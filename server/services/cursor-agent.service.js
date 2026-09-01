@@ -403,6 +403,15 @@ ${systemPrompt}`;
     } finally {
       this._activeSessions.delete(sessionId);
     }
+
+    // Agent is fully disposed — safe to start the next queued message as a fresh turn.
+    if (turnFinishedOk) {
+      try {
+        await this.app.service('sessions').onTurnComplete(sessionId);
+      } catch (err) {
+        logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to send queued message');
+      }
+    }
   }
 
   async _normalizeAndPersist(session, sdkMsg, pendingToolCalls) {

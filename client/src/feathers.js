@@ -26,6 +26,7 @@ reposService.methods(
   'createLocal'
 );
 export const secretsService = app.service('secrets');
+export const queuedMessagesService = app.service('queued-messages');
 export const usersService = app.service('users');
 usersService.methods('approve', 'reject');
 export const pluginsService = app.service('admin/plugins');

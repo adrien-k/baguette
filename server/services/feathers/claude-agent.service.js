@@ -476,6 +476,15 @@ export class ClaudeAgentService {
         logger.warn({ sessionId, err: disposeErr?.message }, 'claude-agent dispose failed');
       }
     }
+
+    // Agent is fully disposed — safe to start the next queued message as a fresh turn.
+    if (turnComplete) {
+      try {
+        await this.app.service('sessions').onTurnComplete(sessionId);
+      } catch (err) {
+        logger.warn({ sessionId, err: err.message }, 'Failed to send queued message');
+      }
+    }
   }
 
   async sendMessage(sessionId, content) {

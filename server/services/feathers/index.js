@@ -10,6 +10,7 @@ import { registerUserReposService } from './user-repos.service.js';
 import { registerClaudeAgentService } from './claude-agent.service.js';
 import { registerCursorAgentService } from '../cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
+import { registerQueuedMessagesService } from './queued-messages.service.js';
 
 /**
  * Register Feathers services (sessions, messages, tasks), their hooks, and channel publishing.
@@ -18,6 +19,7 @@ import { registerPluginsService } from './plugins.service.js';
 export function registerFeathersServices(app) {
   registerMessagesService(app);
   registerSessionsService(app);
+  registerQueuedMessagesService(app);
   registerClaudeAgentService(app);
   registerCursorAgentService(app);
   registerTasksService(app);
@@ -63,4 +65,8 @@ export function registerFeathersServices(app) {
   });
 
   app.service('repos').publish(() => app.channel(GLOBAL_FEATHERS_CHANNEL));
+
+  app.service('queued-messages').publish((data) => {
+    return app.channel(`user/${data.user_id}`);
+  });
 }

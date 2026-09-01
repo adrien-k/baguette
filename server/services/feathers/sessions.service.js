@@ -462,12 +462,28 @@ export class SessionsService extends KnexService {
       });
       patch.total_cost_usd = prevCost + costUpdate;
     }
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length > 0) {
+      await this.app.service('sessions').patch(sessionId, patch, {
+        provider: undefined,
+        user: { id: session.user_id },
+      });
+    }
+  }
 
-    await this.app.service('sessions').patch(sessionId, patch, {
-      provider: undefined,
-      user: { id: session.user_id },
+  async onTurnComplete(sessionId) {
+    const db = this.app.get('db');
+    const queued = await db('queued_messages')
+      .where({ session_id: sessionId })
+      .orderBy('created_at', 'asc')
+      .first();
+    if (!queued) return;
+    await this.app.service('queued-messages').remove(queued.id, {
+      user: { id: queued.user_id },
     });
+    await this.app.service('messages').create(
+      { session_id: sessionId, type: 'user', message_json: queued.message_json },
+      { user: { id: queued.user_id } }
+    );
   }
 }
 

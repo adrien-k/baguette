@@ -12,10 +12,11 @@ import {
   Terminal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { messagesService, sessionsService } from '../../feathers.js';
+import { messagesService, sessionsService, queuedMessagesService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
+import QueuedMessages from '../../components/QueuedMessages.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { isMobile } from '../../utils/isMobile.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
@@ -92,9 +93,37 @@ export default function ChatView({
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
   const [restoring, setRestoring] = useState(false);
+  const [queue, setQueue] = useState([]);
 
   const isRunning = session?.status === 'running';
   const isReviewerSession = session?.agent_type === 'reviewer';
+
+  useEffect(() => {
+    if (!session?.id) return;
+    queuedMessagesService
+      .find({ query: { session_id: session.id, $sort: { created_at: 1 }, $limit: 50 } })
+      .then((res) => setQueue(res.data ?? res))
+      .catch(() => {});
+
+    const onCreated = (item) => {
+      if (item.session_id === session.id) setQueue((q) => [...q, item]);
+    };
+    const onPatched = (item) => {
+      if (item.session_id === session.id)
+        setQueue((q) => q.map((m) => (m.id === item.id ? item : m)));
+    };
+    const onRemoved = (item) => {
+      setQueue((q) => q.filter((m) => m.id !== item.id));
+    };
+    queuedMessagesService.on('created', onCreated);
+    queuedMessagesService.on('patched', onPatched);
+    queuedMessagesService.on('removed', onRemoved);
+    return () => {
+      queuedMessagesService.off('created', onCreated);
+      queuedMessagesService.off('patched', onPatched);
+      queuedMessagesService.off('removed', onRemoved);
+    };
+  }, [session?.id]);
 
   const displayMessages = useMemo(() => {
     const result = [];
@@ -234,6 +263,22 @@ export default function ChatView({
     }
   };
 
+  const buildContent = async (text, filesToSend) => {
+    if (filesToSend.length) {
+      const fileBlocks = await Promise.all(filesToSend.map(fileToContentBlock));
+      return text ? [{ type: 'text', text }, ...fileBlocks] : fileBlocks;
+    }
+    return text;
+  };
+
+  const sendMessage = async (messageJson) => {
+    await messagesService.create({
+      session_id: session.id,
+      type: 'user',
+      message_json: messageJson,
+    });
+  };
+
   const handleSend = async (e) => {
     e?.preventDefault();
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
@@ -247,12 +292,7 @@ export default function ChatView({
     setSending(true);
     let content;
     try {
-      if (filesToSend.length) {
-        const fileBlocks = await Promise.all(filesToSend.map(fileToContentBlock));
-        content = text ? [{ type: 'text', text }, ...fileBlocks] : fileBlocks;
-      } else {
-        content = text;
-      }
+      content = await buildContent(text, filesToSend);
     } catch (err) {
       setFileError(err?.message ?? 'Failed to read attached files');
       setInput(text);
@@ -261,12 +301,25 @@ export default function ChatView({
       return;
     }
 
+    const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
+
+    if (isRunning) {
+      try {
+        await queuedMessagesService.create({ session_id: session.id, message_json: messageJson });
+        persistentState.clear();
+        setInput('');
+      } catch (err) {
+        setInput(text);
+        setFiles(filesToSend);
+        toastError('Failed to queue message', err);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
     try {
-      await messagesService.create({
-        session_id: session.id,
-        type: 'user',
-        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content } }),
-      });
+      await sendMessage(messageJson);
       persistentState.clear();
     } catch (err) {
       setInput(text);
@@ -274,6 +327,31 @@ export default function ChatView({
       toastError('Failed to send message', err);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleQueueDelete = async (id) => {
+    try {
+      await queuedMessagesService.remove(id);
+    } catch (err) {
+      toastError('Failed to delete queued message', err);
+    }
+  };
+
+  const handleQueueSendNow = async (item) => {
+    try {
+      await queuedMessagesService.remove(item.id);
+      await sendMessage(item.message_json);
+    } catch (err) {
+      toastError('Failed to send message', err);
+    }
+  };
+
+  const handleQueueEdit = async (id, newMessageJson) => {
+    try {
+      await queuedMessagesService.patch(id, { message_json: newMessageJson });
+    } catch (err) {
+      toastError('Failed to update queued message', err);
     }
   };
 
@@ -433,6 +511,17 @@ export default function ChatView({
           </div>
         )}
 
+        {!readonly && queue.length > 0 && (
+          <div className="border-t border-zinc-800 pt-2">
+            <QueuedMessages
+              queue={queue}
+              onDelete={handleQueueDelete}
+              onSendNow={handleQueueSendNow}
+              onEdit={handleQueueEdit}
+            />
+          </div>
+        )}
+
         {!readonly && (
           <form
             onSubmit={handleSend}
@@ -478,7 +567,7 @@ export default function ChatView({
                   disabled={(!input.trim() && !files.length) || sending}
                   className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-4 sm:px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
                 >
-                  {sending ? '...' : 'Send'}
+                  {sending ? '...' : isRunning ? 'Queue' : 'Send'}
                 </button>
               </div>
             </div>
