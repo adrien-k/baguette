@@ -700,7 +700,7 @@ export function registerSessionsService(app, path = 'sessions') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new SessionsService(options), {
-    events: ['permission:request', 'permission:handled', 'app:error'],
+    events: ['permission:request', 'permission:handled', 'app:error', 'push:request'],
     methods: [
       'find',
       'get',

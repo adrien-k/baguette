@@ -504,7 +504,7 @@ export default function Session() {
     setPushRequest(null);
     setPushing(true);
     try {
-      await sessionsService.push(session.id, { forceMode, branch });
+      await sessionsService.push({ id: session.id, forceMode, branch });
       setCommitsToPush(0);
       toast.success('Pushed successfully');
     } catch (err) {
