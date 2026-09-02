@@ -88,28 +88,6 @@ export class SessionsService extends KnexService {
     return getClaudeEnvForSession(this.app, sessionId);
   }
 
-  async recentCombos({ repoFullName }, params) {
-    const db = this.app.get('db');
-    const userId = params?.user?.id;
-    const rows = await db('sessions')
-      .where({ user_id: userId, repo_full_name: repoFullName })
-      .whereNull('archived_at')
-      .orderBy('created_at', 'desc')
-      .select('agent_sdk', 'model')
-      .limit(50);
-    const seen = new Set();
-    const combos = [];
-    for (const row of rows) {
-      const key = `${row.agent_sdk}|${row.model ?? ''}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        combos.push({ agentSdk: row.agent_sdk, model: row.model ?? '' });
-      }
-      if (combos.length >= 5) break;
-    }
-    return combos;
-  }
-
   async removeByRepoId(repoId, params) {
     const db = this.app.get('db');
     const sessions = await db('sessions').where({ repo_id: repoId }).whereNull('archived_at');
@@ -692,6 +670,49 @@ function serializePlugins(context) {
   return context;
 }
 
+function extractVariantId(context) {
+  context.params.variantId = context.data.variantId ?? null;
+  delete context.data.variantId;
+  return context;
+}
+
+async function saveRecentCombo(context) {
+  const session = context.result;
+  if (!session?.user_id || !session?.repo_id || !session?.agent_sdk) return context;
+
+  let modelId = session.model ?? '';
+  let params = null;
+  if (session.agent_sdk === 'cursor' && modelId) {
+    try {
+      const parsed = JSON.parse(modelId);
+      if (parsed?.id) {
+        modelId = parsed.id;
+        params = parsed.params?.length ? JSON.stringify(parsed.params) : null;
+      }
+    } catch { /* not JSON — model is a plain string */ }
+  }
+  if (!modelId) return context;
+
+  const db = context.app.get('db');
+  const variantId = context.params.variantId ?? null;
+  const now = new Date();
+  await db('recent_combos')
+    .insert({
+      user_id: session.user_id,
+      repo_id: session.repo_id,
+      agent_sdk: session.agent_sdk,
+      model: modelId,
+      params,
+      variant_id: variantId,
+      updated_at: now,
+      created_at: now,
+    })
+    .onConflict(['user_id', 'repo_id', 'agent_sdk', 'model'])
+    .merge(['params', 'variant_id', 'updated_at']);
+
+  return context;
+}
+
 export function registerSessionsService(app, path = 'sessions') {
   const options = {
     Model: app.get('db'),
@@ -717,7 +738,6 @@ export function registerSessionsService(app, path = 'sessions') {
       'push',
       'restore',
       'getPrDetails',
-      'recentCombos',
     ],
   });
   app.service(path).hooks(sessionsHooks);
@@ -741,7 +761,7 @@ export const sessionsHooks = {
   before: {
     all: [requireUser, scopeByUser],
     find: [applyGroupSort],
-    create: [ensureShortId, prepareSessionEnvironment, serializePlugins, extractInitialFiles],
+    create: [ensureShortId, prepareSessionEnvironment, serializePlugins, extractInitialFiles, extractVariantId],
     patch: [requireOwnSession],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
@@ -753,12 +773,11 @@ export const sessionsHooks = {
     restore: [resolveSessionFromData],
     getPrDetails: [resolveSessionFromData],
     resolvePermission: [requireUser],
-    recentCombos: [requireUser],
   },
   after: {
     find: [addHasWebserver],
     get: [refreshPrStatusAfterGet, addHasWebserver],
-    create: [persistSystemPrompt, createFirstMessage, addHasWebserver],
+    create: [persistSystemPrompt, createFirstMessage, addHasWebserver, saveRecentCombo],
     patch: [syncSessionSettingsAfterPatch, addHasWebserver],
   },
 };

@@ -11,6 +11,7 @@ import { registerClaudeAgentService } from './claude-agent.service.js';
 import { registerCursorAgentService } from '../cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
+import { registerRecentCombosService } from './recent-combos.service.js';
 
 /**
  * Register Feathers services (sessions, messages, tasks), their hooks, and channel publishing.
@@ -28,6 +29,7 @@ export function registerFeathersServices(app) {
   registerReposService(app);
   registerUserReposService(app);
   registerPluginsService(app);
+  registerRecentCombosService(app);
 
   app.service('sessions').publish((data) => {
     return app.channel(`user/${data.user_id}`);

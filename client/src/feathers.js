@@ -9,7 +9,8 @@ app.configure(socketio(socket));
 
 export default app;
 export const sessionsService = app.service('sessions');
-sessionsService.methods('stop', 'commands', 'resolvePermission', 'diff', 'shas', 'showDiff', 'merge', 'push', 'restore', 'getPrDetails', 'recentCombos');
+sessionsService.methods('stop', 'commands', 'resolvePermission', 'diff', 'shas', 'showDiff', 'merge', 'push', 'restore', 'getPrDetails');
+export const recentCombosService = app.service('recent-combos');
 export const messagesService = app.service('messages');
 export const tasksService = app.service('tasks');
 tasksService.methods('kill', 'logs');

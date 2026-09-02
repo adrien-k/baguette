@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import GithubIcon from './GithubIcon.jsx';
 import { apiFetch } from '../api.js';
-import { pluginsService, sessionsService } from '../feathers.js';
+import { pluginsService, recentCombosService } from '../feathers.js';
+import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
@@ -17,25 +18,16 @@ function parseRepoFullName(full) {
   return { owner: full.slice(0, i), name: full.slice(i + 1) };
 }
 
-// Parse cursor model JSON to get model ID and raw params
-function parseCursorModel(rawModel) {
-  if (!rawModel) return { modelId: '', rawParams: null };
-  try {
-    const j = JSON.parse(rawModel);
-    if (j?.id) return { modelId: j.id, rawParams: j.params ?? null };
-  } catch {}
-  return { modelId: rawModel, rawParams: null };
-}
-
 // "Claude / modelId" or "Cursor / modelId", with params appended only when showParams is true
-function comboLabel(agentSdk, rawModel, showParams = false) {
+function comboLabel(agentSdk, model, showParams = false, params = null) {
   const sdkLabel = agentSdk === 'cursor' ? 'Cursor' : 'Claude';
-  const { modelId, rawParams } =
-    agentSdk === 'cursor' ? parseCursorModel(rawModel) : { modelId: rawModel || '', rawParams: null };
-  if (!modelId) return sdkLabel;
-  const base = `${sdkLabel} / ${modelId}`;
-  if (showParams && rawParams?.length) {
-    return `${base} (${rawParams.map((p) => `${p.id}:${p.value}`).join(', ')})`;
+  if (!model) return sdkLabel;
+  const base = `${sdkLabel} / ${model}`;
+  if (showParams && params) {
+    const rawParams = typeof params === 'string' ? JSON.parse(params) : params;
+    if (rawParams?.length) {
+      return `${base} (${rawParams.map((p) => `${p.id}:${p.value}`).join(', ')})`;
+    }
   }
   return base;
 }
@@ -140,8 +132,8 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   useEffect(() => {
     comboAutoApplied.current = false;
     if (!repoFullName) { setRecentCombos([]); return; }
-    sessionsService
-      .recentCombos({ repoFullName })
+    recentCombosService
+      .find({ query: { repoFullName } })
       .then((combos) => setRecentCombos(combos))
       .catch(() => setRecentCombos([]));
   }, [repoFullName]);
@@ -151,11 +143,9 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     if (!recentCombos.length || comboAutoApplied.current) return;
     comboAutoApplied.current = true;
     const combo = recentCombos[0];
-    const modelId =
-      combo.agentSdk === 'cursor' ? parseCursorModel(combo.model).modelId : combo.model;
     setAgentSdkRaw(combo.agentSdk);
-    setModel(modelId);
-    setCursorVariantIdx(null); // resolved by variant default effect once models load
+    setModel(combo.model);
+    setCursorVariantIdx(combo.variantId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentCombos]);
 
@@ -208,6 +198,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       autoPush,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       agentSdk,
+      variantId: cursorVariantIdx,
     };
   };
 
@@ -239,12 +230,9 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Quick-combo dropdown — normalize cursor model IDs before comparing
-  const comboMatchIdx = recentCombos.findIndex((c) => {
-    if (c.agentSdk !== agentSdk) return false;
-    const modelId = c.agentSdk === 'cursor' ? parseCursorModel(c.model).modelId : c.model;
-    return modelId === model;
-  });
+  const comboMatchIdx = recentCombos.findIndex(
+    (c) => c.agentSdk === agentSdk && c.model === model && c.variantId === cursorVariantIdx
+  );
 
   const handleComboChange = (e) => {
     const val = e.target.value;
@@ -256,10 +244,16 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     if (isNaN(idx)) return;
     const combo = recentCombos[idx];
     if (!combo) return;
-    const modelId = combo.agentSdk === 'cursor' ? parseCursorModel(combo.model).modelId : combo.model;
     setAgentSdkRaw(combo.agentSdk);
-    setModel(modelId);
-    setCursorVariantIdx(null); // resolved by variant default effect once models load
+    setModel(combo.model);
+    setCursorVariantIdx(combo.variantId ?? null);
+  };
+
+  const handleDeleteCombo = (id) => {
+    recentCombosService
+      .remove(id)
+      .then(() => setRecentCombos((prev) => prev.filter((c) => c.id !== id)))
+      .catch((err) => toastError('Failed to remove combo', err));
   };
 
   const comboSelectValue = comboMatchIdx >= 0 ? String(comboMatchIdx) : '';
@@ -505,27 +499,39 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
           baseLabels.forEach((l) => { baseLabelCount[l] = (baseLabelCount[l] || 0) + 1; });
 
           return (
-            <select
-              value={comboSelectValue}
-              onChange={handleComboChange}
-              disabled={!repoFullName}
-              className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-40 min-w-0 max-w-xs truncate"
-            >
-              {comboSelectValue === '' && (
-                <option value="" disabled>
-                  {comboLabel(agentSdk, model, false)}
-                </option>
-              )}
-              {recentCombos.map((combo, i) => {
-                const showParams = baseLabelCount[baseLabels[i]] > 1;
-                return (
-                  <option key={i} value={String(i)}>
-                    {comboLabel(combo.agentSdk, combo.model, showParams)}
+            <div className="flex items-center gap-1">
+              <select
+                value={comboSelectValue}
+                onChange={handleComboChange}
+                disabled={!repoFullName}
+                className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-40 min-w-0 max-w-xs truncate"
+              >
+                {comboSelectValue === '' && (
+                  <option value="" disabled>
+                    {comboLabel(agentSdk, model, false)}
                   </option>
-                );
-              })}
-              <option value="__custom__">Select something else…</option>
-            </select>
+                )}
+                {recentCombos.map((combo, i) => {
+                  const showParams = baseLabelCount[baseLabels[i]] > 1;
+                  return (
+                    <option key={i} value={String(i)}>
+                      {comboLabel(combo.agentSdk, combo.model, showParams, combo.params)}
+                    </option>
+                  );
+                })}
+                <option value="__custom__">Select something else…</option>
+              </select>
+              {comboMatchIdx >= 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCombo(recentCombos[comboMatchIdx].id)}
+                  title="Remove from recents"
+                  className="px-1.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors text-base leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           );
         })()}
         <div className="flex items-center gap-3">
