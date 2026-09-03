@@ -19,6 +19,7 @@ import {
   getPRStatus,
   upsertPR,
   createWorktree,
+  configureWorktreeGitIdentity,
   getOpenPRByNumber,
   getOpenPR,
   splitPrBody,
@@ -376,6 +377,7 @@ export class SessionsService extends KnexService {
         token,
         { detach: false, baseBranch: session.base_branch }
       );
+      await configureWorktreeGitIdentity(absoluteWorktreePath, user);
       dbUpdate.worktree_path = path.relative(DATA_DIR, absoluteWorktreePath);
     }
 
@@ -534,6 +536,7 @@ async function prepareSessionEnvironment(context) {
       token,
       { detach: false, baseBranch: baseBranchForWorktree }
     );
+    await configureWorktreeGitIdentity(absoluteWorktreePath, context.params.user);
     Object.assign(context.data, {
       worktree_path: path.relative(DATA_DIR, absoluteWorktreePath),
       repo_id: repo.id,
@@ -561,6 +564,7 @@ async function prepareSessionEnvironment(context) {
       shortId,
       token
     );
+    await configureWorktreeGitIdentity(absoluteWorktreePath, context.params.user);
     Object.assign(context.data, {
       worktree_path: path.relative(DATA_DIR, absoluteWorktreePath),
       repo_id: repo.id,
