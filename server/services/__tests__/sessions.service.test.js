@@ -42,13 +42,17 @@ vi.mock('child_process', () => ({
   execFile: vi.fn((_cmd, _args, _opts, cb) => cb(null, { stdout: '', stderr: '' })),
 }));
 
-vi.mock('../github.js', () => ({
-  removeWorktree: vi.fn().mockResolvedValue(undefined),
-  createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
-  getOpenPRByNumber: vi.fn(),
-  getOpenPR: vi.fn().mockResolvedValue(null),
-  getPRStatus: vi.fn().mockResolvedValue('open'),
-}));
+vi.mock('../github.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    removeWorktree: vi.fn().mockResolvedValue(undefined),
+    createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
+    getOpenPRByNumber: vi.fn(),
+    getOpenPR: vi.fn().mockResolvedValue(null),
+    getPRStatus: vi.fn().mockResolvedValue('open'),
+  };
+});
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
