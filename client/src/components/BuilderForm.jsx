@@ -53,7 +53,6 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   const [fileError, setFileError] = useState(null);
   const [recentCombos, setRecentCombos] = useState([]);
   const initialPromptRef = useRef(null);
-  const comboAutoApplied = useRef(false);
   const isCursor = agentSdk === 'cursor';
 
   // Cascade-clear harness change: reset model + variant
@@ -128,26 +127,23 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, models]);
 
-  // Load recent combos for this repo and reset auto-apply flag per repo
+  // Load recent combos for this repo and immediately apply the latest one
   useEffect(() => {
-    comboAutoApplied.current = false;
     if (!repoFullName) { setRecentCombos([]); return; }
     recentCombosService
       .find({ query: { repoFullName } })
-      .then((combos) => setRecentCombos(combos))
+      .then((combos) => {
+        setRecentCombos(combos);
+        if (combos.length > 0) {
+          const combo = combos[0];
+          setAgentSdkRaw(combo.agentSdk);
+          setModel(combo.model);
+          setCursorVariantIdx(combo.variantId ?? null);
+        }
+      })
       .catch(() => setRecentCombos([]));
-  }, [repoFullName]);
-
-  // Auto-apply the most recent combo once when combos load for a repo
-  useEffect(() => {
-    if (!recentCombos.length || comboAutoApplied.current) return;
-    comboAutoApplied.current = true;
-    const combo = recentCombos[0];
-    setAgentSdkRaw(combo.agentSdk);
-    setModel(combo.model);
-    setCursorVariantIdx(combo.variantId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentCombos]);
+  }, [repoFullName]);
 
   useEffect(() => {
     pluginsService
@@ -256,7 +252,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       .catch((err) => toastError('Failed to remove combo', err));
   };
 
-  const comboSelectValue = comboMatchIdx >= 0 ? String(comboMatchIdx) : '';
+  const comboSelectValue = comboMatchIdx >= 0 ? String(comboMatchIdx) : '__custom__';
 
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
 
@@ -506,11 +502,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                 disabled={!repoFullName}
                 className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-40 min-w-0 max-w-xs truncate"
               >
-                {comboSelectValue === '' && (
-                  <option value="" disabled>
-                    {comboLabel(agentSdk, model, false)}
-                  </option>
-                )}
+                <option value="__custom__">Custom</option>
                 {recentCombos.map((combo, i) => {
                   const showParams = baseLabelCount[baseLabels[i]] > 1;
                   return (
@@ -519,7 +511,6 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                     </option>
                   );
                 })}
-                <option value="__custom__">Select something else…</option>
               </select>
               {comboMatchIdx >= 0 && (
                 <button
