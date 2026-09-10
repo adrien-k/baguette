@@ -1,10 +1,10 @@
-import { Agent, AgentBusyError, AgentNotFoundError } from '@cursor/sdk';
+import { Agent, AgentBusyError } from '@cursor/sdk';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import logger from '../logger.js';
-import { resolveDataDirRelativePath, DATA_DIR } from '../config.js';
-import { buildCursorCustomTools } from './baguette-mcp-server.js';
-import { buildSystemPromptAppend } from './session-prompt.js';
+import logger from '../../logger.js';
+import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
+import { buildCursorCustomTools } from '../baguette-mcp-server.js';
+import { buildSystemPromptAppend } from '../session-prompt.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -122,13 +122,6 @@ ${systemPrompt}`;
     }
 
     const apiKey = repoApiKey || user.cursor_api_key || undefined;
-    const apiKeySource = repoApiKey ? 'repo' : user.cursor_api_key ? 'user' : 'none';
-    const maskedApiKey = apiKey
-      ? apiKey.length > 8
-        ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`
-        : `${apiKey.slice(0, 2)}...`
-      : null;
-
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
 
     const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
@@ -155,51 +148,21 @@ ${systemPrompt}`;
       }
     }
 
-    const coldStartContext = {
-      sessionId,
-      userId: session.user_id,
-      repoId: session.repo_id,
-      apiKeySource,
-      apiKeyMasked: maskedApiKey,
-      apiKeyPresent: !!apiKey,
-      model: agentOptions.model,
-      cwd,
-    };
-
     let agent;
     if (session.cursor_agent_id) {
       logger.info(
-        { ...coldStartContext, storedAgentId: session.cursor_agent_id },
+        { sessionId, storedAgentId: session.cursor_agent_id },
         'cursor-agent: cache miss — resuming stored agent'
       );
       try {
         agent = await Agent.resume(session.cursor_agent_id, agentOptions);
-        logger.info(
-          { sessionId, agentId: session.cursor_agent_id },
-          'cursor-agent: resume succeeded'
-        );
       } catch (err) {
-        const isRecoverable =
-          err instanceof AgentNotFoundError ||
-          err?.message?.toLowerCase().includes('authentication') ||
-          err?.message?.toLowerCase().includes('unauthorized');
-        if (!isRecoverable) throw err;
-        logger.warn(
-          {
-            sessionId,
-            storedAgentId: session.cursor_agent_id,
-            errName: err.name,
-            errMessage: err.message,
-            isAgentNotFound: err instanceof AgentNotFoundError,
-          },
-          'cursor-agent: resume failed, will create fresh agent'
-        );
+        logger.warn({ sessionId, storedAgentId: session.cursor_agent_id, err: err.message }, 'cursor-agent: resume failed, will create fresh agent');
       }
     }
     if (!agent) {
-      logger.info(coldStartContext, 'cursor-agent: creating new agent');
+      logger.info({ sessionId }, 'cursor-agent: creating new agent');
       agent = await Agent.create(agentOptions);
-      logger.info({ sessionId, agentId: agent.agentId }, 'cursor-agent: new agent created');
       await db('sessions').where({ id: sessionId }).update({ cursor_agent_id: agent.agentId });
     }
 
@@ -324,21 +287,8 @@ ${systemPrompt}`;
             break;
           }
           if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
-            const isAuthError =
-              sdkMsg.message?.toLowerCase().includes('authentication') ||
-              sdkMsg.message?.toLowerCase().includes('unauthorized') ||
-              sdkMsg.message?.toLowerCase().includes('logged in');
             logger.warn(
-              {
-                sessionId,
-                userId,
-                status,
-                agent_id: sdkMsg.agent_id,
-                run_id: sdkMsg.run_id,
-                sdkMessage: sdkMsg.message,
-                isAuthError,
-                sdkMsgFull: sdkMsg,
-              },
+              { sessionId, status, agent_id: sdkMsg.agent_id, run_id: sdkMsg.run_id, sdkMessage: sdkMsg.message },
               'cursor-agent received terminal status'
             );
             let statusMsg;
@@ -346,8 +296,6 @@ ${systemPrompt}`;
               statusMsg = 'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
             } else if (status === 'CANCELLED') {
               statusMsg = 'Cursor agent was cancelled.';
-            } else if (isAuthError) {
-              statusMsg = 'Cursor authentication failed. Please verify your API key in settings, or try again later if this is a temporary Cursor service issue.';
             } else {
               statusMsg = `Cursor agent encountered an error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''} Send your message again to continue in a fresh conversation.`;
             }
@@ -370,29 +318,12 @@ ${systemPrompt}`;
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        const isAuthErr =
-          err?.message?.toLowerCase().includes('authentication') ||
-          err?.message?.toLowerCase().includes('unauthorized');
-        logger.error(
-          {
-            sessionId,
-            userId,
-            errName: err.name,
-            errMessage: err.message,
-            errStack: err.stack,
-            isAuthErr,
-          },
-          'Cursor session stream error'
-        );
+        logger.error({ sessionId, err: err.message }, 'Cursor session stream error');
         try {
           await this.app
             .service('sessions')
             .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-          let errStatusMsg = err.message;
-          if (isAuthErr) {
-            errStatusMsg = 'Cursor authentication failed. Please verify your API key in settings, or try again later if this is a temporary Cursor service issue.';
-          }
-          await this._persistStatusMessage(sessionId, userId, errStatusMsg);
+          await this._persistStatusMessage(sessionId, userId, err.message);
         } catch {
           // ignore secondary errors
         }

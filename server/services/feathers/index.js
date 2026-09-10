@@ -8,7 +8,7 @@ import { registerUsersService } from './users.service.js';
 import { registerReposService } from './repos.service.js';
 import { registerUserReposService } from './user-repos.service.js';
 import { registerClaudeAgentService } from './claude-agent.service.js';
-import { registerCursorAgentService } from '../cursor-agent.service.js';
+import { registerCursorAgentService } from './cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerRecentCombosService } from './recent-combos.service.js';
