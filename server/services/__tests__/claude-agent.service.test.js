@@ -104,7 +104,6 @@ function makeMockApp(db) {
   const sessionEmit = vi.fn();
   const messageCreate = vi.fn().mockResolvedValue({ id: 1 });
   const genericRemove = vi.fn().mockResolvedValue({});
-
   const getClaudeEnv = vi.fn().mockResolvedValue({});
   const deleteSessionTasks = vi.fn();
   const createTask = vi.fn().mockResolvedValue({});
@@ -300,112 +299,7 @@ describe('ClaudeAgentService', (hooks) => {
     });
   });
 
-  // ── 3. Assistant approval ──────────────────────────────────────────────────
-
-  describe('assistant approval', () => {
-    it('patches status to approval and emits permission request when canUseTool is called', async () => {
-      const service = Object.assign(new ClaudeAgentService(), {
-        app: mockApp,
-        _db: mockApp.get('db'),
-      });
-      let capturedCanUseTool;
-
-      query.mockImplementation(({ options }) => {
-        capturedCanUseTool = options.canUseTool;
-        // Keep the agent loop alive so `resolvePermission` still sees an active session
-        return makeNeverEndingIterable();
-      });
-
-      // Capture the requestId from the permission event
-      let capturedRequestId;
-      mockApp._sessionEmit.mockImplementation((event, data) => {
-        if (event === 'permission:request') capturedRequestId = data.requestId;
-      });
-
-      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
-
-      expect(capturedCanUseTool).toBeDefined();
-
-      // Simulate the SDK calling canUseTool
-      const abortController = new AbortController();
-      const permissionPromise = capturedCanUseTool(
-        'Bash',
-        { command: 'ls' },
-        { signal: abortController.signal }
-      );
-
-      // Status should be patched to 'approval' (after initial 'running' from createAgentSession)
-      await vi.waitFor(() => {
-        expect(
-          mockApp._sessionPatch.mock.calls.some((c) => c[1]?.status === 'approval')
-        ).toBe(true);
-      });
-
-      // Permission event should have been emitted
-      expect(mockApp._sessionEmit).toHaveBeenCalledWith(
-        'permission:request',
-        expect.objectContaining({
-          sessionId: BASE_SESSION_ID,
-          user_id: BASE_SESSION_DATA.user_id,
-          toolName: 'Bash',
-        })
-      );
-
-      // Resolve the permission request
-      await service.resolvePermission(BASE_SESSION_ID, capturedRequestId, { approved: true });
-
-      // Status should be patched back to 'running'
-      await vi.waitFor(() => {
-        const allCalls = mockApp._sessionPatch.mock.calls;
-        expect(allCalls.some((c) => c[1]?.status === 'running')).toBe(true);
-      });
-
-      const result = await permissionPromise;
-      expect(result.behavior).toBe('allow');
-    });
-
-    it('resolves with deny behavior when user rejects the permission', async () => {
-      const service = Object.assign(new ClaudeAgentService(), {
-        app: mockApp,
-        _db: mockApp.get('db'),
-      });
-      let capturedCanUseTool;
-      let capturedRequestId;
-
-      query.mockImplementation(({ options }) => {
-        capturedCanUseTool = options.canUseTool;
-        return makeNeverEndingIterable();
-      });
-
-      mockApp._sessionEmit.mockImplementation((event, data) => {
-        if (event === 'permission:request') capturedRequestId = data.requestId;
-      });
-
-      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
-
-      const abortController = new AbortController();
-      const permissionPromise = capturedCanUseTool(
-        'Write',
-        { path: '/etc/passwd', content: 'x' },
-        { signal: abortController.signal }
-      );
-
-      await vi.waitFor(() => expect(capturedRequestId).toBeDefined());
-
-      await service.resolvePermission(BASE_SESSION_ID, capturedRequestId, {
-        approved: false,
-        reason: 'Too risky',
-      });
-
-      const result = await permissionPromise;
-      expect(result.behavior).toBe('deny');
-      expect(result.message).toBe('Too risky');
-    });
-  });
-
-  // ── 4. Assistant success ───────────────────────────────────────────────────
+  // ── 3. Assistant success ───────────────────────────────────────────────────
 
   describe('assistant success', () => {
     it('patches session status to completed when result is successful', async () => {

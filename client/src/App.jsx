@@ -11,11 +11,9 @@ import Settings from './pages/Settings.jsx';
 import Admin from './pages/Admin.jsx';
 import SessionPreview from './pages/SessionPreview.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
-import ApprovalsDropdown from './components/ApprovalsDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider } from './context/RepoContext.jsx';
 import { FilterProvider } from './context/FilterContext.jsx';
-import ApprovalsOverlay from './components/ApprovalsOverlay.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 
 function Nav() {
@@ -63,7 +61,6 @@ function Nav() {
         <div className="flex items-center gap-3">
           <RepoPicker />
           <RunningTasksDropdown />
-          <ApprovalsDropdown />
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -224,7 +221,6 @@ export default function App() {
         <SessionsProvider>
           <RepoProvider>
             <AppRoutes />
-            <ApprovalsOverlay />
             <Toaster
               position="bottom-center"
               toastOptions={{ duration: 5000 }}

@@ -18,8 +18,21 @@ export function registerMessagesService(app, path = 'messages') {
   app.service(path).hooks(messagesHooks);
 }
 
+async function queueIfRunning(context) {
+  if (!context.params?.provider || context.data?.type !== 'user') return context;
+  const db = context.app.get('db');
+  const session = await db('sessions').where({ id: context.data.session_id }).first();
+  if (!session || session.status !== 'running') return context;
+  await context.app.service('queued-messages').create(
+    { session_id: context.data.session_id, message_json: context.data.message_json },
+    { user: context.params.user }
+  );
+  context.result = { queued: true };
+  return context;
+}
+
 async function afterCreateNotifySessionsAndAgent(context) {
-  if (!context.result) return context;
+  if (!context.result || context.result.queued) return context;
   const message = context.result;
   await context.app.service('sessions').onMessageCreated(message);
   const session = await context.app.get('db')('sessions').where({ id: message.session_id }).first();
@@ -34,6 +47,7 @@ async function afterCreateNotifySessionsAndAgent(context) {
 export const messagesHooks = {
   before: {
     all: [requireUser, scopeBySessionUser],
+    create: [queueIfRunning],
   },
   after: {
     create: [afterCreateNotifySessionsAndAgent],

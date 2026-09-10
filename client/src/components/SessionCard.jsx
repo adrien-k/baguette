@@ -3,7 +3,6 @@ import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Square, Archive } 
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import PrStatusBadge from './PrStatusBadge.jsx';
-import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { formatRelativeTime } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
 import { parseModelField } from '../utils/models.js';
@@ -30,12 +29,7 @@ const STOPPABLE_STATUSES = new Set(['running']);
 
 export default function SessionCard({ session, showRepo = false }) {
   const navigate = useNavigate();
-  const { pendingApprovals, dismissedApprovalIds, reopenApproval } = useSessionsContext();
   const isArchived = !!session.archived_at;
-
-  const dismissedApproval = pendingApprovals.find(
-    (p) => p.sessionId === session.id && dismissedApprovalIds.has(p.requestId)
-  );
 
   const handleStop = async (e) => {
     e.stopPropagation();
@@ -88,17 +82,6 @@ export default function SessionCard({ session, showRepo = false }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-          {dismissedApproval && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                reopenApproval(dismissedApproval.requestId);
-              }}
-              className="px-2 py-0.5 text-xs text-amber-400 border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 rounded transition-colors"
-            >
-              Review approval
-            </button>
-          )}
           {!isArchived && STOPPABLE_STATUSES.has(session.status) && (
             <button
               onClick={handleStop}

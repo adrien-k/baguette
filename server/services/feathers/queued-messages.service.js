@@ -1,6 +1,6 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest } from '@feathersjs/errors';
-import { requireUser, scopeByUser, only } from './hooks.js';
+import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 
 export class QueuedMessagesService extends KnexService {}
@@ -27,7 +27,7 @@ async function validateSessionOwnership(context) {
 const queuedMessagesHooks = {
   before: {
     all: [requireUser],
-    create: [only(['session_id', 'message_json']), validateSessionOwnership, scopeByUser],
+    create: [disableExternal, only(['session_id', 'message_json']), validateSessionOwnership, scopeByUser],
     find: [scopeByUser],
     get: [scopeByUser],
     patch: [scopeByUser, only(['message_json'])],

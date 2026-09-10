@@ -171,28 +171,6 @@ export class SessionsService extends KnexService {
     return { commands: getAvailableCommands(baguetteConfig) };
   }
 
-  async resolvePermission(data, params) {
-    const { sessionId, requestId, approved, reason, answers } = data;
-    const userId = params.user?.id;
-    const db = this.app.get('db');
-    const session = await db('sessions').where({ id: sessionId, user_id: userId }).first();
-    if (!session) throw new NotFound('Session not found');
-
-    const claudeAgent = this.app.service('claude-agent');
-    const entry = claudeAgent.getActiveSession(sessionId)?.permissionRequests?.get(requestId);
-    const toolName = entry?.toolName;
-
-    await claudeAgent.resolvePermission(sessionId, requestId, { approved, reason, answers });
-
-    this.emit('permission:handled', { requestId, sessionId, user_id: userId });
-
-    if (approved && toolName === 'ExitPlanMode') {
-      await this.app.service('sessions').patch(sessionId, { plan_mode: 0 }, { user: params.user });
-    }
-
-    return { ok: true };
-  }
-
   async diff(data, params) {
     const session = params.resolvedSession;
     if (!session?.worktree_path) return { diff: '' };
@@ -725,7 +703,7 @@ export function registerSessionsService(app, path = 'sessions') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new SessionsService(options), {
-    events: ['permission:request', 'permission:handled', 'app:error', 'push:request'],
+    events: ['app:error', 'push:request'],
     methods: [
       'find',
       'get',
@@ -734,7 +712,6 @@ export function registerSessionsService(app, path = 'sessions') {
       'remove',
       'stop',
       'commands',
-      'resolvePermission',
       'diff',
       'shas',
       'showDiff',
@@ -776,7 +753,6 @@ export const sessionsHooks = {
     push: [resolveSessionFromData],
     restore: [resolveSessionFromData],
     getPrDetails: [resolveSessionFromData],
-    resolvePermission: [requireUser],
   },
   after: {
     find: [addHasWebserver],

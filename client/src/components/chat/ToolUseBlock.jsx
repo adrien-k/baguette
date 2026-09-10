@@ -3,6 +3,8 @@ import { Bot, CheckSquare2, Square, Loader2 } from 'lucide-react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { messagesService, sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
+import ExitPlanModeBlock from './ExitPlanModeBlock.jsx';
+import AskUserQuestionBlock from './AskUserQuestionBlock.jsx';
 import { stripWorktreePath } from '../../utils/paths.js';
 import { ansiToHtml } from '../../utils/ansi.js';
 import EditDiffView from './EditDiffView.jsx';
@@ -191,6 +193,7 @@ function AgentTaskBlock({ block }) {
   );
 }
 
+
 function CursorPlanBlock({ block, sessionId }) {
   const [continuePlanning, setContinuePlanning] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -316,7 +319,7 @@ function CursorPlanBlock({ block, sessionId }) {
   );
 }
 
-export default function ToolUseBlock({ block, worktreePath, sessionId }) {
+export default function ToolUseBlock({ block, worktreePath, sessionId, userReplied }) {
   // Resolve Cursor SDK tool name aliases to their Claude equivalents
   const effectiveName = CURSOR_TOOL_ALIAS[block.name] ?? block.name;
   let resolvedBlock = effectiveName !== block.name ? { ...block, name: effectiveName } : block;
@@ -392,6 +395,16 @@ export default function ToolUseBlock({ block, worktreePath, sessionId }) {
   // TodoWrite / updateTodos
   if (effectiveName === 'TodoWrite' || block.name === 'updateTodos') {
     return <TodoBlock todos={resolvedBlock.input?.todos} />;
+  }
+
+  // ExitPlanMode: show the plan inline with Run/Continue planning buttons
+  if (effectiveName === 'ExitPlanMode' && resolvedBlock.input) {
+    return <ExitPlanModeBlock block={resolvedBlock} sessionId={sessionId} userReplied={userReplied} />;
+  }
+
+  // AskUserQuestion: show questions inline; user submits answers as a follow-up message
+  if (effectiveName === 'AskUserQuestion' && resolvedBlock.input?.questions) {
+    return <AskUserQuestionBlock block={resolvedBlock} sessionId={sessionId} userReplied={userReplied} />;
   }
 
   // createPlan: Cursor plan-mode result

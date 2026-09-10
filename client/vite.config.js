@@ -5,12 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 const APP_PORT = process.env.PORT || 3000;
 const VITE_PORT = parseInt(process.env.VITE_PORT) || 5173;
-const SOCKET_PATH = process.env.SOCKET_PATH || '/_baguette/ws/default'; 
 
 export default defineConfig({
-  define: {
-    __SOCKET_PATH__: JSON.stringify(SOCKET_PATH),
-  },
   plugins: [
     react(),
     tailwindcss(),
@@ -55,10 +51,6 @@ export default defineConfig({
     proxy: {
       '/api': `http://127.0.0.1:${APP_PORT}`,
       '/auth': `http://127.0.0.1:${APP_PORT}`,
-      [SOCKET_PATH]: {
-        target: `ws://127.0.0.1:${APP_PORT}`,
-        ws: true,
-      },
     },
   },
 });

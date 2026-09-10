@@ -20,7 +20,6 @@ import {
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS } from '../context/RepoContext.jsx';
-import { useAuth } from '../hooks/useAuth.jsx';
 import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
@@ -252,14 +251,8 @@ export default function Session() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get('view') || 'chat';
-  const { user } = useAuth();
   const {
     sessions,
-    pendingApprovals,
-    dismissedApprovalIds,
-    reopenApproval,
-    handleApproval,
-    setPermissionMode,
     hasMore: hasMoreSessions,
     loadMore: loadMoreSessions,
   } = useSessionsContext();
@@ -561,19 +554,6 @@ export default function Session() {
   }
 
   const isReadonly = !!session.archived_at;
-
-  const dismissedApproval = pendingApprovals.find(
-    (p) => p.sessionId === session?.id && dismissedApprovalIds.has(p.requestId)
-  );
-
-  const isModalMode = !!user?.builder_modal_mode;
-
-  // When modal approval is disabled for this session type, show the approval inline in chat
-  const inlineApproval = !isModalMode
-    ? pendingApprovals.find(
-        (p) => p.sessionId === session?.id && !dismissedApprovalIds.has(p.requestId)
-      )
-    : null;
 
     let sidebarClassName = "hidden md:flex"
     if (showSidebar) {
@@ -987,11 +967,6 @@ export default function Session() {
                 loadingMore={loadingMore}
                 session={session}
                 systemPrompt={systemPrompt}
-                dismissedApproval={dismissedApproval}
-                reopenApproval={reopenApproval}
-                inlineApproval={inlineApproval}
-                onApproval={handleApproval}
-                onModeChange={setPermissionMode}
                 onViewChange={setView}
                 readonly={isReadonly}
 

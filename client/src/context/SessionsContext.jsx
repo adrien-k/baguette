@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { toastError } from '../utils/toastError.jsx';
 import { CheckCircle, XCircle, X } from 'lucide-react';
 import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
 import { sessionsService } from '../feathers.js';
@@ -15,8 +14,6 @@ function isTabHidden() {
 
 export function SessionsProvider({ children }) {
   const { sessions, loading, refetch, hasMore, loadMore } = useGetUserSessions();
-  const [pendingApprovals, setPendingApprovals] = useState([]);
-  const [dismissedApprovalIds, setDismissedApprovalIds] = useState(new Set());
   const prevStatusRef = useRef(new Map());
   const sessionsRef = useRef(sessions);
   useEffect(() => {
@@ -136,88 +133,10 @@ export function SessionsProvider({ children }) {
     return () => sessionsService.off('patched', onPatched);
   }, [notifyCompleted, notifyFailed]);
 
-  useEffect(() => {
-    const onPermissionHandled = (msg) => {
-      if (!msg.requestId) return;
-      setPendingApprovals((prev) => prev.filter((p) => p.requestId !== msg.requestId));
-      setDismissedApprovalIds((prev) => {
-        const next = new Set(prev);
-        next.delete(msg.requestId);
-        return next;
-      });
-    };
-    sessionsService.on('permission:handled', onPermissionHandled);
-    return () => sessionsService.off('permission:handled', onPermissionHandled);
-  }, []);
-
-  useEffect(() => {
-    const onPermissionRequest = (msg) => {
-      if (!msg.sessionId) return;
-      setPendingApprovals((prev) => {
-        if (prev.some((p) => p.requestId === msg.requestId)) return prev;
-        return [...prev, msg];
-      });
-      if (isTabHidden()) {
-        showBrowserNotification(
-          'Approval required',
-          msg.description || 'Claude needs your approval to continue.',
-          `approval-${msg.requestId}`,
-          () => {
-            window.focus();
-          }
-        );
-      }
-    };
-    sessionsService.on('permission:request', onPermissionRequest);
-    return () => sessionsService.off('permission:request', onPermissionRequest);
-  }, []);
-
-  const handleApproval = useCallback(
-    (requestId, approved, reason, answers) => {
-      const approval = pendingApprovals.find((p) => p.requestId === requestId);
-      if (!approval) return;
-      sessionsService
-        .resolvePermission({ sessionId: approval.sessionId, requestId, approved, reason, answers })
-        .catch((err) => toastError('Failed to resolve permission', err));
-      setPendingApprovals((prev) => prev.filter((p) => p.requestId !== requestId));
-      setDismissedApprovalIds((prev) => {
-        const next = new Set(prev);
-        next.delete(requestId);
-        return next;
-      });
-    },
-    [pendingApprovals]
-  );
-
-  const dismissApproval = useCallback((requestId) => {
-    setDismissedApprovalIds((prev) => new Set([...prev, requestId]));
-  }, []);
-
-  const reopenApproval = useCallback((requestId) => {
-    setDismissedApprovalIds((prev) => {
-      const next = new Set(prev);
-      next.delete(requestId);
-      return next;
-    });
-  }, []);
-
-  const setPermissionMode = useCallback((sessionId, mode) => {
-    if (!sessionId) return;
-    sessionsService
-      .patch(sessionId, { permission_mode: mode })
-      .catch((err) => toastError('Failed to set permission mode', err));
-  }, []);
-
   return (
     <SessionsContext.Provider
       value={{
         sessions,
-        pendingApprovals,
-        dismissedApprovalIds,
-        handleApproval,
-        dismissApproval,
-        reopenApproval,
-        setPermissionMode,
         refetch,
         loading,
         hasMore,

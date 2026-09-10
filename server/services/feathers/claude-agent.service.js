@@ -1,5 +1,4 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import crypto from 'crypto';
 import logger from '../../logger.js';
 import { remoteHasNewCommits } from '../github.js';
 import {
@@ -195,7 +194,6 @@ export class ClaudeAgentService {
     } catch (err) {
       logger.warn({ sessionId, err: err.message }, 'claude-agent session dispose cleanup');
     }
-    session.permissionRequests.clear();
     this._activeSessions.delete(sessionId);
     await this._closeQueryInstanceSafe(sessionId, session.queryInstance);
   }
@@ -217,67 +215,23 @@ export class ClaudeAgentService {
     );
   }
 
-  createCanUseTool(sessionId, userId, permissionRequests, sessionSettings) {
-    const app = this.app;
-    return async (toolName, input, { signal }) => {
-      // Auto-allow all baguette MCP tools without showing approval UI
-      if (toolName.startsWith('mcp__baguette__')) {
-        return { behavior: 'allow', updatedInput: input };
+  createCanUseTool() {
+    return async (toolName, input) => {
+      if (toolName === 'ExitPlanMode') {
+        return {
+          behavior: 'deny',
+          message:
+            'The plan has been presented to the user for review. They will send a message when ready to proceed or to request revisions.',
+        };
       }
 
-      // Auto-approve everything in bypass mode, except ExitPlanMode and AskUserQuestion which must always be reviewed
-      if (
-        sessionSettings?.bypassPermissions &&
-        toolName !== 'ExitPlanMode' &&
-        toolName !== 'AskUserQuestion'
-      ) {
-        return { behavior: 'allow', updatedInput: input };
+      if (toolName === 'AskUserQuestion') {
+        return {
+          behavior: 'deny',
+          message: 'Questions presented to the user inline. They will reply with their answers.',
+        };
       }
-
-      const requestId = crypto.randomUUID();
-
-      await app
-        .service('sessions')
-        .patch(sessionId, { status: 'approval' }, { user: { id: userId } });
-      const approvalEvent = {
-        requestId,
-        sessionId,
-        toolName,
-        input,
-        user_id: userId,
-      };
-      app.service('sessions').emit('permission:request', approvalEvent);
-
-      return new Promise((resolve, reject) => {
-        const onAbort = () => {
-          permissionRequests.delete(requestId);
-          reject(new Error('Aborted'));
-        };
-        signal.addEventListener('abort', onAbort, { once: true });
-
-        const resolver = async (decision) => {
-          signal.removeEventListener('abort', onAbort);
-          permissionRequests.delete(requestId);
-
-          await app
-            .service('sessions')
-            .patch(sessionId, { status: 'running' }, { user: { id: userId } });
-
-          if (decision.approved) {
-            const updatedInput =
-              toolName === 'AskUserQuestion' && decision.answers
-                ? { ...input, answers: decision.answers }
-                : input;
-            resolve({ behavior: 'allow', updatedInput });
-          } else {
-            resolve({
-              behavior: 'deny',
-              message: decision.reason || 'Denied by user',
-            });
-          }
-        };
-        permissionRequests.set(requestId, { resolve: resolver, toolName, input, approvalEvent });
-      });
+      return { behavior: 'allow', updatedInput: input };
     };
   }
 
@@ -310,19 +264,12 @@ export class ClaudeAgentService {
     const sessionId = sessionRow.id;
     
     const channel = createMessageChannel();
-    const permissionRequests = new Map();
     const abortController = new AbortController();
 
     const sessionSettings = {
       permissionMode: sessionRow.plan_mode ? 'plan' : sessionRow.permission_mode,
-      bypassPermissions: sessionRow.permission_mode === 'bypassPermissions',
     };
-    const canUseTool = this.createCanUseTool(
-      sessionId,
-      sessionRow.user_id,
-      permissionRequests,
-      sessionSettings
-    );
+    const canUseTool = this.createCanUseTool();
     const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser(user));
 
     const queryOptions = await buildBuilderQueryOptions(this.app, sessionRow, {
@@ -344,7 +291,6 @@ export class ClaudeAgentService {
       token: getEffectiveGithubToken(user),
       channel,
       queryInstance,
-      permissionRequests,
       abortController,
       sessionSettings,
     };
@@ -531,41 +477,17 @@ export class ClaudeAgentService {
     });
   }
 
-  async resolvePermission(sessionId, requestId, decision) {
-    const session = await this.ensureActiveSession(sessionId);
-    if (!session) return false;
-
-    const entry = session.permissionRequests.get(requestId);
-    if (!entry) return false;
-
-    entry.resolve(decision);
-    return true;
-  }
-
   syncSessionSettingsFromPatch(sessionId, sessionRow) {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
     const effectiveMode = sessionRow.plan_mode ? 'plan' : sessionRow.permission_mode;
     if (session.sessionSettings) {
       session.sessionSettings.permissionMode = effectiveMode;
-      session.sessionSettings.bypassPermissions = sessionRow.permission_mode === 'bypassPermissions';
     }
-    // For bypassPermissions, use acceptEdits as the SDK-level mode — full bypass is handled
-    // in canUseTool which auto-approves all tool calls when permissionMode is bypassPermissions.
     session.queryInstance.setPermissionMode(
       effectiveMode === 'bypassPermissions' ? 'acceptEdits' : effectiveMode
     );
     session.queryInstance.setModel(sessionRow.model);
-
-    // When switching to bypass mode, auto-approve any pending approvals (except ExitPlanMode and AskUserQuestion)
-    if (sessionRow.permission_mode === 'bypassPermissions' && session.permissionRequests?.size > 0) {
-      for (const [requestId, entry] of session.permissionRequests) {
-        if (entry.toolName === 'ExitPlanMode') continue;
-        if (entry.toolName === 'AskUserQuestion') continue;
-        entry.resolve({ approved: true });
-        this.app.service('sessions').emit('permission:handled', { requestId, sessionId });
-      }
-    }
   }
 
   async stopSession(sessionId) {
@@ -641,7 +563,6 @@ export function registerClaudeAgentService(app, path = 'claude-agent') {
       'resumeSession',
       'ensureActiveSession',
       'sendMessage',
-      'resolvePermission',
       'stopSession',
       'syncSessionSettingsFromPatch',
       'onMessageCreated',

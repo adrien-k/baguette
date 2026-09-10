@@ -1,5 +1,5 @@
 import db from '../../db.js';
-import { GLOBAL_FEATHERS_CHANNEL } from '../../feathers.js';
+import sseManager from '../../sse.js';
 import { registerMessagesService } from './messages.service.js';
 import { registerSessionsService } from './sessions.service.js';
 import { registerTasksService } from './tasks.service.js';
@@ -12,9 +12,10 @@ import { registerCursorAgentService } from '../cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerRecentCombosService } from './recent-combos.service.js';
+const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
 /**
- * Register Feathers services (sessions, messages, tasks), their hooks, and channel publishing.
+ * Register Feathers services and wire their events to SSE connections.
  * Call after app.configure(rest()) and before app.setup(server).
  */
 export function registerFeathersServices(app) {
@@ -31,44 +32,40 @@ export function registerFeathersServices(app) {
   registerPluginsService(app);
   registerRecentCombosService(app);
 
-  app.service('sessions').publish((data) => {
-    return app.channel(`user/${data.user_id}`);
+  // Route service CRUD events to the right SSE connections
+  for (const event of CRUD_EVENTS) {
+    app.service('sessions').on(event, (data) => {
+      if (data?.user_id) sseManager.send(data.user_id, 'sessions', event, data);
+    });
+
+    app.service('messages').on(event, async (data) => {
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session) sseManager.send(session.user_id, 'messages', event, data);
+    });
+
+    app.service('tasks').on(event, async (data) => {
+      if (!data.session_id) return;
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session) sseManager.send(session.user_id, 'tasks', event, data);
+    });
+
+    app.service('repos').on(event, (data) => {
+      sseManager.sendAll('repos', event, data);
+    });
+
+    app.service('queued-messages').on(event, (data) => {
+      if (data?.user_id) sseManager.send(data.user_id, 'queued-messages', event, data);
+    });
+  }
+
+  // Transient session-level errors (no replay needed)
+  app.service('sessions').on('app:error', (data) => {
+    if (data?.user_id) sseManager.send(data.user_id, 'sessions', 'app:error', data);
   });
 
-  app.service('sessions').publish('permission:request', (data) => {
-    return app.channel(`user/${data.user_id}`);
-  });
-
-  app.service('sessions').publish('permission:handled', (data) => {
-    return app.channel(`user/${data.user_id}`);
-  });
-
-  app.service('sessions').publish('app:error', (data) => {
-    return app.channel(`user/${data.user_id}`);
-  });
-
-  app.service('messages').publish(async (data) => {
+  app.service('tasks').on('log', async (data) => {
+    if (!data.session_id) return;
     const session = await db('sessions').where({ id: data.session_id }).first();
-    if (!session) return null;
-    return app.channel(`user/${session.user_id}`);
-  });
-
-  app.service('tasks').publish(async (data) => {
-    if (!data.session_id) return null;
-    const session = await db('sessions').where({ id: data.session_id }).first();
-    if (!session) return null;
-    return app.channel(`user/${session.user_id}`);
-  });
-
-  app.service('tasks').publish('log', async (data) => {
-    if (!data.session_id) return null;
-    const session = await db('sessions').where({ id: data.session_id }).first();
-    return session ? app.channel(`user/${session.user_id}`) : null;
-  });
-
-  app.service('repos').publish(() => app.channel(GLOBAL_FEATHERS_CHANNEL));
-
-  app.service('queued-messages').publish((data) => {
-    return app.channel(`user/${data.user_id}`);
+    if (session) sseManager.send(session.user_id, 'tasks', 'log', data);
   });
 }

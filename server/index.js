@@ -10,15 +10,11 @@ import { createAuthRoutes } from './routes/auth.js';
 import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';
 import { createRequireAuth } from './middleware/auth.js';
-import {
-  createFeathersApp,
-  cookieAuthMiddleware,
-  configureChannels,
-  SOCKET_PATH,
-} from './feathers.js';
+import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
 import { DevserverProxy } from './services/devserver-proxy.js';
 import { loadBaguetteConfig, resolveServicesConfig } from './services/baguette-config.js';
+import sseManager from './sse.js';
 import db from './db.js';
 
 const { rest } = express;
@@ -71,14 +67,45 @@ app.use(async (req, res, next) => {
   return devserverProxy.handleRequest(req, res, session, config);
 });
 
-app.use(express.json());
+app.use(express.json({ strict: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieAuthMiddleware(app));
-app.configure(rest());
-registerFeathersServices(app);
 
 const requireAuth = createRequireAuth(app);
 app.use(createSettingsRoutes(requireAuth));
+app.use(createAuthRoutes(app));
+
+// SSE endpoint for real-time server→client events
+app.get('/api/events', requireAuth, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const userId = req.user.id;
+  sseManager.add(userId, res);
+
+  // Heartbeat to keep the connection alive through proxies
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+  }, 30000);
+
+  res.on('close', () => {
+    clearInterval(heartbeat);
+    sseManager.remove(userId, res);
+  });
+});
+
+// Strip /api prefix so Feathers services are accessible at /api/<name>
+// (existing /api/* Express routes above are already handled and won't reach here)
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/')) req.url = '/' + req.url.slice(5);
+  next();
+});
+
+app.configure(rest());
+registerFeathersServices(app);
 
 // Dev only: redirect GET / to the frontend dev server (e.g. Vite)
 if (process.env.VITE_SERVER_ENABLED === 'true') {
@@ -104,8 +131,6 @@ app.hooks({
   },
 });
 
-app.use(createAuthRoutes(app));
-
 if (process.env.VITE_SERVER_ENABLED !== 'true') {
   const clientDist = path.join(__dirname, '..', 'client', 'dist');
   app.use(express.static(clientDist));
@@ -114,39 +139,16 @@ if (process.env.VITE_SERVER_ENABLED !== 'true') {
   });
 }
 
+app.use(express.errorHandler());
 app.setup(server);
-configureChannels(app);
 
-// WebSocket proxy for devserver subdomains (host + signed preview cookie).
-// Replace the default upgrade chain so Engine.io only runs after we know this is
-// not a preview devserver WS (avoids Engine.io's non-matching-path destroy race
-// with async previewSession). Baguette Socket.io on preview hosts still uses SOCKET_PATH.
-const upgradeListeners = server.listeners('upgrade').slice();
-server.removeAllListeners('upgrade');
+// WebSocket proxy for devserver subdomains only — no Socket.IO to forward to.
 server.on('upgrade', async (req, socket, head) => {
-  logger.info({ host: req.headers.host, url: req.url }, 'DEBUG upgrade event');
   const session = await devserverProxy.previewSession(req);
-  if (session === undefined) {
-    for (const fn of upgradeListeners) {
-      fn.call(server, req, socket, head);
-    }
-    return;
-  }
-
-  if (session === null) {
+  if (session == null) {
     socket.destroy();
     return;
   }
-
-  // Baguette's own Socket.IO still works on preview hosts (e.g. for the UI embedded in an iframe).
-  // Only match the exact outer SOCKET_PATH (± trailing slash) — sub-paths like /_baguette/ws/3a96
-  // belong to an inner devserver using a custom SOCKET_PATH and must be proxied, not forwarded.
-  const pathname = new URL(req.url, 'http://x').pathname;
-  if (pathname === SOCKET_PATH || pathname === SOCKET_PATH + '/') {
-    for (const fn of upgradeListeners) fn.call(server, req, socket, head);
-    return;
-  }
-
   try {
     await devserverProxy.handlePreviewUpgrade(req, socket, head, session);
   } catch (err) {

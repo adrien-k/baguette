@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Copy, Check } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
 import ThinkingBlock from './chat/ThinkingBlock.jsx';
@@ -30,7 +30,17 @@ function CopyButton({ text }) {
   );
 }
 
-export default function ChatMessage({ message, isLatestMessage, worktreePath, sessionId, agentName = 'Claude' }) {
+export default function ChatMessage({ message, isLatestMessage, worktreePath, sessionId, agentName = 'Claude', messageIndex, allMessages }) {
+  // True once the user sends a real message after this assistant turn — used to
+  // hide action buttons on ExitPlanMode / AskUserQuestion blocks after the user
+  // has interacted (the deny tool_result is source='baguette' and must not count).
+  const userReplied = useMemo(() => {
+    if (!allMessages || messageIndex == null) return false;
+    return allMessages.slice(messageIndex + 1).some(
+      (m) => m.type === 'user' && m.source !== 'baguette'
+    );
+  }, [allMessages, messageIndex]);
+
   if (message.type === 'assistant' && message.message?.content) {
     return (
       <div className="space-y-2">
@@ -54,6 +64,7 @@ export default function ChatMessage({ message, isLatestMessage, worktreePath, se
                 block={block}
                 worktreePath={worktreePath}
                 sessionId={sessionId}
+                userReplied={userReplied}
               />
             );
           }

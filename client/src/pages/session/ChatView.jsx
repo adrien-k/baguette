@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import {
-  AlertCircle,
   GitPullRequest,
   GitMerge,
   CircleCheck,
@@ -20,7 +19,6 @@ import QueuedMessages from '../../components/QueuedMessages.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { isMobile } from '../../utils/isMobile.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
-import ApprovalInline from '../../components/ApprovalInline.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import Tooltip from '../../components/Tooltip.jsx';
 
@@ -72,11 +70,6 @@ export default function ChatView({
   loadingMore,
   session,
   systemPrompt,
-  dismissedApproval,
-  reopenApproval,
-  inlineApproval,
-  onApproval,
-  onModeChange,
   onViewChange,
   readonly,
 }) {
@@ -303,21 +296,6 @@ export default function ChatView({
 
     const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
 
-    if (isRunning) {
-      try {
-        await queuedMessagesService.create({ session_id: session.id, message_json: messageJson });
-        persistentState.clear();
-        setInput('');
-      } catch (err) {
-        setInput(text);
-        setFiles(filesToSend);
-        toastError('Failed to queue message', err);
-      } finally {
-        setSending(false);
-      }
-      return;
-    }
-
     try {
       await sendMessage(messageJson);
       persistentState.clear();
@@ -374,6 +352,8 @@ export default function ChatView({
               worktreePath={session.absolute_worktree_path}
               sessionId={session.id}
               agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+              messageIndex={i}
+              allMessages={displayMessages}
             />
           ))}
           {!readonly &&
@@ -391,28 +371,6 @@ export default function ChatView({
                 </button>
               </div>
             )}
-          {inlineApproval && (
-            <ApprovalInline
-              request={inlineApproval}
-              onRespond={onApproval}
-              session={session}
-              onModeChange={onModeChange}
-            />
-          )}
-          {!inlineApproval && dismissedApproval && (
-            <div className="flex flex-col items-center gap-2 py-4">
-              <div className="flex items-center gap-2 text-amber-400 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                <span>Waiting for your approval</span>
-              </div>
-              <button
-                onClick={() => reopenApproval(dismissedApproval.requestId)}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-sm font-medium rounded-lg transition-colors"
-              >
-                Open
-              </button>
-            </div>
-          )}
           {session?.archived_at && (
             <div className="flex gap-2 flex-wrap py-2">
               <Tooltip content="Recreate the worktree on the same branch and resume this session.">
