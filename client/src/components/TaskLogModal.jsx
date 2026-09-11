@@ -31,7 +31,9 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
   if (!task) return null;
 
   const isRunning = task.status === 'running';
-  const sessionPath = session?.short_id ? `/session/${session.short_id}` : null;
+  const sessionPath = session?.short_id
+    ? `/repos/${session.repo_id}/sessions/${session.short_id}`
+    : null;
   const isOnSession = sessionPath && location.pathname === sessionPath;
 
   return (

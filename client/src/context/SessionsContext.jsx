@@ -37,9 +37,14 @@ export function SessionsProvider({ children }) {
     sessions.forEach((s) => prevStatusRef.current.set(s.id, s.status));
   }, [sessions, loading]);
 
-  const isCurrentSession = useCallback(
-    (session) => locationRef.current.pathname === `/session/${session.short_id}`,
+  const sessionPath = useCallback(
+    (session) => `/repos/${session.repo_id}/sessions/${session.short_id}`,
     []
+  );
+
+  const isCurrentSession = useCallback(
+    (session) => locationRef.current.pathname === sessionPath(session),
+    [sessionPath]
   );
 
   const notifyCompleted = useCallback((session) => {
@@ -56,7 +61,7 @@ export function SessionsProvider({ children }) {
             <p className="text-zinc-400 text-xs">Session completed</p>
           </div>
           <Link
-            to={`/session/${session.short_id}`}
+            to={sessionPath(session)}
             onClick={() => toast.dismiss(t.id)}
             className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
           >
@@ -79,7 +84,7 @@ export function SessionsProvider({ children }) {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionPath]);
 
   const notifyFailed = useCallback((session) => {
     if (isCurrentSession(session)) return;
@@ -95,7 +100,7 @@ export function SessionsProvider({ children }) {
             <p className="text-zinc-400 text-xs">Session failed</p>
           </div>
           <Link
-            to={`/session/${session.short_id}`}
+            to={sessionPath(session)}
             onClick={() => toast.dismiss(t.id)}
             className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
           >
@@ -117,7 +122,7 @@ export function SessionsProvider({ children }) {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionPath]);
 
   // Listen for status transitions
   useEffect(() => {

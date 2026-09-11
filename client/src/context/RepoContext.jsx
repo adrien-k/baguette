@@ -1,7 +1,5 @@
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { useGetRepos } from '../hooks/useGetRepos.js';
-import { usePersistentState } from '../hooks/usePersistentState.js';
-import { useSessionsContext } from './SessionsContext.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 
 export const ALL_REPOS = '__all__';
@@ -11,24 +9,14 @@ const RepoContext = createContext(null);
 export function RepoProvider({ children }) {
   const { user } = useAuth();
   const { repos, loading, refetch } = useGetRepos(!!user);
-  const { sessions } = useSessionsContext();
-  const persistent = usePersistentState('dashboard');
-  const [selectedRepo, setSelectedRepo] = persistent.useState('selectedRepo', null);
+  const [selectedRepo, setSelectedRepo] = useState(null);
 
-  // Drop persisted selection if that repo was removed / is no longer available
+  // Drop selection if that repo is no longer available
   useEffect(() => {
     if (loading || !selectedRepo || selectedRepo === ALL_REPOS) return;
     const exists = repos.some((r) => r.full_name === selectedRepo);
     if (!exists) setSelectedRepo(null);
-  }, [loading, repos, selectedRepo, setSelectedRepo]);
-
-  // Auto-select when none chosen (incl. after stale selection cleared)
-  // ALL_REPOS is truthy so it won't trigger this effect
-  useEffect(() => {
-    if (selectedRepo) return;
-    if (loading || repos.length === 0) return;
-    setSelectedRepo(repos[0].full_name);
-  }, [loading, repos, selectedRepo, sessions, setSelectedRepo]);
+  }, [loading, repos, selectedRepo]);
 
   return (
     <RepoContext.Provider value={{ repos, loading, refetch, selectedRepo, setSelectedRepo }}>

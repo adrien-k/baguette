@@ -667,7 +667,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       const session = await app.service('sessions').create(data, params({ id: userId1 }));
 
       expect(session.short_id).toBeTruthy();
-      expect(session.short_id).toHaveLength(4);
+      expect(session.short_id).toHaveLength(8);
     });
 
     it('ignores user_id in data and always uses the authenticated user', async () => {

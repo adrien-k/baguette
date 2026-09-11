@@ -464,7 +464,7 @@ async function requireOwnSession(context) {
 
 async function ensureShortId(context) {
   if (!context.data.short_id) {
-    context.data.short_id = crypto.randomBytes(2).toString('hex');
+    context.data.short_id = crypto.randomBytes(4).toString('hex');
   }
   return context;
 }

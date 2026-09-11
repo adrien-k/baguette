@@ -172,7 +172,17 @@ function AppRoutes() {
             }
           />
           <Route
-            path="/session/:short_id"
+            path="/repos/:repoId"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Dashboard />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/repos/:repoId/sessions/:short_id"
             element={
               <ProtectedRoute>
                 <Session />

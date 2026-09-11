@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ChevronDown, Plus, Layers } from 'lucide-react';
 import GithubIcon from './GithubIcon.jsx';
 import { useRepoContext, ALL_REPOS } from '../context/RepoContext.jsx';
@@ -7,6 +7,7 @@ import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 
 export default function RepoPicker({ className = '' }) {
   const { repos, selectedRepo, setSelectedRepo } = useRepoContext();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -37,6 +38,7 @@ export default function RepoPicker({ className = '' }) {
           <button
             onClick={() => {
               setSelectedRepo(ALL_REPOS);
+              navigate('/');
               setOpen(false);
             }}
             className={`w-full text-left flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
@@ -50,13 +52,14 @@ export default function RepoPicker({ className = '' }) {
           </button>
           {repos.length > 0 && <div className="border-t border-zinc-700 my-1" />}
           {repos.map((r) => (
-            <button
+            <Link
               key={r.full_name}
+              to={`/repos/${r.id}`}
               onClick={() => {
                 setSelectedRepo(r.full_name);
                 setOpen(false);
               }}
-              className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+              className={`block px-3 py-2 text-sm transition-colors ${
                 selectedRepo === r.full_name
                   ? 'text-white bg-zinc-800'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
@@ -66,7 +69,7 @@ export default function RepoPicker({ className = '' }) {
               {isLocalRepo(r.full_name) && (
                 <span className="ml-1.5 text-xs text-zinc-500">local</span>
               )}
-            </button>
+            </Link>
           ))}
           <div className={repos.length > 0 ? 'border-t border-zinc-700 mt-1 pt-1' : ''}>
             <Link

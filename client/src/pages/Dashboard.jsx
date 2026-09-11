@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Loader2, Archive } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { sessionsService } from '../feathers.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useRepoContext, ALL_REPOS } from '../context/RepoContext.jsx';
@@ -10,6 +10,8 @@ import { apiFetch } from '../api.js';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import NoReposCard from '../components/NoReposCard.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
+import { repoDisplayName } from '../utils/repoDisplayName.js';
+import GithubIcon from '../components/GithubIcon.jsx';
 
 const REPO_COLORS = [
   'bg-amber-500',
@@ -173,6 +175,7 @@ export default function Dashboard() {
   const [formKey, setFormKey] = useState(0);
   const location = useLocation();
   const navigate = useNavigate();
+  const { repoId } = useParams();
   const { sessions, loading, hasMore, loadMore } = useSessionsContext();
   const { repos, loading: loadingRepos, selectedRepo, setSelectedRepo } = useRepoContext();
   const { showArchived, setShowArchived } = useFilters();
@@ -180,10 +183,26 @@ export default function Dashboard() {
   const [initDefaults, setInitDefaults] = useState(() => location.state ?? {});
   const { initRepo, initPrompt } = initDefaults;
 
+  // Sync selectedRepo from URL param when at /repos/:repoId
   useEffect(() => {
-    if (initRepo) setSelectedRepo(initRepo);
+    if (!repos.length) return;
+    if (repoId) {
+      const repo = repos.find((r) => String(r.id) === String(repoId));
+      if (repo && selectedRepo !== repo.full_name) setSelectedRepo(repo.full_name);
+    } else {
+      // At "/" — show all sessions
+      if (selectedRepo !== ALL_REPOS) setSelectedRepo(ALL_REPOS);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initRepo]);
+  }, [repoId, repos]);
+
+  useEffect(() => {
+    if (initRepo) {
+      const repo = repos.find((r) => r.full_name === initRepo);
+      if (repo) navigate(`/repos/${repo.id}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initRepo, repos]);
 
   const handleCreate = async ({
     repoFullName,
@@ -247,6 +266,24 @@ export default function Dashboard() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
       <h1 className="text-base font-semibold text-white mb-5 font-display">Sessions</h1>
+
+      {isAllSessions && repos.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
+          <p className="text-sm text-zinc-400 mb-3">Select a repository to create a session:</p>
+          <div className="flex flex-wrap gap-2">
+            {repos.map((r) => (
+              <Link
+                key={r.id}
+                to={`/repos/${r.id}`}
+                className="flex items-center gap-2 px-3 py-2 rounded-md bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors"
+              >
+                <GithubIcon className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                {repoDisplayName(r.full_name)}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!isAllSessions && (
         <div className="relative bg-zinc-900 border border-zinc-800 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">

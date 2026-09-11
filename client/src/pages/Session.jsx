@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
-import { useRepoContext, ALL_REPOS } from '../context/RepoContext.jsx';
+import { useRepoContext } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
@@ -224,7 +224,7 @@ function MiniSessionEntry({ session: s, currentId, onArchive }) {
     >
       <SessionStatusIndicator session={s} />
       <Link
-        to={`/session/${s.short_id}`}
+        to={`/repos/${s.repo_id}/sessions/${s.short_id}`}
         className="flex-1 min-w-0 line-clamp-2 wrap-break-word leading-snug text-left"
       >
         {s.label || s.repo_full_name}
@@ -247,7 +247,7 @@ const VIEWS = [
 ];
 
 export default function Session() {
-  const { short_id } = useParams();
+  const { short_id, repoId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get('view') || 'chat';
@@ -389,32 +389,12 @@ export default function Session() {
     }
   }, [sessionLoading, short_id, sessionFromHook, navigate]);
 
-  const prevSelectedRepoRef = useRef(selectedRepo);
-  const selectedRepoRef = useRef(selectedRepo);
-  useLayoutEffect(() => {
-    selectedRepoRef.current = selectedRepo;
-  }, [selectedRepo]);
-
-  useEffect(() => {
-    if (prevSelectedRepoRef.current === selectedRepo) return;
-    prevSelectedRepoRef.current = selectedRepo;
-    navigate('/');
-  }, [selectedRepo, navigate]);
-
-  // When navigating to a new session URL, sync the repo picker to that session's
-  // repo. Tied to short_id (not sessionRepo) so user changing the picker never
-  // triggers this — only navigating to a different session does. This also means
-  // clicking a session from "All sessions" correctly switches to that session's repo.
+  // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;
-  const prevShortIdRef = useRef(null);
   useEffect(() => {
     if (!sessionRepo) return;
-    if (prevShortIdRef.current === short_id) return;
-    prevShortIdRef.current = short_id;
-    if (sessionRepo === selectedRepoRef.current) return;
-    prevSelectedRepoRef.current = sessionRepo;
-    setSelectedRepo(sessionRepo);
-  }, [short_id, sessionRepo, setSelectedRepo]);
+    if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
+  }, [sessionRepo, selectedRepo, setSelectedRepo]);
 
   useEffect(() => {
     if (!showMenu) {
@@ -528,13 +508,18 @@ export default function Session() {
       await sessionsService.remove(session.id);
       setSession((prev) => (prev ? { ...prev, archived_at: new Date().toISOString() } : prev));
       if (!showArchived) {
+        const currentRepoId = repoId || session?.repo_id;
         const firstSession = sessions.find(
           (s) =>
             s.short_id !== short_id &&
             !s.archived_at &&
-            (!selectedRepo || selectedRepo === ALL_REPOS || s.repo_full_name === selectedRepo)
+            (!currentRepoId || String(s.repo_id) === String(currentRepoId))
         );
-        navigate(firstSession ? `/session/${firstSession.short_id}` : '/');
+        navigate(
+          firstSession
+            ? `/repos/${firstSession.repo_id}/sessions/${firstSession.short_id}`
+            : currentRepoId ? `/repos/${currentRepoId}` : '/'
+        );
       }
     } catch (err) {
       toastError('Failed to archive session', err);
@@ -568,7 +553,7 @@ export default function Session() {
       <div className="bg-zinc-900 border-b border-zinc-800 px-3 sm:px-4 py-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Link to="/" className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden">
+            <Link to={repoId ? `/repos/${repoId}` : '/'} className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden">
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="min-w-0">
@@ -859,7 +844,7 @@ export default function Session() {
         <div className={`${sidebarClassName} w-64 flex-col border-r border-zinc-800 bg-zinc-900 shrink-0 min-h-0`}>
           <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
             <Link
-              to="/"
+              to={repoId ? `/repos/${repoId}` : '/'}
               className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
             >
               <Plus className="w-3 h-3" />
@@ -879,7 +864,7 @@ export default function Session() {
               ...sessions.filter(
                 (s) =>
                   (showArchived || !s.archived_at) &&
-                  (!selectedRepo || selectedRepo === ALL_REPOS || s.repo_full_name === selectedRepo)
+                  (!repoId || String(s.repo_id) === String(repoId))
               ),
             ].map((s) => (
               <MiniSessionEntry
@@ -888,13 +873,18 @@ export default function Session() {
                 currentId={short_id}
                 onArchive={(archived) => {
                   if (archived.short_id !== short_id || showArchived) return;
+                  const currentRepoId = repoId || session?.repo_id;
                   const firstSession = sessions.find(
                     (x) =>
                       x.short_id !== short_id &&
                       !x.archived_at &&
-                      (!selectedRepo || selectedRepo === ALL_REPOS || x.repo_full_name === selectedRepo)
+                      (!currentRepoId || String(x.repo_id) === String(currentRepoId))
                   );
-                  navigate(firstSession ? `/session/${firstSession.short_id}` : '/');
+                  navigate(
+                    firstSession
+                      ? `/repos/${firstSession.repo_id}/sessions/${firstSession.short_id}`
+                      : currentRepoId ? `/repos/${currentRepoId}` : '/'
+                  );
                 }}
               />
             ))}

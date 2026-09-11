@@ -42,7 +42,7 @@ export default function SessionCard({ session, showRepo = false }) {
 
   return (
     <div
-      onClick={() => navigate(`/session/${session.short_id}`)}
+      onClick={() => navigate(`/repos/${session.repo_id}/sessions/${session.short_id}`)}
       className={`w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 sm:p-4 transition-colors border-l-2 cursor-pointer hover:border-zinc-700 active:bg-zinc-800/50 ${
         {
           running: 'border-l-emerald-500',

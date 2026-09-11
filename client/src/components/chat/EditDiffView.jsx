@@ -1,6 +1,6 @@
 import { diffLines } from 'diff';
 
-function EditDiffPreview({ oldString, newString, maxLines = 5, onExpand }) {
+function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
   const parts = diffLines(oldString ?? '', newString ?? '');
   const lines = [];
   for (const part of parts) {
@@ -101,7 +101,7 @@ export default function EditDiffView({
     return useCursorDiff ? (
       <DiffStringView
         diffString={cursorDiff.diffString}
-        maxLines={5}
+        maxLines={7}
         onExpand={onExpand}
       />
     ) : (
