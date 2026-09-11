@@ -1,4 +1,5 @@
 import { Agent, AgentBusyError } from '@cursor/sdk';
+import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import logger from '../../logger.js';
@@ -454,10 +455,10 @@ ${systemPrompt}`;
     const userId = session.user_id;
 
     const agentUsage = await agent.getUsage();
-    const rawCostCents = agentUsage.cost?.rawCostCents ?? 0;
-    if (rawCostCents <= 0) return;
+    const chargedCents = agentUsage.cost?.chargedCents ?? 0;
+    if (chargedCents <= 0) return;
 
-    const newTotalCostUsd = rawCostCents / 100;
+    const newTotalCostUsd = chargedCents / 100;
     const prevRow = await db('usage').where({ session_id: sessionId }).sum('cost_usd as total').first();
     const prevTotalCostUsd = parseFloat(prevRow?.total ?? 0);
 
@@ -525,6 +526,22 @@ ${systemPrompt}`;
 
   async get(id) {
     return this.getActiveSession(id);
+  }
+
+  async deleteAgent(session) {
+    if (!session?.cursor_agent_id) return;
+    const sessionId = session.id;
+    const cwd = resolveDataDirRelativePath(session.worktree_path) || DATA_DIR;
+    const store = await SqliteLocalAgentStore.open({
+      workspaceRef: cwd,
+      stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
+    });
+    try {
+      await Agent.delete(session.cursor_agent_id, { store });
+      logger.info({ sessionId, agentId: session.cursor_agent_id }, 'cursor-agent: deleted agent on archive');
+    } finally {
+      await store.dispose().catch(() => {});
+    }
   }
 
   async generateSessionMetadata(initialPrompt, shortId = '', user, repo = null) {
@@ -601,6 +618,6 @@ Task: ${initialPrompt}`;
 
 export function registerCursorAgentService(app, path = 'cursor-agent') {
   app.use(path, new CursorAgentService(), {
-    methods: ['onMessageCreated', 'stopSession', 'generateSessionMetadata'],
+    methods: ['onMessageCreated', 'stopSession', 'generateSessionMetadata', 'deleteAgent'],
   });
 }

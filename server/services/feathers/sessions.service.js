@@ -142,6 +142,14 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     const repo = session?.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
+    if (session?.agent_sdk === 'cursor' && session?.cursor_agent_id) {
+      await this.app
+        .service('cursor-agent')
+        .deleteAgent(session)
+        .catch((err) =>
+          logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to delete agent on archive')
+        );
+    }
     await removeWorktree(session, repo);
     this.app.service('tasks').deleteSessionTasks(sessionId);
     const archivedAt = new Date().toISOString();

@@ -27,6 +27,7 @@ const {
   loadBaguetteConfig,
   generateSessionMetadata,
   buildSystemPromptAppend,
+  deleteAgent,
 } = vi.hoisted(() => ({
   stopSession: vi.fn().mockResolvedValue(undefined),
   onMessageCreated: vi.fn().mockResolvedValue(undefined),
@@ -36,6 +37,7 @@ const {
     .fn()
     .mockResolvedValue({ label: 'Test task', branchName: 'test-task-abc' }),
   buildSystemPromptAppend: vi.fn().mockResolvedValue('mocked builder system prompt'),
+  deleteAgent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('child_process', () => ({
@@ -93,6 +95,11 @@ function makeApp(db) {
         'generateSessionMetadata',
       ],
     }
+  );
+  app.use(
+    'cursor-agent',
+    { stopSession, deleteAgent, generateSessionMetadata },
+    { methods: ['stopSession', 'deleteAgent', 'generateSessionMetadata'] }
   );
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
   registerSessionsService(app);
@@ -281,6 +288,29 @@ describe('Sessions service - custom methods', (hooks) => {
       await expect(app.service('sessions').remove(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+
+    it('deletes cursor agent when archiving a cursor session', async () => {
+      const cursorAgentId = 'test-cursor-agent-id';
+      await db('sessions').where({ id: sessId }).update({
+        agent_sdk: 'cursor',
+        cursor_agent_id: cursorAgentId,
+      });
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      expect(deleteAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ id: sessId, cursor_agent_id: cursorAgentId }),
+        expect.anything()
+      );
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.archived_at).toBeTruthy();
+    });
+
+    it('does not call deleteAgent for claude sessions', async () => {
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      expect(deleteAgent).not.toHaveBeenCalled();
     });
   });
 
