@@ -36,7 +36,7 @@ import DiffView from './session/DiffView.jsx';
 import LogsView from './session/LogsView.jsx';
 import EditView from './session/EditView.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
-import { parseModelField, parseModelFieldFull, variantLabel } from '../utils/models.js';
+import { parseModelField, variantLabel } from '../utils/models.js';
 
 /**
  * Processes a flat list of messages from session history:
@@ -418,10 +418,12 @@ export default function Session() {
     setShowMenu(false);
   };
 
-  const handleModelChange = (model) => {
+  const handleModelChange = (modelId, modelParams = null) => {
     if (!session?.id) return;
+    const patch = { model: modelId };
+    if (modelParams !== null) patch.model_params = modelParams;
     sessionsService
-      .patch(session.id, { model })
+      .patch(session.id, patch)
       .catch((err) => toastError('Failed to change model', err));
   };
 
@@ -694,7 +696,11 @@ export default function Session() {
                     )}
                     {(() => {
                       const isCursor = session.agent_sdk === 'cursor';
-                      const { id: sessionModelId, params: sessionParams } = parseModelFieldFull(session.model);
+                      const sessionModelId = session.model || null;
+                      const sessionParams = (() => {
+                        if (!session.model_params) return null;
+                        try { return JSON.parse(session.model_params); } catch { return null; }
+                      })();
                       const menuModelId = menuModelOverride ?? sessionModelId;
                       const menuModelObj = models.find((m) => m.id === menuModelId);
                       const variants = menuModelObj?.variants ?? [];
@@ -742,7 +748,8 @@ export default function Session() {
                                 onChange={(e) => {
                                   const v = variants[parseInt(e.target.value)];
                                   handleModelChange(
-                                    JSON.stringify({ id: menuModelId, params: v.params })
+                                    menuModelId,
+                                    v.params?.length ? JSON.stringify(v.params) : null
                                   );
                                 }}
                                 className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300 focus:outline-none mb-1"

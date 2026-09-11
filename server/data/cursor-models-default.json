@@ -1,0 +1,3704 @@
+[
+  {
+    "id": "auto-smart",
+    "display_name": "Auto",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Auto Intelligence",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "optimize_for", "value": "intelligence" }]
+      },
+      {
+        "display_name": "Auto Balance",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "optimize_for", "value": "balanced" }]
+      },
+      {
+        "display_name": "Auto Cost",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "optimize_for", "value": "cost" }]
+      }
+    ]
+  },
+  {
+    "id": "default",
+    "display_name": "Auto",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Auto",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "grok-4.6",
+    "display_name": "Cursor Grok 4.6",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "grok-4.5",
+    "display_name": "Cursor Grok 4.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Cursor Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "composer-2.5",
+    "display_name": "Composer 2.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Composer 2.5",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "fast", "value": "true" }]
+      },
+      {
+        "display_name": "Composer 2.5",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "fast", "value": "false" }]
+      }
+    ]
+  },
+  {
+    "id": "claude-opus-5",
+    "display_name": "Opus 5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-opus-4-8",
+    "display_name": "Opus 4.8",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.8",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.6-sol",
+    "display_name": "GPT-5.6 Sol",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.5",
+    "display_name": "GPT-5.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "false" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-fable-5",
+    "display_name": "Fable 5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Fable 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-sonnet-5",
+    "display_name": "Sonnet 5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.6-terra",
+    "display_name": "GPT-5.6 Terra",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-sonnet-4-6",
+    "display_name": "Sonnet 4.6",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "composer-2",
+    "display_name": "Composer 2",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Composer 2",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "fast", "value": "true" }]
+      },
+      {
+        "display_name": "Composer 2",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "fast", "value": "false" }]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.3-codex",
+    "display_name": "Codex 5.3",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Codex 5.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-opus-4-7",
+    "display_name": "Opus 4.7",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "cyber", "value": "false" },
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.4",
+    "display_name": "GPT-5.4",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "false" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-opus-4-6",
+    "display_name": "Opus 4.6",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Opus 4.6",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-opus-4-5",
+    "display_name": "Opus 4.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Opus 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "thinking", "value": "false" }]
+      },
+      {
+        "display_name": "Opus 4.5",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "thinking", "value": "true" }]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.2",
+    "display_name": "GPT-5.2",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.2",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning", "value": "extra-high" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.6-luna",
+    "display_name": "GPT-5.6 Luna",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "272k" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gemini-3.6-flash",
+    "display_name": "Gemini 3.6 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 3.6 Flash",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "effort", "value": "minimal" }]
+      },
+      {
+        "display_name": "Gemini 3.6 Flash",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "effort", "value": "low" }]
+      },
+      {
+        "display_name": "Gemini 3.6 Flash",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "effort", "value": "medium" }]
+      },
+      {
+        "display_name": "Gemini 3.6 Flash",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "effort", "value": "high" }]
+      }
+    ]
+  },
+  {
+    "id": "gemini-3.1-pro",
+    "display_name": "Gemini 3.1 Pro",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 3.1 Pro",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.4-mini",
+    "display_name": "GPT-5.4 Mini",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.4 Mini",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "none" }]
+      },
+      {
+        "display_name": "GPT-5.4 Mini",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "low" }]
+      },
+      {
+        "display_name": "GPT-5.4 Mini",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning", "value": "medium" }]
+      },
+      {
+        "display_name": "GPT-5.4 Mini",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      },
+      {
+        "display_name": "GPT-5.4 Mini",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "xhigh" }]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.4-nano",
+    "display_name": "GPT-5.4 Nano",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.4 Nano",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "none" }]
+      },
+      {
+        "display_name": "GPT-5.4 Nano",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "low" }]
+      },
+      {
+        "display_name": "GPT-5.4 Nano",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning", "value": "medium" }]
+      },
+      {
+        "display_name": "GPT-5.4 Nano",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      },
+      {
+        "display_name": "GPT-5.4 Nano",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "xhigh" }]
+      }
+    ]
+  },
+  {
+    "id": "claude-haiku-4-5",
+    "display_name": "Haiku 4.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Haiku 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "thinking", "value": "false" }]
+      },
+      {
+        "display_name": "Haiku 4.5",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "thinking", "value": "true" }]
+      }
+    ]
+  },
+  {
+    "id": "claude-sonnet-4-5",
+    "display_name": "Sonnet 4.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Sonnet 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4.5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5.1",
+    "display_name": "GPT-5.1",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5.1",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "low" }]
+      },
+      {
+        "display_name": "GPT-5.1",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning", "value": "medium" }]
+      },
+      {
+        "display_name": "GPT-5.1",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      }
+    ]
+  },
+  {
+    "id": "gemini-3-flash",
+    "display_name": "Gemini 3 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 3 Flash",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "gemini-3.5-flash",
+    "display_name": "Gemini 3.5 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 3.5 Flash",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "claude-sonnet-4",
+    "display_name": "Sonnet 4",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Sonnet 4",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "200k" }
+        ]
+      },
+      {
+        "display_name": "Sonnet 4",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "200k" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gpt-5-mini",
+    "display_name": "GPT-5 Mini",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GPT-5 Mini",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "gemini-2.5-flash",
+    "display_name": "Gemini 2.5 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 2.5 Flash",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "kimi-k3",
+    "display_name": "Kimi K3",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Kimi K3",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "low" }]
+      },
+      {
+        "display_name": "Kimi K3",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      },
+      {
+        "display_name": "Kimi K3",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning", "value": "max" }]
+      }
+    ]
+  },
+  {
+    "id": "kimi-k2.7-code",
+    "display_name": "Kimi K2.7 Code",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Kimi K2.7 Code",
+        "description": null,
+        "is_default": true,
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "glm-5.2",
+    "display_name": "GLM 5.2",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GLM 5.2",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      },
+      {
+        "display_name": "GLM 5.2",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "max" }]
+      }
+    ]
+  }
+]

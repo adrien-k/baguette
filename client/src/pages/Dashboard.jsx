@@ -212,6 +212,7 @@ export default function Dashboard() {
     permissionMode,
     planMode,
     model,
+    modelParams,
     createNewBranch,
     branchName,
     autoPush,
@@ -229,6 +230,7 @@ export default function Dashboard() {
     };
     if (agentSdk) params.agent_sdk = agentSdk;
     if (model) params.model = model;
+    if (modelParams) params.model_params = modelParams;
     if (branchName) params.branch_name = branchName;
     if (plugins?.length) params.plugins = plugins;
     if (files?.length) {

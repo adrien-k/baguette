@@ -145,14 +145,13 @@ ${systemPrompt}`;
       },
     };
 
-    const rawModel = session.model || user.cursor_model || null;
-    if (rawModel) {
-      try {
-        const parsed = JSON.parse(rawModel);
-        agentOptions.model = parsed?.id ? parsed : { id: rawModel };
-      } catch {
-        agentOptions.model = { id: rawModel };
+    const modelId = session.model || user.cursor_model || null;
+    if (modelId) {
+      let params = null;
+      if (session.model_params) {
+        try { params = JSON.parse(session.model_params); } catch { /* invalid JSON */ }
       }
+      agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
     }
 
     let agent;

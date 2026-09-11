@@ -7,7 +7,7 @@ import * as yaml from 'js-yaml';
 import { DOCKER_COMPOSE_PATH } from '../config.js';
 import { getEffectiveGithubToken } from '../services/agent-settings.js';
 import { listModels, refreshModels } from '../services/anthropic-models.js';
-import { listCursorModels } from '../services/cursor-models.js';
+import { listCursorModels, refreshCursorModels } from '../services/cursor-models.js';
 import { decrypt } from '../lib/encrypt.js';
 import db from '../db.js';
 
@@ -38,6 +38,14 @@ export default function createSettingsRoutes(requireAuth) {
 
   router.post('/api/settings/models/refresh', requireAuth, async (req, res) => {
     try {
+      if (req.query.sdk === 'cursor') {
+        const userRow = await db('users').where({ id: req.user.id }).first();
+        const apiKey = userRow?.cursor_api_key_encrypted
+          ? decrypt(userRow.cursor_api_key_encrypted)
+          : null;
+        const models = await refreshCursorModels(apiKey);
+        return res.json({ models });
+      }
       const models = await refreshModels();
       res.json({ models });
     } catch (err) {

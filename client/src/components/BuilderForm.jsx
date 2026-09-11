@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import GithubIcon from './GithubIcon.jsx';
 import { apiFetch } from '../api.js';
-import { pluginsService, recentCombosService } from '../feathers.js';
+import { sessionsService, pluginsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
@@ -18,20 +18,6 @@ function parseRepoFullName(full) {
   return { owner: full.slice(0, i), name: full.slice(i + 1) };
 }
 
-// "Claude / modelId" or "Cursor / modelId", with params appended only when showParams is true
-function comboLabel(agentSdk, model, showParams = false, params = null) {
-  const sdkLabel = agentSdk === 'cursor' ? 'Cursor' : 'Claude';
-  if (!model) return sdkLabel;
-  const base = `${sdkLabel} / ${model}`;
-  if (showParams && params) {
-    const rawParams = typeof params === 'string' ? JSON.parse(params) : params;
-    if (rawParams?.length) {
-      return `${base} (${rawParams.map((p) => `${p.id}:${p.value}`).join(', ')})`;
-    }
-  }
-  return base;
-}
-
 export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPrompt }) {
   const persistentState = usePersistentState(`builder-form-${repoFullName}`);
   const globalState = usePersistentState('builder-form-global');
@@ -43,16 +29,18 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
   const { repos } = useRepoContext();
   const [agentSdk, setAgentSdkRaw] = persistentState.useState('agentSdk', 'claude');
-  const [model, setModel] = useState('');
+  const [model, setModel] = persistentState.useState('model', '');
   const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
+  const [variantExpanded, setVariantExpanded] = useState(false);
   const [models, setModels] = useState([]);
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState('plugins', []);
   const [availablePlugins, setAvailablePlugins] = useState([]);
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
-  const [recentCombos, setRecentCombos] = useState([]);
   const initialPromptRef = useRef(null);
+  // Holds model_params string from the last session, used to seed cursorVariantIdx on model load
+  const pendingModelParamsRef = useRef(null);
   const isCursor = agentSdk === 'cursor';
 
   // Cascade-clear harness change: reset model + variant
@@ -60,6 +48,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     setAgentSdkRaw(sdk);
     setModel('');
     setCursorVariantIdx(null);
+    setVariantExpanded(false);
   };
 
   const selectedRepo = useMemo(
@@ -87,14 +76,17 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   }, [repoFullName, selectedRepo?.default_branch, branches]);
 
   const loadModels = (force = false) => {
-    const base =
+    const refreshUrl =
+      agentSdk === 'cursor'
+        ? '/api/settings/models/refresh?sdk=cursor'
+        : '/api/settings/models/refresh';
+    const getUrl =
       agentSdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
-    const url = force && agentSdk !== 'cursor' ? '/api/settings/models/refresh' : base;
-    const method = force && agentSdk !== 'cursor' ? 'POST' : 'GET';
+    const url = force ? refreshUrl : getUrl;
     setRefreshingModels(true);
-    return apiFetch(url, method === 'POST' ? { method } : undefined)
+    return apiFetch(url, force ? { method: 'POST' } : undefined)
       .then((d) => setModels(d.models || []))
-      .catch(() => {})
+      .catch((err) => { if (force) toastError('Failed to refresh models', err); })
       .finally(() => setRefreshingModels(false));
   };
 
@@ -105,13 +97,32 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentSdk]);
 
-  // Set default model only when model is explicitly empty (e.g. after harness cascade-clear)
+  // Validate/default model when models load; also resolve pendingModelParams variant
   useEffect(() => {
+    if (!models.length) return;
+
+    // Ensure model is valid; fall back to first
     setModel((prev) => {
-      if (prev !== '') return prev; // keep whatever is set — combo or user choice
+      if (prev && models.some((m) => m.id === prev)) return prev;
       return models[0]?.id || '';
     });
-  }, [agentSdk, models]);
+
+    // Resolve pending model_params to a variant index (from last session load)
+    const pending = pendingModelParamsRef.current;
+    if (isCursor && pending) {
+      setModel((currentModel) => {
+        const selectedModel = models.find((m) => m.id === currentModel);
+        const variants = selectedModel?.variants ?? [];
+        const idx = variants.findIndex((v) => {
+          try { return JSON.stringify(v.params) === pending; } catch { return false; }
+        });
+        if (idx >= 0) setCursorVariantIdx(idx);
+        return currentModel;
+      });
+      pendingModelParamsRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
 
   // Set default cursor variant when model or models change (only if not already set)
   useEffect(() => {
@@ -127,21 +138,20 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, models]);
 
-  // Load recent combos for this repo and immediately apply the latest one
+  // Populate form from the most recent session for this repo
   useEffect(() => {
-    if (!repoFullName) { setRecentCombos([]); return; }
-    recentCombosService
-      .find({ query: { repoFullName } })
-      .then((combos) => {
-        setRecentCombos(combos);
-        if (combos.length > 0) {
-          const combo = combos[0];
-          setAgentSdkRaw(combo.agentSdk);
-          setModel(combo.model);
-          setCursorVariantIdx(combo.variantId ?? null);
-        }
+    if (!repoFullName) return;
+    sessionsService
+      .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
+      .then((result) => {
+        const sessions = (result.data || []).filter((s) => s.agent_sdk || s.model);
+        if (!sessions.length) return;
+        const last = sessions[0];
+        if (last.agent_sdk) setAgentSdkRaw(last.agent_sdk);
+        if (last.model) setModel(last.model);
+        pendingModelParamsRef.current = last.model_params || null;
       })
-      .catch(() => setRecentCombos([]));
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoFullName]);
 
@@ -174,13 +184,6 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       selectedModel?.variants != null && cursorVariantIdx != null
         ? selectedModel.variants[cursorVariantIdx]
         : null;
-    const modelPayload = (() => {
-      if (!model) return undefined;
-      if (isCursor && selectedVariant?.params?.length) {
-        return JSON.stringify({ id: model, params: selectedVariant.params });
-      }
-      return model;
-    })();
     return {
       repoFullName,
       branch,
@@ -188,13 +191,16 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       files,
       permissionMode: 'bypassPermissions',
       planMode,
-      model: modelPayload,
+      model: model || undefined,
+      modelParams:
+        isCursor && selectedVariant?.params?.length
+          ? JSON.stringify(selectedVariant.params)
+          : undefined,
       createNewBranch,
       branchName: branchName || undefined,
       autoPush,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       agentSdk,
-      variantId: cursorVariantIdx,
     };
   };
 
@@ -226,35 +232,14 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const comboMatchIdx = recentCombos.findIndex(
-    (c) => c.agentSdk === agentSdk && c.model === model && c.variantId === cursorVariantIdx
-  );
-
-  const handleComboChange = (e) => {
-    const val = e.target.value;
-    if (val === '__custom__') {
-      setShowMore(true);
-      return;
-    }
-    const idx = parseInt(val, 10);
-    if (isNaN(idx)) return;
-    const combo = recentCombos[idx];
-    if (!combo) return;
-    setAgentSdkRaw(combo.agentSdk);
-    setModel(combo.model);
-    setCursorVariantIdx(combo.variantId ?? null);
-  };
-
-  const handleDeleteCombo = (id) => {
-    recentCombosService
-      .remove(id)
-      .then(() => setRecentCombos((prev) => prev.filter((c) => c.id !== id)))
-      .catch((err) => toastError('Failed to remove combo', err));
-  };
-
-  const comboSelectValue = comboMatchIdx >= 0 ? String(comboMatchIdx) : '__custom__';
-
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
+
+  const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
+  const selectedVariant =
+    selectedModel?.variants != null && cursorVariantIdx != null
+      ? selectedModel.variants[cursorVariantIdx]
+      : null;
+  const variants = selectedModel?.variants ?? [];
 
   return (
     <form onSubmit={handleStart} className="space-y-4">
@@ -355,63 +340,6 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                 />
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">Harness</label>
-              <select
-                value={agentSdk}
-                onChange={(e) => setAgentSdk(e.target.value)}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              >
-                <option value="claude">Claude</option>
-                <option value="cursor">Cursor</option>
-              </select>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium text-zinc-300">Model</label>
-                <button
-                  type="button"
-                  onClick={() => loadModels(true)}
-                  disabled={refreshingModels}
-                  className="text-xs text-amber-400 hover:text-amber-300 disabled:opacity-50 transition-colors"
-                >
-                  {refreshingModels ? 'Refreshing…' : '↻ Refresh'}
-                </button>
-              </div>
-              <select
-                value={model}
-                onChange={(e) => { setModel(e.target.value); setCursorVariantIdx(null); }}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              >
-                {models.length === 0 && <option value="">Loading…</option>}
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.display_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {isCursor && (() => {
-              const selectedModel = models.find((m) => m.id === model);
-              const variants = selectedModel?.variants ?? [];
-              return variants.length > 0 ? (
-                <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-1">Variant</label>
-                  <select
-                    value={cursorVariantIdx ?? 0}
-                    onChange={(e) => setCursorVariantIdx(parseInt(e.target.value))}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                  >
-                    {variants.map((v, i) => (
-                      <option key={i} value={i}>
-                        {variantLabel(v, selectedModel?.display_name)}
-                        {v.is_default ? ' (default)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null;
-            })()}
 
             {availablePlugins.length > 0 && (
               <div className="sm:col-span-2">
@@ -487,49 +415,97 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
           </span>
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        {recentCombos.length > 0 && (() => {
-          // Compute base labels for duplicate detection
-          const baseLabels = recentCombos.map((c) => comboLabel(c.agentSdk, c.model, false));
-          const baseLabelCount = {};
-          baseLabels.forEach((l) => { baseLabelCount[l] = (baseLabelCount[l] || 0) + 1; });
 
-          return (
+      {/* SDK + Model + (variant) on the left; Start/Plan on the right */}
+      <div className="flex flex-col sm:flex-row sm:items-start gap-2">
+        {/* Left: selects + variant link */}
+        <div>
+          <div className="flex items-center gap-2">
+            <select
+              value={agentSdk}
+              onChange={(e) => setAgentSdk(e.target.value)}
+              className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            >
+              <option value="claude">Claude</option>
+              <option value="cursor">Cursor</option>
+            </select>
+
             <div className="flex items-center gap-1">
               <select
-                value={comboSelectValue}
-                onChange={handleComboChange}
-                disabled={!repoFullName}
-                className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-40 min-w-0 max-w-xs truncate"
+                value={model}
+                onChange={(e) => { setModel(e.target.value); setCursorVariantIdx(null); setVariantExpanded(false); }}
+                className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               >
-                <option value="__custom__">Custom</option>
-                {recentCombos.map((combo, i) => {
-                  const showParams = baseLabelCount[baseLabels[i]] > 1;
-                  return (
-                    <option key={i} value={String(i)}>
-                      {comboLabel(combo.agentSdk, combo.model, showParams, combo.params)}
-                    </option>
-                  );
-                })}
+                {models.length === 0 && <option value="">Loading…</option>}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name}
+                  </option>
+                ))}
               </select>
-              {comboMatchIdx >= 0 && (
-                <button
-                  type="button"
-                  onClick={() => handleDeleteCombo(recentCombos[comboMatchIdx].id)}
-                  title="Remove from recents"
-                  className="px-1.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors text-base leading-none"
+              <button
+                type="button"
+                onClick={() => loadModels(true)}
+                disabled={refreshingModels}
+                title="Refresh models"
+                className="px-1.5 py-2 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
+              >
+                ↻
+              </button>
+            </div>
+          </div>
+
+          {/* Cursor variant link — tight margin below selects */}
+          {isCursor && variants.length > 0 && (
+            <div className="mt-1 ml-px">
+              <button
+                type="button"
+                onClick={() => setVariantExpanded((v) => !v)}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+              >
+                <span>
+                  {selectedVariant
+                    ? variantLabel(selectedVariant, selectedModel?.display_name)
+                    : 'Select variant'}
+                </span>
+                <svg
+                  className={`w-2.5 h-2.5 transition-transform ${variantExpanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  ×
-                </button>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {variantExpanded && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {variants.map((v, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => { setCursorVariantIdx(i); setVariantExpanded(false); }}
+                      className={`px-2.5 py-1 rounded text-xs transition-colors border ${
+                        cursorVariantIdx === i
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
+                      }`}
+                    >
+                      {variantLabel(v, selectedModel?.display_name)}
+                      {v.is_default && <span className="ml-1 text-zinc-500">(default)</span>}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-          );
-        })()}
-        <div className="flex items-center gap-3">
+          )}
+        </div>
+
+        {/* Right: Start / Plan */}
+        <div className="flex items-center gap-3 sm:ml-auto">
           <button
             type="submit"
             disabled={!canSubmit}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-5 py-2.5 rounded-md text-sm font-medium transition-colors"
+            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-5 py-2 rounded-md text-sm font-medium transition-colors"
           >
             {loading ? 'Creating...' : 'Start'}
           </button>
@@ -537,7 +513,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
             type="button"
             onClick={handlePlan}
             disabled={!canSubmit}
-            className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-300 hover:text-white px-5 py-2.5 rounded-md text-sm font-medium transition-colors border border-zinc-700 disabled:border-zinc-700"
+            className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-300 hover:text-white px-5 py-2 rounded-md text-sm font-medium transition-colors border border-zinc-700 disabled:border-zinc-700"
           >
             Plan
           </button>

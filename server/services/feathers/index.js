@@ -11,7 +11,6 @@ import { registerClaudeAgentService } from './claude-agent.service.js';
 import { registerCursorAgentService } from './cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
-import { registerRecentCombosService } from './recent-combos.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
 /**
@@ -30,7 +29,6 @@ export function registerFeathersServices(app) {
   registerReposService(app);
   registerUserReposService(app);
   registerPluginsService(app);
-  registerRecentCombosService(app);
 
   // Route service CRUD events to the right SSE connections
   for (const event of CRUD_EVENTS) {

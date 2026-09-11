@@ -660,46 +660,19 @@ function serializePlugins(context) {
   return context;
 }
 
-function extractVariantId(context) {
-  context.params.variantId = context.data.variantId ?? null;
-  delete context.data.variantId;
-  return context;
-}
-
-async function saveRecentCombo(context) {
-  const session = context.result;
-  if (!session?.user_id || !session?.repo_id || !session?.agent_sdk) return context;
-
-  let modelId = session.model ?? '';
-  let params = null;
-  if (session.agent_sdk === 'cursor' && modelId) {
-    try {
-      const parsed = JSON.parse(modelId);
-      if (parsed?.id) {
-        modelId = parsed.id;
-        params = parsed.params?.length ? JSON.stringify(parsed.params) : null;
+function normalizeModelFields(context) {
+  const { model } = context.data;
+  if (!model) return context;
+  // Handle legacy JSON-encoded cursor model field: {"id": "...", "params": [...]}
+  try {
+    const parsed = JSON.parse(model);
+    if (parsed?.id) {
+      context.data.model = parsed.id;
+      if (parsed.params?.length) {
+        context.data.model_params = JSON.stringify(parsed.params);
       }
-    } catch { /* not JSON — model is a plain string */ }
-  }
-  if (!modelId) return context;
-
-  const db = context.app.get('db');
-  const variantId = context.params.variantId ?? null;
-  const now = new Date();
-  await db('recent_combos')
-    .insert({
-      user_id: session.user_id,
-      repo_id: session.repo_id,
-      agent_sdk: session.agent_sdk,
-      model: modelId,
-      params,
-      variant_id: variantId,
-      updated_at: now,
-      created_at: now,
-    })
-    .onConflict(['user_id', 'repo_id', 'agent_sdk', 'model'])
-    .merge(['params', 'variant_id', 'updated_at']);
-
+    }
+  } catch { /* plain string, no-op */ }
   return context;
 }
 
@@ -750,8 +723,8 @@ export const sessionsHooks = {
   before: {
     all: [requireUser, scopeByUser],
     find: [applyGroupSort],
-    create: [ensureShortId, prepareSessionEnvironment, serializePlugins, extractInitialFiles, extractVariantId],
-    patch: [requireOwnSession],
+    create: [ensureShortId, prepareSessionEnvironment, serializePlugins, extractInitialFiles, normalizeModelFields],
+    patch: [requireOwnSession, normalizeModelFields],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
@@ -765,7 +738,7 @@ export const sessionsHooks = {
   after: {
     find: [addHasWebserver],
     get: [refreshPrStatusAfterGet, addHasWebserver],
-    create: [persistSystemPrompt, createFirstMessage, addHasWebserver, saveRecentCombo],
+    create: [persistSystemPrompt, createFirstMessage, addHasWebserver],
     patch: [syncSessionSettingsAfterPatch, addHasWebserver],
   },
 };
