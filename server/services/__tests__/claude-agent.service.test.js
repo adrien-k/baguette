@@ -360,19 +360,13 @@ describe('ClaudeAgentService', (hooks) => {
         _db: mockApp.get('db'),
       });
 
-      // Simulate: result arrives while a background task is still live, then background_tasks_changed
-      // clears the set once the task finishes.
+      // Simulate: task_started registers the task, result arrives while it is still live,
+      // then task_notification fires once the task finishes.
       const mockIterable = makeAsyncIterable([
-        {
-          type: 'system',
-          subtype: 'background_tasks_changed',
-          tasks: [{ task_id: 'bg-1', task_type: 'local_agent', description: 'sub', ambient: false }],
-        },
+        { type: 'system', subtype: 'task_started', task_id: 'bg-1', task_type: 'local_bash', description: 'sub', is_backgrounded: true },
         { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
         // task_notification arrives AFTER result — baguette must still be consuming the stream here
         { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed', output_file: '', summary: 'done' },
-        // background_tasks_changed clears once the task is gone — this triggers the loop exit
-        { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
       ]);
 
       query.mockImplementation(() => mockIterable);
@@ -388,10 +382,59 @@ describe('ClaudeAgentService', (hooks) => {
         );
       });
 
-      // Status is still completed (set at result time)
+      // Status reached completed (set at result time), then running (awaiting auto-resume)
       expect(mockApp._sessionPatch).toHaveBeenCalledWith(
         BASE_SESSION_ID,
         { status: 'completed' },
+        expect.anything()
+      );
+      expect(mockApp._sessionPatch).toHaveBeenCalledWith(
+        BASE_SESSION_ID,
+        { status: 'running' },
+        expect.anything()
+      );
+    });
+
+    it('resumes the turn when a background task completes (SDK auto-continuation)', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+
+      // The SDK auto-starts a continuation turn after task_notification so Claude can process it.
+      // Baguette must stay in the loop past the first result and the task_notification, then handle
+      // the second result from Claude's response to the notification.
+      const mockIterable = makeAsyncIterable([
+        { type: 'system', subtype: 'task_started', task_id: 'bg-2', task_type: 'local_agent', description: 'sub', is_backgrounded: true },
+        { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
+        { type: 'system', subtype: 'task_notification', task_id: 'bg-2', status: 'completed', output_file: '', summary: 'finished' },
+        // SDK auto-continuation: Claude responds to the notification and produces a second result
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Task done.' }] } },
+        { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
+      ]);
+
+      query.mockImplementation(() => mockIterable);
+
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow);
+
+      // The assistant message from the auto-continuation must be persisted
+      await vi.waitFor(() => {
+        expect(mockApp._messageCreate).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'assistant' }),
+          expect.anything()
+        );
+      });
+
+      // Session must end up completed (from the second result)
+      const patchCalls = mockApp._sessionPatch.mock.calls;
+      const lastStatusPatch = [...patchCalls].reverse().find(([, patch]) => patch.status);
+      expect(lastStatusPatch[1]).toEqual({ status: 'completed' });
+
+      // Status was set to running when task_notification arrived (before auto-continuation)
+      expect(mockApp._sessionPatch).toHaveBeenCalledWith(
+        BASE_SESSION_ID,
+        { status: 'running' },
         expect.anything()
       );
     });

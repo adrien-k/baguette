@@ -343,10 +343,13 @@ export class ClaudeAgentService {
     const { queryInstance, sessionId, userId } = sessionState;
     const db = this.app.get('db');
 
-    // Track live background tasks (replace semantics: each background_tasks_changed carries the full set).
-    // We must not close the query while non-ambient background tasks are still running, because closing
-    // the query terminates the CLI subprocess and kills those tasks before they can emit task_notification.
+    // Track non-ambient background tasks via edge signals (task_started / task_notification).
+    // We must not close the query while tasks are still running, because closing terminates
+    // the CLI subprocess and kills them before they can emit task_notification.
+    // When the last pending task notifies after the main turn result, the SDK auto-starts a
+    // continuation turn so Claude can process the result; awaitingAutoResume tracks that window.
     let pendingBackgroundTaskIds = new Set();
+    let awaitingAutoResume = false;
     let turnComplete = false;
 
     try {
@@ -361,19 +364,29 @@ export class ClaudeAgentService {
         if (message.isReplay) continue;
         if (isHumanUserMessage(message)) continue;
 
-        // Replace background task set on every membership change.
-        if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
-          pendingBackgroundTaskIds = new Set(
-            message.tasks.filter((t) => !t.ambient).map((t) => t.task_id)
-          );
+        // Edge: a new task started — track it so we don't close the query while it runs.
+        if (message.type === 'system' && message.subtype === 'task_started' && !message.ambient) {
+          pendingBackgroundTaskIds.add(message.task_id);
+        }
+
+        // Edge: a task finished — remove it. If the main turn already ended and all tasks are
+        // now done, the SDK will auto-continue so Claude can process the notification.
+        if (message.type === 'system' && message.subtype === 'task_notification' && !message.ambient) {
+          pendingBackgroundTaskIds.delete(message.task_id);
+          if (turnComplete && pendingBackgroundTaskIds.size === 0) {
+            awaitingAutoResume = true;
+            await this.app
+              .service('sessions')
+              .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+          }
         }
 
         await this.persistMessage(sessionState, message);
 
-        // The result message ends the current agent turn. Informational messages (task_notification,
-        // background_tasks_changed, etc.) may still follow it — do not close until background tasks settle.
+        // The result message ends the current agent turn (or the SDK auto-continuation turn).
         if (message.type === 'result') {
           turnComplete = true;
+          awaitingAutoResume = false;
           if (message.subtype === 'success' && !message.is_error) {
             await this.app
               .service('sessions')
@@ -385,8 +398,8 @@ export class ClaudeAgentService {
           }
         }
 
-        // Exit the stream once the turn is done and no background tasks remain.
-        if (turnComplete && pendingBackgroundTaskIds.size === 0) {
+        // Exit once the turn (and any auto-continuation) is done and no tasks are still running.
+        if (turnComplete && pendingBackgroundTaskIds.size === 0 && !awaitingAutoResume) {
           break;
         }
       }
