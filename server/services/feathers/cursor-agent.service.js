@@ -1,6 +1,6 @@
 import { Agent, AgentBusyError } from '@cursor/sdk';
-import { access } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, mkdir, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
@@ -67,10 +67,26 @@ export class CursorAgentService {
     });
   }
 
-  async _buildSystemPrompt(session) {
+  async _prepareGlobalRulesDir(session) {
     const absoluteCwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    // New structure: worktree is at .../sessions/<id>/worktree — cursor-dir sits alongside it.
+    // Old sessions: worktree_path points directly to the git root, fall back to DATA_DIR bucket.
+    const sessionRulesRoot =
+      basename(absoluteCwd) === 'worktree'
+        ? join(dirname(absoluteCwd), 'cursor-dir')
+        : join(DATA_DIR, 'cursor-rules', String(session.id));
+    const rulesDir = join(sessionRulesRoot, '.cursor', 'rules');
     // DB rows don't have absolute_worktree_path (added by the Feathers serializer), so inject it.
-    return buildSystemPromptAppend({ ...session, absolute_worktree_path: absoluteCwd });
+    const systemPrompt = await buildSystemPromptAppend({ ...session, absolute_worktree_path: absoluteCwd });
+    const mdcContent = `---
+description: Baguette session rules (always applied)
+alwaysApply: true
+---
+
+${systemPrompt}`;
+    await mkdir(rulesDir, { recursive: true });
+    await writeFile(join(rulesDir, 'baguette.mdc'), mdcContent, 'utf8');
+    return sessionRulesRoot;
   }
 
   async _getPluginDirs(session) {
@@ -114,16 +130,15 @@ export class CursorAgentService {
     const apiKey = repoApiKey || user.cursor_api_key || undefined;
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
 
-    const systemPrompt = await this._buildSystemPrompt(session);
+    const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
     const pluginDirs = await this._getPluginDirs(session);
 
     const agentOptions = {
       apiKey,
-      systemPrompt,
       local: {
         cwd,
         settingSources: ['project'],
-        dirs: pluginDirs.length > 0 ? pluginDirs : undefined,
+        dirs: [baguetteRulesDir, ...pluginDirs],
         customTools: buildCursorCustomTools(session, this.app),
         stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
       },
