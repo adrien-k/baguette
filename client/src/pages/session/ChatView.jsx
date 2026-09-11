@@ -264,11 +264,12 @@ export default function ChatView({
     return text;
   };
 
-  const sendMessage = async (messageJson) => {
+  const sendMessage = async (messageJson, { force = false } = {}) => {
     await messagesService.create({
       session_id: session.id,
       type: 'user',
       message_json: messageJson,
+      ...(force ? { force: true } : {}),
     });
   };
 
@@ -319,7 +320,7 @@ export default function ChatView({
   const handleQueueSendNow = async (item) => {
     try {
       await queuedMessagesService.remove(item.id);
-      await sendMessage(item.message_json);
+      await sendMessage(item.message_json, { force: true });
     } catch (err) {
       toastError('Failed to send message', err);
     }

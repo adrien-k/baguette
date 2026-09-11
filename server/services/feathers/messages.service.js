@@ -18,8 +18,17 @@ export function registerMessagesService(app, path = 'messages') {
   app.service(path).hooks(messagesHooks);
 }
 
+function extractForceParam(context) {
+  if (context.data?.force) {
+    context.params._force = true;
+    delete context.data.force;
+  }
+  return context;
+}
+
 async function queueIfRunning(context) {
   if (!context.params?.provider || context.data?.type !== 'user') return context;
+  if (context.params._force) return context;
   const db = context.app.get('db');
   const session = await db('sessions').where({ id: context.data.session_id }).first();
   if (!session || session.status !== 'running') return context;
@@ -33,7 +42,7 @@ async function queueIfRunning(context) {
 
 async function afterCreateNotifySessionsAndAgent(context) {
   if (!context.result || context.result.queued) return context;
-  const message = context.result;
+  const message = context.params._force ? { ...context.result, force: true } : context.result;
   await context.app.service('sessions').onMessageCreated(message);
   const session = await context.app.get('db')('sessions').where({ id: message.session_id }).first();
   if (session?.agent_sdk === 'cursor') {
@@ -47,7 +56,7 @@ async function afterCreateNotifySessionsAndAgent(context) {
 export const messagesHooks = {
   before: {
     all: [requireUser, scopeBySessionUser],
-    create: [queueIfRunning],
+    create: [extractForceParam, queueIfRunning],
   },
   after: {
     create: [afterCreateNotifySessionsAndAgent],
