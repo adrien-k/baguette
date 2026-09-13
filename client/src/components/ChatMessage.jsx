@@ -171,6 +171,23 @@ export default function ChatMessage({ message, isLatestMessage, worktreePath, se
   }
 
   if (message.type === 'system') {
+    if (message.subtype === 'task') {
+      return (
+        <div className="text-xs text-zinc-500 text-center py-1">
+          {message.task_status ? (
+            <span className="text-zinc-600 mr-1">[{message.task_status}]</span>
+          ) : null}
+          {message.text}
+        </div>
+      );
+    }
+    if (message.subtype === 'request') {
+      return (
+        <div className="text-xs text-amber-500/80 text-center py-1">
+          Agent is awaiting your input or approval
+        </div>
+      );
+    }
     let label;
     if (message.subtype === 'init') label = 'Session started';
     else if (message.subtype === 'thinking_tokens')

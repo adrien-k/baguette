@@ -212,110 +212,40 @@ ${systemPrompt}`;
       }
       sessionState.currentRun = run;
 
-      const pendingToolCalls = new Map();
+      const { finishedOk: mainFinished, hasBackgroundTask } = await this._streamOneRun(session, run);
 
-      // Cursor streams assistant text and thinking in per-word chunks.
-      // Buffer each type and flush as a single message on type switch or non-streaming message.
-      let streamBuffer = null; // { kind: 'assistant'|'thinking', msg: object, text: string }
+      if (mainFinished) {
+        let allDone = true;
+        let lastCompletedRunId = run.id;
 
-      const flushStreamBuffer = async () => {
-        if (!streamBuffer) return;
-        if (streamBuffer.kind === 'assistant') {
-          await this._persistMessage(sessionId, userId, streamBuffer.msg);
-        } else {
-          // thinking — emit as assistant message with thinking block
-          await this._persistMessage(sessionId, userId, {
-            type: 'assistant',
-            agent_id: streamBuffer.agentId,
-            run_id: streamBuffer.runId,
-            message: { role: 'assistant', content: [{ type: 'thinking', thinking: streamBuffer.text }] },
-          });
-        }
-        streamBuffer = null;
-      };
+        // If a background task was spawned, poll for the agent-scheduled follow-up run.
+        if (hasBackgroundTask) {
+          const MAX_FOLLOW_UPS = 10;
+          for (let i = 0; i < MAX_FOLLOW_UPS; i++) {
+            const followUpRun = await this._findFollowUpRun(session, agent, lastCompletedRunId);
+            if (!followUpRun) break;
 
-      for await (const sdkMsg of run.stream()) {
-        if (sdkMsg.type === 'assistant') {
-          if (streamBuffer?.kind !== 'assistant') {
-            await flushStreamBuffer();
-            // Deep-clone so we can mutate content freely
-            streamBuffer = {
-              kind: 'assistant',
-              msg: {
-                ...sdkMsg,
-                message: { ...sdkMsg.message, content: sdkMsg.message.content.map((b) => ({ ...b })) },
-              },
-            };
-          } else {
-            for (const block of sdkMsg.message.content) {
-              if (block.type === 'text') {
-                const existing = streamBuffer.msg.message.content.find((b) => b.type === 'text');
-                if (existing) {
-                  existing.text += block.text;
-                } else {
-                  streamBuffer.msg.message.content.push({ ...block });
-                }
-              } else {
-                streamBuffer.msg.message.content.push({ ...block });
-              }
-            }
-          }
-          continue;
-        }
-
-        if (sdkMsg.type === 'thinking') {
-          if (streamBuffer?.kind !== 'thinking') {
-            await flushStreamBuffer();
-            streamBuffer = {
-              kind: 'thinking',
-              agentId: sdkMsg.agent_id,
-              runId: sdkMsg.run_id,
-              text: sdkMsg.text ?? '',
-            };
-          } else {
-            streamBuffer.text += sdkMsg.text ?? '';
-          }
-          continue;
-        }
-
-        // Any other message: flush the buffer first, then handle normally
-        await flushStreamBuffer();
-
-        await this._normalizeAndPersist(session, sdkMsg, pendingToolCalls);
-
-        if (sdkMsg.type === 'status') {
-          const { status } = sdkMsg;
-          if (status === 'FINISHED') {
-            turnFinishedOk = true;
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
-            break;
-          }
-          if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
-            logger.warn(
-              { sessionId, status, agent_id: sdkMsg.agent_id, run_id: sdkMsg.run_id, sdkMessage: sdkMsg.message },
-              'cursor-agent received terminal status'
+            logger.info(
+              { sessionId, followUpRunId: followUpRun.id, followUpIndex: i },
+              'cursor-agent: processing follow-up run from background task'
             );
-            let statusMsg;
-            if (status === 'EXPIRED') {
-              statusMsg = 'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
-            } else if (status === 'CANCELLED') {
-              statusMsg = 'Cursor agent was cancelled.';
-            } else {
-              statusMsg = `Cursor agent encountered an error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''} Send your message again to continue in a fresh conversation.`;
-            }
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-            await this._persistStatusMessage(sessionId, userId, statusMsg);
-            break;
+            sessionState.currentRun = followUpRun;
+            const { finishedOk: followUpDone, hasBackgroundTask: moreFollowUps } =
+              await this._streamOneRun(session, followUpRun);
+
+            if (!followUpDone) { allDone = false; break; }
+            lastCompletedRunId = followUpRun.id;
+            if (!moreFollowUps) break;
           }
+        }
+
+        if (allDone) {
+          turnFinishedOk = true;
+          await this.app
+            .service('sessions')
+            .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
         }
       }
-
-      // Flush any remaining buffered content at end of stream
-      await flushStreamBuffer();
 
       if (turnFinishedOk) {
         await this._recordTurnCost(session, agent).catch((err) =>
@@ -349,6 +279,146 @@ ${systemPrompt}`;
         logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to send queued message');
       }
     }
+  }
+
+  /**
+   * Stream one run to completion. Returns { finishedOk, hasBackgroundTask }.
+   * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message.
+   * FINISHED is left for the caller to handle (so follow-up runs can be chained first).
+   */
+  async _streamOneRun(session, run) {
+    const sessionId = session.id;
+    const userId = session.user_id;
+    const pendingToolCalls = new Map();
+    let finishedOk = false;
+    let hasBackgroundTask = false;
+
+    // Cursor streams assistant text and thinking in per-word chunks.
+    // Buffer each type and flush as a single message on type switch or non-streaming message.
+    let streamBuffer = null; // { kind: 'assistant'|'thinking', msg: object, text: string }
+
+    const flushStreamBuffer = async () => {
+      if (!streamBuffer) return;
+      if (streamBuffer.kind === 'assistant') {
+        await this._persistMessage(sessionId, userId, streamBuffer.msg);
+      } else {
+        await this._persistMessage(sessionId, userId, {
+          type: 'assistant',
+          agent_id: streamBuffer.agentId,
+          run_id: streamBuffer.runId,
+          message: { role: 'assistant', content: [{ type: 'thinking', thinking: streamBuffer.text }] },
+        });
+      }
+      streamBuffer = null;
+    };
+
+    for await (const sdkMsg of run.stream()) {
+      if (sdkMsg.type === 'assistant') {
+        if (streamBuffer?.kind !== 'assistant') {
+          await flushStreamBuffer();
+          streamBuffer = {
+            kind: 'assistant',
+            msg: {
+              ...sdkMsg,
+              message: { ...sdkMsg.message, content: sdkMsg.message.content.map((b) => ({ ...b })) },
+            },
+          };
+        } else {
+          for (const block of sdkMsg.message.content) {
+            if (block.type === 'text') {
+              const existing = streamBuffer.msg.message.content.find((b) => b.type === 'text');
+              if (existing) {
+                existing.text += block.text;
+              } else {
+                streamBuffer.msg.message.content.push({ ...block });
+              }
+            } else {
+              streamBuffer.msg.message.content.push({ ...block });
+            }
+          }
+        }
+        continue;
+      }
+
+      if (sdkMsg.type === 'thinking') {
+        if (streamBuffer?.kind !== 'thinking') {
+          await flushStreamBuffer();
+          streamBuffer = {
+            kind: 'thinking',
+            agentId: sdkMsg.agent_id,
+            runId: sdkMsg.run_id,
+            text: sdkMsg.text ?? '',
+          };
+        } else {
+          streamBuffer.text += sdkMsg.text ?? '';
+        }
+        continue;
+      }
+
+      // Any other message: flush the buffer first, then handle normally
+      await flushStreamBuffer();
+
+      // task messages indicate a background subagent was spawned — a follow-up run may arrive after FINISHED
+      if (sdkMsg.type === 'task') hasBackgroundTask = true;
+
+      await this._normalizeAndPersist(session, sdkMsg, pendingToolCalls);
+
+      if (sdkMsg.type === 'status') {
+        const { status } = sdkMsg;
+        if (status === 'FINISHED') {
+          finishedOk = true;
+          break;
+        }
+        if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
+          logger.warn(
+            { sessionId, status, agent_id: sdkMsg.agent_id, run_id: sdkMsg.run_id, sdkMessage: sdkMsg.message },
+            'cursor-agent received terminal status'
+          );
+          let statusMsg;
+          if (status === 'EXPIRED') {
+            statusMsg = 'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
+          } else if (status === 'CANCELLED') {
+            statusMsg = 'Cursor agent was cancelled.';
+          } else {
+            statusMsg = `Cursor agent encountered an error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''} Send your message again to continue in a fresh conversation.`;
+          }
+          await this.app
+            .service('sessions')
+            .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+          await this._persistStatusMessage(sessionId, userId, statusMsg);
+          break;
+        }
+      }
+    }
+
+    await flushStreamBuffer();
+    return { finishedOk, hasBackgroundTask };
+  }
+
+  /**
+   * Polls Agent.listRuns for a follow-up run created by a background task.
+   * Returns the run if found within the timeout, null otherwise.
+   */
+  async _findFollowUpRun(session, agent, completedRunId) {
+    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const POLLS = 8;
+    const DELAY_MS = 2000;
+
+    for (let i = 0; i < POLLS; i++) {
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+      try {
+        const { items } = await Agent.listRuns(agent.agentId, { cwd });
+        const followUp = items.find((r) => r.status === 'running' && r.id !== completedRunId);
+        if (followUp) return followUp;
+      } catch (err) {
+        logger.warn(
+          { sessionId: session.id, err: err.message },
+          'cursor-agent: error checking for follow-up run'
+        );
+        return null;
+      }
+    }
+    return null;
   }
 
   async _normalizeAndPersist(session, sdkMsg, pendingToolCalls) {
@@ -444,8 +514,32 @@ ${systemPrompt}`;
 
         pendingToolCalls.delete(sdkMsg.call_id);
       }
+      return;
     }
-    // SDKSystemMessage, SDKStatusMessage, SDKUsageMessage, SDKTaskMessage: not persisted as chat messages
+
+    if (sdkMsg.type === 'task') {
+      // Only persist if there's meaningful text to show
+      if (sdkMsg.text) {
+        await this._persistMessage(sessionId, userId, {
+          type: 'system',
+          subtype: 'task',
+          task_status: sdkMsg.status ?? null,
+          text: sdkMsg.text,
+        });
+      }
+      return;
+    }
+
+    if (sdkMsg.type === 'request') {
+      await this._persistMessage(sessionId, userId, {
+        type: 'system',
+        subtype: 'request',
+        request_id: sdkMsg.request_id,
+      });
+      return;
+    }
+
+    // SDKSystemMessage, SDKStatusMessage (non-terminal), SDKUsageMessage: not persisted as chat messages
   }
 
   async _recordTurnCost(session, agent) {
