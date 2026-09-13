@@ -12,12 +12,13 @@ import Admin from './pages/Admin.jsx';
 import SessionPreview from './pages/SessionPreview.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
-import { RepoProvider } from './context/RepoContext.jsx';
+import { RepoProvider, useRepoContext, ALL_REPOS } from './context/RepoContext.jsx';
 import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 
 function Nav() {
   const { user, logout } = useAuth();
+  const { selectedRepo, repos } = useRepoContext();
   const location = useLocation();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [usage, setUsage] = useState(null);
@@ -46,6 +47,12 @@ function Nav() {
 
   if (!user) return null;
 
+  const currentRepo =
+    selectedRepo && selectedRepo !== ALL_REPOS
+      ? repos?.find((r) => r.full_name === selectedRepo)
+      : null;
+  const logoLink = currentRepo ? `/repos/${currentRepo.id}` : '/';
+
   const menuItemClass =
     'flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700/50 transition-colors';
 
@@ -53,7 +60,7 @@ function Nav() {
     <nav className="bg-zinc-900 border-b border-zinc-800 relative z-40 shrink-0">
       <div className="px-4 flex items-center justify-between h-14">
         <div className="flex items-center shrink-0">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to={logoLink} className="flex items-center gap-2">
             <img src="/baguette.svg" alt="" className="w-6 h-6 shrink-0" />
             <span className="text-white font-semibold text-sm font-display">Baguette</span>
           </Link>

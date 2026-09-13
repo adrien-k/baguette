@@ -385,9 +385,9 @@ export default function Session() {
   useEffect(() => {
     if (sessionLoading || !short_id) return;
     if (!sessionFromHook) {
-      navigate('/');
+      navigate(repoId ? `/repos/${repoId}` : '/');
     }
-  }, [sessionLoading, short_id, sessionFromHook, navigate]);
+  }, [sessionLoading, short_id, sessionFromHook, navigate, repoId]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;
