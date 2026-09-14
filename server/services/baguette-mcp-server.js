@@ -22,6 +22,7 @@ import {
   listRepoTags,
   splitPrBody,
   buildPrBody,
+  buildSessionFooter,
 } from './github.js';
 import { loadBaguetteConfig, getAvailableCommands, getAvailableTasks } from './baguette-config.js';
 import loadPrompt from '../prompts/loadPrompt.js';
@@ -343,7 +344,7 @@ function buildBaguetteToolList(session, app) {
             repoFullName: session.repo_full_name,
             prNumber: effectivePrNumber,
             title,
-            body: buildPrBody(userPrefix, description),
+            body: buildPrBody(userPrefix, description, buildSessionFooter(session)),
             head,
             baseBranch,
             reopen,

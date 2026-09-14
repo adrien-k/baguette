@@ -24,6 +24,7 @@ import {
   getOpenPR,
   splitPrBody,
   buildPrBody,
+  buildSessionFooter,
 } from '../github.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
@@ -301,7 +302,7 @@ export class SessionsService extends KnexService {
         repoFullName: session.repo_full_name,
         prNumber: session.pr_number,
         title: session.label || session.repo_full_name,
-        body: buildPrBody(userPrefix, session.pr_description ?? ''),
+        body: buildPrBody(userPrefix, session.pr_description ?? '', buildSessionFooter(session)),
         head: session.pr_number ? undefined : head,
         baseBranch: session.base_branch,
       });

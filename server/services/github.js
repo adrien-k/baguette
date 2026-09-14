@@ -1151,7 +1151,25 @@ export function splitPrBody(body) {
   return { userPrefix, baguetteContent };
 }
 
-export function buildPrBody(userPrefix, baguetteContent) {
-  const baguetteSection = `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\n${baguetteContent}`;
+export function buildSessionFooter(session) {
+  const parts = [];
+  if (session?.agent_sdk) parts.push(`SDK: ${session.agent_sdk}`);
+  if (session?.model) parts.push(`Model: \`${session.model}\``);
+  if (session?.model_params) {
+    try {
+      const params = JSON.parse(session.model_params);
+      if (Array.isArray(params) && params.length) {
+        parts.push(`Params: \`${params.map((p) => `${p.id}=${p.value}`).join(', ')}\``);
+      }
+    } catch {
+      // invalid JSON — skip
+    }
+  }
+  if (!parts.length) return '';
+  return `\n\n---\n_${parts.join(' · ')}_`;
+}
+
+export function buildPrBody(userPrefix, baguetteContent, footer = '') {
+  const baguetteSection = `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\n${baguetteContent}${footer}`;
   return userPrefix ? `${userPrefix}\n\n${baguetteSection}` : baguetteSection;
 }
