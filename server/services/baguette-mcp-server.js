@@ -685,7 +685,7 @@ function buildBaguetteToolList(session, app) {
       {
         name: 'RunProjectCommand',
         description:
-          'Run a project command by its label from .baguette.yaml (e.g. "Run tests"). Always use this instead of running scripts directly. Pass args to scope execution: a file path, a test name pattern, or any flag the underlying runner supports (e.g. ["src/foo.test.js"], ["--grep", "my test"], ["-k", "my_test"]). Output is returned as stdoutLines/stderrLines (one terminal line per JSON line).',
+          'Run a project command by its label from .baguette.yaml (e.g. "Run tests"). Always use this instead of running scripts directly. Pass args to scope execution: a file path, a test name pattern, or any flag the underlying runner supports (e.g. ["src/foo.test.js"], ["--grep", "my test"], ["-k", "my_test"]). By default runs detached: returns a taskId immediately so you can check logs with ReadTaskOutput or stop the task with KillTask. Pass attach: true to wait for the command to finish and get the full output inline.',
         schema: {
           label: z.string().describe('Command label exactly as returned by ListProjectCommands'),
           args: z
@@ -694,8 +694,14 @@ function buildBaguetteToolList(session, app) {
             .describe(
               'Extra arguments appended to the command (e.g. a test file path, name pattern, or CLI flag)'
             ),
+          attach: z
+            .boolean()
+            .optional()
+            .describe(
+              'If true, wait for the command to finish and return exitCode/stdoutLines/stderrLines inline. Default false (detached): returns taskId immediately.'
+            ),
         },
-        handler: async ({ label, args = [] }) => {
+        handler: async ({ label, args = [], attach = false }) => {
           let tasks;
           try {
             const cfg = await loadBaguetteConfig(session.worktree_path);
@@ -713,6 +719,25 @@ function buildBaguetteToolList(session, app) {
           }
 
           const combined = `${taskDef.run} ${args.join(' ')}`.trim();
+
+          if (!attach) {
+            try {
+              const task = await app.service('tasks').create(
+                {
+                  session_id: session.id,
+                  command: combined,
+                  label,
+                  ports: taskDef.ports || [],
+                  task_key: label,
+                },
+                { user: { id: session.user_id } }
+              );
+              return ok({ taskId: task.id, label: task.label, status: task.status });
+            } catch (err) {
+              return fail(err.message);
+            }
+          }
+
           let stdout = '';
           let stderr = '';
 

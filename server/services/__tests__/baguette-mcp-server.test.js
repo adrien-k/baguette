@@ -93,7 +93,7 @@ const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 /** Simulates a task that calls onLog/onExit callbacks asynchronously. */
 function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   return vi.fn().mockImplementation((data) => {
-    const task = { id: 99 };
+    const task = { id: 99, label: data.label ?? null, status: 'running' };
     setImmediate(() => {
       if (stdout) data.onLog?.(task.id, 'stdout', stdout);
       if (stderr) data.onLog?.(task.id, 'stderr', stderr);
@@ -491,7 +491,7 @@ describe('RunProjectCommand', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('creates task and returns stdout on exit 0', async () => {
+  it('detached (default): creates task and returns taskId immediately', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -500,6 +500,40 @@ describe('RunProjectCommand', () => {
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
     const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    expect(result.ok).toBe(true);
+    expect(result.taskId).toBe(99);
+    expect(result.label).toBe('Run tests');
+    expect(result.status).toBe('running');
+    expect(result.exitCode).toBeUndefined();
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm test' }),
+      expect.anything()
+    );
+  });
+
+  it('detached (default): does not pass onLog/onExit callbacks', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ onLog: expect.anything(), onExit: expect.anything() }),
+      expect.anything()
+    );
+  });
+
+  it('attach: true — waits for exit and returns stdout on exit 0', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
+    );
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
     expect(result.stdoutLines).toEqual(['all tests passed']);
@@ -510,7 +544,7 @@ describe('RunProjectCommand', () => {
     );
   });
 
-  it('returns stdout and stderr when command exits non-zero', async () => {
+  it('attach: true — returns stdout and stderr when command exits non-zero', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -518,13 +552,15 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 1, stderr: 'Test failed\n' }) }
     );
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(
+      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
+    );
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(1);
     expect(result.stderrLines).toEqual(['Test failed']);
   });
 
-  it('returns full stdout as lines without truncation', async () => {
+  it('attach: true — returns full stdout as lines without truncation', async () => {
     const huge = `${'x'.repeat(90_000)}\nLAST_LINE\n`;
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
@@ -533,7 +569,9 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: huge }) }
     );
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(
+      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
+    );
     expect(result.ok).toBe(true);
     const joined = result.stdoutLines.join('\n');
     expect(joined).toBe(huge.replace(/\n$/, ''));
