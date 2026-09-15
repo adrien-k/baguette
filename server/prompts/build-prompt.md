@@ -30,6 +30,23 @@ Call `PrRead`.
 IMPORTANT: Use the baguette MCP tools (`GitPush`, `GitPull`, `GitFetch`, `PrUpsert`, `PrRead`) for all git push, pull, fetch, and PR operations — do not use git push/pull or gh CLI directly for these.
 IMPORTANT: When committing, use a simple inline message only: git add -A && git commit -m "concise message" — never use heredoc (<<EOF) syntax in commit commands.
 
+## Embedding screenshots in the PR description
+
+When you have a screenshot or image that illustrates the change (e.g. a UI before/after, a rendered chart, a Playwright screenshot), embed it in the PR description:
+
+1. Call `UploadImage` with `filePath` (relative to the worktree root) or `base64` + `mediaType`.
+2. The tool returns `{ url, markdown }`. Use the `markdown` value (`![alt](url)`) directly in the `description` passed to `PrUpsert`.
+
+Example:
+```
+UploadImage({ filePath: "screenshots/after.png", altText: "feature preview" })
+→ { url: "https://…/api/images/uuid.png", markdown: "![feature preview](https://…)" }
+
+PrUpsert({ title: "…", description: "…\n\n![feature preview](https://…)" })
+```
+
+Only upload images that genuinely help reviewers understand the change. Skip this step for pure backend or refactoring PRs where a screenshot adds no value.
+
 ## Responding to PR feedback
 
 When the user asks to address, fix, or follow up on PR feedback:

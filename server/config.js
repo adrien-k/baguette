@@ -73,6 +73,8 @@ export const REPOS_DIR = resolveDataDirRelativePath('repos');
 fs.mkdirSync(REPOS_DIR, { recursive: true });
 export const CACHE_DIR = resolveDataDirRelativePath('cache');
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+export const IMAGES_DIR = resolveDataDirRelativePath('images');
+fs.mkdirSync(IMAGES_DIR, { recursive: true });
 export const DB_PATH = resolveDataDirRelativePath('baguette.sqlite3');
 export const DOCKER_COMPOSE_PATH = resolveDataDirRelativePath('docker-compose.yml');
 if (!fs.existsSync(DOCKER_COMPOSE_PATH)) {
