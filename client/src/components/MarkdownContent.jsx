@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MermaidChart from './MermaidChart.jsx';
 
 const markdownClasses = `
   text-zinc-200 text-sm leading-relaxed
@@ -21,10 +22,22 @@ const markdownClasses = `
   [&_hr]:border-zinc-700 [&_hr]:my-3
 `;
 
+const components = {
+  code({ className, children }) {
+    const language = /language-(\w+)/.exec(className || '')?.[1];
+    if (language === 'mermaid') {
+      return <MermaidChart chart={String(children).trim()} />;
+    }
+    return <code className={className}>{children}</code>;
+  },
+};
+
 export default function MarkdownContent({ children, className = '' }) {
   return (
     <div className={`markdown-content ${markdownClasses} ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }
