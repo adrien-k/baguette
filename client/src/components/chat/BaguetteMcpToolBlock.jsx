@@ -403,6 +403,29 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
     );
   }
 
+  if (toolShortName === 'UploadImage') {
+    const imageUrl = mcpResult?.url;
+    const altText = block.input?.altText ?? 'uploaded image';
+    return (
+      <div>
+        <QuietToolBlock
+          icon="🖼"
+          label="UploadImage"
+          detail={imageUrl ? altText : undefined}
+          isError={block.isError}
+          result={block.result}
+        />
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt={altText}
+            className="max-w-xs rounded border border-zinc-700 mt-1 ml-4"
+          />
+        )}
+      </div>
+    );
+  }
+
   // Default quiet block: GitPush, GitPull, GitFetch, PrRead, PrComments, etc.
   const detail =
     toolShortName === 'GitFetch'
