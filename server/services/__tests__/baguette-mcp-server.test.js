@@ -50,6 +50,7 @@ vi.mock('../../config.js', async (importOriginal) => {
   };
 });
 vi.mock('../prompts/loadPrompt.js', () => ({ default: vi.fn().mockResolvedValue('prompt text') }));
+vi.mock('../port-utils.js', () => ({ isPortListening: vi.fn().mockResolvedValue(false) }));
 
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { execFile } from 'child_process';
@@ -69,6 +70,7 @@ import {
   BAGUETTE_DESCRIPTION_MARKER,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
+import { isPortListening } from '../port-utils.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -103,7 +105,7 @@ function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   });
 }
 
-function makeApp(sessionData, { tasksCreate } = {}) {
+function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = {}) {
   let sessionSnapshot = {
     ...DEFAULT_SESSION,
     ...sessionData,
@@ -115,6 +117,8 @@ function makeApp(sessionData, { tasksCreate } = {}) {
   });
   const mockGetTaskEnv = vi.fn().mockResolvedValue({});
   const mockCreate = tasksCreate ?? vi.fn().mockResolvedValue({ id: 99 });
+  const mockGetTask = tasksGetTask ?? vi.fn().mockReturnValue(null);
+  const mockFilterTasks = tasksFilterTasks ?? vi.fn().mockReturnValue([]);
   const db = (table) => {
     if (table === 'sessions')
       return { where: () => ({ first: async () => ({ ...sessionSnapshot }) }) };
@@ -132,18 +136,19 @@ function makeApp(sessionData, { tasksCreate } = {}) {
     get: (key) => (key === 'db' ? db : null),
     service: (name) => {
       if (name === 'users') return { get: async () => ({ id: 1, github_token: 'tok' }) };
+      if (name === 'tasks') return { getTask: mockGetTask, filterTasks: mockFilterTasks, create: mockCreate };
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };
     },
   };
-  return { app, mockPatch, mockGetTaskEnv, mockCreate };
+  return { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
 
 function buildServer(sessionOverrides = {}, appOpts = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
-  const { app, mockPatch, mockGetTaskEnv, mockCreate } = makeApp(sessionRow, appOpts);
+  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(sessionRow, appOpts);
   buildBaguetteMcpServer(sessionRow, app);
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
-  return { tools, mockPatch, mockGetTaskEnv, mockCreate };
+  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
 
 function callTool(tools, name, args = {}) {
@@ -825,5 +830,54 @@ describe('ConfigRepoPrompt', () => {
     expect(result.ok).toBe(true);
     expect(typeof result.prompt).toBe('string');
     expect(result.prompt.length).toBeGreaterThan(0);
+  });
+});
+
+describe('TaskStatus', () => {
+  it('returns ok: false when task not found', async () => {
+    const { tools } = buildServer();
+    const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 999 }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/999/);
+  });
+
+  it('returns ok: false when task belongs to a different session', async () => {
+    const task = { id: 5, session_id: 999, label: 'Run tests', status: 'running', exit_code: null, ports: {} };
+    const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 5 }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/does not belong/);
+  });
+
+  it('returns status and empty ports when task has no ports', async () => {
+    const task = { id: 7, session_id: DEFAULT_SESSION.id, label: 'Run tests', status: 'exited', exit_code: 0, ports: {} };
+    const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 7 }));
+    expect(result.ok).toBe(true);
+    expect(result.taskId).toBe(7);
+    expect(result.status).toBe('exited');
+    expect(result.exit_code).toBe(0);
+    expect(result.ports).toEqual({});
+    expect(isPortListening).not.toHaveBeenCalled();
+  });
+
+  it('checks each port and returns listening status', async () => {
+    isPortListening.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const task = {
+      id: 8,
+      session_id: DEFAULT_SESSION.id,
+      label: 'Dev server',
+      status: 'running',
+      exit_code: null,
+      ports: { PORT: 3001, API_PORT: 3002 },
+    };
+    const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 8 }));
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('running');
+    expect(result.ports.PORT).toEqual({ port: 3001, listening: true });
+    expect(result.ports.API_PORT).toEqual({ port: 3002, listening: false });
+    expect(isPortListening).toHaveBeenCalledWith(3001);
+    expect(isPortListening).toHaveBeenCalledWith(3002);
   });
 });
