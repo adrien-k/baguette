@@ -318,7 +318,7 @@ export default function Dashboard() {
             <NoReposCard />
           ) : (
             <BuilderForm
-              key={`builder-${formKey}`}
+              key={`builder-${formKey}-${selectedRepo}`}
               onSubmit={handleCreate}
               loading={creating}
               repoFullName={selectedRepo}
