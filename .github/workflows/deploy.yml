@@ -34,6 +34,17 @@ jobs:
       - name: Renew SSL certificate
         run: ssh ${{ vars.DEPLOY_USER || 'ubuntu' }}@${{ vars.DEPLOY_SERVER }} '/home/${{ vars.DEPLOY_USER || 'ubuntu' }}/acme.sh/renew.sh'
 
+      # Build and push are split from deploy to avoid ECONNRESET on registry port forwarding.
+      # A long build (~280s) drops the SSH tunnel Kamal uses to push the image, causing
+      # "Connection reset by peer". Running them separately keeps the tunnel short-lived.
+      # See: https://github.com/basecamp/kamal/discussions/1326
+      - name: Build and push image
+        env:
+          DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
+          DOMAIN: ${{ vars.DOMAIN }}
+        run: kamal build push
+
       - name: Deploy with Kamal
         env:
           GITHUB_CLIENT_ID: ${{ secrets.AUTH_GITHUB_CLIENT_ID }}
@@ -42,4 +53,4 @@ jobs:
           DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
-        run: kamal deploy
+        run: kamal deploy --skip-push

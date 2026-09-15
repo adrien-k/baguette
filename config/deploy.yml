@@ -20,9 +20,6 @@ servers:
 
 ssh:
   user: <%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>
-  options:
-    server_alive_interval: 30
-    server_alive_count_max: 10
 
 # Don't keep too many old versions to preserve space.
 retain_containers: 2
