@@ -388,7 +388,7 @@ export default function ChatView({
             </div>
           )}
           {!readonly &&
-            session?.status === 'completed' &&
+            session?.status !== 'running' &&
             session?.pr_status !== 'merged' && (
               <div className="flex gap-2 flex-wrap py-2">
                 <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
