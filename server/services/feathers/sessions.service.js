@@ -290,10 +290,12 @@ export class SessionsService extends KnexService {
     if (session.label || session.pr_description != null) {
       const head = pushedBranch || session.remote_branch || session.created_branch;
       let userPrefix = '';
+      let existingPrBody = '';
       if (session.pr_number) {
         try {
           const existingPr = await getOpenPRByNumber(token, session.repo_full_name, session.pr_number);
           userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+          existingPrBody = existingPr?.body ?? '';
         } catch {
           // non-fatal — proceed without user prefix
         }
@@ -302,7 +304,7 @@ export class SessionsService extends KnexService {
         repoFullName: session.repo_full_name,
         prNumber: session.pr_number,
         title: session.label || session.repo_full_name,
-        body: buildPrBody(userPrefix, session.pr_description ?? '', buildSessionFooter(session)),
+        body: buildPrBody(userPrefix, session.pr_description ?? '', buildSessionFooter(session, existingPrBody)),
         head: session.pr_number ? undefined : head,
         baseBranch: session.base_branch,
       });

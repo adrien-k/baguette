@@ -1151,9 +1151,9 @@ export function splitPrBody(body) {
   return { userPrefix, baguetteContent };
 }
 
-export function buildSessionFooter(session) {
+export function buildSessionFooter(session, existingPrBody = '') {
   const parts = [];
-  if (session?.agent_sdk) parts.push(`SDK: ${session.agent_sdk}`);
+  if (session?.agent_sdk) parts.push(`harness: ${session.agent_sdk}`);
   if (session?.model) parts.push(`Model: \`${session.model}\``);
   if (session?.model_params) {
     try {
@@ -1166,7 +1166,17 @@ export function buildSessionFooter(session) {
     }
   }
   if (!parts.length) return '';
-  return `\n\n---\n_${parts.join(' · ')}_`;
+
+  const newCombo = parts.join(' · ');
+  const existingCombos = [];
+  const footerMatch = (existingPrBody ?? '').match(/\n\n---\n_([\s\S]*?)_\s*$/);
+  if (footerMatch) {
+    existingCombos.push(...footerMatch[1].split('\n').filter(Boolean));
+  }
+  if (!existingCombos.includes(newCombo)) {
+    existingCombos.push(newCombo);
+  }
+  return `\n\n---\n_${existingCombos.join('\n')}_`;
 }
 
 export function buildPrBody(userPrefix, baguetteContent, footer = '') {

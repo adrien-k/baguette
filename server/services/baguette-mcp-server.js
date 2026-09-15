@@ -331,6 +331,7 @@ function buildBaguetteToolList(session, app) {
 
           // Preserve any user-written content above the baguette section
           let userPrefix = '';
+          let existingPrBody = '';
           if (effectivePrNumber) {
             try {
               const existingPr = await getOpenPRByNumber(
@@ -339,6 +340,7 @@ function buildBaguetteToolList(session, app) {
                 effectivePrNumber
               );
               userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+              existingPrBody = existingPr?.body ?? '';
             } catch {
               // non-fatal — proceed without user prefix
             }
@@ -348,7 +350,7 @@ function buildBaguetteToolList(session, app) {
             repoFullName: session.repo_full_name,
             prNumber: effectivePrNumber,
             title,
-            body: buildPrBody(userPrefix, description, buildSessionFooter(session)),
+            body: buildPrBody(userPrefix, description, buildSessionFooter(session, existingPrBody)),
             head,
             baseBranch,
             reopen,
