@@ -177,7 +177,7 @@ export class TasksService {
     const { user } = params;
     const query = params.query || {};
     const status = query.status;
-    const sessionId = query.session_id;
+    const sessionId = query.session_id != null ? Number(query.session_id) : null;
 
     let sessionIds;
     if (sessionId) {

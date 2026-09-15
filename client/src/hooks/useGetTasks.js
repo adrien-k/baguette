@@ -48,6 +48,7 @@ export function useGetTasks({ sessionId = null, status = null, skip = false }) {
       if (status != null && data.status !== status) return;
 
       setTasks((prev) => {
+        if (prev.some((t) => t.id === data.id)) return prev;
         return [data, ...prev];
       });
     };
