@@ -438,6 +438,51 @@ describe('ClaudeAgentService', (hooks) => {
         expect.anything()
       );
     });
+    it('does not restart the turn on intermediate task_notification events (non-terminal status)', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+
+      // Intermediate notifications (status !== 'completed'/'failed'/'error') must not trigger
+      // awaitingAutoResume or a status: 'running' patch. Only the final 'completed' one should.
+      const mockIterable = makeAsyncIterable([
+        { type: 'system', subtype: 'task_started', task_id: 'bg-3', task_type: 'local_agent', description: 'sub', is_backgrounded: true },
+        { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
+        // Two intermediate notifications — must be persisted but must NOT trigger a restart
+        { type: 'system', subtype: 'task_notification', task_id: 'bg-3', status: 'running', summary: 'still going' },
+        { type: 'system', subtype: 'task_notification', task_id: 'bg-3', status: 'running', summary: 'still going 2' },
+        // Final terminal notification — this one should trigger awaitingAutoResume
+        { type: 'system', subtype: 'task_notification', task_id: 'bg-3', status: 'completed', output_file: '', summary: 'done' },
+        // SDK auto-continuation result
+        { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
+      ]);
+
+      query.mockImplementation(() => mockIterable);
+
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow);
+
+      await vi.waitFor(() => {
+        // All three task_notification messages must be persisted
+        const notifCalls = mockApp._messageCreate.mock.calls.filter(
+          ([msg]) => msg.subtype === 'task_notification'
+        );
+        expect(notifCalls).toHaveLength(3);
+      });
+
+      // status: 'running' must be patched exactly twice: once at session start (createAgentSession)
+      // and once for the terminal task_notification — never for intermediate notifications.
+      const runningPatches = mockApp._sessionPatch.mock.calls.filter(
+        ([, patch]) => patch.status === 'running'
+      );
+      expect(runningPatches).toHaveLength(2);
+
+      // Session must end completed
+      const patchCalls = mockApp._sessionPatch.mock.calls;
+      const lastStatusPatch = [...patchCalls].reverse().find(([, patch]) => patch.status);
+      expect(lastStatusPatch[1]).toEqual({ status: 'completed' });
+    });
   });
 
   // ── 5. Assistant failure ───────────────────────────────────────────────────

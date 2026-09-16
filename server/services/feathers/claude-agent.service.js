@@ -372,12 +372,18 @@ export class ClaudeAgentService {
         // Edge: a task finished — remove it. If the main turn already ended and all tasks are
         // now done, the SDK will auto-continue so Claude can process the notification.
         if (message.type === 'system' && message.subtype === 'task_notification' && !message.ambient) {
-          pendingBackgroundTaskIds.delete(message.task_id);
-          if (turnComplete && pendingBackgroundTaskIds.size === 0) {
-            awaitingAutoResume = true;
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+          const isTerminal =
+            message.status === 'completed' ||
+            message.status === 'failed' ||
+            message.status === 'error';
+          if (isTerminal) {
+            pendingBackgroundTaskIds.delete(message.task_id);
+            if (turnComplete && pendingBackgroundTaskIds.size === 0) {
+              awaitingAutoResume = true;
+              await this.app
+                .service('sessions')
+                .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+            }
           }
         }
 
