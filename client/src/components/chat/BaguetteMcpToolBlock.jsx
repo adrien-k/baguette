@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { sessionsService } from '../../feathers.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
@@ -322,6 +323,66 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
   );
 }
 
+// ─── UploadImageBlock ─────────────────────────────────────────────────────────
+
+function UploadImageBlock({ block, mcpResult }) {
+  const [open, setOpen] = useState(false);
+  const imageUrl = mcpResult?.url;
+  const altText = block.input?.altText ?? 'uploaded image';
+
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, close]);
+
+  if (!imageUrl) {
+    return (
+      <QuietToolBlock
+        icon="🖼"
+        label="UploadImage"
+        isError={block.isError}
+        result={block.result}
+      />
+    );
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="block mt-1 rounded border border-zinc-700 overflow-hidden hover:border-zinc-500 transition-colors cursor-zoom-in"
+      >
+        <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
+      </button>
+      {open && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={close}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={close}
+              className="absolute -top-8 right-0 text-zinc-400 hover:text-white text-sm"
+            >
+              ✕ close
+            </button>
+            <img
+              src={imageUrl}
+              alt={altText}
+              className="max-w-full max-h-[85vh] rounded border border-zinc-700 object-contain"
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // ─── BaguetteMcpToolBlock ─────────────────────────────────────────────────────
 
 export default function BaguetteMcpToolBlock({ block, sessionId }) {
@@ -404,26 +465,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
   }
 
   if (toolShortName === 'UploadImage') {
-    const imageUrl = mcpResult?.url;
-    const altText = block.input?.altText ?? 'uploaded image';
-    return (
-      <div>
-        <QuietToolBlock
-          icon="🖼"
-          label="UploadImage"
-          detail={imageUrl ? altText : undefined}
-          isError={block.isError}
-          result={block.result}
-        />
-        {imageUrl && (
-          <img
-            src={imageUrl}
-            alt={altText}
-            className="max-w-xs rounded border border-zinc-700 mt-1 ml-4"
-          />
-        )}
-      </div>
-    );
+    return <UploadImageBlock block={block} mcpResult={mcpResult} />;
   }
 
   // Default quiet block: GitPush, GitPull, GitFetch, PrRead, PrComments, etc.
