@@ -90,22 +90,33 @@ app.get('/api/events', requireAuth, (req, res) => {
   });
 });
 
-// Strip /api prefix so Feathers services are accessible at /api/<name>
-// (existing /api/* Express routes above are already handled and won't reach here)
-app.use((req, res, next) => {
-  if (req.url.startsWith('/api/')) req.url = '/' + req.url.slice(5);
-  next();
-});
-
-app.configure(rest());
-registerFeathersServices(app);
-
 // Dev only: redirect GET / to the frontend dev server (e.g. Vite)
 if (process.env.VITE_SERVER_ENABLED === 'true') {
   app.get('/', (req, res) => {
     res.redirect(PUBLIC_HOST);
   });
 }
+
+if (process.env.VITE_SERVER_ENABLED !== 'true') {
+  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+  // Serve static routes before turning /api/* routes into Feathers services
+  // to avoid any conflict.
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.url.startsWith('/api/')) return next();
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
+
+// Strip /api prefix so Feathers services are accessible at /api/<name>
+// (existing /api/* Express routes above are already handled and won't reach here)
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/')) req.url = '/' + req.url.slice(5);
+  next();
+});
+app.configure(rest());
+registerFeathersServices(app);
 
 app.hooks({
   error: {
@@ -124,13 +135,6 @@ app.hooks({
   },
 });
 
-if (process.env.VITE_SERVER_ENABLED !== 'true') {
-  const clientDist = path.join(__dirname, '..', 'client', 'dist');
-  app.use(express.static(clientDist));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(clientDist, 'index.html'));
-  });
-}
 
 app.use(express.errorHandler());
 app.setup(server);
