@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import logger from '../logger.js';
-import { signProxyToken } from '../services/preview.js';
+import { signProxyToken, buildSessionHostname } from '../services/preview.js';
 import { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, PUBLIC_HOST, PUBLIC_API_URL } from '../config.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
@@ -180,8 +180,8 @@ export function createAuthRoutes(app) {
     if (!service) return res.status(400).json({ error: 'Missing service parameter' });
 
     const token = signProxyToken(userId);
-    const scheme = new URL(PUBLIC_API_URL).protocol;
-    const authUrl = `${scheme}//${service}/_baguette/auth?sign=${token}`;
+    const { protocol, hostname } = new URL(PUBLIC_API_URL);
+    const authUrl = `${protocol}//${buildSessionHostname(hostname, service)}/_baguette/auth?sign=${token}`;
     return res.redirect(authUrl);
   });
 

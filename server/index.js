@@ -42,7 +42,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 const server = createServer(app);
 
-const devProxy = new DevProxy(app, [new CodeServerHandler(), new DevserverHandler()]);
+const devProxy = new DevProxy(app, [CodeServerHandler, DevserverHandler]);
 
 // Kamal health check
 app.get('/up', (req, res) => {

@@ -11,19 +11,19 @@ const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hour
 const POLL_INTERVAL_MS = 1000;
 
 /**
- * Handlers must implement:
- *   matchesHost(host) → bool
- *   matchesUser(req, userId, app) → auth context ({ user_id, id? }) | null
- *   handleAuthenticated(req, res, session, devProxy)
- *   handleUpgrade(req, socket, head, session, devProxy)
- *   buildTask(app, session, key) → { task, exposePort } (not yet started)
- *   getErrorMessages(reason) → { title, message }
+ * Handler classes must implement:
+ *   constructor(app, req)
+ *   isValidHost() → bool
+ *   allowUser(userId) → Promise<bool>
+ *   get key() → string  (state map key, typically the hostname)
+ *   render(res) → Promise<bool>  (returns true if response was handled)
+ *   buildTask() → Promise<{ task, exposePort }>
  *   startupTimeoutMs, idleTimeoutMs
  */
 export class DevProxy {
-  constructor(app, handlers) {
+  constructor(app, handlerClasses) {
     this.app = app;
-    this.handlers = handlers;
+    this.handlerClasses = handlerClasses;
     this.states = new Map();
     this.middleware = this.middleware.bind(this);
   }
@@ -31,8 +31,7 @@ export class DevProxy {
   // ── Express middleware ────────────────────────────────────────────────────────
 
   async middleware(req, res, next) {
-    const host = (req.headers.host || '').split(':')[0];
-    const handler = this.handlers.find((h) => h.matchesHost(host));
+    const handler = this.handlerClasses.map((H) => new H(this.app, req)).find((h) => h.isValidHost());
     if (!handler) return next();
 
     // Handle /_baguette/auth before checking the proxy cookie (this is what sets it)
@@ -54,48 +53,50 @@ export class DevProxy {
     const userId = req.signedCookies?.[PROXY_COOKIE];
     if (!userId) {
       if (req.method !== 'GET') {
-        return res.status(401).json({ error: 'Unauthorized', authUrl: `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(host)}` });
+        return res.status(401).json({ error: 'Unauthorized', authUrl: `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}` });
       }
-      return res.redirect(`${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(host)}`);
+      return res.redirect(`${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}`);
     }
 
-    // Handler-level authorization (e.g. session ownership)
-    const session = await handler.matchesUser(req, userId, this.app);
-    if (!session) return res.status(403).send('Forbidden');
+    if (!await handler.allowUser(userId)) return res.status(403).send('Forbidden');
 
     this._setProxyCookie(res, userId); // renew TTL
-    return handler.handleAuthenticated(req, res, session, this);
+
+    if (await handler.render(res)) return;
+
+    return this.dispatch(req, res, handler);
   }
 
   // ── WebSocket upgrade ─────────────────────────────────────────────────────────
 
   async handleUpgrade(req, socket, head) {
-    const host = (req.headers.host || '').split(':')[0];
-    const handler = this.handlers.find((h) => h.matchesHost(host));
+    const handler = this.handlerClasses.map((H) => new H(this.app, req)).find((h) => h.isValidHost());
     if (!handler) { socket.destroy(); return; }
 
     const userId = this._getWsCookieUserId(req);
     if (!userId) { socket.destroy(); return; }
 
-    let session;
     try {
-      session = await handler.matchesUser(req, userId, this.app);
+      if (!await handler.allowUser(userId)) { socket.destroy(); return; }
     } catch (err) {
-      logger.error(err, 'WS matchesUser error');
+      logger.error(err, 'WS allowUser error');
+      socket.destroy();
+      return;
     }
-    if (!session) { socket.destroy(); return; }
 
     try {
-      await handler.handleUpgrade(req, socket, head, session, this);
+      await this.wsDispatch(req, socket, head, handler);
     } catch (err) {
       logger.error(err, 'WebSocket upgrade failed');
       socket.destroy();
     }
   }
 
-  // ── Dispatch (called by handlers) ─────────────────────────────────────────────
+  // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-  async dispatch(req, res, session, handler, key) {
+  async dispatch(req, res, handler) {
+    const key = handler.key;
+
     if (req.url === '/_baguette/logs') {
       return this._serveSseLogs(req, res, key);
     }
@@ -108,7 +109,7 @@ export class DevProxy {
 
     let state = this._getOrFixState(key);
     if (!state) {
-      state = await this._startService(session, handler, key);
+      state = await this._startService(handler);
     }
 
     if (state.status === 'timedout' || state.status === 'crashed' || state.status === 'starting') {
@@ -120,10 +121,12 @@ export class DevProxy {
     return this._proxyRequest(req, res, state.port);
   }
 
-  async wsDispatch(req, socket, head, session, handler, key) {
+  async wsDispatch(req, socket, head, handler) {
+    const key = handler.key;
+
     let state = this._getOrFixState(key);
     if (!state) {
-      state = await this._startService(session, handler, key);
+      state = await this._startService(handler);
     }
 
     const ok = await this._waitUntilListeningOrTerminal(state, handler.startupTimeoutMs);
@@ -150,7 +153,9 @@ export class DevProxy {
 
   // ── Internals ─────────────────────────────────────────────────────────────────
 
-  async _startService(session, handler, key) {
+  async _startService(handler) {
+    const key = handler.key;
+
     const state = {
       task: null,
       port: null,
@@ -165,7 +170,7 @@ export class DevProxy {
 
     this.states.set(key, state);
 
-    const { task, exposePort } = await handler.buildTask(this.app, session, key);
+    const { task, exposePort } = await handler.buildTask();
 
     task.onLog((_id, _stream, line) => {
       for (const res of state.sseClients) res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`);

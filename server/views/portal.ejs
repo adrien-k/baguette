@@ -17,7 +17,7 @@
 <body>
   <h1>Preview services</h1>
   <% services.forEach(function(svc) { %>
-  <a class="service" href="<%= svc.url %>_baguette/auth?sign=<%= encodeURIComponent(svc.token) %>" target="_blank" rel="noopener noreferrer">
+  <a class="service" href="<%= svc.url %>" target="_blank" rel="noopener noreferrer">
     <span class="name"><%= svc.name %></span>
     <span class="arrow">↗</span>
   </a>
