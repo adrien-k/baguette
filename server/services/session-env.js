@@ -1,4 +1,4 @@
-import { loadBaguetteConfig, interpolateEnv, resolveServicesConfig } from './baguette-config.js';
+import { loadBaguetteConfig, interpolateEnv, interpolateString, resolveServicesConfig } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 
 const SERVER_ONLY_ENV_KEYS = [
@@ -17,6 +17,31 @@ function stripServerEnv(env) {
   return result;
 }
 
+async function buildInterpolateContext(db, sessionId) {
+  const session = await db('sessions').where({ id: sessionId }).first();
+  const secretRows = await db('secrets').select('key', 'value');
+  const secrets = Object.fromEntries(secretRows.map((r) => [r.key, r.value]));
+
+  let baguetteConfig = null;
+  let interpolateOpts = null;
+  if (session?.worktree_path) {
+    baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    if (baguetteConfig) {
+      const servicesConfig = resolveServicesConfig(baguetteConfig);
+      const servicesUriMap = servicesConfig
+        ? Object.fromEntries(servicesConfig.map((s) => [s.name, getServicePreviewHost(session.short_id, s.name)]))
+        : {};
+      interpolateOpts = {
+        shortId: session.short_id,
+        secrets,
+        publicUri: getPreviewHost(session.short_id),
+        servicesUriMap,
+      };
+    }
+  }
+  return { baguetteConfig, interpolateOpts };
+}
+
 /**
  * Build the environment for task subprocesses (init/cleanup scripts, dev servers).
  * Includes interpolated .baguette.yaml env vars and user secrets, but NOT
@@ -26,35 +51,18 @@ function stripServerEnv(env) {
  * top of the session-level env, using the same substitution syntax.
  */
 export async function buildTaskEnv(db, sessionId, taskKey = null) {
-  const session = await db('sessions').where({ id: sessionId }).first();
-  const secretRows = await db('secrets').select('key', 'value');
-  const secrets = Object.fromEntries(secretRows.map((r) => [r.key, r.value]));
+  const { baguetteConfig, interpolateOpts } = await buildInterpolateContext(db, sessionId);
 
   let sessionEnv = {};
   let taskEnv = {};
-  if (session?.worktree_path) {
-    const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
-    if (baguetteConfig) {
-      const servicesConfig = resolveServicesConfig(baguetteConfig);
-      const servicesUriMap = servicesConfig
-        ? Object.fromEntries(servicesConfig.map((s) => [s.name, getServicePreviewHost(session.short_id, s.name)]))
-        : {};
-      const interpolateOpts = {
-        shortId: session.short_id,
-        secrets,
-        publicUri: getPreviewHost(session.short_id),
-        servicesUriMap,
-      };
-
-      if (baguetteConfig.session?.env && typeof baguetteConfig.session.env === 'object') {
-        sessionEnv = interpolateEnv(baguetteConfig.session.env, interpolateOpts);
-      }
-
-      if (taskKey) {
-        const taskDef = baguetteConfig.session?.tasks?.[taskKey];
-        if (taskDef?.env && typeof taskDef.env === 'object') {
-          taskEnv = interpolateEnv(taskDef.env, interpolateOpts);
-        }
+  if (interpolateOpts) {
+    if (baguetteConfig.session?.env && typeof baguetteConfig.session.env === 'object') {
+      sessionEnv = interpolateEnv(baguetteConfig.session.env, interpolateOpts);
+    }
+    if (taskKey) {
+      const taskDef = baguetteConfig.session?.tasks?.[taskKey];
+      if (taskDef?.env && typeof taskDef.env === 'object') {
+        taskEnv = interpolateEnv(taskDef.env, interpolateOpts);
       }
     }
   }
@@ -64,6 +72,17 @@ export async function buildTaskEnv(db, sessionId, taskKey = null) {
     ...sessionEnv,
     ...taskEnv,
   };
+}
+
+/**
+ * Interpolate `${{ baguette.secrets.* }}` (and other baguette placeholders) in a
+ * task command string, using the same substitution rules as session.env / task.env.
+ */
+export async function interpolateTaskCommand(db, sessionId, commandStr) {
+  if (!commandStr?.includes('${{')) return commandStr;
+  const { interpolateOpts } = await buildInterpolateContext(db, sessionId);
+  if (!interpolateOpts) return commandStr;
+  return interpolateString(commandStr, interpolateOpts);
 }
 
 /**

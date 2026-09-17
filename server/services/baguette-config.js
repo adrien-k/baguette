@@ -29,18 +29,21 @@ const SHORT_ID_REGEX = /\$\{\{\s*baguette\.session\.short_id\s*\}\}/g;
 const PUBLIC_URI_REGEX = /\$\{\{\s*baguette\.session\.public_uri\s*\}\}/g;
 const SERVICE_URI_REGEX = /\$\{\{\s*baguette\.services\.([A-Za-z0-9_-]+)\.public_uri\s*\}\}/g;
 
-export function interpolateEnv(template, { shortId, secrets, publicUri, servicesUriMap = {} }) {
-  if (!template || typeof template !== 'object') return {};
+export function interpolateString(str, { shortId, secrets, publicUri, servicesUriMap = {} }) {
+  if (!str || typeof str !== 'string') return str;
+  return str
+    .replace(PLACEHOLDER_REGEX, (_, secretKey) => secrets[secretKey] ?? '')
+    .replace(SHORT_ID_REGEX, shortId ?? '')
+    .replace(PUBLIC_URI_REGEX, publicUri)
+    .replace(SERVICE_URI_REGEX, (_, serviceName) => servicesUriMap[serviceName] ?? '');
+}
 
+export function interpolateEnv(template, opts) {
+  if (!template || typeof template !== 'object') return {};
   const result = {};
   for (const [key, value] of Object.entries(template)) {
     if (typeof value !== 'string') continue;
-    let interpolated = value
-      .replace(PLACEHOLDER_REGEX, (_, secretKey) => secrets[secretKey] ?? '')
-      .replace(SHORT_ID_REGEX, shortId ?? '')
-      .replace(PUBLIC_URI_REGEX, publicUri)
-      .replace(SERVICE_URI_REGEX, (_, serviceName) => servicesUriMap[serviceName] ?? '');
-    result[key] = interpolated;
+    result[key] = interpolateString(value, opts);
   }
   return result;
 }

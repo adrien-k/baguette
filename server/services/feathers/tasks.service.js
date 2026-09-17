@@ -163,6 +163,7 @@ export class TasksService {
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
     const env = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
+    const interpolatedCommand = await this.app.service('sessions').getInterpolatedCommand(session.id, command);
     const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
     const dependsOn = [];
 
@@ -205,7 +206,7 @@ export class TasksService {
       }
     }
 
-    const task = this.createTask({ sessionId: session_id, command, label, ports, env, cwd, dependsOn });
+    const task = this.createTask({ sessionId: session_id, command: interpolatedCommand, label, ports, env, cwd, dependsOn });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);
     this.emit('created', task.toPublic());

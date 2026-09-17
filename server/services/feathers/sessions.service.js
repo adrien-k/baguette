@@ -31,7 +31,7 @@ import { requireUser, scopeByUser } from './hooks.js';
 import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
 import { getPreviewHost } from '../preview.js';
 import path from 'path';
-import { buildTaskEnv, getClaudeEnvForSession } from '../session-env.js';
+import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '../session-env.js';
 import { getEffectiveGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
@@ -81,6 +81,10 @@ export class SessionsService extends KnexService {
 
   async getTaskEnv(sessionId, taskKey = null) {
     return buildTaskEnv(this.app.get('db'), sessionId, taskKey);
+  }
+
+  async getInterpolatedCommand(sessionId, command) {
+    return interpolateTaskCommand(this.app.get('db'), sessionId, command);
   }
 
   async getClaudeEnv(sessionId) {
