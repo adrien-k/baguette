@@ -89,14 +89,7 @@ export class DevProxy {
       state = await this._startService(session, handler, key);
     }
 
-    if (state.status === 'timedout' || state.status === 'crashed') {
-      const { title, message } = handler.getErrorMessages(state.status);
-      return res
-        .status(state.status === 'crashed' ? 500 : 504)
-        .render('devserver-error', { title, message });
-    }
-
-    if (state.status === 'starting') {
+    if (state.status === 'timedout' || state.status === 'crashed' || state.status === 'starting') {
       return res.render('devserver-loading');
     }
 
@@ -190,6 +183,8 @@ export class DevProxy {
   _getOrFixState(key) {
     const state = this.states.get(key);
     if (!state) return null;
+    // Keep terminal states until the user explicitly retries
+    if (state.status === 'crashed' || state.status === 'timedout') return state;
     if (state.task != null) {
       const liveTask = this.app.service('tasks').getTask(state.task.id);
       if (!liveTask || liveTask.status === 'exited') {
