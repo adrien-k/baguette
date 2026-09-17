@@ -11,6 +11,15 @@ import SearchableSelect from './SearchableSelect';
 import { isMobile } from '../utils/isMobile.js';
 import { variantLabel } from '../utils/models.js';
 
+function applyParamOverrides(params, fast, effort) {
+  if (fast === 'default' && effort === 'default') return params;
+  const overrides = new Map();
+  if (fast !== 'default') overrides.set('fast', fast === 'yes' ? 'true' : 'false');
+  if (effort !== 'default') overrides.set('effort', effort);
+  // Only update params that already exist in the variant — never inject new ones
+  return params.map((p) => overrides.has(p.id) ? { ...p, value: overrides.get(p.id) } : p);
+}
+
 function parseRepoFullName(full) {
   if (!full) return { owner: '', name: '' };
   const i = full.indexOf('/');
@@ -32,6 +41,9 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   const [model, setModel] = persistentState.useState('model', '');
   const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
   const [variantExpanded, setVariantExpanded] = useState(false);
+  const [prefsExpanded, setPrefsExpanded] = useState(false);
+  const [cursorFast, setCursorFast] = persistentState.useState('cursorFast', 'default');
+  const [cursorEffort, setCursorEffort] = persistentState.useState('cursorEffort', 'default');
   const [models, setModels] = useState([]);
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState('plugins', []);
@@ -49,6 +61,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     setModel('');
     setCursorVariantIdx(null);
     setVariantExpanded(false);
+    setPrefsExpanded(false);
   };
 
   const selectedRepo = useMemo(
@@ -113,10 +126,26 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       setModel((currentModel) => {
         const selectedModel = models.find((m) => m.id === currentModel);
         const variants = selectedModel?.variants ?? [];
-        const idx = variants.findIndex((v) => {
+        // Step A: find variant from last session, or model's default
+        let latestOrDefaultVariantIdx = variants.findIndex((v) => {
           try { return JSON.stringify(v.params) === pending; } catch { return false; }
         });
-        if (idx >= 0) setCursorVariantIdx(idx);
+        if (latestOrDefaultVariantIdx < 0) {
+          const di = variants.findIndex((v) => v.is_default);
+          latestOrDefaultVariantIdx = di >= 0 ? di : (variants.length > 0 ? 0 : -1);
+        }
+        // Apply fast/effort overrides and find matching variant
+        const latestOrDefaultVariant = latestOrDefaultVariantIdx >= 0 ? variants[latestOrDefaultVariantIdx] : null;
+        if (latestOrDefaultVariant) {
+          const mergedParams = applyParamOverrides(latestOrDefaultVariant.params || [], cursorFast, cursorEffort);
+          const mergedStr = JSON.stringify(mergedParams);
+          const withPreferenceVariantIdx = variants.findIndex((v) => {
+            try { return JSON.stringify(v.params) === mergedStr; } catch { return false; }
+          });
+          setCursorVariantIdx(withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx);
+        } else {
+          setCursorVariantIdx(null);
+        }
         return currentModel;
       });
       pendingModelParamsRef.current = null;
@@ -125,6 +154,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   }, [models]);
 
   // Set default cursor variant when model or models change (only if not already set)
+  // Applies fast/effort overrides: finds latestOrDefault, then withPreference if a match exists
   useEffect(() => {
     if (!isCursor) { setCursorVariantIdx(null); return; }
     const m = models.find((m) => m.id === model);
@@ -133,7 +163,17 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     setCursorVariantIdx((prev) => {
       if (prev != null && prev < variants.length) return prev;
       const defaultIdx = variants.findIndex((v) => v.is_default);
-      return defaultIdx >= 0 ? defaultIdx : 0;
+      const latestOrDefaultVariantIdx = defaultIdx >= 0 ? defaultIdx : 0;
+      const latestOrDefaultVariant = variants[latestOrDefaultVariantIdx];
+      if (latestOrDefaultVariant) {
+        const mergedParams = applyParamOverrides(latestOrDefaultVariant.params || [], cursorFast, cursorEffort);
+        const mergedStr = JSON.stringify(mergedParams);
+        const withPreferenceVariantIdx = variants.findIndex((v) => {
+          try { return JSON.stringify(v.params) === mergedStr; } catch { return false; }
+        });
+        return withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx;
+      }
+      return latestOrDefaultVariantIdx;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, models]);
@@ -184,6 +224,9 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       selectedModel?.variants != null && cursorVariantIdx != null
         ? selectedModel.variants[cursorVariantIdx]
         : null;
+    const finalParams = isCursor
+      ? applyParamOverrides(selectedVariant?.params ?? [], cursorFast, cursorEffort)
+      : null;
     return {
       repoFullName,
       branch,
@@ -193,8 +236,8 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       planMode,
       model: model || undefined,
       modelParams:
-        isCursor && selectedVariant?.params?.length
-          ? JSON.stringify(selectedVariant.params)
+        isCursor && finalParams?.length
+          ? JSON.stringify(finalParams)
           : undefined,
       createNewBranch,
       branchName: branchName || undefined,
@@ -240,6 +283,16 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       ? selectedModel.variants[cursorVariantIdx]
       : null;
   const variants = selectedModel?.variants ?? [];
+
+  const retryVariantWithPreference = (newFast, newEffort) => {
+    const baseParams = selectedVariant?.params ?? [];
+    const mergedParams = applyParamOverrides(baseParams, newFast, newEffort);
+    const mergedStr = JSON.stringify(mergedParams);
+    const withPreferenceVariantIdx = variants.findIndex((v) => {
+      try { return JSON.stringify(v.params) === mergedStr; } catch { return false; }
+    });
+    if (withPreferenceVariantIdx >= 0) setCursorVariantIdx(withPreferenceVariantIdx);
+  };
 
   return (
     <form onSubmit={handleStart} className="space-y-4">
@@ -455,29 +508,44 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
             </div>
           </div>
 
-          {/* Cursor variant link — tight margin below selects */}
-          {isCursor && variants.length > 0 && (
+          {/* Cursor variant + preferences selectors */}
+          {isCursor && (
             <div className="mt-1 ml-px">
-              <button
-                type="button"
-                onClick={() => setVariantExpanded((v) => !v)}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-              >
-                <span>
-                  {selectedVariant
-                    ? variantLabel(selectedVariant, selectedModel?.display_name)
-                    : 'Select variant'}
-                </span>
-                <svg
-                  className={`w-2.5 h-2.5 transition-transform ${variantExpanded ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {variants.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setVariantExpanded((v) => !v); setPrefsExpanded(false); }}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+                  >
+                    <span>
+                      {selectedVariant
+                        ? variantLabel(selectedVariant, selectedModel?.display_name)
+                        : 'Select variant'}
+                    </span>
+                    <svg
+                      className={`w-2.5 h-2.5 transition-transform ${variantExpanded ? 'rotate-180' : ''}`}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setPrefsExpanded((v) => !v); setVariantExpanded(false); }}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {variantExpanded && (
+                  <span>preferences</span>
+                  <svg
+                    className={`w-2.5 h-2.5 transition-transform ${prefsExpanded ? 'rotate-180' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+              {variants.length > 0 && variantExpanded && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {variants.map((v, i) => (
                     <button
@@ -494,6 +562,44 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                       {v.is_default && <span className="ml-1 text-zinc-500">(default)</span>}
                     </button>
                   ))}
+                </div>
+              )}
+              {prefsExpanded && (
+                <div className="mt-1.5 flex flex-col gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-zinc-500 w-10">fast:</span>
+                    {['default', 'yes', 'no'].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => { setCursorFast(val); retryVariantWithPreference(val, cursorEffort); }}
+                        className={`px-2.5 py-1 rounded text-xs transition-colors border ${
+                          cursorFast === val
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-zinc-500 w-10">effort:</span>
+                    {['default', 'low', 'medium', 'high', 'xhigh'].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => { setCursorEffort(val); retryVariantWithPreference(cursorFast, val); }}
+                        className={`px-2.5 py-1 rounded text-xs transition-colors border ${
+                          cursorEffort === val
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
