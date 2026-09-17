@@ -106,6 +106,7 @@ export function getAvailableTasks(baguetteConfig) {
         run: val.run,
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
+        ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
       };
     }
   } else if (Array.isArray(userCommands)) {

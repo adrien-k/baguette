@@ -21,32 +21,48 @@ function stripServerEnv(env) {
  * Build the environment for task subprocesses (init/cleanup scripts, dev servers).
  * Includes interpolated .baguette.yaml env vars and user secrets, but NOT
  * the Anthropic API key or git identity (those are for the Claude agent only).
+ *
+ * If taskKey is provided, per-task env (session.tasks[taskKey].env) is merged on
+ * top of the session-level env, using the same substitution syntax.
  */
-export async function buildTaskEnv(db, sessionId) {
+export async function buildTaskEnv(db, sessionId, taskKey = null) {
   const session = await db('sessions').where({ id: sessionId }).first();
   const secretRows = await db('secrets').select('key', 'value');
   const secrets = Object.fromEntries(secretRows.map((r) => [r.key, r.value]));
 
   let sessionEnv = {};
+  let taskEnv = {};
   if (session?.worktree_path) {
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
-    if (baguetteConfig?.session?.env && typeof baguetteConfig.session.env === 'object') {
+    if (baguetteConfig) {
       const servicesConfig = resolveServicesConfig(baguetteConfig);
       const servicesUriMap = servicesConfig
         ? Object.fromEntries(servicesConfig.map((s) => [s.name, getServicePreviewHost(session.short_id, s.name)]))
         : {};
-      sessionEnv = interpolateEnv(baguetteConfig.session.env, {
+      const interpolateOpts = {
         shortId: session.short_id,
         secrets,
         publicUri: getPreviewHost(session.short_id),
         servicesUriMap,
-      });
+      };
+
+      if (baguetteConfig.session?.env && typeof baguetteConfig.session.env === 'object') {
+        sessionEnv = interpolateEnv(baguetteConfig.session.env, interpolateOpts);
+      }
+
+      if (taskKey) {
+        const taskDef = baguetteConfig.session?.tasks?.[taskKey];
+        if (taskDef?.env && typeof taskDef.env === 'object') {
+          taskEnv = interpolateEnv(taskDef.env, interpolateOpts);
+        }
+      }
     }
   }
 
   return {
     ...stripServerEnv(process.env),
     ...sessionEnv,
+    ...taskEnv,
   };
 }
 

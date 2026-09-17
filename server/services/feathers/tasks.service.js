@@ -162,7 +162,7 @@ export class TasksService {
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
-    const env = await this.app.service('sessions').getTaskEnv(session.id);
+    const env = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
     const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
     const dependsOn = [];
 

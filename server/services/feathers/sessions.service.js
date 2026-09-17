@@ -79,8 +79,8 @@ export class SessionsService extends KnexService {
       });
   }
 
-  async getTaskEnv(sessionId) {
-    return buildTaskEnv(this.app.get('db'), sessionId);
+  async getTaskEnv(sessionId, taskKey = null) {
+    return buildTaskEnv(this.app.get('db'), sessionId, taskKey);
   }
 
   async getClaudeEnv(sessionId) {

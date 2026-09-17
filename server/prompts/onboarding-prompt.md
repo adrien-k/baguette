@@ -108,6 +108,22 @@ Each task in `session.tasks` supports:
 - **run**: the shell command to execute
 - **ports**: (optional) list of env var names that baguette will assign free ports to before launching
 - **depends-on**: (optional) list of task keys that must be running and listening before this task starts. Dependency ports are available as `${{ baguette.tasks.<task-key>.<PORT_NAME> }}` in the `run` command.
+- **env**: (optional) per-task environment variables, merged on top of `session.env` for this task only. Supports the same substitution syntax as `session.env`: `${{ baguette.secrets.X }}`, `${{ baguette.session.short_id }}`, `${{ baguette.session.public_uri }}`, and `${{ baguette.services.<name>.public_uri }}`. Use this to override or add env vars for a specific task without affecting others.
+
+```yaml
+tasks:
+  dev-server:
+    run: pnpm dev --port $VITE_PORT
+    ports: [VITE_PORT]
+    env:
+      NODE_ENV: development
+      API_KEY: '${{ baguette.secrets.DEV_API_KEY }}'
+  run-tests:
+    run: pnpm test
+    env:
+      NODE_ENV: test
+      DATABASE_URL: 'postgres://user:${{ baguette.secrets.DB_PASSWORD }}@postgres:5432/app_${{ baguette.session.short_id }}_test'
+```
 
 ## Your Task
 
