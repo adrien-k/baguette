@@ -47,6 +47,9 @@ export const PUBLIC_HOST = process.env.PUBLIC_HOST || DEFAULT_PUBLIC_HOST;
 export const PUBLIC_API_HOST =
   process.env.PUBLIC_API_HOST ||
   (process.env.VITE_SERVER_ENABLED ? DEFAULT_PUBLIC_API_HOST : PUBLIC_HOST);
+export const PUBLIC_API_URL = /^https?:\/\//.test(PUBLIC_API_HOST)
+  ? PUBLIC_API_HOST
+  : `https://${PUBLIC_API_HOST}`;
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 export const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 export const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;

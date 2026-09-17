@@ -28,18 +28,14 @@ import {
 } from '../github.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
-import { DEFAULT_PAGINATE, PUBLIC_HOST, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
+import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
+import { getPreviewHost } from '../preview.js';
 import path from 'path';
 import { buildTaskEnv, getClaudeEnvForSession } from '../session-env.js';
 import { getEffectiveGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 
-function getPreviewAuthUri(shortId) {
-  const url = new URL('/preview', PUBLIC_HOST);
-  url.searchParams.set('session', shortId);
-  return url.toString();
-}
 
 /**
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
@@ -615,9 +611,9 @@ async function withHasWebserver(session) {
   return {
     ...session,
     absolute_worktree_path: absoluteWorktreePath ?? null,
-    preview_url: hasPreview && getPreviewAuthUri(session.short_id),
+    preview_url: hasPreview && getPreviewHost(session.short_id),
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
-    codeserver_url: session.worktree_path ? getCodeserverUrl(session.short_id) : null,
+    codeserver_url: absoluteWorktreePath ? getCodeserverUrl(absoluteWorktreePath) : null,
   };
 }
 

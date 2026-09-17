@@ -53,11 +53,7 @@ app.use(cookieParser(ENCRYPTION_KEY));
 
 // Subdomain proxies — run before auth and body parsers so POST bodies are not
 // consumed before being piped to the underlying process.
-app.use(async (req, res, next) => {
-  const session = await devProxy.previewSession(req);
-  if (session == null) return next();
-  return devProxy.handleRequest(req, res, session);
-});
+app.use(devProxy.middleware);
 
 app.use(express.json({ strict: false }));
 app.use(express.urlencoded({ extended: true }));
@@ -140,16 +136,7 @@ app.use(express.errorHandler());
 app.setup(server);
 
 // WebSocket proxy for session subdomains — no Socket.IO to forward to.
-server.on('upgrade', async (req, socket, head) => {
-  const session = await devProxy.previewSession(req);
-  if (session == null) { socket.destroy(); return; }
-  try {
-    await devProxy.handleUpgrade(req, socket, head, session);
-  } catch (err) {
-    logger.error(err, 'WebSocket upgrade failed');
-    socket.destroy();
-  }
-});
+server.on('upgrade', (req, socket, head) => devProxy.handleUpgrade(req, socket, head));
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : undefined;

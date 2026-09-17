@@ -586,7 +586,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
 
       expect(session.preview_url).toBeTruthy();
-      expect(session.preview_url).toContain('/preview?session=a1b2c3');
+      expect(session.preview_url).toContain('session-a1b2c3');
     });
 
     it('is set when baguette config has a services block (not just webserver)', async () => {
@@ -598,7 +598,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
 
       expect(session.preview_url).toBeTruthy();
-      expect(session.preview_url).toContain('/preview?session=a1b2c3');
+      expect(session.preview_url).toContain('session-a1b2c3');
     });
 
     it('is false when baguette config has neither webserver nor services', async () => {

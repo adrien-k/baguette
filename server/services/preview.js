@@ -1,16 +1,15 @@
 import crypto from 'crypto';
-import { ENCRYPTION_KEY, PUBLIC_API_HOST } from '../config.js';
+import { ENCRYPTION_KEY, PUBLIC_API_URL } from '../config.js';
 
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export function signPreviewToken(shortId) {
-  const payload = JSON.stringify({ s: shortId, e: Date.now() + TTL_MS });
-  const encoded = Buffer.from(payload).toString('base64url');
+function _sign(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', ENCRYPTION_KEY).update(encoded).digest('base64url');
   return `${encoded}.${sig}`;
 }
 
-export function verifyPreviewToken(token) {
+function _verify(token) {
   const dotIdx = token.lastIndexOf('.');
   if (dotIdx < 0) throw new Error('Invalid token format');
   const encoded = token.slice(0, dotIdx);
@@ -23,27 +22,35 @@ export function verifyPreviewToken(token) {
   }
   const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
   if (Date.now() > payload.e) throw new Error('Token expired');
-  return payload.s; // shortId
+  return payload;
+}
+
+/** Signs a short-lived token containing the user ID for proxy authentication. */
+export function signProxyToken(userId) {
+  return _sign({ u: userId, e: Date.now() + TTL_MS });
+}
+
+/** Verifies a proxy token and returns the userId. */
+export function verifyProxyToken(token) {
+  return _verify(token).u;
 }
 
 const SESSION_PREFIX = 'session-';
 
-function buildSessionHostname(base, suffix) {
+export function buildSessionHostname(base, suffix) {
   return base.startsWith('www.') ? `${suffix}.${base.slice(4)}` : `${suffix}.${base}`;
 }
 
 /** Returns the preview subdomain URL for a session (portal or single-service). e.g. https://session-abc123.example.com/ */
 export function getPreviewHost(shortId) {
-  const hasScheme = /^https?:\/\//.test(PUBLIC_API_HOST);
-  const url = new URL(hasScheme ? PUBLIC_API_HOST : `https://${PUBLIC_API_HOST}`);
+  const url = new URL(PUBLIC_API_URL);
   url.hostname = buildSessionHostname(url.hostname, `${SESSION_PREFIX}${shortId}`);
   return url.toString();
 }
 
 /** Returns the preview subdomain URL for a named service. e.g. https://session-abc123-api.example.com/ */
 export function getServicePreviewHost(shortId, serviceName) {
-  const hasScheme = /^https?:\/\//.test(PUBLIC_API_HOST);
-  const url = new URL(hasScheme ? PUBLIC_API_HOST : `https://${PUBLIC_API_HOST}`);
+  const url = new URL(PUBLIC_API_URL);
   url.hostname = buildSessionHostname(url.hostname, `${SESSION_PREFIX}${shortId}-${serviceName}`);
   return url.toString();
 }

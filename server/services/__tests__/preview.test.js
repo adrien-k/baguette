@@ -9,46 +9,44 @@ process.env.ENCRYPTION_KEY = 'test-encryption-key-at-least-32-chars-long!!';
 process.env.PUBLIC_API_HOST = 'https://preview.example.com';
 
 const {
-  signPreviewToken,
-  verifyPreviewToken,
+  signProxyToken,
+  verifyProxyToken,
   extractSessionIdFromHost,
   getPreviewHost,
   getServicePreviewHost,
 } = await import('../preview.js');
 
-// ── signPreviewToken / verifyPreviewToken ────────────────────────────────────
+// ── signProxyToken / verifyProxyToken ────────────────────────────────────────
 
-describe('signPreviewToken / verifyPreviewToken', () => {
-  it('round-trips a shortId correctly', () => {
-    const token = signPreviewToken('abc123');
-    expect(verifyPreviewToken(token)).toBe('abc123');
+describe('signProxyToken / verifyProxyToken', () => {
+  it('round-trips a userId correctly', () => {
+    const token = signProxyToken(42);
+    expect(verifyProxyToken(token)).toBe(42);
   });
 
   it('rejects a token with a tampered payload', () => {
-    const token = signPreviewToken('abc123');
+    const token = signProxyToken(42);
     const [encoded, sig] = token.split('.');
-    // Flip the last char of the encoded payload
     const tampered = encoded.slice(0, -1) + (encoded.at(-1) === 'a' ? 'b' : 'a');
-    expect(() => verifyPreviewToken(`${tampered}.${sig}`)).toThrow('Invalid signature');
+    expect(() => verifyProxyToken(`${tampered}.${sig}`)).toThrow('Invalid signature');
   });
 
   it('rejects a token with a tampered signature', () => {
-    const token = signPreviewToken('abc123');
+    const token = signProxyToken(42);
     const lastDot = token.lastIndexOf('.');
     const encoded = token.slice(0, lastDot);
-    expect(() => verifyPreviewToken(`${encoded}.invalidsig`)).toThrow();
+    expect(() => verifyProxyToken(`${encoded}.invalidsig`)).toThrow();
   });
 
   it('rejects a token with no dot separator', () => {
-    expect(() => verifyPreviewToken('nodottoken')).toThrow('Invalid token format');
+    expect(() => verifyProxyToken('nodottoken')).toThrow('Invalid token format');
   });
 
   it('rejects an expired token', async () => {
     vi.useFakeTimers();
-    const token = signPreviewToken('exptest');
-    // Advance 6 minutes past the 5-minute TTL
+    const token = signProxyToken(99);
     vi.advanceTimersByTime(6 * 60 * 1000);
-    expect(() => verifyPreviewToken(token)).toThrow('Token expired');
+    expect(() => verifyProxyToken(token)).toThrow('Token expired');
     vi.useRealTimers();
   });
 });

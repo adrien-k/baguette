@@ -16,6 +16,7 @@ import {
   PanelLeft,
   Pencil,
   Upload,
+  Code2,
 } from 'lucide-react';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
@@ -621,9 +622,9 @@ export default function Session() {
                     href={session.codeserver_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 text-sky-400 hover:text-sky-300"
+                    className="hidden sm:inline shrink-0 text-sky-400 hover:text-sky-300"
                   >
-                    VS Code
+                    Code
                   </a>
                 )}
               </div>
@@ -776,6 +777,20 @@ export default function Session() {
                         </div>
                       );
                     })()}
+                    {session.codeserver_url && (
+                      <div className="p-2 border-b border-zinc-800 sm:hidden">
+                        <a
+                          href={session.codeserver_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setShowMenu(false)}
+                          className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-sky-400 hover:bg-zinc-800"
+                        >
+                          <Code2 className="w-3 h-3 shrink-0" />
+                          <span>Code</span>
+                        </a>
+                      </div>
+                    )}
                     <div className="p-2 border-b border-zinc-800 sm:hidden">
                       <button
                         onClick={() => { handlePush(); setShowMenu(false); }}

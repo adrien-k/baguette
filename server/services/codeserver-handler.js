@@ -1,26 +1,21 @@
-import { extractSessionIdFromHost, getServicePreviewHost } from './preview.js';
-import { PUBLIC_HOST, resolveDataDirRelativePath } from '../config.js';
+import { PUBLIC_API_URL } from '../config.js';
+import { buildSessionHostname } from './preview.js';
 
-export const VSCODE_SERVICE_NAME = 'vscode';
+const CODE_DOMAIN_PREFIX = 'code';
+const CODE_SERVER_KEY = 'global:vscode';
+
+const codeHostname = buildSessionHostname(new URL(PUBLIC_API_URL).hostname, CODE_DOMAIN_PREFIX);
 
 export class CodeServerHandler {
   startupTimeoutMs = 2 * 60 * 1000;
   idleTimeoutMs = 30 * 60 * 1000;
 
-  matches(req) {
-    const parsed = extractSessionIdFromHost(req.headers.host);
-    return !!parsed && parsed.serviceName === VSCODE_SERVICE_NAME;
+  matchesHost(host) {
+    return host === codeHostname;
   }
 
-  async previewSession(req, app) {
-    const parsed = extractSessionIdFromHost(req.headers.host);
-    if (!parsed || parsed.serviceName !== VSCODE_SERVICE_NAME) return undefined;
-    const session = await app.get('db')('sessions').where({ short_id: parsed.shortId }).first();
-    return session ?? null;
-  }
-
-  getPreviewRoute(session) {
-    return `${PUBLIC_HOST}/preview?session=${session.short_id}&service=${VSCODE_SERVICE_NAME}`;
+  async matchesUser(_req, userId) {
+    return { user_id: userId };
   }
 
   getErrorMessages(reason) {
@@ -30,25 +25,31 @@ export class CodeServerHandler {
   }
 
   async handleAuthenticated(req, res, session, devProxy) {
-    return devProxy.dispatch(req, res, session, this, `${session.id}:vscode`);
+    return devProxy.dispatch(req, res, session, this, CODE_SERVER_KEY);
   }
 
   async handleUpgrade(req, socket, head, session, devProxy) {
-    return devProxy.wsDispatch(req, socket, head, session, this, `${session.id}:vscode`);
+    return devProxy.wsDispatch(req, socket, head, session, this, CODE_SERVER_KEY);
   }
 
-  async buildTask(_app, session, _key) {
-    const worktreePath = resolveDataDirRelativePath(session.worktree_path) || '';
-    return {
-      command: `code-server --auth none --disable-telemetry "${worktreePath}"`,
+  async buildTask(app, _session, _key) {
+    const task = app.service('tasks').createTask({
+      sessionId: null,
+      command: 'code-server --auth none --disable-telemetry',
       label: 'baguette:codeserver',
       ports: ['PORT'],
-      exposePort: 'PORT',
-    };
+      env: {},
+      cwd: undefined,
+      dependsOn: [],
+    });
+    return { task, exposePort: 'PORT' };
   }
 }
 
-/** Returns the VS Code web URL for a session. */
-export function getCodeserverUrl(shortId) {
-  return getServicePreviewHost(shortId, VSCODE_SERVICE_NAME);
+/** Returns the VS Code web URL for a session folder on the shared code-server. */
+export function getCodeserverUrl(absoluteWorktreePath) {
+  const url = new URL(PUBLIC_API_URL);
+  url.hostname = codeHostname;
+  url.searchParams.set('folder', absoluteWorktreePath);
+  return url.toString();
 }

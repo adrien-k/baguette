@@ -1,5 +1,4 @@
-import { extractSessionIdFromHost, signPreviewToken, getServicePreviewHost } from './preview.js';
-import { PUBLIC_HOST } from '../config.js';
+import { extractSessionIdFromHost, signProxyToken, getServicePreviewHost } from './preview.js';
 import { loadBaguetteConfig, resolveWebserverConfig, resolveServicesConfig } from './baguette-config.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -8,24 +7,23 @@ export class DevserverHandler {
   startupTimeoutMs = 1 * 60 * 1000;
   idleTimeoutMs = 5 * 60 * 1000;
 
-  matches(req) {
-    return !!extractSessionIdFromHost(req.headers.host);
+  matchesHost(host) {
+    return !!extractSessionIdFromHost(host);
   }
 
-  async previewSession(req, app) {
-    const parsed = extractSessionIdFromHost(req.headers.host);
-    if (!parsed) return undefined;
+  async matchesUser(req, userId, app) {
+    const host = (req.headers.host || '').split(':')[0];
+    const parsed = extractSessionIdFromHost(host);
+    if (!parsed) return null;
     const session = await app.get('db')('sessions').where({ short_id: parsed.shortId }).first();
     if (!session) return null;
+    // Allow session owner or public previews
+    if (!session.is_preview_public && String(session.user_id) !== String(userId)) return null;
     const config = await loadBaguetteConfig(session.worktree_path);
     const hasWebserver = !!config?.webserver;
     const hasServices = !hasWebserver && !!(config && resolveServicesConfig(config));
-    if (!hasWebserver && !hasServices) return undefined; // no devserver → fall through to main app
+    if (!hasWebserver && !hasServices) return null;
     return session;
-  }
-
-  getPreviewRoute(session) {
-    return `${PUBLIC_HOST}/preview?session=${session.short_id}`;
   }
 
   getErrorMessages(reason) {
@@ -35,7 +33,7 @@ export class DevserverHandler {
   }
 
   async handleAuthenticated(req, res, session, devProxy) {
-    const parsed = extractSessionIdFromHost(req.headers.host);
+    const parsed = extractSessionIdFromHost((req.headers.host || '').split(':')[0]);
     const { serviceName } = parsed ?? { serviceName: null };
 
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
@@ -50,7 +48,8 @@ export class DevserverHandler {
   }
 
   async handleUpgrade(req, socket, head, session, devProxy) {
-    const parsed = extractSessionIdFromHost(req.headers.host);
+    const host = (req.headers.host || '').split(':')[0];
+    const parsed = extractSessionIdFromHost(host);
     if (!parsed) { socket.destroy(); return; }
 
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
@@ -60,18 +59,24 @@ export class DevserverHandler {
     return devProxy.wsDispatch(req, socket, head, session, this, `${session.id}:${serviceName}`);
   }
 
-  async buildTask(_app, session, key) {
+  async buildTask(app, session, key) {
     const serviceName = key.slice(String(session.id).length + 1);
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
     const webserverConfig = this._resolveServiceConfig(baguetteConfig, serviceName);
     if (!webserverConfig) throw new Error(`No webserver config for service "${serviceName}"`);
-    return {
-      command: webserverConfig.command,
-      label: `baguette:webserver:${serviceName}`,
-      ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
-      exposePort: webserverConfig.expose,
-      taskKey: webserverConfig.taskKey,
-    };
+    const publicTask = await app.service('tasks').create(
+      {
+        session_id: session.id,
+        command: webserverConfig.command,
+        label: `baguette:webserver:${serviceName}`,
+        ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
+        ...(webserverConfig.taskKey ? { task_key: webserverConfig.taskKey } : {}),
+        autoStart: false,
+      },
+      { user: { id: session.user_id } }
+    );
+    const task = app.service('tasks').getTask(publicTask.id);
+    return { task, exposePort: webserverConfig.expose };
   }
 
   _resolveServiceConfig(baguetteConfig, serviceName) {
@@ -101,18 +106,13 @@ export class DevserverHandler {
       return res.status(204).end();
     }
 
-    const tokens = {};
-    for (const svc of servicesConfig) {
-      tokens[svc.name] = signPreviewToken(session.short_id);
-    }
-
     const serviceStatuses = servicesConfig.map((svc) => {
       const state = devProxy.states.get(`${sessionId}:${svc.name}`);
       return {
         name: svc.name,
         status: state?.status ?? 'stopped',
         url: getServicePreviewHost(session.short_id, svc.name),
-        token: tokens[svc.name],
+        token: signProxyToken(session.user_id),
       };
     });
 

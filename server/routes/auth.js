@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import db from '../db.js';
 import logger from '../logger.js';
-import { signPreviewToken, getPreviewHost, getServicePreviewHost } from '../services/preview.js';
-import { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, PUBLIC_HOST } from '../config.js';
+import { signProxyToken } from '../services/preview.js';
+import { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, PUBLIC_HOST, PUBLIC_API_URL } from '../config.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -170,37 +170,19 @@ export function createAuthRoutes(app) {
     });
   });
 
-  // Returns the signed preview redirect URL as JSON.
-  // Browser navigations (Accept: text/html) fall through to the SPA which renders SessionPreview.
-  router.get('/auth/preview', async (req, res, _next) => {
+  // Signs a proxy token for the given service subdomain and redirects there.
+  // Used by the dev-proxy middleware when the user has no baguette_proxy cookie.
+  router.get('/auth/proxy', async (req, res, _next) => {
     const userId = req.signedCookies?.userId;
-    const { session: shortId, service } = req.query;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    if (!shortId) return res.status(400).json({ error: 'Missing session parameter' });
+    const service = req.query.service;
+    if (!service) return res.status(400).json({ error: 'Missing service parameter' });
 
-    const session = await db('sessions')
-      .where({ short_id: shortId })
-      .whereNull('archived_at')
-      .first();
-    if (!session) return res.status(404).json({ error: 'Session not found' });
-
-    // Public previews are accessible to anyone; private previews require the owner
-    if (!session.is_preview_public) {
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-      if (String(session.user_id) !== String(userId))
-        return res.status(403).json({ error: 'Forbidden' });
-    }
-
-    const token = signPreviewToken(shortId);
-    const targetHost = service ? getServicePreviewHost(shortId, service) : getPreviewHost(shortId);
-    const url = new URL('/_baguette/auth', targetHost);
-    url.searchParams.set('sign', token);
-
-    if (req.get('Accept') !== 'application/json') {
-      return res.redirect(url.toString());
-    } else {
-      return res.json({ url: url.toString() });
-    }
+    const token = signProxyToken(userId);
+    const scheme = new URL(PUBLIC_API_URL).protocol;
+    const authUrl = `${scheme}//${service}/_baguette/auth?sign=${token}`;
+    return res.redirect(authUrl);
   });
 
   router.post('/auth/logout', (req, res) => {
