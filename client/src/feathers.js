@@ -9,7 +9,7 @@ app.configure(rest(`${window.location.origin}/api`).fetch(window.fetch.bind(wind
 const suppressClientEvent = (context) => { context.event = null; };
 const noAutoEmit = { after: { create: [suppressClientEvent], patch: [suppressClientEvent], remove: [suppressClientEvent] } };
 
-function createService(path, { methods = [], customMethods = [] } = {}) {
+function createService(path, { customMethods = [] } = {}) {
   const svc = app.service(path);
   if (customMethods.length) svc.methods(...customMethods);
   svc.hooks(noAutoEmit);

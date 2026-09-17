@@ -383,6 +383,59 @@ function UploadImageBlock({ block, mcpResult }) {
   );
 }
 
+// ─── ReadTaskOutputBlock ─────────────────────────────────────────────────────
+
+function ReadTaskOutputBlock({ block }) {
+  const [expanded, setExpanded] = useState(false);
+  const isRunning = block.result == null;
+
+  let parsed = null;
+  try {
+    parsed =
+      block.result != null
+        ? typeof block.result === 'string'
+          ? JSON.parse(block.result)
+          : block.result
+        : null;
+  } catch {
+    /* ignore */
+  }
+
+  const taskId = block.input?.taskId ?? parsed?.taskId;
+  const logsHtml = useMemo(() => {
+    const lines = parsed?.lines ?? [];
+    const text = lines.join('\n');
+    return text ? ansiToHtml(text) : '';
+  }, [parsed]);
+
+  return (
+    <div
+      onClick={() => setExpanded((e) => !e)}
+      className="text-xs font-mono py-0.5 pl-1 cursor-pointer overflow-hidden"
+    >
+      <div className="flex items-center gap-1.5 text-zinc-700">
+        <span>↳</span>
+        <span>ReadTaskOutput</span>
+        {taskId != null && <span className="truncate text-zinc-800">#{taskId}</span>}
+        {isRunning && (
+          <div className="w-2.5 h-2.5 border border-zinc-700 border-t-zinc-500 rounded-full animate-spin shrink-0" />
+        )}
+      </div>
+      {expanded && logsHtml && (
+        <pre
+          className="mt-1 pl-3 whitespace-pre-wrap overflow-auto max-h-48"
+          dangerouslySetInnerHTML={{ __html: logsHtml }}
+        />
+      )}
+      {expanded && !logsHtml && parsed && (
+        <pre className="mt-1 pl-3 text-zinc-700 whitespace-pre-wrap overflow-auto max-h-48">
+          {typeof block.result === 'string' ? block.result : JSON.stringify(parsed, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // ─── BaguetteMcpToolBlock ─────────────────────────────────────────────────────
 
 export default function BaguetteMcpToolBlock({ block, sessionId }) {
@@ -462,6 +515,10 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
         result={block.result}
       />
     );
+  }
+
+  if (toolShortName === 'ReadTaskOutput') {
+    return <ReadTaskOutputBlock block={block} />;
   }
 
   if (toolShortName === 'UploadImage') {

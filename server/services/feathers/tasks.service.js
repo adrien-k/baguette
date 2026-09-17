@@ -2,8 +2,7 @@ import { NotFound, BadRequest } from '@feathersjs/errors';
 import { Task } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
-import { loadBaguetteConfig, getScriptCommand, getAvailableTasks, interpolateTaskPorts } from '../baguette-config.js';
-import { waitForPorts } from '../port-utils.js';
+import { loadBaguetteConfig, getScriptCommand, getAvailableTasks } from '../baguette-config.js';
 import logger from '../../logger.js';
 
 const MAX_TASKS = 20; // Only keeps 20 task (running + history)
@@ -29,7 +28,7 @@ export class TasksService {
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
    */
-  createTask({ sessionId, command, label, ports }) {
+  createTask({ sessionId, command, label, ports, env, cwd, dependsOn }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
@@ -46,7 +45,7 @@ export class TasksService {
     }
 
     const id = this._nextId++;
-    const task = new Task({ id, sessionId, command, label, ports, taskService: this });
+    const task = new Task({ id, sessionId, command, label, ports, taskService: this, env, cwd, dependsOn });
     this._tasks.set(id, task);
     return task;
   }
@@ -116,54 +115,6 @@ export class TasksService {
     return null;
   }
 
-  /**
-   * Resolve `depends_on` for a task: start missing dependencies and wait for their ports.
-   * Returns a port map: `{ [taskKey]: { PORT_NAME: portNumber } }`.
-   */
-  async _resolveDependencies(sessionId, taskKey, baguetteConfig, params, visited = new Set()) {
-    if (visited.has(taskKey)) throw new BadRequest(`Circular dependency detected: ${taskKey}`);
-    visited.add(taskKey);
-
-    const tasks = getAvailableTasks(baguetteConfig);
-    const taskDef = tasks[taskKey];
-    if (!taskDef?.depends_on?.length) return {};
-
-    const depPortMap = {};
-    for (const depKey of taskDef.depends_on) {
-      const depDef = tasks[depKey];
-      if (!depDef) throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
-
-      let runningDep = this._findRunningTask(sessionId, depKey);
-      if (!runningDep) {
-        // Recursively resolve the dependency's own dependencies first
-        const nestedPorts = await this._resolveDependencies(sessionId, depKey, baguetteConfig, params, new Set(visited));
-        const depCommand = interpolateTaskPorts(depDef.run, nestedPorts);
-
-        const depPublic = await this.create(
-          {
-            session_id: sessionId,
-            command: depCommand,
-            label: depKey,
-            ports: depDef.ports || [],
-            skipInit: true,
-            _skipDependencyResolution: true,
-          },
-          params
-        );
-        runningDep = this.getTask(depPublic.id);
-      }
-
-      // Wait for dependency ports to be listening
-      if (runningDep && Object.keys(runningDep.ports).length > 0) {
-        const listening = await waitForPorts(Object.values(runningDep.ports));
-        if (!listening) throw new BadRequest(`Dependency "${depKey}" ports did not start listening within timeout`);
-      }
-
-      depPortMap[depKey] = runningDep?.ports ?? {};
-    }
-    return depPortMap;
-  }
-
   /** Reset all in-memory state. For use in tests only. */
   _resetForTest() {
     this._tasks.clear();
@@ -205,44 +156,73 @@ export class TasksService {
     return task.toPublic();
   }
 
-  /** Create a task in memory and spawn its process. */
+  /** Create a task in memory, optionally starting it immediately (default: true). */
   async create(data, params) {
-    const { session_id, command, label, ports, task_key, onLog, onExit, skipInit, _skipDependencyResolution } = data;
+    const { session_id, command, label, ports, task_key, onLog, onExit, skipInit, _depChain, autoStart = true } = data;
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
-    // Lazy init: prepend the session init command so its logs stream with this task.
-    let effectiveCommand = command;
+    const env = await this.app.service('sessions').getTaskEnv(session.id);
+    const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
+    const dependsOn = [];
+
+    // Add init as a dependency if the session has not been initialized yet
     if (!skipInit && !session.initialized && session.worktree_path) {
       const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
       const initCommand = getScriptCommand(baguetteConfig?.session?.init);
-      // Mark initialized first to prevent double-init on concurrent task starts.
+      // Mark initialized eagerly to prevent double-init on concurrent task starts.
       await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
       if (initCommand) {
-        effectiveCommand = `${initCommand}\n${command}`;
+        const initPub = await this.create(
+          { session_id, command: initCommand, label: 'baguette:init', skipInit: true, autoStart: false },
+          params
+        );
+        dependsOn.push(this.getTask(initPub.id));
       }
     }
 
-    // Dependency resolution: start dependency tasks and inject their ports
-    if (task_key && !_skipDependencyResolution && session.worktree_path) {
+    // Add .baguette.yaml declared dependencies (transitive, cycle-detected via _depChain)
+    if (task_key && session.worktree_path) {
       const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
       if (baguetteConfig) {
-        const depPortMap = await this._resolveDependencies(session_id, task_key, baguetteConfig, params);
-        if (Object.keys(depPortMap).length > 0) {
-          effectiveCommand = interpolateTaskPorts(effectiveCommand, depPortMap);
+        const taskDefs = getAvailableTasks(baguetteConfig);
+        const depChain = new Set(_depChain ?? []);
+        depChain.add(task_key);
+        for (const depKey of taskDefs[task_key]?.depends_on ?? []) {
+          if (depChain.has(depKey)) throw new BadRequest(`Circular dependency detected: ${depKey} is already in the dependency chain`);
+          const depDef = taskDefs[depKey];
+          if (!depDef) throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
+          let depTask = this._findRunningTask(session_id, depKey);
+          if (!depTask) {
+            const depPub = await this.create(
+              { session_id, command: depDef.run, label: depKey, ports: depDef.ports || [], task_key: depKey, skipInit: true, _depChain: [...depChain], autoStart: false },
+              params
+            );
+            depTask = this.getTask(depPub.id);
+          }
+          if (depTask) dependsOn.push(depTask);
         }
       }
     }
 
-    const task = this.createTask({
-      sessionId: session_id,
-      command: effectiveCommand,
-      label,
-      ports,
-    });
-    const env = await this.app.service('sessions').getTaskEnv(session.id);
-    const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
-    await task.start({ cwd, env, onLog, onExit });
+    const task = this.createTask({ sessionId: session_id, command, label, ports, env, cwd, dependsOn });
+    if (onLog) task.onLog(onLog);
+    if (onExit) task.onExit(onExit);
+    this.emit('created', task.toPublic());
+
+    if (dependsOn.length > 0) {
+      const initDep = dependsOn.find((t) => t.label === 'baguette:init');
+      if (initDep) task.addLog('stdout', `\x1b[2m[baguette] Init running in task #${initDep.id}...\x1b[0m\n`);
+    }
+
+    if (autoStart) {
+      if (dependsOn.length > 0) {
+        void task.start().catch((err) => logger.error(err, 'Task startup error'));
+      } else {
+        await task.start();
+      }
+    }
+
     return task.toPublic();
   }
 

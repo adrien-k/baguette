@@ -30,12 +30,11 @@ describe('Task kill integration', () => {
         sessionId: 1,
         command: `exec ${process.execPath} ${listenerPath}`,
         taskService: null,
-      });
-
-      await task.start({
         cwd: process.cwd(),
         env: { ...process.env },
       });
+
+      await task.start();
 
       await waitFor(() => task.getLogs().includes('signal-listener started'), { msg: `Logs: ${task.getLogs()}` });
       task.kill()
