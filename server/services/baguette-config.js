@@ -192,6 +192,9 @@ export function resolveServicesConfig(baguetteConfig) {
     if (!SERVICE_NAME_REGEX.test(name)) {
       throw new Error(`Invalid service name "${name}": must be lowercase alphanumeric + hyphens`);
     }
+    if (name === 'vscode') {
+      throw new Error(`Service name "vscode" is reserved by Baguette`);
+    }
     if (!svcDef || typeof svcDef !== 'object') continue;
 
     if (!svcDef.task) {

@@ -616,6 +616,16 @@ export default function Session() {
                     )}
                   </span>
                 )}
+                {session.codeserver_url && (
+                  <a
+                    href={session.codeserver_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 text-sky-400 hover:text-sky-300"
+                  >
+                    VS Code
+                  </a>
+                )}
               </div>
             </div>
           </div>

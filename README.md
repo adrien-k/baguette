@@ -80,7 +80,13 @@ npm run migrate
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-6. Sign in with your GitHub account and configure your agent(s) in **Settings** > **Agent**.
+6. *(Optional)* Install [code-server](https://coder.com/docs/code-server/install) to enable the **VS Code** button on sessions:
+
+```bash
+curl -fsSL https://code-server.dev/install.sh | sh
+```
+
+7. Sign in with your GitHub account and configure your agent(s) in **Settings** > **Agent**.
 
 ### Configuring agents
 

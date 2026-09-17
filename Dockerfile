@@ -58,6 +58,13 @@ RUN curl -fsSL https://mise.jdx.dev/gpg-key.pub | gpg --dearmor > /usr/share/key
     && apt-get update && apt-get install -y mise && rm -rf /var/lib/apt/lists/*
 
 
+# Install code-server for VS Code web access to session worktrees
+ARG CODE_SERVER_VERSION=4.137.0
+RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_$(dpkg --print-architecture).deb" \
+      -o /tmp/code-server.deb \
+    && dpkg -i /tmp/code-server.deb \
+    && rm /tmp/code-server.deb
+
 RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.202 playwright
 
 # Install Chromium and its system dependencies for Playwright

@@ -33,6 +33,7 @@ import path from 'path';
 import { buildTaskEnv, getClaudeEnvForSession } from '../session-env.js';
 import { getEffectiveGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import { getCodeserverUrl } from '../codeserver-handler.js';
 
 function getPreviewAuthUri(shortId) {
   const url = new URL('/preview', PUBLIC_HOST);
@@ -616,6 +617,7 @@ async function withHasWebserver(session) {
     absolute_worktree_path: absoluteWorktreePath ?? null,
     preview_url: hasPreview && getPreviewAuthUri(session.short_id),
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
+    codeserver_url: session.worktree_path ? getCodeserverUrl(session.short_id) : null,
   };
 }
 

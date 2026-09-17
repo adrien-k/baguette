@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import logger from '../logger.js';
-import { signPreviewToken, getPreviewHost } from '../services/preview.js';
+import { signPreviewToken, getPreviewHost, getServicePreviewHost } from '../services/preview.js';
 import { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, PUBLIC_HOST } from '../config.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
@@ -174,7 +174,7 @@ export function createAuthRoutes(app) {
   // Browser navigations (Accept: text/html) fall through to the SPA which renders SessionPreview.
   router.get('/auth/preview', async (req, res, _next) => {
     const userId = req.signedCookies?.userId;
-    const { session: shortId } = req.query;
+    const { session: shortId, service } = req.query;
 
     if (!shortId) return res.status(400).json({ error: 'Missing session parameter' });
 
@@ -192,7 +192,8 @@ export function createAuthRoutes(app) {
     }
 
     const token = signPreviewToken(shortId);
-    const url = new URL('/_baguette/auth', getPreviewHost(shortId));
+    const targetHost = service ? getServicePreviewHost(shortId, service) : getPreviewHost(shortId);
+    const url = new URL('/_baguette/auth', targetHost);
     url.searchParams.set('sign', token);
 
     if (req.get('Accept') !== 'application/json') {

@@ -4,6 +4,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 export default function SessionPreview() {
   const [searchParams] = useSearchParams();
   const shortId = searchParams.get('session');
+  const service = searchParams.get('service');
   const [status, setStatus] = useState('loading'); // 'loading' | 'redirecting' | 401 | 403 | 404 | 'error'
 
   useEffect(() => {
@@ -12,7 +13,9 @@ export default function SessionPreview() {
       return;
     }
 
-    fetch(`/auth/preview?session=${encodeURIComponent(shortId)}`, {
+    const params = new URLSearchParams({ session: shortId });
+    if (service) params.set('service', service);
+    fetch(`/auth/preview?${params}`, {
       headers: { Accept: 'application/json' },
     })
       .then(async (res) => {
@@ -25,7 +28,7 @@ export default function SessionPreview() {
         }
       })
       .catch(() => setStatus('error'));
-  }, [shortId]);
+  }, [shortId, service]);
 
   if (status === 'loading' || status === 'redirecting') {
     return (

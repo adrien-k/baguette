@@ -110,7 +110,7 @@ export default function SessionCard({ session, showRepo = false }) {
         )}
       </div>
       <p className="text-xs text-zinc-500 line-clamp-2 ml-5">{session.initial_prompt}</p>
-      {(session.pr_url || session.preview_url) && (
+      {(session.pr_url || session.preview_url || session.codeserver_url) && (
         <div className="mt-1.5 sm:mt-2 ml-5 flex items-center gap-3">
           {session.pr_url && (
             <PrStatusBadge
@@ -128,6 +128,17 @@ export default function SessionCard({ session, showRepo = false }) {
               className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
             >
               Preview
+            </a>
+          )}
+          {session.codeserver_url && (
+            <a
+              href={session.codeserver_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+            >
+              VS Code
             </a>
           )}
         </div>

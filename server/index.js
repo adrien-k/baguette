@@ -13,8 +13,9 @@ import createImagesRoutes from './routes/images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
-import { DevserverProxy } from './services/devserver-proxy.js';
-import { loadBaguetteConfig, resolveServicesConfig } from './services/baguette-config.js';
+import { DevProxy } from './services/dev-proxy.js';
+import { CodeServerHandler } from './services/codeserver-handler.js';
+import { DevserverHandler } from './services/devserver-handler.js';
 import sseManager from './sse.js';
 import db from './db.js';
 
@@ -41,8 +42,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 const server = createServer(app);
 
-// Devserver proxy — instantiated before services so middleware can reference it
-const devserverProxy = new DevserverProxy(app);
+const devProxy = new DevProxy(app, [new CodeServerHandler(), new DevserverHandler()]);
 
 // Kamal health check
 app.get('/up', (req, res) => {
@@ -51,21 +51,12 @@ app.get('/up', (req, res) => {
 
 app.use(cookieParser(ENCRYPTION_KEY));
 
-// Subdomain proxy — runs before auth, bypasses Feathers routes for devserver traffic
-// Body parsers are intentionally placed AFTER this middleware so that POST bodies
-// are not consumed before being piped to the devserver.
+// Subdomain proxies — run before auth and body parsers so POST bodies are not
+// consumed before being piped to the underlying process.
 app.use(async (req, res, next) => {
-  const session = await devserverProxy.previewSession(req);
+  const session = await devProxy.previewSession(req);
   if (session == null) return next();
-
-  const config = await loadBaguetteConfig(session.worktree_path);
-  // Dispatch if the config has either a webserver block (single-service) or a services block (multi-service).
-  // Short-circuit: resolveServicesConfig throws when both blocks are set, so only call it when webserver is absent.
-  const hasWebserver = !!config?.webserver;
-  const hasServices = !hasWebserver && !!(config && resolveServicesConfig(config));
-  if (!hasWebserver && !hasServices) return next();
-
-  return devserverProxy.handleRequest(req, res, session, config);
+  return devProxy.handleRequest(req, res, session);
 });
 
 app.use(express.json({ strict: false }));
@@ -144,17 +135,14 @@ if (process.env.VITE_SERVER_ENABLED !== 'true') {
 app.use(express.errorHandler());
 app.setup(server);
 
-// WebSocket proxy for devserver subdomains only — no Socket.IO to forward to.
+// WebSocket proxy for session subdomains — no Socket.IO to forward to.
 server.on('upgrade', async (req, socket, head) => {
-  const session = await devserverProxy.previewSession(req);
-  if (session == null) {
-    socket.destroy();
-    return;
-  }
+  const session = await devProxy.previewSession(req);
+  if (session == null) { socket.destroy(); return; }
   try {
-    await devserverProxy.handlePreviewUpgrade(req, socket, head, session);
+    await devProxy.handleUpgrade(req, socket, head, session);
   } catch (err) {
-    logger.error(err, 'Preview WebSocket upgrade failed');
+    logger.error(err, 'WebSocket upgrade failed');
     socket.destroy();
   }
 });
