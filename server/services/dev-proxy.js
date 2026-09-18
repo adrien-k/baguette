@@ -4,6 +4,7 @@ import { unsign } from 'cookie-signature';
 import logger from '../logger.js';
 import { verifyProxyToken } from './preview.js';
 import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
+import { toSafePath } from '../lib/safe-path.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
 const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
@@ -93,7 +94,8 @@ export class DevProxy {
         try {
           const userId = verifyProxyToken(sign);
           this._setProxyCookie(res, String(userId));
-          return res.redirect('/');
+          const dest = toSafePath(req.query.redirectTo) ?? '/';
+          return res.redirect(dest);
         } catch (e) {
           logger.error(e, 'Proxy auth token error');
         }
@@ -110,8 +112,9 @@ export class DevProxy {
           authUrl: `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}`,
         });
       }
+      const redirectToParam = req.url ? `&redirectTo=${encodeURIComponent(req.url)}` : '';
       return res.redirect(
-        `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}`
+        `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}${redirectToParam}`
       );
     }
 

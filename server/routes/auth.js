@@ -183,7 +183,11 @@ export function createAuthRoutes(app) {
 
     const token = signProxyToken(userId);
     const { protocol, hostname } = new URL(PUBLIC_API_URL);
-    const authUrl = `${protocol}//${buildSessionHostname(hostname, service)}/_baguette/auth?sign=${token}`;
+
+    const redirectToParam = req.query.redirectTo
+      ? `&redirectTo=${encodeURIComponent(req.query.redirectTo)}`
+      : '';
+    const authUrl = `${protocol}//${buildSessionHostname(hostname, service)}/_baguette/auth?sign=${token}${redirectToParam}`;
     return res.redirect(authUrl);
   });
 
