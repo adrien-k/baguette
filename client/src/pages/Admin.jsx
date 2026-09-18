@@ -502,7 +502,9 @@ function PluginsTab() {
       .catch((err) => toastError('Failed to load plugins', err));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleInstall = async (e) => {
     e.preventDefault();
@@ -515,7 +517,9 @@ function PluginsTab() {
       const installed = result.installed?.length ?? 0;
       const skipped = result.skipped?.length ?? 0;
       if (installed > 0) {
-        toast.success(`Installed ${installed} plugin${installed !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} already up to date` : ''}`);
+        toast.success(
+          `Installed ${installed} plugin${installed !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} already up to date` : ''}`
+        );
       } else if (skipped > 0) {
         toast.success(`All ${skipped} plugin${skipped !== 1 ? 's' : ''} already up to date`);
       }
@@ -559,15 +563,18 @@ function PluginsTab() {
     <div>
       <p className="text-zinc-400 text-sm mb-4">
         Install Claude Code plugins from GitHub. Plugins are available when starting new sessions.
-        Each plugin must contain a <code className="text-zinc-300">.claude-plugin/plugin.json</code> file.
+        Each plugin must contain a <code className="text-zinc-300">.claude-plugin/plugin.json</code>{' '}
+        file.
       </p>
 
-      <form onSubmit={handleInstall} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-6">
+      <form
+        onSubmit={handleInstall}
+        className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-6"
+      >
         <h2 className="text-sm font-medium text-zinc-300 mb-1">Install Plugin</h2>
         <p className="text-xs text-zinc-500 mb-3">
-          Enter a GitHub URL: repo root (e.g.{' '}
-          <code className="text-zinc-400">…/tree/main</code>) or a subdirectory (e.g.{' '}
-          <code className="text-zinc-400">…/tree/main/plugins/foo</code>).
+          Enter a GitHub URL: repo root (e.g. <code className="text-zinc-400">…/tree/main</code>) or
+          a subdirectory (e.g. <code className="text-zinc-400">…/tree/main/plugins/foo</code>).
         </p>
         <div className="flex gap-2">
           <input
@@ -608,7 +615,9 @@ function PluginsTab() {
                     <div className="text-xs text-zinc-500 mt-0.5 flex items-center gap-2">
                       <code className="text-zinc-600 truncate">{plugin.plugin_path}</code>
                       {plugin.git_sha && (
-                        <span className="text-zinc-700 font-mono shrink-0">{plugin.git_sha.slice(0, 7)}</span>
+                        <span className="text-zinc-700 font-mono shrink-0">
+                          {plugin.git_sha.slice(0, 7)}
+                        </span>
                       )}
                     </div>
                   </div>

@@ -37,9 +37,7 @@ export function parsePluginInput(input) {
   }
 
   // Try plain repo URL: https://github.com/owner/repo
-  const repoMatch = input.match(
-    /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)\/?$/
-  );
+  const repoMatch = input.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)\/?$/);
   if (repoMatch) {
     return {
       owner: repoMatch[1],
@@ -61,11 +59,9 @@ export function parsePluginInput(input) {
 export async function getRemoteSha(owner, repo, branch, token) {
   const repoUrl = buildRepoUrl(owner, repo, token);
   try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['ls-remote', repoUrl, `refs/heads/${branch}`],
-      { timeout: 15000 }
-    );
+    const { stdout } = await execFileAsync('git', ['ls-remote', repoUrl, `refs/heads/${branch}`], {
+      timeout: 15000,
+    });
     const sha = stdout.trim().split(/\s+/)[0];
     return sha || null;
   } catch {
@@ -95,7 +91,15 @@ export async function downloadPlugin(owner, repo, branch, pluginPath, token) {
     // Sparse clone — only metadata, no blobs yet
     await execFileAsync(
       'git',
-      ['clone', '--filter=blob:none', '--sparse', '--depth=1', `--branch=${branch}`, repoUrl, tmpDir],
+      [
+        'clone',
+        '--filter=blob:none',
+        '--sparse',
+        '--depth=1',
+        `--branch=${branch}`,
+        repoUrl,
+        tmpDir,
+      ],
       { timeout: 60000 }
     );
 
@@ -105,17 +109,11 @@ export async function downloadPlugin(owner, repo, branch, pluginPath, token) {
       // so all files (including .claude-plugin/) are materialized.
       // `sparse-checkout set --cone .` treats "." as a literal dir name
       // rather than the repo root, which leaves subdirectories missing.
-      await execFileAsync(
-        'git',
-        ['-C', tmpDir, 'sparse-checkout', 'disable'],
-        { timeout: 30000 }
-      );
+      await execFileAsync('git', ['-C', tmpDir, 'sparse-checkout', 'disable'], { timeout: 30000 });
     } else {
-      await execFileAsync(
-        'git',
-        ['-C', tmpDir, 'sparse-checkout', 'set', '--cone', pluginPath],
-        { timeout: 30000 }
-      );
+      await execFileAsync('git', ['-C', tmpDir, 'sparse-checkout', 'set', '--cone', pluginPath], {
+        timeout: 30000,
+      });
     }
 
     const pluginDir = path.join(tmpDir, pluginPath);
@@ -133,11 +131,9 @@ export async function downloadPlugin(owner, repo, branch, pluginPath, token) {
     }
 
     // Get sha
-    const { stdout: shaOut } = await execFileAsync(
-      'git',
-      ['-C', tmpDir, 'rev-parse', 'HEAD'],
-      { timeout: 10000 }
-    );
+    const { stdout: shaOut } = await execFileAsync('git', ['-C', tmpDir, 'rev-parse', 'HEAD'], {
+      timeout: 10000,
+    });
     const sha = shaOut.trim();
 
     // Move plugin directory to its final location in DATA_DIR
@@ -151,9 +147,11 @@ export async function downloadPlugin(owner, repo, branch, pluginPath, token) {
     return { localPath: localRelPath, sha, pluginJson };
   } finally {
     // Always clean up temp dir
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch((err) =>
-      logger.warn({ err, tmpDir }, 'Failed to clean up plugin temp dir (non-fatal)')
-    );
+    await fs
+      .rm(tmpDir, { recursive: true, force: true })
+      .catch((err) =>
+        logger.warn({ err, tmpDir }, 'Failed to clean up plugin temp dir (non-fatal)')
+      );
   }
 }
 

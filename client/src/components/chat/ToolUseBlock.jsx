@@ -193,7 +193,6 @@ function AgentTaskBlock({ block }) {
   );
 }
 
-
 function CursorPlanBlock({ block, sessionId }) {
   const [continuePlanning, setContinuePlanning] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -201,7 +200,11 @@ function CursorPlanBlock({ block, sessionId }) {
   const [expanded, setExpanded] = useState(true);
 
   const planMarkdown = block.input?.plan ?? block.input?.description ?? block.input?.content ?? '';
-  const firstHeading = planMarkdown.split('\n').find((l) => l.startsWith('# '))?.slice(2) ?? 'Plan';
+  const firstHeading =
+    planMarkdown
+      .split('\n')
+      .find((l) => l.startsWith('# '))
+      ?.slice(2) ?? 'Plan';
 
   const sendMsg = (text) =>
     messagesService.create({
@@ -399,12 +402,16 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
 
   // ExitPlanMode: show the plan inline with Run/Continue planning buttons
   if (effectiveName === 'ExitPlanMode' && resolvedBlock.input) {
-    return <ExitPlanModeBlock block={resolvedBlock} sessionId={sessionId} userReplied={userReplied} />;
+    return (
+      <ExitPlanModeBlock block={resolvedBlock} sessionId={sessionId} userReplied={userReplied} />
+    );
   }
 
   // AskUserQuestion: show questions inline; user submits answers as a follow-up message
   if (effectiveName === 'AskUserQuestion' && resolvedBlock.input?.questions) {
-    return <AskUserQuestionBlock block={resolvedBlock} sessionId={sessionId} userReplied={userReplied} />;
+    return (
+      <AskUserQuestionBlock block={resolvedBlock} sessionId={sessionId} userReplied={userReplied} />
+    );
   }
 
   // createPlan: Cursor plan-mode result
@@ -426,7 +433,9 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
     } else if (effectiveName === 'Grep' || block.name === 'semSearch') {
       detail = [
         resolvedBlock.input?.pattern ?? resolvedBlock.input?.query,
-        resolvedBlock.input?.path ? stripWorktreePath(resolvedBlock.input.path, worktreePath) : null,
+        resolvedBlock.input?.path
+          ? stripWorktreePath(resolvedBlock.input.path, worktreePath)
+          : null,
       ]
         .filter(Boolean)
         .join(' ');
@@ -444,7 +453,8 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
   }
 
   // Legacy baguette-op commands (old sessions only)
-  const baguetteOp = effectiveName === 'Bash' ? parseBaguetteOp(resolvedBlock.input?.command) : null;
+  const baguetteOp =
+    effectiveName === 'Bash' ? parseBaguetteOp(resolvedBlock.input?.command) : null;
   if (baguetteOp) {
     if (QUIET_BAGUETTE_OPS.has(baguetteOp.op)) {
       return (

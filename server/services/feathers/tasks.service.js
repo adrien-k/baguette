@@ -46,7 +46,9 @@ export class TasksService {
 
     const id = this._nextId++;
     const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn });
-    task.onLog((_id, stream, data) => this.emit('log', { id, session_id: sessionId, stream, data }));
+    task.onLog((_id, stream, data) =>
+      this.emit('log', { id, session_id: sessionId, stream, data })
+    );
     task.onExit((_id, _code) => this.emit('patched', task.toPublic()));
     this._tasks.set(id, task);
     return task;
@@ -160,12 +162,25 @@ export class TasksService {
 
   /** Create a task in memory, optionally starting it immediately (default: true). */
   async create(data, params) {
-    const { session_id, command, label, ports, task_key, onLog, onExit, skipInit, _depChain, autoStart = true } = data;
+    const {
+      session_id,
+      command,
+      label,
+      ports,
+      task_key,
+      onLog,
+      onExit,
+      skipInit,
+      _depChain,
+      autoStart = true,
+    } = data;
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
     const env = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
-    const interpolatedCommand = await this.app.service('sessions').getInterpolatedCommand(session.id, command);
+    const interpolatedCommand = await this.app
+      .service('sessions')
+      .getInterpolatedCommand(session.id, command);
     const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
     const dependsOn = [];
 
@@ -177,7 +192,13 @@ export class TasksService {
       await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
       if (initCommand) {
         const initPub = await this.create(
-          { session_id, command: initCommand, label: 'baguette:init', skipInit: true, autoStart: false },
+          {
+            session_id,
+            command: initCommand,
+            label: 'baguette:init',
+            skipInit: true,
+            autoStart: false,
+          },
           params
         );
         dependsOn.push(this.getTask(initPub.id));
@@ -192,13 +213,26 @@ export class TasksService {
         const depChain = new Set(_depChain ?? []);
         depChain.add(task_key);
         for (const depKey of taskDefs[task_key]?.depends_on ?? []) {
-          if (depChain.has(depKey)) throw new BadRequest(`Circular dependency detected: ${depKey} is already in the dependency chain`);
+          if (depChain.has(depKey))
+            throw new BadRequest(
+              `Circular dependency detected: ${depKey} is already in the dependency chain`
+            );
           const depDef = taskDefs[depKey];
-          if (!depDef) throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
+          if (!depDef)
+            throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
           let depTask = this._findRunningTask(session_id, depKey);
           if (!depTask) {
             const depPub = await this.create(
-              { session_id, command: depDef.run, label: depKey, ports: depDef.ports || [], task_key: depKey, skipInit: true, _depChain: [...depChain], autoStart: false },
+              {
+                session_id,
+                command: depDef.run,
+                label: depKey,
+                ports: depDef.ports || [],
+                task_key: depKey,
+                skipInit: true,
+                _depChain: [...depChain],
+                autoStart: false,
+              },
               params
             );
             depTask = this.getTask(depPub.id);
@@ -208,14 +242,23 @@ export class TasksService {
       }
     }
 
-    const task = this.createTask({ sessionId: session_id, command: interpolatedCommand, label, ports, env, cwd, dependsOn });
+    const task = this.createTask({
+      sessionId: session_id,
+      command: interpolatedCommand,
+      label,
+      ports,
+      env,
+      cwd,
+      dependsOn,
+    });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);
     this.emit('created', task.toPublic());
 
     if (dependsOn.length > 0) {
       const initDep = dependsOn.find((t) => t.label === 'baguette:init');
-      if (initDep) task.addLog('stdout', `\x1b[2m[baguette] Init running in task #${initDep.id}...\x1b[0m\n`);
+      if (initDep)
+        task.addLog('stdout', `\x1b[2m[baguette] Init running in task #${initDep.id}...\x1b[0m\n`);
     }
 
     if (autoStart) {

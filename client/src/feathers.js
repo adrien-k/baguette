@@ -6,8 +6,16 @@ app.configure(rest(`${window.location.origin}/api`).fetch(window.fetch.bind(wind
 
 // SSE is the sole source of real-time events; suppress the REST client's
 // auto-emit so mutating calls don't fire a duplicate event before SSE arrives.
-const suppressClientEvent = (context) => { context.event = null; };
-const noAutoEmit = { after: { create: [suppressClientEvent], patch: [suppressClientEvent], remove: [suppressClientEvent] } };
+const suppressClientEvent = (context) => {
+  context.event = null;
+};
+const noAutoEmit = {
+  after: {
+    create: [suppressClientEvent],
+    patch: [suppressClientEvent],
+    remove: [suppressClientEvent],
+  },
+};
 
 function createService(path, { customMethods = [] } = {}) {
   const svc = app.service(path);
@@ -29,12 +37,31 @@ eventSource.onmessage = ({ data }) => {
 
 export default app;
 export const sessionsService = createService('sessions', {
-  customMethods: ['stop', 'commands', 'diff', 'shas', 'showDiff', 'merge', 'push', 'restore', 'getPrDetails'],
+  customMethods: [
+    'stop',
+    'commands',
+    'diff',
+    'shas',
+    'showDiff',
+    'merge',
+    'push',
+    'restore',
+    'getPrDetails',
+  ],
 });
 export const messagesService = createService('messages');
 export const tasksService = createService('tasks', { customMethods: ['kill', 'logs'] });
 export const reposService = createService('repos', {
-  customMethods: ['findRemote', 'findOrgs', 'branches', 'configure', 'refresh', 'findAll', 'unlink', 'createLocal'],
+  customMethods: [
+    'findRemote',
+    'findOrgs',
+    'branches',
+    'configure',
+    'refresh',
+    'findAll',
+    'unlink',
+    'createLocal',
+  ],
 });
 export const userReposService = createService('user-repos');
 export const secretsService = createService('secrets');

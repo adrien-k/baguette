@@ -9,9 +9,9 @@ export default [
     ignores: [
       'node_modules/**',
       'client/node_modules/**',
+      'dist/**',
       'client/dist/**',
       'client/scripts/**',
-      'dist/**',
       '.data/**',
     ],
   },

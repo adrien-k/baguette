@@ -99,70 +99,57 @@ describe('task port substitution (integration)', () => {
     await Promise.all(runningTasks.map((t) => t.kill().catch(() => {})));
   });
 
-  it(
-    'substitutes the dependency port before spawning the client task',
-    async () => {
-      service.app = buildMockApp(service);
+  it('substitutes the dependency port before spawning the client task', async () => {
+    service.app = buildMockApp(service);
 
-      // Command contains the raw ${{ }} placeholder — same as what the UI sends.
-      const clientCommand =
-        "node -e \"require('http').get('http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{process.stdout.write('response:'+d+'\\n');process.exit(0)})}).on('error',e=>{process.stderr.write(e.message+'\\n');process.exit(1)})\"";
+    // Command contains the raw ${{ }} placeholder — same as what the UI sends.
+    const clientCommand =
+      "node -e \"require('http').get('http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{process.stdout.write('response:'+d+'\\n');process.exit(0)})}).on('error',e=>{process.stderr.write(e.message+'\\n');process.exit(1)})\"";
 
-      // create() will auto-start the http-server dependency, wait for its
-      // port, substitute the placeholder, then spawn the client.
-      const clientPub = await service.create(
-        {
-          session_id: 1,
-          command: clientCommand,
-          label: 'http-client',
-          task_key: 'http-client',  // ← the fix: this triggers dependency resolution
-        },
-        { user: { id: 1 } }  // internal call — no provider, bypasses only() hook
-      );
+    // create() will auto-start the http-server dependency, wait for its
+    // port, substitute the placeholder, then spawn the client.
+    const clientPub = await service.create(
+      {
+        session_id: 1,
+        command: clientCommand,
+        label: 'http-client',
+        task_key: 'http-client', // ← the fix: this triggers dependency resolution
+      },
+      { user: { id: 1 } } // internal call — no provider, bypasses only() hook
+    );
 
-      // Wait for the client task to exit.
-      await waitFor(
-        () => service.getTask(clientPub.id)?.status === 'exited',
-        {
-          timeoutMs: 15_000,
-          msg: () => `client logs: ${service.getTask(clientPub.id)?.getLogs()}`,
-        }
-      );
+    // Wait for the client task to exit.
+    await waitFor(() => service.getTask(clientPub.id)?.status === 'exited', {
+      timeoutMs: 15_000,
+      msg: () => `client logs: ${service.getTask(clientPub.id)?.getLogs()}`,
+    });
 
-      const clientTask = service.getTask(clientPub.id);
-      expect(clientTask.exit_code).toBe(0);
-      expect(clientTask.getLogs()).toContain('response:pong');
-    },
-    20_000
-  );
+    const clientTask = service.getTask(clientPub.id);
+    expect(clientTask.exit_code).toBe(0);
+    expect(clientTask.getLogs()).toContain('response:pong');
+  }, 20_000);
 
-  it(
-    'does NOT substitute ports when task_key is omitted — shell receives bad substitution',
-    async () => {
-      service.app = buildMockApp(service);
+  it('does NOT substitute ports when task_key is omitted — shell receives bad substitution', async () => {
+    service.app = buildMockApp(service);
 
-      // Omit task_key — no dependency resolution, placeholder reaches the shell.
-      const clientPub = await service.create(
-        {
-          session_id: 1,
-          command: "node -e \"require('http').get('http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}',r=>{process.exit(0)}).on('error',e=>{process.exit(1)})\"",
-          label: 'http-client-no-key',
-          // task_key intentionally absent
-        },
-        { user: { id: 1 } }
-      );
+    // Omit task_key — no dependency resolution, placeholder reaches the shell.
+    const clientPub = await service.create(
+      {
+        session_id: 1,
+        command:
+          "node -e \"require('http').get('http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}',r=>{process.exit(0)}).on('error',e=>{process.exit(1)})\"",
+        label: 'http-client-no-key',
+        // task_key intentionally absent
+      },
+      { user: { id: 1 } }
+    );
 
-      await waitFor(
-        () => service.getTask(clientPub.id)?.status === 'exited',
-        { timeoutMs: 10_000 }
-      );
+    await waitFor(() => service.getTask(clientPub.id)?.status === 'exited', { timeoutMs: 10_000 });
 
-      const clientTask = service.getTask(clientPub.id);
-      // Without substitution the command fails (bad substitution or unreachable port).
-      expect(clientTask.exit_code).not.toBe(0);
-    },
-    15_000
-  );
+    const clientTask = service.getTask(clientPub.id);
+    // Without substitution the command fails (bad substitution or unreachable port).
+    expect(clientTask.exit_code).not.toBe(0);
+  }, 15_000);
 
   it('interpolateTaskPorts replaces all ${{ baguette.tasks.KEY.PORT }} placeholders', () => {
     const portMap = { 'my-server': { HTTP_PORT: 54321, WS_PORT: 54322 } };

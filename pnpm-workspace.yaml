@@ -8,4 +8,4 @@ minimumReleaseAgeExclude:
   - '@cursor/sdk-win32-x64@1.0.30'
   - '@cursor/sdk@1.0.30'
 packages:
-  - "client"
+  - 'client'

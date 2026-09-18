@@ -55,20 +55,15 @@ export default function SearchableSelect({
   const inputRef = useRef(null);
   const { ring, border } = COLOR_CLASSES[color] ?? COLOR_CLASSES.amber;
 
-  const {
-    fetchedOptions,
-    asyncLoading,
-    fetchForQuery,
-    debouncedFetch,
-    cancelDebouncedFetch,
-  } = useSearchableSelectAsync({
-    getOptions,
-    getOptionValue,
-    getOptionLabel,
-    getOptionsDebounceMs,
-    asyncRefetchKey,
-    search,
-  });
+  const { fetchedOptions, asyncLoading, fetchForQuery, debouncedFetch, cancelDebouncedFetch } =
+    useSearchableSelectAsync({
+      getOptions,
+      getOptionValue,
+      getOptionLabel,
+      getOptionsDebounceMs,
+      asyncRefetchKey,
+      search,
+    });
 
   const primeAsyncEmptyQuery = useCallback(() => {
     if (!getOptions) return;

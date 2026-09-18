@@ -77,7 +77,11 @@ app.get('/api/events', requireAuth, (req, res) => {
 
   // Heartbeat to keep the connection alive through proxies
   const heartbeat = setInterval(() => {
-    try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+    try {
+      res.write(': heartbeat\n\n');
+    } catch {
+      clearInterval(heartbeat);
+    }
   }, 30000);
 
   res.on('close', () => {
@@ -104,7 +108,6 @@ if (process.env.VITE_SERVER_ENABLED !== 'true') {
   });
 }
 
-
 // Strip /api prefix so Feathers services are accessible at /api/<name>
 // (existing /api/* Express routes above are already handled and won't reach here)
 app.use((req, res, next) => {
@@ -130,7 +133,6 @@ app.hooks({
     ],
   },
 });
-
 
 app.use(express.errorHandler());
 app.setup(server);

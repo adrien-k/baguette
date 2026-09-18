@@ -85,9 +85,9 @@ describe('createWorktree', () => {
 
     // Session 2: new session based on the same branch (default detach: true).
     // The fetch goes to a unique temp ref, so git never sees a "branch checked out" conflict.
-    await expect(
-      createWorktree(repo, BRANCH, 'session-2', FAKE_TOKEN)
-    ).resolves.toMatchObject({ worktreePath: expect.stringContaining('session-2') });
+    await expect(createWorktree(repo, BRANCH, 'session-2', FAKE_TOKEN)).resolves.toMatchObject({
+      worktreePath: expect.stringContaining('session-2'),
+    });
   });
 
   it('worktree starts from the latest remote commit, not the stale bare-clone ref', async () => {

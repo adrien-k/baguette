@@ -223,7 +223,7 @@ describe('Task.onLog / onExit unsubscribe', () => {
 
     unsubA();
     task.addLog('stdout', 'after\n');
-    expect(a).toEqual(['msg\n']);   // unsubscribed
+    expect(a).toEqual(['msg\n']); // unsubscribed
     expect(b).toEqual(['msg\n', 'after\n']); // still subscribed
   });
 });

@@ -334,19 +334,16 @@ function UploadImageBlock({ block, mcpResult }) {
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close]);
 
   if (!imageUrl) {
     return (
-      <QuietToolBlock
-        icon="🖼"
-        label="UploadImage"
-        isError={block.isError}
-        result={block.result}
-      />
+      <QuietToolBlock icon="🖼" label="UploadImage" isError={block.isError} result={block.result} />
     );
   }
 
@@ -358,27 +355,31 @@ function UploadImageBlock({ block, mcpResult }) {
       >
         <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
       </button>
-      {open && createPortal(
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={close}
-        >
-          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={close}
-              className="absolute -top-8 right-0 text-zinc-400 hover:text-white text-sm"
+      {open &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={close}
+          >
+            <div
+              className="relative max-w-[90vw] max-h-[90vh]"
+              onClick={(e) => e.stopPropagation()}
             >
-              ✕ close
-            </button>
-            <img
-              src={imageUrl}
-              alt={altText}
-              className="max-w-full max-h-[85vh] rounded border border-zinc-700 object-contain"
-            />
-          </div>
-        </div>,
-        document.body
-      )}
+              <button
+                onClick={close}
+                className="absolute -top-8 right-0 text-zinc-400 hover:text-white text-sm"
+              >
+                ✕ close
+              </button>
+              <img
+                src={imageUrl}
+                alt={altText}
+                className="max-w-full max-h-[85vh] rounded border border-zinc-700 object-contain"
+              />
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 }

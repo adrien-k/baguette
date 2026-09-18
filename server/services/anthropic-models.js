@@ -18,7 +18,11 @@ export async function listModels() {
     const q = query({ prompt: '' });
     try {
       const sdkModels = await q.supportedModels();
-      const models = sdkModels.map((m) => ({ id: m.value, display_name: m.displayName, description: m.description }));
+      const models = sdkModels.map((m) => ({
+        id: m.value,
+        display_name: m.displayName,
+        description: m.description,
+      }));
       const modelIds = new Set(models.map((m) => m.id));
       for (const extra of EXTRA_MODELS) {
         if (!modelIds.has(extra.id)) models.push(extra);

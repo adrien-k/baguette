@@ -38,6 +38,7 @@ When you have a screenshot or image that illustrates the change (e.g. a UI befor
 2. The tool returns `{ url, markdown }`. Use the `markdown` value (`![alt](url)`) directly in the `description` passed to `PrUpsert`.
 
 Example:
+
 ```
 UploadImage({ filePath: "screenshots/after.png", altText: "feature preview" })
 → { url: "https://…/api/images/uuid.png", markdown: "![feature preview](https://…)" }

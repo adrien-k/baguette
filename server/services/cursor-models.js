@@ -7,7 +7,10 @@ import * as cache from '../lib/cache.js';
 const MODELS_CACHE_KEY = 'cursor-models-keyed';
 const MODELS_CACHE_TTL = Infinity;
 
-const DEFAULT_MODELS_PATH = join(dirname(fileURLToPath(import.meta.url)), '../data/cursor-models-default.json');
+const DEFAULT_MODELS_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../data/cursor-models-default.json'
+);
 
 function loadDefaultModels() {
   try {

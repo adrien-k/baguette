@@ -36,7 +36,6 @@ import { getEffectiveGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 
-
 /**
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
  */
@@ -149,7 +148,10 @@ export class SessionsService extends KnexService {
         .service('cursor-agent')
         .deleteAgent(session)
         .catch((err) =>
-          logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to delete agent on archive')
+          logger.warn(
+            { sessionId, err: err.message },
+            'cursor-agent: failed to delete agent on archive'
+          )
         );
     }
     await removeWorktree(session, repo);
@@ -294,7 +296,11 @@ export class SessionsService extends KnexService {
       let existingPrBody = '';
       if (session.pr_number) {
         try {
-          const existingPr = await getOpenPRByNumber(token, session.repo_full_name, session.pr_number);
+          const existingPr = await getOpenPRByNumber(
+            token,
+            session.repo_full_name,
+            session.pr_number
+          );
           userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
           existingPrBody = existingPr?.body ?? '';
         } catch {
@@ -305,7 +311,11 @@ export class SessionsService extends KnexService {
         repoFullName: session.repo_full_name,
         prNumber: session.pr_number,
         title: session.label || session.repo_full_name,
-        body: buildPrBody(userPrefix, session.pr_description ?? '', buildSessionFooter(session, existingPrBody)),
+        body: buildPrBody(
+          userPrefix,
+          session.pr_description ?? '',
+          buildSessionFooter(session, existingPrBody)
+        ),
         head: session.pr_number ? undefined : head,
         baseBranch: session.base_branch,
       });
@@ -345,13 +355,18 @@ export class SessionsService extends KnexService {
       ? resolveDataDirRelativePath(session.worktree_path)
       : null;
     const worktreeExists = resolvedPath
-      ? await fs.access(resolvedPath).then(() => true).catch(() => false)
+      ? await fs
+          .access(resolvedPath)
+          .then(() => true)
+          .catch(() => false)
       : false;
 
     const dbUpdate = { archived_at: null, status: 'stopped' };
 
     if (!worktreeExists) {
-      const repo = session.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
+      const repo = session.repo_id
+        ? await db('repos').where({ id: session.repo_id }).first()
+        : null;
       if (!repo) throw new BadRequest('Session has no associated repository');
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getEffectiveGithubToken(user);
@@ -450,10 +465,12 @@ export class SessionsService extends KnexService {
     await this.app.service('queued-messages').remove(queued.id, {
       user: { id: queued.user_id },
     });
-    await this.app.service('messages').create(
-      { session_id: sessionId, type: 'user', message_json: queued.message_json },
-      { user: { id: queued.user_id } }
-    );
+    await this.app
+      .service('messages')
+      .create(
+        { session_id: sessionId, type: 'user', message_json: queued.message_json },
+        { user: { id: queued.user_id } }
+      );
   }
 }
 
@@ -484,10 +501,7 @@ async function ensureShortId(context) {
 async function prepareSessionEnvironment(context) {
   const continueExistingBranch = !(context.data.create_new_branch ?? true);
 
-  const {
-    repo_full_name: repoFullName,
-    base_branch: baseBranch,
-  } = context.data;
+  const { repo_full_name: repoFullName, base_branch: baseBranch } = context.data;
   if (!repoFullName) return context; // headless/system session — no worktree needed
 
   const db = context.app.get('db');
@@ -563,16 +577,25 @@ async function prepareSessionEnvironment(context) {
     const fallbackBranch = `${branchPrefix}task-${shortId}`;
     const requestedBranchName = context.data.branch_name;
     let branchName = requestedBranchName
-      ? requestedBranchName.toLowerCase().replace(/[^a-z0-9/_.-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || fallbackBranch
+      ? requestedBranchName
+          .toLowerCase()
+          .replace(/[^a-z0-9/_.-]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '') || fallbackBranch
       : fallbackBranch;
     try {
-      const agentService =
-        context.data.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
+      const agentService = context.data.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
       const result = await context.app
         .service(agentService)
-        .generateSessionMetadata(context.data.initial_prompt || '', shortId, context.params.user, repo);
+        .generateSessionMetadata(
+          context.data.initial_prompt || '',
+          shortId,
+          context.params.user,
+          repo
+        );
       if (result.label) context.data.label = result.label;
-      if (!requestedBranchName) branchName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
+      if (!requestedBranchName)
+        branchName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
     }
@@ -677,7 +700,9 @@ function normalizeModelFields(context) {
         context.data.model_params = JSON.stringify(parsed.params);
       }
     }
-  } catch { /* plain string, no-op */ }
+  } catch {
+    /* plain string, no-op */
+  }
   return context;
 }
 
@@ -728,7 +753,13 @@ export const sessionsHooks = {
   before: {
     all: [requireUser, scopeByUser],
     find: [applyGroupSort],
-    create: [ensureShortId, prepareSessionEnvironment, serializePlugins, extractInitialFiles, normalizeModelFields],
+    create: [
+      ensureShortId,
+      prepareSessionEnvironment,
+      serializePlugins,
+      extractInitialFiles,
+      normalizeModelFields,
+    ],
     patch: [requireOwnSession, normalizeModelFields],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
@@ -760,7 +791,11 @@ function refreshPrStatusInBackground(app, session) {
         if (pr_status !== session.pr_status) {
           app
             .service('sessions')
-            .patch(session.id, { pr_status }, { provider: undefined, user: { id: session.user_id } });
+            .patch(
+              session.id,
+              { pr_status },
+              { provider: undefined, user: { id: session.user_id } }
+            );
         }
       });
     })

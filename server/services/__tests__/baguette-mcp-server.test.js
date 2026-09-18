@@ -127,7 +127,11 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
     if (table === 'repos')
       return {
         where: () => ({
-          first: async () => ({ id: sessionSnapshot.repo_id ?? 7, full_name: sessionSnapshot.repo_full_name ?? 'owner/repo', default_branch: 'main' }),
+          first: async () => ({
+            id: sessionSnapshot.repo_id ?? 7,
+            full_name: sessionSnapshot.repo_full_name ?? 'owner/repo',
+            default_branch: 'main',
+          }),
         }),
       };
     return { where: () => ({ first: async () => null }) };
@@ -136,7 +140,8 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
     get: (key) => (key === 'db' ? db : null),
     service: (name) => {
       if (name === 'users') return { get: async () => ({ id: 1, github_token: 'tok' }) };
-      if (name === 'tasks') return { getTask: mockGetTask, filterTasks: mockFilterTasks, create: mockCreate };
+      if (name === 'tasks')
+        return { getTask: mockGetTask, filterTasks: mockFilterTasks, create: mockCreate };
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };
     },
   };
@@ -145,7 +150,10 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
 
 function buildServer(sessionOverrides = {}, appOpts = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
-  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(sessionRow, appOpts);
+  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
+    sessionRow,
+    appOpts
+  );
   buildBaguetteMcpServer(sessionRow, app);
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
@@ -652,7 +660,12 @@ describe('PrComment', () => {
     const { tools } = buildServer({ pr_number: 42 });
     const result = parseResult(await callTool(tools, 'PrComment', { body: 'Looks good!' }));
     expect(result.ok).toBe(true);
-    expect(createPRComment).toHaveBeenCalledWith('ghtoken', 'owner/repo', 42, `${SESSION_HEADER}Looks good!`);
+    expect(createPRComment).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      42,
+      `${SESSION_HEADER}Looks good!`
+    );
     expect(createPRLineComment).not.toHaveBeenCalled();
   });
 
@@ -812,7 +825,6 @@ describe('PrWorkflowLogs', () => {
   });
 });
 
-
 describe('ShowDiff', () => {
   it('returns ok: true with path and no diff content', async () => {
     const { tools } = buildServer();
@@ -842,7 +854,14 @@ describe('TaskStatus', () => {
   });
 
   it('returns ok: false when task belongs to a different session', async () => {
-    const task = { id: 5, session_id: 999, label: 'Run tests', status: 'running', exit_code: null, ports: {} };
+    const task = {
+      id: 5,
+      session_id: 999,
+      label: 'Run tests',
+      status: 'running',
+      exit_code: null,
+      ports: {},
+    };
     const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
     const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 5 }));
     expect(result.ok).toBe(false);
@@ -850,7 +869,14 @@ describe('TaskStatus', () => {
   });
 
   it('returns status and empty ports when task has no ports', async () => {
-    const task = { id: 7, session_id: DEFAULT_SESSION.id, label: 'Run tests', status: 'exited', exit_code: 0, ports: {} };
+    const task = {
+      id: 7,
+      session_id: DEFAULT_SESSION.id,
+      label: 'Run tests',
+      status: 'exited',
+      exit_code: 0,
+      ports: {},
+    };
     const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
     const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 7 }));
     expect(result.ok).toBe(true);

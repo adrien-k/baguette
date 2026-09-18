@@ -41,7 +41,9 @@ export function createAuthRoutes(app) {
 
         const redirectTo = req.query.redirectTo;
         const dest =
-          redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/';
+          redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')
+            ? redirectTo
+            : '/';
         res.redirect(dest);
       } catch (err) {
         logger.error(err, 'Dev sign-in error');

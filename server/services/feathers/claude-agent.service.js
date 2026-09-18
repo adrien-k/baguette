@@ -1,10 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
 import { remoteHasNewCommits } from '../github.js';
-import {
-  getEffectiveGithubToken,
-  getAllowedCommandsFromUser,
-} from '../agent-settings.js';
+import { getEffectiveGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
 import { getClaudeEnv } from '../session-env.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createMessageChannel } from '../message-channel.js';
@@ -29,9 +26,7 @@ async function baseBuildQueryOptions(app, sessionRow, systemPrompt) {
   const mcpServer = buildBaguetteMcpServer(sessionRow, app);
 
   const cwd =
-    resolveDataDirRelativePath(sessionRow.worktree_path) ||
-    sessionRow.absolute_worktree_path ||
-    '';
+    resolveDataDirRelativePath(sessionRow.worktree_path) || sessionRow.absolute_worktree_path || '';
 
   return {
     cwd,
@@ -44,7 +39,7 @@ async function baseBuildQueryOptions(app, sessionRow, systemPrompt) {
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
-      append: systemPrompt
+      append: systemPrompt,
     },
   };
 }
@@ -135,11 +130,9 @@ export class ClaudeAgentService {
   }
 
   async createAgentSession(session) {
-    const sessionState = await this._startAgentLoop(session)
+    const sessionState = await this._startAgentLoop(session);
 
-    await this.app
-      .service('sessions')
-      .patch(session.id, { status: 'running' });
+    await this.app.service('sessions').patch(session.id, { status: 'running' });
     return sessionState;
   }
 
@@ -262,7 +255,7 @@ export class ClaudeAgentService {
   async _startAgentLoop(sessionRow) {
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
-    
+
     const channel = createMessageChannel();
     const abortController = new AbortController();
 
@@ -298,7 +291,7 @@ export class ClaudeAgentService {
     if (sessionRow.claude_session_id) {
       sessionState.claudeSessionId = sessionRow.claude_session_id;
     }
-    
+
     this._activeSessions.set(sessionRow.id, sessionState);
 
     this.processMessages(sessionState).catch((err) => {
@@ -311,9 +304,12 @@ export class ClaudeAgentService {
   async resumeSession(session) {
     if (!session.claude_session_id) throw new Error('No Claude session to resume');
 
-    const sessionState = await this._startAgentLoop(session)
+    const sessionState = await this._startAgentLoop(session);
 
-    logger.info({ sessionId: session.id, claudeSessionId: session.claude_session_id }, 'Resumed session');
+    logger.info(
+      { sessionId: session.id, claudeSessionId: session.claude_session_id },
+      'Resumed session'
+    );
 
     return sessionState;
   }
@@ -371,7 +367,11 @@ export class ClaudeAgentService {
 
         // Edge: a task finished — remove it. If the main turn already ended and all tasks are
         // now done, the SDK will auto-continue so Claude can process the notification.
-        if (message.type === 'system' && message.subtype === 'task_notification' && !message.ambient) {
+        if (
+          message.type === 'system' &&
+          message.subtype === 'task_notification' &&
+          !message.ambient
+        ) {
           const isTerminal =
             message.status === 'completed' ||
             message.status === 'failed' ||

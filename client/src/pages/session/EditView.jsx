@@ -94,7 +94,10 @@ export default function EditView({ session }) {
           <input
             type="text"
             value={label}
-            onChange={(e) => { setLabel(e.target.value); setDirty(true); }}
+            onChange={(e) => {
+              setLabel(e.target.value);
+              setDirty(true);
+            }}
             placeholder="Session title / PR title"
             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
           />
@@ -104,7 +107,10 @@ export default function EditView({ session }) {
           <label className="block text-xs font-medium text-zinc-400">Description</label>
           <textarea
             value={description}
-            onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              setDirty(true);
+            }}
             placeholder="PR description (markdown supported)"
             rows={12}
             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-y font-mono"
@@ -121,9 +127,7 @@ export default function EditView({ session }) {
             <Save className="w-3.5 h-3.5" />
             {saving ? 'Saving…' : 'Save'}
           </button>
-          {dirty && (
-            <span className="text-xs text-zinc-500">Unsaved changes</span>
-          )}
+          {dirty && <span className="text-xs text-zinc-500">Unsaved changes</span>}
         </div>
 
         <div className="border-t border-zinc-800 pt-4">

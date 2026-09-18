@@ -91,7 +91,7 @@ export class Task {
   start() {
     if (this._started) return this;
     this._started = true;
-    
+
     (async () => {
       try {
         for (const depTask of this._dependsOn) {
@@ -116,7 +116,10 @@ export class Task {
 
         return this._startProcess();
       } catch (err) {
-        this.addLog('stderr', `\x1b[31m──── Failed to start task "${this.label}": ${err.message}\x1b[0m\n`);
+        this.addLog(
+          'stderr',
+          `\x1b[31m──── Failed to start task "${this.label}": ${err.message}\x1b[0m\n`
+        );
         this.exit(err.exitCode ?? 1);
         return this;
       }
@@ -136,7 +139,9 @@ export class Task {
     if (this.status === 'exited') {
       if (isPortDep || this.exit_code !== 0) {
         throw Object.assign(
-          new Error(`"${this.label ?? 'task'}" ${isPortDep ? 'exited before ports were ready' : `failed with exit code ${this.exit_code}`}`),
+          new Error(
+            `"${this.label ?? 'task'}" ${isPortDep ? 'exited before ports were ready' : `failed with exit code ${this.exit_code}`}`
+          ),
           { exitCode: this.exit_code }
         );
       }
@@ -147,7 +152,12 @@ export class Task {
       // Short-lived dep: wait for exit
       return new Promise((resolve, reject) => {
         this.onExit((_id, code) => {
-          if (code !== 0) reject(Object.assign(new Error(`"${this.label ?? 'task'}" failed with exit code ${code}`), { exitCode: code }));
+          if (code !== 0)
+            reject(
+              Object.assign(new Error(`"${this.label ?? 'task'}" failed with exit code ${code}`), {
+                exitCode: code,
+              })
+            );
           else resolve();
         });
       });
@@ -157,17 +167,23 @@ export class Task {
     const deadline = Date.now() + timeoutMs;
 
     let exitReject;
-    const exitPromise = new Promise((_, reject) => { exitReject = reject; });
-    const exitHandler = (_id, code) =>
-      exitReject(Object.assign(new Error(`"${this.label ?? 'task'}" exited before ports were ready`), { exitCode: code }));
-    this._exitListeners.push(exitHandler);
+    const exitPromise = new Promise((_, reject) => {
+      exitReject = reject;
+    });
+    const unsubExit = this.onExit((_id, code) =>
+      exitReject(
+        Object.assign(new Error(`"${this.label ?? 'task'}" exited before ports were ready`), {
+          exitCode: code,
+        })
+      )
+    );
 
     const pollPromise = (async () => {
       while (Date.now() < deadline) {
         const portValues = Object.values(this.ports);
         // Only check ports once they are allocated
         if (portValues.length === this._portEnvVars.length) {
-          const results = await Promise.all(portValues.map(isPortListening));  
+          const results = await Promise.all(portValues.map(isPortListening));
           if (results.every(Boolean)) return;
         }
         await new Promise((r) => setTimeout(r, pollMs));
@@ -178,8 +194,7 @@ export class Task {
     try {
       return await Promise.race([pollPromise, exitPromise]);
     } finally {
-      const idx = this._exitListeners.indexOf(exitHandler);
-      if (idx !== -1) this._exitListeners.splice(idx, 1);
+      unsubExit();
     }
   }
 
@@ -204,7 +219,12 @@ export class Task {
       await writeFile(scriptPath, `#!/bin/sh\nset -e\n${this.command}\n`, 'utf8');
     }
 
-    const spawnOpts = { cwd: this._cwd, env: fullEnv, stdio: ['pipe', 'pipe', 'pipe'], detached: true };
+    const spawnOpts = {
+      cwd: this._cwd,
+      env: fullEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    };
     const child = scriptPath
       ? spawn('sh', [scriptPath], spawnOpts)
       : spawn('sh', ['-c', this.command], spawnOpts);
@@ -255,7 +275,11 @@ export class Task {
       process.kill(-this.#process.pid, signal);
     } catch {
       // Fall back to killing just the process (e.g. if pgid no longer exists)
-      try { this.#process.kill(signal); } catch { /* already gone */ }
+      try {
+        this.#process.kill(signal);
+      } catch {
+        /* already gone */
+      }
     }
   }
 

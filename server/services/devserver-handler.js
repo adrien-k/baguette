@@ -1,5 +1,9 @@
 import { extractSessionIdFromHost, getServicePreviewHost } from './preview.js';
-import { loadBaguetteConfig, resolveWebserverConfig, resolveServicesConfig } from './baguette-config.js';
+import {
+  loadBaguetteConfig,
+  resolveWebserverConfig,
+  resolveServicesConfig,
+} from './baguette-config.js';
 
 export class DevserverHandler {
   startupTimeoutMs = 1 * 60 * 1000;
@@ -21,12 +25,18 @@ export class DevserverHandler {
   }
 
   async getSession() {
-    this._sessionPromise ??= this.app.get('db')('sessions').where({ short_id: this.shortId }).first().then((s) => s ?? null);
+    this._sessionPromise ??= this.app
+      .get('db')('sessions')
+      .where({ short_id: this.shortId })
+      .first()
+      .then((s) => s ?? null);
     return this._sessionPromise;
   }
 
   async _getConfig() {
-    this._configPromise ??= this.getSession().then((s) => s ? loadBaguetteConfig(s.worktree_path) : null);
+    this._configPromise ??= this.getSession().then((s) =>
+      s ? loadBaguetteConfig(s.worktree_path) : null
+    );
     return this._configPromise;
   }
 
@@ -65,7 +75,8 @@ export class DevserverHandler {
     const config = await this._getConfig();
     const effectiveServiceName = this.serviceName ?? 'default';
     const webserverConfig = this._resolveServiceConfig(config, effectiveServiceName);
-    if (!webserverConfig) throw new Error(`No webserver config for service "${effectiveServiceName}"`);
+    if (!webserverConfig)
+      throw new Error(`No webserver config for service "${effectiveServiceName}"`);
     const publicTask = await this.app.service('tasks').create(
       {
         session_id: session.id,

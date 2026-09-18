@@ -1,4 +1,9 @@
-import { loadBaguetteConfig, interpolateEnv, interpolateString, resolveServicesConfig } from './baguette-config.js';
+import {
+  loadBaguetteConfig,
+  interpolateEnv,
+  interpolateString,
+  resolveServicesConfig,
+} from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 
 const SERVER_ONLY_ENV_KEYS = [
@@ -29,7 +34,9 @@ async function buildInterpolateContext(db, sessionId) {
     if (baguetteConfig) {
       const servicesConfig = resolveServicesConfig(baguetteConfig);
       const servicesUriMap = servicesConfig
-        ? Object.fromEntries(servicesConfig.map((s) => [s.name, getServicePreviewHost(session.short_id, s.name)]))
+        ? Object.fromEntries(
+            servicesConfig.map((s) => [s.name, getServicePreviewHost(session.short_id, s.name)])
+          )
         : {};
       interpolateOpts = {
         shortId: session.short_id,
@@ -149,8 +156,6 @@ export async function getClaudeEnvForSession(app, sessionId) {
   const db = app.get('db');
   const session = await db('sessions').where({ id: sessionId }).first();
   if (!session) return buildClaudeEnvFromPlainUser(null, null);
-  const repo = session.repo_id
-    ? await db('repos').where({ id: session.repo_id }).first()
-    : null;
+  const repo = session.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
   return getClaudeEnv(app, session.user_id, repo?.full_name ?? null);
 }

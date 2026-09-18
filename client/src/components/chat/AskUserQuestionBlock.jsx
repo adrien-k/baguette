@@ -21,7 +21,8 @@ function buildAnswerMessage(questions, answers) {
 function isAnswerComplete(questions, answers) {
   return questions.every((q, i) => {
     const ans = answers[i];
-    if (q.multiSelect) return ans.selected.size > 0 && (!ans.selected.has('Other') || ans.otherText.trim());
+    if (q.multiSelect)
+      return ans.selected.size > 0 && (!ans.selected.has('Other') || ans.otherText.trim());
     return ans.selected && (ans.selected !== 'Other' || ans.otherText.trim());
   });
 }
@@ -84,53 +85,69 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
       <div className="px-3 sm:px-4 py-3 space-y-4">
         {questions.map((q, i) => {
           const ans = answers[i];
-          const allOptions = [...(q.options ?? []), { label: 'Other', description: 'Enter a custom answer' }];
+          const allOptions = [
+            ...(q.options ?? []),
+            { label: 'Other', description: 'Enter a custom answer' },
+          ];
           return (
             <div key={i}>
               <div className="text-sm font-medium text-white mb-2">{q.question}</div>
               <div className="space-y-1.5">
                 {allOptions.map((opt) => {
-                  const selected = q.multiSelect ? ans.selected.has(opt.label) : ans.selected === opt.label;
+                  const selected = q.multiSelect
+                    ? ans.selected.has(opt.label)
+                    : ans.selected === opt.label;
                   return (
                     <button
                       key={opt.label}
                       onClick={() => !hasResult && toggle(i, opt.label)}
                       disabled={hasResult || loading}
                       className={`w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors disabled:cursor-default ${
-                        selected ? 'bg-amber-500/20 border-amber-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500 disabled:hover:border-zinc-700'
+                        selected
+                          ? 'bg-amber-500/20 border-amber-500 text-white'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500 disabled:hover:border-zinc-700'
                       }`}
                     >
                       <div className="font-medium">{opt.label}</div>
-                      {opt.description && <div className="text-xs text-zinc-500 mt-0.5">{opt.description}</div>}
+                      {opt.description && (
+                        <div className="text-xs text-zinc-500 mt-0.5">{opt.description}</div>
+                      )}
                     </button>
                   );
                 })}
               </div>
-              {(q.multiSelect ? ans.selected.has('Other') : ans.selected === 'Other') && !hasResult && (
-                <input
-                  autoFocus
-                  type="text"
-                  value={ans.otherText}
-                  onChange={(e) => setAnswers((prev) => prev.map((a, idx) => idx === i ? { ...a, otherText: e.target.value } : a))}
-                  placeholder="Your answer…"
-                  className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-400"
-                />
-              )}
+              {(q.multiSelect ? ans.selected.has('Other') : ans.selected === 'Other') &&
+                !hasResult && (
+                  <input
+                    autoFocus
+                    type="text"
+                    value={ans.otherText}
+                    onChange={(e) =>
+                      setAnswers((prev) =>
+                        prev.map((a, idx) => (idx === i ? { ...a, otherText: e.target.value } : a))
+                      )
+                    }
+                    placeholder="Your answer…"
+                    className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-400"
+                  />
+                )}
             </div>
           );
         })}
       </div>
-      {!hasResult && (!questions.every((q) => !q.multiSelect) || answers.some((a) => a.selected === 'Other')) && (
-        <div className="px-3 sm:px-4 pb-3">
-          <button
-            onClick={() => submit()}
-            disabled={!isAnswerComplete(questions, answers) || loading}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 rounded-lg text-sm font-medium transition-colors"
-          >
-            Submit
-          </button>
-        </div>
-      )}
+      {!hasResult &&
+        (!questions.every((q) => !q.multiSelect) ||
+          answers.some((a) => a.selected === 'Other')) && (
+          <div className="px-3 sm:px-4 pb-3">
+            <button
+              onClick={() => submit()}
+              disabled={!isAnswerComplete(questions, answers) || loading}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 rounded-lg text-sm font-medium transition-colors"
+            >
+              Submit
+            </button>
+          </div>
+        )}
     </div>
   );
 }

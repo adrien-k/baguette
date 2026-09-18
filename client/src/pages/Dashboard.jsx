@@ -126,7 +126,9 @@ function UsageGraph({ repoFilter }) {
                 {hoveredDay.day}
                 {hasCursor && hoveredDay.claude > 0 && hoveredDay.cursor > 0 ? (
                   <>
-                    <span className="text-amber-500/80 ml-1.5">${hoveredDay.claude.toFixed(4)}</span>
+                    <span className="text-amber-500/80 ml-1.5">
+                      ${hoveredDay.claude.toFixed(4)}
+                    </span>
                     <span className="text-zinc-600 mx-1">+</span>
                     <span className="text-sky-500/80">${hoveredDay.cursor.toFixed(4)}</span>
                     <span className="text-zinc-500 ml-1">= ${hoveredDay.total.toFixed(4)}</span>
@@ -293,9 +295,7 @@ export default function Dashboard() {
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
-                <p className="text-sm font-medium text-zinc-100">
-                  Starting your agent session…
-                </p>
+                <p className="text-sm font-medium text-zinc-100">Starting your agent session…</p>
                 <p className="text-xs text-zinc-400">This usually only takes a few seconds.</p>
               </div>
             </div>

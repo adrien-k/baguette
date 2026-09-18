@@ -363,10 +363,24 @@ describe('ClaudeAgentService', (hooks) => {
       // Simulate: task_started registers the task, result arrives while it is still live,
       // then task_notification fires once the task finishes.
       const mockIterable = makeAsyncIterable([
-        { type: 'system', subtype: 'task_started', task_id: 'bg-1', task_type: 'local_bash', description: 'sub', is_backgrounded: true },
+        {
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'bg-1',
+          task_type: 'local_bash',
+          description: 'sub',
+          is_backgrounded: true,
+        },
         { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
         // task_notification arrives AFTER result — baguette must still be consuming the stream here
-        { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed', output_file: '', summary: 'done' },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bg-1',
+          status: 'completed',
+          output_file: '',
+          summary: 'done',
+        },
       ]);
 
       query.mockImplementation(() => mockIterable);
@@ -405,11 +419,28 @@ describe('ClaudeAgentService', (hooks) => {
       // Baguette must stay in the loop past the first result and the task_notification, then handle
       // the second result from Claude's response to the notification.
       const mockIterable = makeAsyncIterable([
-        { type: 'system', subtype: 'task_started', task_id: 'bg-2', task_type: 'local_agent', description: 'sub', is_backgrounded: true },
+        {
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'bg-2',
+          task_type: 'local_agent',
+          description: 'sub',
+          is_backgrounded: true,
+        },
         { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
-        { type: 'system', subtype: 'task_notification', task_id: 'bg-2', status: 'completed', output_file: '', summary: 'finished' },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bg-2',
+          status: 'completed',
+          output_file: '',
+          summary: 'finished',
+        },
         // SDK auto-continuation: Claude responds to the notification and produces a second result
-        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Task done.' }] } },
+        {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Task done.' }] },
+        },
         { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
       ]);
 
@@ -447,13 +478,39 @@ describe('ClaudeAgentService', (hooks) => {
       // Intermediate notifications (status !== 'completed'/'failed'/'error') must not trigger
       // awaitingAutoResume or a status: 'running' patch. Only the final 'completed' one should.
       const mockIterable = makeAsyncIterable([
-        { type: 'system', subtype: 'task_started', task_id: 'bg-3', task_type: 'local_agent', description: 'sub', is_backgrounded: true },
+        {
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'bg-3',
+          task_type: 'local_agent',
+          description: 'sub',
+          is_backgrounded: true,
+        },
         { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
         // Two intermediate notifications — must be persisted but must NOT trigger a restart
-        { type: 'system', subtype: 'task_notification', task_id: 'bg-3', status: 'running', summary: 'still going' },
-        { type: 'system', subtype: 'task_notification', task_id: 'bg-3', status: 'running', summary: 'still going 2' },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bg-3',
+          status: 'running',
+          summary: 'still going',
+        },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bg-3',
+          status: 'running',
+          summary: 'still going 2',
+        },
         // Final terminal notification — this one should trigger awaitingAutoResume
-        { type: 'system', subtype: 'task_notification', task_id: 'bg-3', status: 'completed', output_file: '', summary: 'done' },
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bg-3',
+          status: 'completed',
+          output_file: '',
+          summary: 'done',
+        },
         // SDK auto-continuation result
         { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
       ]);

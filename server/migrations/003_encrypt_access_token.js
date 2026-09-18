@@ -34,9 +34,7 @@ export async function down(knex) {
   }
 
   if (!(await knex.schema.hasColumn('users', 'access_token'))) {
-    await knex.raw(
-      "ALTER TABLE users ADD COLUMN access_token TEXT NOT NULL DEFAULT ''"
-    );
+    await knex.raw("ALTER TABLE users ADD COLUMN access_token TEXT NOT NULL DEFAULT ''");
   }
 
   const rows = await knex('users').select('id', 'access_token_encrypted');

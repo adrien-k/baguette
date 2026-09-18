@@ -56,7 +56,10 @@ export const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
-const TEST_DATA_DIR = path.join(os.tmpdir(), `baguette-test-${Math.random().toString(36).slice(2)}`);
+const TEST_DATA_DIR = path.join(
+  os.tmpdir(),
+  `baguette-test-${Math.random().toString(36).slice(2)}`
+);
 
 export const DATA_DIR = getDataDir();
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -94,14 +97,11 @@ if (!fs.existsSync(DOCKER_COMPOSE_PATH)) {
 function getDataDir() {
   const raw =
     process.env.DATA_DIR ??
-    (process.env.NODE_ENV === 'test'
-      ? TEST_DATA_DIR
-      : path.join(os.homedir(), '.baguette'));
+    (process.env.NODE_ENV === 'test' ? TEST_DATA_DIR : path.join(os.homedir(), '.baguette'));
   const resolved = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(rootDir, raw);
   logger.info({ path: resolved }, 'Using data directory');
   return resolved;
 }
-
 
 export const DEFAULT_PAGINATE = { default: 20, max: 100 };
 export const MESSAGES_PAGINATE = { default: 100, max: 200 };

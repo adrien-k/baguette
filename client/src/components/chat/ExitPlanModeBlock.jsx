@@ -75,27 +75,48 @@ export default function ExitPlanModeBlock({ block, sessionId, userReplied = fals
                 onChange={(e) => setFeedback(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleContinueSubmit();
-                  if (e.key === 'Escape') { setContinuePlanning(false); setFeedback(''); }
+                  if (e.key === 'Escape') {
+                    setContinuePlanning(false);
+                    setFeedback('');
+                  }
                 }}
                 placeholder="What should Claude refine? (optional)"
                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 text-zinc-100 rounded-lg text-sm resize-none focus:outline-none focus:border-zinc-400 placeholder-zinc-500"
                 rows={3}
               />
               <div className="flex gap-2">
-                <button onClick={handleContinueSubmit} disabled={loading} className="px-4 py-2 bg-zinc-600 hover:bg-zinc-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors">
+                <button
+                  onClick={handleContinueSubmit}
+                  disabled={loading}
+                  className="px-4 py-2 bg-zinc-600 hover:bg-zinc-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                >
                   Send feedback
                 </button>
-                <button onClick={() => { setContinuePlanning(false); setFeedback(''); }} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg text-sm font-medium transition-colors">
+                <button
+                  onClick={() => {
+                    setContinuePlanning(false);
+                    setFeedback('');
+                  }}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg text-sm font-medium transition-colors"
+                >
                   Cancel
                 </button>
               </div>
             </>
           ) : (
             <div className="flex gap-3">
-              <button onClick={handleRun} disabled={loading} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors">
+              <button
+                onClick={handleRun}
+                disabled={loading}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              >
                 Run
               </button>
-              <button onClick={() => setContinuePlanning(true)} disabled={loading} className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors">
+              <button
+                onClick={() => setContinuePlanning(true)}
+                disabled={loading}
+                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              >
                 Continue planning
               </button>
             </div>

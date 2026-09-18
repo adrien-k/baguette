@@ -61,7 +61,9 @@ export function getServicePreviewHost(shortId, serviceName) {
  * serviceName is null for the portal / single-service subdomain.
  */
 export function extractSessionIdFromHost(host) {
-  const match = host.match(new RegExp(`^${SESSION_PREFIX}([a-f0-9]{4,})(?:-([a-z0-9][a-z0-9-]*))?\\.`));
+  const match = host.match(
+    new RegExp(`^${SESSION_PREFIX}([a-f0-9]{4,})(?:-([a-z0-9][a-z0-9-]*))?\\.`)
+  );
   if (!match) return null;
   return { shortId: match[1], serviceName: match[2] ?? null };
 }

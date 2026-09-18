@@ -18,16 +18,19 @@ export function registerQueuedMessagesService(app, path = 'queued-messages') {
 
 async function validateSessionOwnership(context) {
   if (!context.data.session_id) throw new BadRequest('session_id is required');
-  await context.app
-    .service('sessions')
-    .get(context.data.session_id, { user: context.params.user });
+  await context.app.service('sessions').get(context.data.session_id, { user: context.params.user });
   return context;
 }
 
 const queuedMessagesHooks = {
   before: {
     all: [requireUser],
-    create: [disableExternal, only(['session_id', 'message_json']), validateSessionOwnership, scopeByUser],
+    create: [
+      disableExternal,
+      only(['session_id', 'message_json']),
+      validateSessionOwnership,
+      scopeByUser,
+    ],
     find: [scopeByUser],
     get: [scopeByUser],
     patch: [scopeByUser, only(['message_json'])],

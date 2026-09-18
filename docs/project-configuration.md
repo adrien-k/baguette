@@ -64,19 +64,19 @@ config:
 ```yaml
 config:
   session:
-    env:        # Key-value env vars injected into every task and Claude session
-    init:       # Multi-line script run once when a session starts
-    cleanup:    # Multi-line script run when a session is closed
-    tasks:      # Hash of named tasks (replaces legacy `commands` array)
+    env: # Key-value env vars injected into every task and Claude session
+    init: # Multi-line script run once when a session starts
+    cleanup: # Multi-line script run when a session is closed
+    tasks: # Hash of named tasks (replaces legacy `commands` array)
       <task-key>:
         run: <shell command>
-        ports: [ENV_VAR_NAME, ...]       # Optional: env vars assigned free ports
-        depends-on: [<other-task-key>]   # Optional: tasks to start first
+        ports: [ENV_VAR_NAME, ...] # Optional: env vars assigned free ports
+        depends-on: [<other-task-key>] # Optional: tasks to start first
   # Use one of webserver OR services — they are mutually exclusive.
   webserver:
-    task: <task-key>       # Reference a task from session.tasks
-    expose: ENV_VAR        # Which port env var users access in the browser
-  services:                # Multi-service: each gets its own subdomain
+    task: <task-key> # Reference a task from session.tasks
+    expose: ENV_VAR # Which port env var users access in the browser
+  services: # Multi-service: each gets its own subdomain
     <service-name>:
       task: <task-key>
       expose: ENV_VAR
@@ -90,12 +90,12 @@ Environment variables injected into all session tasks (init, cleanup, commands, 
 
 Supports placeholders:
 
-| Placeholder                                    | Description                                                        |
-| ---------------------------------------------- | ------------------------------------------------------------------ |
-| `${{ baguette.secrets.KEY }}`                  | Secret stored in Settings > Secrets                                |
-| `${{ baguette.session.short_id }}`             | Unique 4-character hex identifier for this session                 |
-| `${{ baguette.session.public_uri }}`           | Public URL of the webserver (or portal URL for multi-service)      |
-| `${{ baguette.services.<name>.public_uri }}`   | Public URL of a specific named service (multi-service only)        |
+| Placeholder                                  | Description                                                   |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `${{ baguette.secrets.KEY }}`                | Secret stored in Settings > Secrets                           |
+| `${{ baguette.session.short_id }}`           | Unique 4-character hex identifier for this session            |
+| `${{ baguette.session.public_uri }}`         | Public URL of the webserver (or portal URL for multi-service) |
+| `${{ baguette.services.<name>.public_uri }}` | Public URL of a specific named service (multi-service only)   |
 
 ### `init`
 
@@ -130,11 +130,11 @@ tasks:
 
 #### Task fields
 
-| Field        | Type       | Description                                                                                      |
-| ------------ | ---------- | ------------------------------------------------------------------------------------------------ |
-| `run`        | string     | Shell command to execute                                                                         |
-| `ports`      | string[]   | Env var names that Baguette assigns free ports to before launching                               |
-| `depends-on` | string[]   | Task keys that must be running and listening before this task starts                              |
+| Field        | Type     | Description                                                          |
+| ------------ | -------- | -------------------------------------------------------------------- |
+| `run`        | string   | Shell command to execute                                             |
+| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching   |
+| `depends-on` | string[] | Task keys that must be running and listening before this task starts |
 
 #### Ports
 
@@ -266,13 +266,13 @@ Baguette polls all allocated ports until they are listening on 127.0.0.1 before 
 
 Baguette exposes these MCP tools for task management:
 
-| Tool                  | Description                                         |
-| --------------------- | --------------------------------------------------- |
-| `ListProjectCommands` | List all available tasks from `.baguette.yaml`      |
-| `RunProjectCommand`   | Run a task by label, with optional args             |
-| `ListRunningTasks`    | List currently running tasks with ports              |
-| `KillTask`            | Kill a running task by ID                            |
-| `ReadTaskOutput`      | Read log output of a task (supports offset/limit)   |
+| Tool                  | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `ListProjectCommands` | List all available tasks from `.baguette.yaml`    |
+| `RunProjectCommand`   | Run a task by label, with optional args           |
+| `ListRunningTasks`    | List currently running tasks with ports           |
+| `KillTask`            | Kill a running task by ID                         |
+| `ReadTaskOutput`      | Read log output of a task (supports offset/limit) |
 
 ## Examples
 

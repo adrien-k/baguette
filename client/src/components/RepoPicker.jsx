@@ -21,7 +21,11 @@ export default function RepoPicker({ className = '' }) {
   }, [open]);
 
   const isAllSessions = selectedRepo === ALL_REPOS;
-  const label = isAllSessions ? 'All sessions' : selectedRepo ? repoDisplayName(selectedRepo) : 'Select repo';
+  const label = isAllSessions
+    ? 'All sessions'
+    : selectedRepo
+      ? repoDisplayName(selectedRepo)
+      : 'Select repo';
 
   return (
     <div className={`relative ${className}`} ref={ref}>
@@ -29,7 +33,11 @@ export default function RepoPicker({ className = '' }) {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-200 hover:text-white shadow-sm"
       >
-        {isAllSessions ? <Layers className="w-4 h-4 shrink-0" /> : <GithubIcon className="w-4 h-4 shrink-0" />}
+        {isAllSessions ? (
+          <Layers className="w-4 h-4 shrink-0" />
+        ) : (
+          <GithubIcon className="w-4 h-4 shrink-0" />
+        )}
         <span className="max-w-32 truncate">{label}</span>
         <ChevronDown className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
       </button>

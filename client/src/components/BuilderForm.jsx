@@ -17,7 +17,7 @@ function applyParamOverrides(params, fast, effort) {
   if (fast !== 'default') overrides.set('fast', fast === 'yes' ? 'true' : 'false');
   if (effort !== 'default') overrides.set('effort', effort);
   // Only update params that already exist in the variant — never inject new ones
-  return params.map((p) => overrides.has(p.id) ? { ...p, value: overrides.get(p.id) } : p);
+  return params.map((p) => (overrides.has(p.id) ? { ...p, value: overrides.get(p.id) } : p));
 }
 
 function parseRepoFullName(full) {
@@ -99,7 +99,9 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     setRefreshingModels(true);
     return apiFetch(url, force ? { method: 'POST' } : undefined)
       .then((d) => setModels(d.models || []))
-      .catch((err) => { if (force) toastError('Failed to refresh models', err); })
+      .catch((err) => {
+        if (force) toastError('Failed to refresh models', err);
+      })
       .finally(() => setRefreshingModels(false));
   };
 
@@ -128,21 +130,36 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
         const variants = selectedModel?.variants ?? [];
         // Step A: find variant from last session, or model's default
         let latestOrDefaultVariantIdx = variants.findIndex((v) => {
-          try { return JSON.stringify(v.params) === pending; } catch { return false; }
+          try {
+            return JSON.stringify(v.params) === pending;
+          } catch {
+            return false;
+          }
         });
         if (latestOrDefaultVariantIdx < 0) {
           const di = variants.findIndex((v) => v.is_default);
-          latestOrDefaultVariantIdx = di >= 0 ? di : (variants.length > 0 ? 0 : -1);
+          latestOrDefaultVariantIdx = di >= 0 ? di : variants.length > 0 ? 0 : -1;
         }
         // Apply fast/effort overrides and find matching variant
-        const latestOrDefaultVariant = latestOrDefaultVariantIdx >= 0 ? variants[latestOrDefaultVariantIdx] : null;
+        const latestOrDefaultVariant =
+          latestOrDefaultVariantIdx >= 0 ? variants[latestOrDefaultVariantIdx] : null;
         if (latestOrDefaultVariant) {
-          const mergedParams = applyParamOverrides(latestOrDefaultVariant.params || [], cursorFast, cursorEffort);
+          const mergedParams = applyParamOverrides(
+            latestOrDefaultVariant.params || [],
+            cursorFast,
+            cursorEffort
+          );
           const mergedStr = JSON.stringify(mergedParams);
           const withPreferenceVariantIdx = variants.findIndex((v) => {
-            try { return JSON.stringify(v.params) === mergedStr; } catch { return false; }
+            try {
+              return JSON.stringify(v.params) === mergedStr;
+            } catch {
+              return false;
+            }
           });
-          setCursorVariantIdx(withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx);
+          setCursorVariantIdx(
+            withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx
+          );
         } else {
           setCursorVariantIdx(null);
         }
@@ -156,20 +173,34 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   // Set default cursor variant when model or models change (only if not already set)
   // Applies fast/effort overrides: finds latestOrDefault, then withPreference if a match exists
   useEffect(() => {
-    if (!isCursor) { setCursorVariantIdx(null); return; }
+    if (!isCursor) {
+      setCursorVariantIdx(null);
+      return;
+    }
     const m = models.find((m) => m.id === model);
     const variants = m?.variants ?? [];
-    if (variants.length === 0) { setCursorVariantIdx(null); return; }
+    if (variants.length === 0) {
+      setCursorVariantIdx(null);
+      return;
+    }
     setCursorVariantIdx((prev) => {
       if (prev != null && prev < variants.length) return prev;
       const defaultIdx = variants.findIndex((v) => v.is_default);
       const latestOrDefaultVariantIdx = defaultIdx >= 0 ? defaultIdx : 0;
       const latestOrDefaultVariant = variants[latestOrDefaultVariantIdx];
       if (latestOrDefaultVariant) {
-        const mergedParams = applyParamOverrides(latestOrDefaultVariant.params || [], cursorFast, cursorEffort);
+        const mergedParams = applyParamOverrides(
+          latestOrDefaultVariant.params || [],
+          cursorFast,
+          cursorEffort
+        );
         const mergedStr = JSON.stringify(mergedParams);
         const withPreferenceVariantIdx = variants.findIndex((v) => {
-          try { return JSON.stringify(v.params) === mergedStr; } catch { return false; }
+          try {
+            return JSON.stringify(v.params) === mergedStr;
+          } catch {
+            return false;
+          }
         });
         return withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx;
       }
@@ -235,10 +266,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       permissionMode: 'bypassPermissions',
       planMode,
       model: model || undefined,
-      modelParams:
-        isCursor && finalParams?.length
-          ? JSON.stringify(finalParams)
-          : undefined,
+      modelParams: isCursor && finalParams?.length ? JSON.stringify(finalParams) : undefined,
       createNewBranch,
       branchName: branchName || undefined,
       autoPush,
@@ -289,7 +317,11 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     const mergedParams = applyParamOverrides(baseParams, newFast, newEffort);
     const mergedStr = JSON.stringify(mergedParams);
     const withPreferenceVariantIdx = variants.findIndex((v) => {
-      try { return JSON.stringify(v.params) === mergedStr; } catch { return false; }
+      try {
+        return JSON.stringify(v.params) === mergedStr;
+      } catch {
+        return false;
+      }
     });
     if (withPreferenceVariantIdx >= 0) setCursorVariantIdx(withPreferenceVariantIdx);
   };
@@ -382,7 +414,9 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
               <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-zinc-300 mb-1">
                   Branch name{' '}
-                  <span className="text-zinc-500 font-normal">(optional, auto-generated if empty)</span>
+                  <span className="text-zinc-500 font-normal">
+                    (optional, auto-generated if empty)
+                  </span>
                 </label>
                 <input
                   type="text"
@@ -486,7 +520,11 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
             <div className="flex items-center gap-1">
               <select
                 value={model}
-                onChange={(e) => { setModel(e.target.value); setCursorVariantIdx(null); setVariantExpanded(false); }}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setCursorVariantIdx(null);
+                  setVariantExpanded(false);
+                }}
                 className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               >
                 {models.length === 0 && <option value="">Loading…</option>}
@@ -515,7 +553,10 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                 {variants.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => { setVariantExpanded((v) => !v); setPrefsExpanded(false); }}
+                    onClick={() => {
+                      setVariantExpanded((v) => !v);
+                      setPrefsExpanded(false);
+                    }}
                     className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
                   >
                     <span>
@@ -525,23 +566,40 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                     </span>
                     <svg
                       className={`w-2.5 h-2.5 transition-transform ${variantExpanded ? 'rotate-180' : ''}`}
-                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
                   </button>
                 )}
                 <button
                   type="button"
-                  onClick={() => { setPrefsExpanded((v) => !v); setVariantExpanded(false); }}
+                  onClick={() => {
+                    setPrefsExpanded((v) => !v);
+                    setVariantExpanded(false);
+                  }}
                   className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
                 >
                   <span>preferences</span>
                   <svg
                     className={`w-2.5 h-2.5 transition-transform ${prefsExpanded ? 'rotate-180' : ''}`}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
                   </svg>
                 </button>
               </div>
@@ -551,7 +609,10 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                     <button
                       key={i}
                       type="button"
-                      onClick={() => { setCursorVariantIdx(i); setVariantExpanded(false); }}
+                      onClick={() => {
+                        setCursorVariantIdx(i);
+                        setVariantExpanded(false);
+                      }}
                       className={`px-2.5 py-1 rounded text-xs transition-colors border ${
                         cursorVariantIdx === i
                           ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
@@ -572,7 +633,10 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                       <button
                         key={val}
                         type="button"
-                        onClick={() => { setCursorFast(val); retryVariantWithPreference(val, cursorEffort); }}
+                        onClick={() => {
+                          setCursorFast(val);
+                          retryVariantWithPreference(val, cursorEffort);
+                        }}
                         className={`px-2.5 py-1 rounded text-xs transition-colors border ${
                           cursorFast === val
                             ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
@@ -589,7 +653,10 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
                       <button
                         key={val}
                         type="button"
-                        onClick={() => { setCursorEffort(val); retryVariantWithPreference(cursorFast, val); }}
+                        onClick={() => {
+                          setCursorEffort(val);
+                          retryVariantWithPreference(cursorFast, val);
+                        }}
                         className={`px-2.5 py-1 rounded text-xs transition-colors border ${
                           cursorEffort === val
                             ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'

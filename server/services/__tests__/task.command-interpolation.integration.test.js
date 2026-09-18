@@ -47,14 +47,20 @@ function buildMockApp(service) {
     archived_at: null,
     short_id: 'tst',
   };
-  const interpolateOpts = { shortId: 'tst', secrets: TEST_SECRETS, publicUri: 'http://tst.localhost', servicesUriMap: {} };
+  const interpolateOpts = {
+    shortId: 'tst',
+    secrets: TEST_SECRETS,
+    publicUri: 'http://tst.localhost',
+    servicesUriMap: {},
+  };
   return {
     service: (name) => {
       if (name === 'sessions') {
         return {
           get: async () => sessionRow,
           getTaskEnv: async () => ({ ...process.env }),
-          getInterpolatedCommand: async (_sessionId, command) => interpolateString(command, interpolateOpts),
+          getInterpolatedCommand: async (_sessionId, command) =>
+            interpolateString(command, interpolateOpts),
         };
       }
       if (name === 'tasks') return service;
@@ -76,57 +82,49 @@ describe('task command interpolation (integration)', () => {
     await service.killAllTasks();
   });
 
-  it(
-    'substitutes ${{ baguette.secrets.* }} placeholders in the command before spawning',
-    async () => {
-      service.app = buildMockApp(service);
+  it('substitutes ${{ baguette.secrets.* }} placeholders in the command before spawning', async () => {
+    service.app = buildMockApp(service);
 
-      // Shell-inline env vars: one unquoted, one double-quoted.
-      // After interpolation the shell sees:
-      //   NO_QUOTE=plain_value QUOTE="value with spaces" env
-      const pub = await service.create(
-        {
-          session_id: 1,
-          command:
-            'NO_QUOTE=${{ baguette.secrets.NO_QUOTE }} QUOTE="${{ baguette.secrets.QUOTE }}" env',
-          label: 'secret-interp',
-        },
-        { user: { id: 1 } }
-      );
+    // Shell-inline env vars: one unquoted, one double-quoted.
+    // After interpolation the shell sees:
+    //   NO_QUOTE=plain_value QUOTE="value with spaces" env
+    const pub = await service.create(
+      {
+        session_id: 1,
+        command:
+          'NO_QUOTE=${{ baguette.secrets.NO_QUOTE }} QUOTE="${{ baguette.secrets.QUOTE }}" env',
+        label: 'secret-interp',
+      },
+      { user: { id: 1 } }
+    );
 
-      await waitFor(() => service.getTask(pub.id)?.status === 'exited', {
-        timeoutMs: 10_000,
-        msg: () => service.getTask(pub.id)?.getLogs(),
-      });
+    await waitFor(() => service.getTask(pub.id)?.status === 'exited', {
+      timeoutMs: 10_000,
+      msg: () => service.getTask(pub.id)?.getLogs(),
+    });
 
-      const task = service.getTask(pub.id);
-      expect(task.exit_code).toBe(0);
-      expect(task.getLogs()).toContain('NO_QUOTE=plain_value');
-      expect(task.getLogs()).toContain('QUOTE=value with spaces');
-    },
-    15_000
-  );
+    const task = service.getTask(pub.id);
+    expect(task.exit_code).toBe(0);
+    expect(task.getLogs()).toContain('NO_QUOTE=plain_value');
+    expect(task.getLogs()).toContain('QUOTE=value with spaces');
+  }, 15_000);
 
-  it(
-    'leaves the command unchanged when no ${{ }} placeholders are present',
-    async () => {
-      service.app = buildMockApp(service);
+  it('leaves the command unchanged when no ${{ }} placeholders are present', async () => {
+    service.app = buildMockApp(service);
 
-      const pub = await service.create(
-        {
-          session_id: 1,
-          command: 'echo hello',
-          label: 'no-placeholders',
-        },
-        { user: { id: 1 } }
-      );
+    const pub = await service.create(
+      {
+        session_id: 1,
+        command: 'echo hello',
+        label: 'no-placeholders',
+      },
+      { user: { id: 1 } }
+    );
 
-      await waitFor(() => service.getTask(pub.id)?.status === 'exited', { timeoutMs: 10_000 });
+    await waitFor(() => service.getTask(pub.id)?.status === 'exited', { timeoutMs: 10_000 });
 
-      const task = service.getTask(pub.id);
-      expect(task.exit_code).toBe(0);
-      expect(task.getLogs()).toContain('hello');
-    },
-    10_000
-  );
+    const task = service.getTask(pub.id);
+    expect(task.exit_code).toBe(0);
+    expect(task.getLogs()).toContain('hello');
+  }, 10_000);
 });

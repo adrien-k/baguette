@@ -47,82 +47,91 @@ export function SessionsProvider({ children }) {
     [sessionPath]
   );
 
-  const notifyCompleted = useCallback((session) => {
-    if (isCurrentSession(session)) return;
-    const label = session.label || `Session #${session.id}`;
-    toast.custom(
-      (t) => (
-        <div
-          className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
-        >
-          <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-medium truncate">{label}</p>
-            <p className="text-zinc-400 text-xs">Session completed</p>
+  const notifyCompleted = useCallback(
+    (session) => {
+      if (isCurrentSession(session)) return;
+      const label = session.label || `Session #${session.id}`;
+      toast.custom(
+        (t) => (
+          <div
+            className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
+          >
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-medium truncate">{label}</p>
+              <p className="text-zinc-400 text-xs">Session completed</p>
+            </div>
+            <Link
+              to={sessionPath(session)}
+              onClick={() => toast.dismiss(t.id)}
+              className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
+            >
+              View
+            </Link>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <Link
-            to={sessionPath(session)}
-            onClick={() => toast.dismiss(t.id)}
-            className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
-          >
-            View
-          </Link>
-          <button
-            onClick={() => toast.dismiss(t.id)}
-            className="text-zinc-500 hover:text-zinc-300 shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-      { duration: 8000 }
-    );
+        ),
+        { duration: 8000 }
+      );
 
-    if (isTabHidden()) {
-      showBrowserNotification('Session completed', label, `session-completed-${session.id}`, () => {
-        window.focus();
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionPath]);
+      if (isTabHidden()) {
+        showBrowserNotification(
+          'Session completed',
+          label,
+          `session-completed-${session.id}`,
+          () => {
+            window.focus();
+          }
+        );
+      }
+    },
+    [sessionPath]
+  );
 
-  const notifyFailed = useCallback((session) => {
-    if (isCurrentSession(session)) return;
-    const label = session.label || `Session #${session.id}`;
-    toast.custom(
-      (t) => (
-        <div
-          className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
-        >
-          <XCircle className="w-5 h-5 text-red-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-medium truncate">{label}</p>
-            <p className="text-zinc-400 text-xs">Session failed</p>
+  const notifyFailed = useCallback(
+    (session) => {
+      if (isCurrentSession(session)) return;
+      const label = session.label || `Session #${session.id}`;
+      toast.custom(
+        (t) => (
+          <div
+            className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
+          >
+            <XCircle className="w-5 h-5 text-red-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-medium truncate">{label}</p>
+              <p className="text-zinc-400 text-xs">Session failed</p>
+            </div>
+            <Link
+              to={sessionPath(session)}
+              onClick={() => toast.dismiss(t.id)}
+              className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
+            >
+              View
+            </Link>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <Link
-            to={sessionPath(session)}
-            onClick={() => toast.dismiss(t.id)}
-            className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
-          >
-            View
-          </Link>
-          <button
-            onClick={() => toast.dismiss(t.id)}
-            className="text-zinc-500 hover:text-zinc-300 shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-      { duration: 8000 }
-    );
-    if (isTabHidden()) {
-      showBrowserNotification('Session failed', label, `session-failed-${session.id}`, () => {
-        window.focus();
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionPath]);
+        ),
+        { duration: 8000 }
+      );
+      if (isTabHidden()) {
+        showBrowserNotification('Session failed', label, `session-failed-${session.id}`, () => {
+          window.focus();
+        });
+      }
+    },
+    [sessionPath]
+  );
 
   // Listen for status transitions
   useEffect(() => {

@@ -228,13 +228,13 @@ function LogMessage({ msg }) {
   const labelColor =
     type === 'system' && msg.subtype === 'prompt'
       ? 'text-zinc-500'
-      : ({
+      : {
           user: 'text-sky-400',
           assistant: 'text-amber-400',
           result: msg.subtype === 'success' ? 'text-emerald-400' : 'text-red-400',
           system: 'text-zinc-400',
           tool_progress: 'text-zinc-500',
-        }[type] || 'text-zinc-400');
+        }[type] || 'text-zinc-400';
 
   const summary = getMessageSummary(msg);
 

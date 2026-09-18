@@ -200,7 +200,9 @@ export async function ensureBareClone(repo, token) {
   if (await lfsAvailable()) {
     try {
       await gitWithToken(token, ['lfs', 'fetch', '--all'], { cwd: barePath, stdio: 'pipe' });
-    } catch { /* repo may not use LFS */ }
+    } catch {
+      /* repo may not use LFS */
+    }
   }
   return barePath;
 }
@@ -262,18 +264,31 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
     });
   } catch (err) {
     const msg = err?.stderr?.toString() ?? err?.message ?? '';
-    const isNoRemote = msg.includes("No such remote") || msg.includes("does not appear to be a git repository");
+    const isNoRemote =
+      msg.includes('No such remote') || msg.includes('does not appear to be a git repository');
     if (!isNoRemote) throw err;
     // Local repo with no origin — use existing local branch ref as-is
   }
   // Sync the local branch ref to the fetched commit so new worktrees start from the latest
   // remote commit rather than the stale commit from when the bare clone was created.
   try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', tempRef], { cwd: barePath, stdio: 'pipe' });
-    await execFileAsync('git', ['update-ref', `refs/heads/${branch}`, stdout.trim()], { cwd: barePath, stdio: 'pipe' });
-  } catch { /* fall back to existing local ref */ }
+    const { stdout } = await execFileAsync('git', ['rev-parse', tempRef], {
+      cwd: barePath,
+      stdio: 'pipe',
+    });
+    await execFileAsync('git', ['update-ref', `refs/heads/${branch}`, stdout.trim()], {
+      cwd: barePath,
+      stdio: 'pipe',
+    });
+  } catch {
+    /* fall back to existing local ref */
+  }
   // Clean up temp ref (best-effort)
-  try { await execFileAsync('git', ['update-ref', '-d', tempRef], { cwd: barePath, stdio: 'pipe' }); } catch { /* ignore */ }
+  try {
+    await execFileAsync('git', ['update-ref', '-d', tempRef], { cwd: barePath, stdio: 'pipe' });
+  } catch {
+    /* ignore */
+  }
 
   // Also fetch the base branch so origin/<baseBranch> is up to date for merge-base diffs
   if (baseBranch && baseBranch !== branch) {
@@ -283,13 +298,20 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
         ['fetch', 'origin', `+${baseBranch}:refs/remotes/origin/${baseBranch}`],
         { cwd: barePath, stdio: 'pipe' }
       );
-    } catch { /* local repo with no remote — skip */ }
+    } catch {
+      /* local repo with no remote — skip */
+    }
   }
 
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'fetch', 'origin', branch], { cwd: barePath, stdio: 'pipe' });
-    } catch { /* repo may not use LFS */ }
+      await gitWithToken(token, ['lfs', 'fetch', 'origin', branch], {
+        cwd: barePath,
+        stdio: 'pipe',
+      });
+    } catch {
+      /* repo may not use LFS */
+    }
   }
 
   try {
@@ -307,7 +329,9 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   if (await lfsAvailable()) {
     try {
       await execFileAsync('git', ['lfs', 'checkout'], { cwd: worktreePath, stdio: 'pipe' });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   return { worktreePath };
@@ -325,7 +349,9 @@ export async function configureWorktreeGitIdentity(worktreePath, user) {
       ? `${user.github_id}+${user.username}@users.noreply.github.com`
       : 'baguette@users.noreply.github.com');
   await execFileAsync('git', ['-C', worktreePath, 'config', 'user.name', name], { stdio: 'pipe' });
-  await execFileAsync('git', ['-C', worktreePath, 'config', 'user.email', email], { stdio: 'pipe' });
+  await execFileAsync('git', ['-C', worktreePath, 'config', 'user.email', email], {
+    stdio: 'pipe',
+  });
 }
 
 export async function removeWorktree(session, repo) {
@@ -454,7 +480,9 @@ export async function gitPull(worktreePath, remoteBranch, token) {
   if (await lfsAvailable()) {
     try {
       await gitWithToken(token, ['lfs', 'pull'], { cwd: worktreePath, stdio: 'pipe' });
-    } catch { /* repo may not use LFS */ }
+    } catch {
+      /* repo may not use LFS */
+    }
   }
   return { ok: true };
 }
@@ -474,10 +502,16 @@ export async function gitFetch(worktreePath, token, branch) {
  * Push the current HEAD to origin and return the branch name.
  * Throws with a `rejected` property if the push is rejected.
  */
-export async function gitPush(worktreePath, token, { branch, force = false, forceOverwrite = false } = {}) {
-  const targetBranch = branch ?? (
-    await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath })
-  ).stdout.trim();
+export async function gitPush(
+  worktreePath,
+  token,
+  { branch, force = false, forceOverwrite = false } = {}
+) {
+  const targetBranch =
+    branch ??
+    (
+      await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath })
+    ).stdout.trim();
 
   const pushArgs = ['push', '--set-upstream'];
   if (forceOverwrite) pushArgs.push('--force');
@@ -492,11 +526,12 @@ export async function gitPush(worktreePath, token, { branch, force = false, forc
   } catch (pushErr) {
     const stderr = pushErr.stderr?.toString() ?? '';
     if (stderr.includes('[rejected]') || stderr.includes('Updates were rejected')) {
-      const guidance = force || forceOverwrite
-        ? 'Force push rejected: the remote ref has been updated since your last fetch. ' +
-          'Call GitFetch to update your tracking refs, then try GitPush with force again.'
-        : 'Push rejected: the remote has changes not present locally. ' +
-          'Call GitPull to pull the latest changes, resolve any conflicts, then call GitPush again.';
+      const guidance =
+        force || forceOverwrite
+          ? 'Force push rejected: the remote ref has been updated since your last fetch. ' +
+            'Call GitFetch to update your tracking refs, then try GitPush with force again.'
+          : 'Push rejected: the remote has changes not present locally. ' +
+            'Call GitPull to pull the latest changes, resolve any conflicts, then call GitPush again.';
       const err = new Error(`${guidance}\n\nOriginal error:\n${stderr.trim()}`);
       err.rejected = true;
       throw err;
@@ -562,7 +597,8 @@ export async function gitLocalAndRemoteSha(worktreePath, remoteBranch = null) {
   ]);
   return {
     localSha: localResult.status === 'fulfilled' ? localResult.value.stdout.trim() || null : null,
-    remoteSha: remoteResult.status === 'fulfilled' ? remoteResult.value.stdout.trim() || null : null,
+    remoteSha:
+      remoteResult.status === 'fulfilled' ? remoteResult.value.stdout.trim() || null : null,
   };
 }
 
@@ -1070,7 +1106,11 @@ const GH_HEADERS = (token) => ({
   'User-Agent': 'baguette-app',
 });
 
-export async function listRepoPRs(token, repoFullName, { state = 'open', author, label, base, text } = {}) {
+export async function listRepoPRs(
+  token,
+  repoFullName,
+  { state = 'open', author, label, base, text } = {}
+) {
   const headers = GH_HEADERS(token);
 
   if (author || label || text) {
@@ -1098,10 +1138,9 @@ export async function listRepoPRs(token, repoFullName, { state = 'open', author,
 
   const params = new URLSearchParams({ state, sort: 'updated', per_page: '50' });
   if (base) params.set('base', base);
-  const res = await fetch(
-    `https://api.github.com/repos/${repoFullName}/pulls?${params}`,
-    { headers }
-  );
+  const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls?${params}`, {
+    headers,
+  });
   if (!res.ok) throw new Error(`GitHub API error: ${await res.text()}`);
   const prs = await res.json();
   return prs.map((pr) => ({
@@ -1131,10 +1170,9 @@ export async function addLabelsToPR(token, repoFullName, prNumber, labels) {
 
 export async function listRepoTags(token, repoFullName) {
   const headers = GH_HEADERS(token);
-  const res = await fetch(
-    `https://api.github.com/repos/${repoFullName}/tags?per_page=50`,
-    { headers }
-  );
+  const res = await fetch(`https://api.github.com/repos/${repoFullName}/tags?per_page=50`, {
+    headers,
+  });
   if (!res.ok) throw new Error(`GitHub API error: ${await res.text()}`);
   const tags = await res.json();
   return tags.map((t) => ({ name: t.name, sha: t.commit?.sha }));

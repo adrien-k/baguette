@@ -20,15 +20,18 @@ function RepoSearchInput({ value, onSelect, addedNames, trailing }) {
     addedNamesRef.current = addedNames;
   }, [addedNames]);
 
-  const getRepoOptions = useCallback(async (query) => {
-    try {
-      const res = await reposService.findRemote({ org: selectedOrg, query });
-      return res.repos.filter((r) => !addedNamesRef.current.has(r.full_name));
-    } catch (err) {
-      toastError('Failed to load repositories', err);
-      return [];
-    }
-  }, [selectedOrg]);
+  const getRepoOptions = useCallback(
+    async (query) => {
+      try {
+        const res = await reposService.findRemote({ org: selectedOrg, query });
+        return res.repos.filter((r) => !addedNamesRef.current.has(r.full_name));
+      } catch (err) {
+        toastError('Failed to load repositories', err);
+        return [];
+      }
+    },
+    [selectedOrg]
+  );
 
   useEffect(() => {
     reposService
@@ -111,10 +114,10 @@ function RepoSearchInput({ value, onSelect, addedNames, trailing }) {
         </div>
       </div>
       <p className="text-xs text-zinc-500 mt-2 max-w-xl leading-relaxed">
-        Lists up to <span className="text-zinc-400">20</span> repos per load. Empty field shows the 20
-        most recently updated you can access; type a fragment of{' '}
-        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list. Personal
-        is owner and direct collaborator repos only.
+        Lists up to <span className="text-zinc-400">20</span> repos per load. Empty field shows the
+        20 most recently updated you can access; type a fragment of{' '}
+        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list.
+        Personal is owner and direct collaborator repos only.
       </p>
     </div>
   );
@@ -220,7 +223,10 @@ function RepositoriesTab({ settings, onSave }) {
       setRepoKeyValue(null);
       setRepoKeyDirty(false);
     } catch (err) {
-      toastError(`Failed to save ${repoKeyField === 'anthropic' ? 'Anthropic' : 'Cursor'} Key`, err);
+      toastError(
+        `Failed to save ${repoKeyField === 'anthropic' ? 'Anthropic' : 'Cursor'} Key`,
+        err
+      );
     } finally {
       setRepoKeySaving(false);
     }
@@ -489,13 +495,19 @@ function RepositoriesTab({ settings, onSave }) {
                 <div className="flex items-center justify-between px-4 py-3 gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <code className="text-sm text-white font-medium">{repoDisplayName(r.full_name)}</code>
+                      <code className="text-sm text-white font-medium">
+                        {repoDisplayName(r.full_name)}
+                      </code>
                       {isLocalRepo(r.full_name) && (
-                        <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">local</span>
+                        <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">
+                          local
+                        </span>
                       )}
                     </div>
                     {r.full_name.startsWith('/') && (
-                      <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">{r.full_name}</div>
+                      <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">
+                        {r.full_name}
+                      </div>
                     )}
                     <div className="text-xs text-zinc-500 mt-0.5">
                       {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}

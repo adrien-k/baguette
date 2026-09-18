@@ -310,10 +310,14 @@ class ReposService extends KnexService {
       const db = this.options.Model;
       const repo = await db('repos').where({ full_name: fullName }).whereNull('deleted_at').first();
       if (repo?.bare_path) {
-        const { stdout } = await execFileAsync('git', ['branch', '--list', '--format=%(refname:short)'], {
-          cwd: repo.bare_path,
-          stdio: 'pipe',
-        });
+        const { stdout } = await execFileAsync(
+          'git',
+          ['branch', '--list', '--format=%(refname:short)'],
+          {
+            cwd: repo.bare_path,
+            stdio: 'pipe',
+          }
+        );
         return { branches: stdout.split('\n').filter(Boolean) };
       }
       return { branches: [] };
@@ -331,7 +335,8 @@ class ReposService extends KnexService {
    */
   async createLocal(data, params) {
     const { name, localPath } = data;
-    if (!name && !localPath) throw new Error('Provide either name (new repo) or localPath (import)');
+    if (!name && !localPath)
+      throw new Error('Provide either name (new repo) or localPath (import)');
 
     const fullName = localPath ?? name;
     if (!localPath && name.includes('/')) throw new Error('Repo name must not contain "/"');

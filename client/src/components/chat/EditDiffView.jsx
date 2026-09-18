@@ -99,11 +99,7 @@ export default function EditDiffView({
 
   if (collapsed) {
     return useCursorDiff ? (
-      <DiffStringView
-        diffString={cursorDiff.diffString}
-        maxLines={7}
-        onExpand={onExpand}
-      />
+      <DiffStringView diffString={cursorDiff.diffString} maxLines={7} onExpand={onExpand} />
     ) : (
       <EditDiffPreview
         oldString={oldString ?? ''}

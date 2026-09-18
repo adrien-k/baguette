@@ -561,9 +561,7 @@ describe('Sessions service - find, get, create', (hooks) => {
     });
 
     it('skips PR status refresh when pr_status is already merged', async () => {
-      await db('sessions')
-        .where({ id: sessId1 })
-        .update({ pr_number: 7, pr_status: 'merged' });
+      await db('sessions').where({ id: sessId1 }).update({ pr_number: 7, pr_status: 'merged' });
 
       await app.service('sessions').get(sessId1, params({ id: userId1 }));
       await new Promise((r) => setTimeout(r, 0));
@@ -581,7 +579,9 @@ describe('Sessions service - find, get, create', (hooks) => {
     });
 
     it('is set when baguette config has a webserver block', async () => {
-      loadBaguetteConfig.mockResolvedValue({ webserver: { command: 'node server.js', ports: [3000] } });
+      loadBaguetteConfig.mockResolvedValue({
+        webserver: { command: 'node server.js', ports: [3000] },
+      });
 
       const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
 
@@ -592,7 +592,7 @@ describe('Sessions service - find, get, create', (hooks) => {
     it('is set when baguette config has a services block (not just webserver)', async () => {
       loadBaguetteConfig.mockResolvedValue({
         services: { api: { task: 'server' } },
-        'session': { tasks: { server: { run: 'node api.js', ports: [4000] } } },
+        session: { tasks: { server: { run: 'node api.js', ports: [4000] } } },
       });
 
       const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
@@ -748,9 +748,7 @@ describe('Sessions service - find, get, create', (hooks) => {
           params({ id: userId1 })
         );
 
-      const userMsgCall = createMessage.mock.calls.find(
-        ([data]) => data.type === 'user'
-      );
+      const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
       expect(userMsgCall).toBeTruthy();
       const parsed = JSON.parse(userMsgCall[0].message_json);
       expect(parsed.message.content).toBe('Please add tests');
@@ -764,9 +762,7 @@ describe('Sessions service - find, get, create', (hooks) => {
         .service('sessions')
         .create(sessionData({ repo_id: repoId, initial_prompt: '' }), params({ id: userId1 }));
 
-      const userMsgCall = createMessage.mock.calls.find(
-        ([data]) => data.type === 'user'
-      );
+      const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
       expect(userMsgCall).toBeUndefined();
     });
 
@@ -863,9 +859,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(parsed.content).toBe('mocked builder system prompt');
 
       const promptIdx = createMessage.mock.calls.indexOf(promptCall);
-      const userMsgIdx = createMessage.mock.calls.findIndex(
-        ([data]) => data.type === 'user'
-      );
+      const userMsgIdx = createMessage.mock.calls.findIndex(([data]) => data.type === 'user');
       expect(promptIdx).toBeLessThan(userMsgIdx);
     });
 

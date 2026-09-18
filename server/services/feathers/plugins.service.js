@@ -12,10 +12,13 @@ import { requireUser } from './hooks.js';
 
 class PluginsService extends KnexService {
   async find(_params) {
-    return this.options.Model('plugins').select().orderBy([
-      { column: 'marketplace_repo', order: 'asc' },
-      { column: 'plugin_path', order: 'asc' },
-    ]);
+    return this.options
+      .Model('plugins')
+      .select()
+      .orderBy([
+        { column: 'marketplace_repo', order: 'asc' },
+        { column: 'plugin_path', order: 'asc' },
+      ]);
   }
 
   async create(data, params) {
@@ -36,7 +39,13 @@ class PluginsService extends KnexService {
       return { installed: [], skipped: [existing] };
     }
 
-    const { localPath, sha, pluginJson } = await downloadPlugin(owner, repo, branch, pluginPath, token);
+    const { localPath, sha, pluginJson } = await downloadPlugin(
+      owner,
+      repo,
+      branch,
+      pluginPath,
+      token
+    );
     const name = pluginJson.name || path.basename(pluginPath);
     const description = pluginJson.description || null;
     const now = new Date().toISOString();
@@ -94,7 +103,13 @@ class PluginsService extends KnexService {
       return { refreshed: false, plugin };
     }
 
-    const { localPath, sha, pluginJson } = await downloadPlugin(owner, repo, branch, plugin.plugin_path, token);
+    const { localPath, sha, pluginJson } = await downloadPlugin(
+      owner,
+      repo,
+      branch,
+      plugin.plugin_path,
+      token
+    );
     const name = pluginJson.name || path.basename(plugin.plugin_path);
     const description = pluginJson.description || null;
     const now = new Date().toISOString();

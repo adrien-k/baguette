@@ -49,6 +49,7 @@ config:
 ```
 
 > **Legacy format**: You can also use an array-based `commands` format instead of `tasks`:
+>
 > ```yaml
 > commands:
 >   - label: Run tests
@@ -105,6 +106,7 @@ config:
 ## tasks block fields
 
 Each task in `session.tasks` supports:
+
 - **run**: the shell command to execute
 - **ports**: (optional) list of env var names that baguette will assign free ports to before launching
 - **depends-on**: (optional) list of task keys that must be running and listening before this task starts. Dependency ports are available as `${{ baguette.tasks.<task-key>.<PORT_NAME> }}` in the `run` command.

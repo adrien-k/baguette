@@ -171,7 +171,11 @@ export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
   return Object.entries(tasks)
     .filter(([_, t]) => t && typeof t.run === 'string')
-    .map(([key, t]) => ({ label: key, run: t.run, ...(t.ports?.length ? { ports: t.ports } : {}) }));
+    .map(([key, t]) => ({
+      label: key,
+      run: t.run,
+      ...(t.ports?.length ? { ports: t.ports } : {}),
+    }));
 }
 
 const SERVICE_NAME_REGEX = /^[a-z0-9][a-z0-9-]*$/;

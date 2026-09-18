@@ -106,7 +106,6 @@ fly deploy
 
 On first boot the entrypoint starts `dockerd`, runs database migrations, then launches the Node server. The health check at `/up` gates traffic until the server is ready.
 
-
 ## Cold starts in practice
 
 With `auto_stop_machines = "stop"`, the cold start (~1–3s) only happens when the **first** request arrives after the machine has been idle. In practice this is rare: as long as any browser tab has the Baguette UI open, the active WebSocket connection keeps the machine running. The machine only stops after all tabs are closed and the idle timeout elapses.

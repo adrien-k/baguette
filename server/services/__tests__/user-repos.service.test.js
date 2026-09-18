@@ -68,9 +68,9 @@ describe('UserRepos service - find', () => {
   });
 
   it('unauthenticated find is rejected', async () => {
-    await expect(
-      app.service('user-repos').find({ provider: 'rest' })
-    ).rejects.toThrow('Not authenticated');
+    await expect(app.service('user-repos').find({ provider: 'rest' })).rejects.toThrow(
+      'Not authenticated'
+    );
   });
 });
 
@@ -97,9 +97,7 @@ describe('UserRepos service - patch (encrypt + mask)', () => {
     await app
       .service('user-repos')
       .patch(userRepo1.id, { anthropic_api_key: 'sk-ant-abc123456' }, params(user1));
-    const result = await app
-      .service('user-repos')
-      .get(userRepo1.id, internal(user1));
+    const result = await app.service('user-repos').get(userRepo1.id, internal(user1));
     expect(result.anthropic_api_key).toBe('sk-ant-abc123456');
     expect(result.anthropic_api_key_encrypted).toBeUndefined();
   });
@@ -108,9 +106,7 @@ describe('UserRepos service - patch (encrypt + mask)', () => {
     await app
       .service('user-repos')
       .patch(userRepo1.id, { anthropic_api_key: 'sk-ant-abc123' }, params(user1));
-    await app
-      .service('user-repos')
-      .patch(userRepo1.id, { anthropic_api_key: '' }, params(user1));
+    await app.service('user-repos').patch(userRepo1.id, { anthropic_api_key: '' }, params(user1));
     const row = await db('user_repos').where({ id: userRepo1.id }).first();
     expect(row.anthropic_api_key_encrypted).toBeNull();
     const result = await app.service('user-repos').get(userRepo1.id, internal(user1));
@@ -119,7 +115,9 @@ describe('UserRepos service - patch (encrypt + mask)', () => {
 
   it('unauthenticated patch is rejected', async () => {
     await expect(
-      app.service('user-repos').patch(userRepo1.id, { anthropic_api_key: 'x' }, { provider: 'rest' })
+      app
+        .service('user-repos')
+        .patch(userRepo1.id, { anthropic_api_key: 'x' }, { provider: 'rest' })
     ).rejects.toThrow('Not authenticated');
   });
 
@@ -147,8 +145,8 @@ describe('UserRepos service - get', () => {
   });
 
   it('unauthenticated get is rejected', async () => {
-    await expect(
-      app.service('user-repos').get(userRepo1.id, { provider: 'rest' })
-    ).rejects.toThrow('Not authenticated');
+    await expect(app.service('user-repos').get(userRepo1.id, { provider: 'rest' })).rejects.toThrow(
+      'Not authenticated'
+    );
   });
 });

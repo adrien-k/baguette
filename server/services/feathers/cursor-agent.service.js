@@ -78,7 +78,10 @@ export class CursorAgentService {
         : join(DATA_DIR, 'cursor-rules', String(session.id));
     const rulesDir = join(sessionRulesRoot, '.cursor', 'rules');
     // DB rows don't have absolute_worktree_path (added by the Feathers serializer), so inject it.
-    const systemPrompt = await buildSystemPromptAppend({ ...session, absolute_worktree_path: absoluteCwd });
+    const systemPrompt = await buildSystemPromptAppend({
+      ...session,
+      absolute_worktree_path: absoluteCwd,
+    });
     const mdcContent = `---
 description: Baguette session rules (always applied)
 alwaysApply: true
@@ -149,7 +152,11 @@ ${systemPrompt}`;
     if (modelId) {
       let params = null;
       if (session.model_params) {
-        try { params = JSON.parse(session.model_params); } catch { /* invalid JSON */ }
+        try {
+          params = JSON.parse(session.model_params);
+        } catch {
+          /* invalid JSON */
+        }
       }
       agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
     }
@@ -163,7 +170,10 @@ ${systemPrompt}`;
       try {
         agent = await Agent.resume(session.cursor_agent_id, agentOptions);
       } catch (err) {
-        logger.warn({ sessionId, storedAgentId: session.cursor_agent_id, err: err.message }, 'cursor-agent: resume failed, will create fresh agent');
+        logger.warn(
+          { sessionId, storedAgentId: session.cursor_agent_id, err: err.message },
+          'cursor-agent: resume failed, will create fresh agent'
+        );
       }
     }
     if (!agent) {
@@ -212,7 +222,10 @@ ${systemPrompt}`;
       }
       sessionState.currentRun = run;
 
-      const { finishedOk: mainFinished, hasBackgroundTask } = await this._streamOneRun(session, run);
+      const { finishedOk: mainFinished, hasBackgroundTask } = await this._streamOneRun(
+        session,
+        run
+      );
 
       if (mainFinished) {
         let allDone = true;
@@ -233,7 +246,10 @@ ${systemPrompt}`;
             const { finishedOk: followUpDone, hasBackgroundTask: moreFollowUps } =
               await this._streamOneRun(session, followUpRun);
 
-            if (!followUpDone) { allDone = false; break; }
+            if (!followUpDone) {
+              allDone = false;
+              break;
+            }
             lastCompletedRunId = followUpRun.id;
             if (!moreFollowUps) break;
           }
@@ -306,7 +322,10 @@ ${systemPrompt}`;
           type: 'assistant',
           agent_id: streamBuffer.agentId,
           run_id: streamBuffer.runId,
-          message: { role: 'assistant', content: [{ type: 'thinking', thinking: streamBuffer.text }] },
+          message: {
+            role: 'assistant',
+            content: [{ type: 'thinking', thinking: streamBuffer.text }],
+          },
         });
       }
       streamBuffer = null;
@@ -320,7 +339,10 @@ ${systemPrompt}`;
             kind: 'assistant',
             msg: {
               ...sdkMsg,
-              message: { ...sdkMsg.message, content: sdkMsg.message.content.map((b) => ({ ...b })) },
+              message: {
+                ...sdkMsg.message,
+                content: sdkMsg.message.content.map((b) => ({ ...b })),
+              },
             },
           };
         } else {
@@ -371,12 +393,19 @@ ${systemPrompt}`;
         }
         if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
           logger.warn(
-            { sessionId, status, agent_id: sdkMsg.agent_id, run_id: sdkMsg.run_id, sdkMessage: sdkMsg.message },
+            {
+              sessionId,
+              status,
+              agent_id: sdkMsg.agent_id,
+              run_id: sdkMsg.run_id,
+              sdkMessage: sdkMsg.message,
+            },
             'cursor-agent received terminal status'
           );
           let statusMsg;
           if (status === 'EXPIRED') {
-            statusMsg = 'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
+            statusMsg =
+              'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
           } else if (status === 'CANCELLED') {
             statusMsg = 'Cursor agent was cancelled.';
           } else {
@@ -436,7 +465,14 @@ ${systemPrompt}`;
             run_id: sdkMsg.run_id,
             message: {
               role: 'assistant',
-              content: [{ type: 'tool_use', id: sdkMsg.call_id, name: sdkMsg.name, input: sdkMsg.args ?? {} }],
+              content: [
+                {
+                  type: 'tool_use',
+                  id: sdkMsg.call_id,
+                  name: sdkMsg.name,
+                  input: sdkMsg.args ?? {},
+                },
+              ],
             },
           });
           pendingToolCalls.set(sdkMsg.call_id, {
@@ -469,14 +505,18 @@ ${systemPrompt}`;
             run_id: pending.runId ?? sdkMsg.run_id,
             message: {
               role: 'assistant',
-              content: [{ type: 'tool_use', id: sdkMsg.call_id, name: finalName, input: finalArgs }],
+              content: [
+                { type: 'tool_use', id: sdkMsg.call_id, name: finalName, input: finalArgs },
+              ],
             },
           };
-          await this.app.service('messages').patch(
-            pending.persistedMsgId,
-            { message_json: JSON.stringify(finalToolUse) },
-            { provider: undefined, user: { id: userId } }
-          );
+          await this.app
+            .service('messages')
+            .patch(
+              pending.persistedMsgId,
+              { message_json: JSON.stringify(finalToolUse) },
+              { provider: undefined, user: { id: userId } }
+            );
         } else {
           await this._persistMessage(sessionId, userId, {
             type: 'assistant',
@@ -484,7 +524,9 @@ ${systemPrompt}`;
             run_id: pending?.runId ?? sdkMsg.run_id,
             message: {
               role: 'assistant',
-              content: [{ type: 'tool_use', id: sdkMsg.call_id, name: finalName, input: finalArgs }],
+              content: [
+                { type: 'tool_use', id: sdkMsg.call_id, name: finalName, input: finalArgs },
+              ],
             },
           });
         }
@@ -552,7 +594,10 @@ ${systemPrompt}`;
     if (chargedCents <= 0) return;
 
     const newTotalCostUsd = chargedCents / 100;
-    const prevRow = await db('usage').where({ session_id: sessionId }).sum('cost_usd as total').first();
+    const prevRow = await db('usage')
+      .where({ session_id: sessionId })
+      .sum('cost_usd as total')
+      .first();
     const prevTotalCostUsd = parseFloat(prevRow?.total ?? 0);
 
     const deltaCostUsd = newTotalCostUsd - prevTotalCostUsd;
@@ -566,13 +611,18 @@ ${systemPrompt}`;
       agent_sdk: 'cursor',
     });
 
-    const currentSession = await db('sessions').where({ id: sessionId }).select('total_cost_usd').first();
+    const currentSession = await db('sessions')
+      .where({ id: sessionId })
+      .select('total_cost_usd')
+      .first();
     const prevSessionCost = parseFloat(currentSession?.total_cost_usd ?? 0);
-    await this.app.service('sessions').patch(
-      sessionId,
-      { total_cost_usd: prevSessionCost + deltaCostUsd },
-      { provider: undefined, user: { id: userId } }
-    );
+    await this.app
+      .service('sessions')
+      .patch(
+        sessionId,
+        { total_cost_usd: prevSessionCost + deltaCostUsd },
+        { provider: undefined, user: { id: userId } }
+      );
   }
 
   async _persistMessage(sessionId, userId, message) {
@@ -631,7 +681,10 @@ ${systemPrompt}`;
     });
     try {
       await Agent.delete(session.cursor_agent_id, { store });
-      logger.info({ sessionId, agentId: session.cursor_agent_id }, 'cursor-agent: deleted agent on archive');
+      logger.info(
+        { sessionId, agentId: session.cursor_agent_id },
+        'cursor-agent: deleted agent on archive'
+      );
     } finally {
       await store.dispose().catch(() => {});
     }

@@ -96,7 +96,9 @@ export default function PushConfirmModal({
                 <span className="text-zinc-700">/</span>
                 <span
                   title={`origin/${branch}`}
-                  className={remoteSha && remoteSha !== localSha ? 'text-zinc-400' : 'text-zinc-600'}
+                  className={
+                    remoteSha && remoteSha !== localSha ? 'text-zinc-400' : 'text-zinc-600'
+                  }
                 >
                   {loadingShas ? '…' : (remoteSha ?? 'no remote')}
                 </span>
@@ -121,8 +123,8 @@ export default function PushConfirmModal({
             <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-950/30 border border-amber-500/20 rounded-lg px-3 py-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                <strong>--force</strong> overwrites remote history. Only use if you know what you&apos;re
-                doing.
+                <strong>--force</strong> overwrites remote history. Only use if you know what
+                you&apos;re doing.
               </span>
             </div>
           )}

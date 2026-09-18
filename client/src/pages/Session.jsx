@@ -252,11 +252,7 @@ export default function Session() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get('view') || 'chat';
-  const {
-    sessions,
-    hasMore: hasMoreSessions,
-    loadMore: loadMoreSessions,
-  } = useSessionsContext();
+  const { sessions, hasMore: hasMoreSessions, loadMore: loadMoreSessions } = useSessionsContext();
   const { selectedRepo, setSelectedRepo, repos } = useRepoContext();
   const { showArchived } = useFilters();
   const { session: sessionFromHook, loading: sessionLoading } = useGetSession(short_id);
@@ -334,9 +330,7 @@ export default function Session() {
   useEffect(() => {
     if (!session) return;
     const url =
-      session.agent_sdk === 'cursor'
-        ? '/api/settings/models?sdk=cursor'
-        : '/api/settings/models';
+      session.agent_sdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
     apiFetch(url)
       .then((d) => setModels(d.models || []))
       .catch(() => {});
@@ -521,7 +515,9 @@ export default function Session() {
         navigate(
           firstSession
             ? `/repos/${firstSession.repo_id}/sessions/${firstSession.short_id}`
-            : currentRepoId ? `/repos/${currentRepoId}` : '/'
+            : currentRepoId
+              ? `/repos/${currentRepoId}`
+              : '/'
         );
       }
     } catch (err) {
@@ -543,20 +539,23 @@ export default function Session() {
 
   const isReadonly = !!session.archived_at;
 
-    let sidebarClassName = "hidden md:flex"
-    if (showSidebar) {
-      sidebarClassName = "flex"
-    }
-    if (showSidebar === false) {
-      sidebarClassName = "hidden"
-    }
+  let sidebarClassName = 'hidden md:flex';
+  if (showSidebar) {
+    sidebarClassName = 'flex';
+  }
+  if (showSidebar === false) {
+    sidebarClassName = 'hidden';
+  }
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* Top Bar */}
       <div className="bg-zinc-900 border-b border-zinc-800 px-3 sm:px-4 py-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Link to={repoId ? `/repos/${repoId}` : '/'} className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden">
+            <Link
+              to={repoId ? `/repos/${repoId}` : '/'}
+              className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden"
+            >
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="min-w-0">
@@ -583,7 +582,9 @@ export default function Session() {
                 )}
               </div>
               <div className="flex min-w-0 items-center gap-2 text-xs">
-                <span className="hidden sm:inline shrink-0 text-zinc-600">{session.base_branch}</span>
+                <span className="hidden sm:inline shrink-0 text-zinc-600">
+                  {session.base_branch}
+                </span>
                 {session.created_branch && (
                   <span className="flex min-w-0 items-center gap-1 overflow-hidden text-zinc-500">
                     <GitBranch className="w-3 h-3 shrink-0" />
@@ -710,7 +711,11 @@ export default function Session() {
                       const sessionModelId = session.model || null;
                       const sessionParams = (() => {
                         if (!session.model_params) return null;
-                        try { return JSON.parse(session.model_params); } catch { return null; }
+                        try {
+                          return JSON.parse(session.model_params);
+                        } catch {
+                          return null;
+                        }
                       })();
                       const menuModelId = menuModelOverride ?? sessionModelId;
                       const menuModelObj = models.find((m) => m.id === menuModelId);
@@ -753,7 +758,9 @@ export default function Session() {
                           </select>
                           {isCursor && variants.length > 0 && (
                             <>
-                              <div className="text-[11px] text-zinc-500 px-2 py-1 mt-1">Variant</div>
+                              <div className="text-[11px] text-zinc-500 px-2 py-1 mt-1">
+                                Variant
+                              </div>
                               <select
                                 value={currentVariantIdx}
                                 onChange={(e) => {
@@ -793,7 +800,10 @@ export default function Session() {
                     )}
                     <div className="p-2 border-b border-zinc-800 sm:hidden">
                       <button
-                        onClick={() => { handlePush(); setShowMenu(false); }}
+                        onClick={() => {
+                          handlePush();
+                          setShowMenu(false);
+                        }}
                         disabled={pushing}
                         className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
                       >
@@ -873,7 +883,9 @@ export default function Session() {
       {/* Sidebar (full height) + main column (tabs + views + tasks) */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {/* Sessions Sidebar - md+ only; top-aligned with tab row */}
-        <div className={`${sidebarClassName} w-64 flex-col border-r border-zinc-800 bg-zinc-900 shrink-0 min-h-0`}>
+        <div
+          className={`${sidebarClassName} w-64 flex-col border-r border-zinc-800 bg-zinc-900 shrink-0 min-h-0`}
+        >
           <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
             <Link
               to={repoId ? `/repos/${repoId}` : '/'}
@@ -915,7 +927,9 @@ export default function Session() {
                   navigate(
                     firstSession
                       ? `/repos/${firstSession.repo_id}/sessions/${firstSession.short_id}`
-                      : currentRepoId ? `/repos/${currentRepoId}` : '/'
+                      : currentRepoId
+                        ? `/repos/${currentRepoId}`
+                        : '/'
                   );
                 }}
               />
@@ -942,20 +956,20 @@ export default function Session() {
               <PanelLeft className="w-4 h-4" />
             </button>
             <div className="flex overflow-x-auto gap-1 min-w-0 flex-1 scrollbar-none">
-            {VIEWS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                onClick={() => setView(id)}
-                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px ${
-                  activeView === id
-                    ? 'border-amber-500 text-amber-400'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </button>
-            ))}
+              {VIEWS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setView(id)}
+                  className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px ${
+                    activeView === id
+                      ? 'border-amber-500 text-amber-400'
+                      : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {label}
+                </button>
+              ))}
             </div>
             {!isReadonly && session?.pr_status !== 'merged' && (
               <div className="ml-auto shrink-0 flex items-center gap-2 py-2 pl-2">
@@ -991,7 +1005,6 @@ export default function Session() {
                 systemPrompt={systemPrompt}
                 onViewChange={setView}
                 readonly={isReadonly}
-
               />
             )}
             {activeView === 'diff' && <DiffView session={session} onFilesChange={setDiffFiles} />}
@@ -1033,8 +1046,7 @@ export default function Session() {
                 <p className="text-xs text-zinc-500 px-3 py-4">No files changed</p>
               ) : (
                 diffFiles.map((file, i) => {
-                  const displayPath =
-                    file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
+                  const displayPath = file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
                   return (
                     <button
                       key={i}
@@ -1049,12 +1061,8 @@ export default function Session() {
                       <span className="font-mono text-xs text-zinc-300 truncate flex-1 min-w-0">
                         {displayPath}
                       </span>
-                      <span className="text-xs text-emerald-400 shrink-0">
-                        +{file.addedCount}
-                      </span>
-                      <span className="text-xs text-red-400 shrink-0">
-                        -{file.removedCount}
-                      </span>
+                      <span className="text-xs text-emerald-400 shrink-0">+{file.addedCount}</span>
+                      <span className="text-xs text-red-400 shrink-0">-{file.removedCount}</span>
                     </button>
                   );
                 })

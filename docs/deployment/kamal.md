@@ -25,7 +25,6 @@ Copy the private key (`cat /home/ubuntu/.ssh/id_ed25519`) — it becomes the `SS
 mkdir -p /home/ubuntu/baguette_storage   # → /data  (SQLite DB, repos, worktrees)
 ```
 
-
 ## 2. Wildcard TLS with acme.sh
 
 Install acme.sh on the server (as the `ubuntu` user):

@@ -30,15 +30,23 @@ function CopyButton({ text }) {
   );
 }
 
-export default function ChatMessage({ message, isLatestMessage, worktreePath, sessionId, agentName = 'Claude', messageIndex, allMessages }) {
+export default function ChatMessage({
+  message,
+  isLatestMessage,
+  worktreePath,
+  sessionId,
+  agentName = 'Claude',
+  messageIndex,
+  allMessages,
+}) {
   // True once the user sends a real message after this assistant turn — used to
   // hide action buttons on ExitPlanMode / AskUserQuestion blocks after the user
   // has interacted (the deny tool_result is source='baguette' and must not count).
   const userReplied = useMemo(() => {
     if (!allMessages || messageIndex == null) return false;
-    return allMessages.slice(messageIndex + 1).some(
-      (m) => m.type === 'user' && m.source !== 'baguette'
-    );
+    return allMessages
+      .slice(messageIndex + 1)
+      .some((m) => m.type === 'user' && m.source !== 'baguette');
   }, [allMessages, messageIndex]);
 
   if (message.type === 'assistant' && message.message?.content) {
@@ -47,7 +55,10 @@ export default function ChatMessage({ message, isLatestMessage, worktreePath, se
         {message.message.content.map((block, i) => {
           if (block.type === 'text') {
             return (
-              <div key={i} className="group bg-zinc-900 rounded-lg p-3 sm:p-4 border border-zinc-800">
+              <div
+                key={i}
+                className="group bg-zinc-900 rounded-lg p-3 sm:p-4 border border-zinc-800"
+              >
                 <div className="text-xs text-indigo-400 mb-1 font-medium flex items-center justify-between">
                   <span>{agentName}</span>
                   <CopyButton text={block.text} />

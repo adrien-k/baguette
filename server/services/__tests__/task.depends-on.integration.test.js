@@ -236,7 +236,9 @@ describe('Task depends_on (integration)', () => {
       cwd: '/tmp',
     });
     task.onLog((_id, _stream, data) => logs.push(data));
-    task.onExit((_id, code) => { exitedCode = code; });
+    task.onExit((_id, code) => {
+      exitedCode = code;
+    });
     runningTasks.push(task);
 
     await task.start();
@@ -273,7 +275,10 @@ describe('Task depends_on (integration)', () => {
     runningTasks.push(main);
 
     await main.start();
-    await waitFor(() => main.status === 'exited', { msg: 'main did not exit after already-running dep', timeoutMs: 5_000 });
+    await waitFor(() => main.status === 'exited', {
+      msg: 'main did not exit after already-running dep',
+      timeoutMs: 5_000,
+    });
 
     expect(dep.exit_code).toBe(0);
     expect(main.exit_code).toBe(0);
@@ -345,7 +350,9 @@ describe('Task depends_on (integration)', () => {
 
     await main.start();
     // main.fail() is synchronous so no need to wait
-    await waitFor(() => main.status === 'exited', { msg: 'main did not fail after already-failed dep' });
+    await waitFor(() => main.status === 'exited', {
+      msg: 'main did not fail after already-failed dep',
+    });
 
     expect(main.status).toBe('exited');
     expect(main.exit_code).toBe(3);

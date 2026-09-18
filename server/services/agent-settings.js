@@ -33,4 +33,3 @@ export function getAllowedCommandsFromUser(user) {
 export function getEffectiveGithubToken(user) {
   return user?.github_token || user?.access_token || null;
 }
-

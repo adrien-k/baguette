@@ -6,12 +6,19 @@ import { verifyProxyToken } from './preview.js';
 import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
-const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hour
-const POLL_INTERVAL_MS = 1000;
+const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
 
-function writeSseLog(res, line)  { res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`); }
-function writeSseReady(res)      { res.write(`event: ready\ndata: {}\n\n`); }
-function writeSseError(res, err) { res.write(`event: error\ndata: ${JSON.stringify({ message: err?.message ?? 'Unknown error' })}\n\n`); }
+function writeSseLog(res, line) {
+  res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`);
+}
+function writeSseReady(res) {
+  res.write(`event: ready\ndata: {}\n\n`);
+}
+function writeSseError(res, err) {
+  res.write(
+    `event: error\ndata: ${JSON.stringify({ message: err?.message ?? 'Unknown error' })}\n\n`
+  );
+}
 
 class SseChannel {
   #clients = new Set();
@@ -21,20 +28,34 @@ class SseChannel {
     req.on('close', () => this.#clients.delete(res));
   }
 
-  log(line)  { for (const res of this.#clients) writeSseLog(res, line); }
+  log(line) {
+    for (const res of this.#clients) writeSseLog(res, line);
+  }
 
   ready() {
-    for (const res of this.#clients) { writeSseReady(res); res.end(); }
+    for (const res of this.#clients) {
+      writeSseReady(res);
+      res.end();
+    }
     this.#clients.clear();
   }
 
   error(err) {
-    for (const res of this.#clients) { writeSseError(res, err); res.end(); }
+    for (const res of this.#clients) {
+      writeSseError(res, err);
+      res.end();
+    }
     this.#clients.clear();
   }
 
   closeAll() {
-    for (const res of this.#clients) { try { res.end(); } catch { /* already closed */ } }
+    for (const res of this.#clients) {
+      try {
+        res.end();
+      } catch {
+        /* already closed */
+      }
+    }
     this.#clients.clear();
   }
 }
@@ -60,7 +81,9 @@ export class DevProxy {
   // ── Express middleware ────────────────────────────────────────────────────────
 
   async middleware(req, res, next) {
-    const handler = this.handlerClasses.map((H) => new H(this.app, req)).find((h) => h.isValidHost());
+    const handler = this.handlerClasses
+      .map((H) => new H(this.app, req))
+      .find((h) => h.isValidHost());
     if (!handler) return next();
 
     // Handle /_baguette/auth before checking the proxy cookie (this is what sets it)
@@ -82,12 +105,17 @@ export class DevProxy {
     const userId = req.signedCookies?.[PROXY_COOKIE];
     if (!userId) {
       if (req.method !== 'GET') {
-        return res.status(401).json({ error: 'Unauthorized', authUrl: `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}` });
+        return res.status(401).json({
+          error: 'Unauthorized',
+          authUrl: `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}`,
+        });
       }
-      return res.redirect(`${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}`);
+      return res.redirect(
+        `${PUBLIC_HOST}/auth/proxy?service=${encodeURIComponent(handler.subdomain)}`
+      );
     }
 
-    if (!await handler.allowUser(userId)) return res.status(403).send('Forbidden');
+    if (!(await handler.allowUser(userId))) return res.status(403).send('Forbidden');
 
     this._setProxyCookie(res, userId); // renew TTL
 
@@ -99,14 +127,25 @@ export class DevProxy {
   // ── WebSocket upgrade ─────────────────────────────────────────────────────────
 
   async handleUpgrade(req, socket, head) {
-    const handler = this.handlerClasses.map((H) => new H(this.app, req)).find((h) => h.isValidHost());
-    if (!handler) { socket.destroy(); return; }
+    const handler = this.handlerClasses
+      .map((H) => new H(this.app, req))
+      .find((h) => h.isValidHost());
+    if (!handler) {
+      socket.destroy();
+      return;
+    }
 
     const userId = this._getWsCookieUserId(req);
-    if (!userId) { socket.destroy(); return; }
+    if (!userId) {
+      socket.destroy();
+      return;
+    }
 
     try {
-      if (!await handler.allowUser(userId)) { socket.destroy(); return; }
+      if (!(await handler.allowUser(userId))) {
+        socket.destroy();
+        return;
+      }
     } catch (err) {
       logger.error(err, 'WS allowUser error');
       socket.destroy();
@@ -138,7 +177,7 @@ export class DevProxy {
 
     let state = this.states.get(key);
     if (!state) {
-      state = await this._startService(handler)
+      state = await this._startService(handler);
     }
 
     if (state.status === 'crashed' || state.status === 'starting') {
@@ -156,7 +195,7 @@ export class DevProxy {
     if (!state) {
       state = await this._startService(handler);
     }
-    
+
     try {
       await state.task.waitForReady({ timeout: handler.startupTimeoutMs });
     } catch (err) {
@@ -204,7 +243,7 @@ export class DevProxy {
       });
 
       task.start();
-      
+
       (async () => {
         try {
           await task.waitForReady({ timeout: handler.startupTimeoutMs });
@@ -218,7 +257,7 @@ export class DevProxy {
           this._onCrashed(key, state, err);
         }
       })();
-      
+
       return state;
     } catch (err) {
       this._onCrashed(key, state, err);
@@ -257,16 +296,27 @@ export class DevProxy {
       'X-Accel-Buffering': 'no',
     });
     res.flushHeaders?.();
-    
-    if (!state) { res.end(); return; }
+
+    if (!state) {
+      res.end();
+      return;
+    }
 
     if (state.task != null) {
       const buffered = state.task.getLogs?.();
       if (buffered) writeSseLog(res, buffered);
     }
 
-    if (state.status === 'listening') { writeSseReady(res); res.end(); return; }
-    if (state.status === 'crashed') { writeSseError(res, state.error); res.end(); return; }
+    if (state.status === 'listening') {
+      writeSseReady(res);
+      res.end();
+      return;
+    }
+    if (state.status === 'crashed') {
+      writeSseError(res, state.error);
+      res.end();
+      return;
+    }
 
     state.sseClients.add(req, res);
   }
@@ -289,24 +339,40 @@ export class DevProxy {
   _proxyRequest(req, res, port) {
     const proxyReq = http.request(
       { hostname: '127.0.0.1', port, path: req.url, method: req.method, headers: req.headers },
-      (proxyRes) => { res.writeHead(proxyRes.statusCode, proxyRes.headers); proxyRes.pipe(res); }
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+      }
     );
-    proxyReq.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end('Bad Gateway'); });
+    proxyReq.on('error', () => {
+      if (!res.headersSent) res.writeHead(502);
+      res.end('Bad Gateway');
+    });
     req.pipe(proxyReq);
   }
 
   _proxyUpgrade(req, socket, head, port) {
     const proxyReq = http.request(
-      { agent: false, hostname: '127.0.0.1', port, path: req.url, method: req.method, headers: req.headers },
-      (proxyRes) => { if (proxyRes.statusCode !== 101) socket.destroy(); }
+      {
+        agent: false,
+        hostname: '127.0.0.1',
+        port,
+        path: req.url,
+        method: req.method,
+        headers: req.headers,
+      },
+      (proxyRes) => {
+        if (proxyRes.statusCode !== 101) socket.destroy();
+      }
     );
 
     proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
       const lines = [`HTTP/1.1 ${proxyRes.statusCode} ${proxyRes.statusMessage || ''}`];
       for (const [k, value] of Object.entries(proxyRes.headers)) {
         if (value === undefined) continue;
-        if (Array.isArray(value)) { for (const v of value) lines.push(`${k}: ${v}`); }
-        else lines.push(`${k}: ${value}`);
+        if (Array.isArray(value)) {
+          for (const v of value) lines.push(`${k}: ${v}`);
+        } else lines.push(`${k}: ${value}`);
       }
       socket.write(lines.join('\r\n') + '\r\n\r\n');
       if (proxyHead?.length) socket.write(proxyHead);
@@ -317,8 +383,10 @@ export class DevProxy {
       socket.on('error', () => proxySocket.destroy());
     });
 
-    proxyReq.on('error', (err) => { logger.error({ err: err.message }, 'Proxy upgrade error'); socket.destroy(); });
+    proxyReq.on('error', (err) => {
+      logger.error({ err: err.message }, 'Proxy upgrade error');
+      socket.destroy();
+    });
     proxyReq.end();
   }
-
 }

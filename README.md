@@ -80,7 +80,7 @@ npm run migrate
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-6. *(Optional)* Install [code-server](https://coder.com/docs/code-server/install) to enable the **VS Code** button on sessions:
+6. _(Optional)_ Install [code-server](https://coder.com/docs/code-server/install) to enable the **VS Code** button on sessions:
 
 ```bash
 curl -fsSL https://code-server.dev/install.sh | sh
