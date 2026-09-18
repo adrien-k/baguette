@@ -18,7 +18,7 @@ const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
  *   get key() → string  (state map key, typically the hostname)
  *   render(res) → Promise<bool>  (returns true if response was handled)
  *   buildTask() → Promise<{ task, exposePort }>
- *   startupTimeoutMs, idleTimeoutMs
+ *   startupTimeoutMs
  */
 export class DevProxy {
   constructor(app, handlerClasses) {
@@ -137,7 +137,7 @@ export class DevProxy {
       return res.render('devserver-loading');
     }
 
-    this._resetIdleTimer(key, state, handler.idleTimeoutMs);
+    state.task?.resetTtl();
     return this._proxyRequest(req, res, state.port);
   }
 
@@ -157,12 +157,11 @@ export class DevProxy {
       return;
     }
 
-    this._resetIdleTimer(key, state, handler.idleTimeoutMs);
+    state.task?.resetTtl();
     this._proxyUpgrade(req, socket, head, state.port);
   }
 
   _cleanup(key, state) {
-    clearTimeout(state.idleTimer);
     state.unsubLog?.();
     state.unsubExit?.();
     if (state.task != null) this.app.service('tasks').deleteTask(state.task.id);
@@ -178,7 +177,6 @@ export class DevProxy {
       task: null,
       port: null,
       status: 'starting',
-      idleTimer: null,
       unsubLog: null,
       unsubExit: null,
     };
@@ -195,7 +193,11 @@ export class DevProxy {
       );
       state.unsubExit = task.onExit((_id, code) => {
         if (this.states.get(key) !== state) return;
-        if (code !== 0 && state.status === 'starting') this._onCrashed(key, state);
+        if (state.status === 'starting') {
+          if (code !== 0) this._onCrashed(key, state);
+        } else if (state.status === 'listening') {
+          this._cleanup(key, state);
+        }
       });
 
       task.start();
@@ -208,7 +210,7 @@ export class DevProxy {
             throw new Error('Port not allocated');
           }
 
-          this._onListening(key, state, port, handler.idleTimeoutMs);
+          this._onListening(key, state, port);
         } catch (err) {
           this._onCrashed(key, state, err);
         }
@@ -221,12 +223,11 @@ export class DevProxy {
     }
   }
 
-  _onListening(key, state, port, idleTimeoutMs) {
+  _onListening(key, state, port) {
     state.port = port;
     state.status = 'listening';
     this.sse.send(key, { event: 'ready' });
     this.sse.closeChannel(key);
-    this._resetIdleTimer(key, state, idleTimeoutMs);
   }
 
   _onCrashed(key, state, error) {
@@ -235,13 +236,6 @@ export class DevProxy {
     state.error = error;
     this.sse.send(key, { event: 'error', data: { message: error?.message ?? 'Unknown error' } });
     this.sse.closeChannel(key);
-  }
-
-  _resetIdleTimer(key, state, idleTimeoutMs) {
-    clearTimeout(state.idleTimer);
-    state.idleTimer = setTimeout(() => {
-      if (this.states.get(key) === state) this._cleanup(key, state);
-    }, idleTimeoutMs);
   }
 
   _serveSseLogs(req, res, key) {

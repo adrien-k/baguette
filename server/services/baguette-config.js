@@ -110,6 +110,7 @@ export function getAvailableTasks(baguetteConfig) {
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
+        ...(typeof val.ttl === 'number' ? { ttl: val.ttl } : {}),
       };
     }
   } else if (Array.isArray(userCommands)) {

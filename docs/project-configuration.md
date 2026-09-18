@@ -72,6 +72,7 @@ config:
         run: <shell command>
         ports: [ENV_VAR_NAME, ...] # Optional: env vars assigned free ports
         depends-on: [<other-task-key>] # Optional: tasks to start first
+        ttl: <seconds> # Optional: task lifetime in seconds (default: 900)
   # Use one of webserver OR services — they are mutually exclusive.
   webserver:
     task: <task-key> # Reference a task from session.tasks
@@ -130,11 +131,12 @@ tasks:
 
 #### Task fields
 
-| Field        | Type     | Description                                                          |
-| ------------ | -------- | -------------------------------------------------------------------- |
-| `run`        | string   | Shell command to execute                                             |
-| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching   |
-| `depends-on` | string[] | Task keys that must be running and listening before this task starts |
+| Field        | Type     | Description                                                                                                                                               |
+| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`        | string   | Shell command to execute                                                                                                                                  |
+| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching                                                                                        |
+| `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                                                      |
+| `ttl`        | number   | Task lifetime in seconds before it is automatically stopped (default: 900). For webserver/service tasks, each incoming HTTP request resets the countdown. |
 
 #### Ports
 

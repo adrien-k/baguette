@@ -7,7 +7,6 @@ import {
 
 export class DevserverHandler {
   startupTimeoutMs = 1 * 60 * 1000;
-  idleTimeoutMs = 5 * 60 * 1000;
 
   constructor(app, req) {
     this.app = app;

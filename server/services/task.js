@@ -6,6 +6,8 @@ import net from 'net';
 import { interpolateTaskPorts } from './baguette-config.js';
 import { isPortListening } from './port-utils.js';
 
+export const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
 /** Release stdio streams and listeners after the child exits (task row stays for UI/logs). */
 function detachChildProcess(child) {
   try {
@@ -40,8 +42,10 @@ function getFreePort() {
 export class Task {
   #process = null;
   #logBuffer = [];
+  #ttlTimer = null;
+  #ttlMs;
 
-  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn }) {
+  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn, ttlMs }) {
     this.id = id;
     this.session_id = sessionId;
     this.command = command;
@@ -59,6 +63,33 @@ export class Task {
     this._exitListeners = [];
     this._dependsOn = Array.isArray(dependsOn) ? dependsOn : [];
     this._started = false;
+    this.#ttlMs = ttlMs ?? DEFAULT_TTL_MS;
+  }
+
+  get ttlMs() {
+    return this.#ttlMs;
+  }
+
+  /** Reset (or start) the TTL countdown. No-op if already exited. */
+  resetTtl() {
+    if (this.status === 'exited') return;
+    clearTimeout(this.#ttlTimer);
+    this.#ttlTimer = setTimeout(() => {
+      this.addLog('stdout', `\x1b[33m[baguette] TTL expired, stopping task...\x1b[0m\n`);
+      this.kill().catch(() => {});
+    }, this.#ttlMs);
+  }
+
+  /**
+   * Extend this task's TTL (and all its dependencies) if newTtlMs is larger.
+   * Used when a parent task with a longer TTL depends on this already-running task.
+   */
+  extendTtlCascade(newTtlMs) {
+    if (newTtlMs > this.#ttlMs) {
+      this.#ttlMs = newTtlMs;
+    }
+    if (this.status !== 'exited') this.resetTtl();
+    for (const dep of this._dependsOn) dep.extendTtlCascade(newTtlMs);
   }
 
   /** Register a log listener: fn(id, stream, data). Replays accumulated buffer, then registers. Returns unsubscribe. */
@@ -248,6 +279,7 @@ export class Task {
       this.exit(exitCode);
     });
 
+    this.resetTtl();
     return this;
   }
 
@@ -322,6 +354,7 @@ export class Task {
   /** Mark the task as failed without a running process. */
   exit(exitCode = 1) {
     if (this.status === 'exited') return;
+    clearTimeout(this.#ttlTimer);
     this.status = 'exited';
     this.exit_code = exitCode;
     for (const fn of this._exitListeners) fn(this.id, exitCode);
@@ -344,6 +377,7 @@ export class Task {
       exit_code: this.exit_code,
       created_at: this.created_at,
       ports: this.ports,
+      ttl_ms: this.#ttlMs,
     };
   }
 }

@@ -1,5 +1,5 @@
 import { NotFound, BadRequest } from '@feathersjs/errors';
-import { Task } from '../task.js';
+import { Task, DEFAULT_TTL_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { loadBaguetteConfig, getScriptCommand, getAvailableTasks } from '../baguette-config.js';
@@ -28,7 +28,7 @@ export class TasksService {
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
    */
-  createTask({ sessionId, command, label, ports, env, cwd, dependsOn }) {
+  createTask({ sessionId, command, label, ports, env, cwd, dependsOn, ttlMs }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
@@ -45,7 +45,7 @@ export class TasksService {
     }
 
     const id = this._nextId++;
-    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn });
+    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn, ttlMs });
     task.onLog((_id, stream, data) =>
       this.emit('log', { id, session_id: sessionId, stream, data })
     );
@@ -173,6 +173,7 @@ export class TasksService {
       onExit,
       skipInit,
       _depChain,
+      _parentTtlMs,
       autoStart = true,
     } = data;
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
@@ -184,11 +185,25 @@ export class TasksService {
       .service('sessions')
       .getInterpolatedCommand(session.id, command);
     const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
+
+    // Load config once for init, deps, and TTL lookups
+    const baguetteConfig = session.worktree_path
+      ? await loadBaguetteConfig(session.worktree_path)
+      : null;
+
+    // Determine this task's effective TTL: max of its own configured TTL and the parent chain TTL
+    let taskConfigTtlMs = DEFAULT_TTL_MS;
+    if (task_key && baguetteConfig) {
+      const taskDefs = getAvailableTasks(baguetteConfig);
+      const taskDef = taskDefs[task_key];
+      if (typeof taskDef?.ttl === 'number') taskConfigTtlMs = taskDef.ttl * 1000;
+    }
+    const effectiveTtlMs = Math.max(taskConfigTtlMs, _parentTtlMs ?? 0);
+
     const dependsOn = [];
 
     // Add init as a dependency if the session has not been initialized yet
     if (!skipInit && !session.initialized && session.worktree_path) {
-      const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
       const initCommand = getScriptCommand(baguetteConfig?.session?.init);
       // Mark initialized eagerly to prevent double-init on concurrent task starts.
       await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
@@ -199,6 +214,7 @@ export class TasksService {
             command: initCommand,
             label: 'baguette:init',
             skipInit: true,
+            _parentTtlMs: effectiveTtlMs,
             autoStart: false,
           },
           params
@@ -208,39 +224,39 @@ export class TasksService {
     }
 
     // Add .baguette.yaml declared dependencies (transitive, cycle-detected via _depChain)
-    if (task_key && session.worktree_path) {
-      const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
-      if (baguetteConfig) {
-        const taskDefs = getAvailableTasks(baguetteConfig);
-        const depChain = new Set(_depChain ?? []);
-        depChain.add(task_key);
-        for (const depKey of taskDefs[task_key]?.depends_on ?? []) {
-          if (depChain.has(depKey))
-            throw new BadRequest(
-              `Circular dependency detected: ${depKey} is already in the dependency chain`
-            );
-          const depDef = taskDefs[depKey];
-          if (!depDef)
-            throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
-          let depTask = this._findRunningTask(session_id, depKey);
-          if (!depTask) {
-            const depPub = await this.create(
-              {
-                session_id,
-                command: depDef.run,
-                label: depKey,
-                ports: depDef.ports || [],
-                task_key: depKey,
-                skipInit: true,
-                _depChain: [...depChain],
-                autoStart: false,
-              },
-              params
-            );
-            depTask = this.getTask(depPub.id);
-          }
-          if (depTask) dependsOn.push(depTask);
+    if (task_key && baguetteConfig) {
+      const taskDefs = getAvailableTasks(baguetteConfig);
+      const depChain = new Set(_depChain ?? []);
+      depChain.add(task_key);
+      for (const depKey of taskDefs[task_key]?.depends_on ?? []) {
+        if (depChain.has(depKey))
+          throw new BadRequest(
+            `Circular dependency detected: ${depKey} is already in the dependency chain`
+          );
+        const depDef = taskDefs[depKey];
+        if (!depDef) throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
+        let depTask = this._findRunningTask(session_id, depKey);
+        if (depTask) {
+          // Already running: extend its TTL (and its own deps) if parent chain TTL is larger
+          depTask.extendTtlCascade(effectiveTtlMs);
+        } else {
+          const depPub = await this.create(
+            {
+              session_id,
+              command: depDef.run,
+              label: depKey,
+              ports: depDef.ports || [],
+              task_key: depKey,
+              skipInit: true,
+              _depChain: [...depChain],
+              _parentTtlMs: effectiveTtlMs,
+              autoStart: false,
+            },
+            params
+          );
+          depTask = this.getTask(depPub.id);
         }
+        if (depTask) dependsOn.push(depTask);
       }
     }
 
@@ -252,6 +268,7 @@ export class TasksService {
       env,
       cwd,
       dependsOn,
+      ttlMs: effectiveTtlMs,
     });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);

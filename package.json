@@ -18,7 +18,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "fix": "npm run lint:fix && npm run format"
+    "fix": "\"$npm_execpath\" run lint:fix && \"$npm_execpath\" run format"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.247",

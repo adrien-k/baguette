@@ -7,7 +7,6 @@ const codeHostname = buildSessionHostname(new URL(PUBLIC_API_URL).hostname, CODE
 
 export class CodeServerHandler {
   startupTimeoutMs = 2 * 60 * 1000;
-  idleTimeoutMs = 30 * 60 * 1000;
 
   constructor(app, req) {
     this.app = app;
