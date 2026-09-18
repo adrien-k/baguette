@@ -59,31 +59,26 @@
     const error = document.getElementById('error');
     const source = new EventSource('/_baguette/logs');
 
-    source.addEventListener('log', (e) => {
-      logs.innerHTML += ansiToHtml(JSON.parse(e.data));
-      logs.scrollTop = logs.scrollHeight;
-    });
-
-    source.addEventListener('ready', () => {
-      source.close();
-      window.location.reload();
-    });
-
-    source.addEventListener('timeout', () => {
-      source.close();
-      document.querySelector('.spinner').style.display = 'none';
-      document.querySelector('h1').textContent = 'Dev server timed out';
-      error.style.display = 'block';
-    });
-
-    source.addEventListener('error', (e) => {
-      if (e.data === undefined) return; // connection drop, not a server-sent error event
-      source.close();
-      document.querySelector('.spinner').style.display = 'none';
-      document.querySelector('h1').textContent = 'Dev server exited';
-      error.querySelector('p').textContent = JSON.parse(e.data).message;
-      error.style.display = 'block';
-    });
+    source.onmessage = ({ data }) => {
+      try {
+        const { event, data: payload } = JSON.parse(data);
+        if (event === 'log') {
+          logs.innerHTML += ansiToHtml(payload);
+          logs.scrollTop = logs.scrollHeight;
+        } else if (event === 'ready') {
+          source.close();
+          window.location.reload();
+        } else if (event === 'error') {
+          source.close();
+          document.querySelector('.spinner').style.display = 'none';
+          document.querySelector('h1').textContent = 'Dev server exited';
+          error.querySelector('p').textContent = payload.message;
+          error.style.display = 'block';
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    };
 
     source.onerror = () => {
       // SSE connection dropped (e.g. server restart) — keep retrying

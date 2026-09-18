@@ -16,7 +16,7 @@ import { registerFeathersServices } from './services/feathers/index.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
-import sseManager from './sse.js';
+import { SseManager } from './lib/sse-manager.js';
 import db from './db.js';
 
 const { rest } = express;
@@ -36,6 +36,7 @@ process.on('unhandledRejection', (reason) => {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = createFeathersApp();
+const feathersSse = new SseManager();
 
 app.set('db', db);
 app.set('view engine', 'ejs');
@@ -73,21 +74,7 @@ app.get('/api/events', requireAuth, (req, res) => {
   res.flushHeaders();
 
   const userId = req.user.id;
-  sseManager.add(userId, res);
-
-  // Heartbeat to keep the connection alive through proxies
-  const heartbeat = setInterval(() => {
-    try {
-      res.write(': heartbeat\n\n');
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, 30000);
-
-  res.on('close', () => {
-    clearInterval(heartbeat);
-    sseManager.remove(userId, res);
-  });
+  feathersSse.subscribe(req, res, userId);
 });
 
 // Dev only: redirect GET / to the frontend dev server (e.g. Vite)
@@ -115,7 +102,7 @@ app.use((req, res, next) => {
   next();
 });
 app.configure(rest());
-registerFeathersServices(app);
+registerFeathersServices(app, feathersSse);
 
 app.hooks({
   error: {

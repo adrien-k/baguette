@@ -717,7 +717,9 @@ function buildBaguetteToolList(session, app) {
         env: z
           .record(z.string())
           .optional()
-          .describe('Extra environment variables to set for this command run, merged on top of session env'),
+          .describe(
+            'Extra environment variables to set for this command run, merged on top of session env'
+          ),
         attach: z
           .boolean()
           .optional()

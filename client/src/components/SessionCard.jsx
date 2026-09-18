@@ -138,7 +138,7 @@ export default function SessionCard({ session, showRepo = false }) {
               onClick={(e) => e.stopPropagation()}
               className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
             >
-              VS Code
+              Code
             </a>
           )}
         </div>

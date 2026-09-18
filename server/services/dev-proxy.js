@@ -4,62 +4,11 @@ import { unsign } from 'cookie-signature';
 import logger from '../logger.js';
 import { verifyProxyToken } from './preview.js';
 import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
+import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
 const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
-
-function writeSseLog(res, line) {
-  res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`);
-}
-function writeSseReady(res) {
-  res.write(`event: ready\ndata: {}\n\n`);
-}
-function writeSseError(res, err) {
-  res.write(
-    `event: error\ndata: ${JSON.stringify({ message: err?.message ?? 'Unknown error' })}\n\n`
-  );
-}
-
-class SseChannel {
-  #clients = new Set();
-
-  add(req, res) {
-    this.#clients.add(res);
-    req.on('close', () => this.#clients.delete(res));
-  }
-
-  log(line) {
-    for (const res of this.#clients) writeSseLog(res, line);
-  }
-
-  ready() {
-    for (const res of this.#clients) {
-      writeSseReady(res);
-      res.end();
-    }
-    this.#clients.clear();
-  }
-
-  error(err) {
-    for (const res of this.#clients) {
-      writeSseError(res, err);
-      res.end();
-    }
-    this.#clients.clear();
-  }
-
-  closeAll() {
-    for (const res of this.#clients) {
-      try {
-        res.end();
-      } catch {
-        /* already closed */
-      }
-    }
-    this.#clients.clear();
-  }
-}
 
 /**
  * Handler classes must implement:
@@ -76,6 +25,7 @@ export class DevProxy {
     this.app = app;
     this.handlerClasses = handlerClasses;
     this.states = new Map();
+    this.sse = new SseManager({ replay: true });
     this.middleware = this.middleware.bind(this);
   }
 
@@ -216,7 +166,7 @@ export class DevProxy {
     state.unsubLog?.();
     state.unsubExit?.();
     if (state.task != null) this.app.service('tasks').deleteTask(state.task.id);
-    state.sseClients.closeAll();
+    this.sse.purgeChannel(key);
     if (this.states.get(key) === state) this.states.delete(key);
   }
 
@@ -229,7 +179,6 @@ export class DevProxy {
       port: null,
       status: 'starting',
       idleTimer: null,
-      sseClients: new SseChannel(),
       unsubLog: null,
       unsubExit: null,
     };
@@ -239,7 +188,11 @@ export class DevProxy {
       const { task, exposePort } = await handler.buildTask();
 
       state.task = task;
-      state.unsubLog = task.onLog((_id, _stream, line) => state.sseClients.log(line));
+      const buffered = task.getLogs?.();
+      if (buffered) this.sse.send(key, { event: 'log', data: buffered });
+      state.unsubLog = task.onLog((_id, _stream, line) =>
+        this.sse.send(key, { event: 'log', data: line })
+      );
       state.unsubExit = task.onExit((_id, code) => {
         if (this.states.get(key) !== state) return;
         if (code !== 0 && state.status === 'starting') this._onCrashed(key, state);
@@ -271,7 +224,8 @@ export class DevProxy {
   _onListening(key, state, port, idleTimeoutMs) {
     state.port = port;
     state.status = 'listening';
-    state.sseClients.ready();
+    this.sse.send(key, { event: 'ready' });
+    this.sse.closeChannel(key);
     this._resetIdleTimer(key, state, idleTimeoutMs);
   }
 
@@ -279,7 +233,8 @@ export class DevProxy {
     if (state.status === 'crashed') return;
     state.status = 'crashed';
     state.error = error;
-    state.sseClients.error(error);
+    this.sse.send(key, { event: 'error', data: { message: error?.message ?? 'Unknown error' } });
+    this.sse.closeChannel(key);
   }
 
   _resetIdleTimer(key, state, idleTimeoutMs) {
@@ -290,8 +245,6 @@ export class DevProxy {
   }
 
   _serveSseLogs(req, res, key) {
-    const state = this.states.get(key);
-
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -300,28 +253,12 @@ export class DevProxy {
     });
     res.flushHeaders?.();
 
-    if (!state) {
+    if (!this.states.get(key)) {
       res.end();
       return;
     }
 
-    if (state.task != null) {
-      const buffered = state.task.getLogs?.();
-      if (buffered) writeSseLog(res, buffered);
-    }
-
-    if (state.status === 'listening') {
-      writeSseReady(res);
-      res.end();
-      return;
-    }
-    if (state.status === 'crashed') {
-      writeSseError(res, state.error);
-      res.end();
-      return;
-    }
-
-    state.sseClients.add(req, res);
+    this.sse.subscribe(req, res, key);
   }
 
   _setProxyCookie(res, userId) {
