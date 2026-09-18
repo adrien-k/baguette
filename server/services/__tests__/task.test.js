@@ -171,6 +171,63 @@ describe('TasksService.killSessionTasks', () => {
   });
 });
 
+describe('Task.onLog / onExit unsubscribe', () => {
+  it('onLog replays buffer then receives new logs; unsub stops delivery', () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x' });
+    task.addLog('stdout', 'buffered\n');
+
+    const received = [];
+    const unsub = task.onLog((_id, _stream, data) => received.push(data));
+
+    expect(received).toEqual(['buffered\n']); // replayed on subscribe
+
+    task.addLog('stdout', 'live\n');
+    expect(received).toEqual(['buffered\n', 'live\n']);
+
+    unsub();
+    task.addLog('stdout', 'after unsub\n');
+    expect(received).toEqual(['buffered\n', 'live\n']); // no new delivery
+  });
+
+  it('onExit fires on exit; unsub before exit prevents delivery', () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x' });
+    const calls = [];
+    const unsub = task.onExit((_id, code) => calls.push(code));
+
+    unsub();
+    task.exit(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('onExit fires immediately and returns no-op unsub when already exited', () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x' });
+    task.exit(2);
+
+    const calls = [];
+    const unsub = task.onExit((_id, code) => calls.push(code));
+    expect(calls).toEqual([2]); // immediate replay
+
+    expect(() => unsub()).not.toThrow(); // no-op unsub
+  });
+
+  it('multiple onLog subscribers are independent', () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x' });
+    const a = [];
+    const b = [];
+    const unsubA = task.onLog((_id, _s, d) => a.push(d));
+    task.onLog((_id, _s, d) => b.push(d));
+
+    task.addLog('stdout', 'msg\n');
+    expect(a).toEqual(['msg\n']);
+    expect(b).toEqual(['msg\n']);
+
+    unsubA();
+    task.addLog('stdout', 'after\n');
+    expect(a).toEqual(['msg\n']);   // unsubscribed
+    expect(b).toEqual(['msg\n', 'after\n']); // still subscribed
+  });
+});
+
 describe('TasksService eviction', () => {
   it('evicts an exited task when at capacity', () => {
     // Fill up to MAX_TASKS (500) — use a smaller service for testing by patching limit.

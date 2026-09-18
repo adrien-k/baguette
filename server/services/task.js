@@ -36,14 +36,12 @@ function getFreePort() {
 
 /**
  * Represents a single ephemeral task (child process).
- * Instantiated by TasksService; emits events back through the injected taskService.
  */
 export class Task {
   #process = null;
   #logBuffer = [];
-  #taskService;
 
-  constructor({ id, sessionId, command, label, ports, taskService, env, cwd, dependsOn }) {
+  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn }) {
     this.id = id;
     this.session_id = sessionId;
     this.command = command;
@@ -55,7 +53,6 @@ export class Task {
     this.status = 'running';
     this.exit_code = null;
     this.created_at = new Date().toISOString();
-    this.#taskService = taskService;
     this._env = env ?? null;
     this._cwd = cwd ?? null;
     this._logListeners = [];
@@ -64,54 +61,66 @@ export class Task {
     this._started = false;
   }
 
-  /** Register a log listener: fn(id, stream, data). Replays accumulated buffer, then registers. */
+  /** Register a log listener: fn(id, stream, data). Replays accumulated buffer, then registers. Returns unsubscribe. */
   onLog(fn) {
     for (const { stream, data } of this.#logBuffer) fn(this.id, stream, data);
     this._logListeners.push(fn);
-    return this;
+    return () => {
+      const idx = this._logListeners.indexOf(fn);
+      if (idx !== -1) this._logListeners.splice(idx, 1);
+    };
   }
 
-  /** Register an exit listener: fn(id, exitCode). Fires immediately if already exited. */
+  /** Register an exit listener: fn(id, exitCode). Fires immediately if already exited. Returns unsubscribe. */
   onExit(fn) {
-    if (this.status === 'exited') fn(this.id, this.exit_code);
-    else this._exitListeners.push(fn);
-    return this;
+    if (this.status === 'exited') {
+      fn(this.id, this.exit_code);
+      return () => {};
+    }
+    this._exitListeners.push(fn);
+    return () => {
+      const idx = this._exitListeners.indexOf(fn);
+      if (idx !== -1) this._exitListeners.splice(idx, 1);
+    };
   }
 
   /**
    * Run all depends_on tasks sequentially, then spawn this task's process.
    * Idempotent: calling start() on an already-started task is a no-op.
    */
-  async start() {
+  start() {
     if (this._started) return this;
     this._started = true;
-
-    for (const depTask of this._dependsOn) {
-      const depLabel = depTask.label ?? 'unlabeled';
-      this.addLog('stdout', `\x1b[2m──── Pre-requisite: ${depLabel}\x1b[0m\n`);
-      depTask.onLog((_id, stream, data) => this.addLog(stream, data));
-
+    
+    (async () => {
       try {
-        await depTask.start();
-        await depTask.waitForReady();
+        for (const depTask of this._dependsOn) {
+          const depLabel = depTask.label ?? 'unlabeled';
+          this.addLog('stdout', `\x1b[2m──── Pre-requisite: ${depLabel}\x1b[0m\n`);
+          const unsubDepLog = depTask.onLog((_id, stream, data) => this.addLog(stream, data));
+
+          await depTask.start();
+          await depTask.waitForReady();
+          unsubDepLog();
+
+          if (depTask.label && Object.keys(depTask.ports).length > 0) {
+            this._portMap[depTask.label] = depTask.ports;
+          }
+          const word = depTask._portEnvVars.length > 0 ? 'ready' : 'completed';
+          this.addLog('stdout', `\x1b[2m──── Pre-requisite ${word}: ${depLabel}\x1b[0m\n`);
+        }
+
+        if (Object.keys(this._portMap).length > 0) {
+          this.command = interpolateTaskPorts(this.command, this._portMap);
+        }
+
+        return this._startProcess();
       } catch (err) {
-        this.addLog('stderr', `\x1b[31m──── Pre-requisite "${depLabel}" failed: ${err.message}\x1b[0m\n`);
-        this.fail(err.exitCode ?? 1);
+        this.addLog('stderr', `\x1b[31m──── Failed to start task "${this.label}": ${err.message}\x1b[0m\n`);
+        this.exit(err.exitCode ?? 1);
         return this;
       }
-
-      if (depTask.label && Object.keys(depTask.ports).length > 0) {
-        this._portMap[depTask.label] = depTask.ports;
-      }
-      const word = depTask._portEnvVars.length > 0 ? 'ready' : 'completed';
-      this.addLog('stdout', `\x1b[2m──── Pre-requisite ${word}: ${depLabel}\x1b[0m\n`);
-    }
-
-    if (Object.keys(this._portMap).length > 0) {
-      this.command = interpolateTaskPorts(this.command, this._portMap);
-    }
-
-    return this._startProcess();
+    })();
   }
 
   /**
@@ -145,7 +154,6 @@ export class Task {
     }
 
     // Port dep: poll isPortListening, fail fast if process exits first
-    const portValues = Object.values(this.ports);
     const deadline = Date.now() + timeoutMs;
 
     let exitReject;
@@ -156,8 +164,12 @@ export class Task {
 
     const pollPromise = (async () => {
       while (Date.now() < deadline) {
-        const results = await Promise.all(portValues.map(isPortListening));
-        if (results.every(Boolean)) return;
+        const portValues = Object.values(this.ports);
+        // Only check ports once they are allocated
+        if (portValues.length === this._portEnvVars.length) {
+          const results = await Promise.all(portValues.map(isPortListening));  
+          if (results.every(Boolean)) return;
+        }
         await new Promise((r) => setTimeout(r, pollMs));
       }
       throw new Error(`"${this.label ?? 'task'}" ports not ready after ${timeoutMs}ms`);
@@ -202,15 +214,7 @@ export class Task {
 
     const handleData = (stream) => (data) => {
       const line = data.toString();
-      this.#logBuffer.push({ stream, data: line });
-      if (this.#logBuffer.length > 10000) this.#logBuffer.shift();
-      for (const fn of this._logListeners) fn(this.id, stream, line);
-      this.#taskService?.emit('log', {
-        id: this.id,
-        session_id: this.session_id,
-        stream,
-        data: line,
-      });
+      this.addLog(stream, line);
     };
 
     child.stdout.on('data', handleData('stdout'));
@@ -219,12 +223,9 @@ export class Task {
     child.on('exit', (code, signal) => {
       if (scriptPath) unlink(scriptPath).catch(() => {});
       const exitCode = code ?? (signal ? 1 : 0);
-      this.status = 'exited';
-      this.exit_code = exitCode;
       this.#process = null;
       detachChildProcess(child);
-      for (const fn of this._exitListeners) fn(this.id, exitCode);
-      this.#taskService?.emit('patched', this.toPublic());
+      this.exit(exitCode);
     });
 
     return this;
@@ -291,20 +292,15 @@ export class Task {
   addLog(stream, data) {
     this.#logBuffer.push({ stream, data });
     if (this.#logBuffer.length > 10000) this.#logBuffer.shift();
-    this.#taskService?.emit('log', {
-      id: this.id,
-      session_id: this.session_id,
-      stream,
-      data,
-    });
+    for (const fn of this._logListeners) fn(this.id, stream, data);
   }
 
   /** Mark the task as failed without a running process. */
-  fail(exitCode = 1) {
+  exit(exitCode = 1) {
     if (this.status === 'exited') return;
     this.status = 'exited';
     this.exit_code = exitCode;
-    this.#taskService?.emit('patched', this.toPublic());
+    for (const fn of this._exitListeners) fn(this.id, exitCode);
   }
 
   /** Return the full log buffer as a single string. */

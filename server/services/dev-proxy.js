@@ -4,11 +4,40 @@ import { unsign } from 'cookie-signature';
 import logger from '../logger.js';
 import { verifyProxyToken } from './preview.js';
 import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
-import { isPortListening } from './port-utils.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
 const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hour
 const POLL_INTERVAL_MS = 1000;
+
+function writeSseLog(res, line)  { res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`); }
+function writeSseReady(res)      { res.write(`event: ready\ndata: {}\n\n`); }
+function writeSseError(res, err) { res.write(`event: error\ndata: ${JSON.stringify({ message: err?.message ?? 'Unknown error' })}\n\n`); }
+
+class SseChannel {
+  #clients = new Set();
+
+  add(req, res) {
+    this.#clients.add(res);
+    req.on('close', () => this.#clients.delete(res));
+  }
+
+  log(line)  { for (const res of this.#clients) writeSseLog(res, line); }
+
+  ready() {
+    for (const res of this.#clients) { writeSseReady(res); res.end(); }
+    this.#clients.clear();
+  }
+
+  error(err) {
+    for (const res of this.#clients) { writeSseError(res, err); res.end(); }
+    this.#clients.clear();
+  }
+
+  closeAll() {
+    for (const res of this.#clients) { try { res.end(); } catch { /* already closed */ } }
+    this.#clients.clear();
+  }
+}
 
 /**
  * Handler classes must implement:
@@ -107,16 +136,15 @@ export class DevProxy {
       return res.end();
     }
 
-    let state = this._getOrFixState(key);
+    let state = this.states.get(key);
     if (!state) {
-      state = await this._startService(handler);
+      state = await this._startService(handler)
     }
 
-    if (state.status === 'timedout' || state.status === 'crashed' || state.status === 'starting') {
+    if (state.status === 'crashed' || state.status === 'starting') {
       return res.render('devserver-loading');
     }
 
-    state.lastTraffic = new Date();
     this._resetIdleTimer(key, state, handler.idleTimeoutMs);
     return this._proxyRequest(req, res, state.port);
   }
@@ -124,13 +152,15 @@ export class DevProxy {
   async wsDispatch(req, socket, head, handler) {
     const key = handler.key;
 
-    let state = this._getOrFixState(key);
+    let state = this.states.get(key);
     if (!state) {
       state = await this._startService(handler);
     }
-
-    const ok = await this._waitUntilListeningOrTerminal(state, handler.startupTimeoutMs);
-    if (!ok || state.status !== 'listening') {
+    
+    try {
+      await state.task.waitForReady({ timeout: handler.startupTimeoutMs });
+    } catch (err) {
+      this._onCrashed(key, state, err);
       socket.destroy();
       return;
     }
@@ -140,14 +170,11 @@ export class DevProxy {
   }
 
   _cleanup(key, state) {
-    clearInterval(state.pollerInterval);
-    clearTimeout(state.startupTimer);
     clearTimeout(state.idleTimer);
+    state.unsubLog?.();
+    state.unsubExit?.();
     if (state.task != null) this.app.service('tasks').deleteTask(state.task.id);
-    for (const res of state.sseClients) { try { res.end(); } catch { /* already closed */ } }
-    state.sseClients.clear();
-    for (const res of state.portalSseClients) { try { res.end(); } catch { /* already closed */ } }
-    state.portalSseClients.clear();
+    state.sseClients.closeAll();
     if (this.states.get(key) === state) this.states.delete(key);
   }
 
@@ -155,94 +182,62 @@ export class DevProxy {
 
   async _startService(handler) {
     const key = handler.key;
-
     const state = {
       task: null,
       port: null,
       status: 'starting',
-      lastTraffic: null,
-      startupTimer: null,
       idleTimer: null,
-      pollerInterval: null,
-      sseClients: new Set(),
-      portalSseClients: new Set(),
+      sseClients: new SseChannel(),
+      unsubLog: null,
+      unsubExit: null,
     };
 
     this.states.set(key, state);
+    try {
+      const { task, exposePort } = await handler.buildTask();
 
-    const { task, exposePort } = await handler.buildTask();
+      state.task = task;
+      state.unsubLog = task.onLog((_id, _stream, line) => state.sseClients.log(line));
+      state.unsubExit = task.onExit((_id, code) => {
+        if (this.states.get(key) !== state) return;
+        if (code !== 0 && state.status === 'starting') this._onCrashed(key, state);
+      });
 
-    task.onLog((_id, _stream, line) => {
-      for (const res of state.sseClients) res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`);
-      for (const res of state.portalSseClients) res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`);
-    });
-    task.onExit((_id, code) => {
-      if (this.states.get(key) !== state) return;
-      if (code !== 0 && state.status === 'starting') this._onCrashed(key, state);
-      else this._cleanup(key, state);
-    });
+      task.start();
+      
+      (async () => {
+        try {
+          await task.waitForReady({ timeout: handler.startupTimeoutMs });
+          const port = task.ports[exposePort];
+          if (!port) {
+            throw new Error('Port not allocated');
+          }
 
-    const port = task.ports[exposePort];
-    if (!port) {
-      this._cleanup(key, state);
-      throw new Error('Port not allocated');
+          this._onListening(key, state, port, handler.idleTimeoutMs);
+        } catch (err) {
+          this._onCrashed(key, state, err);
+        }
+      })();
+      
+      return state;
+    } catch (err) {
+      this._onCrashed(key, state, err);
+      return state;
     }
+  }
 
-    state.task = task;
+  _onListening(key, state, port, idleTimeoutMs) {
     state.port = port;
-
-    void task.start().catch((err) => logger.error(err, 'Task startup error'));
-
-    const allPorts = Object.values(task.ports);
-    state.pollerInterval = setInterval(async () => {
-      const results = await Promise.all(allPorts.map(isPortListening));
-      if (results.every(Boolean)) this._onListening(key, state, handler.idleTimeoutMs);
-    }, POLL_INTERVAL_MS);
-
-    state.startupTimer = setTimeout(() => {
-      if (state.status !== 'starting') return;
-      state.status = 'timedout';
-      clearInterval(state.pollerInterval);
-      this.app.service('tasks').deleteTask(state.task.id);
-      for (const res of state.sseClients) { res.write(`event: timeout\ndata: {}\n\n`); res.end(); }
-      state.sseClients.clear();
-    }, handler.startupTimeoutMs);
-
-    return state;
-  }
-
-  _getOrFixState(key) {
-    const state = this.states.get(key);
-    if (!state) return null;
-    // Keep terminal states until the user explicitly retries
-    if (state.status === 'crashed' || state.status === 'timedout') return state;
-    if (state.task != null) {
-      const liveTask = this.app.service('tasks').getTask(state.task.id);
-      if (!liveTask || liveTask.status === 'exited') {
-        this._cleanup(key, state);
-        return null;
-      }
-    }
-    return state;
-  }
-
-  _onListening(key, state, idleTimeoutMs) {
-    clearInterval(state.pollerInterval);
-    clearTimeout(state.startupTimer);
     state.status = 'listening';
-    for (const res of state.sseClients) { res.write(`event: ready\ndata: {}\n\n`); res.end(); }
-    state.sseClients.clear();
-    for (const res of state.portalSseClients) res.write(`event: ready\ndata: {}\n\n`);
+    state.sseClients.ready();
     this._resetIdleTimer(key, state, idleTimeoutMs);
   }
 
-  _onCrashed(key, state) {
-    clearInterval(state.pollerInterval);
-    clearTimeout(state.startupTimer);
+  _onCrashed(key, state, error) {
+    if (state.status === 'crashed') return;
     state.status = 'crashed';
-    for (const res of state.sseClients) { res.write(`event: error\ndata: {}\n\n`); res.end(); }
-    state.sseClients.clear();
-    for (const res of state.portalSseClients) res.write(`event: error\ndata: {}\n\n`);
+    state.error = error;
+    state.sseClients.error(error);
   }
 
   _resetIdleTimer(key, state, idleTimeoutMs) {
@@ -262,20 +257,18 @@ export class DevProxy {
       'X-Accel-Buffering': 'no',
     });
     res.flushHeaders?.();
-
+    
     if (!state) { res.end(); return; }
 
     if (state.task != null) {
       const buffered = state.task.getLogs?.();
-      if (buffered) res.write(`event: log\ndata: ${JSON.stringify(buffered)}\n\n`);
+      if (buffered) writeSseLog(res, buffered);
     }
 
-    if (state.status === 'listening') { res.write(`event: ready\ndata: {}\n\n`); res.end(); return; }
-    if (state.status === 'timedout') { res.write(`event: timeout\ndata: {}\n\n`); res.end(); return; }
-    if (state.status === 'crashed') { res.write(`event: error\ndata: {}\n\n`); res.end(); return; }
+    if (state.status === 'listening') { writeSseReady(res); res.end(); return; }
+    if (state.status === 'crashed') { writeSseError(res, state.error); res.end(); return; }
 
-    state.sseClients.add(res);
-    req.on('close', () => state.sseClients.delete(res));
+    state.sseClients.add(req, res);
   }
 
   _setProxyCookie(res, userId) {
@@ -328,16 +321,4 @@ export class DevProxy {
     proxyReq.end();
   }
 
-  _waitUntilListeningOrTerminal(state, timeoutMs) {
-    const start = Date.now();
-    return new Promise((resolve) => {
-      const tick = () => {
-        if (state.status === 'listening') { resolve(true); return; }
-        if (state.status === 'timedout' || state.status === 'crashed') { resolve(false); return; }
-        if (Date.now() - start > timeoutMs) { resolve(false); return; }
-        setTimeout(tick, POLL_INTERVAL_MS);
-      };
-      tick();
-    });
-  }
 }

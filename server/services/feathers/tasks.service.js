@@ -45,7 +45,9 @@ export class TasksService {
     }
 
     const id = this._nextId++;
-    const task = new Task({ id, sessionId, command, label, ports, taskService: this, env, cwd, dependsOn });
+    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn });
+    task.onLog((_id, stream, data) => this.emit('log', { id, session_id: sessionId, stream, data }));
+    task.onExit((_id, _code) => this.emit('patched', task.toPublic()));
     this._tasks.set(id, task);
     return task;
   }
@@ -217,11 +219,7 @@ export class TasksService {
     }
 
     if (autoStart) {
-      if (dependsOn.length > 0) {
-        void task.start().catch((err) => logger.error(err, 'Task startup error'));
-      } else {
-        await task.start();
-      }
+      task.start();
     }
 
     return task.toPublic();

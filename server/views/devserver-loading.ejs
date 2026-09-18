@@ -81,7 +81,7 @@
       source.close();
       document.querySelector('.spinner').style.display = 'none';
       document.querySelector('h1').textContent = 'Dev server exited';
-      error.querySelector('p').textContent = 'The dev server process exited with a non-zero code.';
+      error.querySelector('p').textContent = JSON.parse(e.data).message;
       error.style.display = 'block';
     });
 
