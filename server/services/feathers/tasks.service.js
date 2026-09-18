@@ -168,6 +168,7 @@ export class TasksService {
       label,
       ports,
       task_key,
+      extra_env,
       onLog,
       onExit,
       skipInit,
@@ -177,7 +178,8 @@ export class TasksService {
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
-    const env = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
+    const baseEnv = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
+    const env = extra_env ? { ...baseEnv, ...extra_env } : baseEnv;
     const interpolatedCommand = await this.app
       .service('sessions')
       .getInterpolatedCommand(session.id, command);

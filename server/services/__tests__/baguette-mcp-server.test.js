@@ -630,6 +630,33 @@ describe('RunProjectCommand', () => {
       expect.anything()
     );
   });
+
+  it('passes extra_env to task create when env is provided', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    await callTool(tools, 'RunProjectCommand', {
+      label: 'Run tests',
+      env: { MY_VAR: 'hello', ANOTHER: 'world' },
+    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ extra_env: { MY_VAR: 'hello', ANOTHER: 'world' } }),
+      expect.anything()
+    );
+  });
+
+  it('does not include extra_env when env is omitted', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ extra_env: expect.anything() }),
+      expect.anything()
+    );
+  });
 });
 
 describe('PrComments', () => {

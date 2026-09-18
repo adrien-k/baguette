@@ -714,6 +714,10 @@ function buildBaguetteToolList(session, app) {
           .describe(
             'Extra arguments appended to the command (e.g. a test file path, name pattern, or CLI flag)'
           ),
+        env: z
+          .record(z.string())
+          .optional()
+          .describe('Extra environment variables to set for this command run, merged on top of session env'),
         attach: z
           .boolean()
           .optional()
@@ -721,7 +725,7 @@ function buildBaguetteToolList(session, app) {
             'If true, wait for the command to finish and return exitCode/stdoutLines/stderrLines inline. Default false (detached): returns taskId immediately.'
           ),
       },
-      handler: async ({ label, args = [], attach = false }) => {
+      handler: async ({ label, args = [], env: extraEnv, attach = false }) => {
         let tasks;
         try {
           const cfg = await loadBaguetteConfig(session.worktree_path);
@@ -749,6 +753,7 @@ function buildBaguetteToolList(session, app) {
                 label,
                 ports: taskDef.ports || [],
                 task_key: label,
+                extra_env: extraEnv,
               },
               { user: { id: session.user_id } }
             );
@@ -771,6 +776,7 @@ function buildBaguetteToolList(session, app) {
                 label,
                 ports: taskDef.ports || [],
                 task_key: label,
+                extra_env: extraEnv,
                 onLog: (id, stream, data) => {
                   if (stream === 'stdout') stdout += data;
                   else stderr += data;
