@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%- title %></title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; text-align: center; }
+    h1 { font-size: 1.5rem; color: #f85149; margin-bottom: 1rem; }
+    p { color: #8b949e; margin-bottom: 1.5rem; max-width: 480px; line-height: 1.5; }
+    a.back { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 0.5rem 1rem; border-radius: 6px; font-family: monospace; text-decoration: none; }
+    a.back:hover { background: #30363d; }
+  </style>
+</head>
+<body>
+  <h1><%- title %></h1>
+  <p><%- message %></p>
+  <a class="back" href="<%- backUrl %>">← Back to Baguette</a>
+</body>
+</html>

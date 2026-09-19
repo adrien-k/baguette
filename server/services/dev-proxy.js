@@ -68,7 +68,7 @@ export class DevProxy {
       );
     }
 
-    if (!(await handler.allowUser(userId))) return res.status(403).send('Forbidden');
+    if (!(await handler.allowUser(userId, res))) return;
 
     this._setProxyCookie(res, userId); // renew TTL
 

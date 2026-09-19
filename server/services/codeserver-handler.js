@@ -18,7 +18,7 @@ export class CodeServerHandler {
     return this.host === codeHostname;
   }
 
-  async allowUser(_userId) {
+  async allowUser(_userId, _res) {
     return true;
   }
 

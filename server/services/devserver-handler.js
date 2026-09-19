@@ -4,6 +4,7 @@ import {
   resolveWebserverConfig,
   resolveServicesConfig,
 } from './baguette-config.js';
+import { PUBLIC_HOST } from '../config.js';
 
 export class DevserverHandler {
   startupTimeoutMs = 1 * 60 * 1000;
@@ -39,14 +40,46 @@ export class DevserverHandler {
     return this._configPromise;
   }
 
-  async allowUser(userId) {
+  async allowUser(userId, res) {
     const session = await this.getSession();
-    if (!session) return false;
-    if (!session.is_preview_public && String(session.user_id) !== String(userId)) return false;
+
+    if (!session) {
+      this._renderDenied(res, 404, 'Session not found', 'This preview session no longer exists.');
+      return false;
+    }
+
+    if (session.is_preview_public) return true;
+
+    if (String(session.user_id) !== String(userId)) {
+      this._renderDenied(
+        res,
+        403,
+        'Access denied',
+        "You don't have permission to view this preview."
+      );
+      return false;
+    }
+
     const config = await this._getConfig();
     const hasWebserver = !!config?.webserver;
     const hasServices = !hasWebserver && !!(config && resolveServicesConfig(config));
-    return hasWebserver || hasServices;
+
+    if (!hasWebserver && !hasServices) {
+      this._renderDenied(
+        res,
+        404,
+        'No preview available',
+        'No webserver or services are configured for this session.'
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  _renderDenied(res, status, title, message) {
+    if (!res) return; // WS upgrade path has no response to render into
+    res.status(status).render('devserver-denied', { title, message, backUrl: PUBLIC_HOST });
   }
 
   get key() {
