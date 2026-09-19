@@ -72,7 +72,6 @@ config:
         run: <shell command>
         ports: [ENV_VAR_NAME, ...] # Optional: env vars assigned free ports
         depends-on: [<other-task-key>] # Optional: tasks to start first
-        ttl: <seconds> # Optional: task lifetime in seconds (default: 900)
   # Use one of webserver OR services — they are mutually exclusive.
   webserver:
     task: <task-key> # Reference a task from session.tasks
@@ -131,12 +130,18 @@ tasks:
 
 #### Task fields
 
-| Field        | Type     | Description                                                                                                                                               |
-| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run`        | string   | Shell command to execute                                                                                                                                  |
-| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching                                                                                        |
-| `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                                                      |
-| `ttl`        | number   | Task lifetime in seconds before it is automatically stopped (default: 900). For webserver/service tasks, each incoming HTTP request resets the countdown. |
+| Field        | Type     | Description                                                          |
+| ------------ | -------- | -------------------------------------------------------------------- |
+| `run`        | string   | Shell command to execute                                             |
+| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching   |
+| `depends-on` | string[] | Task keys that must be running and listening before this task starts |
+
+#### Lifetime
+
+Task lifetime is determined by whether the task exposes ports — it is not configurable in `.baguette.yaml`:
+
+- **No ports** — the task runs until it exits or is cancelled. Heartbeats have no effect.
+- **Has ports** — the task is stopped after 5 minutes of inactivity. A heartbeat resets that window to 5 minutes. The preview proxy heartbeats the underlying task on every proxied request. Each running task also heartbeats its `depends-on` tasks every minute until it exits, so a long-running command keeps its server dependencies alive.
 
 #### Ports
 

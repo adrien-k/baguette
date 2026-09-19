@@ -1,7 +1,7 @@
 /**
  * Unit tests for Task class and TasksService store logic.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../db.js', () => ({ default: vi.fn() }));
 
@@ -16,7 +16,7 @@ vi.mock('child_process', () => {
   return { spawn: vi.fn(() => mockChild) };
 });
 
-import { Task } from '../task.js';
+import { Task, DEFAULT_TTL_MS, HEARTBEAT_INTERVAL_MS } from '../task.js';
 import { TasksService } from '../feathers/tasks.service.js';
 
 let service;
@@ -45,6 +45,12 @@ describe('Task', () => {
     expect(pub.command).toBe('x');
     expect('logBuffer' in pub).toBe(false);
     expect('process' in pub).toBe(false);
+    expect(pub.ttl_ms).toBeNull();
+  });
+
+  it('toPublic() reports the default TTL for tasks with ports', () => {
+    const task = new Task({ id: 1, sessionId: 10, command: 'x', ports: ['PORT'] });
+    expect(task.toPublic().ttl_ms).toBe(DEFAULT_TTL_MS);
   });
 
   it('getLogs() returns empty string initially', () => {
@@ -225,6 +231,96 @@ describe('Task.onLog / onExit unsubscribe', () => {
     task.addLog('stdout', 'after\n');
     expect(a).toEqual(['msg\n']); // unsubscribed
     expect(b).toEqual(['msg\n', 'after\n']); // still subscribed
+  });
+});
+
+describe('Task heartbeat / TTL', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('heartbeat() is a no-op for tasks without ports', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x' });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS + 1);
+
+    expect(kill).not.toHaveBeenCalled();
+    expect(task.status).toBe('running');
+  });
+
+  it('heartbeat() starts a 5-minute TTL for tasks with ports', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
+    expect(kill).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('heartbeat() resets the 5-minute TTL window', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
+    expect(kill).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('heartbeat() is a no-op after the task has exited', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+    task.exit(0);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS + 1);
+
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it('start() heartbeats depends_on immediately and every minute until exit', () => {
+    vi.useFakeTimers();
+    const dep = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const hb = vi.spyOn(dep, 'heartbeat');
+    vi.spyOn(dep, 'start').mockImplementation(() => {
+      dep._started = true;
+      return dep;
+    });
+    vi.spyOn(dep, 'waitForReady').mockResolvedValue();
+
+    const main = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'x',
+      dependsOn: [dep],
+    });
+    vi.spyOn(main, '_startProcess').mockResolvedValue(main);
+
+    main.start();
+    expect(hb).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    expect(hb).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    expect(hb).toHaveBeenCalledTimes(3);
+
+    main.exit(0);
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS * 2);
+    expect(hb).toHaveBeenCalledTimes(3);
   });
 });
 

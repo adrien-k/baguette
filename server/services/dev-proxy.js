@@ -137,7 +137,7 @@ export class DevProxy {
       return res.render('devserver-loading');
     }
 
-    state.task?.resetTtl();
+    state.task?.heartbeat();
     return this._proxyRequest(req, res, state.port);
   }
 
@@ -157,7 +157,7 @@ export class DevProxy {
       return;
     }
 
-    state.task?.resetTtl();
+    state.task?.heartbeat();
     this._proxyUpgrade(req, socket, head, state.port);
   }
 

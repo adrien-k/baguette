@@ -87,7 +87,7 @@ export function interpolateTaskPorts(commandStr, taskPortMap) {
 
 /**
  * Build a tasks hash from a baguette config.
- * Returns `{ [taskKey]: { run, ports?, depends_on? } }`.
+ * Returns `{ [taskKey]: { run, ports?, depends_on?, env? } }`.
  *
  * Supports both the new `session.tasks` hash format and the legacy `session.commands` array.
  * Synthesizes `baguette:init` from `session.init` if defined.
@@ -110,7 +110,6 @@ export function getAvailableTasks(baguetteConfig) {
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
-        ...(typeof val.ttl === 'number' ? { ttl: val.ttl } : {}),
       };
     }
   } else if (Array.isArray(userCommands)) {

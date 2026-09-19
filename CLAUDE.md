@@ -1,12 +1,12 @@
-# Baguette – Claude Code Notes
+# Baguette - Claude Code Notes
 
 ## Before committing
 
-Run tests and lint — both must pass:
+Run tests and fix format - both must pass:
 
 ```
 pnpm test
-pnpm run lint
+pnpm run fix
 ```
 
 ## API routes: prefer Feathers services over Express routes
