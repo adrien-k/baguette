@@ -2,7 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { usersService } from '../feathers.js';
 import { useAuth } from './useAuth.jsx';
 import { toastError } from '../utils/toastError.jsx';
-import { normalizeCursorModelPrefs, DEFAULT_CURSOR_MODEL_PREFS } from '../utils/agentPreferences.js';
+import {
+  normalizeCursorModelPrefs,
+  DEFAULT_CURSOR_MODEL_PREFS,
+} from '../utils/agentPreferences.js';
 
 const SAVE_DEBOUNCE_MS = 400;
 

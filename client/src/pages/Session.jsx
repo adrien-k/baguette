@@ -17,6 +17,7 @@ import {
   Pencil,
   Upload,
   Code2,
+  MonitorPlay,
 } from 'lucide-react';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
@@ -36,6 +37,7 @@ import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
 import LogsView from './session/LogsView.jsx';
 import EditView from './session/EditView.jsx';
+import PreviewView from './session/PreviewView.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
 import { parseModelField, variantLabel } from '../utils/models.js';
 
@@ -240,12 +242,13 @@ function MiniSessionEntry({ session: s, currentId, onArchive }) {
   );
 }
 
-const VIEWS = [
+const BASE_VIEWS = [
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
   { id: 'diff', label: 'Diff', Icon: FolderOpen },
   { id: 'logs', label: 'Logs', Icon: ScrollText },
   { id: 'edit', label: 'Edit', Icon: Pencil },
 ];
+const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
 
 export default function Session() {
   const { short_id, repoId } = useParams();
@@ -326,6 +329,14 @@ export default function Session() {
       })),
     [tasksFromHook, killedTaskIds]
   );
+
+  const views = useMemo(() => {
+    const list = [...BASE_VIEWS];
+    if (session?.preview_url) {
+      list.splice(3, 0, PREVIEW_VIEW);
+    }
+    return list;
+  }, [session?.preview_url]);
 
   useEffect(() => {
     if (!session) return;
@@ -961,7 +972,7 @@ export default function Session() {
               <PanelLeft className="w-4 h-4" />
             </button>
             <div className="flex overflow-x-auto gap-1 min-w-0 flex-1 scrollbar-none">
-              {VIEWS.map(({ id, label, Icon }) => (
+              {views.map(({ id, label, Icon }) => (
                 <button
                   key={id}
                   onClick={() => setView(id)}
@@ -1015,6 +1026,13 @@ export default function Session() {
             {activeView === 'diff' && <DiffView session={session} onFilesChange={setDiffFiles} />}
             {activeView === 'logs' && (
               <LogsView rawMessages={rawMessages} loadMore={loadMore} loadingMore={loadingMore} />
+            )}
+            {activeView === 'preview' && (
+              <PreviewView
+                session={session}
+                readonly={isReadonly}
+                onViewLogs={handleViewTaskLogs}
+              />
             )}
             {activeView === 'edit' && <EditView session={session} />}
           </div>

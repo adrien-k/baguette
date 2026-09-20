@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ExternalLink, Save, RefreshCw, Globe, Wifi } from 'lucide-react';
+import { ExternalLink, Save, RefreshCw } from 'lucide-react';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import toast from 'react-hot-toast';
@@ -136,66 +136,6 @@ export default function EditView({ session }) {
             <span className="text-zinc-400 font-medium">Push</span> button or when auto-push runs.
           </p>
         </div>
-
-        {session?.preview_url && (
-          <div className="border-t border-zinc-800 pt-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-zinc-400" />
-                <div>
-                  <h3 className="text-sm font-medium text-zinc-300">Public preview</h3>
-                  <p className="text-xs text-zinc-500">
-                    Anyone with the link can open the preview and start the dev server.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={!!session?.is_preview_public}
-                onClick={() => {
-                  if (!session?.id) return;
-                  sessionsService
-                    .patch(session.id, { is_preview_public: !session.is_preview_public })
-                    .catch((err) => toastError('Failed to update public preview setting', err));
-                }}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.is_preview_public ? 'bg-amber-500' : 'bg-zinc-600'}`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_public ? 'translate-x-4.5' : 'translate-x-0.5'}`}
-                />
-              </button>
-            </div>
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center gap-2">
-                <Wifi className="w-4 h-4 text-zinc-400" />
-                <div>
-                  <h3 className="text-sm font-medium text-zinc-300">IP-public preview</h3>
-                  <p className="text-xs text-zinc-500">
-                    Sign in to start the dev server; once running, the same IP can use the preview
-                    without signing in.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={!!session?.is_preview_ip_public}
-                onClick={() => {
-                  if (!session?.id) return;
-                  sessionsService
-                    .patch(session.id, { is_preview_ip_public: !session.is_preview_ip_public })
-                    .catch((err) => toastError('Failed to update IP-public preview setting', err));
-                }}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.is_preview_ip_public ? 'bg-amber-500' : 'bg-zinc-600'}`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_ip_public ? 'translate-x-4.5' : 'translate-x-0.5'}`}
-                />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

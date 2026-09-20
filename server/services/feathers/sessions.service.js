@@ -30,6 +30,12 @@ import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
 import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
 import { getPreviewHost } from '../preview.js';
+import {
+  getPreviewServiceDefinitions,
+  resolvePreviewServiceConfig,
+  sessionHasPreviewConfig,
+} from '../preview-services.js';
+import { isPortListening } from '../port-utils.js';
 import path from 'path';
 import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '../session-env.js';
 import { getEffectiveGithubToken } from '../agent-settings.js';
@@ -181,6 +187,85 @@ export class SessionsService extends KnexService {
     if (!session?.worktree_path) return { commands: [] };
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
     return { commands: getAvailableCommands(baguetteConfig) };
+  }
+
+  async previewStatus(_data, params) {
+    const session = params.resolvedSession;
+    if (!session?.worktree_path) return { services: [] };
+    const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    const definitions = getPreviewServiceDefinitions(baguetteConfig, session.short_id);
+    if (!definitions?.length) return { services: [] };
+
+    const tasksService = this.app.service('tasks');
+    const services = [];
+    for (const def of definitions) {
+      const task = tasksService.findLatestTaskByLabel(session.id, def.task_label);
+      let status = 'stopped';
+      let task_id = null;
+      let exit_code = null;
+      const ports = {};
+
+      if (task) {
+        task_id = task.id;
+        if (task.status === 'running') {
+          const exposePort = def.expose ? task.ports[def.expose] : null;
+          if (exposePort && (await isPortListening(exposePort))) {
+            status = 'ready';
+          } else {
+            status = 'starting';
+          }
+          for (const [envVar, port] of Object.entries(task.ports)) {
+            ports[envVar] = { port, listening: await isPortListening(port) };
+          }
+        } else {
+          exit_code = task.exit_code;
+          status = exit_code != null && exit_code !== 0 ? 'crashed' : 'stopped';
+        }
+      }
+
+      services.push({
+        name: def.name,
+        display_name: def.display_name,
+        url: def.url,
+        deep_link_url: def.deep_link_url,
+        expose: def.expose,
+        task_key: def.task_key,
+        task_label: def.task_label,
+        task_id,
+        status,
+        exit_code,
+        ports,
+      });
+    }
+    return { services };
+  }
+
+  async startPreviewService(data, params) {
+    const session = params.resolvedSession;
+    if (!session?.worktree_path) throw new BadRequest('Session has no worktree');
+    const serviceName = data?.service ?? 'default';
+    const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    const webserverConfig = resolvePreviewServiceConfig(baguetteConfig, serviceName);
+    if (!webserverConfig) {
+      throw new BadRequest(`No preview service "${serviceName}" configured`);
+    }
+
+    const label = `baguette:webserver:${serviceName}`;
+    const tasksService = this.app.service('tasks');
+    const running = tasksService._findRunningTask(session.id, label);
+    if (running) return running.toPublic();
+
+    return tasksService.create(
+      {
+        session_id: session.id,
+        command: webserverConfig.command,
+        label,
+        ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
+        ...(webserverConfig.taskKey ? { task_key: webserverConfig.taskKey } : {}),
+        no_ttl: true,
+      },
+      params
+    );
   }
 
   async diff(data, params) {
@@ -634,11 +719,14 @@ async function withHasWebserver(session) {
     ? await fs.realpath(resolvedPath).catch(() => resolvedPath)
     : resolvedPath;
   const config = session.worktree_path ? await loadBaguetteConfig(session.worktree_path) : null;
-  const hasPreview = !!(config?.webserver || config?.services);
+  const hasPreview = sessionHasPreviewConfig(config);
+  const previewServices =
+    hasPreview && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
   return {
     ...session,
     absolute_worktree_path: absoluteWorktreePath ?? null,
     preview_url: hasPreview && getPreviewHost(session.short_id),
+    preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     codeserver_url: absoluteWorktreePath ? getCodeserverUrl(absoluteWorktreePath) : null,
@@ -731,6 +819,8 @@ export function registerSessionsService(app, path = 'sessions') {
       'push',
       'restore',
       'getPrDetails',
+      'previewStatus',
+      'startPreviewService',
     ],
   });
   app.service(path).hooks(sessionsHooks);
@@ -771,6 +861,8 @@ export const sessionsHooks = {
     push: [resolveSessionFromData],
     restore: [resolveSessionFromData],
     getPrDetails: [resolveSessionFromData],
+    previewStatus: [resolveSessionFromData],
+    startPreviewService: [resolveSessionFromData],
   },
   after: {
     find: [addHasWebserver],

@@ -28,7 +28,7 @@ export class TasksService {
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
    */
-  createTask({ sessionId, command, label, ports, env, cwd, dependsOn }) {
+  createTask({ sessionId, command, label, ports, env, cwd, dependsOn, noTtl }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
@@ -45,7 +45,7 @@ export class TasksService {
     }
 
     const id = this._nextId++;
-    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn });
+    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl });
     task.onLog((_id, stream, data) =>
       this.emit('log', { id, session_id: sessionId, stream, data })
     );
@@ -107,6 +107,17 @@ export class TasksService {
     const running = Array.from(this._tasks.values()).filter((t) => t.status === 'running');
     await Promise.all(running.map((t) => t.kill()));
     this._tasks.clear();
+  }
+
+  /** Most recent task in a session with the given label (any status). */
+  findLatestTaskByLabel(sessionId, label) {
+    let latest = null;
+    for (const task of this._tasks.values()) {
+      if (task.session_id === sessionId && task.label === label) {
+        if (!latest || task.id > latest.id) latest = task;
+      }
+    }
+    return latest;
   }
 
   /** Find a running task in this session by its label. */
@@ -174,6 +185,7 @@ export class TasksService {
       skipInit,
       _depChain,
       autoStart = true,
+      no_ttl: noTtl = false,
     } = data;
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
@@ -253,6 +265,7 @@ export class TasksService {
       env,
       cwd,
       dependsOn,
+      noTtl,
     });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);

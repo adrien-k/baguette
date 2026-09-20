@@ -41,6 +41,9 @@ config:
         depends-on: [dev-server]
   # Single-service preview (most projects): reference one task.
   # Use `services` instead for multi-service setups (see below).
+  # Optional: custom URL scheme for deep links (e.g. Expo exp://). Also supported per-service.
+  preview:
+    scheme: exp://
   webserver:
     # Reference a task from session.tasks (recommended). Mutually exclusive with command.
     task: dev-server

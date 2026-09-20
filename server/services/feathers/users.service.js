@@ -51,10 +51,7 @@ async function normalizeCursorModelPrefsPatch(context) {
     ...context.params,
     provider: undefined,
   });
-  const merged = mergeCursorModelPrefs(
-    existing.agent_preferences,
-    context.data.agent_preferences
-  );
+  const merged = mergeCursorModelPrefs(existing.agent_preferences, context.data.agent_preferences);
   context.data.agent_preferences = stringifyCursorModelPrefs(merged);
   return context;
 }

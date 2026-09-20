@@ -1,9 +1,6 @@
-import { extractSessionIdFromHost, getServicePreviewHost } from './preview.js';
-import {
-  loadBaguetteConfig,
-  resolveWebserverConfig,
-  resolveServicesConfig,
-} from './baguette-config.js';
+import { extractSessionIdFromHost } from './preview.js';
+import { getPreviewServiceDefinitions, resolvePreviewServiceConfig } from './preview-services.js';
+import { loadBaguetteConfig } from './baguette-config.js';
 import { PUBLIC_HOST } from '../config.js';
 
 export class DevserverHandler {
@@ -42,9 +39,7 @@ export class DevserverHandler {
 
   async _hasPreviewConfig() {
     const config = await this._getConfig();
-    const hasWebserver = !!config?.webserver;
-    const hasServices = !hasWebserver && !!(config && resolveServicesConfig(config));
-    return hasWebserver || hasServices;
+    return !!getPreviewServiceDefinitions(config, this.shortId)?.length;
   }
 
   async allowUser(userId, res) {
@@ -104,12 +99,10 @@ export class DevserverHandler {
 
   async render(res) {
     const config = await this._getConfig();
-    const servicesConfig = resolveServicesConfig(config);
-    if (!servicesConfig || this.serviceName !== null) return false;
-    const services = servicesConfig.map((svc) => ({
-      name: svc.name,
-      url: getServicePreviewHost(this.shortId, svc.name),
-    }));
+    const definitions = getPreviewServiceDefinitions(config, this.shortId);
+    const multiService = definitions && definitions.length > 1 && definitions[0].name !== 'default';
+    if (!multiService || this.serviceName !== null) return false;
+    const services = definitions.map((svc) => ({ name: svc.display_name, url: svc.url }));
     res.render('portal', { services });
     return true;
   }
@@ -118,7 +111,7 @@ export class DevserverHandler {
     const session = await this.getSession();
     const config = await this._getConfig();
     const effectiveServiceName = this.serviceName ?? 'default';
-    const webserverConfig = this._resolveServiceConfig(config, effectiveServiceName);
+    const webserverConfig = resolvePreviewServiceConfig(config, effectiveServiceName);
     if (!webserverConfig)
       throw new Error(`No webserver config for service "${effectiveServiceName}"`);
     const publicTask = await this.app.service('tasks').create(
@@ -134,11 +127,5 @@ export class DevserverHandler {
     );
     const task = this.app.service('tasks').getTask(publicTask.id);
     return { task, exposePort: webserverConfig.expose };
-  }
-
-  _resolveServiceConfig(baguetteConfig, serviceName) {
-    if (serviceName === 'default') return resolveWebserverConfig(baguetteConfig);
-    const services = resolveServicesConfig(baguetteConfig);
-    return services?.find((s) => s.name === serviceName) ?? null;
   }
 }

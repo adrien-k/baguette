@@ -48,7 +48,7 @@ export class Task {
   #ttlTimer = null;
   #heartbeatTimer = null;
 
-  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn }) {
+  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl = false }) {
     this.id = id;
     this.session_id = sessionId;
     this.command = command;
@@ -66,6 +66,7 @@ export class Task {
     this._exitListeners = [];
     this._dependsOn = Array.isArray(dependsOn) ? dependsOn : [];
     this._started = false;
+    this._noTtl = !!noTtl;
   }
 
   get hasPorts() {
@@ -77,7 +78,7 @@ export class Task {
    * (they run until cancelled or they exit) and for tasks that have already exited.
    */
   heartbeat() {
-    if (this.status === 'exited' || !this.hasPorts) return;
+    if (this.status === 'exited' || !this.hasPorts || this._noTtl) return;
     clearTimeout(this.#ttlTimer);
     this.#ttlTimer = setTimeout(() => {
       this.addLog('stdout', `\x1b[33m[baguette] TTL expired, stopping task...\x1b[0m\n`);
@@ -387,7 +388,8 @@ export class Task {
       exit_code: this.exit_code,
       created_at: this.created_at,
       ports: this.ports,
-      ttl_ms: this.hasPorts ? DEFAULT_TTL_MS : null,
+      ttl_ms: this.hasPorts && !this._noTtl ? DEFAULT_TTL_MS : null,
+      no_ttl: this._noTtl,
     };
   }
 }

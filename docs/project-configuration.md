@@ -161,6 +161,31 @@ For example, if `dev-server` has `ports: [VITE_PORT]` and is allocated port 5432
 
 Circular dependencies are detected and rejected with an error.
 
+## `preview.scheme` (deep links)
+
+Optional custom URL scheme for preview deep links (e.g. Expo `exp://`). Set globally under `preview`, or override per `webserver` / `services.<name>`:
+
+```yaml
+config:
+  preview:
+    scheme: exp://
+  webserver:
+    task: dev-server
+    expose: VITE_PORT
+```
+
+For multi-service setups:
+
+```yaml
+services:
+  expo:
+    task: expo
+    expose: EXPO_PORT
+    scheme: exp://
+```
+
+Baguette builds a deep link by replacing the `https://` prefix of the service preview URL with the configured scheme (e.g. `https://session-<id>-expo.<domain>/` → `exp://session-<id>-expo.<domain>/`). The session **Preview** tab shows a copyable deep link when a scheme is configured.
+
 ## `services` block (multi-service preview)
 
 Use `services` instead of `webserver` when the project has **multiple services that each need their own independent public URL** — the primary case is a mobile app (e.g., Expo/React Native) whose runtime directly calls an API backend. Each service gets its own subdomain `session-<id>-<name>.<domain>`. A portal page at `session-<id>.<domain>` lists all services with live status and logs.

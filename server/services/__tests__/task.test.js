@@ -279,6 +279,17 @@ describe('Task heartbeat / TTL', () => {
     expect(kill).toHaveBeenCalledTimes(1);
   });
 
+  it('heartbeat() is a no-op when no_ttl is set', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'], noTtl: true });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS + 1);
+
+    expect(kill).not.toHaveBeenCalled();
+  });
+
   it('heartbeat() is a no-op after the task has exited', () => {
     vi.useFakeTimers();
     const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });

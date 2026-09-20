@@ -136,7 +136,10 @@ describe('Users service - patch', () => {
       );
     expect(result.agent_preferences).toEqual({ cursor_fast: 'yes', cursor_effort: 'high' });
     const row = await db('users').where({ id: user1.id }).first();
-    expect(JSON.parse(row.agent_preferences)).toEqual({ cursor_fast: 'yes', cursor_effort: 'high' });
+    expect(JSON.parse(row.agent_preferences)).toEqual({
+      cursor_fast: 'yes',
+      cursor_effort: 'high',
+    });
   });
 
   it('merges partial agent_preferences patches', async () => {

@@ -47,6 +47,8 @@ export const sessionsService = createService('sessions', {
     'push',
     'restore',
     'getPrDetails',
+    'previewStatus',
+    'startPreviewService',
   ],
 });
 export const messagesService = createService('messages');

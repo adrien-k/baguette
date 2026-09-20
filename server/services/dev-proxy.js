@@ -129,7 +129,7 @@ export class DevProxy {
     }
     if (req.method === 'POST' && req.url === '/_baguette/retry') {
       const state = this.states.get(key);
-      if (state) this._cleanup(key, state);
+      if (state) this._releaseProxyState(key, state, { stopRunningTask: true });
       res.writeHead(302, { Location: '/' });
       return res.end();
     }
@@ -167,10 +167,17 @@ export class DevProxy {
     this._proxyUpgrade(req, socket, head, state.port);
   }
 
-  _cleanup(key, state) {
+  /**
+   * Detach proxy state from a task without removing it from the task store (logs/history stay in the UI).
+   * @param {{ stopRunningTask?: boolean }} opts - kill a still-running child on retry, but keep the task row
+   */
+  _releaseProxyState(key, state, { stopRunningTask = false } = {}) {
     state.unsubLog?.();
     state.unsubExit?.();
-    if (state.task != null) this.app.service('tasks').deleteTask(state.task.id);
+    const task = state.task;
+    if (stopRunningTask && task?.status === 'running') {
+      void task.kill().catch((err) => logger.error(err, 'Error stopping preview task on retry'));
+    }
     this.sse.purgeChannel(key);
     if (this.states.get(key) === state) this.states.delete(key);
   }
@@ -223,7 +230,7 @@ export class DevProxy {
         if (state.status === 'starting') {
           if (code !== 0) this._onCrashed(key, state);
         } else if (state.status === 'listening') {
-          this._cleanup(key, state);
+          this._releaseProxyState(key, state);
         }
       });
 
