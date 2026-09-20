@@ -6,6 +6,7 @@ import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
+import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
 import { isMobile } from '../utils/isMobile.js';
@@ -30,6 +31,7 @@ function parseRepoFullName(full) {
 export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPrompt }) {
   const persistentState = usePersistentState(`builder-form-${repoFullName}`);
   const globalState = usePersistentState('builder-form-global');
+  const { cursorFast, cursorEffort, setCursorFast, setCursorEffort } = useCursorModelPrefs();
   const [branch, setBranch] = persistentState.useState('branch', '');
   const [initialPrompt, setInitialPrompt] = persistentState.useState('prompt', defaultPrompt || '');
   const [showMore, setShowMore] = globalState.useState('showMore', false);
@@ -42,8 +44,6 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
   const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
   const [variantExpanded, setVariantExpanded] = useState(false);
   const [prefsExpanded, setPrefsExpanded] = useState(false);
-  const [cursorFast, setCursorFast] = persistentState.useState('cursorFast', 'default');
-  const [cursorEffort, setCursorEffort] = persistentState.useState('cursorEffort', 'default');
   const [models, setModels] = useState([]);
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState('plugins', []);

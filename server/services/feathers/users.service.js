@@ -2,6 +2,11 @@ import { KnexService } from '@feathersjs/knex';
 import { NotAuthenticated } from '@feathersjs/errors';
 import { requireUser, encryptFields, decryptFields } from './hooks.js';
 import { SYSTEM_ALLOWED_COMMANDS } from '../../services/agent-settings.js';
+import {
+  mergeCursorModelPrefs,
+  parseCursorModelPrefsJson,
+  stringifyCursorModelPrefs,
+} from '../../services/agent-preferences.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 
 /**
@@ -39,6 +44,21 @@ function encryptAllowedCommands(context) {
   return context;
 }
 
+async function normalizeCursorModelPrefsPatch(context) {
+  if (context.data.agent_preferences === undefined) return context;
+
+  const existing = await context.service.get(context.id, {
+    ...context.params,
+    provider: undefined,
+  });
+  const merged = mergeCursorModelPrefs(
+    existing.agent_preferences,
+    context.data.agent_preferences
+  );
+  context.data.agent_preferences = stringifyCursorModelPrefs(merged);
+  return context;
+}
+
 // Non-secret fields only visible externally + parsed allowed_commands
 function formatUserExternal(context) {
   if (!context.params.provider) return context;
@@ -46,6 +66,7 @@ function formatUserExternal(context) {
     // access_token is always hidden from external callers (even masked)
     delete user.access_token;
     user.allowed_commands = user.allowed_commands ? JSON.parse(user.allowed_commands) : [];
+    user.agent_preferences = parseCursorModelPrefsJson(user.agent_preferences);
     user.system_allowed_commands = SYSTEM_ALLOWED_COMMANDS;
     return user;
   };
@@ -85,8 +106,13 @@ export const usersHooks = {
   before: {
     all: [requireUser],
     find: [orderByCreatedAt],
-    create: [encryptAllowedCommands, encryptUserSecrets],
-    patch: [restrictPatchToSelf, encryptAllowedCommands, encryptUserSecrets],
+    create: [encryptAllowedCommands, normalizeCursorModelPrefsPatch, encryptUserSecrets],
+    patch: [
+      restrictPatchToSelf,
+      encryptAllowedCommands,
+      normalizeCursorModelPrefsPatch,
+      encryptUserSecrets,
+    ],
   },
   after: {
     find: [decryptUserSecrets, formatUserExternal],
