@@ -4,6 +4,7 @@ import { unsign } from 'cookie-signature';
 import logger from '../logger.js';
 import { verifyProxyToken } from './preview.js';
 import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
+import { getClientIp } from '../lib/client-ip.js';
 import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
 
@@ -53,9 +54,13 @@ export class DevProxy {
       return next();
     }
 
-    // Check proxy session
-    const userId = req.signedCookies?.[PROXY_COOKIE];
-    if (!userId) {
+    const clientIp = getClientIp(req);
+    const access = await this._resolveProxyAccess(
+      handler,
+      req.signedCookies?.[PROXY_COOKIE],
+      clientIp
+    );
+    if (access.needsAuth) {
       if (req.method !== 'GET') {
         return res.status(401).json({
           error: 'Unauthorized',
@@ -68,9 +73,9 @@ export class DevProxy {
       );
     }
 
-    if (!(await handler.allowUser(userId, res))) return;
+    if (!(await this._authorizeHandler(handler, access, res))) return;
 
-    this._setProxyCookie(res, userId); // renew TTL
+    if (access.userId) this._setProxyCookie(res, access.userId); // renew TTL
 
     if (await handler.render(res)) return;
 
@@ -88,19 +93,20 @@ export class DevProxy {
       return;
     }
 
-    const userId = this._getWsCookieUserId(req);
-    if (!userId) {
+    const clientIp = getClientIp(req);
+    const access = await this._resolveProxyAccess(handler, this._getWsCookieUserId(req), clientIp);
+    if (access.needsAuth) {
       socket.destroy();
       return;
     }
 
     try {
-      if (!(await handler.allowUser(userId))) {
+      if (!(await this._authorizeHandler(handler, access))) {
         socket.destroy();
         return;
       }
     } catch (err) {
-      logger.error(err, 'WS allowUser error');
+      logger.error(err, 'WS proxy authorize error');
       socket.destroy();
       return;
     }
@@ -130,7 +136,7 @@ export class DevProxy {
 
     let state = this.states.get(key);
     if (!state) {
-      state = await this._startService(handler);
+      state = await this._startService(handler, getClientIp(req));
     }
 
     if (state.status === 'crashed' || state.status === 'starting') {
@@ -146,7 +152,7 @@ export class DevProxy {
 
     let state = this.states.get(key);
     if (!state) {
-      state = await this._startService(handler);
+      state = await this._startService(handler, getClientIp(req));
     }
 
     try {
@@ -171,12 +177,33 @@ export class DevProxy {
 
   // ── Internals ─────────────────────────────────────────────────────────────────
 
-  async _startService(handler) {
+  async _resolveProxyAccess(handler, userId, clientIp) {
+    if (userId) return { userId, clientIp, needsAuth: false, ipBypass: false };
+    const state = this.states.get(handler.key);
+    if (handler.allowIpPublicAccess) {
+      try {
+        if (await handler.allowIpPublicAccess(clientIp, state)) {
+          return { userId: null, clientIp, needsAuth: false, ipBypass: true };
+        }
+      } catch (err) {
+        logger.error(err, 'allowIpPublicAccess error');
+      }
+    }
+    return { userId: null, clientIp, needsAuth: true, ipBypass: false };
+  }
+
+  async _authorizeHandler(handler, access, res) {
+    if (access.ipBypass) return true;
+    return handler.allowUser(access.userId, res);
+  }
+
+  async _startService(handler, starterIp) {
     const key = handler.key;
     const state = {
       task: null,
       port: null,
       status: 'starting',
+      starterIp: starterIp ?? null,
       unsubLog: null,
       unsubExit: null,
     };

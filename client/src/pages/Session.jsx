@@ -616,6 +616,11 @@ export default function Session() {
                         public
                       </span>
                     )}
+                    {session.is_preview_ip_public && !session.is_preview_public && (
+                      <span className="text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
+                        ip-public
+                      </span>
+                    )}
                   </span>
                 )}
                 {session.codeserver_url && (

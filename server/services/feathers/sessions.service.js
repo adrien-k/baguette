@@ -640,6 +640,7 @@ async function withHasWebserver(session) {
     absolute_worktree_path: absoluteWorktreePath ?? null,
     preview_url: hasPreview && getPreviewHost(session.short_id),
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
+    is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     codeserver_url: absoluteWorktreePath ? getCodeserverUrl(absoluteWorktreePath) : null,
   };
 }

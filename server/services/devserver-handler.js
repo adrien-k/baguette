@@ -40,6 +40,13 @@ export class DevserverHandler {
     return this._configPromise;
   }
 
+  async _hasPreviewConfig() {
+    const config = await this._getConfig();
+    const hasWebserver = !!config?.webserver;
+    const hasServices = !hasWebserver && !!(config && resolveServicesConfig(config));
+    return hasWebserver || hasServices;
+  }
+
   async allowUser(userId, res) {
     const session = await this.getSession();
 
@@ -60,11 +67,7 @@ export class DevserverHandler {
       return false;
     }
 
-    const config = await this._getConfig();
-    const hasWebserver = !!config?.webserver;
-    const hasServices = !hasWebserver && !!(config && resolveServicesConfig(config));
-
-    if (!hasWebserver && !hasServices) {
+    if (!(await this._hasPreviewConfig())) {
       this._renderDenied(
         res,
         404,
@@ -80,6 +83,15 @@ export class DevserverHandler {
   _renderDenied(res, status, title, message) {
     if (!res) return; // WS upgrade path has no response to render into
     res.status(status).render('devserver-denied', { title, message, backUrl: PUBLIC_HOST });
+  }
+
+  /** Unauthenticated access for the IP that started the dev server (when enabled on session). */
+  async allowIpPublicAccess(clientIp, proxyState) {
+    const session = await this.getSession();
+    if (!session?.is_preview_ip_public) return false;
+    if (!proxyState?.starterIp || proxyState.starterIp !== clientIp) return false;
+    if (proxyState.status === 'crashed') return false;
+    return this._hasPreviewConfig();
   }
 
   get key() {
