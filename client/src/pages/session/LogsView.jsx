@@ -284,13 +284,14 @@ function LogMessage({ msg }) {
   );
 }
 
-export default function LogsView({ rawMessages, loadMore, loadingMore }) {
+export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore }) {
   const scrollContainerRef = useRef(null);
   const topSentinelRef = useRef(null);
   const scrollAnchor = useRef(null);
   const isLoadingMoreRef = useRef(false);
 
   const handleLoadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return;
     if (scrollContainerRef.current) {
       scrollAnchor.current = {
         scrollTop: scrollContainerRef.current.scrollTop,
@@ -299,11 +300,11 @@ export default function LogsView({ rawMessages, loadMore, loadingMore }) {
     }
     isLoadingMoreRef.current = true;
     loadMore();
-  }, [loadMore]);
+  }, [hasMore, loadMore, loadingMore]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || !topSentinelRef.current) return;
+    if (!container || !topSentinelRef.current || !hasMore) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) handleLoadMore();
@@ -312,7 +313,7 @@ export default function LogsView({ rawMessages, loadMore, loadingMore }) {
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore]);
+  }, [handleLoadMore, hasMore]);
 
   // Restore scroll position after loading more
   useEffect(() => {

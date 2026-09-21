@@ -24,20 +24,28 @@ function sortSessions(sessions) {
  */
 export function useGetUserSessions() {
   const [sessions, setSessions] = useState([]);
-  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const skipRef = useRef(0);
 
   const fetchPage = useCallback((skip, replace) => {
     const query = { $limit: PAGE_SIZE, $skip: skip };
-    if (replace) setLoading(true);
+    if (replace) {
+      setLoading(true);
+      setHasMore(false);
+    }
     return sessionsService
       .find({ query })
       .then((res) => {
         const list = Array.isArray(res) ? res : (res?.data ?? []);
-        const serverTotal = res?.total ?? list.length;
-        setTotal(serverTotal);
+        const serverTotal = Number(res?.total ?? list.length);
+        const nextSkip = skip + list.length;
+        skipRef.current = nextSkip;
+        setHasMore(nextSkip < serverTotal && list.length > 0);
+        if (!replace && list.length === 0) {
+          setHasMore(false);
+        }
         setSessions((prev) => {
           const merged = replace
             ? list
@@ -45,7 +53,6 @@ export function useGetUserSessions() {
           return sortSessions(merged);
         });
         setError(null);
-        skipRef.current = skip + list.length;
       })
       .catch((err) => {
         setError(err);
@@ -62,8 +69,9 @@ export function useGetUserSessions() {
   }, [fetchPage]);
 
   const loadMore = useCallback(() => {
+    if (!hasMore) return;
     fetchPage(skipRef.current, false);
-  }, [fetchPage]);
+  }, [fetchPage, hasMore]);
 
   useEffect(() => {
     refetch();
@@ -71,7 +79,7 @@ export function useGetUserSessions() {
     const onCreated = (session) => {
       setSessions((prev) => {
         if (prev.some((s) => s.id === session.id)) return prev;
-        setTotal((t) => t + 1);
+        skipRef.current += 1;
         return sortSessions([session, ...prev]);
       });
     };
@@ -112,8 +120,6 @@ export function useGetUserSessions() {
       sessionsService.off('removed', onRemoved);
     };
   }, [refetch]);
-
-  const hasMore = sessions.length < total;
 
   return { sessions, loading, error, refetch, hasMore, loadMore };
 }

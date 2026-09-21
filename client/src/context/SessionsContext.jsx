@@ -90,7 +90,7 @@ export function SessionsProvider({ children }) {
         );
       }
     },
-    [sessionPath]
+    [sessionPath, isCurrentSession]
   );
 
   const notifyFailed = useCallback(
@@ -130,7 +130,7 @@ export function SessionsProvider({ children }) {
         });
       }
     },
-    [sessionPath]
+    [sessionPath, isCurrentSession]
   );
 
   // Listen for status transitions

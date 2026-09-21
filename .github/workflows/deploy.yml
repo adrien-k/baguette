@@ -3,13 +3,20 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment to deploy (secrets and variables)
+        required: true
+        type: environment
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'smplee' }}
 
     steps:
       - uses: actions/checkout@v4

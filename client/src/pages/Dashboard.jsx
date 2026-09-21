@@ -370,7 +370,7 @@ export default function Dashboard() {
         {filteredSessions.map((s) => (
           <SessionCard key={s.id} session={s} />
         ))}
-        {hasMore && (
+        {hasMore && sessions.length > 0 && (
           <button
             onClick={loadMore}
             className="w-full py-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"

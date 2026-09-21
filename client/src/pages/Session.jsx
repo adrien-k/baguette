@@ -945,7 +945,7 @@ export default function Session() {
                 }}
               />
             ))}
-            {hasMoreSessions && (
+            {hasMoreSessions && sessions.length > 0 && (
               <button
                 onClick={loadMoreSessions}
                 className="w-full px-3 py-2 text-xs text-zinc-600 hover:text-zinc-400 transition-colors text-left"
@@ -1012,6 +1012,7 @@ export default function Session() {
                 messages={messages}
                 loadMore={loadMore}
                 loadingMore={loadingMore}
+                hasMore={hasMore}
                 session={session}
                 systemPrompt={systemPrompt}
                 onViewChange={setView}
@@ -1020,7 +1021,12 @@ export default function Session() {
             )}
             {activeView === 'diff' && <DiffView session={session} onFilesChange={setDiffFiles} />}
             {activeView === 'logs' && (
-              <LogsView rawMessages={rawMessages} loadMore={loadMore} loadingMore={loadingMore} />
+              <LogsView
+                rawMessages={rawMessages}
+                loadMore={loadMore}
+                loadingMore={loadingMore}
+                hasMore={hasMore}
+              />
             )}
             {activeView === 'preview' && (
               <PreviewView

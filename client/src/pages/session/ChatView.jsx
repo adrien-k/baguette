@@ -68,6 +68,7 @@ export default function ChatView({
   messages,
   loadMore,
   loadingMore,
+  hasMore,
   session,
   systemPrompt,
   onViewChange,
@@ -219,6 +220,7 @@ export default function ChatView({
   }, [messages]);
 
   const handleLoadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return;
     if (scrollContainerRef.current) {
       scrollAnchor.current = {
         scrollTop: scrollContainerRef.current.scrollTop,
@@ -227,11 +229,11 @@ export default function ChatView({
     }
     isLoadingMoreRef.current = true;
     loadMore();
-  }, [loadMore]);
+  }, [hasMore, loadMore, loadingMore]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || !topSentinelRef.current) return;
+    if (!container || !topSentinelRef.current || !hasMore) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) handleLoadMore();
@@ -240,7 +242,7 @@ export default function ChatView({
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore]);
+  }, [handleLoadMore, hasMore]);
 
   const handleChatInputChange = (e) => {
     setInput(e.target.value);
