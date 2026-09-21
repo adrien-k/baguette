@@ -10,6 +10,7 @@ import Session from './pages/Session.jsx';
 import Settings from './pages/Settings.jsx';
 import Admin from './pages/Admin.jsx';
 import SessionPreview from './pages/SessionPreview.jsx';
+import Onboarding from './pages/Onboarding.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider, useRepoContext, ALL_REPOS } from './context/RepoContext.jsx';
@@ -114,6 +115,7 @@ function Nav() {
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -135,6 +137,9 @@ function ProtectedRoute({ children }) {
         </div>
       </div>
     );
+  }
+  if (!user.onboarding_completed && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" />;
   }
 
   return children;
@@ -217,6 +222,20 @@ function AppRoutes() {
             }
           />
           <Route path="/account" element={<Navigate to="/settings" replace />} />
+          <Route
+            path="/onboarding"
+            element={
+              !user || !user.approved ? (
+                <Navigate to="/login" />
+              ) : user.onboarding_completed ? (
+                <Navigate to="/" />
+              ) : (
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Onboarding />
+                </div>
+              )
+            }
+          />
           <Route
             path="/preview"
             element={
