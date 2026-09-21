@@ -4,14 +4,14 @@ This guide provisions a single Ubuntu EC2 instance with Route 53 DNS and [acme.s
 
 ## What the stack creates
 
-| Resource                       | Purpose                                                                                            |
-| ------------------------------ | -------------------------------------------------------------------------------------------------- |
-| EC2 (Ubuntu 24.04)             | Kamal deploy target; Docker installed; `/home/ubuntu/baguette_storage` for app data                |
-| Elastic IP                     | Stable public IP; `www.<DOMAIN>` and `*.<DOMAIN>` point here                                       |
-| Security group                 | TCP 22 (Kamal/CI), 80, 443                                                                         |
+| Resource                       | Purpose                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| EC2 (Ubuntu 24.04)             | Kamal deploy target; Docker installed; `/home/ubuntu/baguette_storage` for app data    |
+| Elastic IP                     | Stable public IP; `www.<DOMAIN>` and `*.<DOMAIN>` point here                           |
+| Security group                 | TCP 22 (Kamal/CI), 80, 443                                                             |
 | IAM instance role              | Route 53 `dns_aws` (list zones, change records on `HostedZoneId`); SSM Session Manager |
-| Route 53 A records             | `www.<DOMAIN>` and `*.<DOMAIN>` → Elastic IP                                                       |
-| acme.sh + `~/acme.sh/renew.sh` | Wildcard cert; CI renews before each deploy                                                        |
+| Route 53 A records             | `www.<DOMAIN>` and `*.<DOMAIN>` → Elastic IP                                           |
+| acme.sh + `~/acme.sh/renew.sh` | Wildcard cert; CI renews before each deploy                                            |
 
 Template: [`infra/aws/cloudformation/baguette-kamal.yaml`](../../infra/aws/cloudformation/baguette-kamal.yaml) (instance bootstrap: [`userdata.sh`](../../infra/aws/cloudformation/userdata.sh))
 
@@ -24,16 +24,16 @@ Template: [`infra/aws/cloudformation/baguette-kamal.yaml`](../../infra/aws/cloud
 
 ## Parameters
 
-| Parameter                   | Description                                                                                                                            |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `DomainName`                | Same as `DOMAIN` in CI (e.g. `baguette.example.com`)                                                                                   |
-| `HostedZoneId`              | Route 53 hosted zone ID (console or `aws route53 list-hosted-zones`)                                                                   |
-| `VpcId`                     | VPC for the instance (default VPC is fine)                                                                                             |
-| `SubnetId`                  | **Public** subnet with a route to an Internet Gateway                                                                                  |
-| `AcmeEmail`                 | Let's Encrypt account email                                                                                                            |
-| `InstanceType`              | Default `t3.medium` (remote Docker builds need RAM)                                                                                    |
-| `VolumeSize` / `VolumeType` | Root disk; default 40 GiB `gp3`                                                                                                        |
-| `SshIngressCidr`            | CIDR for SSH (port 22) — **Kamal/GitHub Actions only**; default `0.0.0.0/0` because hosted runner IPs change                           |
+| Parameter                   | Description                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `DomainName`                | Same as `DOMAIN` in CI (e.g. `baguette.example.com`)                                                         |
+| `HostedZoneId`              | Route 53 hosted zone ID (console or `aws route53 list-hosted-zones`)                                         |
+| `VpcId`                     | VPC for the instance (default VPC is fine)                                                                   |
+| `SubnetId`                  | **Public** subnet with a route to an Internet Gateway                                                        |
+| `AcmeEmail`                 | Let's Encrypt account email                                                                                  |
+| `InstanceType`              | Default `t3.medium` (remote Docker builds need RAM)                                                          |
+| `VolumeSize` / `VolumeType` | Root disk; default 40 GiB `gp3`                                                                              |
+| `SshIngressCidr`            | CIDR for SSH (port 22) — **Kamal/GitHub Actions only**; default `0.0.0.0/0` because hosted runner IPs change |
 
 Each resource gets a `Name` tag from the stack. Extra tags are **CloudFormation stack tags**, not a template parameter: `Fn::ForEach` cannot build a `Tags` list (it merges objects, so every iteration repeats the key `Key`). Stack tags propagate to the instance, Elastic IP, security group, and IAM role.
 
@@ -95,10 +95,10 @@ That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DO
 
 ### Variables (Settings → Secrets and variables → Actions → **Variables**)
 
-| Variable        | Source                                          |
-| --------------- | ----------------------------------------------- |
-| `DEPLOY_SERVER` | `www.<DOMAIN>` (resolves to the Elastic IP)     |
-| `DOMAIN`        | Stack parameter `DomainName`                    |
+| Variable        | Source                                      |
+| --------------- | ------------------------------------------- |
+| `DEPLOY_SERVER` | `www.<DOMAIN>` (resolves to the Elastic IP) |
+| `DOMAIN`        | Stack parameter `DomainName`                |
 
 ### Secrets (**Secrets** tab)
 
@@ -143,13 +143,13 @@ Push to `main` to deploy, or follow [kamal.md §5.1](kamal.md#51-deploy-with-kam
 
 ## Troubleshooting
 
-| Symptom                                    | Check                                                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Stack stuck / instance running but no cert | `./infra/aws/provision-stack.sh bootstrap-logs` (or `sudo tail -f /var/log/cloud-init-output.log`); run `/home/ubuntu/acme.sh/renew.sh` as `ubuntu` |
+| Symptom                                    | Check                                                                                                                                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stack stuck / instance running but no cert | `./infra/aws/provision-stack.sh bootstrap-logs` (or `sudo tail -f /var/log/cloud-init-output.log`); run `/home/ubuntu/acme.sh/renew.sh` as `ubuntu`                                                |
 | acme.sh install / WaitCondition FAILURE    | Installer must run in `/home/ubuntu` (it writes `master.tar.gz` to cwd). `bootstrap-logs` reads the instance id from the stack resource, not outputs (outputs only exist after `CREATE_COMPLETE`). |
-| SSM target not connected                   | Instance has public egress; IAM role includes `AmazonSSMManagedInstanceCore`; wait a few minutes after boot    |
-| acme DNS errors                            | `HostedZoneId` matches the zone for `DomainName`; role allows `route53:ListHostedZones` plus record changes on that zone |
-| Deploy SSH fails                           | `SSH_PRIVATE_KEY` is the deploy key from SSM; security group allows SSH from GitHub Actions (`SshIngressCidr`) |
-| 502 / proxy errors                         | First deploy still running; ensure `www` and wildcard DNS resolve to the Elastic IP (`dig www.<DOMAIN>`)       |
+| SSM target not connected                   | Instance has public egress; IAM role includes `AmazonSSMManagedInstanceCore`; wait a few minutes after boot                                                                                        |
+| acme DNS errors                            | `HostedZoneId` matches the zone for `DomainName`; role allows `route53:ListHostedZones` plus record changes on that zone                                                                           |
+| Deploy SSH fails                           | `SSH_PRIVATE_KEY` is the deploy key from SSM; security group allows SSH from GitHub Actions (`SshIngressCidr`)                                                                                     |
+| 502 / proxy errors                         | First deploy still running; ensure `www` and wildcard DNS resolve to the Elastic IP (`dig www.<DOMAIN>`)                                                                                           |
 
 For provider-agnostic Kamal steps (OAuth, env vars, local deploy), see [kamal.md](kamal.md).

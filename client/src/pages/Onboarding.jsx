@@ -146,7 +146,9 @@ export default function Onboarding() {
                     setCursorApiKeyDirty(dirty);
                   }}
                 />
-                <p className="mt-1.5 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  Required to use the Cursor agent SDK.
+                </p>
               </div>
             </div>
 
