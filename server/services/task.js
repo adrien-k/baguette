@@ -61,6 +61,8 @@ export class Task {
     this.pid = null;
     this.status = 'running';
     this.exit_code = null;
+    /** Set by kill(): 'stopped' (explicit stop) or 'ttl' (idle timeout). null when it exited on its own. */
+    this.kill_reason = null;
     this.created_at = new Date().toISOString();
     this._env = env ?? null;
     this._cwd = cwd ?? null;
@@ -85,7 +87,7 @@ export class Task {
     clearTimeout(this.#ttlTimer);
     this.#ttlTimer = setTimeout(() => {
       this.addLog('stdout', `\x1b[33m[baguette] TTL expired, stopping task...\x1b[0m\n`);
-      this.kill().catch(() => {});
+      this.kill({ reason: 'ttl' }).catch(() => {});
     }, this._ttlMs);
   }
 
@@ -339,12 +341,15 @@ export class Task {
 
   /**
    * Send SIGTERM; escalate to SIGKILL after 5 s if still running; await until the child exits or `timeoutMs`.
+   * @param {{ timeoutMs?: number, reason?: 'stopped'|'ttl' }} opts - `reason` is recorded on the task so
+   *   consumers can tell a deliberate stop from a crash (see DevProxy exit handling).
    * @returns {Promise<boolean>} true if a signal was sent, false if already exited/no process.
    */
-  async kill({ timeoutMs = 12000 } = {}) {
+  async kill({ timeoutMs = 12000, reason = 'stopped' } = {}) {
     if (this.status !== 'running') {
       return false;
     }
+    this.kill_reason = reason;
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
     // forever and the Preview Start button stays disabled.

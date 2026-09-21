@@ -74,11 +74,24 @@ const params = (user) => ({ provider: 'rest', user });
 
 const deleteSessionTasks = vi.fn();
 const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, github_token: 'test-token' });
+// Not Feathers methods (like the real service): called directly by sessions.service.
+const findRunningTask = vi.fn().mockReturnValue(null);
+const tasksCreate = vi.fn(async (data) => ({ id: 42, ...data }));
+const getTask = vi.fn().mockReturnValue(null);
 
 function makeApp(db) {
   const app = feathers();
   app.set('db', db);
-  app.use('tasks', { deleteSessionTasks }, { methods: ['deleteSessionTasks'] });
+  app.use(
+    'tasks',
+    {
+      deleteSessionTasks,
+      create: tasksCreate,
+      _findRunningTask: findRunningTask,
+      getTask,
+    },
+    { methods: ['deleteSessionTasks', 'create'] }
+  );
   app.use(
     'claude-agent',
     {
@@ -255,6 +268,58 @@ describe('Sessions service - custom methods', (hooks) => {
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').commands(sessId, params({ id: otherUserId }))
+      ).rejects.toBeInstanceOf(NotFound);
+    });
+  });
+
+  // ── startPreviewService ────────────────────────────────────────────────────
+
+  describe('startPreviewService', () => {
+    beforeEach(() => {
+      loadBaguetteConfig.mockResolvedValue({
+        webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' },
+      });
+      findRunningTask.mockReturnValue(null);
+    });
+
+    it('starts a webserver task for the default service', async () => {
+      const result = await app
+        .service('sessions')
+        .startPreviewService({ id: sessId }, params({ id: userId }));
+
+      expect(tasksCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          session_id: sessId,
+          command: 'npm start',
+          label: 'baguette:webserver:default',
+          ports: ['PORT'],
+        }),
+        expect.anything()
+      );
+      expect(result.id).toBe(42);
+    });
+
+    it('clears then starts: stops the task already running for the service', async () => {
+      const kill = vi.fn().mockResolvedValue(true);
+      findRunningTask.mockReturnValue({ id: 7, ports: { PORT: 3000 }, kill });
+
+      await app.service('sessions').startPreviewService({ id: sessId }, params({ id: userId }));
+
+      expect(kill).toHaveBeenCalled();
+      expect(tasksCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects when the service is not configured', async () => {
+      loadBaguetteConfig.mockResolvedValue({});
+
+      await expect(
+        app.service('sessions').startPreviewService({ id: sessId }, params({ id: userId }))
+      ).rejects.toThrow('No preview service "default" configured');
+    });
+
+    it('rejects with NotFound when session belongs to another user', async () => {
+      await expect(
+        app.service('sessions').startPreviewService({ id: sessId }, params({ id: otherUserId }))
       ).rejects.toBeInstanceOf(NotFound);
     });
   });

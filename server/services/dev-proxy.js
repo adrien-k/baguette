@@ -264,7 +264,11 @@ export class DevProxy {
       if (state.status === 'starting') {
         if (code !== 0) this._onCrashed(key, state);
       } else if (state.status === 'listening') {
-        this._releaseProxyState(key, state);
+        // An idle-TTL stop is transparent: drop the state so the next request boots a fresh
+        // server. Any other exit (Stop from the Preview tab, or a crash) keeps the state so
+        // opening the preview link shows the task logs and the Retry button.
+        if (task.kill_reason === 'ttl') this._releaseProxyState(key, state);
+        else this._onExited(key, state, code);
       }
     });
 
@@ -294,6 +298,27 @@ export class DevProxy {
     state.port = port;
     state.status = 'listening';
     this.sse.send(key, { event: 'ready' });
+    this.sse.closeChannel(key);
+  }
+
+  /**
+   * The server exited after it had come up (stopped from the Preview tab, or crashed).
+   * Keep the proxy state — status `crashed` means "terminal, not serving" — so the preview page
+   * renders the task logs plus the Retry button instead of silently starting a new server.
+   */
+  _onExited(key, state, code) {
+    state.unsubLog?.();
+    state.port = null;
+    state.status = 'crashed';
+    const message = state.task?.kill_reason
+      ? 'Dev server was stopped.'
+      : `Dev server exited${code != null ? ` with code ${code}` : ''}.`;
+    // The replay log still holds the `ready` event from when the server came up, which would make
+    // the loading page reload in a loop. Rebuild it from the task logs plus this exit.
+    this.sse.purgeChannel(key);
+    const buffered = state.task?.getLogs?.();
+    if (buffered) this.sse.send(key, { event: 'log', data: buffered });
+    this.sse.send(key, { event: 'error', data: { message } });
     this.sse.closeChannel(key);
   }
 

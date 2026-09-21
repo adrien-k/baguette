@@ -220,7 +220,10 @@ export class SessionsService extends KnexService {
           }
         } else {
           exit_code = task.exit_code;
-          status = exit_code != null && exit_code !== 0 ? 'crashed' : 'stopped';
+          // A task we killed (Stop button, idle TTL) is stopped, not crashed, whatever the
+          // exit code its child reported on SIGTERM.
+          const killed = !!task.kill_reason;
+          status = !killed && exit_code != null && exit_code !== 0 ? 'crashed' : 'stopped';
         }
       }
 
@@ -286,17 +289,11 @@ export class SessionsService extends KnexService {
 
     const label = `baguette:webserver:${serviceName}`;
     const tasksService = this.app.service('tasks');
+    // Start clears then starts, like the preview page's Retry button: stop whatever task is
+    // running for this service and boot a fresh one (attaching it below drops the old proxy
+    // state and its logs).
     const running = tasksService._findRunningTask(session.id, label);
-    if (running) {
-      const exposePort = webserverConfig.expose;
-      const port = exposePort ? running.ports[exposePort] : null;
-      if (port && (await isPortListening(port))) {
-        this._attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, running, params);
-        return running.toPublic();
-      }
-      // Not actually serving — e.g. stuck in init or a dead child still marked running.
-      await running.kill();
-    }
+    if (running) await running.kill();
 
     const created = await tasksService.create(
       {
