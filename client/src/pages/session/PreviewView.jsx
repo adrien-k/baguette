@@ -89,7 +89,16 @@ function PreviewSettingsToggles({ session }) {
   );
 }
 
-function ServiceRow({ svc, readonly, ipPublicEnabled, onStart, onStop, onViewLogs, starting, stopping }) {
+function ServiceRow({
+  svc,
+  readonly,
+  ipPublicEnabled,
+  onStart,
+  onStop,
+  onViewLogs,
+  starting,
+  stopping,
+}) {
   const statusMeta = STATUS_LABEL[svc.status] ?? STATUS_LABEL.stopped;
   const isActive = svc.status === 'ready' || svc.status === 'starting';
   const canStart = !readonly && !isActive && !starting && !stopping;
@@ -115,8 +124,7 @@ function ServiceRow({ svc, readonly, ipPublicEnabled, onStart, onStop, onViewLog
             )}
             {ipPublicEnabled && isActive && svc.allowed_ip && (
               <span className="text-xs text-zinc-500">
-                Allowed IP{' '}
-                <span className="font-mono text-zinc-400">{svc.allowed_ip}</span>
+                Allowed IP <span className="font-mono text-zinc-400">{svc.allowed_ip}</span>
               </span>
             )}
           </div>

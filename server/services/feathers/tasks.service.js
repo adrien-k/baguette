@@ -45,7 +45,18 @@ export class TasksService {
     }
 
     const id = this._nextId++;
-    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl, ttlMs });
+    const task = new Task({
+      id,
+      sessionId,
+      command,
+      label,
+      ports,
+      env,
+      cwd,
+      dependsOn,
+      noTtl,
+      ttlMs,
+    });
     task.onLog((_id, stream, data) =>
       this.emit('log', { id, session_id: sessionId, stream, data })
     );
