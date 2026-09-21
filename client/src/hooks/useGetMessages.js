@@ -31,6 +31,9 @@ export function useGetMessages(sessionId) {
 
     let cancelled = false;
     setLoading(true);
+    // Drop the previous session's messages immediately so they are never shown
+    // under the newly selected session while its history is being fetched.
+    setMessages([]);
     setHasMore(false);
     oldestIdRef.current = null;
 

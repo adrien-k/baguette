@@ -260,7 +260,13 @@ export default function Session() {
   const { showArchived } = useFilters();
   const { session: sessionFromHook, loading: sessionLoading } = useGetSession(short_id);
   const sessionId = sessionFromHook?.id;
-  const { messages: hookMessages, loadMore, loadingMore, hasMore } = useGetMessages(sessionId);
+  const {
+    messages: hookMessages,
+    loading: messagesLoading,
+    loadMore,
+    loadingMore,
+    hasMore,
+  } = useGetMessages(sessionId);
   const { tasks: tasksFromHook } = useGetTasks({ sessionId, skip: !sessionId });
 
   const [session, setSession] = useState(null);
@@ -289,6 +295,12 @@ export default function Session() {
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
     [rawMessages]
   );
+
+  // When switching sessions the resolved session (and therefore the messages keyed off
+  // its id) lags behind the URL for a few renders. Treat that window as loading so the
+  // chat shows a loader instead of the previous session's conversation.
+  const switchingSession = !!short_id && session?.short_id !== short_id;
+  const chatLoading = switchingSession || messagesLoading;
 
   // If loadMore produced only hidden/filtered messages, keep pulling until something visible appears
   const prevMessagesLengthRef = useRef(null);
@@ -1010,6 +1022,7 @@ export default function Session() {
             {activeView === 'chat' && (
               <ChatView
                 messages={messages}
+                loading={chatLoading}
                 loadMore={loadMore}
                 loadingMore={loadingMore}
                 hasMore={hasMore}

@@ -66,6 +66,7 @@ function SystemPromptEntry({ content }) {
 
 export default function ChatView({
   messages,
+  loading,
   loadMore,
   loadingMore,
   hasMore,
@@ -340,132 +341,144 @@ export default function ChatView({
     <>
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4 space-y-3" ref={scrollContainerRef}>
-          <div ref={topSentinelRef} className="h-px" />
-          {loadingMore && (
-            <div className="flex justify-center py-2">
-              <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+          {loading ? (
+            <div
+              className="flex h-full items-center justify-center"
+              role="status"
+              aria-label="Loading conversation"
+            >
+              <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
             </div>
-          )}
-          {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
-          {displayMessages.map((msg, i) => (
-            <ChatMessage
-              key={i}
-              message={msg}
-              isLatestMessage={i === displayMessages.length - 1}
-              worktreePath={session.absolute_worktree_path}
-              sessionId={session.id}
-              agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-              messageIndex={i}
-              allMessages={displayMessages}
-            />
-          ))}
-          {!readonly &&
-            messages.at(-1)?.type === 'system' &&
-            messages.at(-1)?.subtype === 'status' &&
-            messages.at(-1)?.status === 'Server restarted — session was stopped' && (
-              <div className="flex gap-2 flex-wrap py-2">
-                <button
-                  type="button"
-                  onClick={() => handleQuickSend('continue')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Continue
-                </button>
-              </div>
-            )}
-          {session?.archived_at && (
-            <div className="flex gap-2 flex-wrap py-2">
-              <Tooltip content="Recreate the worktree on the same branch and resume this session.">
-                <button
-                  type="button"
-                  onClick={handleRestore}
-                  disabled={restoring}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  {restoring ? 'Restoring…' : 'Restore'}
-                </button>
-              </Tooltip>
-            </div>
-          )}
-          {!readonly && session?.status !== 'running' && session?.pr_status !== 'merged' && (
-            <div className="flex gap-2 flex-wrap py-2">
-              <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickSend(
-                      'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-                    )
-                  }
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                >
-                  <GitPullRequest className="w-3.5 h-3.5" />
-                  Git sync
-                </button>
-              </Tooltip>
-              <Tooltip content="Merge the pull request into the base branch.">
-                <button
-                  type="button"
-                  onClick={() => setShowMergeModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                >
-                  <GitMerge className="w-3.5 h-3.5" />
-                  Merge
-                </button>
-              </Tooltip>
-              <Tooltip content="Check all PR workflow statuses and fix problems.">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickSend(
-                      'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
-                    )
-                  }
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                >
-                  <CircleCheck className="w-3.5 h-3.5" />
-                  Check CI
-                </button>
-              </Tooltip>
-              <Tooltip
-                content={
-                  isReviewerSession
-                    ? CHECK_COMMENTS_TOOLTIP_REVIEWER
-                    : CHECK_COMMENTS_TOOLTIP_BUILDER
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickSend(
-                      isReviewerSession
-                        ? CHECK_COMMENTS_PROMPT_REVIEWER
-                        : CHECK_COMMENTS_PROMPT_BUILDER
-                    )
-                  }
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Check comments
-                </button>
-              </Tooltip>
-              {onViewChange && (
-                <Tooltip content="View a diff of all changes in this session.">
-                  <button
-                    type="button"
-                    onClick={() => onViewChange('diff')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                  >
-                    <GitCompare className="w-3.5 h-3.5" />
-                    Diff
-                  </button>
-                </Tooltip>
+          ) : (
+            <>
+              <div ref={topSentinelRef} className="h-px" />
+              {loadingMore && (
+                <div className="flex justify-center py-2">
+                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+                </div>
               )}
-            </div>
+              {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
+              {displayMessages.map((msg, i) => (
+                <ChatMessage
+                  key={i}
+                  message={msg}
+                  isLatestMessage={i === displayMessages.length - 1}
+                  worktreePath={session.absolute_worktree_path}
+                  sessionId={session.id}
+                  agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                  messageIndex={i}
+                  allMessages={displayMessages}
+                />
+              ))}
+              {!readonly &&
+                messages.at(-1)?.type === 'system' &&
+                messages.at(-1)?.subtype === 'status' &&
+                messages.at(-1)?.status === 'Server restarted — session was stopped' && (
+                  <div className="flex gap-2 flex-wrap py-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickSend('continue')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Continue
+                    </button>
+                  </div>
+                )}
+              {session?.archived_at && (
+                <div className="flex gap-2 flex-wrap py-2">
+                  <Tooltip content="Recreate the worktree on the same branch and resume this session.">
+                    <button
+                      type="button"
+                      onClick={handleRestore}
+                      disabled={restoring}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      {restoring ? 'Restoring…' : 'Restore'}
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
+              {!readonly && session?.status !== 'running' && session?.pr_status !== 'merged' && (
+                <div className="flex gap-2 flex-wrap py-2">
+                  <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleQuickSend(
+                          'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
+                        )
+                      }
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <GitPullRequest className="w-3.5 h-3.5" />
+                      Git sync
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Merge the pull request into the base branch.">
+                    <button
+                      type="button"
+                      onClick={() => setShowMergeModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <GitMerge className="w-3.5 h-3.5" />
+                      Merge
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Check all PR workflow statuses and fix problems.">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleQuickSend(
+                          'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
+                        )
+                      }
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <CircleCheck className="w-3.5 h-3.5" />
+                      Check CI
+                    </button>
+                  </Tooltip>
+                  <Tooltip
+                    content={
+                      isReviewerSession
+                        ? CHECK_COMMENTS_TOOLTIP_REVIEWER
+                        : CHECK_COMMENTS_TOOLTIP_BUILDER
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleQuickSend(
+                          isReviewerSession
+                            ? CHECK_COMMENTS_PROMPT_REVIEWER
+                            : CHECK_COMMENTS_PROMPT_BUILDER
+                        )
+                      }
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Check comments
+                    </button>
+                  </Tooltip>
+                  {onViewChange && (
+                    <Tooltip content="View a diff of all changes in this session.">
+                      <button
+                        type="button"
+                        onClick={() => onViewChange('diff')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      >
+                        <GitCompare className="w-3.5 h-3.5" />
+                        Diff
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {error && (

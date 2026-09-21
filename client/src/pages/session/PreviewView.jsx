@@ -269,7 +269,7 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
                 onStop={handleStop}
                 onViewLogs={onViewLogs}
                 starting={startingService === svc.name}
-                stopping={stoppingTaskId === svc.task_id}
+                stopping={svc.task_id != null && stoppingTaskId === svc.task_id}
               />
             ))
           )}
