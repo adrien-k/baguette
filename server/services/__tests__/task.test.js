@@ -16,8 +16,14 @@ vi.mock('child_process', () => {
   return { spawn: vi.fn(() => mockChild) };
 });
 
+vi.mock('../port-utils.js', () => ({
+  isPortListening: vi.fn(async () => false),
+  waitForPorts: vi.fn(async () => false),
+}));
+
 import { Task, DEFAULT_TTL_MS, HEARTBEAT_INTERVAL_MS } from '../task.js';
 import { TasksService } from '../feathers/tasks.service.js';
+import { isPortListening } from '../port-utils.js';
 
 let service;
 
@@ -62,6 +68,14 @@ describe('Task', () => {
     const task = new Task({ id: 1, sessionId: 1, command: 'x', taskService: service });
     task.status = 'exited';
     await expect(task.kill()).resolves.toBe(false);
+  });
+
+  it('kill() marks a running task exited when no child process exists yet', async () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    expect(task.status).toBe('running');
+    await expect(task.kill()).resolves.toBe(true);
+    expect(task.status).toBe('exited');
+    expect(task.exit_code).toBe(0);
   });
 });
 
@@ -237,6 +251,8 @@ describe('Task.onLog / onExit unsubscribe', () => {
 describe('Task heartbeat / TTL', () => {
   afterEach(() => {
     vi.useRealTimers();
+    isPortListening.mockReset();
+    isPortListening.mockResolvedValue(false);
   });
 
   it('heartbeat() is a no-op for tasks without ports', () => {
@@ -332,6 +348,38 @@ describe('Task heartbeat / TTL', () => {
     main.exit(0);
     vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS * 2);
     expect(hb).toHaveBeenCalledTimes(3);
+  });
+
+  it('waitForReady does not time out while ports are still unallocated (init/deps)', async () => {
+    vi.useFakeTimers();
+    isPortListening.mockResolvedValue(false);
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'], label: 'web' });
+
+    const ready = task.waitForReady({ timeoutMs: 1_000, pollMs: 100 });
+    const raced = Promise.race([
+      ready.then(() => 'ready').catch((err) => err.message),
+      new Promise((resolve) => setTimeout(() => resolve('still-waiting'), 5_000)),
+    ]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await raced).toBe('still-waiting');
+
+    isPortListening.mockResolvedValue(true);
+    task.ports = { PORT: 12345 };
+    const afterAlloc = Promise.race([ready.then(() => 'ready'), new Promise(() => {})]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await afterAlloc).toBe('ready');
+  });
+
+  it('waitForReady times out only after ports are allocated but not listening', async () => {
+    vi.useFakeTimers();
+    isPortListening.mockResolvedValue(false);
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'], label: 'web' });
+    task.ports = { PORT: 12345 };
+
+    const ready = task.waitForReady({ timeoutMs: 1_000, pollMs: 100 });
+    const assertion = expect(ready).rejects.toThrow('ports not ready after 1000ms');
+    await vi.advanceTimersByTimeAsync(1_100);
+    await assertion;
   });
 });
 

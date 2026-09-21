@@ -139,6 +139,7 @@ export class Task {
     (async () => {
       try {
         for (const depTask of this._dependsOn) {
+          if (this.status !== 'running') return this;
           const depLabel = depTask.label ?? 'unlabeled';
           this.addLog('stdout', `\x1b[2m──── Pre-requisite: ${depLabel}\x1b[0m\n`);
           const unsubDepLog = depTask.onLog((_id, stream, data) => this.addLog(stream, data));
@@ -147,12 +148,16 @@ export class Task {
           await depTask.waitForReady();
           unsubDepLog();
 
+          if (this.status !== 'running') return this;
+
           if (depTask.label && Object.keys(depTask.ports).length > 0) {
             this._portMap[depTask.label] = depTask.ports;
           }
           const word = depTask._portEnvVars.length > 0 ? 'ready' : 'completed';
           this.addLog('stdout', `\x1b[2m──── Pre-requisite ${word}: ${depLabel}\x1b[0m\n`);
         }
+
+        if (this.status !== 'running') return this;
 
         if (Object.keys(this._portMap).length > 0) {
           this.command = interpolateTaskPorts(this.command, this._portMap);
@@ -174,10 +179,14 @@ export class Task {
    * Wait until this task is "ready":
    * - No ports: resolves when the process exits 0; rejects on non-zero exit.
    * - With ports: resolves when all ports are accepting connections; rejects if the process
-   *   exits before they're ready, or if the timeout elapses.
+   *   exits before they're ready, or if the timeout elapses after ports are allocated.
+   *   Init/depends_on time is not counted against the timeout (ports are assigned only
+   *   after those complete).
    * Resolves immediately if already succeeded; rejects immediately if already failed.
+   * `timeout` is accepted as an alias of `timeoutMs`.
    */
-  async waitForReady({ timeoutMs = 60_000, pollMs = 500 } = {}) {
+  async waitForReady({ timeoutMs, timeout, pollMs = 500 } = {}) {
+    const readyTimeoutMs = timeoutMs ?? timeout ?? 60_000;
     const isPortDep = this._portEnvVars.length > 0;
 
     if (this.status === 'exited') {
@@ -207,9 +216,9 @@ export class Task {
       });
     }
 
-    // Port dep: poll isPortListening, fail fast if process exits first
-    const deadline = Date.now() + timeoutMs;
-
+    // Port dep: poll isPortListening, fail fast if process exits first.
+    // Do not start the listen timeout until ports are allocated — init/depends_on
+    // can take longer than readyTimeoutMs (e.g. pnpm install on first preview start).
     let exitReject;
     const exitPromise = new Promise((_, reject) => {
       exitReject = reject;
@@ -223,16 +232,16 @@ export class Task {
     );
 
     const pollPromise = (async () => {
-      while (Date.now() < deadline) {
-        const portValues = Object.values(this.ports);
-        // Only check ports once they are allocated
-        if (portValues.length === this._portEnvVars.length) {
-          const results = await Promise.all(portValues.map(isPortListening));
-          if (results.every(Boolean)) return;
-        }
+      while (Object.keys(this.ports).length !== this._portEnvVars.length) {
         await new Promise((r) => setTimeout(r, pollMs));
       }
-      throw new Error(`"${this.label ?? 'task'}" ports not ready after ${timeoutMs}ms`);
+      const deadline = Date.now() + readyTimeoutMs;
+      while (Date.now() < deadline) {
+        const results = await Promise.all(Object.values(this.ports).map(isPortListening));
+        if (results.every(Boolean)) return;
+        await new Promise((r) => setTimeout(r, pollMs));
+      }
+      throw new Error(`"${this.label ?? 'task'}" ports not ready after ${readyTimeoutMs}ms`);
     })();
 
     try {
@@ -333,8 +342,18 @@ export class Task {
    * @returns {Promise<boolean>} true if a signal was sent, false if already exited/no process.
    */
   async kill({ timeoutMs = 12000 } = {}) {
-    if (this.status !== 'running' || !this.#process) {
+    if (this.status !== 'running') {
       return false;
+    }
+    // Cancel before the child exists (still in init/depends_on) or if the child
+    // already vanished without an exit event — otherwise the task stays "running"
+    // forever and the Preview Start button stays disabled.
+    if (!this.#process) {
+      for (const dep of this._dependsOn) {
+        await dep.kill().catch(() => {});
+      }
+      this.exit(0);
+      return true;
     }
     this.#killProcessGroup('SIGTERM');
     const escalation = setTimeout(() => {

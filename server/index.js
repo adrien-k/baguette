@@ -129,9 +129,11 @@ app.setup(server);
 server.on('upgrade', (req, socket, head) => devProxy.handleUpgrade(req, socket, head));
 
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : undefined;
+// Preview proxy health-checks 127.0.0.1. Binding `::` in dev can make those
+// checks fail (IPv6-only) so the preview never leaves "starting".
+const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
 server.listen(PORT, HOST, () => {
-  logger.info({ port: PORT, host: HOST ?? 'default' }, 'Server running');
+  logger.info({ port: PORT, host: HOST }, 'Server running');
 });
 
 let shuttingDown = false;

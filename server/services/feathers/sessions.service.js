@@ -288,8 +288,14 @@ export class SessionsService extends KnexService {
     const tasksService = this.app.service('tasks');
     const running = tasksService._findRunningTask(session.id, label);
     if (running) {
-      this._attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, running, params);
-      return running.toPublic();
+      const exposePort = webserverConfig.expose;
+      const port = exposePort ? running.ports[exposePort] : null;
+      if (port && (await isPortListening(port))) {
+        this._attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, running, params);
+        return running.toPublic();
+      }
+      // Not actually serving — e.g. stuck in init or a dead child still marked running.
+      await running.kill();
     }
 
     const created = await tasksService.create(
@@ -301,7 +307,9 @@ export class SessionsService extends KnexService {
         ...(webserverConfig.taskKey ? { task_key: webserverConfig.taskKey } : {}),
         ttl_ms: PREVIEW_WEBSERVICE_TTL_MS,
       },
-      params
+      // Internal call: forwarding the REST/socket `provider` would let tasks.create
+      // strip `ttl_ms` via the `only()` hook.
+      { user: params.user, clientIp: params.clientIp }
     );
     const task = tasksService.getTask(created.id);
     if (task) {

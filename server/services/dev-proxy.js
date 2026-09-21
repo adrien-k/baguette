@@ -158,7 +158,7 @@ export class DevProxy {
     }
 
     try {
-      await state.task.waitForReady({ timeout: handler.startupTimeoutMs });
+      await state.task.waitForReady({ timeoutMs: handler.startupTimeoutMs });
     } catch (err) {
       this._onCrashed(key, state, err);
       socket.destroy();

@@ -47,6 +47,7 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: VITE_PORT,
+    strictPort: true,
     allowedHosts: process.env.PUBLIC_HOST ? [new URL(process.env.PUBLIC_HOST).hostname] : undefined,
     proxy: {
       '/api': `http://127.0.0.1:${APP_PORT}`,

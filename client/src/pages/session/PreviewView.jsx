@@ -101,7 +101,9 @@ function ServiceRow({
 }) {
   const statusMeta = STATUS_LABEL[svc.status] ?? STATUS_LABEL.stopped;
   const isActive = svc.status === 'ready' || svc.status === 'starting';
-  const canStart = !readonly && !isActive && !starting && !stopping;
+  // Enable Start whenever the expose port is not ready. A stopped/crashed server
+  // (or one stuck in "starting") must remain startable.
+  const canStart = !readonly && svc.status !== 'ready' && !starting && !stopping;
   const canStop = !readonly && isActive && svc.task_id && !stopping;
 
   const copyLink = (url, label) => {
@@ -171,12 +173,11 @@ function ServiceRow({
               Stop
             </button>
           )}
-          {!readonly && !canStop && (
+          {!readonly && canStart && (
             <button
               type="button"
-              disabled={!canStart}
               onClick={() => onStart(svc.name)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600"
               title="Start preview service (1 hour idle timeout)"
             >
               <Play className="w-3.5 h-3.5 text-emerald-400" />
