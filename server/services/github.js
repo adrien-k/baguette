@@ -6,6 +6,8 @@ import path from 'path';
 import { REPOS_DIR, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
 
+export { configureWorktreeGitIdentity } from './git-identity.js';
+
 const execFileAsync = promisify(execFile);
 
 export function gitAuthArgs(token) {
@@ -335,23 +337,6 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   }
 
   return { worktreePath };
-}
-
-/**
- * Configure git user identity in a worktree's local git config so commits carry
- * the correct author regardless of which agent (Claude or Cursor) runs them.
- */
-export async function configureWorktreeGitIdentity(worktreePath, user) {
-  const name = user?.username || 'baguette';
-  const email =
-    user?.email ||
-    (user?.github_id && user?.username
-      ? `${user.github_id}+${user.username}@users.noreply.github.com`
-      : 'baguette@users.noreply.github.com');
-  await execFileAsync('git', ['-C', worktreePath, 'config', 'user.name', name], { stdio: 'pipe' });
-  await execFileAsync('git', ['-C', worktreePath, 'config', 'user.email', email], {
-    stdio: 'pipe',
-  });
 }
 
 export async function removeWorktree(session, repo) {

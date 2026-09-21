@@ -5,6 +5,7 @@ import {
   resolveServicesConfig,
 } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
+import { gitAuthorEnvFromUser } from './git-identity.js';
 
 const SERVER_ONLY_ENV_KEYS = [
   'NODE_ENV',
@@ -97,19 +98,10 @@ export async function interpolateTaskCommand(db, sessionId, commandStr) {
  * All fields on `user` must already be plaintext (fetched via Feather service with no provider).
  */
 function buildClaudeEnvFromPlainUser(user, anthropicApiKey) {
-  const gitName = user?.username || 'baguette';
-  const gitEmail =
-    user?.email ||
-    (user?.github_id && user?.username
-      ? `${user.github_id}+${user.username}@users.noreply.github.com`
-      : 'baguette@users.noreply.github.com');
   return {
     ...stripServerEnv(process.env),
     ...(anthropicApiKey ? { ANTHROPIC_API_KEY: anthropicApiKey } : {}),
-    GIT_AUTHOR_NAME: gitName,
-    GIT_AUTHOR_EMAIL: gitEmail,
-    GIT_COMMITTER_NAME: gitName,
-    GIT_COMMITTER_EMAIL: gitEmail,
+    ...gitAuthorEnvFromUser(user),
   };
 }
 
