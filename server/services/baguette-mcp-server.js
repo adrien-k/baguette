@@ -162,7 +162,7 @@ function buildBaguetteToolList(session, app) {
         if (!session.auto_push) {
           return ok({
             message:
-              'Auto-push is disabled. Changes have been committed locally. The user can push manually or enable auto-push using the controls at the bottom of the chat. You should still call ReadSessionInfo and UpdateSession to ensure the session label and description are up to date.',
+              'Auto-push is disabled. Changes have been committed locally. The user can push manually or enable auto-push using the controls at the bottom of the chat. Call PrUpsert with an appropriate title and description — it saves them to the session even when auto-push is off.',
           });
         }
 
@@ -217,7 +217,7 @@ function buildBaguetteToolList(session, app) {
 
     {
       name: 'ReadSessionInfo',
-      description: 'Get the current session label (title) and description.',
+      description: 'Get the current session label and stored PR description.',
       schema: {},
       handler: async () => {
         const session = await getSession();
@@ -231,20 +231,13 @@ function buildBaguetteToolList(session, app) {
     {
       name: 'UpdateSession',
       description:
-        'Update the session label (title) and/or description. Use this to keep the session info in sync with the work being done.',
+        'Rename the session in the UI (database only, no GitHub). Use when no pull request is intended yet. Title and PR description for shipping work come from PrUpsert.',
       schema: {
-        label: z.string().optional().describe('Session label / title'),
-        description: z.string().optional().describe('Session description (markdown)'),
+        label: z.string().describe('Session label / title'),
       },
-      handler: async ({ label, description }) => {
-        const patch = {};
-        if (label !== undefined) patch.label = label;
-        if (description !== undefined) patch.pr_description = description;
-        if (Object.keys(patch).length === 0) {
-          return ok({ message: 'No changes provided.' });
-        }
-        await patchSession(patch);
-        return ok({ message: 'Session info updated.' });
+      handler: async ({ label }) => {
+        await patchSession({ label });
+        return ok({ message: 'Session label updated.' });
       },
     },
 

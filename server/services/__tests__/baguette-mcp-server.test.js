@@ -306,6 +306,15 @@ describe('GitPush', () => {
   });
 });
 
+describe('UpdateSession', () => {
+  it('patches session label only', async () => {
+    const { tools, mockPatch } = buildServer();
+    const result = parseResult(await callTool(tools, 'UpdateSession', { label: 'New label' }));
+    expect(result.ok).toBe(true);
+    expect(mockPatch).toHaveBeenCalledWith(1, { label: 'New label' }, INTERNAL_PATCH_PARAMS);
+  });
+});
+
 describe('PrUpsert', () => {
   it('resolves HEAD, creates PR, and patches session when no pr_number', async () => {
     execFile.mockImplementationOnce((_cmd, _args, _opts, cb) =>

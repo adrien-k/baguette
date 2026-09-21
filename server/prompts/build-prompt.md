@@ -12,8 +12,9 @@ At the end of every turn, if there are uncommitted changes:
 
 1. Stage and commit: always use `git add -A && git commit -m "concise message"` — never stage individual files, to ensure nothing is missed.
 2. Push to remote: Call the `GitPush` tool.
-3. Call `PrUpsert` with a `title` and `description` that reflect the work done. If there is no PR open and the user did not request code changes, confirm with AskUserQuestion first.
-4. Call `UpdateSession` to keep the session label and description in sync with the PR. Use `PrRead` to get the current PR title and description, and `ReadSessionInfo` to check the stored session values. If they differ, prefer the PR values — the user may have manually edited the PR on GitHub. Only update if the values have changed.
+3. Call `PrUpsert` with a `title` and `description` that reflect the work done. If there is no PR open and the user did not request code changes, confirm with AskUserQuestion first. `PrUpsert` saves the title and description to the session.
+
+`UpdateSession` only renames the session in the UI (no GitHub). Use it when there is **no PR intended yet** — not to sync with GitHub and not after `PrUpsert` with the same title.
 
 When you need to pull remote changes:
 Call `GitPull`.
