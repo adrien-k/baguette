@@ -44,6 +44,7 @@ app.set('views', path.join(__dirname, 'views'));
 const server = createServer(app);
 
 const devProxy = new DevProxy(app, [CodeServerHandler, DevserverHandler]);
+app.set('devProxy', devProxy);
 
 // Kamal health check
 app.get('/up', (req, res) => {

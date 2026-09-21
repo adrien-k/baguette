@@ -41,6 +41,7 @@ import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '..
 import { getEffectiveGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
+import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
 
 /**
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
@@ -223,6 +224,17 @@ export class SessionsService extends KnexService {
         }
       }
 
+      let allowed_ip = null;
+      if (
+        session.is_preview_ip_public &&
+        (status === 'ready' || status === 'starting') &&
+        def.url
+      ) {
+        const key = this._previewServiceProxyKey(session, def.name, baguetteConfig);
+        const proxyState = key ? this.app.get('devProxy')?.states.get(key) : null;
+        allowed_ip = proxyState?.starterIp ?? null;
+      }
+
       services.push({
         name: def.name,
         display_name: def.display_name,
@@ -235,9 +247,31 @@ export class SessionsService extends KnexService {
         status,
         exit_code,
         ports,
+        allowed_ip,
       });
     }
     return { services };
+  }
+
+  _previewServiceProxyKey(session, serviceName, baguetteConfig) {
+    const definitions = getPreviewServiceDefinitions(baguetteConfig, session.short_id);
+    const def = definitions?.find((d) => d.name === serviceName);
+    if (!def?.url) return null;
+    try {
+      return new URL(def.url).hostname;
+    } catch {
+      return null;
+    }
+  }
+
+  _attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, task, params) {
+    const key = this._previewServiceProxyKey(session, serviceName, baguetteConfig);
+    const webserverConfig = resolvePreviewServiceConfig(baguetteConfig, serviceName);
+    if (!key || !webserverConfig?.expose) return;
+    const devProxy = this.app.get('devProxy');
+    devProxy?.attachWebserverTask(key, task, webserverConfig.expose, {
+      starterIp: params.clientIp ?? null,
+    });
   }
 
   async startPreviewService(data, params) {
@@ -253,19 +287,27 @@ export class SessionsService extends KnexService {
     const label = `baguette:webserver:${serviceName}`;
     const tasksService = this.app.service('tasks');
     const running = tasksService._findRunningTask(session.id, label);
-    if (running) return running.toPublic();
+    if (running) {
+      this._attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, running, params);
+      return running.toPublic();
+    }
 
-    return tasksService.create(
+    const created = await tasksService.create(
       {
         session_id: session.id,
         command: webserverConfig.command,
         label,
         ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
         ...(webserverConfig.taskKey ? { task_key: webserverConfig.taskKey } : {}),
-        no_ttl: true,
+        ttl_ms: PREVIEW_WEBSERVICE_TTL_MS,
       },
       params
     );
+    const task = tasksService.getTask(created.id);
+    if (task) {
+      this._attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, task, params);
+    }
+    return created;
   }
 
   async diff(data, params) {

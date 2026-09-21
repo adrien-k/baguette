@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Globe, Play, ScrollText, Wifi, Copy, Loader2 } from 'lucide-react';
+import { ExternalLink, Globe, Play, ScrollText, Wifi, Copy, Loader2, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'react-qr-code';
 import { toastError } from '../../utils/toastError.jsx';
-import { sessionsService } from '../../feathers.js';
+import { sessionsService, tasksService } from '../../feathers.js';
 
 function ServiceQrCode({ url }) {
   if (!url) return null;
@@ -89,9 +89,11 @@ function PreviewSettingsToggles({ session }) {
   );
 }
 
-function ServiceRow({ svc, readonly, onStart, onViewLogs, starting }) {
+function ServiceRow({ svc, readonly, ipPublicEnabled, onStart, onStop, onViewLogs, starting, stopping }) {
   const statusMeta = STATUS_LABEL[svc.status] ?? STATUS_LABEL.stopped;
-  const canStart = !readonly && svc.status !== 'ready' && svc.status !== 'starting' && !starting;
+  const isActive = svc.status === 'ready' || svc.status === 'starting';
+  const canStart = !readonly && !isActive && !starting && !stopping;
+  const canStop = !readonly && isActive && svc.task_id && !stopping;
 
   const copyLink = (url, label) => {
     if (!url) return;
@@ -110,6 +112,12 @@ function ServiceRow({ svc, readonly, onStart, onViewLogs, starting }) {
             <span className={`text-xs ${statusMeta.className}`}>{statusMeta.text}</span>
             {svc.status === 'starting' && (
               <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+            )}
+            {ipPublicEnabled && isActive && svc.allowed_ip && (
+              <span className="text-xs text-zinc-500">
+                Allowed IP{' '}
+                <span className="font-mono text-zinc-400">{svc.allowed_ip}</span>
+              </span>
             )}
           </div>
           {svc.exit_code != null && svc.status === 'crashed' && (
@@ -144,13 +152,24 @@ function ServiceRow({ svc, readonly, onStart, onViewLogs, starting }) {
         </div>
         <div className="flex items-start gap-2 shrink-0">
           <ServiceQrCode url={qrUrl} />
-          {!readonly && (
+          {!readonly && canStop && (
+            <button
+              type="button"
+              onClick={() => onStop(svc.task_id)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600"
+              title="Stop preview service"
+            >
+              <Square className="w-3.5 h-3.5 fill-current text-red-400" />
+              Stop
+            </button>
+          )}
+          {!readonly && !canStop && (
             <button
               type="button"
               disabled={!canStart}
               onClick={() => onStart(svc.name)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Start without idle timeout (runs until stopped)"
+              title="Start preview service (1 hour idle timeout)"
             >
               <Play className="w-3.5 h-3.5 text-emerald-400" />
               Start
@@ -175,6 +194,7 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingService, setStartingService] = useState(null);
+  const [stoppingTaskId, setStoppingTaskId] = useState(null);
 
   const refreshStatus = useCallback(() => {
     if (!session?.id) return;
@@ -205,6 +225,19 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
     }
   };
 
+  const handleStop = async (taskId) => {
+    if (!taskId) return;
+    setStoppingTaskId(taskId);
+    try {
+      await tasksService.kill(taskId);
+      refreshStatus();
+    } catch (err) {
+      toastError('Failed to stop preview service', err);
+    } finally {
+      setStoppingTaskId(null);
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
       <div className="max-w-2xl mx-auto space-y-6">
@@ -222,9 +255,12 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
                 key={svc.name}
                 svc={svc}
                 readonly={readonly}
+                ipPublicEnabled={!!session?.is_preview_ip_public}
                 onStart={handleStart}
+                onStop={handleStop}
                 onViewLogs={onViewLogs}
                 starting={startingService === svc.name}
+                stopping={stoppingTaskId === svc.task_id}
               />
             ))
           )}

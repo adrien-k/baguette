@@ -1,5 +1,5 @@
 import { NotFound, BadRequest } from '@feathersjs/errors';
-import { Task } from '../task.js';
+import { Task, DEFAULT_TTL_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { loadBaguetteConfig, getScriptCommand, getAvailableTasks } from '../baguette-config.js';
@@ -28,7 +28,7 @@ export class TasksService {
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
    */
-  createTask({ sessionId, command, label, ports, env, cwd, dependsOn, noTtl }) {
+  createTask({ sessionId, command, label, ports, env, cwd, dependsOn, noTtl, ttlMs }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
@@ -45,7 +45,7 @@ export class TasksService {
     }
 
     const id = this._nextId++;
-    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl });
+    const task = new Task({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl, ttlMs });
     task.onLog((_id, stream, data) =>
       this.emit('log', { id, session_id: sessionId, stream, data })
     );
@@ -186,7 +186,9 @@ export class TasksService {
       _depChain,
       autoStart = true,
       no_ttl: noTtl = false,
+      ttl_ms: ttlMs,
     } = data;
+    const effectiveTtlMs = noTtl ? null : (ttlMs ?? DEFAULT_TTL_MS);
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
@@ -266,6 +268,7 @@ export class TasksService {
       cwd,
       dependsOn,
       noTtl,
+      ttlMs: effectiveTtlMs,
     });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);

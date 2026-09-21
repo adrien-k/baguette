@@ -7,9 +7,11 @@ import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
 import { getClientIp } from '../lib/client-ip.js';
 import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
+import { isPortListening } from './port-utils.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
 const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
+const WEBSERVER_STARTUP_TIMEOUT_MS = 60 * 1000;
 
 /**
  * Handler classes must implement:
@@ -204,6 +206,28 @@ export class DevProxy {
     return handler.allowUser(access.userId, res);
   }
 
+  /**
+   * Register an already-created webserver task with the proxy (e.g. started from the Preview tab).
+   */
+  attachWebserverTask(key, task, exposePort, { starterIp = null, startupTimeoutMs } = {}) {
+    const timeoutMs = startupTimeoutMs ?? WEBSERVER_STARTUP_TIMEOUT_MS;
+    const existing = this.states.get(key);
+    if (existing?.task?.id === task.id) return existing;
+    if (existing) this._releaseProxyState(key, existing);
+
+    const state = {
+      task,
+      port: null,
+      status: 'starting',
+      starterIp: starterIp ?? null,
+      unsubLog: null,
+      unsubExit: null,
+    };
+    this.states.set(key, state);
+    this._wireTaskToProxy(key, state, exposePort, timeoutMs);
+    return state;
+  }
+
   async _startService(handler, starterIp) {
     const key = handler.key;
     const state = {
@@ -218,43 +242,52 @@ export class DevProxy {
     this.states.set(key, state);
     try {
       const { task, exposePort } = await handler.buildTask();
-
       state.task = task;
-      const buffered = task.getLogs?.();
-      if (buffered) this.sse.send(key, { event: 'log', data: buffered });
-      state.unsubLog = task.onLog((_id, _stream, line) =>
-        this.sse.send(key, { event: 'log', data: line })
-      );
-      state.unsubExit = task.onExit((_id, code) => {
-        if (this.states.get(key) !== state) return;
-        if (state.status === 'starting') {
-          if (code !== 0) this._onCrashed(key, state);
-        } else if (state.status === 'listening') {
-          this._releaseProxyState(key, state);
-        }
-      });
-
       task.start();
-
-      (async () => {
-        try {
-          await task.waitForReady({ timeout: handler.startupTimeoutMs });
-          const port = task.ports[exposePort];
-          if (!port) {
-            throw new Error('Port not allocated');
-          }
-
-          this._onListening(key, state, port);
-        } catch (err) {
-          this._onCrashed(key, state, err);
-        }
-      })();
-
+      this._wireTaskToProxy(key, state, exposePort, handler.startupTimeoutMs);
       return state;
     } catch (err) {
       this._onCrashed(key, state, err);
       return state;
     }
+  }
+
+  _wireTaskToProxy(key, state, exposePort, startupTimeoutMs) {
+    const task = state.task;
+    const buffered = task.getLogs?.();
+    if (buffered) this.sse.send(key, { event: 'log', data: buffered });
+    state.unsubLog = task.onLog((_id, _stream, line) =>
+      this.sse.send(key, { event: 'log', data: line })
+    );
+    state.unsubExit = task.onExit((_id, code) => {
+      if (this.states.get(key) !== state) return;
+      if (state.status === 'starting') {
+        if (code !== 0) this._onCrashed(key, state);
+      } else if (state.status === 'listening') {
+        this._releaseProxyState(key, state);
+      }
+    });
+
+    (async () => {
+      try {
+        const portEnv = exposePort;
+        if (task.status === 'running' && portEnv && task.ports[portEnv]) {
+          const port = task.ports[portEnv];
+          if (await isPortListening(port)) {
+            this._onListening(key, state, port);
+            return;
+          }
+        }
+        await task.waitForReady({ timeoutMs: startupTimeoutMs });
+        const port = task.ports[exposePort];
+        if (!port) {
+          throw new Error('Port not allocated');
+        }
+        this._onListening(key, state, port);
+      } catch (err) {
+        this._onCrashed(key, state, err);
+      }
+    })();
   }
 
   _onListening(key, state, port) {

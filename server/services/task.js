@@ -8,6 +8,8 @@ import { isPortListening } from './port-utils.js';
 
 /** Idle lifetime for tasks that expose ports. Reset by heartbeat(). */
 export const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/** Idle lifetime for preview-tab webserver starts (matches proxy cookie TTL). */
+export const PREVIEW_WEBSERVICE_TTL_MS = 60 * 60 * 1000; // 1 hour
 /** How often a task heartbeats its depends_on tasks. */
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
@@ -48,7 +50,7 @@ export class Task {
   #ttlTimer = null;
   #heartbeatTimer = null;
 
-  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl = false }) {
+  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl = false, ttlMs }) {
     this.id = id;
     this.session_id = sessionId;
     this.command = command;
@@ -67,6 +69,7 @@ export class Task {
     this._dependsOn = Array.isArray(dependsOn) ? dependsOn : [];
     this._started = false;
     this._noTtl = !!noTtl;
+    this._ttlMs = noTtl ? null : (ttlMs ?? DEFAULT_TTL_MS);
   }
 
   get hasPorts() {
@@ -74,16 +77,16 @@ export class Task {
   }
 
   /**
-   * Reset this task's idle TTL to 5 minutes. No-op for tasks without ports
+   * Reset this task's idle TTL. No-op for tasks without ports
    * (they run until cancelled or they exit) and for tasks that have already exited.
    */
   heartbeat() {
-    if (this.status === 'exited' || !this.hasPorts || this._noTtl) return;
+    if (this.status === 'exited' || !this.hasPorts || !this._ttlMs) return;
     clearTimeout(this.#ttlTimer);
     this.#ttlTimer = setTimeout(() => {
       this.addLog('stdout', `\x1b[33m[baguette] TTL expired, stopping task...\x1b[0m\n`);
       this.kill().catch(() => {});
-    }, DEFAULT_TTL_MS);
+    }, this._ttlMs);
   }
 
   #heartbeatDeps() {
@@ -388,7 +391,7 @@ export class Task {
       exit_code: this.exit_code,
       created_at: this.created_at,
       ports: this.ports,
-      ttl_ms: this.hasPorts && !this._noTtl ? DEFAULT_TTL_MS : null,
+      ttl_ms: this.hasPorts && this._ttlMs ? this._ttlMs : null,
       no_ttl: this._noTtl,
     };
   }
