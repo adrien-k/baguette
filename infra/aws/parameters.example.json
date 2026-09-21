@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "DomainName",
+    "ParameterValue": "baguette.example.com"
+  },
+  {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z0123456789ABCDEFGHIJ"
+  },
+  {
+    "ParameterKey": "AcmeEmail",
+    "ParameterValue": "you@example.com"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "SubnetId",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t3.medium"
+  },
+  {
+    "ParameterKey": "VolumeSize",
+    "ParameterValue": "40"
+  },
+  {
+    "ParameterKey": "VolumeType",
+    "ParameterValue": "gp3"
+  },
+  {
+    "ParameterKey": "SshIngressCidr",
+    "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "AdditionalTags",
+    "ParameterValue": "Environment=production,Project=baguette,ManagedBy=cloudformation"
+  }
+]

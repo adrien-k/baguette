@@ -4,6 +4,8 @@ This repository ships with a [Kamal](https://kamal-deploy.org/) configuration fo
 
 ## 1. Server setup
 
+**AWS shortcut:** use [aws-ec2-kamal.md](aws-ec2-kamal.md) to provision Ubuntu on EC2, Route 53 DNS, and acme.sh via CloudFormation, then set the GitHub Actions variables from stack outputs.
+
 Provision a VPS running Ubuntu (Hetzner, EC2, DigitalOcean, etc.). Most providers include an `ubuntu` user; if not, create one:
 
 ```bash

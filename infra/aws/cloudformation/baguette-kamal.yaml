@@ -1,0 +1,335 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::LanguageExtensions
+Description: >-
+  EC2 host for Baguette Kamal deploys — Docker-ready Ubuntu, Route 53 DNS for www
+  and wildcard, acme.sh (dns_aws) for TLS certs consumed by Kamal on deploy.
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: >-
+      App domain (DOMAIN in CI) — Kamal serves www.<DomainName> and *.<DomainName>
+    AllowedPattern: '^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+    ConstraintDescription: Must be a valid DNS hostname (e.g. baguette.example.com)
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID that contains DomainName (e.g. Z1234567890ABC)
+    AllowedPattern: '^Z[A-Z0-9]+$'
+
+  AcmeEmail:
+    Type: String
+    Description: Email for Let's Encrypt / acme.sh account registration
+    AllowedPattern: '^[^@]+@[^@]+\.[^@]+$'
+
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    Description: EC2 instance type (2 vCPU / 4 GiB recommended for remote Docker builds)
+
+  VolumeSize:
+    Type: Number
+    Default: 40
+    MinValue: 20
+    MaxValue: 2000
+    Description: Root EBS volume size in GiB
+
+  VolumeType:
+    Type: String
+    Default: gp3
+    AllowedValues:
+      - gp3
+      - gp2
+
+  SshIngressCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: >-
+      CIDR allowed for SSH (port 22) — used by Kamal/GitHub Actions deploys only.
+      Admin access uses SSM Session Manager (no SSH key required).
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the instance and security group (default VPC is fine)
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet (route to an Internet Gateway) for the instance and Elastic IP
+
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    Description: Ubuntu 24.04 LTS AMI (SSM parameter path)
+
+  AdditionalTags:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: >-
+      Optional extra resource tags as Key=Value pairs (comma-separated). Applied to
+      the instance, Elastic IP, security group, and IAM role. Avoid commas in values.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: DNS & TLS
+        Parameters:
+          - DomainName
+          - HostedZoneId
+          - AcmeEmail
+      - Label:
+          default: EC2
+        Parameters:
+          - VpcId
+          - SubnetId
+          - InstanceType
+          - VolumeSize
+          - VolumeType
+          - AmiId
+          - SshIngressCidr
+      - Label:
+          default: Tags
+        Parameters:
+          - AdditionalTags
+
+Resources:
+  BaguetteHostRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-baguette-host-role'
+        - Fn::ForEach::AdditionalTagsOnHostRole:
+            - TagPair
+            - !Ref AdditionalTags
+            - Key: !Select [0, !Split ['=', !Ref TagPair]]
+              Value: !Select [1, !Split ['=', !Ref TagPair]]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: AcmeDnsAwsRoute53
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: route53:GetChange
+                Resource: arn:aws:route53:::change/*
+              - Effect: Allow
+                Action:
+                  - route53:ChangeResourceRecordSets
+                  - route53:ListResourceRecordSets
+                Resource: !Sub 'arn:aws:route53:::hostedzone/${HostedZoneId}'
+
+  BaguetteHostInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BaguetteHostRole
+
+  BaguetteSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Baguette Kamal — SSH, HTTP, HTTPS
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshIngressCidr
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-baguette'
+        - Fn::ForEach::AdditionalTagsOnSecurityGroup:
+            - TagPair
+            - !Ref AdditionalTags
+            - Key: !Select [0, !Split ['=', !Ref TagPair]]
+              Value: !Select [1, !Split ['=', !Ref TagPair]]
+
+  BaguetteElasticIp:
+    Type: AWS::EC2::EIP
+    Domain: vpc
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-baguette'
+        - Fn::ForEach::AdditionalTagsOnElasticIp:
+            - TagPair
+            - !Ref AdditionalTags
+            - Key: !Select [0, !Split ['=', !Ref TagPair]]
+              Value: !Select [1, !Split ['=', !Ref TagPair]]
+
+  BaguetteInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref SubnetId
+      IamInstanceProfile: !Ref BaguetteHostInstanceProfile
+      SecurityGroupIds:
+        - !Ref BaguetteSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref VolumeSize
+            VolumeType: !Ref VolumeType
+            DeleteOnTermination: true
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-baguette'
+        - Fn::ForEach::AdditionalTagsOnInstance:
+            - TagPair
+            - !Ref AdditionalTags
+            - Key: !Select [0, !Split ['=', !Ref TagPair]]
+              Value: !Select [1, !Split ['=', !Ref TagPair]]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          export AWS_ROUTE53_ZONE_ID="${HostedZoneId}"
+
+          # --- Deploy SSH key (private key becomes GitHub SSH_PRIVATE_KEY; admin via SSM) ---
+          install -d -m 700 -o ubuntu -g ubuntu /home/ubuntu/.ssh
+          if ! sudo -u ubuntu test -f /home/ubuntu/.ssh/id_ed25519; then
+            sudo -u ubuntu ssh-keygen -t ed25519 -N "" -f /home/ubuntu/.ssh/id_ed25519
+            sudo -u ubuntu bash -c 'cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys'
+          fi
+          chmod 600 /home/ubuntu/.ssh/authorized_keys
+          chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+
+          # --- Data volume mount path for Kamal ---
+          install -d -m 755 -o ubuntu -g ubuntu /home/ubuntu/baguette_storage
+
+          # --- Docker (Kamal also installs on first deploy; pre-install speeds bootstrap) ---
+          if ! command -v docker >/dev/null 2>&1; then
+            curl -fsSL https://get.docker.com | sh
+            usermod -aG docker ubuntu
+          fi
+
+          # --- acme.sh + renew script (CI runs renew.sh before each deploy) ---
+          if ! sudo -u ubuntu test -x /home/ubuntu/.acme.sh/acme.sh; then
+            sudo -u ubuntu bash -c "curl -fsSL https://get.acme.sh | sh -s email=${AcmeEmail}"
+          fi
+
+          install -d -m 755 -o ubuntu -g ubuntu /home/ubuntu/acme.sh
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            "DOMAIN=${DomainName}" \
+            "export AWS_ROUTE53_ZONE_ID=${HostedZoneId}" \
+            '/home/ubuntu/.acme.sh/acme.sh --issue --dns dns_aws -d "${DOMAIN}" -d "*.${DOMAIN}" --server letsencrypt' \
+            'rc=$?' \
+            'if [ "$rc" -eq 2 ]; then' \
+            '  exit 0' \
+            'fi' \
+            'exit "$rc"' \
+            > /home/ubuntu/acme.sh/renew.sh
+          chown ubuntu:ubuntu /home/ubuntu/acme.sh/renew.sh
+          chmod +x /home/ubuntu/acme.sh/renew.sh
+
+          # Issue initial cert once DNS points at this host (instance role supplies AWS creds).
+          for attempt in $(seq 1 30); do
+            if sudo -u ubuntu /home/ubuntu/acme.sh/renew.sh; then
+              break
+            fi
+            sleep 20
+          done
+
+  BaguetteEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt BaguetteElasticIp.AllocationId
+      InstanceId: !Ref BaguetteInstance
+
+  WwwDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'www.${DomainName}'
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !Ref BaguetteElasticIp
+
+  WildcardDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '*.${DomainName}'
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !Ref BaguetteElasticIp
+
+Outputs:
+  DeployServer:
+    Description: Set as GitHub Actions variable DEPLOY_SERVER
+    Value: !Ref BaguetteElasticIp
+
+  DeployUser:
+    Description: Set as GitHub Actions variable DEPLOY_USER (optional; default ubuntu)
+    Value: ubuntu
+
+  Domain:
+    Description: Set as GitHub Actions variable DOMAIN
+    Value: !Ref DomainName
+
+  InstanceId:
+    Description: EC2 instance ID
+    Value: !Ref BaguetteInstance
+
+  WwwUrl:
+    Description: Baguette UI URL after deploy
+    Value: !Sub 'https://www.${DomainName}'
+
+  SsmStartSessionCommand:
+    Description: Interactive shell on the instance (requires Session Manager plugin)
+    Value: !Sub 'aws ssm start-session --target ${BaguetteInstance} --region ${AWS::Region}'
+
+  SshPrivateKeyCommand:
+    Description: >-
+      Fetch deploy private key via SSM (paste into GitHub secret SSH_PRIVATE_KEY).
+      See docs/deployment/aws-ec2-kamal.md for the full command.
+    Value: !Sub >-
+      aws ssm send-command --region ${AWS::Region} --instance-ids ${BaguetteInstance}
+      --document-name AWS-RunShellScript --parameters
+      commands=["cat /home/ubuntu/.ssh/id_ed25519"]
+
+  GithubActionsVariables:
+    Description: GitHub Actions Variables (Settings → Secrets and variables → Actions → Variables)
+    Value: !Sub |
+      DEPLOY_SERVER=${BaguetteElasticIp}
+      DOMAIN=${DomainName}
+      DEPLOY_USER=ubuntu
+
+  GithubActionsSecretsReminder:
+    Description: >-
+      GitHub Actions Secrets you must set manually (see docs/deployment/aws-ec2-kamal.md)
+    Value: >-
+      SSH_PRIVATE_KEY (from SshPrivateKeyCommand), AUTH_GITHUB_CLIENT_ID,
+      AUTH_GITHUB_CLIENT_SECRET, ENCRYPTION_KEY (openssl rand -hex 32)
