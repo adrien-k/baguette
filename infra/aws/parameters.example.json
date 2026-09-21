@@ -34,9 +34,5 @@
   {
     "ParameterKey": "SshIngressCidr",
     "ParameterValue": "0.0.0.0/0"
-  },
-  {
-    "ParameterKey": "AdditionalTags",
-    "ParameterValue": "Environment=production,Project=baguette,ManagedBy=cloudformation"
   }
 ]

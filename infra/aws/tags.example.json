@@ -1,0 +1,14 @@
+[
+  {
+    "Key": "Environment",
+    "Value": "production"
+  },
+  {
+    "Key": "Project",
+    "Value": "baguette"
+  },
+  {
+    "Key": "ManagedBy",
+    "Value": "cloudformation"
+  }
+]

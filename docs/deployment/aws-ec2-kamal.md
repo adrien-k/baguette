@@ -7,13 +7,13 @@ This guide provisions a single Ubuntu EC2 instance with Route 53 DNS and [acme.s
 | Resource                       | Purpose                                                                                            |
 | ------------------------------ | -------------------------------------------------------------------------------------------------- |
 | EC2 (Ubuntu 24.04)             | Kamal deploy target; Docker installed; `/home/ubuntu/baguette_storage` for app data                |
-| Elastic IP                     | Stable `DEPLOY_SERVER` address                                                                     |
+| Elastic IP                     | Stable public IP; `www.<DOMAIN>` and `*.<DOMAIN>` point here                                       |
 | Security group                 | TCP 22 (Kamal/CI), 80, 443                                                                         |
-| IAM instance role              | Scoped Route 53 access for acme.sh `dns_aws`; SSM Session Manager (`AmazonSSMManagedInstanceCore`) |
+| IAM instance role              | Route 53 `dns_aws` (list zones, change records on `HostedZoneId`); SSM Session Manager |
 | Route 53 A records             | `www.<DOMAIN>` and `*.<DOMAIN>` → Elastic IP                                                       |
 | acme.sh + `~/acme.sh/renew.sh` | Wildcard cert; CI renews before each deploy                                                        |
 
-Template: [`infra/aws/cloudformation/baguette-kamal.yaml`](../../infra/aws/cloudformation/baguette-kamal.yaml)
+Template: [`infra/aws/cloudformation/baguette-kamal.yaml`](../../infra/aws/cloudformation/baguette-kamal.yaml) (instance bootstrap: [`userdata.sh`](../../infra/aws/cloudformation/userdata.sh))
 
 ## Prerequisites
 
@@ -34,13 +34,17 @@ Template: [`infra/aws/cloudformation/baguette-kamal.yaml`](../../infra/aws/cloud
 | `InstanceType`              | Default `t3.medium` (remote Docker builds need RAM)                                                                                    |
 | `VolumeSize` / `VolumeType` | Root disk; default 40 GiB `gp3`                                                                                                        |
 | `SshIngressCidr`            | CIDR for SSH (port 22) — **Kamal/GitHub Actions only**; default `0.0.0.0/0` because hosted runner IPs change                           |
-| `AdditionalTags`            | Optional comma-separated `Key=Value` tags on the EC2 instance, Elastic IP, security group, and IAM role (omit or leave empty for none) |
 
-Copy and edit the example parameters file:
+Each resource gets a `Name` tag from the stack. Extra tags are **CloudFormation stack tags**, not a template parameter: `Fn::ForEach` cannot build a `Tags` list (it merges objects, so every iteration repeats the key `Key`). Stack tags propagate to the instance, Elastic IP, security group, and IAM role.
+
+Copy and edit the example files:
 
 ```bash
 cp infra/aws/parameters.example.json infra/aws/parameters.json
 # edit infra/aws/parameters.json
+
+cp infra/aws/tags.example.json infra/aws/tags.json
+# edit infra/aws/tags.json (optional; omit for no extra tags)
 ```
 
 To find VPC and subnet IDs (use a public subnet):
@@ -50,7 +54,9 @@ aws ec2 describe-subnets --filters Name=map-public-ip-on-launch,Values=true \
   --query 'Subnets[].{SubnetId:SubnetId,VpcId:VpcId,AZ:AvailabilityZone}' --output table
 ```
 
-`parameters.json` is gitignored — do not commit environment-specific values.
+`parameters.json` and `tags.json` are gitignored — do not commit environment-specific values.
+
+`provision-stack.sh` passes `--tags file://infra/aws/tags.json` when that file exists. In the console, use **Stack options → Tags**. On `update`, omitting the file leaves existing stack tags unchanged; an empty `[]` file clears them.
 
 ## Provision the stack
 
@@ -58,35 +64,41 @@ aws ec2 describe-subnets --filters Name=map-public-ip-on-launch,Values=true \
 ./infra/aws/provision-stack.sh create
 ```
 
-Other commands: `update`, `delete`, `outputs`, `status`. Override `STACK_NAME`, `AWS_REGION`, or `PARAMETERS_FILE` as needed.
+Other commands: `update`, `delete`, `outputs`, `status`, `bootstrap-logs`, `render`. Override `STACK_NAME`, `AWS_REGION`, `PARAMETERS_FILE`, or `TAGS_FILE` as needed.
 
-Stack creation waits for `CREATE_COMPLETE`. User data installs acme.sh and retries certificate issuance until DNS and the instance role are ready (often 5–15 minutes). The instance appears in **Systems Manager → Fleet Manager** once SSM registration completes (usually a few minutes after boot).
+Stack creation waits for bootstrap (Docker, acme.sh, first certificate) and fails if that script fails (up to 25 minutes). `create` uses `--disable-rollback` so a failed instance is left running for inspection. Fetch the log with `./infra/aws/provision-stack.sh bootstrap-logs`, then `delete` when you are done. The instance appears in **Systems Manager → Fleet Manager** once SSM registration completes (usually a few minutes after boot).
 
 ### Manual CloudFormation (optional)
 
+`create` / `update` embed [`userdata.sh`](../../infra/aws/cloudformation/userdata.sh) into the template. For a raw `aws` call, render first:
+
 ```bash
+./infra/aws/provision-stack.sh render > /tmp/baguette-kamal.yaml
 aws cloudformation create-stack \
   --stack-name baguette-kamal \
-  --template-body file://infra/aws/cloudformation/baguette-kamal.yaml \
+  --template-body file:///tmp/baguette-kamal.yaml \
   --parameters file://infra/aws/parameters.json \
-  --capabilities CAPABILITY_IAM
+  --tags file://infra/aws/tags.json \
+  --capabilities CAPABILITY_IAM \
+  --disable-rollback
 ```
 
 ## GitHub Actions configuration
 
-When the stack completes, print outputs:
+When the stack completes, print values to copy into the fork:
 
 ```bash
 ./infra/aws/provision-stack.sh outputs
 ```
 
+That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DOMAIN>`, `DOMAIN=<DOMAIN>`). `DEPLOY_USER` is omitted — Kamal and the workflow default to `ubuntu`.
+
 ### Variables (Settings → Secrets and variables → Actions → **Variables**)
 
-| Variable        | Source                             |
-| --------------- | ---------------------------------- |
-| `DEPLOY_SERVER` | Output `DeployServer` (Elastic IP) |
-| `DOMAIN`        | Output `Domain`                    |
-| `DEPLOY_USER`   | `ubuntu` (output `DeployUser`)     |
+| Variable        | Source                                          |
+| --------------- | ----------------------------------------------- |
+| `DEPLOY_SERVER` | `www.<DOMAIN>` (resolves to the Elastic IP)     |
+| `DOMAIN`        | Stack parameter `DomainName`                    |
 
 ### Secrets (**Secrets** tab)
 
@@ -99,7 +111,7 @@ When the stack completes, print outputs:
 
 #### Fetch `SSH_PRIVATE_KEY` with SSM
 
-Replace `INSTANCE_ID` and `REGION` from stack outputs (`InstanceId`, your region):
+Replace `INSTANCE_ID` and `REGION` (or copy the filled-in command from `./infra/aws/provision-stack.sh outputs`):
 
 ```bash
 INSTANCE_ID=i-0123456789abcdef0
@@ -133,9 +145,10 @@ Push to `main` to deploy, or follow [kamal.md §5.1](kamal.md#51-deploy-with-kam
 
 | Symptom                                    | Check                                                                                                          |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Stack stuck / instance running but no cert | SSM in; `sudo tail -f /var/log/cloud-init-output.log`; run `/home/ubuntu/acme.sh/renew.sh` as `ubuntu`         |
+| Stack stuck / instance running but no cert | `./infra/aws/provision-stack.sh bootstrap-logs` (or `sudo tail -f /var/log/cloud-init-output.log`); run `/home/ubuntu/acme.sh/renew.sh` as `ubuntu` |
+| acme.sh install / WaitCondition FAILURE    | Installer must run in `/home/ubuntu` (it writes `master.tar.gz` to cwd). `bootstrap-logs` reads the instance id from the stack resource, not outputs (outputs only exist after `CREATE_COMPLETE`). |
 | SSM target not connected                   | Instance has public egress; IAM role includes `AmazonSSMManagedInstanceCore`; wait a few minutes after boot    |
-| acme DNS errors                            | `HostedZoneId` matches the zone for `DomainName`; role allows changes only on that hosted zone                 |
+| acme DNS errors                            | `HostedZoneId` matches the zone for `DomainName`; role allows `route53:ListHostedZones` plus record changes on that zone |
 | Deploy SSH fails                           | `SSH_PRIVATE_KEY` is the deploy key from SSM; security group allows SSH from GitHub Actions (`SshIngressCidr`) |
 | 502 / proxy errors                         | First deploy still running; ensure `www` and wildcard DNS resolve to the Elastic IP (`dig www.<DOMAIN>`)       |
 
