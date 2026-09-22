@@ -39,7 +39,8 @@ import LogsView from './session/LogsView.jsx';
 import EditView from './session/EditView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
-import { parseModelField, variantLabel } from '../utils/models.js';
+import { parseModelField, variantLabel, pickPreferredVariantIdx } from '../utils/models.js';
+import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 
 /**
  * Processes a flat list of messages from session history:
@@ -279,6 +280,7 @@ export default function Session() {
   const [showMenu, setShowMenu] = useState(false);
   const [menuModelOverride, setMenuModelOverride] = useState(null);
   const [models, setModels] = useState([]);
+  const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const [_localSha, setLocalSha] = useState(null);
   const [_remoteSha, setRemoteSha] = useState(null);
   const [pushing, setPushing] = useState(false);
@@ -744,13 +746,17 @@ export default function Session() {
                       const menuModelObj = models.find((m) => m.id === menuModelId);
                       const variants = menuModelObj?.variants ?? [];
                       const currentVariantIdx = (() => {
-                        if (!variants.length || !sessionParams) return 0;
-                        const idx = variants.findIndex((v) =>
-                          v.params?.every((p) =>
-                            sessionParams.some((sp) => sp.id === p.id && sp.value === p.value)
-                          )
-                        );
-                        return idx >= 0 ? idx : 0;
+                        if (!variants.length) return 0;
+                        if (sessionParams) {
+                          const idx = variants.findIndex((v) =>
+                            v.params?.every((p) =>
+                              sessionParams.some((sp) => sp.id === p.id && sp.value === p.value)
+                            )
+                          );
+                          if (idx >= 0) return idx;
+                        }
+                        const prefIdx = pickPreferredVariantIdx(variants, cursorFast, cursorEffort);
+                        return prefIdx >= 0 ? prefIdx : 0;
                       })();
                       return (
                         <div className="p-2 border-b border-zinc-800">
@@ -760,9 +766,21 @@ export default function Session() {
                             onChange={(e) => {
                               const newId = e.target.value;
                               const newModelObj = models.find((m) => m.id === newId);
-                              if (isCursor && newModelObj?.variants?.length) {
+                              const newVariants = newModelObj?.variants ?? [];
+                              if (isCursor && newVariants.length) {
+                                const prefIdx = pickPreferredVariantIdx(
+                                  newVariants,
+                                  cursorFast,
+                                  cursorEffort
+                                );
+                                const prefVariant = prefIdx >= 0 ? newVariants[prefIdx] : null;
                                 setMenuModelOverride(newId);
-                                handleModelChange(newId);
+                                handleModelChange(
+                                  newId,
+                                  prefVariant?.params?.length
+                                    ? JSON.stringify(prefVariant.params)
+                                    : null
+                                );
                               } else {
                                 handleModelChange(newId);
                                 setShowMenu(false);

@@ -10,16 +10,7 @@ import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
 import { isMobile } from '../utils/isMobile.js';
-import { variantLabel } from '../utils/models.js';
-
-function applyParamOverrides(params, fast, effort) {
-  if (fast === 'default' && effort === 'default') return params;
-  const overrides = new Map();
-  if (fast !== 'default') overrides.set('fast', fast === 'yes' ? 'true' : 'false');
-  if (effort !== 'default') overrides.set('effort', effort);
-  // Only update params that already exist in the variant — never inject new ones
-  return params.map((p) => (overrides.has(p.id) ? { ...p, value: overrides.get(p.id) } : p));
-}
+import { variantLabel, applyParamOverrides } from '../utils/models.js';
 
 function parseRepoFullName(full) {
   if (!full) return { owner: '', name: '' };
