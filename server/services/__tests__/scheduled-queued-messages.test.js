@@ -87,6 +87,39 @@ describe('queued-messages schedule', () => {
         .create({ session_id: sessionId, message_json: messageJson }, params({ id: userId }))
     ).rejects.toThrow(/External access forbidden/);
   });
+
+  it('patch keeps kind=scheduled when another queued row exists', async () => {
+    const sendAt = new Date(Date.now() + 60_000).toISOString();
+    const scheduled = await app
+      .service('queued-messages')
+      .schedule(
+        { session_id: sessionId, message_json: messageJson, send_at: sendAt },
+        params({ id: userId })
+      );
+
+    await db('queued_messages').insert({
+      session_id: sessionId,
+      user_id: userId,
+      message_json: JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'Turn queue' },
+      }),
+      kind: 'turn',
+      send_at: null,
+    });
+
+    const updatedJson = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: 'Edited later' },
+    });
+    const patched = await app
+      .service('queued-messages')
+      .patch(scheduled.id, { message_json: updatedJson }, params({ id: userId }));
+
+    expect(patched.kind).toBe('scheduled');
+    expect(patched.send_at).toBeTruthy();
+    expect(patched.message_json).toBe(updatedJson);
+  });
 });
 
 describe('scheduled dispatcher', () => {

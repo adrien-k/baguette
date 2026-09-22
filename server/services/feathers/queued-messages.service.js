@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 
@@ -47,6 +47,24 @@ async function validateSessionOwnership(context) {
   return context;
 }
 
+/**
+ * scopeByUser sets params.knex; @feathersjs/knex _patch re-fetches with id $in but _find
+ * ignores params.query when params.knex is set, so the post-patch find returns every row
+ * for the user and throws NotFound when there is more than one queued message.
+ */
+async function requireOwnQueuedMessage(context) {
+  if (context.method !== 'patch' || context.id == null) return context;
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const row = await context.app
+    .get('db')('queued_messages')
+    .where({ id: context.id, user_id: userId })
+    .first();
+  if (!row) throw new NotFound('Queued message not found');
+  delete context.params.knex;
+  return context;
+}
+
 async function normalizeInternalCreate(context) {
   if (context.params?.provider) return context;
   const kind = context.data.kind ?? 'turn';
@@ -76,7 +94,7 @@ const queuedMessagesHooks = {
     schedule: [only(['session_id', 'message_json', 'send_at']), validateSessionOwnership],
     find: [scopeByUser],
     get: [scopeByUser],
-    patch: [scopeByUser, only(['message_json'])],
+    patch: [scopeByUser, requireOwnQueuedMessage, only(['message_json'])],
     remove: [scopeByUser],
   },
 };

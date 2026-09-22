@@ -10,7 +10,7 @@ function extractText(messageJson) {
       return content
         .filter((b) => b.type === 'text')
         .map((b) => b.text)
-        .join(' ');
+        .join('\n\n');
     }
   } catch {
     /* ignore */
@@ -124,7 +124,7 @@ function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
         </div>
       ) : (
         <div className="flex items-start gap-2">
-          <p className="flex-1 text-sm text-zinc-300 line-clamp-2 break-words min-w-0">
+          <p className="flex-1 text-sm text-zinc-300 line-clamp-2 break-words min-w-0 whitespace-pre-wrap">
             {text || <span className="text-zinc-500 italic">No text</span>}
           </p>
           <div className="flex gap-0.5 shrink-0 -mt-0.5">

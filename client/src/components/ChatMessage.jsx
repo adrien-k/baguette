@@ -142,7 +142,11 @@ export default function ChatMessage({
           <div className="space-y-2">
             {content.map((block, i) => {
               if (block.type === 'text') {
-                return <MarkdownContent key={i}>{block.text}</MarkdownContent>;
+                return (
+                  <MarkdownContent key={i} hardBreaks>
+                    {block.text}
+                  </MarkdownContent>
+                );
               }
               if (block.type === 'image') {
                 const { media_type, data } = block.source || {};
@@ -170,7 +174,7 @@ export default function ChatMessage({
             })}
           </div>
         ) : (
-          <MarkdownContent>{typeof content === 'string' ? content : ''}</MarkdownContent>
+          <MarkdownContent hardBreaks>{typeof content === 'string' ? content : ''}</MarkdownContent>
         )}
       </div>
     );

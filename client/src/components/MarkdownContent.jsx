@@ -22,6 +22,15 @@ const markdownClasses = `
   [&_hr]:border-zinc-700 [&_hr]:my-3
 `;
 
+/** Single newlines become markdown hard breaks; blank lines stay paragraph breaks. */
+function withHardLineBreaks(text) {
+  if (!text) return text;
+  return text
+    .split(/\n{2,}/)
+    .map((para) => para.replace(/\n/g, '  \n'))
+    .join('\n\n');
+}
+
 const components = {
   code({ className, children }) {
     const language = /language-(\w+)/.exec(className || '')?.[1];
@@ -32,11 +41,13 @@ const components = {
   },
 };
 
-export default function MarkdownContent({ children, className = '' }) {
+export default function MarkdownContent({ children, className = '', hardBreaks = false }) {
+  const source =
+    hardBreaks && typeof children === 'string' ? withHardLineBreaks(children) : children;
   return (
     <div className={`markdown-content ${markdownClasses} ${className}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {children}
+        {source}
       </ReactMarkdown>
     </div>
   );
