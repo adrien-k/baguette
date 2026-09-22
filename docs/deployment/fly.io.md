@@ -13,7 +13,7 @@ Fly.io machines are **Firecracker VMs**, not containers running on a shared host
 ## Prerequisites
 
 - [flyctl](https://fly.io/docs/hands-on/install-flyctl/) installed and authenticated (`fly auth login`)
-- A [GitHub OAuth App](https://github.com/settings/developers)
+- A [GitHub App](https://github.com/settings/apps)
 - An Anthropic API key
 
 ## 1. Configure fly.toml
@@ -52,26 +52,27 @@ fly volumes create baguette_data --size 10 --region iad
 
 Adjust `--region` to match `primary_region` in `fly.toml`. The volume is attached to a single machine, so avoid scaling to multiple machines without a shared storage strategy.
 
-## 4. GitHub OAuth App
+## 4. GitHub App
 
-Create a GitHub OAuth App at [github.com/settings/developers](https://github.com/settings/developers).
+Create a GitHub App at [github.com/settings/apps](https://github.com/settings/apps), with the permissions and options listed in [Setting up the GitHub App](../../README.md#setting-up-the-github-app).
 
 With the default Fly.io domain:
 
 - **Homepage URL**: `https://your-app-name.fly.dev`
-- **Authorization callback URL**: `https://your-app-name.fly.dev/auth/github/callback`
+- **Callback URL** and **Setup URL**: `https://your-app-name.fly.dev/auth/github/callback`
 
 With a custom domain:
 
 - **Homepage URL**: `https://www.your-domain.com`
-- **Authorization callback URL**: `https://www.your-domain.com/auth/github/callback`
+- **Callback URL** and **Setup URL**: `https://www.your-domain.com/auth/github/callback`
 
 ## 5. Set secrets
 
 ```bash
 fly secrets set \
-  GITHUB_CLIENT_ID=your_client_id \
-  GITHUB_CLIENT_SECRET=your_client_secret \
+  AUTH_GITHUB_CLIENT_ID=your_client_id \
+  AUTH_GITHUB_CLIENT_SECRET=your_client_secret \
+  AUTH_GITHUB_APP_SLUG=your-app-slug \
   ENCRYPTION_KEY=$(openssl rand -hex 32) \
   PUBLIC_HOST=https://your-app-name.fly.dev
 ```

@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { reposService } from '../feathers.js';
-import { useAuth } from '../hooks/useAuth.jsx';
 import { toastError } from '../utils/toastError.jsx';
 import SearchableSelect from './SearchableSelect/index.jsx';
 
@@ -11,22 +10,16 @@ function installHref() {
 }
 
 export default function RepoSearchInput({ value, onSelect, addedNames, trailing }) {
-  const { github } = useAuth();
-  const isAppMode = github?.auth_mode === 'app';
   const [orgs, setOrgs] = useState([]);
-  const [selectedOrg, setSelectedOrg] = useState('personal');
+  const [selectedOrg, setSelectedOrg] = useState('');
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const addedNamesRef = useRef(addedNames);
-  useEffect(() => {
-    addedNamesRef.current = addedNames;
-  }, [addedNames]);
 
   const getRepoOptions = useCallback(
     async (query) => {
       try {
         const res = await reposService.findRemote({ org: selectedOrg, query });
-        return res.repos.filter((r) => !addedNamesRef.current.has(r.full_name));
+        return res.repos;
       } catch (err) {
         toastError('Failed to load repositories', err);
         return [];
@@ -35,8 +28,8 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
     [selectedOrg]
   );
 
-  // In app mode the accounts come from GitHub App installations, so "personal" may not be among
-  // them — fall back to the first account returned.
+  // Accounts come from GitHub App installations — keep the current selection if it is still
+  // installed, otherwise fall back to the first account returned.
   const loadOrgs = useCallback(() => {
     setLoadingOrgs(true);
     return reposService
@@ -65,7 +58,7 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
     await loadOrgs();
   };
 
-  const noInstallations = isAppMode && !loadingOrgs && orgs.length === 0;
+  const noInstallations = !loadingOrgs && orgs.length === 0;
 
   if (noInstallations) {
     return (
@@ -130,12 +123,20 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
             emptyText="No repositories found"
             getOptionValue={(r) => r.full_name}
             getOptionLabel={(r) => r.full_name}
-            renderOption={(r) => (
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-mono truncate">{r.full_name}</span>
-                {r.private && <span className="text-xs text-zinc-500 shrink-0">private</span>}
-              </div>
-            )}
+            isOptionDisabled={(r) => addedNames.has(r.full_name)}
+            renderOption={(r) => {
+              const alreadyAdded = addedNames.has(r.full_name);
+              return (
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`font-mono truncate ${alreadyAdded ? 'text-zinc-500' : ''}`}>
+                    {r.full_name}
+                  </span>
+                  <span className="text-xs text-zinc-500 shrink-0">
+                    {alreadyAdded ? 'Already added' : r.private ? 'private' : null}
+                  </span>
+                </div>
+              );
+            }}
             renderSelected={(r) => <span className="font-mono">{r.full_name}</span>}
           />
         </div>
@@ -155,17 +156,11 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
       <p className="text-xs text-zinc-500 mt-2 max-w-xl leading-relaxed">
         Lists up to <span className="text-zinc-400">20</span> repos per load. Empty field shows the
         20 most recently updated you can access; type a fragment of{' '}
-        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list.{' '}
-        {isAppMode ? (
-          <>
-            Only repositories you granted the Baguette GitHub App are listed.{' '}
-            <a href={installHref()} className="text-amber-500 hover:text-amber-400">
-              Manage repository access ↗
-            </a>
-          </>
-        ) : (
-          'Personal is owner and direct collaborator repos only.'
-        )}
+        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list. Only
+        repositories you granted the Baguette GitHub App are listed.{' '}
+        <a href={installHref()} className="text-amber-500 hover:text-amber-400">
+          Manage repository access ↗
+        </a>
       </p>
     </div>
   );

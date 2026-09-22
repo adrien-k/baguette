@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import * as yaml from 'js-yaml';
 import { DOCKER_COMPOSE_PATH } from '../config.js';
-import { getEffectiveGithubToken } from '../services/agent-settings.js';
+import { getGithubToken } from '../services/agent-settings.js';
 import { listModels, refreshModels } from '../services/anthropic-models.js';
 import { listCursorModels, refreshCursorModels } from '../services/cursor-models.js';
 import { decrypt } from '../lib/encrypt.js';
@@ -238,7 +238,7 @@ export default function createSettingsRoutes(requireAuth) {
    */
   router.get('/api/repos/:repoFullName/prs', requireAuth, async (req, res) => {
     try {
-      const token = getEffectiveGithubToken(req.user);
+      const token = getGithubToken(req.user);
       if (!token) {
         return res.status(401).json({ error: 'No GitHub token configured' });
       }

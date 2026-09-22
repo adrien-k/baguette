@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 
 const AuthContext = createContext(null);
 
-const DEFAULT_GITHUB = { auth_mode: 'oauth', install_url: null };
+const DEFAULT_GITHUB = { install_url: null };
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);

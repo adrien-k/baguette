@@ -223,8 +223,9 @@ cmd_outputs() {
   echo
   echo "Secrets"
   echo "  SSH_PRIVATE_KEY            contents of /home/ubuntu/.ssh/id_ed25519 (command below)"
-  echo "  AUTH_GITHUB_CLIENT_ID      GitHub OAuth App client ID"
-  echo "  AUTH_GITHUB_CLIENT_SECRET  GitHub OAuth App client secret"
+  echo "  AUTH_GITHUB_CLIENT_ID      GitHub App client ID"
+  echo "  AUTH_GITHUB_CLIENT_SECRET  GitHub App client secret"
+  echo "  AUTH_GITHUB_APP_SLUG       GitHub App slug (the <slug> in github.com/apps/<slug>)"
   echo "  ENCRYPTION_KEY             openssl rand -hex 32"
   echo
   echo "Fetch SSH_PRIVATE_KEY (paste the full key, including BEGIN/END lines)"

@@ -79,14 +79,12 @@ function formatUserExternal(context) {
 
 const encryptUserSecrets = encryptFields({
   access_token: 'access_token_encrypted',
-  github_token: 'github_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
 });
 
 const decryptUserSecrets = decryptFields({
   access_token: 'access_token_encrypted',
-  github_token: 'github_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
 });

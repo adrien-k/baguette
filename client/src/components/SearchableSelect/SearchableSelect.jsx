@@ -30,6 +30,7 @@ const COLOR_CLASSES = {
  *   getOptionLabel   – (option) => string for filtering — default: String(option)
  *   renderOption     – (option) => ReactNode for dropdown row — default: getOptionLabel
  *   renderSelected   – (option) => ReactNode for selected display — default: getOptionLabel
+ *   isOptionDisabled – optional (option) => boolean; disabled rows are shown but not selectable
  */
 export default function SearchableSelect({
   value,
@@ -49,6 +50,7 @@ export default function SearchableSelect({
   getOptionLabel = (o) => String(o),
   renderOption,
   renderSelected,
+  isOptionDisabled,
 }) {
   const [search, setSearch] = useState(null); // null means search is closed
   const rootRef = useRef(null);
@@ -184,20 +186,28 @@ export default function SearchableSelect({
       >
         {!disabled &&
           !loading &&
-          filteredOptions.map((o) => (
-            <button
-              key={getOptionValue(o)}
-              type="button"
-              onClick={() => {
-                onChange(getOptionValue(o));
-                setSearch(null);
-                cancelDebouncedFetch();
-              }}
-              className="w-full text-left px-3 py-2.5 text-sm text-white hover:bg-zinc-700 transition-colors"
-            >
-              {renderOption ? renderOption(o) : getOptionLabel(o)}
-            </button>
-          ))}
+          filteredOptions.map((o) => {
+            const optionDisabled = isOptionDisabled?.(o) ?? false;
+            return (
+              <button
+                key={getOptionValue(o)}
+                type="button"
+                disabled={optionDisabled}
+                onClick={() => {
+                  onChange(getOptionValue(o));
+                  setSearch(null);
+                  cancelDebouncedFetch();
+                }}
+                className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
+                  optionDisabled
+                    ? 'text-zinc-500 cursor-not-allowed'
+                    : 'text-white hover:bg-zinc-700'
+                }`}
+              >
+                {renderOption ? renderOption(o) : getOptionLabel(o)}
+              </button>
+            );
+          })}
       </div>
     </div>
   );

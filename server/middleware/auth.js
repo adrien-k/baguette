@@ -1,7 +1,7 @@
 /**
  * Express middleware: requires signed userId cookie and sets req.user with decrypted
  * secrets (same shape as cookieAuthMiddleware). Uses the Feathers users service so
- * github_token / access_token are available to routes — raw SQL rows only have *_encrypted.
+ * access_token is available to routes — raw SQL rows only have *_encrypted.
  */
 export function createRequireAuth(app) {
   return async function requireAuth(req, res, next) {

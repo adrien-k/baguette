@@ -17,7 +17,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 
 ## Features
 
-- **GitHub sign-in** -- Sign in with GitHub to create branches and PRs on your behalf. Register a GitHub App instead of an OAuth App to scope Baguette to specific repositories -- down to a single one.
+- **GitHub sign-in** -- Sign in through your own GitHub App to create branches and PRs on your behalf. Baguette is scoped to the repositories you grant the App -- down to a single one.
 - **Claude & Cursor agents** -- Choose between Claude Code and Cursor as the agent backend when creating a session. Both support Start (agent) and Plan modes.
 - **Session management** -- Spin up sessions from any branch of any repo. Each session gets its own git worktree.
 - **Live preview** -- Test your session's changes live in the browser. Each session gets a subdomain hooked to its development server, its own database, and the rest of its isolated stack ([read more](docs/session-management.md#web-server-preview)).
@@ -41,7 +41,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 ### Prerequisites
 
 - Node.js 20+
-- A [GitHub App](https://github.com/settings/apps) (recommended -- lets you grant Baguette access to specific repositories) or a [GitHub OAuth App](https://github.com/settings/developers)
+- A [GitHub App](https://github.com/settings/apps) — Baguette only reaches the repositories you grant it at install time. See [Setting up the GitHub App](#setting-up-the-github-app).
 - An [Anthropic API key](https://console.anthropic.com/) and/or a [Cursor](https://cursor.com) API key
 
 ### Setup
@@ -58,17 +58,17 @@ npm install
 cp .env.example .env
 ```
 
-| Variable               | Description                                                                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_CLIENT_ID`     | GitHub App (or OAuth App) client ID                                                                                                                           |
-| `GITHUB_CLIENT_SECRET` | GitHub App (or OAuth App) client secret                                                                                                                       |
-| `GITHUB_APP_SLUG`      | GitHub App slug, i.e. the `<slug>` in `github.com/apps/<slug>`. Set it to enable repo-scoped access; leave empty to use a classic OAuth App                   |
-| `ENCRYPTION_KEY`       | At least 32 characters; used for cookie signing and for encrypting secrets                                                                                    |
-| `PUBLIC_HOST`          | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`) |
-| `PORT`                 | Express server port (default: `3000`)                                                                                                                         |
-| `DATA_DIR`             | Data directory for DB, repo clones, and worktrees (default: `~/.baguette`)                                                                                    |
+| Variable                    | Description                                                                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                                                          |
+| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                                                                      |
+| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug, i.e. the `<slug>` in `github.com/apps/<slug>`                                                                                                |
+| `ENCRYPTION_KEY`            | At least 32 characters; used for cookie signing and for encrypting secrets                                                                                    |
+| `PUBLIC_HOST`               | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`) |
+| `PORT`                      | Express server port (default: `3000`)                                                                                                                         |
+| `DATA_DIR`                  | Data directory for DB, repo clones, and worktrees (default: `~/.baguette`)                                                                                    |
 
-3. Set your GitHub App's (or OAuth App's) callback URL to `http://localhost:5173/auth/github/callback`. See [Using a GitHub App](#using-a-github-app-recommended) for the App-specific settings.
+3. Create the GitHub App and set its callback URL to `http://localhost:5173/auth/github/callback` — see [Setting up the GitHub App](#setting-up-the-github-app).
 
 4. Run database migrations:
 
@@ -90,9 +90,9 @@ curl -fsSL https://code-server.dev/install.sh | sh
 
 7. Sign in with your GitHub account and configure your agent(s) in **Settings** > **Agent**.
 
-### Using a GitHub App (recommended)
+### Setting up the GitHub App
 
-A classic OAuth App asks for the `repo` scope, which grants Baguette access to **every** repository you can reach. A GitHub App instead lets you choose which repositories it can touch when you install it — including just one.
+Baguette authenticates to GitHub exclusively through a GitHub App, so you choose which repositories it can touch when you install it — including just one.
 
 1. Create a new GitHub App at [github.com/settings/apps](https://github.com/settings/apps).
 2. Set **Callback URL** to `http://localhost:5173/auth/github/callback` (use your `PUBLIC_HOST` in production) and set **Setup URL** to the same value, so installing the App returns the user to Baguette.
@@ -109,14 +109,13 @@ A classic OAuth App asks for the `repo` scope, which grants Baguette access to *
    | Repository → Workflows     | Read and write | Pushing changes to files under `.github/workflows/` |
    | Account → Email addresses  | Read-only      | Associating your account and git commits with you   |
 
-5. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `GITHUB_APP_SLUG` in `.env` (the slug is the `<slug>` in `github.com/apps/<slug>`), then restart the server.
+5. Set `AUTH_GITHUB_CLIENT_ID`, `AUTH_GITHUB_CLIENT_SECRET`, and `AUTH_GITHUB_APP_SLUG` in `.env` (the slug is the `<slug>` in `github.com/apps/<slug>`), then restart the server.
 6. Sign in, then install the App and pick the repositories Baguette may access. The repo picker lists exactly those repositories, and you can change the selection at any time from **Manage repository access** in the picker.
 
 Notes:
 
 - Installing on a repository owned by an organization may need approval from an org owner.
-- Plugin marketplaces are third-party repositories outside your installation, so Baguette clones them without credentials. Public marketplaces work as usual; private ones are not supported in App mode.
-- Leaving `GITHUB_APP_SLUG` empty keeps the classic OAuth App behaviour, so existing installations are unaffected.
+- Plugin marketplaces are third-party repositories outside your installation, so Baguette clones them without credentials. Public marketplaces work as usual; private ones are not supported.
 
 ### Configuring agents
 

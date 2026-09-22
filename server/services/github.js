@@ -120,41 +120,12 @@ const mapRepo = (r) => ({
   default_branch: r.default_branch,
 });
 
-// Refreshing org and repo lists is manual, so we can cache them indefinitely
+// Refreshing installation and repo lists is manual, so we can cache them indefinitely
 const REPOS_CACHE_TTL = Infinity;
-/** Repos for the "Personal" picker: owned by the user and direct collaborator access (incl. other users' private repos). */
-export function listUserRepos(token, scope) {
-  return cache.fetch(`github-repos-${scope}-personal-owner-collab`, REPOS_CACHE_TTL, () =>
-    fetchAllPages(
-      'https://api.github.com/user/repos?sort=updated&affiliation=owner,collaborator',
-      token,
-      mapRepo
-    )
-  );
-}
-
-export function listUserOrgs(token, scope) {
-  return cache.fetch(`github-orgs-${scope}`, REPOS_CACHE_TTL, () =>
-    fetchAllPages('https://api.github.com/user/orgs', token, (o) => ({
-      login: o.login,
-      avatar_url: o.avatar_url,
-    }))
-  );
-}
-
-export function listOrgRepos(token, scope, orgLogin) {
-  return cache.fetch(`github-repos-${scope}-org-${orgLogin}`, REPOS_CACHE_TTL, () =>
-    fetchAllPages(
-      `https://api.github.com/orgs/${orgLogin}/repos?sort=updated&type=all`,
-      token,
-      mapRepo
-    )
-  );
-}
 
 /**
  * GitHub App installations the signed-in user can see, one per account (personal or org) the App
- * is installed on. Requires a user-to-server token; returns [] for a legacy OAuth token.
+ * is installed on.
  */
 export function listUserInstallations(token, scope) {
   return cache.fetch(`github-installations-${scope}`, REPOS_CACHE_TTL, () =>
@@ -198,11 +169,8 @@ export function clearReposCache(scope) {
   return cache.clearByPrefix(`github-repos-${scope}-`);
 }
 
-export function clearOrgsCache(scope) {
-  return Promise.all([
-    cache.clearByPrefix(`github-orgs-${scope}`),
-    cache.clearByPrefix(`github-installations-${scope}`),
-  ]);
+export function clearInstallationsCache(scope) {
+  return cache.clearByPrefix(`github-installations-${scope}`);
 }
 
 export function clearBranchesCache(scope) {

@@ -2,11 +2,10 @@ import { Router } from 'express';
 import db from '../db.js';
 import logger from '../logger.js';
 import { signProxyToken, buildSessionHostname } from '../services/preview.js';
-import { cacheScopeForUser, clearReposCache, clearOrgsCache } from '../services/github.js';
+import { cacheScopeForUser, clearReposCache, clearInstallationsCache } from '../services/github.js';
 import {
   AUTH_GITHUB_CLIENT_ID,
   AUTH_GITHUB_CLIENT_SECRET,
-  GITHUB_AUTH_MODE,
   GITHUB_APP_INSTALL_URL,
   PUBLIC_HOST,
   PUBLIC_API_URL,
@@ -30,7 +29,7 @@ export function createAuthRoutes(app) {
               github_id: 0,
               username: 'dev',
               email: 'dev@baguette.local',
-              github_token: devGhKey,
+              access_token: devGhKey,
               approved: true,
             },
             {} // internal call — no provider, no user required
@@ -73,22 +72,21 @@ export function createAuthRoutes(app) {
   };
 
   router.get('/auth/github', (req, res) => {
-    if (!AUTH_GITHUB_CLIENT_ID) return res.status(503).send('GitHub OAuth not configured');
+    if (!AUTH_GITHUB_CLIENT_ID) return res.status(503).send('GitHub App not configured');
 
     setRedirectCookie(req, res);
 
+    // No `scope` — GitHub Apps ignore it. Access comes from the App's registered permissions
+    // and from the repos the user picked when installing it.
     const params = new URLSearchParams({
       client_id: AUTH_GITHUB_CLIENT_ID,
       redirect_uri: new URL('/auth/github/callback', PUBLIC_HOST).toString(),
-      // GitHub Apps ignore `scope` — their access comes from the App's registered permissions
-      // and from the repos the user picked when installing it.
-      ...(GITHUB_AUTH_MODE === 'app' ? {} : { scope: 'repo read:user user:email workflow' }),
     });
     res.redirect(`${GITHUB_AUTH_URL}?${params}`);
   });
 
   // Sends the user to GitHub to install the App (and choose which repos it can access).
-  // Only meaningful in app mode; GitHub redirects back to /auth/github/callback when done.
+  // GitHub redirects back to /auth/github/callback when done.
   router.get('/auth/github/install', (req, res) => {
     if (!GITHUB_APP_INSTALL_URL) return res.status(503).send('GitHub App not configured');
     setRedirectCookie(req, res);
@@ -107,19 +105,27 @@ export function createAuthRoutes(app) {
   /** Drops cached repo/installation lists so newly granted repos appear immediately. */
   const invalidateRepoCaches = async (userId) => {
     const scope = cacheScopeForUser({ id: userId });
-    await Promise.all([clearReposCache(scope), clearOrgsCache(scope)]);
+    await Promise.all([clearReposCache(scope), clearInstallationsCache(scope)]);
   };
 
   router.get('/auth/github/callback', async (req, res) => {
     if (!AUTH_GITHUB_CLIENT_ID || !AUTH_GITHUB_CLIENT_SECRET)
-      return res.status(503).send('GitHub OAuth not configured');
+      return res.status(503).send('GitHub App not configured');
     const { code, setup_action: setupAction, installation_id: installationId } = req.query;
 
-    // Returning from an App install while already signed in: there is no OAuth code to exchange,
-    // so just refresh the cached lists and continue.
+    // Returning from an App install with no code to exchange — the App does not request user
+    // authorization during installation. A signed-in user may still hold a token that predates the
+    // App (e.g. from a pre-App install of Baguette), which GitHub rejects on App-only endpoints
+    // such as /user/installations, leaving the repo picker permanently empty. Re-run the authorize
+    // flow to mint a fresh user-to-server token; GitHub sends an already-authorized user straight
+    // back, this time with a code. auth_redirect is left intact so they still land where they
+    // started.
     if (!code && (setupAction || installationId)) {
       const userId = req.signedCookies?.userId;
-      if (userId) await invalidateRepoCaches(userId);
+      if (userId) {
+        await invalidateRepoCaches(userId);
+        return res.redirect('/auth/github');
+      }
       return finishRedirect(req, res);
     }
     if (!code) return res.status(400).send('Missing code');
@@ -194,14 +200,14 @@ export function createAuthRoutes(app) {
 
       finishRedirect(req, res);
     } catch (err) {
-      logger.error(err, 'OAuth error');
+      logger.error(err, 'GitHub auth error');
       res.status(500).send('Authentication failed');
     }
   });
 
   router.get('/auth/me', async (req, res) => {
     // Sent regardless of sign-in state so the login screen can explain what it is connecting to.
-    const github = { auth_mode: GITHUB_AUTH_MODE, install_url: GITHUB_APP_INSTALL_URL };
+    const github = { install_url: GITHUB_APP_INSTALL_URL };
     const userId = req.signedCookies?.userId;
     if (!userId) return res.json({ user: null, github });
 

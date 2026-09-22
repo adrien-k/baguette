@@ -40,7 +40,7 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
   return { ...actual, loadBaguetteConfig: vi.fn().mockResolvedValue(null) };
 });
 
-vi.mock('../agent-settings.js', () => ({ getEffectiveGithubToken: vi.fn(() => 'ghtoken') }));
+vi.mock('../agent-settings.js', () => ({ getGithubToken: vi.fn(() => 'ghtoken') }));
 vi.mock('../logger.js', () => ({ default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -124,7 +124,7 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
     if (table === 'sessions')
       return { where: () => ({ first: async () => ({ ...sessionSnapshot }) }) };
     if (table === 'users')
-      return { where: () => ({ first: async () => ({ id: 1, github_token: 'tok' }) }) };
+      return { where: () => ({ first: async () => ({ id: 1, access_token: 'tok' }) }) };
     if (table === 'repos')
       return {
         where: () => ({
@@ -140,7 +140,7 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
   const app = {
     get: (key) => (key === 'db' ? db : null),
     service: (name) => {
-      if (name === 'users') return { get: async () => ({ id: 1, github_token: 'tok' }) };
+      if (name === 'users') return { get: async () => ({ id: 1, access_token: 'tok' }) };
       if (name === 'tasks')
         return { getTask: mockGetTask, filterTasks: mockFilterTasks, create: mockCreate };
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };

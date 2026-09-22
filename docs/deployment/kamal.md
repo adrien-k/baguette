@@ -79,14 +79,16 @@ Add a wildcard A record pointing to your server IP:
 
 This routes both `www.your-domain.com` (Baguette UI) and `session-<id>.your-domain.com` (preview subdomains) to your server.
 
-## 4. GitHub OAuth App
+## 4. GitHub App
 
-Create a GitHub OAuth App at [github.com/settings/developers](https://github.com/settings/developers):
+Create a GitHub App at [github.com/settings/apps](https://github.com/settings/apps):
 
 - **Homepage URL**: `https://www.your-domain.com`
-- **Authorization callback URL**: `https://www.your-domain.com/auth/github/callback`
+- **Callback URL** and **Setup URL**: `https://www.your-domain.com/auth/github/callback`
 
-Note the **Client ID** and generate a **Client Secret** — they become the `AUTH_GITHUB_CLIENT_ID` and `AUTH_GITHUB_CLIENT_SECRET` secrets below.
+Set the permissions and options listed in [Setting up the GitHub App](../../README.md#setting-up-the-github-app).
+
+Note the **Client ID**, generate a **Client Secret**, and note the App slug (the `<slug>` in `github.com/apps/<slug>`) — they become the `AUTH_GITHUB_CLIENT_ID`, `AUTH_GITHUB_CLIENT_SECRET`, and `AUTH_GITHUB_APP_SLUG` secrets below.
 
 ## 5. Deploy Baguette
 
@@ -98,9 +100,9 @@ All configuration is driven by the following variables:
 | `DEPLOY_USER`               | SSH user on the server (default: `ubuntu`)                                                                           |
 | `DOMAIN`                    | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths                    |
 | `SSH_PRIVATE_KEY`           | Private key for SSH access to the server (contents of `/home/ubuntu/.ssh/id_ed25519`)                                |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub OAuth App client ID                                                                                           |
-| `AUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret                                                                                       |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty to use OAuth App instead)                                                     |
+| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                 |
+| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                             |
+| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)                                                           |
 | `ENCRYPTION_KEY`            | At least 32 random characters — used for cookie signing and secret encryption (generate with `openssl rand -hex 32`) |
 
 ### 5.1. Deploy with Kamal
@@ -139,12 +141,12 @@ The included workflow (`.github/workflows/deploy.yml`) deploys automatically on 
 
    **Secrets** (encrypted, "Secrets" tab):
 
-   | Secret                      | Value                                                              |
-   | --------------------------- | ------------------------------------------------------------------ |
-   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server           |
-   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub OAuth App client ID                                    |
-   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret                                |
-   | `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty if using classic OAuth App) |
-   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)          |
+   | Secret                      | Value                                                           |
+   | --------------------------- | --------------------------------------------------------------- |
+   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server        |
+   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub App client ID                                       |
+   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub App client secret                                   |
+   | `AUTH_GITHUB_APP_SLUG`      | Your GitHub App slug (the `<slug>` in `github.com/apps/<slug>`) |
+   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)       |
 
 3. Push to `main` — the workflow will build and deploy automatically.

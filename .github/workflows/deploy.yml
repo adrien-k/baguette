@@ -56,7 +56,7 @@ jobs:
         env:
           AUTH_GITHUB_CLIENT_ID: ${{ secrets.AUTH_GITHUB_CLIENT_ID }}
           AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}
-          AUTH_GITHUB_APP_SLUG: ${{ secrets.AUTH_GITHUB_APP_SLUG || '' }}
+          AUTH_GITHUB_APP_SLUG: ${{ secrets.AUTH_GITHUB_APP_SLUG }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}

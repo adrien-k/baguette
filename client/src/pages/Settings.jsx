@@ -11,50 +11,9 @@ import RepoSearchInput from '../components/RepoSearchInput.jsx';
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
-function RepositoriesTab({ settings, onSave }) {
+function RepositoriesTab() {
   const { user } = useAuth();
   const { repos, refetch: refetchRepos } = useRepoContext();
-
-  // GitHub token state
-  const [usePatMode, setUsePatMode] = useState(false);
-  const [githubToken, setGithubToken] = useState(null);
-  const [githubTokenDirty, setGithubTokenDirty] = useState(false);
-  const [savingGithub, setSavingGithub] = useState(false);
-  const [savedGithub, setSavedGithub] = useState(false);
-  const [githubError, setGithubError] = useState(null);
-
-  useEffect(() => {
-    if (!settings) return;
-    setUsePatMode(!!settings.github_token);
-    setGithubToken(null);
-    setGithubTokenDirty(false);
-  }, [settings]);
-
-  const handleSaveGithub = async (e) => {
-    e.preventDefault();
-    setSavingGithub(true);
-    setSavedGithub(false);
-    setGithubError(null);
-    try {
-      const patch = {};
-      if (githubTokenDirty) {
-        patch.github_token = githubToken ?? '';
-      } else if (!usePatMode && settings?.github_token) {
-        patch.github_token = '';
-      }
-      const updated = await usersService.patch(user.id, patch);
-      onSave(updated);
-      setGithubToken(null);
-      setGithubTokenDirty(false);
-      setUsePatMode(!!updated.github_token);
-      setSavedGithub(true);
-      setTimeout(() => setSavedGithub(false), 2000);
-    } catch (err) {
-      setGithubError(err.message);
-    } finally {
-      setSavingGithub(false);
-    }
-  };
 
   // GitHub repo state
   const [selectedRepo, setSelectedRepo] = useState('');
@@ -189,14 +148,8 @@ function RepositoriesTab({ settings, onSave }) {
   return (
     <div className="space-y-8">
       {/* GitHub connection */}
-      <form onSubmit={handleSaveGithub} className="space-y-4">
+      <div className="space-y-4">
         <h2 className="text-sm font-semibold text-zinc-300">GitHub Connection</h2>
-
-        {githubError && (
-          <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300">
-            {githubError}
-          </div>
-        )}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 space-y-4 max-w-xl">
           <div className="flex items-center gap-3">
@@ -205,65 +158,22 @@ function RepositoriesTab({ settings, onSave }) {
             )}
             <div>
               <p className="text-sm font-medium text-white">{user?.username}</p>
-              <p className="text-xs text-zinc-500">Connected via GitHub OAuth</p>
+              <p className="text-xs text-zinc-500">Connected via the Baguette GitHub App</p>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Token for git operations
-            </label>
-            <div className="flex gap-4 mb-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  checked={!usePatMode}
-                  onChange={() => setUsePatMode(false)}
-                  className="accent-amber-500"
-                />
-                <span className="text-sm text-zinc-300">OAuth token</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  checked={usePatMode}
-                  onChange={() => setUsePatMode(true)}
-                  className="accent-amber-500"
-                />
-                <span className="text-sm text-zinc-300">Personal Access Token</span>
-              </label>
-            </div>
-            {usePatMode && (
-              <div>
-                <MaskedSecretInput
-                  maskedValue={settings?.github_token}
-                  placeholder="github_pat_…"
-                  onChange={(val, dirty) => {
-                    setGithubToken(val);
-                    setGithubTokenDirty(dirty);
-                  }}
-                />
-                <p className="mt-1 text-xs text-zinc-500">
-                  Create a token at github.com/settings/tokens/new with{' '}
-                  <code className="text-zinc-400">repo</code> and{' '}
-                  <code className="text-zinc-400">read:user</code> scopes.
-                </p>
-              </div>
-            )}
-          </div>
+          <p className="text-xs text-zinc-500 leading-relaxed">
+            Baguette can only reach the repositories you granted the App at install time. Git
+            operations use the App token issued when you signed in.{' '}
+            <a
+              href={`/auth/github/install?redirectTo=${encodeURIComponent('/settings?tab=repos')}`}
+              className="text-amber-500 hover:text-amber-400"
+            >
+              Manage repository access ↗
+            </a>
+          </p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={savingGithub}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            {savingGithub ? 'Saving…' : 'Save'}
-          </button>
-          {savedGithub && <span className="text-sm text-emerald-400">Saved</span>}
-        </div>
-      </form>
+      </div>
 
       {/* Repositories */}
       <div>
@@ -935,7 +845,7 @@ export default function Settings() {
         settings && (
           <>
             {activeTab === 'agent' && <AgentTab settings={settings} onSave={setSettings} />}
-            {activeTab === 'repos' && <RepositoriesTab settings={settings} onSave={setSettings} />}
+            {activeTab === 'repos' && <RepositoriesTab />}
             {activeTab === 'notifications' && (
               <NotificationsTab settings={settings} onSave={setSettings} />
             )}

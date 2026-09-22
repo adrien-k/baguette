@@ -168,27 +168,25 @@ describe('Users service - patch', () => {
     ).rejects.toThrow('Not authenticated');
   });
 
-  it('encrypts github_token on patch', async () => {
-    await app.service('users').patch(user1.id, { github_token: 'ghp_testtoken' }, params(user1));
+  it('encrypts access_token on patch', async () => {
+    await app.service('users').patch(user1.id, { access_token: 'ghu_testtoken' }, {}); // internal
     const row = await db('users').where({ id: user1.id }).first();
-    expect(row.github_token_encrypted).toBeTruthy();
-    expect(row.github_token_encrypted).not.toBe('ghp_testtoken');
+    expect(row.access_token_encrypted).toBeTruthy();
+    expect(row.access_token_encrypted).not.toBe('ghu_testtoken');
   });
 
-  it('returns masked github_token for external calls', async () => {
-    await app.service('users').patch(user1.id, { github_token: 'ghp_testtoken123' }, params(user1));
+  it('never exposes access_token to external calls', async () => {
+    await app.service('users').patch(user1.id, { access_token: 'ghu_testtoken123' }, {});
     const result = await app.service('users').get(user1.id, params(user1));
-    expect(result.github_token).toBeTruthy();
-    expect(result.github_token).not.toBe('ghp_testtoken123');
-    expect(result.github_token_encrypted).toBeUndefined();
     expect(result.access_token).toBeUndefined();
+    expect(result.access_token_encrypted).toBeUndefined();
   });
 
-  it('returns decrypted github_token for internal calls (no provider)', async () => {
-    await app.service('users').patch(user1.id, { github_token: 'ghp_testtoken123' }, params(user1));
+  it('returns decrypted access_token for internal calls (no provider)', async () => {
+    await app.service('users').patch(user1.id, { access_token: 'ghu_testtoken123' }, {});
     const result = await app.service('users').get(user1.id, { user: user1 }); // no provider = internal
-    expect(result.github_token).toBe('ghp_testtoken123');
-    expect(result.github_token_encrypted).toBeUndefined();
+    expect(result.access_token).toBe('ghu_testtoken123');
+    expect(result.access_token_encrypted).toBeUndefined();
   });
 
   it('encrypts anthropic_api_key on patch', async () => {

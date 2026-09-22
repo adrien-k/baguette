@@ -1,7 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
 import { remoteHasNewCommits } from '../github.js';
-import { getEffectiveGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
+import { getGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
 import { getClaudeEnv } from '../session-env.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createMessageChannel } from '../message-channel.js';
@@ -281,7 +281,7 @@ export class ClaudeAgentService {
       branch: sessionRow.base_branch,
       absoluteWorktreePath,
       repoId: sessionRow.repo_id,
-      token: getEffectiveGithubToken(user),
+      token: getGithubToken(user),
       channel,
       queryInstance,
       abortController,

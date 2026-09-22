@@ -7,14 +7,11 @@ import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
 import { NotFound } from '@feathersjs/errors';
 import {
-  listUserRepos,
-  listUserOrgs,
-  listOrgRepos,
   listUserInstallations,
   listInstallationRepos,
   cacheScopeForUser,
   clearReposCache,
-  clearOrgsCache,
+  clearInstallationsCache,
   clearBranchesCache,
   listBranches,
   ensureBareClone,
@@ -25,8 +22,8 @@ import {
 import { loadBaguetteConfig } from '../baguette-config.js';
 import loadPrompt from '../../prompts/loadPrompt.js';
 import { requireUser, decryptFields } from './hooks.js';
-import { getEffectiveGithubToken } from '../agent-settings.js';
-import { REPOS_DIR, DOCKER_COMPOSE_PATH, GITHUB_AUTH_MODE } from '../../config.js';
+import { getGithubToken } from '../agent-settings.js';
+import { REPOS_DIR, DOCKER_COMPOSE_PATH } from '../../config.js';
 
 /** True for local repos: absolute path (imported) or plain name with no "/" (brand-new). */
 const isLocalRepo = (fullName) => fullName.startsWith('/') || !fullName.includes('/');
@@ -164,7 +161,7 @@ class ReposService extends KnexService {
 
     const barePath = await ensureBareClone(
       { full_name: fullName, stripped_name: strippedName, bare_path: repo?.bare_path },
-      getEffectiveGithubToken(params.user)
+      getGithubToken(params.user)
     );
 
     let defaultBranch;
@@ -277,42 +274,30 @@ class ReposService extends KnexService {
   }
 
   /**
-   * Accounts to group the repo picker by. In app mode these are GitHub App installations (one per
-   * account the App is installed on); in OAuth mode, "Personal" plus the user's orgs.
+   * Accounts to group the repo picker by: the GitHub App installations, one per account
+   * (personal or org) the App is installed on.
    */
   async findOrgs(data, params) {
-    const token = getEffectiveGithubToken(params.user);
+    const token = getGithubToken(params.user);
     const scope = cacheScopeForUser(params.user);
-    if (GITHUB_AUTH_MODE === 'app') {
-      const installations = await listUserInstallations(token, scope);
-      return installations.map((i) => ({
-        login: i.login,
-        name: i.login,
-        avatar_url: i.avatar_url,
-      }));
-    }
-    const orgs = await listUserOrgs(token, scope);
-    return [{ login: 'personal', name: 'Personal' }, ...orgs];
+    const installations = await listUserInstallations(token, scope);
+    return installations.map((i) => ({
+      login: i.login,
+      name: i.login,
+      avatar_url: i.avatar_url,
+    }));
   }
 
-  /** List and filter GitHub repos for the authenticated user or an org. Returns { repos, hasMore }. */
+  /** List and filter the repos granted to an App installation. Returns { repos, hasMore }. */
   async findRemote(data, params) {
-    const { org = 'personal', query = '' } =
-      typeof data === 'string' ? { query: data } : data || {};
-    const token = getEffectiveGithubToken(params.user);
+    const { org = '', query = '' } = typeof data === 'string' ? { query: data } : data || {};
+    const token = getGithubToken(params.user);
     const scope = cacheScopeForUser(params.user);
-    let allRepos;
-    if (GITHUB_AUTH_MODE === 'app') {
-      // `org` is the installation account login; resolve it to an installation id. The
-      // installations list is cached, so this costs no extra request.
-      const installations = await listUserInstallations(token, scope);
-      const installation = installations.find((i) => i.login === org);
-      allRepos = installation ? await listInstallationRepos(token, scope, installation.id) : [];
-    } else if (org === 'personal') {
-      allRepos = await listUserRepos(token, scope);
-    } else {
-      allRepos = await listOrgRepos(token, scope, org);
-    }
+    // `org` is the installation account login; resolve it to an installation id. The
+    // installations list is cached, so this costs no extra request.
+    const installations = await listUserInstallations(token, scope);
+    const installation = installations.find((i) => i.login === org);
+    const allRepos = installation ? await listInstallationRepos(token, scope, installation.id) : [];
     const q = query.trim().toLowerCase();
     const filtered = q ? allRepos.filter((r) => r.full_name.toLowerCase().includes(q)) : allRepos;
     return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
@@ -321,7 +306,7 @@ class ReposService extends KnexService {
   async refresh(data, params) {
     const scope = cacheScopeForUser(params.user);
     clearReposCache(scope);
-    clearOrgsCache(scope);
+    clearInstallationsCache(scope);
     clearBranchesCache(scope);
     return { ok: true };
   }
@@ -346,7 +331,7 @@ class ReposService extends KnexService {
       return { branches: [] };
     }
     const branches = await listBranches(
-      getEffectiveGithubToken(params.user),
+      getGithubToken(params.user),
       cacheScopeForUser(params.user),
       fullName
     );

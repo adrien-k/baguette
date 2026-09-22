@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { getEffectiveGithubToken } from './agent-settings.js';
+import { getGithubToken } from './agent-settings.js';
 import {
   gitPull,
   gitPush,
@@ -76,7 +76,7 @@ function buildBaguetteToolList(session, app) {
 
   const getToken = async () => {
     const user = await app.service('users').get(session.user_id, {});
-    return getEffectiveGithubToken(user);
+    return getGithubToken(user);
   };
 
   const withSessionHeader = (body, session) => {

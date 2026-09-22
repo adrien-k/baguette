@@ -29,7 +29,7 @@ vi.mock('../github.js', async (importOriginal) => {
 
 vi.mock('../agent-settings.js', () => ({
   getAllowedCommandsFromUser: vi.fn().mockReturnValue([]),
-  getEffectiveGithubToken: vi.fn((user) => user?.access_token || null),
+  getGithubToken: vi.fn((user) => user?.access_token || null),
 }));
 
 vi.mock('../baguette-config.js', () => ({
@@ -124,7 +124,7 @@ function makeMockApp(db) {
       if (name === 'messages') return { create: messageCreate, remove: genericRemove };
       if (name === 'tasks') return { create: createTask, deleteSessionTasks };
       if (name === 'users')
-        return { get: vi.fn().mockResolvedValue({ id: 1, github_token: 'tok' }) };
+        return { get: vi.fn().mockResolvedValue({ id: 1, access_token: 'tok' }) };
       return { patch: vi.fn(), create: vi.fn(), remove: genericRemove };
     }),
     // Exposed for assertions

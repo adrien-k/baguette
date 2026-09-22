@@ -73,7 +73,7 @@ vi.mock('../session-prompt.js', () => ({
 const params = (user) => ({ provider: 'rest', user });
 
 const deleteSessionTasks = vi.fn();
-const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, github_token: 'test-token' });
+const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, access_token: 'test-token' });
 // Not Feathers methods (like the real service): called directly by sessions.service.
 const findRunningTask = vi.fn().mockReturnValue(null);
 const tasksCreate = vi.fn(async (data) => ({ id: 42, ...data }));

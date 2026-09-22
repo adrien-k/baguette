@@ -15,30 +15,15 @@ import { registerReposService } from '../feathers/repos.service.js';
 import { NotFound } from '@feathersjs/errors';
 
 vi.mock('../agent-settings.js', () => ({
-  getEffectiveGithubToken: vi.fn((user) => user?.access_token || null),
+  getGithubToken: vi.fn((user) => user?.access_token || null),
 }));
 
-// Lets individual tests flip between the legacy OAuth App flow and GitHub App ("app") mode.
-const configMock = vi.hoisted(() => ({ authMode: 'oauth' }));
-vi.mock('../../config.js', async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    get GITHUB_AUTH_MODE() {
-      return configMock.authMode;
-    },
-  };
-});
-
 vi.mock('../github.js', () => ({
-  listUserRepos: vi.fn(),
-  listUserOrgs: vi.fn(),
-  listOrgRepos: vi.fn(),
   listUserInstallations: vi.fn(),
   listInstallationRepos: vi.fn(),
   cacheScopeForUser: vi.fn((user) => `u${user?.id}`),
   clearReposCache: vi.fn(),
-  clearOrgsCache: vi.fn(),
+  clearInstallationsCache: vi.fn(),
   clearBranchesCache: vi.fn(),
   listBranches: vi.fn(),
   ensureBareClone: vi.fn(),
@@ -53,13 +38,10 @@ vi.mock('../github.js', () => ({
 }));
 
 import {
-  listUserRepos,
-  listUserOrgs,
-  listOrgRepos,
   listUserInstallations,
   listInstallationRepos,
   clearReposCache,
-  clearOrgsCache,
+  clearInstallationsCache,
   clearBranchesCache,
   listBranches,
   ensureBareClone,
@@ -269,124 +251,11 @@ describe('Repos service - find', () => {
 });
 
 // ---------------------------------------------------------------------------
-// findRemote — GitHub API
-// ---------------------------------------------------------------------------
-
-describe('Repos service - findRemote', () => {
-  it('filters user repos by query and returns { repos, hasMore }', async () => {
-    listUserRepos.mockResolvedValue([
-      { full_name: 'alice/foo', private: false },
-      { full_name: 'alice/bar', private: true },
-      { full_name: 'alice/other', private: false },
-    ]);
-
-    const result = await app.service('repos').findRemote({ query: 'foo' }, params(regularUser));
-
-    expect(listUserRepos).toHaveBeenCalledWith('gh_token_user', scope());
-    expect(result).toEqual({ repos: [{ full_name: 'alice/foo', private: false }], hasMore: false });
-  });
-
-  it('returns all repos when query is empty', async () => {
-    listUserRepos.mockResolvedValue([
-      { full_name: 'alice/foo', private: false },
-      { full_name: 'alice/bar', private: true },
-    ]);
-
-    const result = await app.service('repos').findRemote({ query: '' }, params(regularUser));
-
-    expect(result.repos).toHaveLength(2);
-    expect(result.hasMore).toBe(false);
-  });
-
-  it('unauthenticated findRemote is rejected', async () => {
-    await expect(app.service('repos').findRemote('foo', unauthParams)).rejects.toThrow(
-      'Not authenticated'
-    );
-    expect(listUserRepos).not.toHaveBeenCalled();
-  });
-
-  it('calls listOrgRepos when org is provided', async () => {
-    listOrgRepos.mockResolvedValue([
-      { full_name: 'myorg/alpha', private: false },
-      { full_name: 'myorg/beta', private: true },
-    ]);
-
-    const result = await app.service('repos').findRemote({ org: 'myorg' }, params(regularUser));
-
-    expect(listOrgRepos).toHaveBeenCalledWith('gh_token_user', scope(), 'myorg');
-    expect(listUserRepos).not.toHaveBeenCalled();
-    expect(result.repos).toHaveLength(2);
-  });
-
-  it('filters org repos by query', async () => {
-    listOrgRepos.mockResolvedValue([
-      { full_name: 'myorg/alpha', private: false },
-      { full_name: 'myorg/beta', private: true },
-    ]);
-
-    const result = await app
-      .service('repos')
-      .findRemote({ org: 'myorg', query: 'alp' }, params(regularUser));
-
-    expect(result.repos).toEqual([{ full_name: 'myorg/alpha', private: false }]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// findOrgs — GitHub API
+// findOrgs / findRemote — repos come from GitHub App installations, not from the whole account
 // ---------------------------------------------------------------------------
 
 describe('Repos service - findOrgs', () => {
-  it('returns personal entry plus user orgs', async () => {
-    listUserOrgs.mockResolvedValue([
-      { login: 'myorg', avatar_url: 'https://example.com/avatar.png' },
-    ]);
-
-    const result = await app.service('repos').findOrgs({}, params(regularUser));
-
-    expect(listUserOrgs).toHaveBeenCalledWith('gh_token_user', scope());
-    expect(result[0]).toEqual({ login: 'personal', name: 'Personal' });
-    expect(result[1]).toEqual({ login: 'myorg', avatar_url: 'https://example.com/avatar.png' });
-    expect(result).toHaveLength(2);
-  });
-
-  it('returns only personal when user has no orgs', async () => {
-    listUserOrgs.mockResolvedValue([]);
-
-    const result = await app.service('repos').findOrgs({}, params(regularUser));
-
-    expect(result).toEqual([{ login: 'personal', name: 'Personal' }]);
-  });
-
-  it('does not list other users as orgs (collaborator repos appear under Personal only)', async () => {
-    listUserOrgs.mockResolvedValue([{ login: 'myorg' }]);
-
-    const result = await app.service('repos').findOrgs({}, params(regularUser));
-
-    expect(result.map((r) => r.login)).toEqual(['personal', 'myorg']);
-  });
-
-  it('unauthenticated findOrgs is rejected', async () => {
-    await expect(app.service('repos').findOrgs({}, unauthParams)).rejects.toThrow(
-      'Not authenticated'
-    );
-    expect(listUserOrgs).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GitHub App mode — repos come from installations, not from the whole account
-// ---------------------------------------------------------------------------
-
-describe('Repos service - GitHub App mode', () => {
-  beforeEach(() => {
-    configMock.authMode = 'app';
-  });
-  afterEach(() => {
-    configMock.authMode = 'oauth';
-  });
-
-  it('findOrgs lists installation accounts instead of orgs', async () => {
+  it('lists the accounts the App is installed on', async () => {
     listUserInstallations.mockResolvedValue([
       { id: 42, login: 'alice', avatar_url: 'https://example.com/a.png', account_type: 'User' },
       {
@@ -400,32 +269,41 @@ describe('Repos service - GitHub App mode', () => {
     const result = await app.service('repos').findOrgs({}, params(regularUser));
 
     expect(listUserInstallations).toHaveBeenCalledWith('gh_token_user', scope());
-    expect(listUserOrgs).not.toHaveBeenCalled();
     expect(result).toEqual([
       { login: 'alice', name: 'alice', avatar_url: 'https://example.com/a.png' },
       { login: 'myorg', name: 'myorg', avatar_url: 'https://example.com/o.png' },
     ]);
   });
 
-  it('findOrgs returns an empty list when the App is not installed anywhere', async () => {
+  it('returns an empty list when the App is not installed anywhere', async () => {
     listUserInstallations.mockResolvedValue([]);
 
     expect(await app.service('repos').findOrgs({}, params(regularUser))).toEqual([]);
   });
 
-  it('findRemote returns only the repos granted to that installation', async () => {
+  it('unauthenticated findOrgs is rejected', async () => {
+    await expect(app.service('repos').findOrgs({}, unauthParams)).rejects.toThrow(
+      'Not authenticated'
+    );
+    expect(listUserInstallations).not.toHaveBeenCalled();
+  });
+});
+
+describe('Repos service - findRemote', () => {
+  it('returns only the repos granted to that installation', async () => {
     listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
     listInstallationRepos.mockResolvedValue([{ full_name: 'myorg/only-this-one', private: true }]);
 
     const result = await app.service('repos').findRemote({ org: 'myorg' }, params(regularUser));
 
     expect(listInstallationRepos).toHaveBeenCalledWith('gh_token_user', scope(), 42);
-    expect(listUserRepos).not.toHaveBeenCalled();
-    expect(listOrgRepos).not.toHaveBeenCalled();
-    expect(result.repos).toEqual([{ full_name: 'myorg/only-this-one', private: true }]);
+    expect(result).toEqual({
+      repos: [{ full_name: 'myorg/only-this-one', private: true }],
+      hasMore: false,
+    });
   });
 
-  it('findRemote returns nothing for an account with no installation', async () => {
+  it('returns nothing for an account with no installation', async () => {
     listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
 
     const result = await app.service('repos').findRemote({ org: 'other' }, params(regularUser));
@@ -434,7 +312,7 @@ describe('Repos service - GitHub App mode', () => {
     expect(result).toEqual({ repos: [], hasMore: false });
   });
 
-  it('findRemote still filters by query', async () => {
+  it('filters by query', async () => {
     listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
     listInstallationRepos.mockResolvedValue([
       { full_name: 'myorg/alpha', private: false },
@@ -447,6 +325,13 @@ describe('Repos service - GitHub App mode', () => {
 
     expect(result.repos).toEqual([{ full_name: 'myorg/alpha', private: false }]);
   });
+
+  it('unauthenticated findRemote is rejected', async () => {
+    await expect(app.service('repos').findRemote('foo', unauthParams)).rejects.toThrow(
+      'Not authenticated'
+    );
+    expect(listUserInstallations).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -458,7 +343,7 @@ describe('Repos service - refresh', () => {
     const result = await app.service('repos').refresh({}, params(regularUser));
 
     expect(clearReposCache).toHaveBeenCalledWith(scope());
-    expect(clearOrgsCache).toHaveBeenCalledWith(scope());
+    expect(clearInstallationsCache).toHaveBeenCalledWith(scope());
     expect(clearBranchesCache).toHaveBeenCalledWith(scope());
     expect(result).toEqual({ ok: true });
   });

@@ -28,8 +28,8 @@ export function getAllowedCommandsFromUser(user) {
   return [...SYSTEM_ALLOWED_COMMANDS, ...userCmds];
 }
 
-// Use PAT if set, otherwise fall back to OAuth access_token.
+// The user-to-server token obtained from the GitHub App sign-in flow.
 // Expects a user that has been fetched via the Feather service (plaintext secrets, no _encrypted fields).
-export function getEffectiveGithubToken(user) {
-  return user?.github_token || user?.access_token || null;
+export function getGithubToken(user) {
+  return user?.access_token || null;
 }

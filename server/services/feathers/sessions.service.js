@@ -38,7 +38,7 @@ import {
 import { isPortListening } from '../port-utils.js';
 import path from 'path';
 import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '../session-env.js';
-import { getEffectiveGithubToken } from '../agent-settings.js';
+import { getGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
@@ -327,7 +327,7 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getEffectiveGithubToken(user);
+      const token = getGithubToken(user);
       const currentBranch = session.remote_branch || session.created_branch;
       await Promise.all([
         session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
@@ -360,7 +360,7 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getEffectiveGithubToken(user);
+      const token = getGithubToken(user);
       const branch = data.branch || session.remote_branch || session.created_branch;
       if (branch) await gitFetch(cwd, token, branch).catch(() => {});
       return await gitLocalAndRemoteSha(cwd, branch || null);
@@ -387,7 +387,7 @@ export class SessionsService extends KnexService {
     const session = params.resolvedSession;
     if (!session?.pr_number) throw new BadRequest('No PR to merge');
     const user = await this.app.service('users').get(session.user_id, {});
-    const token = getEffectiveGithubToken(user);
+    const token = getGithubToken(user);
     if (!token) throw new BadRequest('No GitHub token configured');
     if (session.pr_status === 'draft') {
       await markPRReady(token, session.repo_full_name, session.pr_number);
@@ -408,7 +408,7 @@ export class SessionsService extends KnexService {
     if (!session?.worktree_path) throw new BadRequest('Session has no worktree');
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     const user = await this.app.service('users').get(session.user_id, {});
-    const token = getEffectiveGithubToken(user);
+    const token = getGithubToken(user);
     if (!token) throw new BadRequest('No GitHub token configured');
     const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
     const branch = data?.branch || null;
@@ -481,7 +481,7 @@ export class SessionsService extends KnexService {
     const session = params.resolvedSession;
     if (!session?.pr_number) throw new BadRequest('Session has no PR');
     const user = await this.app.service('users').get(session.user_id, {});
-    const token = getEffectiveGithubToken(user);
+    const token = getGithubToken(user);
     if (!token) throw new BadRequest('No GitHub token configured');
     const pr = await getOpenPRByNumber(token, session.repo_full_name, session.pr_number);
     return { title: pr.title, body: pr.body ?? '' };
@@ -514,7 +514,7 @@ export class SessionsService extends KnexService {
         : null;
       if (!repo) throw new BadRequest('Session has no associated repository');
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getEffectiveGithubToken(user);
+      const token = getGithubToken(user);
       if (!token) throw new BadRequest('No GitHub token configured');
 
       const branch = session.remote_branch || session.created_branch;
@@ -650,7 +650,7 @@ async function prepareSessionEnvironment(context) {
   if (!repoFullName) return context; // headless/system session — no worktree needed
 
   const db = context.app.get('db');
-  const token = getEffectiveGithubToken(context.params.user);
+  const token = getGithubToken(context.params.user);
   const shortId = context.data.short_id;
   const repo = await db('repos').where({ full_name: repoFullName }).first();
 
@@ -940,7 +940,7 @@ function refreshPrStatusInBackground(app, session) {
     .service('users')
     .get(session.user_id, {})
     .then((user) => {
-      const token = getEffectiveGithubToken(user);
+      const token = getGithubToken(user);
       if (!token) return;
       return getPRStatus(token, session.repo_full_name, session.pr_number).then((pr_status) => {
         if (pr_status !== session.pr_status) {

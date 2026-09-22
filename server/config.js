@@ -16,16 +16,25 @@ if (process.env.NODE_ENV !== 'production') {
     }
   }
   if (process.env.NODE_ENV !== 'test') {
-    for (const key of ['AUTH_GITHUB_CLIENT_ID', 'AUTH_GITHUB_CLIENT_SECRET']) {
+    for (const key of [
+      'AUTH_GITHUB_CLIENT_ID',
+      'AUTH_GITHUB_CLIENT_SECRET',
+      'AUTH_GITHUB_APP_SLUG',
+    ]) {
       if (!process.env[key]) {
         logger.warn(
-          `Missing ${key} — GitHub OAuth disabled. Set it in .env to enable GitHub sign-in.`
+          `Missing ${key} — GitHub sign-in disabled. Set it in .env to enable GitHub sign-in.`
         );
       }
     }
   }
 } else {
-  for (const key of ['ENCRYPTION_KEY', 'AUTH_GITHUB_CLIENT_ID', 'AUTH_GITHUB_CLIENT_SECRET']) {
+  for (const key of [
+    'ENCRYPTION_KEY',
+    'AUTH_GITHUB_CLIENT_ID',
+    'AUTH_GITHUB_CLIENT_SECRET',
+    'AUTH_GITHUB_APP_SLUG',
+  ]) {
     if (!process.env[key]) {
       throw new Error(
         `Missing required environment variable: ${key}\nSet it in your .env file or environment.`
@@ -55,15 +64,12 @@ export const AUTH_GITHUB_CLIENT_ID = process.env.AUTH_GITHUB_CLIENT_ID;
 export const AUTH_GITHUB_CLIENT_SECRET = process.env.AUTH_GITHUB_CLIENT_SECRET;
 
 /**
- * Slug of the GitHub App (the `<slug>` in github.com/apps/<slug>). When set, Baguette runs in
- * "app" mode: sign-in uses the App's user-to-server flow and the repo picker only lists repos the
+ * Slug of the GitHub App (the `<slug>` in github.com/apps/<slug>). GitHub access is always
+ * App-based: sign-in uses the App's user-to-server flow and the repo picker only lists repos the
  * user selected when installing the App — so access can be scoped to a single repository.
- * When unset, Baguette falls back to the legacy OAuth App flow, which grants access to every repo
- * the user can reach. AUTH_GITHUB_CLIENT_ID / AUTH_GITHUB_CLIENT_SECRET hold the App's credentials in app
- * mode and the OAuth App's credentials otherwise.
+ * AUTH_GITHUB_CLIENT_ID / AUTH_GITHUB_CLIENT_SECRET hold the App's credentials.
  */
 export const AUTH_GITHUB_APP_SLUG = process.env.AUTH_GITHUB_APP_SLUG || null;
-export const GITHUB_AUTH_MODE = AUTH_GITHUB_APP_SLUG ? 'app' : 'oauth';
 export const GITHUB_APP_INSTALL_URL = AUTH_GITHUB_APP_SLUG
   ? `https://github.com/apps/${AUTH_GITHUB_APP_SLUG}/installations/new`
   : null;

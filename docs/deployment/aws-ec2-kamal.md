@@ -102,13 +102,13 @@ That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DO
 
 ### Secrets (**Secrets** tab)
 
-| Secret                      | How to obtain                                                      |
-| --------------------------- | ------------------------------------------------------------------ |
-| `SSH_PRIVATE_KEY`           | Deploy key on the instance — fetch via SSM (below), not SSH        |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub OAuth App ([kamal.md §4](kamal.md#4-github-oauth-app))      |
-| `AUTH_GITHUB_CLIENT_SECRET` | OAuth App client secret                                            |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty if using classic OAuth App) |
-| `ENCRYPTION_KEY`            | `openssl rand -hex 32`                                             |
+| Secret                      | How to obtain                                               |
+| --------------------------- | ----------------------------------------------------------- |
+| `SSH_PRIVATE_KEY`           | Deploy key on the instance — fetch via SSM (below), not SSH |
+| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID ([kamal.md §4](kamal.md#4-github-app)) |
+| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                    |
+| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)  |
+| `ENCRYPTION_KEY`            | `openssl rand -hex 32`                                      |
 
 #### Fetch `SSH_PRIVATE_KEY` with SSM
 
@@ -153,4 +153,4 @@ Push to `main` to deploy, or follow [kamal.md §5.1](kamal.md#51-deploy-with-kam
 | Deploy SSH fails                           | `SSH_PRIVATE_KEY` is the deploy key from SSM; security group allows SSH from GitHub Actions (`SshIngressCidr`)                                                                                     |
 | 502 / proxy errors                         | First deploy still running; ensure `www` and wildcard DNS resolve to the Elastic IP (`dig www.<DOMAIN>`)                                                                                           |
 
-For provider-agnostic Kamal steps (OAuth, env vars, local deploy), see [kamal.md](kamal.md).
+For provider-agnostic Kamal steps (GitHub App, env vars, local deploy), see [kamal.md](kamal.md).

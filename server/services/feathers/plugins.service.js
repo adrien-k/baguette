@@ -7,7 +7,7 @@ import {
   downloadPlugin,
   removePluginFiles,
 } from '../plugins-service.js';
-import { getEffectiveGithubToken } from '../agent-settings.js';
+import { getGithubToken } from '../agent-settings.js';
 import { requireUser } from './hooks.js';
 
 class PluginsService extends KnexService {
@@ -28,7 +28,7 @@ class PluginsService extends KnexService {
     const { owner, repo, branch, pluginPath } = parsePluginInput(input.trim());
     const db = this.options.Model;
     const marketplaceRepo = `${owner}/${repo}`;
-    const token = getEffectiveGithubToken(params.user) || undefined;
+    const token = getGithubToken(params.user) || undefined;
 
     const existing = await db('plugins')
       .where({ marketplace_repo: marketplaceRepo, plugin_path: pluginPath })
@@ -85,7 +85,7 @@ class PluginsService extends KnexService {
     const plugin = await db('plugins').where({ id }).first();
     if (!plugin) throw new NotFound('Plugin not found');
 
-    const token = getEffectiveGithubToken(params.user) || undefined;
+    const token = getGithubToken(params.user) || undefined;
     const [owner, repo] = plugin.marketplace_repo.split('/');
 
     const ghRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
