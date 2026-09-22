@@ -143,13 +143,43 @@ export class Task {
     this.#heartbeatTimer = null;
   }
 
-  /** Register a log listener: fn(id, stream, data). Replays accumulated buffer, then registers. Returns unsubscribe. */
-  onLog(fn) {
-    for (const { stream, data } of this.#logBuffer) fn(this.id, stream, data);
+  /**
+   * Register a log listener: fn(id, stream, data). Replays accumulated buffer, then registers.
+   * Returns unsubscribe.
+   * @param {{ includeNestedTasks?: boolean }} opts - when true, also replay and stream the logs of
+   *   the depends_on tasks (recursively). This task's own log only ever holds the pre-requisite
+   *   start/finish lines; nested logs are spliced in where the dependency ran.
+   */
+  onLog(fn, { includeNestedTasks = false } = {}) {
+    this.#replayLogs(fn, includeNestedTasks);
+    return this.#addLogListener(fn, includeNestedTasks);
+  }
+
+  /** Replay the buffered logs to `fn`, expanding nested-task markers when asked. */
+  #replayLogs(fn, includeNestedTasks) {
+    for (const entry of this.#logBuffer) {
+      if (entry.nestedTask) {
+        if (includeNestedTasks) entry.nestedTask.#replayLogs(fn, true);
+      } else {
+        fn(this.id, entry.stream, entry.data);
+      }
+    }
+  }
+
+  /** Register `fn` (no replay) on this task and, optionally, its dependency tree. Returns unsubscribe. */
+  #addLogListener(fn, includeNestedTasks) {
     this._logListeners.push(fn);
+    const unsubs = [
+      () => {
+        const idx = this._logListeners.indexOf(fn);
+        if (idx !== -1) this._logListeners.splice(idx, 1);
+      },
+    ];
+    if (includeNestedTasks) {
+      for (const dep of this._dependsOn) unsubs.push(dep.#addLogListener(fn, true));
+    }
     return () => {
-      const idx = this._logListeners.indexOf(fn);
-      if (idx !== -1) this._logListeners.splice(idx, 1);
+      for (const unsub of unsubs) unsub();
     };
   }
 
@@ -180,12 +210,27 @@ export class Task {
         for (const depTask of this._dependsOn) {
           if (this.status !== 'running') return this;
           const depLabel = depTask.label ?? 'unlabeled';
-          this.addLog('stdout', `\x1b[2m──── Pre-requisite: ${depLabel}\x1b[0m\n`);
-          const unsubDepLog = depTask.onLog((_id, stream, data) => this.addLog(stream, data));
+          this.addLog(
+            'stdout',
+            `\x1b[2m──── Pre-requisite: ${depLabel} (task #${depTask.id})\x1b[0m\n`
+          );
+          // The dep's own output stays in the dep's log; this task only records that it ran.
+          // Consumers that want the whole tree subscribe with { includeNestedTasks: true }.
+          this.#addNestedTaskMarker(depTask);
 
-          await depTask.start();
-          await depTask.waitForReady();
-          unsubDepLog();
+          try {
+            await depTask.start();
+            await depTask.waitForReady();
+          } catch (err) {
+            // Reported here rather than by the outer catch: the dep name and its task id are what
+            // point at the log that actually holds the error.
+            this.addLog(
+              'stderr',
+              `\x1b[31m──── Pre-requisite failed: ${depLabel} (task #${depTask.id}): ${err.message}\x1b[0m\n`
+            );
+            this.exit(err.exitCode ?? 1);
+            return this;
+          }
 
           if (this.status !== 'running') return this;
 
@@ -420,9 +465,22 @@ export class Task {
 
   /** Inject a synthetic log line (e.g. a status message before the process starts). */
   addLog(stream, data) {
-    this.#logBuffer.push({ stream, data });
-    if (this.#logBuffer.length > 10000) this.#logBuffer.shift();
+    this.#pushLogEntry({ stream, data });
     for (const fn of this._logListeners) fn(this.id, stream, data);
+  }
+
+  /**
+   * Record the position of a dependency in the log buffer so `{ includeNestedTasks: true }`
+   * consumers can splice its output back in at the right place. Nothing is emitted to listeners:
+   * nested subscribers are already attached to the dep itself.
+   */
+  #addNestedTaskMarker(task) {
+    this.#pushLogEntry({ nestedTask: task });
+  }
+
+  #pushLogEntry(entry) {
+    this.#logBuffer.push(entry);
+    if (this.#logBuffer.length > 10000) this.#logBuffer.shift();
   }
 
   /** Mark the task as failed without a running process. */
@@ -435,9 +493,21 @@ export class Task {
     for (const fn of this._exitListeners) fn(this.id, exitCode);
   }
 
-  /** Return the full log buffer as a single string. */
-  getLogs() {
-    return this.#logBuffer.map((e) => e.data).join('');
+  /**
+   * Return the full log buffer as a single string.
+   * @param {{ includeNestedTasks?: boolean }} opts - when true, splice in the logs of the
+   *   depends_on tasks (recursively) where each dependency ran.
+   */
+  getLogs({ includeNestedTasks = false } = {}) {
+    let out = '';
+    for (const entry of this.#logBuffer) {
+      if (entry.nestedTask) {
+        if (includeNestedTasks) out += entry.nestedTask.getLogs({ includeNestedTasks: true });
+      } else {
+        out += entry.data;
+      }
+    }
+    return out;
   }
 
   /** Return a plain public object (no private fields). */

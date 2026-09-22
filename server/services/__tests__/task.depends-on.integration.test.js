@@ -1,6 +1,6 @@
 /**
  * Integration tests for Task depends_on: sequential pre-requisite execution,
- * log streaming from dep to parent, failure propagation, and listener registration.
+ * nested dep log exposure, failure propagation, and listener registration.
  *
  * Uses real child processes — no child_process mocking.
  */
@@ -55,7 +55,7 @@ describe('Task depends_on (integration)', () => {
     expect(main.exit_code).toBe(0);
   });
 
-  it('streams dep logs into the parent task log buffer', async () => {
+  it('keeps dep output out of the parent log, but exposes it with includeNestedTasks', async () => {
     const dep = new Task({
       id: 1,
       sessionId: 1,
@@ -81,9 +81,92 @@ describe('Task depends_on (integration)', () => {
     await waitFor(() => main.status === 'exited');
 
     const logs = main.getLogs();
-    expect(logs).toContain('hello-from-dep');
+    expect(logs).not.toContain('hello-from-dep');
     expect(logs).toContain('hello-from-main');
     expect(logs).toContain('my-dep'); // pre-requisite header includes label
+    expect(logs).toContain(`task #${dep.id}`); // …and points at the dep's own task
+
+    const nested = main.getLogs({ includeNestedTasks: true });
+    expect(nested).toContain('hello-from-dep');
+    expect(nested.indexOf('hello-from-dep')).toBeLessThan(nested.indexOf('hello-from-main'));
+  });
+
+  it('onLog({ includeNestedTasks: true }) replays and streams dep output', async () => {
+    const dep = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo dep-line',
+      label: 'my-dep',
+      taskService: null,
+      env: process.env,
+      cwd: '/tmp',
+    });
+    const main = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'echo main-line',
+      label: 'main',
+      taskService: null,
+      env: process.env,
+      cwd: '/tmp',
+      dependsOn: [dep],
+    });
+    runningTasks.push(dep, main);
+
+    const flat = [];
+    const nested = [];
+    main.onLog((_id, _stream, data) => flat.push(data));
+    const unsub = main.onLog((_id, _stream, data) => nested.push(data), {
+      includeNestedTasks: true,
+    });
+
+    await main.start();
+    await waitFor(() => main.status === 'exited');
+    await waitFor(() => nested.join('').includes('main-line'));
+
+    expect(flat.join('')).not.toContain('dep-line');
+    expect(nested.join('')).toContain('dep-line');
+    // no duplicates: the dep line is delivered once, live, not again from the replay marker
+    expect(nested.join('').match(/dep-line/g)).toHaveLength(1);
+
+    unsub();
+    main.addLog('stdout', 'after-unsub\n');
+    dep.addLog('stdout', 'dep-after-unsub\n');
+    expect(nested.join('')).not.toContain('after-unsub');
+  });
+
+  it('a late nested subscriber replays dep output that already happened', async () => {
+    const dep = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo early-dep-line',
+      label: 'my-dep',
+      taskService: null,
+      env: process.env,
+      cwd: '/tmp',
+    });
+    const main = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'echo main-line',
+      label: 'main',
+      taskService: null,
+      env: process.env,
+      cwd: '/tmp',
+      dependsOn: [dep],
+    });
+    runningTasks.push(dep, main);
+
+    await main.start();
+    await waitFor(() => main.status === 'exited');
+
+    const received = [];
+    main.onLog((_id, _stream, data) => received.push(data), { includeNestedTasks: true });
+
+    const joined = received.join('');
+    expect(joined).toContain('early-dep-line');
+    expect(joined.match(/early-dep-line/g)).toHaveLength(1);
+    expect(joined.indexOf('early-dep-line')).toBeLessThan(joined.indexOf('main-line'));
   });
 
   it('fails the main task when a dep exits non-zero, without running the main process', async () => {
@@ -115,6 +198,7 @@ describe('Task depends_on (integration)', () => {
     expect(main.status).toBe('exited');
     expect(main.exit_code).toBe(2);
     expect(main.getLogs()).not.toContain('should-not-run');
+    expect(main.getLogs()).toContain('Pre-requisite failed: failing-dep');
   });
 
   it('runs multiple deps sequentially and in order', async () => {
@@ -152,7 +236,7 @@ describe('Task depends_on (integration)', () => {
     await waitFor(() => main.status === 'exited');
 
     expect(main.exit_code).toBe(0);
-    const logs = main.getLogs();
+    const logs = main.getLogs({ includeNestedTasks: true });
     const i1 = logs.indexOf('step-one');
     const i2 = logs.indexOf('step-two');
     const i3 = logs.indexOf('step-three');

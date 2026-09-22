@@ -254,10 +254,13 @@ export class DevProxy {
 
   _wireTaskToProxy(key, state, exposePort, startupTimeoutMs) {
     const task = state.task;
-    const buffered = task.getLogs?.();
+    // The loading page shows the whole startup story, so it streams the dependency tree too
+    // (the task's own log only records that a pre-requisite ran).
+    const buffered = task.getLogs?.({ includeNestedTasks: true });
     if (buffered) this.sse.send(key, { event: 'log', data: buffered });
-    state.unsubLog = task.onLog((_id, _stream, line) =>
-      this.sse.send(key, { event: 'log', data: line })
+    state.unsubLog = task.onLog(
+      (_id, _stream, line) => this.sse.send(key, { event: 'log', data: line }),
+      { includeNestedTasks: true }
     );
     state.unsubExit = task.onExit((_id, code) => {
       if (this.states.get(key) !== state) return;
@@ -322,7 +325,7 @@ export class DevProxy {
     // The replay log still holds the `ready` event from when the server came up, which would make
     // the loading page reload in a loop. Rebuild it from the task logs plus this exit.
     this.sse.purgeChannel(key);
-    const buffered = state.task?.getLogs?.();
+    const buffered = state.task?.getLogs?.({ includeNestedTasks: true });
     if (buffered) this.sse.send(key, { event: 'log', data: buffered });
     this.sse.send(key, { event: 'error', data: { message } });
     this.sse.closeChannel(key);
