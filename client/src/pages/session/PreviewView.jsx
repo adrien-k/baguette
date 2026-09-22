@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Globe, Play, ScrollText, Wifi, Copy, Loader2, Square } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { ExternalLink, Globe, Play, ScrollText, Wifi, Loader2, Square } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { toastError } from '../../utils/toastError.jsx';
 import { sessionsService, tasksService } from '../../feathers.js';
@@ -106,13 +105,7 @@ function ServiceRow({
   const canStart = !readonly && svc.status !== 'ready' && !starting && !stopping;
   const canStop = !readonly && isActive && svc.task_id && !stopping;
 
-  const copyLink = (url, label) => {
-    if (!url) return;
-    navigator.clipboard.writeText(url);
-    toast.success(`${label} copied`);
-  };
-
-  const qrUrl = svc.deep_link_url || svc.url;
+  const previewUrl = svc.deep_link_url || svc.url;
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
@@ -135,7 +128,7 @@ function ServiceRow({
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <a
-              href={svc.url}
+              href={previewUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300"
@@ -143,25 +136,10 @@ function ServiceRow({
               Open preview
               <ExternalLink className="w-3 h-3" />
             </a>
-            {svc.deep_link_url && (
-              <button
-                type="button"
-                onClick={() => copyLink(svc.deep_link_url, 'Deep link')}
-                className="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-300"
-              >
-                <Copy className="w-3 h-3" />
-                Deep link
-              </button>
-            )}
           </div>
-          {svc.deep_link_url && (
-            <code className="mt-1 block text-[10px] text-zinc-600 truncate">
-              {svc.deep_link_url}
-            </code>
-          )}
         </div>
         <div className="flex items-start gap-2 shrink-0">
-          <ServiceQrCode url={qrUrl} />
+          <ServiceQrCode url={previewUrl} />
           {!readonly && canStop && (
             <button
               type="button"

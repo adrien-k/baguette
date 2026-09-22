@@ -209,7 +209,7 @@ services:
     scheme: exp://
 ```
 
-Baguette builds a deep link by replacing the `https://` prefix of the service preview URL with the configured scheme (e.g. `https://session-<id>-expo.<domain>/` → `exp://session-<id>-expo.<domain>/`). The session **Preview** tab shows a copyable deep link when a scheme is configured.
+Baguette builds a deep link by replacing the `https://` prefix of the service preview URL with the configured scheme (e.g. `https://session-<id>-expo.<domain>/` → `exp://session-<id>-expo.<domain>/`). On the session **Preview** tab, **Open preview** and the QR code use that deep link when a scheme is configured.
 
 ## `services` block (multi-service preview)
 

@@ -7,7 +7,7 @@ import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
 import { getClientIp } from '../lib/client-ip.js';
 import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
-import { isPortListening } from './port-utils.js';
+import { getLoopbackHost } from './port-utils.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
 const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
@@ -146,7 +146,7 @@ export class DevProxy {
     }
 
     state.task?.heartbeat();
-    return this._proxyRequest(req, res, state.port);
+    return this._proxyRequest(req, res, state.port, state.loopbackHost);
   }
 
   async wsDispatch(req, socket, head, handler) {
@@ -166,7 +166,7 @@ export class DevProxy {
     }
 
     state.task?.heartbeat();
-    this._proxyUpgrade(req, socket, head, state.port);
+    this._proxyUpgrade(req, socket, head, state.port, state.loopbackHost);
   }
 
   /**
@@ -277,8 +277,9 @@ export class DevProxy {
         const portEnv = exposePort;
         if (task.status === 'running' && portEnv && task.ports[portEnv]) {
           const port = task.ports[portEnv];
-          if (await isPortListening(port)) {
-            this._onListening(key, state, port);
+          const loopbackHost = await getLoopbackHost(port);
+          if (loopbackHost) {
+            this._onListening(key, state, port, loopbackHost);
             return;
           }
         }
@@ -287,15 +288,20 @@ export class DevProxy {
         if (!port) {
           throw new Error('Port not allocated');
         }
-        this._onListening(key, state, port);
+        const loopbackHost = await getLoopbackHost(port);
+        if (!loopbackHost) {
+          throw new Error('Port not listening on loopback');
+        }
+        this._onListening(key, state, port, loopbackHost);
       } catch (err) {
         this._onCrashed(key, state, err);
       }
     })();
   }
 
-  _onListening(key, state, port) {
+  _onListening(key, state, port, loopbackHost = '127.0.0.1') {
     state.port = port;
+    state.loopbackHost = loopbackHost;
     state.status = 'listening';
     this.sse.send(key, { event: 'ready' });
     this.sse.closeChannel(key);
@@ -362,9 +368,9 @@ export class DevProxy {
     return signed.startsWith('s:') ? unsign(signed.slice(2), ENCRYPTION_KEY) : false;
   }
 
-  _proxyRequest(req, res, port) {
+  _proxyRequest(req, res, port, hostname = '127.0.0.1') {
     const proxyReq = http.request(
-      { hostname: '127.0.0.1', port, path: req.url, method: req.method, headers: req.headers },
+      { hostname, port, path: req.url, method: req.method, headers: req.headers },
       (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
@@ -377,11 +383,11 @@ export class DevProxy {
     req.pipe(proxyReq);
   }
 
-  _proxyUpgrade(req, socket, head, port) {
+  _proxyUpgrade(req, socket, head, port, hostname = '127.0.0.1') {
     const proxyReq = http.request(
       {
         agent: false,
-        hostname: '127.0.0.1',
+        hostname,
         port,
         path: req.url,
         method: req.method,
