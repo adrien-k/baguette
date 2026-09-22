@@ -10,6 +10,9 @@ import {
   listUserRepos,
   listUserOrgs,
   listOrgRepos,
+  listUserInstallations,
+  listInstallationRepos,
+  cacheScopeForUser,
   clearReposCache,
   clearOrgsCache,
   clearBranchesCache,
@@ -23,7 +26,7 @@ import { loadBaguetteConfig } from '../baguette-config.js';
 import loadPrompt from '../../prompts/loadPrompt.js';
 import { requireUser, decryptFields } from './hooks.js';
 import { getEffectiveGithubToken } from '../agent-settings.js';
-import { REPOS_DIR, DOCKER_COMPOSE_PATH } from '../../config.js';
+import { REPOS_DIR, DOCKER_COMPOSE_PATH, GITHUB_AUTH_MODE } from '../../config.js';
 
 /** True for local repos: absolute path (imported) or plain name with no "/" (brand-new). */
 const isLocalRepo = (fullName) => fullName.startsWith('/') || !fullName.includes('/');
@@ -273,9 +276,22 @@ class ReposService extends KnexService {
     return { ok: true };
   }
 
+  /**
+   * Accounts to group the repo picker by. In app mode these are GitHub App installations (one per
+   * account the App is installed on); in OAuth mode, "Personal" plus the user's orgs.
+   */
   async findOrgs(data, params) {
     const token = getEffectiveGithubToken(params.user);
-    const orgs = await listUserOrgs(token);
+    const scope = cacheScopeForUser(params.user);
+    if (GITHUB_AUTH_MODE === 'app') {
+      const installations = await listUserInstallations(token, scope);
+      return installations.map((i) => ({
+        login: i.login,
+        name: i.login,
+        avatar_url: i.avatar_url,
+      }));
+    }
+    const orgs = await listUserOrgs(token, scope);
     return [{ login: 'personal', name: 'Personal' }, ...orgs];
   }
 
@@ -284,11 +300,18 @@ class ReposService extends KnexService {
     const { org = 'personal', query = '' } =
       typeof data === 'string' ? { query: data } : data || {};
     const token = getEffectiveGithubToken(params.user);
+    const scope = cacheScopeForUser(params.user);
     let allRepos;
-    if (org === 'personal') {
-      allRepos = await listUserRepos(token);
+    if (GITHUB_AUTH_MODE === 'app') {
+      // `org` is the installation account login; resolve it to an installation id. The
+      // installations list is cached, so this costs no extra request.
+      const installations = await listUserInstallations(token, scope);
+      const installation = installations.find((i) => i.login === org);
+      allRepos = installation ? await listInstallationRepos(token, scope, installation.id) : [];
+    } else if (org === 'personal') {
+      allRepos = await listUserRepos(token, scope);
     } else {
-      allRepos = await listOrgRepos(token, org);
+      allRepos = await listOrgRepos(token, scope, org);
     }
     const q = query.trim().toLowerCase();
     const filtered = q ? allRepos.filter((r) => r.full_name.toLowerCase().includes(q)) : allRepos;
@@ -296,10 +319,10 @@ class ReposService extends KnexService {
   }
 
   async refresh(data, params) {
-    const token = getEffectiveGithubToken(params.user);
-    clearReposCache(token);
-    clearOrgsCache(token);
-    clearBranchesCache(token);
+    const scope = cacheScopeForUser(params.user);
+    clearReposCache(scope);
+    clearOrgsCache(scope);
+    clearBranchesCache(scope);
     return { ok: true };
   }
 
@@ -322,7 +345,11 @@ class ReposService extends KnexService {
       }
       return { branches: [] };
     }
-    const branches = await listBranches(getEffectiveGithubToken(params.user), fullName);
+    const branches = await listBranches(
+      getEffectiveGithubToken(params.user),
+      cacheScopeForUser(params.user),
+      fullName
+    );
     return { branches };
   }
 

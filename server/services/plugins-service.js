@@ -57,11 +57,12 @@ export function parsePluginInput(input) {
  * Used to check whether a refresh is needed.
  */
 export async function getRemoteSha(owner, repo, branch, token) {
-  const repoUrl = buildRepoUrl(owner, repo, token);
   try {
-    const { stdout } = await execFileAsync('git', ['ls-remote', repoUrl, `refs/heads/${branch}`], {
-      timeout: 15000,
-    });
+    const { stdout } = await withTokenFallback(token, (t) =>
+      execFileAsync('git', ['ls-remote', buildRepoUrl(owner, repo, t), `refs/heads/${branch}`], {
+        timeout: 15000,
+      })
+    );
     const sha = stdout.trim().split(/\s+/)[0];
     return sha || null;
   } catch {
@@ -72,6 +73,39 @@ export async function getRemoteSha(owner, repo, branch, token) {
 function buildRepoUrl(owner, repo, token) {
   if (token) return `https://${token}@github.com/${owner}/${repo}.git`;
   return `https://github.com/${owner}/${repo}.git`;
+}
+
+/**
+ * Runs a git operation against a plugin's repo, retrying without credentials if the authenticated
+ * attempt fails. Plugin marketplaces are arbitrary third-party repos, so a GitHub App token —
+ * scoped to only the repos the user granted Baguette — will not cover them. Most marketplaces are
+ * public and clone fine with no credentials at all.
+ *
+ * @param {string | undefined} token
+ * @param {(token: string | undefined) => Promise<T>} run  Receives the token to use, or undefined
+ * @returns {Promise<T>}
+ */
+async function withTokenFallback(token, run) {
+  if (!token) return run(undefined);
+  try {
+    return await run(token);
+  } catch (err) {
+    try {
+      return await run(undefined);
+    } catch {
+      // The authenticated failure is usually the more informative one, but its message can embed
+      // the token (it is the userinfo part of the clone URL), so redact before rethrowing.
+      throw redactToken(err, token);
+    }
+  }
+}
+
+function redactToken(err, token) {
+  const sanitize = (s) => (typeof s === 'string' ? s.replaceAll(token, '[REDACTED]') : s);
+  err.message = sanitize(err.message);
+  if (err.stderr) err.stderr = sanitize(err.stderr.toString());
+  if (err.stdout) err.stdout = sanitize(err.stdout.toString());
+  return err;
 }
 
 /**
@@ -86,22 +120,24 @@ export async function downloadPlugin(owner, repo, branch, pluginPath, token) {
   const tmpDir = path.join(os.tmpdir(), `baguette-plugin-${tmpId}`);
 
   try {
-    const repoUrl = buildRepoUrl(owner, repo, token);
-
-    // Sparse clone — only metadata, no blobs yet
-    await execFileAsync(
-      'git',
-      [
-        'clone',
-        '--filter=blob:none',
-        '--sparse',
-        '--depth=1',
-        `--branch=${branch}`,
-        repoUrl,
-        tmpDir,
-      ],
-      { timeout: 60000 }
-    );
+    // Sparse clone — only metadata, no blobs yet. Each attempt starts from a clean temp dir so a
+    // partial clone from a failed authenticated attempt cannot poison the retry.
+    await withTokenFallback(token, async (t) => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      return execFileAsync(
+        'git',
+        [
+          'clone',
+          '--filter=blob:none',
+          '--sparse',
+          '--depth=1',
+          `--branch=${branch}`,
+          buildRepoUrl(owner, repo, t),
+          tmpDir,
+        ],
+        { timeout: 60000 }
+      );
+    });
 
     // Check out only the plugin subdirectory
     if (pluginPath === '.') {

@@ -3,13 +3,19 @@ import { apiFetch } from '../api.js';
 
 const AuthContext = createContext(null);
 
+const DEFAULT_GITHUB = { auth_mode: 'oauth', install_url: null };
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [github, setGithub] = useState(DEFAULT_GITHUB);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch('/auth/me')
-      .then((data) => setUser(data.user))
+      .then((data) => {
+        setUser(data.user);
+        setGithub(data.github || DEFAULT_GITHUB);
+      })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
@@ -20,7 +26,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, setUser }}>
+    <AuthContext.Provider value={{ user, github, loading, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -2,7 +2,15 @@ import { Router } from 'express';
 import db from '../db.js';
 import logger from '../logger.js';
 import { signProxyToken, buildSessionHostname } from '../services/preview.js';
-import { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, PUBLIC_HOST, PUBLIC_API_URL } from '../config.js';
+import { cacheScopeForUser, clearReposCache, clearOrgsCache } from '../services/github.js';
+import {
+  GITHUB_CLIENT_ID,
+  GITHUB_CLIENT_SECRET,
+  GITHUB_AUTH_MODE,
+  GITHUB_APP_INSTALL_URL,
+  PUBLIC_HOST,
+  PUBLIC_API_URL,
+} from '../config.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -52,9 +60,8 @@ export function createAuthRoutes(app) {
     });
   }
 
-  router.get('/auth/github', (req, res) => {
-    if (!GITHUB_CLIENT_ID) return res.status(503).send('GitHub OAuth not configured');
-
+  /** Stores a post-auth redirect target, ignoring anything that isn't a local path. */
+  const setRedirectCookie = (req, res) => {
     const { redirectTo } = req.query;
     if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
       res.cookie('auth_redirect', redirectTo, {
@@ -63,19 +70,58 @@ export function createAuthRoutes(app) {
         maxAge: 10 * 60 * 1000,
       });
     }
+  };
+
+  router.get('/auth/github', (req, res) => {
+    if (!GITHUB_CLIENT_ID) return res.status(503).send('GitHub OAuth not configured');
+
+    setRedirectCookie(req, res);
 
     const params = new URLSearchParams({
       client_id: GITHUB_CLIENT_ID,
-      scope: 'repo read:user user:email workflow',
       redirect_uri: new URL('/auth/github/callback', PUBLIC_HOST).toString(),
+      // GitHub Apps ignore `scope` — their access comes from the App's registered permissions
+      // and from the repos the user picked when installing it.
+      ...(GITHUB_AUTH_MODE === 'app' ? {} : { scope: 'repo read:user user:email workflow' }),
     });
     res.redirect(`${GITHUB_AUTH_URL}?${params}`);
   });
 
+  // Sends the user to GitHub to install the App (and choose which repos it can access).
+  // Only meaningful in app mode; GitHub redirects back to /auth/github/callback when done.
+  router.get('/auth/github/install', (req, res) => {
+    if (!GITHUB_APP_INSTALL_URL) return res.status(503).send('GitHub App not configured');
+    setRedirectCookie(req, res);
+    res.redirect(GITHUB_APP_INSTALL_URL);
+  });
+
+  /** Consumes the auth_redirect cookie and sends the user on to it (or the app root). */
+  const finishRedirect = (req, res) => {
+    const redirectTo = req.cookies?.auth_redirect;
+    res.clearCookie('auth_redirect');
+    const dest =
+      redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/';
+    res.redirect(dest);
+  };
+
+  /** Drops cached repo/installation lists so newly granted repos appear immediately. */
+  const invalidateRepoCaches = async (userId) => {
+    const scope = cacheScopeForUser({ id: userId });
+    await Promise.all([clearReposCache(scope), clearOrgsCache(scope)]);
+  };
+
   router.get('/auth/github/callback', async (req, res) => {
     if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET)
       return res.status(503).send('GitHub OAuth not configured');
-    const { code } = req.query;
+    const { code, setup_action: setupAction, installation_id: installationId } = req.query;
+
+    // Returning from an App install while already signed in: there is no OAuth code to exchange,
+    // so just refresh the cached lists and continue.
+    if (!code && (setupAction || installationId)) {
+      const userId = req.signedCookies?.userId;
+      if (userId) await invalidateRepoCaches(userId);
+      return finishRedirect(req, res);
+    }
     if (!code) return res.status(400).send('Missing code');
 
     try {
@@ -143,11 +189,10 @@ export function createAuthRoutes(app) {
         maxAge: 30 * 24 * 60 * 60 * 1000,
       });
 
-      const redirectTo = req.cookies?.auth_redirect;
-      res.clearCookie('auth_redirect');
-      const dest =
-        redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/';
-      res.redirect(dest);
+      // Authorizing as part of an App install: the repo list just changed.
+      if (setupAction || installationId) await invalidateRepoCaches(userId);
+
+      finishRedirect(req, res);
     } catch (err) {
       logger.error(err, 'OAuth error');
       res.status(500).send('Authentication failed');
@@ -155,13 +200,16 @@ export function createAuthRoutes(app) {
   });
 
   router.get('/auth/me', async (req, res) => {
+    // Sent regardless of sign-in state so the login screen can explain what it is connecting to.
+    const github = { auth_mode: GITHUB_AUTH_MODE, install_url: GITHUB_APP_INSTALL_URL };
     const userId = req.signedCookies?.userId;
-    if (!userId) return res.json({ user: null });
+    if (!userId) return res.json({ user: null, github });
 
     const user = await db('users').where({ id: userId }).first();
-    if (!user) return res.json({ user: null });
+    if (!user) return res.json({ user: null, github });
 
     res.json({
+      github,
       user: {
         id: user.id,
         username: user.username,

@@ -73,9 +73,12 @@ function barePathForStripped(strippedName) {
   return path.join(repoDirPath(strippedName), 'main');
 }
 
-function cacheKeyForToken(token) {
-  if (!token) return 'anonymous';
-  return crypto.createHash('sha256').update(token).digest('hex');
+/**
+ * Cache scope for a user's GitHub lists. Keyed by user id rather than by the token value so
+ * cached lists survive a token being rotated or re-issued.
+ */
+export function cacheScopeForUser(user) {
+  return user?.id ? `u${user.id}` : 'anonymous';
 }
 
 function repoHash(repoFullName) {
@@ -87,9 +90,12 @@ function repoHash(repoFullName) {
  * @param {string} url    Base URL (without page param)
  * @param {string} token  GitHub token
  * @param {(item: object) => T} mapFn  Transform each response item
+ * @param {{ itemsKey?: string }} [opts]  itemsKey unwraps envelope responses such as
+ *   `/user/installations` ({ total_count, installations: [...] }), which return an object
+ *   rather than a bare array.
  * @returns {Promise<T[]>}
  */
-async function fetchAllPages(url, token, mapFn) {
+async function fetchAllPages(url, token, mapFn, { itemsKey } = {}) {
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3+json' };
   const results = [];
   const separator = url.includes('?') ? '&' : '?';
@@ -97,7 +103,8 @@ async function fetchAllPages(url, token, mapFn) {
   while (true) {
     const res = await fetch(`${url}${separator}per_page=100&page=${page}`, { headers });
     if (!res.ok) break;
-    const data = await res.json();
+    const body = await res.json();
+    const data = itemsKey ? body?.[itemsKey] : body;
     if (!Array.isArray(data) || data.length === 0) break;
     for (const item of data) results.push(mapFn(item));
     if (data.length < 100) break;
@@ -116,21 +123,18 @@ const mapRepo = (r) => ({
 // Refreshing org and repo lists is manual, so we can cache them indefinitely
 const REPOS_CACHE_TTL = Infinity;
 /** Repos for the "Personal" picker: owned by the user and direct collaborator access (incl. other users' private repos). */
-export function listUserRepos(token) {
-  return cache.fetch(
-    `github-repos-${cacheKeyForToken(token)}-personal-owner-collab`,
-    REPOS_CACHE_TTL,
-    () =>
-      fetchAllPages(
-        'https://api.github.com/user/repos?sort=updated&affiliation=owner,collaborator',
-        token,
-        mapRepo
-      )
+export function listUserRepos(token, scope) {
+  return cache.fetch(`github-repos-${scope}-personal-owner-collab`, REPOS_CACHE_TTL, () =>
+    fetchAllPages(
+      'https://api.github.com/user/repos?sort=updated&affiliation=owner,collaborator',
+      token,
+      mapRepo
+    )
   );
 }
 
-export function listUserOrgs(token) {
-  return cache.fetch(`github-orgs-${cacheKeyForToken(token)}`, REPOS_CACHE_TTL, () =>
+export function listUserOrgs(token, scope) {
+  return cache.fetch(`github-orgs-${scope}`, REPOS_CACHE_TTL, () =>
     fetchAllPages('https://api.github.com/user/orgs', token, (o) => ({
       login: o.login,
       avatar_url: o.avatar_url,
@@ -138,39 +142,71 @@ export function listUserOrgs(token) {
   );
 }
 
-export function listOrgRepos(token, orgLogin) {
-  return cache.fetch(
-    `github-repos-${cacheKeyForToken(token)}-org-${orgLogin}`,
-    REPOS_CACHE_TTL,
-    () =>
-      fetchAllPages(
-        `https://api.github.com/orgs/${orgLogin}/repos?sort=updated&type=all`,
-        token,
-        mapRepo
-      )
+export function listOrgRepos(token, scope, orgLogin) {
+  return cache.fetch(`github-repos-${scope}-org-${orgLogin}`, REPOS_CACHE_TTL, () =>
+    fetchAllPages(
+      `https://api.github.com/orgs/${orgLogin}/repos?sort=updated&type=all`,
+      token,
+      mapRepo
+    )
+  );
+}
+
+/**
+ * GitHub App installations the signed-in user can see, one per account (personal or org) the App
+ * is installed on. Requires a user-to-server token; returns [] for a legacy OAuth token.
+ */
+export function listUserInstallations(token, scope) {
+  return cache.fetch(`github-installations-${scope}`, REPOS_CACHE_TTL, () =>
+    fetchAllPages(
+      'https://api.github.com/user/installations',
+      token,
+      (i) => ({
+        id: i.id,
+        login: i.account?.login,
+        avatar_url: i.account?.avatar_url,
+        account_type: i.account?.type,
+      }),
+      { itemsKey: 'installations' }
+    )
+  );
+}
+
+/**
+ * Repos the user selected when installing the App on a given account. This is what makes
+ * single-repo access work: GitHub only returns the repos granted to that installation.
+ */
+export function listInstallationRepos(token, scope, installationId) {
+  return cache.fetch(`github-repos-${scope}-installation-${installationId}`, REPOS_CACHE_TTL, () =>
+    fetchAllPages(
+      `https://api.github.com/user/installations/${installationId}/repositories`,
+      token,
+      mapRepo,
+      { itemsKey: 'repositories' }
+    )
   );
 }
 
 const BRANCHES_CACHE_TTL = 60;
-export function listBranches(token, repoFullName) {
-  return cache.fetch(
-    `github-branches-${cacheKeyForToken(token)}-${repoHash(repoFullName)}`,
-    BRANCHES_CACHE_TTL,
-    () =>
-      fetchAllPages(`https://api.github.com/repos/${repoFullName}/branches`, token, (b) => b.name)
+export function listBranches(token, scope, repoFullName) {
+  return cache.fetch(`github-branches-${scope}-${repoHash(repoFullName)}`, BRANCHES_CACHE_TTL, () =>
+    fetchAllPages(`https://api.github.com/repos/${repoFullName}/branches`, token, (b) => b.name)
   );
 }
 
-export function clearReposCache(token) {
-  return cache.clearByPrefix(`github-repos-${cacheKeyForToken(token)}-`);
+export function clearReposCache(scope) {
+  return cache.clearByPrefix(`github-repos-${scope}-`);
 }
 
-export function clearOrgsCache(token) {
-  return cache.clearByPrefix(`github-orgs-${cacheKeyForToken(token)}`);
+export function clearOrgsCache(scope) {
+  return Promise.all([
+    cache.clearByPrefix(`github-orgs-${scope}`),
+    cache.clearByPrefix(`github-installations-${scope}`),
+  ]);
 }
 
-export function clearBranchesCache(token) {
-  return cache.clearByPrefix(`github-branches-${cacheKeyForToken(token)}-`);
+export function clearBranchesCache(scope) {
+  return cache.clearByPrefix(`github-branches-${scope}-`);
 }
 
 /**

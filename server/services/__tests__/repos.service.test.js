@@ -18,10 +18,25 @@ vi.mock('../agent-settings.js', () => ({
   getEffectiveGithubToken: vi.fn((user) => user?.access_token || null),
 }));
 
+// Lets individual tests flip between the legacy OAuth App flow and GitHub App ("app") mode.
+const configMock = vi.hoisted(() => ({ authMode: 'oauth' }));
+vi.mock('../../config.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    get GITHUB_AUTH_MODE() {
+      return configMock.authMode;
+    },
+  };
+});
+
 vi.mock('../github.js', () => ({
   listUserRepos: vi.fn(),
   listUserOrgs: vi.fn(),
   listOrgRepos: vi.fn(),
+  listUserInstallations: vi.fn(),
+  listInstallationRepos: vi.fn(),
+  cacheScopeForUser: vi.fn((user) => `u${user?.id}`),
   clearReposCache: vi.fn(),
   clearOrgsCache: vi.fn(),
   clearBranchesCache: vi.fn(),
@@ -41,6 +56,8 @@ import {
   listUserRepos,
   listUserOrgs,
   listOrgRepos,
+  listUserInstallations,
+  listInstallationRepos,
   clearReposCache,
   clearOrgsCache,
   clearBranchesCache,
@@ -54,6 +71,8 @@ const adminUser = { id: null, access_token: 'gh_token_admin' };
 const regularUser = { id: null, access_token: 'gh_token_user' };
 const params = (user) => ({ provider: 'rest', user });
 const unauthParams = { provider: 'rest' };
+/** Cache scope the service derives for a user (see cacheScopeForUser). */
+const scope = (user = regularUser) => `u${user.id}`;
 
 const removeByRepoId = vi.fn().mockResolvedValue(undefined);
 
@@ -263,7 +282,7 @@ describe('Repos service - findRemote', () => {
 
     const result = await app.service('repos').findRemote({ query: 'foo' }, params(regularUser));
 
-    expect(listUserRepos).toHaveBeenCalledWith('gh_token_user');
+    expect(listUserRepos).toHaveBeenCalledWith('gh_token_user', scope());
     expect(result).toEqual({ repos: [{ full_name: 'alice/foo', private: false }], hasMore: false });
   });
 
@@ -294,7 +313,7 @@ describe('Repos service - findRemote', () => {
 
     const result = await app.service('repos').findRemote({ org: 'myorg' }, params(regularUser));
 
-    expect(listOrgRepos).toHaveBeenCalledWith('gh_token_user', 'myorg');
+    expect(listOrgRepos).toHaveBeenCalledWith('gh_token_user', scope(), 'myorg');
     expect(listUserRepos).not.toHaveBeenCalled();
     expect(result.repos).toHaveLength(2);
   });
@@ -325,7 +344,7 @@ describe('Repos service - findOrgs', () => {
 
     const result = await app.service('repos').findOrgs({}, params(regularUser));
 
-    expect(listUserOrgs).toHaveBeenCalledWith('gh_token_user');
+    expect(listUserOrgs).toHaveBeenCalledWith('gh_token_user', scope());
     expect(result[0]).toEqual({ login: 'personal', name: 'Personal' });
     expect(result[1]).toEqual({ login: 'myorg', avatar_url: 'https://example.com/avatar.png' });
     expect(result).toHaveLength(2);
@@ -356,6 +375,81 @@ describe('Repos service - findOrgs', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GitHub App mode — repos come from installations, not from the whole account
+// ---------------------------------------------------------------------------
+
+describe('Repos service - GitHub App mode', () => {
+  beforeEach(() => {
+    configMock.authMode = 'app';
+  });
+  afterEach(() => {
+    configMock.authMode = 'oauth';
+  });
+
+  it('findOrgs lists installation accounts instead of orgs', async () => {
+    listUserInstallations.mockResolvedValue([
+      { id: 42, login: 'alice', avatar_url: 'https://example.com/a.png', account_type: 'User' },
+      {
+        id: 43,
+        login: 'myorg',
+        avatar_url: 'https://example.com/o.png',
+        account_type: 'Organization',
+      },
+    ]);
+
+    const result = await app.service('repos').findOrgs({}, params(regularUser));
+
+    expect(listUserInstallations).toHaveBeenCalledWith('gh_token_user', scope());
+    expect(listUserOrgs).not.toHaveBeenCalled();
+    expect(result).toEqual([
+      { login: 'alice', name: 'alice', avatar_url: 'https://example.com/a.png' },
+      { login: 'myorg', name: 'myorg', avatar_url: 'https://example.com/o.png' },
+    ]);
+  });
+
+  it('findOrgs returns an empty list when the App is not installed anywhere', async () => {
+    listUserInstallations.mockResolvedValue([]);
+
+    expect(await app.service('repos').findOrgs({}, params(regularUser))).toEqual([]);
+  });
+
+  it('findRemote returns only the repos granted to that installation', async () => {
+    listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
+    listInstallationRepos.mockResolvedValue([{ full_name: 'myorg/only-this-one', private: true }]);
+
+    const result = await app.service('repos').findRemote({ org: 'myorg' }, params(regularUser));
+
+    expect(listInstallationRepos).toHaveBeenCalledWith('gh_token_user', scope(), 42);
+    expect(listUserRepos).not.toHaveBeenCalled();
+    expect(listOrgRepos).not.toHaveBeenCalled();
+    expect(result.repos).toEqual([{ full_name: 'myorg/only-this-one', private: true }]);
+  });
+
+  it('findRemote returns nothing for an account with no installation', async () => {
+    listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
+
+    const result = await app.service('repos').findRemote({ org: 'other' }, params(regularUser));
+
+    expect(listInstallationRepos).not.toHaveBeenCalled();
+    expect(result).toEqual({ repos: [], hasMore: false });
+  });
+
+  it('findRemote still filters by query', async () => {
+    listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
+    listInstallationRepos.mockResolvedValue([
+      { full_name: 'myorg/alpha', private: false },
+      { full_name: 'myorg/beta', private: false },
+    ]);
+
+    const result = await app
+      .service('repos')
+      .findRemote({ org: 'myorg', query: 'alp' }, params(regularUser));
+
+    expect(result.repos).toEqual([{ full_name: 'myorg/alpha', private: false }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // refresh — clear cache
 // ---------------------------------------------------------------------------
 
@@ -363,9 +457,9 @@ describe('Repos service - refresh', () => {
   it('clears repos and branches cache for the token', async () => {
     const result = await app.service('repos').refresh({}, params(regularUser));
 
-    expect(clearReposCache).toHaveBeenCalledWith('gh_token_user');
-    expect(clearOrgsCache).toHaveBeenCalledWith('gh_token_user');
-    expect(clearBranchesCache).toHaveBeenCalledWith('gh_token_user');
+    expect(clearReposCache).toHaveBeenCalledWith(scope());
+    expect(clearOrgsCache).toHaveBeenCalledWith(scope());
+    expect(clearBranchesCache).toHaveBeenCalledWith(scope());
     expect(result).toEqual({ ok: true });
   });
 
@@ -388,7 +482,7 @@ describe('Repos service - branches', () => {
 
     const result = await app.service('repos').branches('alice/foo', params(regularUser));
 
-    expect(listBranches).toHaveBeenCalledWith('gh_token_user', 'alice/foo');
+    expect(listBranches).toHaveBeenCalledWith('gh_token_user', scope(), 'alice/foo');
     expect(result).toEqual({ branches: mockBranches });
   });
 

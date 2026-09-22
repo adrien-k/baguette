@@ -1,9 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { reposService } from '../feathers.js';
+import { useAuth } from '../hooks/useAuth.jsx';
 import { toastError } from '../utils/toastError.jsx';
 import SearchableSelect from './SearchableSelect/index.jsx';
 
+/** Sends the user to GitHub to install the App or change which repos it can access. */
+function installHref() {
+  const back = window.location.pathname + window.location.search;
+  return `/auth/github/install?redirectTo=${encodeURIComponent(back)}`;
+}
+
 export default function RepoSearchInput({ value, onSelect, addedNames, trailing }) {
+  const { github } = useAuth();
+  const isAppMode = github?.auth_mode === 'app';
   const [orgs, setOrgs] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('personal');
   const [loadingOrgs, setLoadingOrgs] = useState(true);
@@ -26,13 +35,25 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
     [selectedOrg]
   );
 
-  useEffect(() => {
-    reposService
+  // In app mode the accounts come from GitHub App installations, so "personal" may not be among
+  // them — fall back to the first account returned.
+  const loadOrgs = useCallback(() => {
+    setLoadingOrgs(true);
+    return reposService
       .findOrgs({})
-      .then(setOrgs)
+      .then((list) => {
+        setOrgs(list);
+        setSelectedOrg((current) =>
+          list.some((o) => o.login === current) ? current : (list[0]?.login ?? '')
+        );
+      })
       .catch((err) => toastError('Failed to load organizations', err))
       .finally(() => setLoadingOrgs(false));
   }, []);
+
+  useEffect(() => {
+    loadOrgs();
+  }, [loadOrgs]);
 
   const handleRefresh = async () => {
     await reposService
@@ -40,15 +61,40 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
       .catch((err) => toastError('Failed to refresh repositories', err));
     onSelect('');
     setRefreshKey((k) => k + 1);
-    setLoadingOrgs(true);
     setOrgs([]);
-    reposService
-      .findOrgs({})
-      .then(setOrgs)
-      .catch((err) => toastError('Failed to load organizations', err))
-      .finally(() => setLoadingOrgs(false));
-    setSelectedOrg('personal');
+    await loadOrgs();
   };
+
+  const noInstallations = isAppMode && !loadingOrgs && orgs.length === 0;
+
+  if (noInstallations) {
+    return (
+      <div className="flex-1">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+          <p className="text-sm text-zinc-300 mb-1">No repositories connected yet</p>
+          <p className="text-xs text-zinc-500 mb-3 max-w-md leading-relaxed">
+            Install the Baguette GitHub App and choose which repositories it can access. You can
+            pick a single repository, and change the selection at any time.
+          </p>
+          <div className="flex items-center gap-3">
+            <a
+              href={installHref()}
+              className="inline-flex items-center gap-2 bg-amber-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors"
+            >
+              Install on GitHub
+            </a>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Already installed? Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1">
@@ -109,8 +155,17 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
       <p className="text-xs text-zinc-500 mt-2 max-w-xl leading-relaxed">
         Lists up to <span className="text-zinc-400">20</span> repos per load. Empty field shows the
         20 most recently updated you can access; type a fragment of{' '}
-        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list.
-        Personal is owner and direct collaborator repos only.
+        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list.{' '}
+        {isAppMode ? (
+          <>
+            Only repositories you granted the Baguette GitHub App are listed.{' '}
+            <a href={installHref()} className="text-amber-500 hover:text-amber-400">
+              Manage repository access ↗
+            </a>
+          </>
+        ) : (
+          'Personal is owner and direct collaborator repos only.'
+        )}
       </p>
     </div>
   );
