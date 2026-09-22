@@ -2,7 +2,7 @@ import { NotFound, BadRequest } from '@feathersjs/errors';
 import { Task, DEFAULT_TTL_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
-import { loadBaguetteConfig, getScriptCommand, getAvailableTasks } from '../baguette-config.js';
+import { loadBaguetteConfig, getAvailableTasks, appendTaskArgs } from '../baguette-config.js';
 import logger from '../../logger.js';
 
 const MAX_TASKS = 20; // Only keeps 20 task (running + history)
@@ -28,7 +28,7 @@ export class TasksService {
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
    */
-  createTask({ sessionId, command, label, ports, env, cwd, dependsOn, noTtl, ttlMs }) {
+  createTask({ sessionId, command, label, taskKey, ports, env, cwd, dependsOn, noTtl, ttlMs }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
@@ -50,6 +50,7 @@ export class TasksService {
       sessionId,
       command,
       label,
+      taskKey,
       ports,
       env,
       cwd,
@@ -182,11 +183,19 @@ export class TasksService {
     return task.toPublic();
   }
 
-  /** Create a task in memory, optionally starting it immediately (default: true). */
+  /**
+   * Create a task in memory, optionally starting it immediately (default: true).
+   *
+   * Callers name *what* to run, not *how*: pass `task_key` and the command, ports and
+   * dependencies are resolved from `.baguette.yaml` here. `command` stays available as the
+   * ad-hoc escape hatch (the "Run a command…" input) and as an override for internal callers
+   * that have no task in the config (e.g. an inline `webserver.command`).
+   */
   async create(data, params) {
     const {
       session_id,
-      command,
+      command: rawCommand,
+      args,
       label,
       ports,
       task_key,
@@ -203,34 +212,39 @@ export class TasksService {
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
+    // Load config once for command resolution, init and deps lookups
+    const baguetteConfig = session.worktree_path
+      ? await loadBaguetteConfig(session.worktree_path)
+      : null;
+    if (baguetteConfig?.error) throw new BadRequest(baguetteConfig.error);
+    const taskDefs = baguetteConfig ? getAvailableTasks(baguetteConfig) : {};
+
+    const taskDef = task_key ? taskDefs[task_key] : null;
+    if (task_key && !taskDef && !rawCommand) {
+      throw new BadRequest(`Task "${task_key}" is not defined in .baguette.yaml`);
+    }
+    const resolvedCommand = rawCommand ?? taskDef?.run;
+    if (!resolvedCommand) throw new BadRequest('A task_key or a command is required');
+
+    const effectiveLabel = label ?? task_key ?? null;
+    const effectivePorts = ports ?? taskDef?.ports ?? [];
+
     const baseEnv = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
     const env = extra_env ? { ...baseEnv, ...extra_env } : baseEnv;
     const interpolatedCommand = await this.app
       .service('sessions')
-      .getInterpolatedCommand(session.id, command);
+      .getInterpolatedCommand(session.id, appendTaskArgs(resolvedCommand, args));
     const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
-
-    // Load config once for init and deps lookups
-    const baguetteConfig = session.worktree_path
-      ? await loadBaguetteConfig(session.worktree_path)
-      : null;
 
     const dependsOn = [];
 
     // Add init as a dependency if the session has not been initialized yet
     if (!skipInit && !session.initialized && session.worktree_path) {
-      const initCommand = getScriptCommand(baguetteConfig?.session?.init);
       // Mark initialized eagerly to prevent double-init on concurrent task starts.
       await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
-      if (initCommand) {
+      if (taskDefs['baguette:init']) {
         const initPub = await this.create(
-          {
-            session_id,
-            command: initCommand,
-            label: 'baguette:init',
-            skipInit: true,
-            autoStart: false,
-          },
+          { session_id, task_key: 'baguette:init', skipInit: true, autoStart: false },
           params
         );
         dependsOn.push(this.getTask(initPub.id));
@@ -239,24 +253,20 @@ export class TasksService {
 
     // Add .baguette.yaml declared dependencies (transitive, cycle-detected via _depChain)
     if (task_key && baguetteConfig) {
-      const taskDefs = getAvailableTasks(baguetteConfig);
       const depChain = new Set(_depChain ?? []);
       depChain.add(task_key);
-      for (const depKey of taskDefs[task_key]?.depends_on ?? []) {
+      for (const depKey of taskDef?.depends_on ?? []) {
         if (depChain.has(depKey))
           throw new BadRequest(
             `Circular dependency detected: ${depKey} is already in the dependency chain`
           );
-        const depDef = taskDefs[depKey];
-        if (!depDef) throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
+        if (!taskDefs[depKey])
+          throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
         let depTask = this._findRunningTask(session_id, depKey);
         if (!depTask) {
           const depPub = await this.create(
             {
               session_id,
-              command: depDef.run,
-              label: depKey,
-              ports: depDef.ports || [],
               task_key: depKey,
               skipInit: true,
               _depChain: [...depChain],
@@ -273,8 +283,9 @@ export class TasksService {
     const task = this.createTask({
       sessionId: session_id,
       command: interpolatedCommand,
-      label,
-      ports,
+      label: effectiveLabel,
+      taskKey: task_key ?? null,
+      ports: effectivePorts,
       env,
       cwd,
       dependsOn,
@@ -343,7 +354,9 @@ export function registerTasksService(app, path = 'tasks') {
 export const tasksHooks = {
   before: {
     all: [requireUser],
-    create: [only(['session_id', 'command', 'label', 'ports', 'task_key'])],
+    // `task_key` names a .baguette.yaml task (command/ports/label resolved server-side);
+    // `command` is the ad-hoc "Run a command…" escape hatch.
+    create: [only(['session_id', 'task_key', 'command', 'args'])],
     patch: [disableExternal],
   },
 };

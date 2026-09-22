@@ -732,22 +732,17 @@ function buildBaguetteToolList(session, app) {
 
         if (!tasks) return fail('.baguette.yaml not found');
 
-        const taskDef = tasks[label];
-        if (!taskDef || typeof taskDef.run !== 'string') {
+        if (!tasks[label]) {
           return fail(`Unknown command label: ${label}`);
         }
-
-        const combined = `${taskDef.run} ${args.join(' ')}`.trim();
 
         if (!attach) {
           try {
             const task = await app.service('tasks').create(
               {
                 session_id: session.id,
-                command: combined,
-                label,
-                ports: taskDef.ports || [],
                 task_key: label,
+                args,
                 extra_env: extraEnv,
               },
               { user: { id: session.user_id } }
@@ -767,10 +762,8 @@ function buildBaguetteToolList(session, app) {
             .create(
               {
                 session_id: session.id,
-                command: combined,
-                label,
-                ports: taskDef.ports || [],
                 task_key: label,
+                args,
                 extra_env: extraEnv,
                 onLog: (id, stream, data) => {
                   if (stream === 'stdout') stdout += data;

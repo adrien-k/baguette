@@ -57,17 +57,36 @@ export function getWebserverConfig(baguetteConfig) {
 }
 
 /**
- * Extract a multi-line script block as a single shell command (lines joined with &&).
+ * Normalize a script block from the config (`session.init`, `session.cleanup`, `tasks.*.run`).
+ * Multi-line blocks are kept verbatim — Task writes them to a script file rather than
+ * collapsing them into a single shell command.
  * Returns null if the block is empty or missing.
  */
-export function getScriptCommand(block) {
+export function getScriptBlock(block) {
   if (!block || typeof block !== 'string') return null;
-  const lines = block
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return null;
-  return lines.join(' && ');
+  const trimmed = block.replace(/\s+$/, '');
+  return trimmed.trim() ? trimmed : null;
+}
+
+/**
+ * Append CLI arguments to a task's `run` script.
+ * For multi-line scripts the args belong to the last command of the script, not to a
+ * new line appended after it.
+ */
+export function appendTaskArgs(run, args) {
+  if (!Array.isArray(args) || args.length === 0) return run;
+  const suffix = args.join(' ').trim();
+  if (!suffix) return run;
+  if (!run.includes('\n')) return `${run} ${suffix}`.trim();
+
+  const lines = run.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim()) {
+      lines[i] = `${lines[i].replace(/\s+$/, '')} ${suffix}`;
+      return lines.join('\n');
+    }
+  }
+  return run;
 }
 
 const TASK_PORT_REGEX = /\$\{\{\s*baguette\.tasks\.([A-Za-z0-9_:-]+)\.([A-Za-z0-9_]+)\s*\}\}/g;
@@ -96,7 +115,7 @@ export function getAvailableTasks(baguetteConfig) {
   const tasks = {};
 
   // Init task
-  const initScript = getScriptCommand(baguetteConfig?.session?.init);
+  const initScript = getScriptBlock(baguetteConfig?.session?.init);
   if (initScript) tasks['baguette:init'] = { run: initScript };
 
   // User tasks: prefer `tasks` hash, fallback to `commands` array
@@ -105,8 +124,10 @@ export function getAvailableTasks(baguetteConfig) {
   if (userTasks && typeof userTasks === 'object' && !Array.isArray(userTasks)) {
     for (const [key, val] of Object.entries(userTasks)) {
       if (!val || typeof val.run !== 'string') continue;
+      const run = getScriptBlock(val.run);
+      if (!run) continue;
       tasks[key] = {
-        run: val.run,
+        run,
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { writeFile, unlink } from 'fs/promises';
+import { mkdir, writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import net from 'net';
@@ -27,6 +27,29 @@ function detachChildProcess(child) {
   }
 }
 
+/** Where multi-line task scripts are written before being executed. */
+const SCRIPT_DIR = join(tmpdir(), 'baguette-tasks');
+
+/**
+ * Write a multi-line command to an executable script file.
+ * A script keeps the block's own control flow (loops, `if`, heredocs, comments) intact,
+ * unlike collapsing it into a single `sh -c` string.
+ * Returns `{ path, argv }`, where argv is what to spawn.
+ */
+async function writeScriptFile(id, command) {
+  await mkdir(SCRIPT_DIR, { recursive: true });
+  const path = join(SCRIPT_DIR, `task-${id}-${Date.now()}.sh`);
+  // A user-supplied shebang wins: the script is then executed directly so the
+  // requested interpreter (bash, zsh, node…) is the one that runs it.
+  const hasShebang = command.startsWith('#!');
+  const body = hasShebang ? command : `#!/bin/sh\nset -e\n${command}`;
+  await writeFile(path, body.endsWith('\n') ? body : `${body}\n`, {
+    encoding: 'utf8',
+    mode: 0o700,
+  });
+  return { path, argv: hasShebang ? [path, []] : ['sh', [path]] };
+}
+
 function getFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -50,11 +73,25 @@ export class Task {
   #ttlTimer = null;
   #heartbeatTimer = null;
 
-  constructor({ id, sessionId, command, label, ports, env, cwd, dependsOn, noTtl = false, ttlMs }) {
+  constructor({
+    id,
+    sessionId,
+    command,
+    label,
+    taskKey,
+    ports,
+    env,
+    cwd,
+    dependsOn,
+    noTtl = false,
+    ttlMs,
+  }) {
     this.id = id;
     this.session_id = sessionId;
     this.command = command;
     this.label = label ?? null;
+    /** `.baguette.yaml` task this was resolved from, if any. Lets a client re-run it by name. */
+    this.task_key = taskKey ?? null;
     this.ports = {}; // { ENV_VAR_NAME: portNumber } — populated after _startProcess()
     this._portEnvVars = Array.isArray(ports) ? ports : [];
     this._portMap = {}; // accumulated dep port assignments for interpolation
@@ -269,9 +306,11 @@ export class Task {
     }
 
     let scriptPath = null;
+    let argv = ['sh', ['-c', this.command]];
     if (this.command.includes('\n')) {
-      scriptPath = join(tmpdir(), `baguette-task-${this.id}-${Date.now()}.sh`);
-      await writeFile(scriptPath, `#!/bin/sh\nset -e\n${this.command}\n`, 'utf8');
+      const script = await writeScriptFile(this.id, this.command);
+      scriptPath = script.path;
+      argv = script.argv;
     }
 
     const spawnOpts = {
@@ -280,9 +319,7 @@ export class Task {
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
     };
-    const child = scriptPath
-      ? spawn('sh', [scriptPath], spawnOpts)
-      : spawn('sh', ['-c', this.command], spawnOpts);
+    const child = spawn(argv[0], argv[1], spawnOpts);
 
     this.pid = child.pid;
     this.#process = child;
@@ -410,6 +447,7 @@ export class Task {
       session_id: this.session_id,
       command: this.command,
       label: this.label,
+      task_key: this.task_key,
       pid: this.pid,
       status: this.status,
       exit_code: this.exit_code,

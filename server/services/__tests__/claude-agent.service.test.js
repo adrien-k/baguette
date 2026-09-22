@@ -35,7 +35,7 @@ vi.mock('../agent-settings.js', () => ({
 vi.mock('../baguette-config.js', () => ({
   loadBaguetteConfig: vi.fn(),
   interpolateEnv: vi.fn(),
-  getScriptCommand: vi.fn(),
+  getScriptBlock: vi.fn(),
 }));
 
 vi.mock('../baguette-mcp-server.js', () => ({

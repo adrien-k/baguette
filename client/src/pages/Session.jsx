@@ -447,16 +447,18 @@ export default function Session() {
       .catch((err) => toastError('Failed to change model', err));
   };
 
-  const handleTaskStart = (command, ports, label) => {
+  // Named .baguette.yaml task: the server resolves the command, ports and dependencies.
+  const handleTaskStart = (taskKey) => {
     tasksService
-      .create({
-        session_id: session?.id,
-        command,
-        label: label || undefined,
-        ports: ports?.length ? ports : undefined,
-        task_key: label || undefined,
-      })
+      .create({ session_id: session?.id, task_key: taskKey })
       .catch((err) => toastError('Failed to start task', err));
+  };
+
+  // Ad-hoc command typed by the user — the only case where the client supplies a command.
+  const handleCommandRun = (command) => {
+    tasksService
+      .create({ session_id: session?.id, command })
+      .catch((err) => toastError('Failed to run command', err));
   };
 
   const handleTaskKill = (taskId) => {
@@ -466,18 +468,16 @@ export default function Session() {
 
   const handleTaskRetry = (taskId) => {
     const task = tasks.find((t) => t.id === taskId);
-    if (task) {
-      const ports = task.ports ? Object.keys(task.ports) : undefined;
-      tasksService
-        .create({
-          session_id: session?.id,
-          command: task.command,
-          label: task.label || undefined,
-          ports: ports?.length ? ports : undefined,
-        })
-        .catch((err) => toastError('Failed to start task', err));
-      setActiveTaskModal(null);
-    }
+    if (!task) return;
+    // Re-resolve a configured task from its name so it picks up any .baguette.yaml edit;
+    // ad-hoc commands have no name and are replayed as-is.
+    tasksService
+      .create({
+        session_id: session?.id,
+        ...(task.task_key ? { task_key: task.task_key } : { command: task.command }),
+      })
+      .catch((err) => toastError('Failed to start task', err));
+    setActiveTaskModal(null);
   };
 
   const handleTaskDelete = (taskId) => {
@@ -1127,7 +1127,8 @@ export default function Session() {
             <TaskPanel
               tasks={tasks}
               configCommands={configCommands}
-              onStart={handleTaskStart}
+              onStartTask={handleTaskStart}
+              onRunCommand={handleCommandRun}
               onKill={handleTaskKill}
               onDelete={handleTaskDelete}
               onRetry={handleTaskRetry}

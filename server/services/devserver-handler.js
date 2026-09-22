@@ -117,10 +117,15 @@ export class DevserverHandler {
     const publicTask = await this.app.service('tasks').create(
       {
         session_id: session.id,
-        command: webserverConfig.command,
         label: `baguette:webserver:${effectiveServiceName}`,
-        ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
-        ...(webserverConfig.taskKey ? { task_key: webserverConfig.taskKey } : {}),
+        // A `webserver.task` reference resolves through the config; an inline
+        // `webserver.command` has no task to name, so pass the command directly.
+        ...(webserverConfig.taskKey
+          ? { task_key: webserverConfig.taskKey }
+          : {
+              command: webserverConfig.command,
+              ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
+            }),
         autoStart: false,
       },
       { user: { id: session.user_id } }

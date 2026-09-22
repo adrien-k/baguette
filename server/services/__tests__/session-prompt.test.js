@@ -7,7 +7,7 @@ import { buildSystemPromptAppend } from '../session-prompt.js';
 vi.mock('../baguette-config.js', () => ({
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   interpolateEnv: vi.fn(),
-  getScriptCommand: vi.fn(),
+  getScriptBlock: vi.fn(),
 }));
 
 vi.mock('../../config.js', async (importOriginal) => {

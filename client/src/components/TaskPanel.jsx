@@ -5,7 +5,8 @@ import { formatRelativeTime } from '../utils/dates.js';
 export default function TaskPanel({
   tasks,
   configCommands = [],
-  onStart,
+  onStartTask,
+  onRunCommand,
   onKill,
   onDelete,
   onRetry,
@@ -17,7 +18,7 @@ export default function TaskPanel({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!command.trim()) return;
-    onStart(command.trim());
+    onRunCommand(command.trim());
     setCommand('');
   };
 
@@ -112,7 +113,7 @@ export default function TaskPanel({
           {configCommands.map((cmd, i) => (
             <button
               key={i}
-              onClick={() => onStart(cmd.run, cmd.ports, cmd.label)}
+              onClick={() => onStartTask(cmd.label)}
               className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 transition-colors"
               title={cmd.run}
             >

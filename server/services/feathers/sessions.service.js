@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import { NotFound, BadRequest } from '@feathersjs/errors';
 import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
-import { loadBaguetteConfig, getAvailableCommands, getScriptCommand } from '../baguette-config.js';
+import { loadBaguetteConfig, getAvailableCommands, getScriptBlock } from '../baguette-config.js';
 import {
   removeWorktree,
   gitDiff,
@@ -119,13 +119,14 @@ export class SessionsService extends KnexService {
   async _runCleanupAndFinalize(session) {
     if (session.worktree_path) {
       const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
-      const cleanupCommand = getScriptCommand(baguetteConfig?.session?.cleanup);
+      const cleanupCommand = getScriptBlock(baguetteConfig?.session?.cleanup);
       if (cleanupCommand) {
         try {
           await this.app.service('tasks').create(
             {
               session_id: session.id,
               command: cleanupCommand,
+              label: 'baguette:cleanup',
               skipInit: true,
               onExit: async () => {
                 try {
@@ -298,10 +299,15 @@ export class SessionsService extends KnexService {
     const created = await tasksService.create(
       {
         session_id: session.id,
-        command: webserverConfig.command,
         label,
-        ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
-        ...(webserverConfig.taskKey ? { task_key: webserverConfig.taskKey } : {}),
+        // A `webserver.task` reference resolves through the config; an inline
+        // `webserver.command` has no task to name, so pass the command directly.
+        ...(webserverConfig.taskKey
+          ? { task_key: webserverConfig.taskKey }
+          : {
+              command: webserverConfig.command,
+              ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
+            }),
         ttl_ms: PREVIEW_WEBSERVICE_TTL_MS,
       },
       // Internal call: forwarding the REST/socket `provider` would let tasks.create

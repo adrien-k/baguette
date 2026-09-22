@@ -95,7 +95,8 @@ const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 /** Simulates a task that calls onLog/onExit callbacks asynchronously. */
 function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   return vi.fn().mockImplementation((data) => {
-    const task = { id: 99, label: data.label ?? null, status: 'running' };
+    // Mirrors TasksService.create(), which defaults the label to the task key.
+    const task = { id: 99, label: data.label ?? data.task_key ?? null, status: 'running' };
     setImmediate(() => {
       if (stdout) data.onLog?.(task.id, 'stdout', stdout);
       if (stderr) data.onLog?.(task.id, 'stderr', stderr);
@@ -528,7 +529,7 @@ describe('RunProjectCommand', () => {
     expect(result.status).toBe('running');
     expect(result.exitCode).toBeUndefined();
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'npm test' }),
+      expect.objectContaining({ task_key: 'Run tests' }),
       expect.anything()
     );
   });
@@ -561,7 +562,7 @@ describe('RunProjectCommand', () => {
     expect(result.stdoutLines).toEqual(['all tests passed']);
     expect(result.stderrLines).toEqual([]);
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'npm test' }),
+      expect.objectContaining({ task_key: 'Run tests' }),
       expect.anything()
     );
   });
@@ -601,19 +602,21 @@ describe('RunProjectCommand', () => {
     expect(joined.length).toBeGreaterThan(90_000);
   });
 
-  it('appends a single file path arg', async () => {
+  // The tool names the task and forwards args; the tasks service resolves the `run` script
+  // from .baguette.yaml and appends the args to it (see appendTaskArgs).
+  it('forwards a single file path arg to the tasks service', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'vitest run' }] },
     });
     const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
     await callTool(tools, 'RunProjectCommand', { label: 'Run tests', args: ['src/foo.test.js'] });
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'vitest run src/foo.test.js' }),
+      expect.objectContaining({ task_key: 'Run tests', args: ['src/foo.test.js'] }),
       expect.anything()
     );
   });
 
-  it('appends multiple args (e.g. --grep flag with pattern)', async () => {
+  it('forwards multiple args (e.g. --reporter flag with value)', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'vitest run' }] },
     });
@@ -623,19 +626,26 @@ describe('RunProjectCommand', () => {
       args: ['--reporter', 'verbose', 'src/foo.test.js'],
     });
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'vitest run --reporter verbose src/foo.test.js' }),
+      expect.objectContaining({
+        task_key: 'Run tests',
+        args: ['--reporter', 'verbose', 'src/foo.test.js'],
+      }),
       expect.anything()
     );
   });
 
-  it('runs without extra args when args is omitted', async () => {
+  it('never sends a command — the task is named, not spelled out', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
     const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
     await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'npm test' }),
+      expect.objectContaining({ task_key: 'Run tests', args: [] }),
+      expect.anything()
+    );
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ command: expect.anything() }),
       expect.anything()
     );
   });

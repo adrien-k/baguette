@@ -99,7 +99,7 @@ Supports placeholders:
 
 ### `init`
 
-Shell commands run once when a session starts (after worktree creation, before the first task). Lines are joined with `&&`. If any command fails, session creation fails.
+Shell commands run once when a session starts (after worktree creation, before the first task). The block runs as a shell script under `set -e`, so the first failing command aborts it and session creation fails.
 
 ```yaml
 init: |
@@ -132,9 +132,34 @@ tasks:
 
 | Field        | Type     | Description                                                          |
 | ------------ | -------- | -------------------------------------------------------------------- |
-| `run`        | string   | Shell command to execute                                             |
+| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks)) |
 | `ports`      | string[] | Env var names that Baguette assigns free ports to before launching   |
 | `depends-on` | string[] | Task keys that must be running and listening before this task starts |
+
+#### Multi-line tasks
+
+A single-line `run` is executed with `sh -c`. A multi-line `run` (and the `init` / `cleanup` blocks) is written to a script file and executed, so the block keeps its own shell semantics: `if`/`for`, heredocs, comments, and variables set on one line and used on the next all work as written.
+
+```yaml
+tasks:
+  reset-db:
+    run: |
+      # a comment, not a broken command
+      if [ -f ./.data/app.sqlite3 ]; then
+        rm ./.data/app.sqlite3
+      fi
+      pnpm run migrate
+```
+
+The script runs under `set -e`, so the task stops at the first failing command. To choose a different interpreter, start the block with a shebang:
+
+```yaml
+run: |
+  #!/usr/bin/env bash
+  set -euo pipefail
+  shopt -s globstar
+  ./scripts/check.sh **/*.ts
+```
 
 #### Lifetime
 

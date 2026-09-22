@@ -106,10 +106,15 @@ export async function scopeBySessionUser(context) {
   return context;
 }
 
+/**
+ * Strip every field but `fields` from external create/patch payloads.
+ * Internal calls (no provider) keep the full payload.
+ */
 export function only(fields) {
   const allowedFields = new Set(fields);
   return async (context) => {
-    if (context.provider && (context.method === 'create' || context.method === 'patch')) {
+    // Feathers exposes the transport on params, not on the context itself.
+    if (context.params?.provider && (context.method === 'create' || context.method === 'patch')) {
       for (const key in context.data) {
         if (!allowedFields.has(key)) {
           delete context.data[key];
