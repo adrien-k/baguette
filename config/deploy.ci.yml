@@ -1,0 +1,6 @@
+# Merged when deploying from GitHub Actions (`kamal … -d ci`).
+# Registry cache does not persist on ephemeral CI runners; use Actions cache instead.
+builder:
+  cache:
+    type: gha
+    options: mode=max

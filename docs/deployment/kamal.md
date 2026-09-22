@@ -125,7 +125,7 @@ kamal deploy
 
 ### 5.2. Deploy using GitHub Actions
 
-The included workflow (`.github/workflows/deploy.yml`) deploys automatically on every push to `main`.
+The included workflow (`.github/workflows/deploy.yml`) deploys automatically on every push to `main`. It uses the `ci` Kamal destination (`config/deploy.ci.yml`) so Docker layer cache is stored in the GitHub Actions cache (BuildKit `type=gha`), not the ephemeral local registry on the runner.
 
 1. **Fork** this repository to your own GitHub account.
 
