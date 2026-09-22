@@ -347,6 +347,13 @@ export class SessionsService extends KnexService {
     }
   }
 
+  async gitStatus(data, params) {
+    const session = params.resolvedSession;
+    if (!session?.worktree_path) return { commitsToPush: 0 };
+    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    return { commitsToPush: await gitCommitsToPush(cwd) };
+  }
+
   async shas(data, params) {
     const session = params.resolvedSession;
     if (!session?.worktree_path) return { localSha: null, remoteSha: null };
@@ -866,6 +873,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'stop',
       'commands',
       'diff',
+      'gitStatus',
       'shas',
       'showDiff',
       'merge',
@@ -908,6 +916,7 @@ export const sessionsHooks = {
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
+    gitStatus: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     showDiff: [resolveSessionFromData],
     merge: [resolveSessionFromData],

@@ -281,8 +281,6 @@ export default function Session() {
   const [menuModelOverride, setMenuModelOverride] = useState(null);
   const [models, setModels] = useState([]);
   const { cursorFast, cursorEffort } = useCursorModelPrefs();
-  const [_localSha, setLocalSha] = useState(null);
-  const [_remoteSha, setRemoteSha] = useState(null);
   const [pushing, setPushing] = useState(false);
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
@@ -353,6 +351,14 @@ export default function Session() {
   }, [session?.preview_url]);
 
   useEffect(() => {
+    if (!sessionId || session?.status === 'running') return;
+    sessionsService
+      .gitStatus(sessionId)
+      .then((res) => setCommitsToPush(res.commitsToPush ?? 0))
+      .catch(() => {});
+  }, [sessionId, session?.status]);
+
+  useEffect(() => {
     if (!session) return;
     const url =
       session.agent_sdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
@@ -367,18 +373,6 @@ export default function Session() {
       .then((d) => setConfigCommands(d.commands || []))
       .catch(() => {});
   }, [sessionId]);
-
-  useEffect(() => {
-    if (!sessionId || session?.status !== 'completed') return;
-    sessionsService
-      .diff(sessionId)
-      .then((res) => {
-        setCommitsToPush(res.commitsToPush ?? 0);
-        setLocalSha(res.localSha ?? null);
-        setRemoteSha(res.remoteSha ?? null);
-      })
-      .catch(() => {});
-  }, [sessionId, session?.status]);
 
   useEffect(() => {
     const onAppError = (msg) => {
