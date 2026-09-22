@@ -663,6 +663,63 @@ describe('ClaudeAgentService', (hooks) => {
       expect(pushSpy).toHaveBeenCalledWith(userMsg);
     });
 
+    it('does not push persisted tool_result user rows back into the agent channel', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      query.mockImplementation(() => makeNeverEndingIterable());
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow);
+
+      const active = service.getActiveSession(BASE_SESSION_ID);
+      const pushSpy = vi.spyOn(active.channel, 'push');
+
+      const toolResultMsg = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'ok' }],
+        },
+      };
+      await service.onMessageCreated({
+        session_id: BASE_SESSION_ID,
+        type: 'user',
+        message_json: JSON.stringify(toolResultMsg),
+      });
+
+      expect(pushSpy).not.toHaveBeenCalled();
+    });
+
+    it('pushes baguette-sourced user messages to the active session channel', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      query.mockImplementation(() => makeNeverEndingIterable());
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow);
+
+      const active = service.getActiveSession(BASE_SESSION_ID);
+      const pushSpy = vi.spyOn(active.channel, 'push');
+
+      const baguetteMsg = {
+        type: 'user',
+        source: 'baguette',
+        title: 'Syncing with remote',
+        message: { role: 'user', content: 'Please pull.' },
+      };
+      await service.onMessageCreated({
+        session_id: BASE_SESSION_ID,
+        type: 'user',
+        subtype: 'baguette',
+        message_json: JSON.stringify(baguetteMsg),
+      });
+
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      expect(pushSpy).toHaveBeenCalledWith(baguetteMsg);
+    });
+
     it('calls createAgentSession when user message and session has no claude_session_id', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
@@ -704,8 +761,8 @@ describe('ClaudeAgentService', (hooks) => {
       expect(parsed.source).toBe('baguette');
       expect(parsed.title).toBe('Syncing with remote');
 
-      // The same payload is what reaches the agent.
-      expect(channel.push).toHaveBeenCalledWith(parsed);
+      // Delivery to the agent is via messages after-hook → onMessageCreated, not a direct push.
+      expect(channel.push).not.toHaveBeenCalled();
     });
   });
 });

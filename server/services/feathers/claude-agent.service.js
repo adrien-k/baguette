@@ -101,13 +101,18 @@ export class ClaudeAgentService {
 
     const sessionId = message.session_id;
 
+    const parsed =
+      typeof message.message_json === 'string'
+        ? JSON.parse(message.message_json)
+        : message.message_json;
+
+    // Only respond to human user messages, not tool_result rows we persisted from the SDK stream.
+    // Baguette-injected messages use source: 'baguette' and are delivered via this hook only.
+    if (!isHumanUserMessage(parsed) && parsed.source !== 'baguette') return;
+
     // Check in-memory first — handles active sessions before claude_session_id is persisted
     const active = this.getActiveSession(sessionId);
     if (active) {
-      const parsed =
-        typeof message.message_json === 'string'
-          ? JSON.parse(message.message_json)
-          : message.message_json;
       active.channel.push(parsed);
       return;
     }
@@ -122,10 +127,6 @@ export class ClaudeAgentService {
       agentSession = await this.createAgentSession(session);
     }
 
-    const parsed =
-      typeof message.message_json === 'string'
-        ? JSON.parse(message.message_json)
-        : message.message_json;
     agentSession.channel.push(parsed);
   }
 
@@ -229,7 +230,7 @@ export class ClaudeAgentService {
   }
 
   async injectBaguetteMessage(sessionState, { title, content }) {
-    const { sessionId, channel } = sessionState;
+    const { sessionId } = sessionState;
     const app = this.app;
     const msg = {
       type: 'user',
@@ -246,8 +247,6 @@ export class ClaudeAgentService {
       subtype: 'baguette',
       message_json: JSON.stringify(msg),
     });
-
-    channel.push(msg);
   }
 
   /**
