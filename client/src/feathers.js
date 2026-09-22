@@ -1,5 +1,7 @@
 import { feathers } from '@feathersjs/feathers';
 import rest from '@feathersjs/rest-client';
+import { showConnectionLostToast, showConnectionRestoredToast } from './utils/connectionToast.jsx';
+import { watchSseConnection } from './utils/sseConnectionWatcher.js';
 
 const app = feathers();
 app.configure(rest(`${window.location.origin}/api`).fetch(window.fetch.bind(window)));
@@ -34,6 +36,12 @@ eventSource.onmessage = ({ data }) => {
     // ignore malformed messages
   }
 };
+
+// Real-time updates are invisible when the stream drops, so tell the user.
+watchSseConnection(eventSource, {
+  onLost: showConnectionLostToast,
+  onRestored: showConnectionRestoredToast,
+});
 
 export default app;
 export const sessionsService = createService('sessions', {
