@@ -682,4 +682,30 @@ describe('ClaudeAgentService', (hooks) => {
       });
     });
   });
+
+  // ── 7. injectBaguetteMessage ───────────────────────────────────────────────
+
+  describe('injectBaguetteMessage', () => {
+    it('tags the message as baguette-sourced so the chat does not show it as the user typing', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const channel = { push: vi.fn() };
+
+      await service.injectBaguetteMessage(
+        { sessionId: BASE_SESSION_ID, channel },
+        { title: 'Syncing with remote', content: 'Please pull the latest changes.' }
+      );
+
+      const [persisted] = mockApp._messageCreate.mock.calls[0];
+      expect(persisted.subtype).toBe('baguette');
+      const parsed = JSON.parse(persisted.message_json);
+      expect(parsed.source).toBe('baguette');
+      expect(parsed.title).toBe('Syncing with remote');
+
+      // The same payload is what reaches the agent.
+      expect(channel.push).toHaveBeenCalledWith(parsed);
+    });
+  });
 });

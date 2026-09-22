@@ -44,45 +44,135 @@ import { getCodeserverUrl } from '../codeserver-handler.js';
 import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
 
 /**
+ * Sent to an agent whose turn was cut short by a server restart. The transcript is resumed, but
+ * the last turn may have stopped anywhere — mid tool call, mid edit — so the agent is asked to
+ * re-check the working tree rather than trust what it remembers writing.
+ */
+const RESTART_PROMPT =
+  'The Baguette server restarted and interrupted your previous turn before it finished. ' +
+  'Check the current state of the working tree (any edit or command you had started may or may ' +
+  'not have completed), then continue the task from where you left off.';
+
+/**
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
  */
 export class SessionsService extends KnexService {
   setup(app) {
     this.app = app;
+  }
 
-    // On startup, any session that was running or waiting for approval when the
-    // server last stopped is now orphaned — reset them to stopped and post a
-    // status message to each session's chat so users can see what happened.
-    app
-      .get('db')('sessions')
-      .whereIn('status', ['running', 'approval'])
-      .whereNull('archived_at')
-      .select('id', 'user_id')
-      .then(async (staleSessions) => {
-        if (staleSessions.length === 0) return;
-        const statusMessage = JSON.stringify({
-          type: 'system',
-          subtype: 'status',
-          status: 'Server restarted — session was stopped',
-        });
-        for (const session of staleSessions) {
-          const userParams = { user: { id: session.user_id } };
-          await app.service('messages').create(
-            {
-              session_id: session.id,
-              type: 'system',
-              subtype: 'status',
-              message_json: statusMessage,
-            },
-            userParams
-          );
-          await app.service('sessions').patch(session.id, { status: 'stopped' }, userParams);
-        }
-        logger.info(`Reset ${staleSessions.length} stale session(s) to stopped on startup`);
-      })
-      .catch((err) => {
-        logger.error(err, 'Failed to reset stale sessions on startup');
-      });
+  /**
+   * Recover sessions that were mid-turn when the server last stopped.
+   *
+   * A session left in `running`/`approval` has no agent process behind it after a reboot, so it
+   * would otherwise sit there forever. Sessions whose agent conversation can be resumed
+   * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
+   * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
+   *
+   * Call this after `app.setup()` — restarting reaches into the agent services, which need their
+   * own `setup()` to have run first.
+   */
+  async restartInterruptedSessions() {
+    const db = this.app.get('db');
+    const counts = { restarted: 0, stopped: 0, failed: 0 };
+    let interrupted;
+    try {
+      interrupted = await db('sessions')
+        .whereIn('status', ['running', 'approval'])
+        .whereNull('archived_at')
+        .select('id', 'user_id', 'agent_sdk', 'claude_session_id', 'cursor_agent_id');
+    } catch (err) {
+      logger.error(err, 'Failed to load interrupted sessions on startup');
+      return counts;
+    }
+
+    // Sequential: each restart spawns an agent process, so a burst of them on boot would
+    // compete for CPU and API rate limits.
+    for (const session of interrupted) {
+      try {
+        if (await this._restartInterruptedSession(session)) counts.restarted++;
+        else counts.stopped++;
+      } catch (err) {
+        // Recovery is best-effort per session — one bad session must not strand the others.
+        counts.failed++;
+        logger.error({ err, sessionId: session.id }, 'Failed to recover interrupted session');
+      }
+    }
+    if (interrupted.length > 0) {
+      logger.info(counts, 'Recovered interrupted session(s) on startup');
+    }
+    return counts;
+  }
+
+  /**
+   * Restart a single interrupted session. Returns true if it was resumed, false if it was
+   * only marked stopped (nothing to resume from).
+   */
+  async _restartInterruptedSession(session) {
+    const userParams = { user: { id: session.user_id } };
+    const resumable =
+      session.agent_sdk === 'cursor' ? !!session.cursor_agent_id : !!session.claude_session_id;
+
+    if (!resumable) {
+      // Nothing was ever persisted on the agent side, so there is no transcript to pick up —
+      // the user has to re-send.
+      await this._stopInterruptedSession(session.id, userParams, 'session was stopped');
+      return false;
+    }
+
+    await this._postStatusMessage(session.id, userParams, 'Server restarted — resuming session');
+    try {
+      // An internal create (no `provider`) skips the queue-while-running hook and goes straight
+      // to the agent service, which resumes the stored conversation before pushing this message.
+      await this.app.service('messages').create(
+        {
+          session_id: session.id,
+          type: 'user',
+          subtype: 'baguette',
+          // `source` makes the chat collapse this into a Baguette block rather than showing it
+          // as something the user typed, and keeps it from counting as a user reply.
+          message_json: JSON.stringify({
+            type: 'user',
+            source: 'baguette',
+            message: { role: 'user', content: RESTART_PROMPT },
+            title: 'Server restarted',
+          }),
+        },
+        userParams
+      );
+    } catch (err) {
+      // The dispatch above flips the session back to `running`; leaving it there would show a
+      // live session with no agent behind it, so fall back to the stopped path.
+      logger.error({ err, sessionId: session.id }, 'Failed to resume interrupted session');
+      await this._stopInterruptedSession(
+        session.id,
+        userParams,
+        `could not resume session (${err.message})`
+      );
+      return false;
+    }
+    return true;
+  }
+
+  async _stopInterruptedSession(sessionId, userParams, reason) {
+    // `can_continue` drives the chat's one-click Continue button — the manual fallback for
+    // everything auto-restart could not pick up itself.
+    await this._postStatusMessage(sessionId, userParams, `Server restarted — ${reason}`, {
+      can_continue: true,
+    });
+    await this.app.service('sessions').patch(sessionId, { status: 'stopped' }, userParams);
+  }
+
+  _postStatusMessage(sessionId, userParams, status, extra = {}) {
+    return this.app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'system',
+        subtype: 'status',
+        message_json: JSON.stringify({ type: 'system', subtype: 'status', status, ...extra }),
+      },
+      userParams
+    );
   }
 
   async getTaskEnv(sessionId, taskKey = null) {

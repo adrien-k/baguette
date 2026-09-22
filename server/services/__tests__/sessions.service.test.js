@@ -72,6 +72,7 @@ vi.mock('../session-prompt.js', () => ({
 
 const params = (user) => ({ provider: 'rest', user });
 
+const cursorOnMessageCreated = vi.fn().mockResolvedValue(undefined);
 const deleteSessionTasks = vi.fn();
 const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, access_token: 'test-token' });
 // Not Feathers methods (like the real service): called directly by sessions.service.
@@ -111,8 +112,8 @@ function makeApp(db) {
   );
   app.use(
     'cursor-agent',
-    { stopSession, deleteAgent, generateSessionMetadata },
-    { methods: ['stopSession', 'deleteAgent', 'generateSessionMetadata'] }
+    { stopSession, deleteAgent, generateSessionMetadata, onMessageCreated: cursorOnMessageCreated },
+    { methods: ['stopSession', 'deleteAgent', 'generateSessionMetadata', 'onMessageCreated'] }
   );
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
   registerSessionsService(app);
@@ -947,5 +948,167 @@ describe('Sessions service - find, get, create', (hooks) => {
 
       expect(createWorktree).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. restartInterruptedSessions — recovery of sessions cut short by a reboot
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Sessions service - restartInterruptedSessions', (hooks) => {
+  const db = createTestDb(hooks);
+
+  let app;
+  let userId;
+  let repoId;
+
+  const seedSession = (overrides = {}) =>
+    db('sessions')
+      .insert({
+        user_id: userId,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Interrupted task',
+        short_id: Math.random().toString(16).slice(2, 10),
+        status: 'running',
+        ...overrides,
+      })
+      .then(([id]) => id);
+
+  const messagesFor = (sessionId) =>
+    db('session_messages').where({ session_id: sessionId }).orderBy('id', 'asc');
+
+  const statusTextsFor = async (sessionId) =>
+    (await messagesFor(sessionId))
+      .filter((m) => m.type === 'system' && m.subtype === 'status')
+      .map((m) => JSON.parse(m.message_json).status);
+
+  // messages.create notifies the agent about every message it persists; the real agent services
+  // ignore anything that is not a user message, so assert on those only.
+  const userDispatches = (mock) => mock.mock.calls.filter(([message]) => message.type === 'user');
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    onMessageCreated.mockResolvedValue(undefined);
+    cursorOnMessageCreated.mockResolvedValue(undefined);
+    loadBaguetteConfig.mockResolvedValue(null);
+
+    await db('users').insert({ github_id: 2001, username: 'alice', approved: true });
+    userId = (await db('users').where({ username: 'alice' }).first()).id;
+    await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+    repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
+
+    app = makeApp(db);
+    await app.setup();
+  });
+
+  it('resumes a running Claude session that has a stored transcript', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
+    expect(await statusTextsFor(sessId)).toEqual(['Server restarted — resuming session']);
+
+    // The nudge reaches the agent as a collapsible Baguette message, not as a user message.
+    const dispatched = userDispatches(onMessageCreated);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0][0].session_id).toBe(sessId);
+    const parsed = JSON.parse(dispatched[0][0].message_json);
+    expect(parsed.source).toBe('baguette');
+    expect(parsed.message.content).toMatch(/interrupted your previous turn/);
+  });
+
+  it('routes a Cursor session to the cursor agent', async () => {
+    const sessId = await seedSession({ agent_sdk: 'cursor', cursor_agent_id: 'cur-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
+    const dispatched = userDispatches(cursorOnMessageCreated);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0][0].session_id).toBe(sessId);
+    expect(userDispatches(onMessageCreated)).toHaveLength(0);
+  });
+
+  it('stops a session with no transcript to resume from and offers a Continue button', async () => {
+    const sessId = await seedSession({ claude_session_id: null });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
+    expect(userDispatches(onMessageCreated)).toHaveLength(0);
+
+    const [status] = await messagesFor(sessId);
+    const parsed = JSON.parse(status.message_json);
+    expect(parsed.status).toBe('Server restarted — session was stopped');
+    expect(parsed.can_continue).toBe(true);
+  });
+
+  it('marks a Cursor session with no stored agent as stopped', async () => {
+    await seedSession({ agent_sdk: 'cursor', cursor_agent_id: null, claude_session_id: 'ignored' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(userDispatches(cursorOnMessageCreated)).toHaveLength(0);
+  });
+
+  it('falls back to stopped when the agent fails to resume', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc' });
+    onMessageCreated.mockImplementation(async (message) => {
+      if (message.type === 'user') throw new Error('worktree is gone');
+    });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
+    expect(await statusTextsFor(sessId)).toEqual([
+      'Server restarted — resuming session',
+      'Server restarted — could not resume session (worktree is gone)',
+    ]);
+  });
+
+  it('recovers sessions waiting on approval', async () => {
+    await seedSession({ status: 'approval', claude_session_id: 'claude-abc' });
+
+    expect(await app.service('sessions').restartInterruptedSessions()).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+    });
+  });
+
+  it('leaves settled and archived sessions alone', async () => {
+    await seedSession({ status: 'completed', claude_session_id: 'claude-done' });
+    await seedSession({ status: 'stopped', claude_session_id: 'claude-stopped' });
+    await seedSession({
+      status: 'running',
+      claude_session_id: 'claude-archived',
+      archived_at: new Date().toISOString(),
+    });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 0, stopped: 0, failed: 0 });
+    expect(onMessageCreated).not.toHaveBeenCalled();
+    expect(await db('session_messages')).toHaveLength(0);
+  });
+
+  it('keeps going when one session cannot be recovered at all', async () => {
+    const failing = await seedSession({ claude_session_id: 'claude-1' });
+    const healthy = await seedSession({ claude_session_id: 'claude-2' });
+    // Rejecting the status message too means even the stopped fallback cannot be written.
+    onMessageCreated.mockImplementation(async (message) => {
+      if (message.session_id === failing) throw new Error('boom');
+    });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 1 });
+    expect((await db('sessions').where({ id: healthy }).first()).status).toBe('running');
   });
 });

@@ -5,6 +5,27 @@ import ThinkingBlock from './chat/ThinkingBlock.jsx';
 import BaguetteBlock from './chat/BaguetteBlock.jsx';
 import ToolUseBlock from './chat/ToolUseBlock.jsx';
 
+/**
+ * A `user` message Baguette wrote on the session's behalf. `source` rides in the message payload;
+ * `subtype` is the DB column, and covers rows written before `source` was set.
+ */
+function isBaguetteMessage(message) {
+  return message.source === 'baguette' || message.subtype === 'baguette';
+}
+
+/**
+ * True for a message the user actually typed. Mirrors `isHumanUserMessage` on the server: the
+ * stream also carries `user` messages that are tool results (notably the synthetic deny that
+ * answers ExitPlanMode / AskUserQuestion), plus messages Baguette injects on the user's behalf.
+ * Neither is the user replying.
+ */
+function isHumanReply(message) {
+  if (message.type !== 'user' || isBaguetteMessage(message)) return false;
+  const content = message.message?.content;
+  if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');
+  return true;
+}
+
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
 
@@ -39,14 +60,11 @@ export default function ChatMessage({
   messageIndex,
   allMessages,
 }) {
-  // True once the user sends a real message after this assistant turn — used to
-  // hide action buttons on ExitPlanMode / AskUserQuestion blocks after the user
-  // has interacted (the deny tool_result is source='baguette' and must not count).
+  // True once the user sends a real message after this assistant turn — used to hide action
+  // buttons on ExitPlanMode / AskUserQuestion blocks once the user has interacted.
   const userReplied = useMemo(() => {
     if (!allMessages || messageIndex == null) return false;
-    return allMessages
-      .slice(messageIndex + 1)
-      .some((m) => m.type === 'user' && m.source !== 'baguette');
+    return allMessages.slice(messageIndex + 1).some(isHumanReply);
   }, [allMessages, messageIndex]);
 
   if (message.type === 'assistant' && message.message?.content) {
@@ -88,7 +106,7 @@ export default function ChatMessage({
     );
   }
 
-  if (message.type === 'user' && message.source === 'baguette') {
+  if (message.type === 'user' && isBaguetteMessage(message)) {
     return <BaguetteBlock message={message} />;
   }
 

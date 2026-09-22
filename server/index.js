@@ -123,7 +123,12 @@ app.hooks({
 });
 
 app.use(express.errorHandler());
-app.setup(server);
+// Sessions interrupted by the last shutdown are resumed once every service is set up — the
+// restart path dispatches through the agent services, which need their own setup() to have run.
+app.setup(server).then(
+  () => app.service('sessions').restartInterruptedSessions(),
+  (err) => logger.error({ err }, 'App setup failed')
+);
 
 // WebSocket proxy for session subdomains — no Socket.IO to forward to.
 server.on('upgrade', (req, socket, head) => devProxy.handleUpgrade(req, socket, head));

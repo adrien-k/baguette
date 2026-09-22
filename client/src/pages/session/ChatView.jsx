@@ -137,6 +137,14 @@ export default function ChatView({
     return result;
   }, [messages]);
 
+  // Manual fallback for a session that auto-restart could not resume on its own. `can_continue` is set
+  // by the server; the literal string covers sessions stopped before that flag existed.
+  const canContinueAfterRestart = useMemo(() => {
+    const last = messages.at(-1);
+    if (last?.type !== 'system' || last?.subtype !== 'status') return false;
+    return last.can_continue === true || last.status === 'Server restarted — session was stopped';
+  }, [messages]);
+
   const handleStop = async () => {
     if (!session?.id || stopping) return;
     setStopping(true);
@@ -370,21 +378,18 @@ export default function ChatView({
                   allMessages={displayMessages}
                 />
               ))}
-              {!readonly &&
-                messages.at(-1)?.type === 'system' &&
-                messages.at(-1)?.subtype === 'status' &&
-                messages.at(-1)?.status === 'Server restarted — session was stopped' && (
-                  <div className="flex gap-2 flex-wrap py-2">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickSend('continue')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      Continue
-                    </button>
-                  </div>
-                )}
+              {!readonly && canContinueAfterRestart && (
+                <div className="flex gap-2 flex-wrap py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickSend('continue')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Continue
+                  </button>
+                </div>
+              )}
               {session?.archived_at && (
                 <div className="flex gap-2 flex-wrap py-2">
                   <Tooltip content="Recreate the worktree on the same branch and resume this session.">

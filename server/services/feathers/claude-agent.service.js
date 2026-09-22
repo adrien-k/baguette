@@ -233,6 +233,9 @@ export class ClaudeAgentService {
     const app = this.app;
     const msg = {
       type: 'user',
+      // Baguette speaks on the session's behalf here; `source` is what tells the chat to render
+      // this as a collapsed Baguette block instead of a message the user typed.
+      source: 'baguette',
       message: { role: 'user', content },
       title,
     };
