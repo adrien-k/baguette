@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import logger from '../logger.js';
 import { DATA_DIR, resolveDataDirRelativePath } from '../config.js';
+import { gitAuthArgs, sanitizeGitError } from './github.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -58,10 +59,12 @@ export function parsePluginInput(input) {
  */
 export async function getRemoteSha(owner, repo, branch, token) {
   try {
-    const { stdout } = await withTokenFallback(token, (t) =>
-      execFileAsync('git', ['ls-remote', buildRepoUrl(owner, repo, t), `refs/heads/${branch}`], {
-        timeout: 15000,
-      })
+    const { stdout } = await withTokenFallback(token, (authArgs) =>
+      execFileAsync(
+        'git',
+        [...authArgs, 'ls-remote', repoUrl(owner, repo), `refs/heads/${branch}`],
+        { timeout: 15000 }
+      )
     );
     const sha = stdout.trim().split(/\s+/)[0];
     return sha || null;
@@ -70,8 +73,7 @@ export async function getRemoteSha(owner, repo, branch, token) {
   }
 }
 
-function buildRepoUrl(owner, repo, token) {
-  if (token) return `https://${token}@github.com/${owner}/${repo}.git`;
+function repoUrl(owner, repo) {
   return `https://github.com/${owner}/${repo}.git`;
 }
 
@@ -81,31 +83,27 @@ function buildRepoUrl(owner, repo, token) {
  * scoped to only the repos the user granted Baguette — will not cover them. Most marketplaces are
  * public and clone fine with no credentials at all.
  *
+ * Credentials are passed as `-c http.…extraheader` args rather than in the remote URL: git does
+ * not persist command-line `-c` overrides into the clone's `.git/config`, so a root-level plugin
+ * (whose `.git` directory gets copied into DATA_DIR alongside its files) cannot leak the token.
+ *
  * @param {string | undefined} token
- * @param {(token: string | undefined) => Promise<T>} run  Receives the token to use, or undefined
+ * @param {(authArgs: string[]) => Promise<T>} run  Receives git args to prepend, possibly empty
  * @returns {Promise<T>}
  */
 async function withTokenFallback(token, run) {
-  if (!token) return run(undefined);
+  if (!token) return run([]);
   try {
-    return await run(token);
+    return await run(gitAuthArgs(token));
   } catch (err) {
     try {
-      return await run(undefined);
+      return await run([]);
     } catch {
-      // The authenticated failure is usually the more informative one, but its message can embed
-      // the token (it is the userinfo part of the clone URL), so redact before rethrowing.
-      throw redactToken(err, token);
+      // The authenticated failure is usually the more informative one, but git can echo the
+      // extraheader back in its output, so scrub the token before rethrowing.
+      throw sanitizeGitError(token, err);
     }
   }
-}
-
-function redactToken(err, token) {
-  const sanitize = (s) => (typeof s === 'string' ? s.replaceAll(token, '[REDACTED]') : s);
-  err.message = sanitize(err.message);
-  if (err.stderr) err.stderr = sanitize(err.stderr.toString());
-  if (err.stdout) err.stdout = sanitize(err.stdout.toString());
-  return err;
 }
 
 /**
@@ -122,17 +120,18 @@ export async function downloadPlugin(owner, repo, branch, pluginPath, token) {
   try {
     // Sparse clone — only metadata, no blobs yet. Each attempt starts from a clean temp dir so a
     // partial clone from a failed authenticated attempt cannot poison the retry.
-    await withTokenFallback(token, async (t) => {
+    await withTokenFallback(token, async (authArgs) => {
       await fs.rm(tmpDir, { recursive: true, force: true });
       return execFileAsync(
         'git',
         [
+          ...authArgs,
           'clone',
           '--filter=blob:none',
           '--sparse',
           '--depth=1',
           `--branch=${branch}`,
-          buildRepoUrl(owner, repo, t),
+          repoUrl(owner, repo),
           tmpDir,
         ],
         { timeout: 60000 }

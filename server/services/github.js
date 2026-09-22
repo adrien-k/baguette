@@ -15,7 +15,7 @@ export function gitAuthArgs(token) {
   return ['-c', `http.https://github.com/.extraheader=Authorization: Basic ${encoded}`];
 }
 
-function sanitizeGitError(token, err) {
+export function sanitizeGitError(token, err) {
   const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
   const sanitize = (s) =>
     typeof s === 'string' ? s.replaceAll(encoded, '[REDACTED]').replaceAll(token, '[REDACTED]') : s;
