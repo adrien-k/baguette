@@ -10,8 +10,9 @@ import { gitAuthorEnvFromUser } from './git-identity.js';
 const SERVER_ONLY_ENV_KEYS = [
   'NODE_ENV',
   'ENCRYPTION_KEY',
-  'GITHUB_CLIENT_ID',
-  'GITHUB_CLIENT_SECRET',
+  'AUTH_GITHUB_CLIENT_ID',
+  'AUTH_GITHUB_CLIENT_SECRET',
+  'AUTH_GITHUB_APP_SLUG',
   'DATA_DIR',
   'PUBLIC_HOST',
   'PUBLIC_API_HOST',

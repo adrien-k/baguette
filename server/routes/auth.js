@@ -4,8 +4,8 @@ import logger from '../logger.js';
 import { signProxyToken, buildSessionHostname } from '../services/preview.js';
 import { cacheScopeForUser, clearReposCache, clearOrgsCache } from '../services/github.js';
 import {
-  GITHUB_CLIENT_ID,
-  GITHUB_CLIENT_SECRET,
+  AUTH_GITHUB_CLIENT_ID,
+  AUTH_GITHUB_CLIENT_SECRET,
   GITHUB_AUTH_MODE,
   GITHUB_APP_INSTALL_URL,
   PUBLIC_HOST,
@@ -73,12 +73,12 @@ export function createAuthRoutes(app) {
   };
 
   router.get('/auth/github', (req, res) => {
-    if (!GITHUB_CLIENT_ID) return res.status(503).send('GitHub OAuth not configured');
+    if (!AUTH_GITHUB_CLIENT_ID) return res.status(503).send('GitHub OAuth not configured');
 
     setRedirectCookie(req, res);
 
     const params = new URLSearchParams({
-      client_id: GITHUB_CLIENT_ID,
+      client_id: AUTH_GITHUB_CLIENT_ID,
       redirect_uri: new URL('/auth/github/callback', PUBLIC_HOST).toString(),
       // GitHub Apps ignore `scope` — their access comes from the App's registered permissions
       // and from the repos the user picked when installing it.
@@ -111,7 +111,7 @@ export function createAuthRoutes(app) {
   };
 
   router.get('/auth/github/callback', async (req, res) => {
-    if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET)
+    if (!AUTH_GITHUB_CLIENT_ID || !AUTH_GITHUB_CLIENT_SECRET)
       return res.status(503).send('GitHub OAuth not configured');
     const { code, setup_action: setupAction, installation_id: installationId } = req.query;
 
@@ -132,8 +132,8 @@ export function createAuthRoutes(app) {
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          client_id: GITHUB_CLIENT_ID,
-          client_secret: GITHUB_CLIENT_SECRET,
+          client_id: AUTH_GITHUB_CLIENT_ID,
+          client_secret: AUTH_GITHUB_CLIENT_SECRET,
           code,
         }),
       });

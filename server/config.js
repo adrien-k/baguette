@@ -16,7 +16,7 @@ if (process.env.NODE_ENV !== 'production') {
     }
   }
   if (process.env.NODE_ENV !== 'test') {
-    for (const key of ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
+    for (const key of ['AUTH_GITHUB_CLIENT_ID', 'AUTH_GITHUB_CLIENT_SECRET']) {
       if (!process.env[key]) {
         logger.warn(
           `Missing ${key} — GitHub OAuth disabled. Set it in .env to enable GitHub sign-in.`
@@ -25,7 +25,7 @@ if (process.env.NODE_ENV !== 'production') {
     }
   }
 } else {
-  for (const key of ['ENCRYPTION_KEY', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
+  for (const key of ['ENCRYPTION_KEY', 'AUTH_GITHUB_CLIENT_ID', 'AUTH_GITHUB_CLIENT_SECRET']) {
     if (!process.env[key]) {
       throw new Error(
         `Missing required environment variable: ${key}\nSet it in your .env file or environment.`
@@ -51,21 +51,21 @@ export const PUBLIC_API_URL = /^https?:\/\//.test(PUBLIC_API_HOST)
   ? PUBLIC_API_HOST
   : `https://${PUBLIC_API_HOST}`;
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
-export const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-export const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+export const AUTH_GITHUB_CLIENT_ID = process.env.AUTH_GITHUB_CLIENT_ID;
+export const AUTH_GITHUB_CLIENT_SECRET = process.env.AUTH_GITHUB_CLIENT_SECRET;
 
 /**
  * Slug of the GitHub App (the `<slug>` in github.com/apps/<slug>). When set, Baguette runs in
  * "app" mode: sign-in uses the App's user-to-server flow and the repo picker only lists repos the
  * user selected when installing the App — so access can be scoped to a single repository.
  * When unset, Baguette falls back to the legacy OAuth App flow, which grants access to every repo
- * the user can reach. GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET hold the App's credentials in app
+ * the user can reach. AUTH_GITHUB_CLIENT_ID / AUTH_GITHUB_CLIENT_SECRET hold the App's credentials in app
  * mode and the OAuth App's credentials otherwise.
  */
-export const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG || null;
-export const GITHUB_AUTH_MODE = GITHUB_APP_SLUG ? 'app' : 'oauth';
-export const GITHUB_APP_INSTALL_URL = GITHUB_APP_SLUG
-  ? `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`
+export const AUTH_GITHUB_APP_SLUG = process.env.AUTH_GITHUB_APP_SLUG || null;
+export const GITHUB_AUTH_MODE = AUTH_GITHUB_APP_SLUG ? 'app' : 'oauth';
+export const GITHUB_APP_INSTALL_URL = AUTH_GITHUB_APP_SLUG
+  ? `https://github.com/apps/${AUTH_GITHUB_APP_SLUG}/installations/new`
   : null;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

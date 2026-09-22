@@ -60,8 +60,9 @@ env:
   clear:
     PUBLIC_HOST: https://www.<%= ENV.fetch('DOMAIN') %>
   secret:
-    - GITHUB_CLIENT_ID
-    - GITHUB_CLIENT_SECRET
+    - AUTH_GITHUB_CLIENT_ID
+    - AUTH_GITHUB_CLIENT_SECRET
+    - AUTH_GITHUB_APP_SLUG
     - ENCRYPTION_KEY
 
 aliases:

@@ -14,8 +14,8 @@ const COOKIE_SECRET = 'test-cookie-secret';
 
 const configMock = vi.hoisted(() => ({ slug: null }));
 vi.mock('../../config.js', () => ({
-  GITHUB_CLIENT_ID: 'client-id',
-  GITHUB_CLIENT_SECRET: 'client-secret',
+  AUTH_GITHUB_CLIENT_ID: 'client-id',
+  AUTH_GITHUB_CLIENT_SECRET: 'client-secret',
   PUBLIC_HOST: 'http://localhost:5173',
   PUBLIC_API_URL: 'http://localhost:3000',
   get GITHUB_AUTH_MODE() {
