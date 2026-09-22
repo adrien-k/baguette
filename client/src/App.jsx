@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { Settings as SettingsIcon, Shield, LogOut } from 'lucide-react';
-import { apiFetch } from './api.js';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Session from './pages/Session.jsx';
@@ -22,14 +21,7 @@ function Nav() {
   const { selectedRepo, repos } = useRepoContext();
   const location = useLocation();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [usage, setUsage] = useState(null);
   const userMenuRef = useRef(null);
-
-  useEffect(() => {
-    apiFetch('/api/usage')
-      .then(setUsage)
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     setUserMenuOpen(false);
@@ -81,12 +73,6 @@ function Nav() {
               <div className="absolute right-0 top-full mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg py-1 z-50">
                 <div className="px-4 pt-2 pb-2 border-b border-zinc-700 mb-1">
                   <div className="text-zinc-500 text-sm">{user.username}</div>
-                  {usage && (
-                    <div className="mt-0.5 text-[11px] text-zinc-600 leading-relaxed">
-                      <div>30D: ${usage.used_usd.toFixed(2)}</div>
-                      <div>24H: ${usage.used_usd_24h.toFixed(2)}</div>
-                    </div>
-                  )}
                 </div>
                 <div>
                   <Link to="/settings" className={menuItemClass}>

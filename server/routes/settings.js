@@ -14,7 +14,15 @@ import db from '../db.js';
 const execFileAsync = promisify(execFile);
 
 const COST_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
-const COST_24H_MS = 24 * 60 * 60 * 1000;
+
+// Usage rows for the signed-in user over the reported window, optionally narrowed
+// to a single repository (`?repo=owner/name`).
+function usageQuery(userId, repo) {
+  const since = new Date(Date.now() - COST_HISTORY_MS).toISOString();
+  const q = db('usage').where({ user_id: userId }).where('created_at', '>=', since);
+  if (repo) q.where({ repo_full_name: repo });
+  return q;
+}
 
 export default function createSettingsRoutes(requireAuth) {
   const router = Router();
@@ -55,77 +63,22 @@ export default function createSettingsRoutes(requireAuth) {
 
   // --- Usage ---
 
-  router.get('/api/usage', requireAuth, async (req, res) => {
+  // One row per (day, repo, sdk) over the last 30 days, so the dashboard can break the
+  // cost graph down along either dimension without a second round trip.
+  router.get('/api/usage/breakdown', requireAuth, async (req, res) => {
     try {
-      const since30d = new Date(Date.now() - COST_HISTORY_MS).toISOString();
-      const since24h = new Date(Date.now() - COST_24H_MS).toISOString();
-
-      const [row30d, row24h] = await Promise.all([
-        db('usage')
-          .where({ user_id: req.user.id })
-          .where('created_at', '>=', since30d)
-          .sum('cost_usd as total')
-          .first(),
-        db('usage')
-          .where({ user_id: req.user.id })
-          .where('created_at', '>=', since24h)
-          .sum('cost_usd as total')
-          .first(),
-      ]);
-
-      res.json({
-        used_usd: parseFloat(row30d?.total ?? 0),
-        used_usd_24h: parseFloat(row24h?.total ?? 0),
-      });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.get('/api/usage/by-day', requireAuth, async (req, res) => {
-    try {
-      const since = new Date(Date.now() - COST_HISTORY_MS).toISOString();
-      const rows = await db('usage')
-        .where({ user_id: req.user.id })
-        .where('created_at', '>=', since)
-        .select(db.raw('date(created_at) as day'), 'agent_sdk')
+      const rows = await usageQuery(req.user.id, req.query.repo || null)
+        .select(db.raw('date(created_at) as day'), 'repo_full_name', 'agent_sdk')
         .sum('cost_usd as cost_usd')
-        .groupBy('day', 'agent_sdk')
+        .groupBy('day', 'repo_full_name', 'agent_sdk')
         .orderBy('day', 'asc');
-
-      // Pivot to { day, claude, cursor } per day
-      const dayMap = {};
-      for (const r of rows) {
-        if (!dayMap[r.day]) dayMap[r.day] = { day: r.day, claude: 0, cursor: 0 };
-        const sdk = r.agent_sdk || 'claude';
-        if (sdk === 'cursor') {
-          dayMap[r.day].cursor = parseFloat(r.cost_usd);
-        } else {
-          dayMap[r.day].claude = parseFloat(r.cost_usd);
-        }
-      }
-
-      res.json(Object.values(dayMap).sort((a, b) => a.day.localeCompare(b.day)));
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.get('/api/usage/by-repo', requireAuth, async (req, res) => {
-    try {
-      const since = new Date(Date.now() - COST_HISTORY_MS).toISOString();
-      const rows = await db('usage')
-        .where({ user_id: req.user.id })
-        .where('created_at', '>=', since)
-        .groupBy('repo_full_name')
-        .select('repo_full_name')
-        .sum('cost_usd as total_cost_usd')
-        .orderBy('total_cost_usd', 'desc');
 
       res.json(
         rows.map((r) => ({
+          day: r.day,
           repo_full_name: r.repo_full_name,
-          total_cost_usd: parseFloat(r.total_cost_usd),
+          agent_sdk: r.agent_sdk || 'claude',
+          cost_usd: parseFloat(r.cost_usd),
         }))
       );
     } catch (err) {

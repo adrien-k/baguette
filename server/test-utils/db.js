@@ -42,5 +42,10 @@ export function createTestDb({ beforeEach, afterEach }) {
     await dbRef.destroy();
   });
 
-  return (table) => dbRef(table);
+  const db = (table) => dbRef(table);
+  // Knex exposes helpers on the instance itself (db.raw, db.fn); mirror the ones
+  // production code uses so a mocked `db` behaves like the real one.
+  db.raw = (...args) => dbRef.raw(...args);
+  db.fn = { now: (...args) => dbRef.fn.now(...args) };
+  return db;
 }

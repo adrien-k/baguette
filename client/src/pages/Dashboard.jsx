@@ -11,157 +11,160 @@ import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import NoReposCard from '../components/NoReposCard.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
+import { buildSeries, recentDays, sumBy } from '../utils/usageSeries.js';
 import GithubIcon from '../components/GithubIcon.jsx';
 
-const REPO_COLORS = [
-  'bg-amber-500',
-  'bg-sky-500',
-  'bg-emerald-500',
-  'bg-violet-500',
-  'bg-rose-500',
-  'bg-orange-500',
-  'bg-teal-500',
-  'bg-indigo-500',
-];
+function DimensionToggle({ value, onChange }) {
+  const option = (key, label) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => onChange(key)}
+      aria-pressed={value === key}
+      className={`px-1.5 py-0.5 rounded transition-colors ${
+        value === key ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex items-center gap-0.5 text-xs bg-zinc-800/80 rounded p-0.5">
+      {option('repo', 'By repo')}
+      {option('sdk', 'By agent')}
+    </div>
+  );
+}
 
 function UsageGraph({ repoFilter }) {
-  const [byDay, setByDay] = useState(null);
-  const [byRepo, setByRepo] = useState(null);
+  const [rows, setRows] = useState(null);
+  const [dimension, setDimension] = useState('repo');
   const [hoveredDay, setHoveredDay] = useState(null);
 
   useEffect(() => {
-    apiFetch('/api/usage/by-day')
-      .then(setByDay)
+    const query = repoFilter ? `?repo=${encodeURIComponent(repoFilter)}` : '';
+    let cancelled = false;
+    setHoveredDay(null);
+    apiFetch(`/api/usage/breakdown${query}`)
+      .then((d) => !cancelled && setRows(d))
       .catch(() => {});
-    apiFetch('/api/usage/by-repo')
-      .then(setByRepo)
-      .catch(() => {});
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [repoFilter]);
 
-  const filteredByRepo = byRepo
-    ? repoFilter
-      ? byRepo.filter((r) => r.repo_full_name === repoFilter)
-      : byRepo
-    : null;
+  const data = rows ?? [];
+  const total = data.reduce((sum, r) => sum + r.cost_usd, 0);
 
-  const total = filteredByRepo ? filteredByRepo.reduce((sum, r) => sum + r.total_cost_usd, 0) : 0;
-  if ((!byDay || byDay.length === 0) && (!filteredByRepo || filteredByRepo.length === 0))
-    return null;
-  if (total === 0 && (!byDay || byDay.length === 0)) return null;
+  // A dimension with a single value can't be broken down — drop the toggle and show the
+  // other one (picking one repo, for instance, leaves only the agent split worth seeing).
+  const canSplitByRepo = sumBy(data, (r) => r.repo_full_name).size > 1;
+  const canSplitBySdk = sumBy(data, (r) => r.agent_sdk).size > 1;
+  const showToggle = canSplitByRepo && canSplitBySdk;
+  const activeDimension = showToggle ? dimension : canSplitBySdk ? 'sdk' : 'repo';
 
-  const maxDay =
-    byDay && byDay.length > 0
-      ? Math.max(...byDay.map((d) => (d.claude ?? 0) + (d.cursor ?? 0)))
-      : 0;
+  const { series, byDay } = buildSeries(data, activeDimension);
+  const days = recentDays();
+  const dayTotal = (day) => [...(byDay.get(day)?.values() ?? [])].reduce((a, b) => a + b, 0);
+  const maxDay = Math.max(0, ...days.map(dayTotal));
 
-  const days = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-    days.push(d.toISOString().slice(0, 10));
-  }
-  const dayMap = Object.fromEntries((byDay ?? []).map((r) => [r.day, r]));
+  // maxDay can be 0 while total isn't if every row falls just outside the 30 rendered
+  // days (the server window ends mid-day) — there would be nothing to draw.
+  if (total === 0 || maxDay === 0) return null;
 
-  const hasCursor = byDay?.some((d) => (d.cursor ?? 0) > 0);
+  const hoveredSeries = hoveredDay
+    ? series
+        .map((s) => ({ ...s, cost: byDay.get(hoveredDay)?.get(s.key) ?? 0 }))
+        .filter((s) => s.cost > 0)
+    : [];
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 mb-4 sm:mb-6 space-y-4">
-      {maxDay > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-zinc-400">
-                Cost per day <span className="text-zinc-600 font-normal">(last 30d)</span>
-              </span>
-              {hasCursor && (
-                <div className="flex items-center gap-2.5">
-                  <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-sm bg-amber-500/70 inline-block" />
-                    <span className="text-xs text-zinc-500">Claude</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-sm bg-sky-500/70 inline-block" />
-                    <span className="text-xs text-zinc-500">Cursor</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <span className="text-xs text-zinc-500">${total.toFixed(2)} total</span>
-          </div>
-          <div className="flex items-stretch gap-px h-10" onMouseLeave={() => setHoveredDay(null)}>
-            {days.map((day) => {
-              const entry = dayMap[day];
-              const claude = entry?.claude ?? 0;
-              const cursor = entry?.cursor ?? 0;
-              const total = claude + cursor;
-              const claudePct = maxDay > 0 ? (claude / maxDay) * 100 : 0;
-              const cursorPct = maxDay > 0 ? (cursor / maxDay) * 100 : 0;
-              return (
-                <div
-                  key={day}
-                  className="flex-1 h-full flex flex-col-reverse gap-px cursor-default"
-                  onMouseEnter={() => setHoveredDay({ day, claude, cursor, total })}
-                >
-                  {claude > 0 && (
-                    <div
-                      className="bg-amber-500/70 rounded-sm transition-all hover:bg-amber-400"
-                      style={{ height: `${Math.max(claudePct, 4)}%` }}
-                    />
-                  )}
-                  {cursor > 0 && (
-                    <div
-                      className="bg-sky-500/70 rounded-sm transition-all hover:bg-sky-400"
-                      style={{ height: `${Math.max(cursorPct, 4)}%` }}
-                    />
-                  )}
-                  {total === 0 && (
-                    <div className="bg-zinc-700/30 rounded-sm" style={{ height: '1px' }} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="h-4 mt-1">
-            {hoveredDay && hoveredDay.total > 0 && (
-              <span className="text-xs text-zinc-400">
-                {hoveredDay.day}
-                {hasCursor && hoveredDay.claude > 0 && hoveredDay.cursor > 0 ? (
-                  <>
-                    <span className="text-amber-500/80 ml-1.5">
-                      ${hoveredDay.claude.toFixed(4)}
-                    </span>
-                    <span className="text-zinc-600 mx-1">+</span>
-                    <span className="text-sky-500/80">${hoveredDay.cursor.toFixed(4)}</span>
-                    <span className="text-zinc-500 ml-1">= ${hoveredDay.total.toFixed(4)}</span>
-                  </>
-                ) : (
-                  <span className="text-zinc-500 ml-1.5">${hoveredDay.total.toFixed(4)}</span>
-                )}
-              </span>
-            )}
-          </div>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 mb-4 sm:mb-6 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-zinc-400">
+          Cost per day <span className="text-zinc-600 font-normal">(last 30d)</span>
+        </span>
+        <div className="flex items-center gap-3">
+          {showToggle && <DimensionToggle value={dimension} onChange={setDimension} />}
+          <span className="text-xs text-zinc-500">${total.toFixed(2)} total</span>
         </div>
-      )}
+      </div>
 
-      {filteredByRepo && filteredByRepo.length > 0 && total > 0 && (
-        <div>
-          <div className="flex h-2 rounded-full overflow-hidden gap-px mb-2.5">
-            {filteredByRepo.map((r, i) => (
+      <div>
+        <div className="flex items-stretch gap-px h-16" onMouseLeave={() => setHoveredDay(null)}>
+          {days.map((day) => {
+            const costs = byDay.get(day);
+            const spent = dayTotal(day);
+            return (
               <div
-                key={r.repo_full_name}
-                className={`${REPO_COLORS[i % REPO_COLORS.length]} transition-all`}
-                style={{ width: `${(r.total_cost_usd / total) * 100}%` }}
-                title={`${r.repo_full_name}: $${r.total_cost_usd.toFixed(3)}`}
+                key={day}
+                className={`flex-1 h-full flex flex-col-reverse gap-[2px] cursor-default ${
+                  hoveredDay && hoveredDay !== day ? 'opacity-50' : ''
+                }`}
+                onMouseEnter={() => setHoveredDay(day)}
+              >
+                {series.map((s) => {
+                  const cost = costs?.get(s.key) ?? 0;
+                  if (cost <= 0) return null;
+                  return (
+                    <div
+                      key={s.key}
+                      className={`${s.color} rounded-sm`}
+                      style={{ height: `${Math.max((cost / maxDay) * 100, 3)}%` }}
+                    />
+                  );
+                })}
+                {spent === 0 && (
+                  <div className="bg-zinc-700/30 rounded-sm" style={{ height: '1px' }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="h-4 mt-1 flex items-center gap-2 overflow-hidden">
+          {hoveredDay && hoveredSeries.length > 0 && (
+            <>
+              <span className="text-xs text-zinc-400 shrink-0">{hoveredDay}</span>
+              <span className="text-xs text-zinc-300 shrink-0">
+                ${dayTotal(hoveredDay).toFixed(4)}
+              </span>
+              {hoveredSeries.slice(0, 3).map((s) => (
+                <span key={s.key} className="flex items-center gap-1 min-w-0 shrink">
+                  <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} />
+                  <span className="text-xs text-zinc-500 truncate">{s.label}</span>
+                  <span className="text-xs text-zinc-600 shrink-0">${s.cost.toFixed(4)}</span>
+                </span>
+              ))}
+              {hoveredSeries.length > 3 && (
+                <span className="text-xs text-zinc-600 shrink-0">
+                  +{hoveredSeries.length - 3} more
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {series.length > 1 && (
+        <div>
+          <div className="flex h-2 rounded-full overflow-hidden gap-[2px] mb-2.5">
+            {series.map((s) => (
+              <div
+                key={s.key}
+                className={s.color}
+                style={{ width: `${(s.total / total) * 100}%` }}
+                title={`${s.title}: $${s.total.toFixed(3)}`}
               />
             ))}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {filteredByRepo.map((r, i) => (
-              <div key={r.repo_full_name} className="flex items-center gap-1.5 min-w-0">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${REPO_COLORS[i % REPO_COLORS.length]}`}
-                />
-                <span className="text-xs text-zinc-400 truncate max-w-48">{r.repo_full_name}</span>
-                <span className="text-xs text-zinc-600">${r.total_cost_usd.toFixed(2)}</span>
+            {series.map((s) => (
+              <div key={s.key} className="flex items-center gap-1.5 min-w-0">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${s.color}`} />
+                <span className="text-xs text-zinc-400 truncate max-w-48" title={s.title}>
+                  {s.label}
+                </span>
+                <span className="text-xs text-zinc-600">${s.total.toFixed(2)}</span>
               </div>
             ))}
           </div>
