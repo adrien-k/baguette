@@ -12,7 +12,6 @@ import RepoSearchInput from '../components/RepoSearchInput.jsx';
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
 function RepositoriesTab() {
-  const { user } = useAuth();
   const { repos, refetch: refetchRepos } = useRepoContext();
 
   // GitHub repo state
@@ -147,34 +146,6 @@ function RepositoriesTab() {
 
   return (
     <div className="space-y-8">
-      {/* GitHub connection */}
-      <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-zinc-300">GitHub Connection</h2>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 space-y-4 max-w-xl">
-          <div className="flex items-center gap-3">
-            {user?.avatar_url && (
-              <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
-            )}
-            <div>
-              <p className="text-sm font-medium text-white">{user?.username}</p>
-              <p className="text-xs text-zinc-500">Connected via the Baguette GitHub App</p>
-            </div>
-          </div>
-
-          <p className="text-xs text-zinc-500 leading-relaxed">
-            Baguette can only reach the repositories you granted the App at install time. Git
-            operations use the App token issued when you signed in.{' '}
-            <a
-              href={`/auth/github/install?redirectTo=${encodeURIComponent('/settings?tab=repos')}`}
-              className="text-amber-500 hover:text-amber-400"
-            >
-              Manage repository access ↗
-            </a>
-          </p>
-        </div>
-      </div>
-
       {/* Repositories */}
       <div>
         <h2 className="text-sm font-semibold text-zinc-300 mb-4">Repositories</h2>
