@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronDown,
   Terminal,
+  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { messagesService, sessionsService, queuedMessagesService } from '../../feathers.js';
@@ -20,6 +21,7 @@ import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { isMobile } from '../../utils/isMobile.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
+import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import Tooltip from '../../components/Tooltip.jsx';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
@@ -89,9 +91,12 @@ export default function ChatView({
   const [mergeError, setMergeError] = useState(null);
   const [restoring, setRestoring] = useState(false);
   const [queue, setQueue] = useState([]);
+  const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   const isRunning = session?.status === 'running';
   const isReviewerSession = session?.agent_type === 'reviewer';
+  const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -119,6 +124,21 @@ export default function ChatView({
       queuedMessagesService.off('removed', onRemoved);
     };
   }, [session?.id]);
+
+  useEffect(() => {
+    if (!scheduleMenuOpen) return;
+    const handleClick = (e) => {
+      if (sendLaterMenuRef.current && !sendLaterMenuRef.current.contains(e.target)) {
+        setScheduleMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [scheduleMenuOpen]);
+
+  useEffect(() => {
+    if (!canSendDraft) setScheduleMenuOpen(false);
+  }, [canSendDraft]);
 
   const displayMessages = useMemo(() => {
     const result = [];
@@ -192,6 +212,7 @@ export default function ChatView({
     }
   };
 
+  const sendLaterMenuRef = useRef(null);
   const chatInputRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const topSentinelRef = useRef(null);
@@ -282,6 +303,76 @@ export default function ChatView({
       message_json: messageJson,
       ...(force ? { force: true } : {}),
     });
+  };
+
+  const buildMessageJsonFromDraft = async (text, filesToSend) => {
+    const content = await buildContent(text, filesToSend);
+    return JSON.stringify({ type: 'user', message: { role: 'user', content } });
+  };
+
+  const scheduleMessageAt = async (sendAtIso) => {
+    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    const text = input.trim();
+    setError(null);
+    setFileError(null);
+    const filesToSend = files;
+    setFiles([]);
+    if (chatInputRef.current) chatInputRef.current.style.height = 'auto';
+
+    setSending(true);
+    let messageJson;
+    try {
+      messageJson = await buildMessageJsonFromDraft(text, filesToSend);
+    } catch (err) {
+      setFileError(err?.message ?? 'Failed to read attached files');
+      setInput(text);
+      setFiles(filesToSend);
+      setSending(false);
+      return;
+    }
+
+    try {
+      await queuedMessagesService.schedule({
+        session_id: session.id,
+        message_json: messageJson,
+        send_at: sendAtIso,
+      });
+      setInput('');
+      persistentState.clear();
+      setScheduleMenuOpen(false);
+      setShowScheduleModal(false);
+      toast.success('Message scheduled');
+    } catch (err) {
+      setInput(text);
+      setFiles(filesToSend);
+      toastError('Failed to schedule message', err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSchedulePreset = (hours) => {
+    setScheduleMenuOpen(false);
+    scheduleMessageAt(new Date(Date.now() + hours * 3_600_000).toISOString());
+  };
+
+  const openScheduleModal = () => {
+    setScheduleMenuOpen(false);
+    setShowScheduleModal(true);
+  };
+
+  const closeScheduleModal = () => {
+    if (sending) return;
+    setShowScheduleModal(false);
+  };
+
+  const handleScheduleConfirm = (sendAtIso) => {
+    const when = new Date(sendAtIso);
+    if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      toast.error('Pick a time in the future');
+      return;
+    }
+    scheduleMessageAt(sendAtIso);
   };
 
   const handleSend = async (e) => {
@@ -543,18 +634,74 @@ export default function ChatView({
                     ■
                   </button>
                 )}
-                <button
-                  type="submit"
-                  disabled={(!input.trim() && !files.length) || sending}
-                  className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-4 sm:px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  {sending ? '...' : isRunning ? 'Queue' : 'Send'}
-                </button>
+                <div className="relative flex shrink-0" ref={sendLaterMenuRef}>
+                  <button
+                    type="submit"
+                    disabled={!canSendDraft}
+                    className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-2.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+                  >
+                    {sending ? '...' : isRunning ? 'Queue' : 'Send'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSendDraft}
+                    onClick={() => setScheduleMenuOpen((v) => !v)}
+                    title="Send later"
+                    aria-expanded={scheduleMenuOpen}
+                    aria-haspopup="menu"
+                    className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-2.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
+                  </button>
+                  {scheduleMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 bottom-full mb-1.5 w-52 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50"
+                    >
+                      <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2 text-xs font-medium text-zinc-400">
+                        <Clock className="w-3.5 h-3.5 text-amber-400/90" />
+                        Send later
+                      </div>
+                      <div className="py-1">
+                        {[
+                          { label: 'In 1 hour', hours: 1 },
+                          { label: 'In 2 hours', hours: 2 },
+                          { label: 'In 4 hours', hours: 4 },
+                        ].map(({ label, hours }) => (
+                          <button
+                            key={hours}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => handleSchedulePreset(hours)}
+                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={openScheduleModal}
+                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
+                        >
+                          Schedule a time…
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </form>
         )}
       </div>
+      {showScheduleModal && (
+        <ScheduleMessageModal
+          onConfirm={handleScheduleConfirm}
+          onCancel={closeScheduleModal}
+          scheduling={sending}
+        />
+      )}
       {showMergeModal && (
         <MergeConfirmModal
           prNumber={session?.pr_number}

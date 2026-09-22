@@ -76,6 +76,8 @@ export const reposService = createService('repos', {
 });
 export const userReposService = createService('user-repos');
 export const secretsService = createService('secrets');
-export const queuedMessagesService = createService('queued-messages');
+export const queuedMessagesService = createService('queued-messages', {
+  customMethods: ['schedule'],
+});
 export const usersService = createService('users', { customMethods: ['approve', 'reject'] });
 export const pluginsService = createService('admin/plugins', { customMethods: ['refresh'] });

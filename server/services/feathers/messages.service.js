@@ -32,12 +32,14 @@ async function queueIfRunning(context) {
   const db = context.app.get('db');
   const session = await db('sessions').where({ id: context.data.session_id }).first();
   if (!session || session.status !== 'running') return context;
-  await context.app
-    .service('queued-messages')
-    .create(
-      { session_id: context.data.session_id, message_json: context.data.message_json },
-      { user: context.params.user }
-    );
+  await context.app.service('queued-messages').create(
+    {
+      session_id: context.data.session_id,
+      message_json: context.data.message_json,
+      kind: 'turn',
+    },
+    { user: context.params.user }
+  );
   context.result = { queued: true };
   return context;
 }

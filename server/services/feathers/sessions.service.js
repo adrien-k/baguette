@@ -693,7 +693,7 @@ export class SessionsService extends KnexService {
   async onTurnComplete(sessionId) {
     const db = this.app.get('db');
     const queued = await db('queued_messages')
-      .where({ session_id: sessionId })
+      .where({ session_id: sessionId, kind: 'turn' })
       .orderBy('created_at', 'asc')
       .first();
     if (!queued) return;

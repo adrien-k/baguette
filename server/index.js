@@ -13,6 +13,7 @@ import createImagesRoutes from './routes/images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
+import { startScheduledQueuedMessageSender } from './services/scheduled-queued-messages.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
@@ -126,7 +127,10 @@ app.use(express.errorHandler());
 // Sessions interrupted by the last shutdown are resumed once every service is set up — the
 // restart path dispatches through the agent services, which need their own setup() to have run.
 app.setup(server).then(
-  () => app.service('sessions').restartInterruptedSessions(),
+  () => {
+    startScheduledQueuedMessageSender(app);
+    return app.service('sessions').restartInterruptedSessions();
+  },
   (err) => logger.error({ err }, 'App setup failed')
 );
 

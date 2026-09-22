@@ -49,12 +49,28 @@ function rebuildMessageJson(messageJson, newText) {
   }
 }
 
+function formatSendAt(sendAt) {
+  if (!sendAt) return null;
+  try {
+    return new Date(sendAt).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+}
+
 function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
   const text = extractText(item.message_json);
   const hasFiles = hasFileAttachments(item.message_json);
+  const isScheduled = item.kind === 'scheduled';
+  const sendAtLabel = isScheduled ? formatSendAt(item.send_at) : null;
 
   const startEdit = () => {
     setEditText(text);
@@ -73,7 +89,7 @@ function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
     <div className="flex flex-col gap-1.5 bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-xs text-amber-400/80 font-medium">
         <Clock className="w-3 h-3" />
-        Queued
+        {isScheduled ? (sendAtLabel ? `Sends ${sendAtLabel}` : 'Scheduled') : 'Queued'}
         {hasFiles && <span className="text-zinc-500">· with attachment</span>}
       </div>
 

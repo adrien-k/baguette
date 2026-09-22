@@ -47,5 +47,6 @@ export function createTestDb({ beforeEach, afterEach }) {
   // production code uses so a mocked `db` behaves like the real one.
   db.raw = (...args) => dbRef.raw(...args);
   db.fn = { now: (...args) => dbRef.fn.now(...args) };
+  db.transaction = (...args) => dbRef.transaction(...args);
   return db;
 }
