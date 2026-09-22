@@ -27,6 +27,7 @@ npm run dev
 
 - No framework, no unnecessary abstraction. Keep it simple.
 - Run the linter before submitting: `npm run lint`
+- A Husky pre-commit hook runs Prettier on staged files (installed automatically by `npm install`). Skip it with `git commit --no-verify` if needed.
 
 ## License
 

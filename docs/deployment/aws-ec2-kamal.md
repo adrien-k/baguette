@@ -102,13 +102,13 @@ That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DO
 
 ### Secrets (**Secrets** tab)
 
-| Secret                      | How to obtain                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| `SSH_PRIVATE_KEY`           | Deploy key on the instance — fetch via SSM (below), not SSH                     |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub OAuth App ([kamal.md §4](kamal.md#4-github-oauth-app))                  |
-| `AUTH_GITHUB_CLIENT_SECRET` | OAuth App client secret                                                         |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty if using classic OAuth App)              |
-| `ENCRYPTION_KEY`            | `openssl rand -hex 32`                                                          |
+| Secret                      | How to obtain                                                      |
+| --------------------------- | ------------------------------------------------------------------ |
+| `SSH_PRIVATE_KEY`           | Deploy key on the instance — fetch via SSM (below), not SSH        |
+| `AUTH_GITHUB_CLIENT_ID`     | GitHub OAuth App ([kamal.md §4](kamal.md#4-github-oauth-app))      |
+| `AUTH_GITHUB_CLIENT_SECRET` | OAuth App client secret                                            |
+| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty if using classic OAuth App) |
+| `ENCRYPTION_KEY`            | `openssl rand -hex 32`                                             |
 
 #### Fetch `SSH_PRIVATE_KEY` with SSM
 

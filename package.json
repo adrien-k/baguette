@@ -18,7 +18,11 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "fix": "\"$npm_execpath\" run lint:fix && \"$npm_execpath\" run format"
+    "fix": "\"$npm_execpath\" run lint:fix && \"$npm_execpath\" run format",
+    "prepare": "husky || true"
+  },
+  "lint-staged": {
+    "*": "prettier --write --ignore-unknown"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.247",
@@ -50,6 +54,8 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.9.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
     "prettier": "^3.9.6",
     "vitest": "^4.1.10",
     "zod": "^4.4.3"

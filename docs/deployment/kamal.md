@@ -139,12 +139,12 @@ The included workflow (`.github/workflows/deploy.yml`) deploys automatically on 
 
    **Secrets** (encrypted, "Secrets" tab):
 
-   | Secret                      | Value                                                                    |
-   | --------------------------- | ---------------------------------------------------------------------- |
-   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server                |
-   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub OAuth App client ID                                         |
-   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret                                     |
-   | `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty if using classic OAuth App)      |
-   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)               |
+   | Secret                      | Value                                                              |
+   | --------------------------- | ------------------------------------------------------------------ |
+   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server           |
+   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub OAuth App client ID                                    |
+   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret                                |
+   | `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (optional; leave empty if using classic OAuth App) |
+   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)          |
 
 3. Push to `main` — the workflow will build and deploy automatically.
