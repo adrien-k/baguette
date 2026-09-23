@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, GitBranch, Bell, KeyRound, Puzzle, Box, Users } from 'lucide-react';
+import { Bot, GitBranch, Bell, KeyRound, Puzzle, Box, Users, Blocks } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -15,6 +15,7 @@ import {
   PluginsTab,
   DockerTab,
   UsersTab,
+  SlackTab,
 } from './settings/GlobalSettingsSections.jsx';
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
@@ -538,6 +539,7 @@ function AgentTab({ settings, onSave }) {
 const TABS = [
   { id: 'repos', label: 'Repositories', icon: GitBranch },
   { id: 'agent', label: 'Agent', icon: Bot },
+  { id: 'integrations', label: 'Integrations', icon: Blocks },
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
@@ -551,7 +553,8 @@ export default function Settings() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') || DEFAULT_TAB;
-  const activeTab = TABS.some((t) => t.id === rawTab) ? rawTab : DEFAULT_TAB;
+  const requestedTab = rawTab === 'slack' ? 'integrations' : rawTab;
+  const activeTab = TABS.some((t) => t.id === requestedTab) ? requestedTab : DEFAULT_TAB;
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
 
@@ -609,6 +612,7 @@ export default function Settings() {
           {activeTab === 'repos' && <RepositoriesTab />}
           {activeTab === 'notifications' && <NotificationsSection />}
           {activeTab === 'secrets' && <SecretsTab />}
+          {activeTab === 'integrations' && <SlackTab />}
           {activeTab === 'plugins' && <PluginsTab />}
           {activeTab === 'docker' && <DockerTab />}
           {activeTab === 'users' && <UsersTab />}

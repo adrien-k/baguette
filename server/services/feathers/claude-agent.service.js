@@ -23,7 +23,7 @@ function commandsToAllowedTools(commands) {
 
 async function baseBuildQueryOptions(app, sessionRow, systemPrompt) {
   const claudeEnv = await app.service('sessions').getClaudeEnv(sessionRow.id);
-  const mcpServer = buildBaguetteMcpServer(sessionRow, app);
+  const mcpServer = await buildBaguetteMcpServer(sessionRow, app);
 
   const cwd =
     resolveDataDirRelativePath(sessionRow.worktree_path) || sessionRow.absolute_worktree_path || '';

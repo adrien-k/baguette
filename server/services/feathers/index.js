@@ -9,6 +9,7 @@ import { registerUserReposService } from './user-repos.service.js';
 import { registerClaudeAgentService } from './claude-agent.service.js';
 import { registerCursorAgentService } from './cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
+import { registerSlackService } from './slack.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerLoopsService } from './loops.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
@@ -29,6 +30,7 @@ export function registerFeathersServices(app, sseManager) {
   registerReposService(app);
   registerUserReposService(app);
   registerPluginsService(app);
+  registerSlackService(app);
   registerLoopsService(app);
 
   // Route service CRUD events to the right SSE connections

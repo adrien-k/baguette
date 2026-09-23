@@ -149,13 +149,13 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
   return { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
 
-function buildServer(sessionOverrides = {}, appOpts = {}) {
+async function buildServer(sessionOverrides = {}, appOpts = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
   const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
     sessionRow,
     appOpts
   );
-  buildBaguetteMcpServer(sessionRow, app);
+  await buildBaguetteMcpServer(sessionRow, app);
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
@@ -178,7 +178,7 @@ beforeEach(() => {
 
 describe('PrRead', () => {
   it('returns pr_url: null and a message when no PR exists', async () => {
-    const { tools } = buildServer({ pr_url: null, pr_number: null, remote_branch: 'feat' });
+    const { tools } = await buildServer({ pr_url: null, pr_number: null, remote_branch: 'feat' });
     const result = parseResult(await callTool(tools, 'PrRead'));
     expect(result.ok).toBe(true);
     expect(result.pr_url).toBeNull();
@@ -188,7 +188,7 @@ describe('PrRead', () => {
   });
 
   it('returns pr_url and no message when PR exists', async () => {
-    const { tools } = buildServer({
+    const { tools } = await buildServer({
       pr_url: 'https://github.com/owner/repo/pull/42',
       pr_number: 42,
     });
@@ -199,13 +199,13 @@ describe('PrRead', () => {
   });
 
   it('returns branch from remote_branch', async () => {
-    const { tools } = buildServer({ remote_branch: 'feat/my-branch' });
+    const { tools } = await buildServer({ remote_branch: 'feat/my-branch' });
     const result = parseResult(await callTool(tools, 'PrRead'));
     expect(result.branch).toBe('feat/my-branch');
   });
 
   it('falls back to created_branch when remote_branch is null', async () => {
-    const { tools } = buildServer({ remote_branch: null, created_branch: 'created-branch' });
+    const { tools } = await buildServer({ remote_branch: null, created_branch: 'created-branch' });
     const result = parseResult(await callTool(tools, 'PrRead'));
     expect(result.branch).toBe('created-branch');
   });
@@ -213,7 +213,7 @@ describe('PrRead', () => {
   it('returns title and description fetched from GitHub when PR exists', async () => {
     const body = `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nGitHub PR body`;
     getOpenPRByNumber.mockResolvedValueOnce({ title: 'GitHub PR title', body });
-    const { tools } = buildServer({
+    const { tools } = await buildServer({
       pr_url: 'https://github.com/owner/repo/pull/42',
       pr_number: 42,
     });
@@ -226,7 +226,7 @@ describe('PrRead', () => {
   it('strips marker and returns only baguette content when user prefix is present', async () => {
     const body = `My notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nBaguette summary`;
     getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body });
-    const { tools } = buildServer({
+    const { tools } = await buildServer({
       pr_url: 'https://github.com/owner/repo/pull/1',
       pr_number: 1,
     });
@@ -235,7 +235,7 @@ describe('PrRead', () => {
   });
 
   it('returns null title and description when no PR exists', async () => {
-    const { tools } = buildServer({ pr_url: null, pr_number: null });
+    const { tools } = await buildServer({ pr_url: null, pr_number: null });
     const result = parseResult(await callTool(tools, 'PrRead'));
     expect(result.title).toBeNull();
     expect(result.description).toBeNull();
@@ -244,7 +244,7 @@ describe('PrRead', () => {
 
 describe('GitPull', () => {
   it('returns ok without calling gitPull when remote_branch is null', async () => {
-    const { tools } = buildServer({ remote_branch: null });
+    const { tools } = await buildServer({ remote_branch: null });
     const result = parseResult(await callTool(tools, 'GitPull'));
     expect(result.ok).toBe(true);
     expect(gitPull).not.toHaveBeenCalled();
@@ -252,7 +252,7 @@ describe('GitPull', () => {
 
   it('calls gitPull with worktreePath, remoteBranch, token and returns result', async () => {
     gitPull.mockResolvedValue({ message: 'Already up to date.' });
-    const { tools } = buildServer({ remote_branch: 'feature-branch' });
+    const { tools } = await buildServer({ remote_branch: 'feature-branch' });
     const result = parseResult(await callTool(tools, 'GitPull'));
     expect(result.ok).toBe(true);
     expect(gitPull).toHaveBeenCalledWith('/tmp/wt', 'feature-branch', 'ghtoken');
@@ -262,7 +262,7 @@ describe('GitPull', () => {
 describe('GitFetch', () => {
   it('calls gitFetch and returns result', async () => {
     gitFetch.mockResolvedValue({ ok: true });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'GitFetch', { branch: 'main' }));
     expect(result.ok).toBe(true);
     expect(gitFetch).toHaveBeenCalledWith('/tmp/wt', 'ghtoken', 'main');
@@ -275,7 +275,7 @@ describe('GitPush', () => {
       rejected: true,
     });
     gitPush.mockRejectedValue(err);
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/conflict/i);
@@ -283,7 +283,7 @@ describe('GitPush', () => {
 
   it('patches session with branch name on success', async () => {
     gitPush.mockResolvedValue({ ok: true, branch: 'feature-branch' });
-    const { tools, mockPatch } = buildServer();
+    const { tools, mockPatch } = await buildServer();
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(true);
     expect(result.branch).toBe('feature-branch');
@@ -298,7 +298,7 @@ describe('GitPush', () => {
   });
 
   it('skips push and returns ok message when auto_push is disabled', async () => {
-    const { tools, mockPatch } = buildServer({ auto_push: 0 });
+    const { tools, mockPatch } = await buildServer({ auto_push: 0 });
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(true);
     expect(typeof result.message).toBe('string');
@@ -309,7 +309,7 @@ describe('GitPush', () => {
 
 describe('UpdateSession', () => {
   it('patches session label only', async () => {
-    const { tools, mockPatch } = buildServer();
+    const { tools, mockPatch } = await buildServer();
     const result = parseResult(await callTool(tools, 'UpdateSession', { label: 'New label' }));
     expect(result.ok).toBe(true);
     expect(mockPatch).toHaveBeenCalledWith(1, { label: 'New label' }, INTERNAL_PATCH_PARAMS);
@@ -322,7 +322,7 @@ describe('PrUpsert', () => {
       cb(null, { stdout: 'feature-branch\n', stderr: '' })
     );
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/1', number: 1 });
-    const { tools, mockPatch } = buildServer({ pr_number: null });
+    const { tools, mockPatch } = await buildServer({ pr_number: null });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'My PR', description: 'Details' })
     );
@@ -354,7 +354,7 @@ describe('PrUpsert', () => {
   it('updates existing PR without HEAD lookup; patches label and description', async () => {
     getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body: '' });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools, mockPatch } = buildServer({ pr_number: 5 });
+    const { tools, mockPatch } = await buildServer({ pr_number: 5 });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'Updated body' })
     );
@@ -378,7 +378,7 @@ describe('PrUpsert', () => {
     const existingBody = `My reviewer notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld baguette content`;
     getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body: existingBody });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = buildServer({ pr_number: 5 });
+    const { tools } = await buildServer({ pr_number: 5 });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'New baguette content' })
     );
@@ -397,7 +397,7 @@ describe('PrUpsert', () => {
       body: `Notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld\n\n<!-- baguette-footer -->\n\nHarness: claude · Model: \`old\``,
     });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = buildServer({
+    const { tools } = await buildServer({
       pr_number: 5,
       agent_sdk: 'cursor',
       model: 'new-model',
@@ -430,7 +430,7 @@ describe('PrUpsert', () => {
       base_ref: 'main',
       draft: false,
     });
-    const { tools, mockPatch } = buildServer({ pr_number: null });
+    const { tools, mockPatch } = await buildServer({ pr_number: null });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'New title', description: 'Body' })
     );
@@ -455,7 +455,7 @@ describe('PrUpsert', () => {
   });
 
   it('persists label and description but skips GitHub when auto_push is disabled', async () => {
-    const { tools, mockPatch } = buildServer({ pr_number: null, auto_push: 0 });
+    const { tools, mockPatch } = await buildServer({ pr_number: null, auto_push: 0 });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'My PR', description: 'Details' })
     );
@@ -473,7 +473,7 @@ describe('PrUpsert', () => {
 describe('ListProjectCommands', () => {
   it('returns ok: true with empty commands and a message when config is missing', async () => {
     loadBaguetteConfig.mockResolvedValue(null);
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'ListProjectCommands'));
     expect(result.ok).toBe(true);
     expect(result.commands).toEqual([]);
@@ -482,7 +482,7 @@ describe('ListProjectCommands', () => {
 
   it('returns ok: false when config has a parse error', async () => {
     loadBaguetteConfig.mockResolvedValue({ error: 'Failed to parse YAML' });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'ListProjectCommands'));
     expect(result.ok).toBe(false);
   });
@@ -499,7 +499,7 @@ describe('ListProjectCommands', () => {
         ],
       },
     });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'ListProjectCommands'));
     expect(result.ok).toBe(true);
     expect(result.commands).toEqual([
@@ -510,7 +510,7 @@ describe('ListProjectCommands', () => {
 
   it('returns empty commands array when config has no commands', async () => {
     loadBaguetteConfig.mockResolvedValue({ session: {} });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'ListProjectCommands'));
     expect(result.ok).toBe(true);
     expect(result.commands).toEqual([]);
@@ -520,7 +520,7 @@ describe('ListProjectCommands', () => {
 describe('RunProjectCommand', () => {
   it('returns ok: false when config is missing', async () => {
     loadBaguetteConfig.mockResolvedValue(null);
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(false);
   });
@@ -529,7 +529,7 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Build', run: 'npm run build' }] },
     });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Unknown' }));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/Unknown/);
@@ -537,7 +537,7 @@ describe('RunProjectCommand', () => {
 
   it('returns ok: false when config has a parse error', async () => {
     loadBaguetteConfig.mockResolvedValue({ error: 'bad YAML' });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(false);
   });
@@ -546,7 +546,7 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools, mockCreate } = buildServer(
+    const { tools, mockCreate } = await buildServer(
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
@@ -566,7 +566,10 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
     await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.not.objectContaining({ onLog: expect.anything(), onExit: expect.anything() }),
@@ -578,7 +581,7 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools, mockCreate } = buildServer(
+    const { tools, mockCreate } = await buildServer(
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
@@ -599,7 +602,7 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools } = buildServer(
+    const { tools } = await buildServer(
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 1, stderr: 'Test failed\n' }) }
     );
@@ -616,7 +619,7 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools } = buildServer(
+    const { tools } = await buildServer(
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: huge }) }
     );
@@ -636,7 +639,10 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'vitest run' }] },
     });
-    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
     await callTool(tools, 'RunProjectCommand', { label: 'Run tests', args: ['src/foo.test.js'] });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests', args: ['src/foo.test.js'] }),
@@ -648,7 +654,10 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'vitest run' }] },
     });
-    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
     await callTool(tools, 'RunProjectCommand', {
       label: 'Run tests',
       args: ['--reporter', 'verbose', 'src/foo.test.js'],
@@ -666,7 +675,10 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
     await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests', args: [] }),
@@ -682,7 +694,10 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
     await callTool(tools, 'RunProjectCommand', {
       label: 'Run tests',
       env: { MY_VAR: 'hello', ANOTHER: 'world' },
@@ -697,7 +712,10 @@ describe('RunProjectCommand', () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
-    const { tools, mockCreate } = buildServer({}, { tasksCreate: makeTaskCreate({ exitCode: 0 }) });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
     await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.not.objectContaining({ extra_env: expect.anything() }),
@@ -708,14 +726,14 @@ describe('RunProjectCommand', () => {
 
 describe('PrComments', () => {
   it('returns ok: false when no PR', async () => {
-    const { tools } = buildServer({ pr_number: null });
+    const { tools } = await buildServer({ pr_number: null });
     const result = parseResult(await callTool(tools, 'PrComments'));
     expect(result.ok).toBe(false);
   });
 
   it('calls getPRComments and returns result', async () => {
     getPRComments.mockResolvedValue({ issueComments: [], reviewComments: [] });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     const result = parseResult(await callTool(tools, 'PrComments'));
     expect(result.ok).toBe(true);
     expect(getPRComments).toHaveBeenCalledWith('ghtoken', 'owner/repo', 42);
@@ -724,14 +742,14 @@ describe('PrComments', () => {
 
 describe('PrComment', () => {
   it('returns ok: false when no PR', async () => {
-    const { tools } = buildServer({ pr_number: null });
+    const { tools } = await buildServer({ pr_number: null });
     const result = parseResult(await callTool(tools, 'PrComment', { body: 'hello' }));
     expect(result.ok).toBe(false);
   });
 
   it('posts general comment via createPRComment when no path/line', async () => {
     createPRComment.mockResolvedValue({ id: 1 });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     const result = parseResult(await callTool(tools, 'PrComment', { body: 'Looks good!' }));
     expect(result.ok).toBe(true);
     expect(createPRComment).toHaveBeenCalledWith(
@@ -748,7 +766,7 @@ describe('PrComment', () => {
       cb(null, { stdout: 'abc1234\n', stderr: '' })
     );
     createPRLineComment.mockResolvedValue({ id: 2 });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     const result = parseResult(
       await callTool(tools, 'PrComment', { body: 'Issue here', path: 'src/foo.js', line: 10 })
     );
@@ -767,7 +785,7 @@ describe('PrComment', () => {
       cb(null, { stdout: 'abc1234\n', stderr: '' })
     );
     createPRLineComment.mockResolvedValue({ id: 3 });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     await callTool(tools, 'PrComment', {
       body: 'Deleted line',
       path: 'src/foo.js',
@@ -785,7 +803,7 @@ describe('PrComment', () => {
 
 describe('PrReview', () => {
   it('returns ok: false when no PR', async () => {
-    const { tools } = buildServer({ pr_number: null });
+    const { tools } = await buildServer({ pr_number: null });
     const result = parseResult(
       await callTool(tools, 'PrReview', { event: 'approve', body: 'LGTM' })
     );
@@ -794,7 +812,7 @@ describe('PrReview', () => {
 
   it('maps approve → APPROVE and calls createPRReview', async () => {
     createPRReview.mockResolvedValue({ id: 1 });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     const result = parseResult(
       await callTool(tools, 'PrReview', { event: 'approve', body: 'LGTM' })
     );
@@ -812,7 +830,7 @@ describe('PrReview', () => {
 
   it('maps request-changes → REQUEST_CHANGES', async () => {
     createPRReview.mockResolvedValue({ id: 2 });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     await callTool(tools, 'PrReview', { event: 'request-changes', body: 'Fix this' });
     expect(createPRReview).toHaveBeenCalledWith(
       'ghtoken',
@@ -830,7 +848,7 @@ describe('PrReview', () => {
       cb(null, { stdout: 'abc1234\n', stderr: '' })
     );
     createPRReview.mockResolvedValue({ id: 3 });
-    const { tools } = buildServer({ pr_number: 42 });
+    const { tools } = await buildServer({ pr_number: 42 });
     const comments = [{ body: 'Fix this', path: 'src/foo.js', line: 10 }];
     const result = parseResult(
       await callTool(tools, 'PrReview', { event: 'comment', body: 'Has issues', comments })
@@ -850,7 +868,7 @@ describe('PrReview', () => {
 
 describe('PrWorkflows', () => {
   it('returns empty runs and message when no branch', async () => {
-    const { tools } = buildServer({ remote_branch: null, created_branch: null });
+    const { tools } = await buildServer({ remote_branch: null, created_branch: null });
     const result = parseResult(await callTool(tools, 'PrWorkflows'));
     expect(result.ok).toBe(true);
     expect(result.runs).toEqual([]);
@@ -859,7 +877,7 @@ describe('PrWorkflows', () => {
 
   it('calls getPRWorkflows with remote_branch', async () => {
     getPRWorkflows.mockResolvedValue([{ id: 1, status: 'completed' }]);
-    const { tools } = buildServer({ remote_branch: 'feat/branch' });
+    const { tools } = await buildServer({ remote_branch: 'feat/branch' });
     const result = parseResult(await callTool(tools, 'PrWorkflows'));
     expect(result.ok).toBe(true);
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch');
@@ -868,7 +886,7 @@ describe('PrWorkflows', () => {
 
   it('falls back to created_branch when remote_branch is null', async () => {
     getPRWorkflows.mockResolvedValue([]);
-    const { tools } = buildServer({ remote_branch: null, created_branch: 'created-branch' });
+    const { tools } = await buildServer({ remote_branch: null, created_branch: 'created-branch' });
     await callTool(tools, 'PrWorkflows');
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch');
   });
@@ -877,7 +895,7 @@ describe('PrWorkflows', () => {
 describe('PrWorkflowLogs', () => {
   it('calls getPRWorkflowLogs with runId and byte range', async () => {
     getPRWorkflowLogs.mockResolvedValue({ logs: 'build failed\n', totalBytes: 5000 });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(
       await callTool(tools, 'PrWorkflowLogs', { runId: '12345', startByte: 0, endByte: 8000 })
     );
@@ -890,7 +908,7 @@ describe('PrWorkflowLogs', () => {
 
   it('passes undefined byte range when not specified', async () => {
     getPRWorkflowLogs.mockResolvedValue({ logs: '', totalBytes: 0 });
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     await callTool(tools, 'PrWorkflowLogs', { runId: '99' });
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '99', {
       startByte: undefined,
@@ -901,7 +919,7 @@ describe('PrWorkflowLogs', () => {
 
 describe('ShowDiff', () => {
   it('returns ok: true with path and no diff content', async () => {
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'ShowDiff', { path: 'src/foo.js' }));
     expect(result.ok).toBe(true);
     expect(result.path).toBe('src/foo.js');
@@ -911,7 +929,7 @@ describe('ShowDiff', () => {
 
 describe('ConfigRepoPrompt', () => {
   it('calls loadPrompt and returns combined prompt text', async () => {
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'ConfigRepoPrompt'));
     expect(result.ok).toBe(true);
     expect(typeof result.prompt).toBe('string');
@@ -921,7 +939,7 @@ describe('ConfigRepoPrompt', () => {
 
 describe('TaskStatus', () => {
   it('returns ok: false when task not found', async () => {
-    const { tools } = buildServer();
+    const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 999 }));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/999/);
@@ -936,7 +954,7 @@ describe('TaskStatus', () => {
       exit_code: null,
       ports: {},
     };
-    const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
     const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 5 }));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/does not belong/);
@@ -951,7 +969,7 @@ describe('TaskStatus', () => {
       exit_code: 0,
       ports: {},
     };
-    const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
     const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 7 }));
     expect(result.ok).toBe(true);
     expect(result.taskId).toBe(7);
@@ -971,7 +989,7 @@ describe('TaskStatus', () => {
       exit_code: null,
       ports: { PORT: 3001, API_PORT: 3002 },
     };
-    const { tools } = buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
     const result = parseResult(await callTool(tools, 'TaskStatus', { taskId: 8 }));
     expect(result.ok).toBe(true);
     expect(result.status).toBe('running');

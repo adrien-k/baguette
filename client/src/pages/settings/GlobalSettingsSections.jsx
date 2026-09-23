@@ -2,7 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { toastError } from '../../utils/toastError.jsx';
 import { apiFetch } from '../../api.js';
-import { secretsService, usersService, reposService, pluginsService } from '../../feathers.js';
+import {
+  secretsService,
+  usersService,
+  reposService,
+  pluginsService,
+  slackService,
+} from '../../feathers.js';
+import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 
 function SecretRow({ secret, onDelete }) {
   return (
@@ -661,6 +668,253 @@ export function PluginsTab() {
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+// ─── SlackTab ─────────────────────────────────────────────────────────────────
+
+const SLACK_SCOPES = 'chat:write, channels:read, groups:read';
+
+const inputClass =
+  'w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50';
+
+function Field({ label, hint, children }) {
+  return (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-zinc-300 mb-1">{label}</label>
+      {hint && <p className="text-xs text-zinc-500 mb-2">{hint}</p>}
+      {children}
+    </div>
+  );
+}
+
+function SlackAppCard({ app, onChanged }) {
+  const [name, setName] = useState(app.name);
+  const [tokenPatch, setTokenPatch] = useState(undefined);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [identity, setIdentity] = useState(null);
+
+  useEffect(() => {
+    setName(app.name);
+    setTokenPatch(undefined);
+    setIdentity(null);
+  }, [app.id, app.name, app.bot_token]);
+
+  const dirty = name.trim() !== app.name || tokenPatch !== undefined;
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const payload = { name: name.trim() };
+      if (tokenPatch !== undefined) payload.bot_token = tokenPatch;
+      await slackService.patch(app.id, payload);
+      toast.success(`Saved ${name.trim()}`);
+      onChanged();
+    } catch (err) {
+      toastError('Failed to save Slack app', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      const result = await slackService.test(app.id);
+      setIdentity(result);
+      toast.success(`Connected to ${result.team} as @${result.user}`);
+    } catch (err) {
+      setIdentity(null);
+      toastError('Slack connection test failed', err);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    try {
+      await slackService.remove(app.id);
+      toast.success(`Removed ${app.name}`);
+      onChanged();
+    } catch (err) {
+      toastError('Failed to remove Slack app', err);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={handleSave}
+      className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-4"
+    >
+      <Field label="Name" hint="How agents refer to this app in SlackPostMessage.">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className={inputClass}
+        />
+      </Field>
+
+      <Field label="Bot user OAuth token">
+        <MaskedSecretInput
+          maskedValue={app.bot_token}
+          placeholder="xoxb-…"
+          onChange={(value, dirtyToken) => setTokenPatch(dirtyToken ? value : undefined)}
+        />
+      </Field>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          type="submit"
+          disabled={saving || !dirty || !name.trim()}
+          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testing}
+          className="text-sm text-zinc-300 hover:text-white disabled:text-zinc-600 px-3 py-2"
+        >
+          {testing ? 'Testing…' : 'Test connection'}
+        </button>
+        <button
+          type="button"
+          onClick={handleRemove}
+          className="text-sm text-red-500 hover:text-red-400 px-3 py-2"
+        >
+          Remove
+        </button>
+        {identity && (
+          <span className="text-sm text-emerald-400">
+            Connected to {identity.team} as @{identity.user}
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+export function SlackTab() {
+  const [apps, setApps] = useState(null);
+  const [newName, setNewName] = useState('');
+  const [newToken, setNewToken] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    slackService
+      .find()
+      .then((d) => setApps(Array.isArray(d) ? d : d.data))
+      .catch((err) => toastError('Failed to load Slack apps', err));
+  }, []);
+
+  useEffect(load, [load]);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!newName.trim() || !newToken.trim()) return;
+    setSaving(true);
+    try {
+      await slackService.create({ name: newName.trim(), bot_token: newToken.trim() });
+      setNewName('');
+      setNewToken('');
+      toast.success('Slack app added');
+      load();
+    } catch (err) {
+      toastError('Failed to add Slack app', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!apps) return <p className="text-zinc-600 text-sm text-center py-8">Loading…</p>;
+
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-zinc-300 mb-3">Slack</h2>
+      <p className="text-zinc-400 text-sm mb-4">
+        Connect one or more Slack bots so agents can post updates to a channel. The{' '}
+        <code className="text-zinc-300">SlackPostMessage</code> tool only appears in sessions once
+        at least one app is saved. Bot token scopes:{' '}
+        <code className="text-zinc-400">{SLACK_SCOPES}</code>.
+      </p>
+
+      {apps.length === 0 && (
+        <p className="text-zinc-600 text-sm text-center py-8 bg-zinc-900 border border-zinc-800 rounded-xl mb-6">
+          No Slack apps configured
+        </p>
+      )}
+      {apps.map((app) => (
+        <SlackAppCard key={app.id} app={app} onChanged={load} />
+      ))}
+
+      <form
+        onSubmit={handleAdd}
+        className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-6"
+      >
+        <h2 className="text-sm font-medium text-zinc-300 mb-4">Add Slack app</h2>
+
+        <Field label="Name">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="acme"
+            className={inputClass}
+          />
+        </Field>
+
+        <Field
+          label="Bot user OAuth token"
+          hint={
+            <>
+              From your Slack app under{' '}
+              <span className="text-zinc-400">OAuth &amp; Permissions</span> (starts with{' '}
+              <code className="text-zinc-400">xoxb-</code>).
+            </>
+          }
+        >
+          <input
+            type="password"
+            value={newToken}
+            onChange={(e) => setNewToken(e.target.value)}
+            placeholder="xoxb-…"
+            autoComplete="off"
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
+
+        <button
+          type="submit"
+          disabled={saving || !newName.trim() || !newToken.trim()}
+          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          {saving ? 'Adding…' : 'Add'}
+        </button>
+      </form>
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
+        <h2 className="text-sm font-medium text-zinc-300 mb-2">Tools exposed to agents</h2>
+        <p className="text-sm text-zinc-500">
+          <code className="text-zinc-400">SlackPostMessage</code> — post a message to a channel.
+          Requires a channel id or <code className="text-zinc-400">#name</code>
+          {apps.length > 1 ? (
+            <>
+              {' '}
+              and an <code className="text-zinc-400">app</code> name (
+              {apps.map((a) => a.name).join(', ')}).
+            </>
+          ) : (
+            '.'
+          )}{' '}
+          Every message carries a footer linking back to the session that posted it.
+        </p>
+      </div>
     </div>
   );
 }

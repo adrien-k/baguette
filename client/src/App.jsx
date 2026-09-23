@@ -95,7 +95,8 @@ function Nav() {
 
 function AdminRedirect() {
   const [searchParams] = useSearchParams();
-  const tab = searchParams.get('tab') || 'secrets';
+  const rawTab = searchParams.get('tab') || 'secrets';
+  const tab = rawTab === 'slack' ? 'integrations' : rawTab;
   return <Navigate to={`/settings?tab=${tab}`} replace />;
 }
 

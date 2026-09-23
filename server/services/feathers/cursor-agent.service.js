@@ -164,14 +164,13 @@ ${systemPrompt}`;
 
     const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
     const pluginDirs = await this._getPluginDirs(session);
-
     const agentOptions = {
       apiKey,
       local: {
         cwd,
         settingSources: ['project'],
         dirs: [baguetteRulesDir, ...pluginDirs],
-        customTools: buildCursorCustomTools(session, this.app),
+        customTools: await buildCursorCustomTools(session, this.app),
         stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
       },
     };

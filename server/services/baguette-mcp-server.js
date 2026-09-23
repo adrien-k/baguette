@@ -30,11 +30,17 @@ import {
 import { loadBaguetteConfig, getAvailableCommands, getAvailableTasks } from './baguette-config.js';
 import { getSessionPreviewUrl } from './preview-services.js';
 import { isPortListening } from './port-utils.js';
+import {
+  getPermalink as slackGetPermalink,
+  postMessage as slackPostMessage,
+  resolveChannelId as slackResolveChannelId,
+} from './slack.js';
 import loadPrompt from '../prompts/loadPrompt.js';
 import {
   DOCKER_COMPOSE_PATH,
   IMAGES_DIR,
   PUBLIC_API_HOST,
+  PUBLIC_HOST,
   resolveDataDirRelativePath,
 } from '../config.js';
 
@@ -59,11 +65,30 @@ function streamToLines(text) {
   return lines;
 }
 
+/** Slack apps with a usable bot token, via the admin CRUD service (internal = decrypted). */
+async function loadConfiguredSlackApps(app) {
+  const service = app.service?.('admin/slack');
+  if (!service?.find) return [];
+  try {
+    const result = await service.find({ paginate: false });
+    const rows = Array.isArray(result) ? result : (result?.data ?? []);
+    return rows.filter((row) => row.bot_token);
+  } catch {
+    return [];
+  }
+}
+
+function formatSlackAppList(apps) {
+  return apps.map((a) => `"${a.name}"`).join(', ');
+}
+
 /**
  * Creates tool definitions shared between Claude SDK MCP server and Cursor customTools.
  * Returns an array of { name, description, schema (Zod shape), handler }.
+ *
+ * Slack tools are included only when at least one Slack app has a bot token.
  */
-function buildBaguetteToolList(session, app) {
+function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
   const db = app.get('db');
 
   const getSession = async () => {
@@ -80,8 +105,8 @@ function buildBaguetteToolList(session, app) {
     return getGithubToken(user);
   };
 
-  const withSessionHeader = (body, session) => {
-    const sessionId = session?.short_id || session?.id;
+  /** "Claude claude-opus-5" — the agent identity shown wherever baguette posts on a user's behalf. */
+  const describeAgent = (session) => {
     const agentName = session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude';
     const modelId = (() => {
       const m = session?.model;
@@ -94,8 +119,12 @@ function buildBaguetteToolList(session, app) {
       }
       return m;
     })();
-    const agentInfo = modelId ? `${agentName} ${modelId}` : agentName;
-    return `*Posted by baguette - ${agentInfo}, session ${sessionId}:*\n\n${body}`;
+    return modelId ? `${agentName} ${modelId}` : agentName;
+  };
+
+  const withSessionHeader = (body, session) => {
+    const sessionId = session?.short_id || session?.id;
+    return `*Posted by baguette - ${describeAgent(session)}, session ${sessionId}:*\n\n${body}`;
   };
 
   const getRepo = async () => {
@@ -124,6 +153,81 @@ function buildBaguetteToolList(session, app) {
 
   const absoluteWorktreePath = resolveDataDirRelativePath(session.worktree_path) || '';
   const { base_branch: baseBranch } = session;
+
+  // ── Slack helpers ──────────────────────────────────────────────────────────
+
+  const sessionUrl = (s) => `${PUBLIC_HOST}/sessions/${s.id}`;
+
+  const slackAppNames = slackApps.map((a) => a.name);
+  const slackAppHint =
+    slackAppNames.length > 1
+      ? `One of: ${formatSlackAppList(slackApps)}.`
+      : slackAppNames.length === 1
+        ? `Defaults to "${slackAppNames[0]}".`
+        : 'Configured in Settings → Integrations.';
+
+  /** Picks a Slack app by name, or the only configured one. Reloads in case apps changed mid-session. */
+  const resolveSlackApp = async (appName) => {
+    const apps = await loadConfiguredSlackApps(app);
+    if (!apps.length) {
+      throw new Error('Slack is not configured. Add a Slack app in Settings → Integrations.');
+    }
+    if (appName) {
+      const found = apps.find((a) => a.name === appName);
+      if (!found) {
+        throw new Error(`Unknown Slack app "${appName}". Available: ${formatSlackAppList(apps)}.`);
+      }
+      return found;
+    }
+    if (apps.length === 1) return apps[0];
+    throw new Error(
+      `Multiple Slack apps configured (${formatSlackAppList(apps)}). Pass \`app\` to choose one.`
+    );
+  };
+
+  /** Slack messages carry their origin so a human can jump from the thread to the session. */
+  const withSlackFooter = (text, s) =>
+    `${text}\n\n_via <${sessionUrl(s)}|baguette> · ${describeAgent(s)} · session ${s.short_id || s.id}_`;
+
+  /** Slack failures are expected (bad channel, missing scope) — report them, don't crash the turn. */
+  const slackHandler = (handler) => async (args) => {
+    try {
+      return await handler(args);
+    } catch (err) {
+      return fail(err.message);
+    }
+  };
+
+  const slackTools = [
+    {
+      name: 'SlackPostMessage',
+      description:
+        'Post a message to a Slack channel — for example to report a finished task or a failing ' +
+        'build to the team. Returns the message `ts` and a permalink. Text uses Slack mrkdwn: ' +
+        '*bold*, _italic_, `code`, ```block```, <https://url|label>.',
+      schema: {
+        text: z.string().describe('Message text (Slack mrkdwn)'),
+        channel: z
+          .string()
+          .describe('Channel id (e.g. C0123ABCD) or name (e.g. #eng). Invite the bot to it first.'),
+        app: z.string().optional().describe(`Slack app to post as. ${slackAppHint}`),
+      },
+      handler: slackHandler(async ({ text, channel, app: appName }) => {
+        const slackApp = await resolveSlackApp(appName);
+        const channelId = await slackResolveChannelId(slackApp.bot_token, channel);
+        const s = await getSession();
+        const { ts } = await slackPostMessage(slackApp.bot_token, {
+          channel: channelId,
+          text: withSlackFooter(text, s),
+        });
+        const permalink = await slackGetPermalink(slackApp.bot_token, {
+          channel: channelId,
+          ts,
+        }).catch(() => null);
+        return ok({ channel: channelId, ts, permalink, app: slackApp.name });
+      }),
+    },
+  ];
 
   return [
     // ── Git ────────────────────────────────────────────────────────────────
@@ -1021,11 +1125,16 @@ function buildBaguetteToolList(session, app) {
         return ok({ url, markdown: `![${altText}](${url})` });
       },
     },
+
+    // ── Slack ──────────────────────────────────────────────────────────────
+
+    ...(slackApps.length ? slackTools : []),
   ];
 }
 
-export function buildBaguetteMcpServer(session, app) {
-  const toolList = buildBaguetteToolList(session, app);
+export async function buildBaguetteMcpServer(session, app) {
+  const slackApps = await loadConfiguredSlackApps(app);
+  const toolList = buildBaguetteToolList(session, app, { slackApps });
   return createSdkMcpServer({
     name: 'baguette',
     tools: toolList.map(({ name, description, schema, handler }) =>
@@ -1034,8 +1143,9 @@ export function buildBaguetteMcpServer(session, app) {
   });
 }
 
-export function buildCursorCustomTools(session, app) {
-  const toolList = buildBaguetteToolList(session, app);
+export async function buildCursorCustomTools(session, app) {
+  const slackApps = await loadConfiguredSlackApps(app);
+  const toolList = buildBaguetteToolList(session, app, { slackApps });
   return Object.fromEntries(
     toolList.map(({ name, description, schema, handler }) => {
       const hasSchema = Object.keys(schema).length > 0;

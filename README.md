@@ -26,6 +26,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **Diff view** -- Browse the session's current git diff with per-file sections and inline/split toggle.
 - **File attachments** -- Attach images and files to any chat message.
 - **Cost tracking** -- Track session costs on session cards, with a daily chart and usage breakdown per repo (Claude and Cursor costs tracked separately).
+- **Slack** -- Connect one or more Slack bots at the admin level and agents can post updates to a channel ([read more](docs/slack.md)).
 - **Secrets** -- Inject global secrets into all sessions and tasks via `.baguette.yaml` placeholders.
 - **Session config (`.baguette.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
 - **User approval** -- First user is auto-approved; subsequent users require approval from an existing user.
@@ -163,6 +164,10 @@ See **[docs/project-configuration.md](docs/project-configuration.md)** for the f
 ## Session management
 
 For details on the data directory layout, git worktree strategy, and web server preview, see **[docs/session-management.md](docs/session-management.md)**.
+
+## Slack
+
+Connect a Slack workspace under **Settings → Integrations** to let agents post updates to a channel. See **[docs/slack.md](docs/slack.md)** for the app setup and required scopes.
 
 ## Security
 
