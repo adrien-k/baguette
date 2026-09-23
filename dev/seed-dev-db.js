@@ -80,6 +80,7 @@ export async function seedDevDb(app) {
     const already = await db('sessions').where({ short_id: spec.short_id }).first();
     if (already) continue;
 
+    // skipFirstMessage: seed and other internal callers must not spawn an agent on create.
     await app.service('sessions').create(
       {
         short_id: spec.short_id,
@@ -90,18 +91,15 @@ export async function seedDevDb(app) {
         label: spec.label,
         agent_sdk: 'claude',
         auto_push: false,
+        status: 'stopped',
       },
-      { user, provider: undefined }
+      { user, provider: undefined, skipFirstMessage: true }
     );
     const created = await db('sessions').where({ short_id: spec.short_id }).first();
-    if (created) {
+    if (created && created.label !== spec.label) {
       await app
         .service('sessions')
-        .patch(created.id, { status: 'stopped' }, { user, provider: undefined });
-      await app
-        .service('claude-agent')
-        .stopSession(created.id)
-        .catch(() => {});
+        .patch(created.id, { label: spec.label }, { user, provider: undefined });
     }
     logger.info({ shortId: spec.short_id, branch: spec.branch }, 'Seeded dev preview session');
   }

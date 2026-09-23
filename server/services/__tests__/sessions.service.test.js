@@ -832,6 +832,21 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(userMsgCall).toBeUndefined();
     });
 
+    it('does not create a first message when skipFirstMessage is set', async () => {
+      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
+      app.use('messages', { create: createMessage });
+
+      await app
+        .service('sessions')
+        .create(
+          sessionData({ repo_id: repoId, initial_prompt: 'Fixture session', status: 'stopped' }),
+          { ...params({ id: userId1 }), skipFirstMessage: true }
+        );
+
+      const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
+      expect(userMsgCall).toBeUndefined();
+    });
+
     it('rejects when not authenticated', async () => {
       await expect(
         app.service('sessions').create(sessionData(), { provider: 'rest' })

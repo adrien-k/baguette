@@ -1114,6 +1114,7 @@ async function persistSystemPrompt(context) {
 }
 
 async function createFirstMessage(context) {
+  if (context.params.skipFirstMessage) return context;
   const session = context.result;
   const initialPrompt = session.initial_prompt;
   if (!initialPrompt) return context;
