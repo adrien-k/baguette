@@ -233,9 +233,11 @@ config:
     frontend:
       task: frontend
       expose: PORT
+      description: Vite web app — open in the browser
     api:
       task: api
       expose: API_PORT
+      description: JSON API for the mobile client
 ```
 
 ### Service URL placeholders
@@ -250,6 +252,7 @@ session:
 ```
 
 - Service names must be lowercase alphanumeric + hyphens (e.g. `api`, `expo`, `web-app`).
+- **`description`** (optional): short text shown on the multi-service portal and the session Preview tab.
 - `${{ baguette.session.public_uri }}` still works and points to the portal URL.
 
 ### Expo + API backend example
@@ -304,10 +307,12 @@ session:
 webserver:
   task: dev-server
   expose: VITE_PORT
+  description: Local Vite dev server (UI)
 ```
 
 - **`task`**: the key of a task in `session.tasks`. The task's `run` and `ports` are used to start the dev server.
 - **`expose`**: which port env var users access in the browser. Must be one of the task's port env var names.
+- **`description`** (optional): short text shown on the session Preview tab.
 
 ### Port readiness
 

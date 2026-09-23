@@ -44,6 +44,13 @@ describe('Task', () => {
     expect(task.exit_code).toBeNull();
   });
 
+  it('exit() sets exited_at and includes it in toPublic()', () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', taskService: service });
+    task.exit(0);
+    expect(task.exited_at).toBeTruthy();
+    expect(task.toPublic().exited_at).toBe(task.exited_at);
+  });
+
   it('toPublic() omits private fields', () => {
     const task = new Task({ id: 1, sessionId: 10, command: 'x', taskService: service });
     const pub = task.toPublic();

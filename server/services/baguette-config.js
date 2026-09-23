@@ -168,6 +168,7 @@ export function resolveWebserverConfig(baguetteConfig) {
       ports: taskDef.ports || [],
       expose: webserver.expose,
       taskKey: webserver.task,
+      description: normalizeServiceDescription(webserver.description),
     };
   }
 
@@ -177,6 +178,7 @@ export function resolveWebserverConfig(baguetteConfig) {
       ports: webserver.ports || [],
       expose: webserver.expose,
       taskKey: null,
+      description: normalizeServiceDescription(webserver.description),
     };
   }
 
@@ -200,6 +202,13 @@ export function getAvailableCommands(baguetteConfig) {
 }
 
 const SERVICE_NAME_REGEX = /^[a-z0-9][a-z0-9-]*$/;
+
+/** Optional human-readable blurb for preview UIs (webserver / services blocks). */
+export function normalizeServiceDescription(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
 
 /**
  * Resolve the services block into an array of service configs.
@@ -239,6 +248,7 @@ export function resolveServicesConfig(baguetteConfig) {
       ports: taskDef.ports || [],
       expose: svcDef.expose,
       taskKey: svcDef.task,
+      description: normalizeServiceDescription(svcDef.description),
     });
   }
 

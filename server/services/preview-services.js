@@ -36,7 +36,7 @@ export function resolvePreviewServiceConfig(baguetteConfig, serviceName) {
 
 /**
  * List preview services defined in .baguette.yaml (webserver or services block).
- * @returns {Array<{ name, display_name, url, expose, task_key, task_label, deep_link_url }>|null}
+ * @returns {Array<{ name, display_name, description, url, expose, task_key, task_label, deep_link_url }>|null}
  */
 export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
   if (!baguetteConfig || !shortId) return null;
@@ -51,6 +51,7 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
       {
         name: 'default',
         display_name: webserver.taskKey || 'webserver',
+        description: webserver.description ?? null,
         url,
         expose: webserver.expose,
         task_key: webserver.taskKey,
@@ -70,6 +71,7 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
     return {
       name: svc.name,
       display_name: svc.name,
+      description: svc.description ?? null,
       url,
       expose: svc.expose,
       task_key: svc.taskKey,

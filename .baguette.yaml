@@ -11,6 +11,7 @@ config:
     init: |
       pnpm install:all
       pnpm run migrate
+      pnpm run seed:dev-db
     tasks:
       run-tests:
         run: pnpm test

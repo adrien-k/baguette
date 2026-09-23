@@ -133,6 +133,21 @@ npm run dev
 
 The Vite dev server runs on `http://localhost:5173` and proxies API/WebSocket requests to the Express server on port 3000.
 
+### Dev preview fixture (optional)
+
+After `pnpm run migrate`, seed a local git repo under `dev/preview-fixtures/demo-repo/` and two sessions for exercising preview UI (also runs automatically as part of `baguette:init` / session init):
+
+```bash
+pnpm run seed:dev-db
+```
+
+| Session                           | Branch           | Config                  |
+| --------------------------------- | ---------------- | ----------------------- |
+| **Dev preview: single webserver** | `preview-single` | One `webserver` task    |
+| **Dev preview: multi-service**    | `preview-multi`  | Two `services` (portal) |
+
+Sign in with [`/auth/dev`](http://localhost:5173/auth/dev) if you have not already. Re-running `seed:dev-db` is safe when both sessions already exist. Rebuild only the fixture git tree with `node dev/preview-fixtures/bootstrap-demo-repo.mjs`.
+
 ## Tech Stack
 
 - **Backend**: Express, Feathers.js, SQLite (via Knex), Socket.io

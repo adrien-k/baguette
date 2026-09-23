@@ -55,4 +55,19 @@ describe('preview-services', () => {
     expect(defs.find((d) => d.name === 'expo').deep_link_url).toMatch(/^exp:\/\//);
     expect(defs.find((d) => d.name === 'api').deep_link_url).toBeNull();
   });
+
+  it('includes service descriptions from yaml', () => {
+    const defs = getPreviewServiceDefinitions(
+      {
+        session: { tasks: { dev: { run: 'vite', ports: ['PORT'] } } },
+        webserver: {
+          task: 'dev',
+          expose: 'PORT',
+          description: '  Web UI  ',
+        },
+      },
+      'abc'
+    );
+    expect(defs[0].description).toBe('Web UI');
+  });
 });

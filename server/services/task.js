@@ -101,6 +101,7 @@ export class Task {
     /** Set by kill(): 'stopped' (explicit stop) or 'ttl' (idle timeout). null when it exited on its own. */
     this.kill_reason = null;
     this.created_at = new Date().toISOString();
+    this.exited_at = null;
     this._env = env ?? null;
     this._cwd = cwd ?? null;
     this._logListeners = [];
@@ -490,6 +491,7 @@ export class Task {
     this.#stopDepHeartbeatLoop();
     this.status = 'exited';
     this.exit_code = exitCode;
+    this.exited_at = new Date().toISOString();
     for (const fn of this._exitListeners) fn(this.id, exitCode);
   }
 
@@ -522,6 +524,7 @@ export class Task {
       status: this.status,
       exit_code: this.exit_code,
       created_at: this.created_at,
+      exited_at: this.exited_at,
       ports: this.ports,
       ttl_ms: this.hasPorts && this._ttlMs ? this._ttlMs : null,
       no_ttl: this._noTtl,

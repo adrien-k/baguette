@@ -18,11 +18,14 @@ function ServiceQrCode({ url }) {
 }
 
 const STATUS_LABEL = {
-  stopped: { text: 'Stopped', className: 'text-zinc-500' },
-  starting: { text: 'Starting…', className: 'text-amber-400' },
-  ready: { text: 'Ready', className: 'text-emerald-400' },
-  crashed: { text: 'Crashed', className: 'text-red-400' },
+  stopped: { text: 'Stopped', className: 'text-zinc-500 bg-zinc-800/80 border-zinc-700' },
+  starting: { text: 'Starting…', className: 'text-amber-300 bg-amber-500/10 border-amber-500/30' },
+  ready: { text: 'Ready', className: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' },
+  crashed: { text: 'Crashed', className: 'text-red-300 bg-red-500/10 border-red-500/30' },
 };
+
+const actionBtnClass =
+  'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-700/80 bg-zinc-800/40 text-xs text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800 transition-colors';
 
 function PreviewSettingsToggles({ session }) {
   if (!session?.preview_url) return null;
@@ -108,30 +111,41 @@ function ServiceRow({
   const previewUrl = svc.deep_link_url || svc.url;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-zinc-200">{svc.display_name}</span>
-            <span className={`text-xs ${statusMeta.className}`}>{statusMeta.text}</span>
-            {svc.status === 'starting' && (
-              <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-            )}
-            {ipPublicEnabled && isActive && svc.allowed_ip && (
-              <span className="text-xs text-zinc-500">
-                Allowed IP <span className="font-mono text-zinc-400">{svc.allowed_ip}</span>
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-zinc-100">{svc.display_name}</span>
+              <span
+                className={`text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusMeta.className}`}
+              >
+                {statusMeta.text}
               </span>
+              {svc.status === 'starting' && (
+                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+              )}
+            </div>
+            {svc.description && (
+              <p className="text-xs text-zinc-500 mt-1 leading-relaxed max-w-prose whitespace-pre-wrap">
+                {svc.description}
+              </p>
             )}
           </div>
-          {svc.exit_code != null && svc.status === 'crashed' && (
-            <p className="text-xs text-red-400/80 mt-0.5">Exit code {svc.exit_code}</p>
+          {ipPublicEnabled && isActive && svc.allowed_ip && (
+            <p className="text-xs text-zinc-500 mt-2">
+              Allowed IP <span className="font-mono text-zinc-400">{svc.allowed_ip}</span>
+            </p>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          {svc.exit_code != null && svc.status === 'crashed' && (
+            <p className="text-xs text-red-400/80 mt-1">Exit code {svc.exit_code}</p>
+          )}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
               href={previewUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300"
+              className={`${actionBtnClass} text-sky-300 hover:text-sky-200 hover:border-sky-500/30`}
             >
               Open preview
               <ExternalLink className="w-3 h-3" />
@@ -144,7 +158,7 @@ function ServiceRow({
             <button
               type="button"
               onClick={() => onStop(svc.task_id)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600"
+              className={actionBtnClass}
               title="Stop preview service"
             >
               <Square className="w-3.5 h-3.5 fill-current text-red-400" />
@@ -155,7 +169,7 @@ function ServiceRow({
             <button
               type="button"
               onClick={() => onStart(svc.name)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600"
+              className={actionBtnClass}
               title="Start preview service (1 hour idle timeout)"
             >
               <Play className="w-3.5 h-3.5 text-emerald-400" />
@@ -166,7 +180,7 @@ function ServiceRow({
             type="button"
             disabled={!svc.task_id}
             onClick={() => svc.task_id && onViewLogs(svc.task_id)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-zinc-700 text-xs text-zinc-300 hover:border-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`${actionBtnClass} disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             <ScrollText className="w-3.5 h-3.5" />
             Logs
@@ -228,6 +242,14 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
       <div className="max-w-2xl mx-auto space-y-6">
+        <header className="space-y-1">
+          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Preview</h1>
+          <p className="text-sm text-zinc-500">
+            Start dev servers on demand and share preview links. Optional descriptions come from{' '}
+            <code className="text-zinc-400 text-xs">.baguette.yaml</code>.
+          </p>
+        </header>
+
         <PreviewSettingsToggles session={session} />
 
         <div className="space-y-3">

@@ -16,7 +16,6 @@ import {
   PanelLeft,
   Pencil,
   Upload,
-  Code2,
   MonitorPlay,
 } from 'lucide-react';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
@@ -39,6 +38,7 @@ import LogsView from './session/LogsView.jsx';
 import EditView from './session/EditView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
+import SessionToolLink from '../components/SessionToolLink.jsx';
 import { parseModelField, variantLabel, pickPreferredVariantIdx } from '../utils/models.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 
@@ -334,6 +334,7 @@ export default function Session() {
         command: t.command,
         label: t.label,
         created_at: t.created_at,
+        exited_at: t.exited_at,
         ports: t.ports ?? {},
         status:
           killedTaskIds.has(t.id) && t.status === 'running' ? 'exited' : (t.status ?? 'running'),
@@ -622,14 +623,7 @@ export default function Session() {
                 )}
                 {session.preview_url && (
                   <span className="shrink-0 flex items-center gap-1">
-                    <a
-                      href={session.preview_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sky-400 hover:text-sky-300"
-                    >
-                      Preview
-                    </a>
+                    <SessionToolLink kind="preview" href={session.preview_url} />
                     {session.is_preview_public && (
                       <span className="text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
                         public
@@ -638,14 +632,7 @@ export default function Session() {
                   </span>
                 )}
                 {session.codeserver_url && (
-                  <a
-                    href={session.codeserver_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hidden sm:inline shrink-0 text-sky-400 hover:text-sky-300"
-                  >
-                    Code
-                  </a>
+                  <SessionToolLink kind="code" href={session.codeserver_url} hideLabelBelowSm />
                 )}
               </div>
             </div>
@@ -819,20 +806,6 @@ export default function Session() {
                         </div>
                       );
                     })()}
-                    {session.codeserver_url && (
-                      <div className="p-2 border-b border-zinc-800 sm:hidden">
-                        <a
-                          href={session.codeserver_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => setShowMenu(false)}
-                          className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-sky-400 hover:bg-zinc-800"
-                        >
-                          <Code2 className="w-3 h-3 shrink-0" />
-                          <span>Code</span>
-                        </a>
-                      </div>
-                    )}
                     <div className="p-2 border-b border-zinc-800 sm:hidden">
                       <button
                         onClick={() => {

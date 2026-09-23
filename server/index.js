@@ -127,9 +127,9 @@ app.use(express.errorHandler());
 // Sessions interrupted by the last shutdown are resumed once every service is set up — the
 // restart path dispatches through the agent services, which need their own setup() to have run.
 app.setup(server).then(
-  () => {
+  async () => {
     startScheduledQueuedMessageSender(app);
-    return app.service('sessions').restartInterruptedSessions();
+    await app.service('sessions').restartInterruptedSessions();
   },
   (err) => logger.error({ err }, 'App setup failed')
 );

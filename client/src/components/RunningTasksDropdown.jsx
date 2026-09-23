@@ -4,6 +4,7 @@ import { tasksService } from '../feathers.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import TaskLogModal from './TaskLogModal.jsx';
+import { repoDisplayName } from '../utils/repoDisplayName.js';
 
 export default function RunningTasksDropdown() {
   const { tasks: runningTasks } = useGetTasks({ status: 'running' });
@@ -17,6 +18,25 @@ export default function RunningTasksDropdown() {
     (sessions || []).forEach((s) => m.set(s.id, s));
     return m;
   }, [sessions]);
+
+  const tasksByRepo = useMemo(() => {
+    const groups = new Map();
+    for (const task of runningTasks) {
+      const session = sessionById.get(task.session_id);
+      const repoKey = session?.repo_full_name ?? `__session_${task.session_id}`;
+      if (!groups.has(repoKey)) {
+        groups.set(repoKey, { repoFullName: session?.repo_full_name ?? null, tasks: [] });
+      }
+      groups.get(repoKey).tasks.push(task);
+    }
+    return [...groups.entries()]
+      .sort(([, a], [, b]) => {
+        const nameA = a.repoFullName ? repoDisplayName(a.repoFullName) : 'Unknown repo';
+        const nameB = b.repoFullName ? repoDisplayName(b.repoFullName) : 'Unknown repo';
+        return nameA.localeCompare(nameB);
+      })
+      .map(([key, group]) => ({ key, ...group }));
+  }, [runningTasks, sessionById]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,32 +92,41 @@ export default function RunningTasksDropdown() {
               <span className="text-xs font-medium text-zinc-400">Running Tasks</span>
             </div>
             <div className="max-h-64 overflow-auto">
-              {runningTasks.map((task) => (
-                <div
-                  key={task.id}
-                  onClick={() => openModal(task.id)}
-                  className="px-3 py-2.5 border-b border-zinc-800 last:border-b-0 cursor-pointer hover:bg-zinc-800/60 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <code className="text-xs text-zinc-200 truncate block">
-                        {task.label || task.command}
-                      </code>
-                      {sessionById.get(task.session_id) && (
-                        <span className="text-[11px] text-zinc-500 truncate block mt-0.5">
-                          {sessionById.get(task.session_id).label ||
-                            sessionById.get(task.session_id).repo_full_name}
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => handleKillFromDropdown(e, task.id)}
-                      className="text-red-400 hover:text-red-300 opacity-60 hover:opacity-100 transition-all shrink-0"
-                      title="Stop"
-                    >
-                      <Square className="w-3.5 h-3.5 fill-current" />
-                    </button>
+              {tasksByRepo.map(({ key, repoFullName, tasks }) => (
+                <div key={key}>
+                  <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-500 uppercase tracking-wider bg-zinc-900 border-b border-zinc-800 sticky top-0">
+                    {repoFullName ? repoDisplayName(repoFullName) : 'Unknown repo'}
                   </div>
+                  {tasks.map((task) => {
+                    const session = sessionById.get(task.session_id);
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={() => openModal(task.id)}
+                        className="px-3 py-2.5 border-b border-zinc-800 last:border-b-0 cursor-pointer hover:bg-zinc-800/60 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <code className="text-xs text-zinc-200 truncate block">
+                              {task.label || task.command}
+                            </code>
+                            {session && (
+                              <span className="text-[11px] text-zinc-500 truncate block mt-0.5">
+                                {session.label || session.short_id}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => handleKillFromDropdown(e, task.id)}
+                            className="text-red-400 hover:text-red-300 opacity-60 hover:opacity-100 transition-all shrink-0"
+                            title="Stop"
+                          >
+                            <Square className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>

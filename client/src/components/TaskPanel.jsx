@@ -1,6 +1,20 @@
 import { useState } from 'react';
 import { Play, RotateCw, Square, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/dates.js';
+import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
+
+function TaskMetaLine({ task }) {
+  const duration = useTaskRunDuration(task);
+  const relative = task.created_at ? formatRelativeTime(task.created_at) : null;
+  if (!relative && !duration) return null;
+  return (
+    <span className="text-[10px] text-zinc-600">
+      {relative}
+      {relative && duration ? ' · ' : null}
+      {duration ? <span className="text-zinc-500 tabular-nums">{duration}</span> : null}
+    </span>
+  );
+}
 
 export default function TaskPanel({
   tasks,
@@ -55,9 +69,7 @@ export default function TaskPanel({
               ))}
             </div>
           )}
-          {task.created_at && (
-            <span className="text-[10px] text-zinc-600">{formatRelativeTime(task.created_at)}</span>
-          )}
+          <TaskMetaLine task={task} />
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0 mt-0.5">

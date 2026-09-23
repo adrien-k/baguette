@@ -11,6 +11,7 @@
     "build": "npm run build --prefix client",
     "start": "NODE_ENV=production node server/index.js",
     "migrate": "knex migrate:latest --knexfile knexfile.js",
+    "seed:dev-db": "node dev/seed-dev-db.js",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
     "test": "vitest run",
     "test:watch": "vitest",

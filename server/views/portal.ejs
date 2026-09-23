@@ -3,24 +3,113 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Preview services</title>
+  <title>Preview services · Baguette</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem; }
-    h1 { font-size: 0.85rem; color: #8b949e; font-weight: normal; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.5rem; }
-    a.service { display: flex; align-items: center; justify-content: space-between; gap: 2rem; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.85rem 1.25rem; width: 100%; max-width: 400px; text-decoration: none; color: #e6edf3; }
-    a.service:hover { border-color: #58a6ff; background: #1c2128; }
-    .name { font-size: 1rem; }
-    .arrow { color: #58a6ff; font-size: 1rem; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #09090b;
+      color: #e4e4e7;
+      min-height: 100vh;
+      padding: 2rem 1.25rem 3rem;
+    }
+    .wrap { max-width: 32rem; margin: 0 auto; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.75rem;
+      color: #a1a1aa;
+      font-size: 0.8125rem;
+    }
+    .brand svg { width: 1.25rem; height: 1.25rem; opacity: 0.9; }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fafafa;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+    .subtitle {
+      font-size: 0.875rem;
+      color: #71717a;
+      margin-bottom: 1.75rem;
+      line-height: 1.45;
+    }
+    .grid { display: flex; flex-direction: column; gap: 0.75rem; }
+    a.service {
+      display: block;
+      background: rgba(24, 24, 27, 0.8);
+      border: 1px solid #3f3f46;
+      border-radius: 0.625rem;
+      padding: 1rem 1.125rem;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+    a.service:hover {
+      border-color: rgba(56, 189, 248, 0.45);
+      background: rgba(14, 165, 233, 0.08);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.12);
+    }
+    .service-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.35rem;
+    }
+    .name { font-size: 0.9375rem; font-weight: 600; color: #f4f4f5; }
+    .arrow {
+      flex-shrink: 0;
+      color: #38bdf8;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .desc {
+      font-size: 0.8125rem;
+      color: #a1a1aa;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .hint {
+      margin-top: 1.5rem;
+      font-size: 0.75rem;
+      color: #52525b;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-  <h1>Preview services</h1>
-  <% services.forEach(function(svc) { %>
-  <a class="service" href="<%= svc.url %>" target="_blank" rel="noopener noreferrer">
-    <span class="name"><%= svc.name %></span>
-    <span class="arrow">↗</span>
-  </a>
-  <% }); %>
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-4-2-4 2-4-2-4 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+      Baguette preview
+    </div>
+    <h1>Choose a service</h1>
+    <p class="subtitle">
+      <% if (sessionLabel) { %>
+        Session: <%= sessionLabel %>
+      <% } else { %>
+        This session exposes multiple preview endpoints. Pick one to open.
+      <% } %>
+    </p>
+    <div class="grid">
+      <% services.forEach(function(svc) { %>
+      <a class="service" href="<%= svc.url %>" rel="noopener noreferrer">
+        <div class="service-head">
+          <span class="name"><%= svc.name %></span>
+          <span class="arrow" aria-hidden="true">↗</span>
+        </div>
+        <% if (svc.description) { %>
+        <p class="desc"><%= svc.description %></p>
+        <% } %>
+      </a>
+      <% }); %>
+    </div>
+    <p class="hint">Services start on demand when you open a link.</p>
+  </div>
 </body>
 </html>

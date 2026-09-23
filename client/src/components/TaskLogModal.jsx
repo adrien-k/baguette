@@ -2,10 +2,12 @@ import { useEffect, useRef, useMemo } from 'react';
 import { ExternalLink, GitBranch, RotateCw, Square, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useGetTaskLogs } from '../hooks/useGetTaskLogs.js';
+import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
 import { ansiToHtml } from '../utils/ansi.js';
 
 export default function TaskLogModal({ task, session, onKill, onRetry, onClose }) {
   const { logs } = useGetTaskLogs(task?.id);
+  const runDuration = useTaskRunDuration(task);
   const logRef = useRef(null);
   const logsHtml = useMemo(() => {
     if (!logs) return '';
@@ -52,7 +54,15 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
                 isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'
               }`}
             />
-            <code className="text-sm text-zinc-200 truncate">{task.label || task.command}</code>
+            <div className="min-w-0 flex flex-col gap-0.5">
+              <code className="text-sm text-zinc-200 truncate">{task.label || task.command}</code>
+              {runDuration && (
+                <span className="text-[11px] text-zinc-500 tabular-nums">
+                  {isRunning ? 'Running for ' : 'Ran for '}
+                  {runDuration}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {!isRunning && (

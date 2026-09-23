@@ -63,16 +63,19 @@ describe('buildSystemPromptAppend', () => {
   it('includes commit/push instructions when auto_push=1', async () => {
     const session = await seedSession({ auto_push: true });
     const result = await buildSystemPromptAppend(session);
-    expect(result).toContain('Stage and commit');
+    expect(result).toContain('End-of-turn shipping');
+    expect(result).toContain('git add -A && git commit');
     expect(result).toContain('GitPush');
   });
 
   it('always includes commit/push/PrUpsert instructions regardless of auto_push', async () => {
     const session = await seedSession({ auto_push: false });
     const result = await buildSystemPromptAppend(session);
-    expect(result).toContain('Stage and commit');
+    expect(result).toContain('End-of-turn shipping');
+    expect(result).toContain('git add -A && git commit');
     expect(result).toContain('GitPush');
     expect(result).toContain('PrUpsert');
+    expect(result).toContain('only commit when the user asks');
   });
 
   it('includes baguette config notice when loadBaguetteConfig returns null', async () => {

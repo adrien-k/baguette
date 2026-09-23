@@ -341,6 +341,7 @@ export class SessionsService extends KnexService {
       services.push({
         name: def.name,
         display_name: def.display_name,
+        description: def.description ?? null,
         url: def.url,
         deep_link_url: def.deep_link_url,
         expose: def.expose,

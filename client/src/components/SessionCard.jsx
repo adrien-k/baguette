@@ -3,6 +3,7 @@ import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Square, Archive } 
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import PrStatusBadge from './PrStatusBadge.jsx';
+import SessionToolLink from './SessionToolLink.jsx';
 import { formatRelativeTime } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
 import { parseModelField } from '../utils/models.js';
@@ -111,7 +112,7 @@ export default function SessionCard({ session, showRepo = false }) {
       </div>
       <p className="text-xs text-zinc-500 line-clamp-2 ml-5">{session.initial_prompt}</p>
       {(session.pr_url || session.preview_url || session.codeserver_url) && (
-        <div className="mt-1.5 sm:mt-2 ml-5 flex items-center gap-3">
+        <div className="mt-1.5 sm:mt-2 ml-5 flex flex-wrap items-center gap-2">
           {session.pr_url && (
             <PrStatusBadge
               status={session.pr_status}
@@ -120,26 +121,20 @@ export default function SessionCard({ session, showRepo = false }) {
             />
           )}
           {session.preview_url && (
-            <a
+            <SessionToolLink
+              kind="preview"
               href={session.preview_url}
-              target="_blank"
-              rel="noopener noreferrer"
+              size="sm"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
-            >
-              Preview
-            </a>
+            />
           )}
           {session.codeserver_url && (
-            <a
+            <SessionToolLink
+              kind="code"
               href={session.codeserver_url}
-              target="_blank"
-              rel="noopener noreferrer"
+              size="sm"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
-            >
-              Code
-            </a>
+            />
           )}
         </div>
       )}

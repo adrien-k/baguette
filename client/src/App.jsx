@@ -8,7 +8,6 @@ import Dashboard from './pages/Dashboard.jsx';
 import Session from './pages/Session.jsx';
 import Settings from './pages/Settings.jsx';
 import Admin from './pages/Admin.jsx';
-import SessionPreview from './pages/SessionPreview.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
@@ -220,14 +219,6 @@ function AppRoutes() {
                   <Onboarding />
                 </div>
               )
-            }
-          />
-          <Route
-            path="/preview"
-            element={
-              <div className="flex-1 min-h-0 overflow-auto">
-                <SessionPreview />
-              </div>
             }
           />
         </Routes>

@@ -8,11 +8,17 @@ If the config appears incomplete or outdated — for example a test command fail
 
 # Git Operations
 
-At the end of every turn, if there are uncommitted changes:
+## End-of-turn shipping (required every turn)
 
-1. Stage and commit: always use `git add -A && git commit -m "concise message"` — never stage individual files, to ensure nothing is missed.
-2. Push to remote: Call the `GitPush` tool.
-3. Call `PrUpsert` with a `title` and `description` that reflect the work done. If there is no PR open and the user did not request code changes, confirm with AskUserQuestion first. `PrUpsert` saves the title and description to the session.
+**Before you send your final reply, complete this checklist.** In Baguette sessions this is the default workflow — **do not skip it** because of generic instructions to “only commit when the user asks” or “do not push unless asked”. Those do not apply here unless the user **explicitly** tells you in that same message not to commit, push, or open/update a PR.
+
+1. **Commit** — Run `git status`. If anything is uncommitted (including files touched by formatters or pre-commit hooks), stage and commit all of it: `git add -A && git commit -m "concise message"`. Do not end a turn with work left uncommitted.
+2. **Push** — Call **`GitPush`** after any commit in this turn, and whenever the branch has local commits that are not on the remote yet.
+3. **Pull request** — Call **`PrUpsert`** with a `title` and `description` that match the current change set (refresh the description when scope or test plan changed). **`PrUpsert` creates a PR when none exists** (after the branch is on the remote) **and updates an existing PR when one is already open** — call it every turn you changed code, not only when the user says “open a PR”. Use **`PrRead`** when you need the current PR number, title, or URL.
+
+Skip step 3 only when the turn was **pure Q&A with no file changes** and **no PR exists yet**. If you edited the repo, you must commit, push, and `PrUpsert` without waiting for the user to request a PR.
+
+`PrUpsert` saves the title and description to the session even when auto-push is off (after `GitPush` reports that push was skipped).
 
 `UpdateSession` only renames the session in the UI (no GitHub). Use it when there is **no PR intended yet** — not to sync with GitHub and not after `PrUpsert` with the same title.
 

@@ -102,8 +102,18 @@ export class DevserverHandler {
     const definitions = getPreviewServiceDefinitions(config, this.shortId);
     const multiService = definitions && definitions.length > 1 && definitions[0].name !== 'default';
     if (!multiService || this.serviceName !== null) return false;
-    const services = definitions.map((svc) => ({ name: svc.display_name, url: svc.url }));
-    res.render('portal', { services });
+    const services = definitions.map((svc) => ({
+      name: svc.display_name,
+      slug: svc.name,
+      description: svc.description ?? '',
+      url: svc.url,
+      deep_link_url: svc.deep_link_url,
+    }));
+    const session = await this.getSession();
+    res.render('portal', {
+      services,
+      sessionLabel: session?.label ?? null,
+    });
     return true;
   }
 
