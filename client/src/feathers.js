@@ -1,6 +1,10 @@
 import { feathers } from '@feathersjs/feathers';
 import rest from '@feathersjs/rest-client';
-import { showConnectionLostToast, showConnectionRestoredToast } from './utils/connectionToast.jsx';
+import {
+  dismissConnectionToast,
+  showConnectionLostToast,
+  showConnectionRestoredToast,
+} from './utils/connectionToast.jsx';
 import { watchSseConnection } from './utils/sseConnectionWatcher.js';
 
 const app = feathers();
@@ -38,10 +42,16 @@ eventSource.onmessage = ({ data }) => {
 };
 
 // Real-time updates are invisible when the stream drops, so tell the user.
-watchSseConnection(eventSource, {
+const sseConnection = watchSseConnection(eventSource, {
   onLost: showConnectionLostToast,
   onRestored: showConnectionRestoredToast,
 });
+
+/** Dismiss connection toasts and stop treating the next SSE close as a user-visible outage. */
+export function clearSseConnectionOnLogout() {
+  dismissConnectionToast();
+  sseConnection.onLogout();
+}
 
 export default app;
 export const sessionsService = createService('sessions', {

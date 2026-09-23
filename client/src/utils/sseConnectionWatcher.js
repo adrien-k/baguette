@@ -10,12 +10,13 @@ export const RECONNECT_GRACE_MS = 4000;
  * The browser reconnects a dropped EventSource by itself, so a brief blip (server
  * restart, network hiccup) is not worth a toast: `onLost` fires only once the
  * stream has been down for `graceMs`, or immediately when the browser has given
- * up entirely (readyState CLOSED, e.g. the session cookie expired). `onRestored`
- * fires on the next successful connection, but only if `onLost` fired first.
+ * up entirely (readyState CLOSED). `onLost` is only called if the stream had
+ * opened at least once (e.g. skip warnings when never authenticated).
+ * `onRestored` fires on the next successful connection, but only if `onLost` fired first.
  *
  * @param {EventSource} source
  * @param {{ onLost?: () => void, onRestored?: () => void, graceMs?: number }} [handlers]
- * @returns {() => void} unsubscribe
+ * @returns {{ unsubscribe: () => void, onLogout: () => void }}
  */
 export function watchSseConnection(
   source,
@@ -23,6 +24,7 @@ export function watchSseConnection(
 ) {
   let timer = null;
   let lost = false;
+  let everOpen = false;
 
   const clearTimer = () => {
     if (timer === null) return;
@@ -32,12 +34,13 @@ export function watchSseConnection(
 
   const reportLost = () => {
     timer = null;
-    if (lost) return;
+    if (!everOpen || lost) return;
     lost = true;
     onLost?.();
   };
 
   source.onopen = () => {
+    everOpen = true;
     clearTimer();
     if (!lost) return;
     lost = false;
@@ -54,9 +57,17 @@ export function watchSseConnection(
     if (timer === null && !lost) timer = setTimeout(reportLost, graceMs);
   };
 
-  return () => {
+  const unsubscribe = () => {
     clearTimer();
     source.onopen = null;
     source.onerror = null;
   };
+
+  const onLogout = () => {
+    everOpen = false;
+    lost = false;
+    clearTimer();
+  };
+
+  return { unsubscribe, onLogout };
 }

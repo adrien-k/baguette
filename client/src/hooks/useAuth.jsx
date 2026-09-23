@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { apiFetch } from '../api.js';
+import { clearSseConnectionOnLogout } from '../feathers.js';
 
 const AuthContext = createContext(null);
 
@@ -21,6 +22,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = async () => {
+    clearSseConnectionOnLogout();
     await apiFetch('/auth/logout', { method: 'POST' });
     setUser(null);
   };

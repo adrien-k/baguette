@@ -41,6 +41,7 @@ describe('watchSseConnection', () => {
   it('stays quiet when the browser reconnects within the grace period', () => {
     const source = fakeSource();
     watch(source);
+    source.open();
 
     source.error();
     vi.advanceTimersByTime(500);
@@ -51,9 +52,21 @@ describe('watchSseConnection', () => {
     expect(onRestored).not.toHaveBeenCalled();
   });
 
+  it('does not report a loss before the stream has ever opened', () => {
+    const source = fakeSource();
+    watch(source);
+
+    source.error();
+    vi.advanceTimersByTime(1000);
+    source.error(CLOSED);
+
+    expect(onLost).not.toHaveBeenCalled();
+  });
+
   it('reports a loss once the stream stays down past the grace period', () => {
     const source = fakeSource();
     watch(source);
+    source.open();
 
     source.error();
     vi.advanceTimersByTime(1000);
@@ -64,6 +77,7 @@ describe('watchSseConnection', () => {
   it('reports immediately when the browser gives up retrying', () => {
     const source = fakeSource();
     watch(source);
+    source.open();
 
     source.error(CLOSED);
 
@@ -73,6 +87,7 @@ describe('watchSseConnection', () => {
   it('reports the loss only once while retries keep failing', () => {
     const source = fakeSource();
     watch(source);
+    source.open();
 
     source.error();
     vi.advanceTimersByTime(1000);
@@ -103,6 +118,7 @@ describe('watchSseConnection', () => {
     watch(source);
 
     for (let i = 0; i < 2; i++) {
+      source.open();
       source.error();
       vi.advanceTimersByTime(1000);
       source.open();
@@ -114,7 +130,8 @@ describe('watchSseConnection', () => {
 
   it('stops reporting after unsubscribe', () => {
     const source = fakeSource();
-    const unsubscribe = watch(source);
+    const { unsubscribe } = watch(source);
+    source.open();
 
     source.error();
     unsubscribe();
@@ -122,5 +139,16 @@ describe('watchSseConnection', () => {
 
     expect(onLost).not.toHaveBeenCalled();
     expect(source.onerror).toBeNull();
+  });
+
+  it('does not report loss after onLogout even if the stream had been open', () => {
+    const source = fakeSource();
+    const { onLogout } = watch(source);
+    source.open();
+
+    onLogout();
+    source.error(CLOSED);
+
+    expect(onLost).not.toHaveBeenCalled();
   });
 });

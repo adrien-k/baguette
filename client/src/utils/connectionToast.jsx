@@ -36,6 +36,10 @@ function ConnectionToast({ t, tone, label, detail }) {
   );
 }
 
+export function dismissConnectionToast() {
+  toast.dismiss(TOAST_ID);
+}
+
 /** Live updates have stopped; stays up until the connection returns or the user acts. */
 export function showConnectionLostToast() {
   toast.custom(
