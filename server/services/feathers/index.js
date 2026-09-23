@@ -10,6 +10,7 @@ import { registerClaudeAgentService } from './claude-agent.service.js';
 import { registerCursorAgentService } from './cursor-agent.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
+import { registerLoopsService } from './loops.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
 /**
@@ -28,6 +29,7 @@ export function registerFeathersServices(app, sseManager) {
   registerReposService(app);
   registerUserReposService(app);
   registerPluginsService(app);
+  registerLoopsService(app);
 
   // Route service CRUD events to the right SSE connections
   for (const event of CRUD_EVENTS) {
@@ -52,6 +54,10 @@ export function registerFeathersServices(app, sseManager) {
 
     app.service('queued-messages').on(event, (data) => {
       if (data?.user_id) sseManager.send(data.user_id, { service: 'queued-messages', event, data });
+    });
+
+    app.service('loops').on(event, (data) => {
+      if (data?.user_id) sseManager.send(data.user_id, { service: 'loops', event, data });
     });
   }
 

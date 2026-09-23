@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { Repeat, HelpCircle } from 'lucide-react';
 import GithubIcon from './GithubIcon.jsx';
+import LoopScheduleFields from './LoopScheduleFields.jsx';
+import Tooltip from './Tooltip.jsx';
+import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
 import { apiFetch } from '../api.js';
 import { sessionsService, pluginsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
@@ -19,31 +23,57 @@ function parseRepoFullName(full) {
   return { owner: full.slice(0, i), name: full.slice(i + 1) };
 }
 
-export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPrompt }) {
-  const persistentState = usePersistentState(`builder-form-${repoFullName}`);
+export default function BuilderForm({
+  onSubmit,
+  onCreateLoop,
+  onUpdateLoop,
+  onCancelEdit,
+  editingLoop,
+  loading,
+  repoFullName,
+  defaultPrompt,
+}) {
+  // Editing runs on the same form but off the draft: a null key makes the store in-memory, so
+  // the loop's own values seed the fields and the pending new-session draft is left alone.
+  const persistentState = usePersistentState(editingLoop ? null : `builder-form-${repoFullName}`);
   const globalState = usePersistentState('builder-form-global');
   const { cursorFast, cursorEffort, setCursorFast, setCursorEffort } = useCursorModelPrefs();
-  const [branch, setBranch] = persistentState.useState('branch', '');
-  const [initialPrompt, setInitialPrompt] = persistentState.useState('prompt', defaultPrompt || '');
+  const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '');
+  const [initialPrompt, setInitialPrompt] = persistentState.useState(
+    'prompt',
+    editingLoop?.prompt ?? defaultPrompt ?? ''
+  );
   const [showMore, setShowMore] = globalState.useState('showMore', false);
   const [createNewBranch, setCreateNewBranch] = persistentState.useState('createNewBranch', true);
   const [branchName, setBranchName] = persistentState.useState('branchName', '');
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
   const { repos } = useRepoContext();
-  const [agentSdk, setAgentSdkRaw] = persistentState.useState('agentSdk', 'claude');
-  const [model, setModel] = persistentState.useState('model', '');
+  const [agentSdk, setAgentSdkRaw] = persistentState.useState(
+    'agentSdk',
+    editingLoop?.agent_sdk ?? 'claude'
+  );
+  const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '');
   const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
   const [variantExpanded, setVariantExpanded] = useState(false);
   const [prefsExpanded, setPrefsExpanded] = useState(false);
   const [models, setModels] = useState([]);
   const [refreshingModels, setRefreshingModels] = useState(false);
-  const [selectedPlugins, setSelectedPlugins] = persistentState.useState('plugins', []);
+  const [selectedPlugins, setSelectedPlugins] = persistentState.useState(
+    'plugins',
+    editingLoop?.plugins ?? []
+  );
   const [availablePlugins, setAvailablePlugins] = useState([]);
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
+  // 'session' starts one run now; 'loop' saves the same form as a recurring template.
+  const [mode, setMode] = useState(editingLoop ? 'loop' : 'session');
+  const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
+  const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
+  const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
   const initialPromptRef = useRef(null);
-  // Holds model_params string from the last session, used to seed cursorVariantIdx on model load
-  const pendingModelParamsRef = useRef(null);
+  // Holds model_params string from the last session (or the loop being edited), used to seed
+  // cursorVariantIdx on model load
+  const pendingModelParamsRef = useRef(editingLoop?.model_params ?? null);
   const isCursor = agentSdk === 'cursor';
 
   // Cascade-clear harness change: reset model + variant
@@ -200,9 +230,10 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, models]);
 
-  // Populate form from the most recent session for this repo
+  // Populate form from the most recent session for this repo — but never over a loop being
+  // edited, whose own harness and model are what should show.
   useEffect(() => {
-    if (!repoFullName) return;
+    if (!repoFullName || editingLoop) return;
     sessionsService
       .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
       .then((result) => {
@@ -224,7 +255,15 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       .catch(() => {});
   }, []);
 
-  const canSubmit = !loading && repoFullName && branch && initialPrompt;
+  const isLoop = mode === 'loop';
+  // The branch-name field is the only other entry, and a loop never shows it.
+  const hasMoreOptions = (createNewBranch && !isLoop) || availablePlugins.length > 0;
+  const canSubmit =
+    !loading &&
+    repoFullName &&
+    branch &&
+    initialPrompt &&
+    (!isLoop || isScheduleComplete(schedule));
 
   useEffect(() => {
     if (!initialPromptRef.current) return;
@@ -238,6 +277,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     persistentState.clear();
     setFiles([]);
     setFileError(null);
+    setLoopName('');
   };
 
   const buildPayload = ({ planMode }) => {
@@ -266,8 +306,7 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     };
   };
 
-  const handleStart = async (e) => {
-    e.preventDefault();
+  const handleStart = async () => {
     if (!canSubmit) return;
     if (await onSubmit(buildPayload({ planMode: false }))) clearForm();
   };
@@ -278,10 +317,51 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     if (await onSubmit(buildPayload({ planMode: true }))) clearForm();
   };
 
+  // A loop replays the same session on a schedule, so it saves the form as a template instead
+  // of starting anything now. Attached files are per-run inputs and are not carried over.
+  const buildLoopPayload = () => {
+    const payload = buildPayload({ planMode: false });
+    return {
+      repo_full_name: payload.repoFullName,
+      base_branch: payload.branch,
+      name: loopName.trim() || null,
+      prompt: payload.initialPrompt,
+      permission_mode: payload.permissionMode,
+      single_session: singleSession,
+      // Every run needs its own branch pushed somewhere reviewable, so neither is optional.
+      create_new_branch: true,
+      auto_push: true,
+      agent_sdk: payload.agentSdk,
+      model: payload.model ?? null,
+      model_params: payload.modelParams ?? null,
+      plugins: payload.plugins ?? [],
+      ...schedulePayload(schedule),
+    };
+  };
+
+  const handleSaveLoop = async () => {
+    if (!canSubmit) return;
+    try {
+      if (editingLoop) await onUpdateLoop(editingLoop.id, buildLoopPayload());
+      else await onCreateLoop(buildLoopPayload());
+    } catch (err) {
+      toastError(editingLoop ? 'Failed to save loop' : 'Failed to create loop', err);
+      return;
+    }
+    clearForm();
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (isLoop) return handleSaveLoop();
+    return handleStart();
+  };
+
   const handleKeyDown = async (e) => {
     if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (canSubmit && (await onSubmit(buildPayload({ planMode: false })))) clearForm();
+      if (isLoop) return handleSaveLoop();
+      return handleStart();
     }
   };
 
@@ -317,8 +397,82 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
     if (withPreferenceVariantIdx >= 0) setCursorVariantIdx(withPreferenceVariantIdx);
   };
 
+  const promptTextarea = (
+    <textarea
+      ref={initialPromptRef}
+      value={initialPrompt}
+      onChange={(e) => setInitialPrompt(e.target.value)}
+      onKeyDown={handleKeyDown}
+      rows={3}
+      className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 pr-9 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent overflow-y-auto resize-none"
+      placeholder={
+        isLoop
+          ? 'Describe what the agent should do on every run...'
+          : 'Describe what you want the agent to do...'
+      }
+      required
+    />
+  );
+
   return (
-    <form onSubmit={handleStart} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {/* A loop being edited stays a loop, so the tabs give way to a title and a way out. */}
+      {editingLoop ? (
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 pb-2 -mt-1">
+          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-white">
+            <Repeat className="w-4 h-4 shrink-0 text-amber-400" />
+            <span className="truncate">
+              Editing loop
+              {editingLoop.name ? <span className="text-zinc-400"> · {editingLoop.name}</span> : ''}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        onCreateLoop && (
+          <div className="flex gap-1 border-b border-zinc-800 -mt-1">
+            {[
+              { value: 'session', label: 'Session' },
+              { value: 'loop', label: 'Loop' },
+            ].map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setMode(tab.value)}
+                className={`px-3 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+                  mode === tab.value
+                    ? 'border-amber-500 text-white'
+                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {isLoop && (
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-1">
+            Loop label <span className="text-zinc-500 font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={loopName}
+            onChange={(e) => setLoopName(e.target.value)}
+            placeholder="Nightly dependency check"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+          />
+        </div>
+      )}
+
       <div className="space-y-2">
         <div>
           <label className="mb-1 block text-sm font-medium text-zinc-300">Base branch</label>
@@ -362,137 +516,181 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-1">Initial Prompt</label>
-        <FileAttachmentPicker
-          files={files}
-          onAdd={handleAddFiles}
-          onRemove={handleRemoveFile}
-          error={fileError}
-        >
-          <textarea
-            ref={initialPromptRef}
-            value={initialPrompt}
-            onChange={(e) => setInitialPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={3}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 pr-9 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent overflow-y-auto resize-none"
-            placeholder="Describe what you want the agent to do..."
-            required
-          />
-        </FileAttachmentPicker>
-      </div>
-
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowMore((v) => !v)}
-          className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-        >
-          <svg
-            className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <label className="block text-sm font-medium text-zinc-300 mb-1">
+          {isLoop ? 'Prompt' : 'Initial Prompt'}
+        </label>
+        {/* Attachments are a one-off input for a single run, so a loop takes the prompt alone. */}
+        {isLoop ? (
+          promptTextarea
+        ) : (
+          <FileAttachmentPicker
+            files={files}
+            onAdd={handleAddFiles}
+            onRemove={handleRemoveFile}
+            error={fileError}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          More options
-        </button>
-
-        {showMore && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
-            {createNewBranch && (
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-zinc-300 mb-1">
-                  Branch name{' '}
-                  <span className="text-zinc-500 font-normal">
-                    (optional, auto-generated if empty)
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={branchName}
-                  onChange={(e) => setBranchName(e.target.value)}
-                  placeholder="my-feature-branch"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
-                />
-              </div>
-            )}
-
-            {availablePlugins.length > 0 && (
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-zinc-300 mb-1.5">Plugins</label>
-                <div className="space-y-1.5">
-                  {availablePlugins.map((plugin) => (
-                    <label
-                      key={plugin.id}
-                      className="flex cursor-pointer items-start gap-2 rounded-md border border-zinc-700/80 bg-zinc-800/40 px-3 py-2"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedPlugins.includes(plugin.id)}
-                        onChange={(e) =>
-                          setSelectedPlugins((prev) =>
-                            e.target.checked
-                              ? [...prev, plugin.id]
-                              : prev.filter((id) => id !== plugin.id)
-                          )
-                        }
-                        className="mt-0.5 rounded border-zinc-600 text-amber-500 focus:ring-amber-500/50"
-                      />
-                      <span className="text-sm text-zinc-300 leading-tight">
-                        <span className="font-medium text-zinc-200">{plugin.name}</span>
-                        <span className="block text-xs font-normal text-zinc-500 mt-0.5">
-                          {plugin.marketplace_repo} · {plugin.plugin_path}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+            {promptTextarea}
+          </FileAttachmentPicker>
         )}
       </div>
 
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={createNewBranch}
-          onClick={() => setCreateNewBranch((v) => !v)}
-          className="flex items-center gap-2 group"
-        >
-          <span
-            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${createNewBranch ? 'bg-amber-500' : 'bg-zinc-600'}`}
+      {isLoop && (
+        <>
+          <LoopScheduleFields schedule={schedule} onChange={setSchedule} />
+
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={singleSession}
+              onClick={() => setSingleSession((v) => !v)}
+              className="flex items-center gap-2 group"
+            >
+              <span
+                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${singleSession ? 'bg-amber-500' : 'bg-zinc-600'}`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${singleSession ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+                />
+              </span>
+              <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
+                Single session
+              </span>
+            </button>
+            <Tooltip
+              content={
+                <span className="block max-w-xs whitespace-normal leading-relaxed">
+                  On: every run continues in the same session, on one worktree and branch — the
+                  conversation is compacted first, then the prompt is sent again, so the agent keeps
+                  a summary of what it already did.
+                  <br />
+                  Off: each run starts a fresh session on its own branch.
+                </span>
+              }
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-400 transition-colors" />
+            </Tooltip>
+          </div>
+        </>
+      )}
+
+      {hasMoreOptions && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            <svg
+              className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            More options
+          </button>
+
+          {showMore && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
+              {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
+              {createNewBranch && !isLoop && (
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-300 mb-1">
+                    Branch name{' '}
+                    <span className="text-zinc-500 font-normal">
+                      (optional, auto-generated if empty)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value)}
+                    placeholder="my-feature-branch"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {availablePlugins.length > 0 && (
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-300 mb-1.5">Plugins</label>
+                  <div className="space-y-1.5">
+                    {availablePlugins.map((plugin) => (
+                      <label
+                        key={plugin.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-md border border-zinc-700/80 bg-zinc-800/40 px-3 py-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPlugins.includes(plugin.id)}
+                          onChange={(e) =>
+                            setSelectedPlugins((prev) =>
+                              e.target.checked
+                                ? [...prev, plugin.id]
+                                : prev.filter((id) => id !== plugin.id)
+                            )
+                          }
+                          className="mt-0.5 rounded border-zinc-600 text-amber-500 focus:ring-amber-500/50"
+                        />
+                        <span className="text-sm text-zinc-300 leading-tight">
+                          <span className="font-medium text-zinc-200">{plugin.name}</span>
+                          <span className="block text-xs font-normal text-zinc-500 mt-0.5">
+                            {plugin.marketplace_repo} · {plugin.plugin_path}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Both are fixed on for a loop: every run needs its own branch, pushed for review. */}
+      {!isLoop && (
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={createNewBranch}
+            onClick={() => setCreateNewBranch((v) => !v)}
+            className="flex items-center gap-2 group"
           >
             <span
-              className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${createNewBranch ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-            />
-          </span>
-          <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
-            New branch
-          </span>
-        </button>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={autoPush}
-          onClick={() => setAutoPush((v) => !v)}
-          className="flex items-center gap-2 group"
-        >
-          <span
-            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${autoPush ? 'bg-amber-500' : 'bg-zinc-600'}`}
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${createNewBranch ? 'bg-amber-500' : 'bg-zinc-600'}`}
+            >
+              <span
+                className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${createNewBranch ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+              />
+            </span>
+            <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
+              New branch
+            </span>
+          </button>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoPush}
+            onClick={() => setAutoPush((v) => !v)}
+            className="flex items-center gap-2 group"
           >
             <span
-              className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${autoPush ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-            />
-          </span>
-          <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
-            Auto-push
-          </span>
-        </button>
-      </div>
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${autoPush ? 'bg-amber-500' : 'bg-zinc-600'}`}
+            >
+              <span
+                className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${autoPush ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+              />
+            </span>
+            <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
+              Auto-push
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* SDK + Model + (variant) on the left; Start/Plan on the right */}
       <div className="flex flex-col sm:flex-row sm:items-start gap-2">
@@ -664,23 +862,25 @@ export default function BuilderForm({ onSubmit, loading, repoFullName, defaultPr
           )}
         </div>
 
-        {/* Right: Start / Plan */}
+        {/* Right: Create for a loop, Start / Plan for a one-off session */}
         <div className="flex items-center gap-3 sm:ml-auto">
           <button
             type="submit"
             disabled={!canSubmit}
             className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-5 py-2 rounded-md text-sm font-medium transition-colors"
           >
-            {loading ? 'Creating...' : 'Start'}
+            {isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
           </button>
-          <button
-            type="button"
-            onClick={handlePlan}
-            disabled={!canSubmit}
-            className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-300 hover:text-white px-5 py-2 rounded-md text-sm font-medium transition-colors border border-zinc-700 disabled:border-zinc-700"
-          >
-            Plan
-          </button>
+          {!isLoop && (
+            <button
+              type="button"
+              onClick={handlePlan}
+              disabled={!canSubmit}
+              className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-300 hover:text-white px-5 py-2 rounded-md text-sm font-medium transition-colors border border-zinc-700 disabled:border-zinc-700"
+            >
+              Plan
+            </button>
+          )}
         </div>
       </div>
     </form>

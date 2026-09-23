@@ -1,5 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Square, Archive } from 'lucide-react';
+import {
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Circle,
+  XCircle,
+  Square,
+  Archive,
+  Repeat,
+} from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import PrStatusBadge from './PrStatusBadge.jsx';
@@ -66,6 +75,15 @@ export default function SessionCard({ session, showRepo = false }) {
           <span className="text-white font-medium text-sm truncate">
             {session.label || session.repo_full_name}
           </span>
+          {session.loop_id && (
+            <span
+              title="Started by a loop"
+              className="flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-400/90 border border-amber-500/20"
+            >
+              <Repeat className="w-2.5 h-2.5" />
+              Loop
+            </span>
+          )}
           {showRepo && session.label && session.repo_full_name && (
             <span className="flex items-center gap-1 shrink-0 text-xs text-zinc-500">
               <GithubIcon className="w-3 h-3" />

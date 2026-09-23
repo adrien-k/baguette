@@ -7,7 +7,6 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
-import { dispatchDueScheduledQueuedMessages } from '../scheduled-queued-messages.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -133,7 +132,7 @@ describe('scheduled dispatcher', () => {
       send_at: sendAt,
     });
 
-    await dispatchDueScheduledQueuedMessages(app);
+    await app.service('queued-messages').runDue();
 
     const queued = await db('queued_messages').where({ session_id: sessionId });
     expect(queued).toHaveLength(0);
@@ -153,7 +152,7 @@ describe('scheduled dispatcher', () => {
       send_at: sendAt,
     });
 
-    await dispatchDueScheduledQueuedMessages(app);
+    await app.service('queued-messages').runDue();
 
     const turnQueue = await db('queued_messages').where({ session_id: sessionId, kind: 'turn' });
     expect(turnQueue).toHaveLength(1);

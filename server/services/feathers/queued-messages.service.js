@@ -2,8 +2,54 @@ import { KnexService } from '@feathersjs/knex';
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
+import logger from '../../logger.js';
+
+const SCHEDULED_DISPATCH_BATCH = 20;
 
 export class QueuedMessagesService extends KnexService {
+  setup(app) {
+    this.app = app;
+  }
+
+  /**
+   * Send queued_messages with kind=scheduled once send_at is due.
+   * Called by LoopScheduler; not exposed as a REST method.
+   */
+  async runDue(nowMs = Date.now()) {
+    const db = this.app.get('db');
+    const due = await db('queued_messages')
+      .where({ kind: 'scheduled' })
+      .where('send_at', '<=', new Date(nowMs).toISOString())
+      .orderBy('send_at', 'asc')
+      .limit(SCHEDULED_DISPATCH_BATCH);
+
+    for (const row of due) {
+      // Atomic claim: overlapping ticks or multiple app instances may see the same row in
+      // `due`; only one DELETE succeeds, so a transaction around read-then-delete is unnecessary.
+      const claimed = await db('queued_messages').where({ id: row.id, kind: 'scheduled' }).delete();
+      if (!claimed) continue;
+
+      try {
+        // messages.queueIfRunning only runs when params.provider is set. Use 'rest' so a
+        // firing schedule behaves like the user clicking Send: if the turn is still running,
+        // the message becomes a kind=turn queued row instead of starting a parallel agent.
+        await this.app.service('messages').create(
+          {
+            session_id: row.session_id,
+            type: 'user',
+            message_json: row.message_json,
+          },
+          { provider: 'rest', user: { id: row.user_id } }
+        );
+      } catch (err) {
+        logger.error(
+          { err, queuedId: row.id, sessionId: row.session_id },
+          'Failed to send scheduled message after claim'
+        );
+      }
+    }
+  }
+
   /**
    * Schedule a user message to be sent at send_at (ISO timestamp).
    * Stored as kind=scheduled; dispatched by the server scheduler.

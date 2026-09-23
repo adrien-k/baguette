@@ -13,11 +13,11 @@ import createImagesRoutes from './routes/images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
-import { startScheduledQueuedMessageSender } from './services/scheduled-queued-messages.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
 import { SseManager } from './lib/sse-manager.js';
+import { LoopScheduler } from './services/loop-scheduler.js';
 import db from './db.js';
 
 const { rest } = express;
@@ -126,10 +126,12 @@ app.hooks({
 app.use(express.errorHandler());
 // Sessions interrupted by the last shutdown are resumed once every service is set up — the
 // restart path dispatches through the agent services, which need their own setup() to have run.
+const loopScheduler = new LoopScheduler(app);
+app.set('loopScheduler', loopScheduler);
 app.setup(server).then(
   async () => {
-    startScheduledQueuedMessageSender(app);
     await app.service('sessions').restartInterruptedSessions();
+    loopScheduler.start();
   },
   (err) => logger.error({ err }, 'App setup failed')
 );
@@ -151,6 +153,7 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info('Shutting down');
+  loopScheduler.stop();
   try {
     await app.service('tasks').killAllTasks();
   } catch (err) {

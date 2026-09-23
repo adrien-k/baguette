@@ -89,5 +89,6 @@ export const secretsService = createService('secrets');
 export const queuedMessagesService = createService('queued-messages', {
   customMethods: ['schedule'],
 });
+export const loopsService = createService('loops');
 export const usersService = createService('users', { customMethods: ['approve', 'reject'] });
 export const pluginsService = createService('admin/plugins', { customMethods: ['refresh'] });
