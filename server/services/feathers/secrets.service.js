@@ -1,27 +1,71 @@
 import { KnexService } from '@feathersjs/knex';
-import { requireUser } from './hooks.js';
+import { Forbidden, NotFound } from '@feathersjs/errors';
+import { requireUser, maskValue } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 
 /**
- * Secrets service (table: secrets). Any authenticated user can list secrets;
- * only admins can create or delete. Create upserts by key.
+ * Secrets: global (user_id null) and personal (user_id set).
+ * Personal values override global keys when resolving session env.
  */
-class SecretsService extends KnexService {}
-
-async function upsertIfExists(context) {
-  const db = context.app.get('db');
-  const { key, value } = context.data;
-  const existing = await db('secrets').where({ key }).first();
-  if (existing) {
-    await db('secrets').where({ id: existing.id }).update({ value });
-    context.result = await db('secrets').where({ id: existing.id }).first();
+class SecretsService extends KnexService {
+  async find(params) {
+    const userId = params.user?.id;
+    const rows = await this.options
+      .Model('secrets')
+      .where((qb) => {
+        qb.whereNull('user_id');
+        if (userId) qb.orWhere({ user_id: userId });
+      })
+      .orderBy('key');
+    return { data: rows, total: rows.length, limit: rows.length, skip: 0 };
   }
-  return context;
-}
 
-function maskValue(value) {
-  if (!value || value.length <= 6) return '••••••';
-  return value.slice(0, 3) + '•'.repeat(Math.min(value.length - 6, 10)) + value.slice(-3);
+  async get(id, params) {
+    const row = await this.options.Model('secrets').where({ id }).first();
+    if (!row) throw new NotFound('Secret not found');
+    if (row.user_id != null && String(row.user_id) !== String(params.user?.id)) {
+      throw new Forbidden('Not allowed to access this secret');
+    }
+    return row;
+  }
+
+  async create(data, params) {
+    const userId = params.user?.id;
+    if (!userId) throw new Forbidden('Not authenticated');
+
+    const key = String(data.key || '').trim();
+    if (!key) throw new Error('key is required');
+
+    const user_id = data.scope === 'global' ? null : userId;
+    const db = this.options.Model;
+    const existingQuery = db('secrets').where({ key });
+    const existing =
+      user_id == null
+        ? await existingQuery.whereNull('user_id').first()
+        : await existingQuery.where({ user_id }).first();
+
+    const value = data.value ?? '';
+    if (existing) {
+      await db('secrets').where({ id: existing.id }).update({ value });
+      return db('secrets').where({ id: existing.id }).first();
+    }
+
+    const [id] = await db('secrets').insert({ key, value, user_id });
+    return db('secrets').where({ id }).first();
+  }
+
+  async patch(id, data, params) {
+    const row = await this.get(id, params);
+    if (data.value === undefined) return row;
+    await this.options.Model('secrets').where({ id }).update({ value: data.value });
+    return this.options.Model('secrets').where({ id }).first();
+  }
+
+  async remove(id, params) {
+    const row = await this.get(id, params);
+    await this.options.Model('secrets').where({ id }).delete();
+    return row;
+  }
 }
 
 function maskSecretValues(context) {
@@ -39,12 +83,12 @@ function maskSecretValues(context) {
 export const secretsHooks = {
   before: {
     all: [requireUser],
-    create: [upsertIfExists],
   },
   after: {
     find: [maskSecretValues],
     get: [maskSecretValues],
     create: [maskSecretValues],
+    patch: [maskSecretValues],
   },
 };
 

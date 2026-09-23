@@ -6,7 +6,7 @@ Baguette uses a `.baguette.yaml` file at the root of your repository to configur
 
 ## Docker configuration
 
-In the Baguette **Admin > Settings** panel, you can define a `docker-compose` configuration that runs alongside every session. This is where you add databases, caches, or any other services your project needs.
+In the Baguette **Settings → Docker** panel, you can define a `docker-compose` configuration that runs alongside every session. This is where you add databases, caches, or any other services your project needs.
 
 For example, to add PostgreSQL:
 
@@ -38,7 +38,7 @@ The services defined here are available to all sessions via their service name a
 config:
   session:
     env:
-      # Credentials match the postgres Docker service defined in Admin > Settings
+      # Credentials match the postgres Docker service defined in Settings → Docker
       DATABASE_URL: 'postgres://postgres:postgres@postgres:5432/app_${{ baguette.session.short_id }}'
       PUBLIC_HOST: '${{ baguette.session.public_uri }}'
     init: |

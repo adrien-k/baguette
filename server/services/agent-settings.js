@@ -12,20 +12,8 @@ export const SYSTEM_ALLOWED_COMMANDS = [
   'wc',
 ];
 
-export function getAllowedCommandsFromUser(user) {
-  let userCmds = [];
-  if (user?.allowed_commands) {
-    try {
-      const parsed =
-        typeof user.allowed_commands === 'string'
-          ? JSON.parse(user.allowed_commands)
-          : user.allowed_commands;
-      if (Array.isArray(parsed)) userCmds = parsed;
-    } catch {
-      /* ignore */
-    }
-  }
-  return [...SYSTEM_ALLOWED_COMMANDS, ...userCmds];
+export function getAllowedCommandsFromUser() {
+  return [...SYSTEM_ALLOWED_COMMANDS];
 }
 
 // The user-to-server token obtained from the GitHub App sign-in flow.

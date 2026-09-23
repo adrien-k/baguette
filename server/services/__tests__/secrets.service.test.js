@@ -35,8 +35,8 @@ beforeEach(async () => {
 describe('Secrets service - find', () => {
   it('any authenticated user can list secrets', async () => {
     await db('secrets').insert([
-      { key: 'FOO', value: 'bar' },
-      { key: 'BAZ', value: 'qux' },
+      { key: 'FOO', value: 'bar', user_id: null },
+      { key: 'BAZ', value: 'qux', user_id: null },
     ]);
 
     const result = await app.service('secrets').find(params(user2));
@@ -46,7 +46,7 @@ describe('Secrets service - find', () => {
   });
 
   it('returns safeValue (masked) instead of the raw value', async () => {
-    await db('secrets').insert({ key: 'API_KEY', value: 'supersecretvalue' });
+    await db('secrets').insert({ key: 'API_KEY', value: 'supersecretvalue', user_id: null });
 
     const result = await app.service('secrets').find(params(user2));
     const data = result.data ?? result;
@@ -63,7 +63,9 @@ describe('Secrets service - find', () => {
 
 describe('Secrets service - create', () => {
   it('admin can create a new secret', async () => {
-    await app.service('secrets').create({ key: 'NEW_KEY', value: 'secret' }, params(user1));
+    await app
+      .service('secrets')
+      .create({ key: 'NEW_KEY', value: 'secret', scope: 'global' }, params(user1));
 
     const row = await db('secrets').where({ key: 'NEW_KEY' }).first();
     expect(row).toBeTruthy();
@@ -71,11 +73,11 @@ describe('Secrets service - create', () => {
   });
 
   it('admin upserts when key already exists — updates value', async () => {
-    await db('secrets').insert({ key: 'EXISTING', value: 'old' });
+    await db('secrets').insert({ key: 'EXISTING', value: 'old', user_id: null });
 
     const result = await app
       .service('secrets')
-      .create({ key: 'EXISTING', value: 'new' }, params(user1));
+      .create({ key: 'EXISTING', value: 'new', scope: 'global' }, params(user1));
 
     const rows = await db('secrets').where({ key: 'EXISTING' });
     expect(rows).toHaveLength(1);
@@ -85,9 +87,35 @@ describe('Secrets service - create', () => {
   });
 
   it('any authenticated user can create a secret', async () => {
+    await app.service('secrets').create({ key: 'K', value: 'v', scope: 'personal' }, params(user2));
+    const row = await db('secrets').where({ key: 'K', user_id: 2 }).first();
+    expect(row).toBeTruthy();
+  });
+
+  it('defaults create without scope to a personal secret', async () => {
     await app.service('secrets').create({ key: 'K', value: 'v' }, params(user2));
     const row = await db('secrets').where({ key: 'K' }).first();
-    expect(row).toBeTruthy();
+    expect(row.user_id).toBe(2);
+  });
+
+  it('does not list another user personal secrets', async () => {
+    await db('secrets').insert([
+      { key: 'SHARED', value: 'g', user_id: null },
+      { key: 'MINE', value: 'p', user_id: 2 },
+      { key: 'THEIRS', value: 'x', user_id: 1 },
+    ]);
+    const result = await app.service('secrets').find(params(user2));
+    const keys = result.data.map((s) => s.key);
+    expect(keys).toContain('SHARED');
+    expect(keys).toContain('MINE');
+    expect(keys).not.toContain('THEIRS');
+  });
+
+  it('cannot get another user personal secret', async () => {
+    const [id] = await db('secrets').insert({ key: 'THEIRS', value: 'x', user_id: 1 });
+    await expect(app.service('secrets').get(id, params(user2))).rejects.toThrow(
+      'Not allowed to access this secret'
+    );
   });
 
   it('unauthenticated create is rejected', async () => {
@@ -99,7 +127,7 @@ describe('Secrets service - create', () => {
 
 describe('Secrets service - get', () => {
   it('any authenticated user can get a secret by id (returns safeValue)', async () => {
-    const [id] = await db('secrets').insert({ key: 'MY_KEY', value: 'mysecret' });
+    const [id] = await db('secrets').insert({ key: 'MY_KEY', value: 'mysecret', user_id: null });
 
     const result = await app.service('secrets').get(id, params(user2));
     expect(result.id).toBe(id);
@@ -109,14 +137,18 @@ describe('Secrets service - get', () => {
   });
 
   it('unauthenticated get is rejected', async () => {
-    const [id] = await db('secrets').insert({ key: 'MY_KEY', value: 'mysecret' });
+    const [id] = await db('secrets').insert({ key: 'MY_KEY', value: 'mysecret', user_id: null });
     await expect(app.service('secrets').get(id, unauthParams)).rejects.toThrow('Not authenticated');
   });
 });
 
 describe('Secrets service - patch', () => {
   it('any authenticated user can patch a secret', async () => {
-    const [id] = await db('secrets').insert({ key: 'PATCH_KEY', value: 'original' });
+    const [id] = await db('secrets').insert({
+      key: 'PATCH_KEY',
+      value: 'original',
+      user_id: null,
+    });
 
     const result = await app.service('secrets').patch(id, { value: 'updated' }, params(user2));
     expect(result.id).toBe(id);
@@ -125,7 +157,11 @@ describe('Secrets service - patch', () => {
   });
 
   it('unauthenticated patch is rejected', async () => {
-    const [id] = await db('secrets').insert({ key: 'PATCH_KEY', value: 'original' });
+    const [id] = await db('secrets').insert({
+      key: 'PATCH_KEY',
+      value: 'original',
+      user_id: null,
+    });
     await expect(
       app.service('secrets').patch(id, { value: 'updated' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
@@ -134,7 +170,7 @@ describe('Secrets service - patch', () => {
 
 describe('Secrets service - remove', () => {
   it('admin can delete a secret by id', async () => {
-    const [id] = await db('secrets').insert({ key: 'TO_DELETE', value: 'val' });
+    const [id] = await db('secrets').insert({ key: 'TO_DELETE', value: 'val', user_id: null });
 
     await app.service('secrets').remove(id, params(user1));
 
@@ -143,7 +179,7 @@ describe('Secrets service - remove', () => {
   });
 
   it('any authenticated user can delete a secret', async () => {
-    const [id] = await db('secrets').insert({ key: 'PROTECTED', value: 'val' });
+    const [id] = await db('secrets').insert({ key: 'PROTECTED', value: 'val', user_id: null });
 
     await app.service('secrets').remove(id, params(user2));
     const row = await db('secrets').where({ id }).first();
@@ -151,7 +187,11 @@ describe('Secrets service - remove', () => {
   });
 
   it('unauthenticated remove is rejected', async () => {
-    const [id] = await db('secrets').insert({ key: 'ALSO_PROTECTED', value: 'val' });
+    const [id] = await db('secrets').insert({
+      key: 'ALSO_PROTECTED',
+      value: 'val',
+      user_id: null,
+    });
 
     await expect(app.service('secrets').remove(id, unauthParams)).rejects.toThrow(
       'Not authenticated'

@@ -1,7 +1,6 @@
 import { KnexService } from '@feathersjs/knex';
 import { NotAuthenticated } from '@feathersjs/errors';
 import { requireUser, encryptFields, decryptFields } from './hooks.js';
-import { SYSTEM_ALLOWED_COMMANDS } from '../../services/agent-settings.js';
 import {
   mergeCursorModelPrefs,
   parseCursorModelPrefsJson,
@@ -35,15 +34,6 @@ async function orderByCreatedAt(context) {
   return context;
 }
 
-function encryptAllowedCommands(context) {
-  if (context.data.allowed_commands !== undefined) {
-    context.data.allowed_commands = JSON.stringify(
-      Array.isArray(context.data.allowed_commands) ? context.data.allowed_commands : []
-    );
-  }
-  return context;
-}
-
 async function normalizeCursorModelPrefsPatch(context) {
   if (context.data.agent_preferences === undefined) return context;
 
@@ -56,15 +46,12 @@ async function normalizeCursorModelPrefsPatch(context) {
   return context;
 }
 
-// Non-secret fields only visible externally + parsed allowed_commands
 function formatUserExternal(context) {
   if (!context.params.provider) return context;
   const process = (user) => {
     // access_token is always hidden from external callers (even masked)
     delete user.access_token;
-    user.allowed_commands = user.allowed_commands ? JSON.parse(user.allowed_commands) : [];
     user.agent_preferences = parseCursorModelPrefsJson(user.agent_preferences);
-    user.system_allowed_commands = SYSTEM_ALLOWED_COMMANDS;
     return user;
   };
   if (Array.isArray(context.result)) {
@@ -101,13 +88,8 @@ export const usersHooks = {
   before: {
     all: [requireUser],
     find: [orderByCreatedAt],
-    create: [encryptAllowedCommands, normalizeCursorModelPrefsPatch, encryptUserSecrets],
-    patch: [
-      restrictPatchToSelf,
-      encryptAllowedCommands,
-      normalizeCursorModelPrefsPatch,
-      encryptUserSecrets,
-    ],
+    create: [normalizeCursorModelPrefsPatch, encryptUserSecrets],
+    patch: [restrictPatchToSelf, normalizeCursorModelPrefsPatch, encryptUserSecrets],
   },
   after: {
     find: [decryptUserSecrets, formatUserExternal],

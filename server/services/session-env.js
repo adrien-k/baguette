@@ -24,10 +24,21 @@ function stripServerEnv(env) {
   return result;
 }
 
+export async function loadSecretsForUser(db, userId) {
+  const globalRows = await db('secrets').whereNull('user_id').select('key', 'value');
+  const secrets = Object.fromEntries(globalRows.map((r) => [r.key, r.value]));
+  if (userId) {
+    const personalRows = await db('secrets').where({ user_id: userId }).select('key', 'value');
+    for (const row of personalRows) {
+      secrets[row.key] = row.value;
+    }
+  }
+  return secrets;
+}
+
 async function buildInterpolateContext(db, sessionId) {
   const session = await db('sessions').where({ id: sessionId }).first();
-  const secretRows = await db('secrets').select('key', 'value');
-  const secrets = Object.fromEntries(secretRows.map((r) => [r.key, r.value]));
+  const secrets = await loadSecretsForUser(db, session?.user_id ?? null);
 
   let baguetteConfig = null;
   let interpolateOpts = null;

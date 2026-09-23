@@ -74,7 +74,6 @@ export async function seedDevDb(app) {
   const user = await ensureDevUser(app);
   const repoDir = await bootstrapDemoRepo();
   const localPath = path.resolve(repoDir);
-
   const { repo } = await app.service('repos').createLocal({ localPath }, { user });
 
   for (const spec of SESSION_SPECS) {

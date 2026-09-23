@@ -50,7 +50,8 @@ class ReposService extends KnexService {
         'repos.default_branch',
         'repos.created_at',
         'user_repos.id as user_repo_id',
-        'user_repos.anthropic_api_key_encrypted'
+        'user_repos.anthropic_api_key_encrypted',
+        'user_repos.cursor_api_key_encrypted'
       )
       .whereNull('repos.deleted_at')
       .orderBy('repos.full_name');
@@ -340,10 +341,7 @@ class ReposService extends KnexService {
 
   /**
    * Create a brand-new local repo (by name) or import an existing local git directory (by path).
-   * No GitHub required.
-   *
-   * - { name }      → git init a fresh repo; full_name = name (no "/" allowed)
-   * - { localPath } → git clone from that directory; full_name = absolute localPath
+   * Settings UI only uses { name }; seed/dev still imports via { localPath }.
    */
   async createLocal(data, params) {
     const { name, localPath } = data;
@@ -358,7 +356,6 @@ class ReposService extends KnexService {
 
     let strippedName = repo?.stripped_name;
     if (!strippedName) {
-      // For imported repos derive from the basename; for new repos use the name itself
       const base = toStrippedName(localPath ? path.basename(localPath) : name);
       const taken = await db('repos').where({ stripped_name: base }).first();
       if (taken) {
@@ -457,7 +454,12 @@ export const reposHooks = {
     all: [requireUser],
   },
   after: {
-    find: [decryptFields({ anthropic_api_key: 'anthropic_api_key_encrypted' })],
+    find: [
+      decryptFields({
+        anthropic_api_key: 'anthropic_api_key_encrypted',
+        cursor_api_key: 'cursor_api_key_encrypted',
+      }),
+    ],
   },
 };
 

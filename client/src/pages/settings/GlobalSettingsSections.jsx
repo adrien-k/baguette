@@ -1,17 +1,83 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { toastError } from '../utils/toastError.jsx';
-import { apiFetch } from '../api.js';
-import { secretsService, usersService, reposService, pluginsService } from '../feathers.js';
+import { toastError } from '../../utils/toastError.jsx';
+import { apiFetch } from '../../api.js';
+import { secretsService, usersService, reposService, pluginsService } from '../../feathers.js';
 
-// ─── SecretsTab ───────────────────────────────────────────────────────────────
+function SecretRow({ secret, onDelete }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-2">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <code className="text-sm text-amber-400 font-medium shrink-0">{secret.key}</code>
+        <code className="text-sm text-zinc-400 truncate hidden sm:block">{secret.safeValue}</code>
+      </div>
+      <button
+        onClick={() => onDelete(secret.id)}
+        className="text-xs text-red-500 hover:text-red-400 shrink-0"
+      >
+        Remove
+      </button>
+    </div>
+  );
+}
 
-function SecretsTab() {
-  const [variables, setVariables] = useState([]);
+function SecretAddForm({ title, scope, onAdded }) {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!newKey.trim()) return;
+    setSaving(true);
+    try {
+      await secretsService.create({
+        key: newKey.trim(),
+        value: newValue,
+        scope,
+      });
+      setNewKey('');
+      setNewValue('');
+      onAdded();
+    } catch (err) {
+      toastError('Failed to add secret', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleAdd} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
+      <h3 className="text-sm font-medium text-zinc-300 mb-3">{title}</h3>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <input
+          type="text"
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          placeholder="KEY"
+          className="sm:w-40 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+        />
+        <input
+          type="text"
+          value={newValue}
+          onChange={(e) => setNewValue(e.target.value)}
+          placeholder="value"
+          className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+        />
+        <button
+          type="submit"
+          disabled={saving || !newKey.trim()}
+          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
+        >
+          Add
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function SecretsTab() {
+  const [variables, setVariables] = useState([]);
 
   const load = () => {
     secretsService
@@ -22,22 +88,6 @@ function SecretsTab() {
 
   useEffect(load, []);
 
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!newKey.trim()) return;
-    setSaving(true);
-    try {
-      await secretsService.create({ key: newKey.trim(), value: newValue });
-      setNewKey('');
-      setNewValue('');
-      load();
-    } catch (err) {
-      toastError('Failed to add secret', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDelete = async (id) => {
     try {
       await secretsService.remove(id);
@@ -47,72 +97,47 @@ function SecretsTab() {
     }
   };
 
+  const globalSecrets = variables.filter((v) => v.user_id == null);
+  const personalSecrets = variables.filter((v) => v.user_id != null);
+
   return (
-    <div>
-      <p className="text-zinc-400 text-sm mb-4">
+    <div className="space-y-10">
+      <p className="text-zinc-400 text-sm">
         Secrets are available in <code className="text-zinc-300">.baguette.yaml</code> config where
-        they can be assigned to environment variables.
+        they can be assigned to environment variables. Personal secrets override global secrets with
+        the same key.
       </p>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6">
-        {variables.length === 0 && (
-          <p className="text-zinc-600 text-sm text-center py-8">No secrets configured</p>
-        )}
-        {variables.map((v) => (
-          <div
-            key={v.id}
-            className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-2"
-          >
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <code className="text-sm text-amber-400 font-medium shrink-0">{v.key}</code>
-              <code className="text-sm text-zinc-400 truncate hidden sm:block">{v.safeValue}</code>
-            </div>
-            <button
-              onClick={() => handleDelete(v.id)}
-              className="text-xs text-red-500 hover:text-red-400 shrink-0"
-            >
-              Remove
-            </button>
-          </div>
-        ))}
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Global secrets</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+          {globalSecrets.length === 0 && (
+            <p className="text-zinc-600 text-sm text-center py-8">No global secrets configured</p>
+          )}
+          {globalSecrets.map((v) => (
+            <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
+          ))}
+        </div>
+        <SecretAddForm title="Add global secret" scope="global" onAdded={load} />
       </div>
 
-      <form
-        onSubmit={handleAdd}
-        className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5"
-      >
-        <h2 className="text-sm font-medium text-zinc-300 mb-3">Add Secret</h2>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="text"
-            value={newKey}
-            onChange={(e) => setNewKey(e.target.value)}
-            placeholder="KEY"
-            className="sm:w-40 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-          />
-          <input
-            type="text"
-            value={newValue}
-            onChange={(e) => setNewValue(e.target.value)}
-            placeholder="value"
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-          />
-          <button
-            type="submit"
-            disabled={saving || !newKey.trim()}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
-          >
-            Add
-          </button>
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Personal secrets</h2>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+          {personalSecrets.length === 0 && (
+            <p className="text-zinc-600 text-sm text-center py-8">No personal secrets yet</p>
+          )}
+          {personalSecrets.map((v) => (
+            <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
+          ))}
         </div>
-      </form>
+        <SecretAddForm title="Add personal secret" scope="personal" onAdded={load} />
+      </div>
     </div>
   );
 }
 
-// ─── RepositoriesTab ──────────────────────────────────────────────────────────
-
-function RepositoriesTab() {
+export function AllRepositoriesSection() {
   const [repos, setRepos] = useState([]);
   const [deletingId, setDeletingId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -134,9 +159,6 @@ function RepositoriesTab() {
     };
   }, [load]);
 
-  const handleDeleteClick = (repo) => setConfirmDelete(repo);
-  const handleDeleteCancel = () => setConfirmDelete(null);
-
   const handleDeleteConfirm = async () => {
     if (!confirmDelete) return;
     setDeletingId(confirmDelete.id);
@@ -153,6 +175,7 @@ function RepositoriesTab() {
 
   return (
     <div>
+      <h2 className="text-sm font-semibold text-zinc-300 mb-3">All repositories</h2>
       <p className="text-zinc-400 text-sm mb-4">
         Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the
         clone for all users.
@@ -173,15 +196,13 @@ function RepositoriesTab() {
                 {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => handleDeleteClick(r)}
-                disabled={deletingId !== null}
-                className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50"
-              >
-                Delete
-              </button>
-            </div>
+            <button
+              onClick={() => setConfirmDelete(r)}
+              disabled={deletingId !== null}
+              className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 shrink-0"
+            >
+              Delete
+            </button>
           </div>
         ))}
       </div>
@@ -200,7 +221,7 @@ function RepositoriesTab() {
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={handleDeleteCancel}
+                onClick={() => setConfirmDelete(null)}
                 className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
               >
                 Cancel
@@ -220,9 +241,7 @@ function RepositoriesTab() {
   );
 }
 
-// ─── UsersTab ─────────────────────────────────────────────────────────────────
-
-function UsersTab() {
+export function UsersTab() {
   const [users, setUsers] = useState([]);
 
   const load = () => {
@@ -232,13 +251,21 @@ function UsersTab() {
   useEffect(load, []);
 
   const handleApprove = async (id) => {
-    await usersService.approve(id);
-    load();
+    try {
+      await usersService.approve(id);
+      load();
+    } catch (err) {
+      toastError('Failed to approve user', err);
+    }
   };
 
   const handleReject = async (id) => {
-    await usersService.reject(id);
-    load();
+    try {
+      await usersService.reject(id);
+      load();
+    } catch (err) {
+      toastError('Failed to reject user', err);
+    }
   };
 
   return (
@@ -297,9 +324,7 @@ function UsersTab() {
   );
 }
 
-// ─── DockerTab ────────────────────────────────────────────────────────────────
-
-function DockerTab() {
+export function DockerTab() {
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -371,14 +396,12 @@ function DockerTab() {
     return 'bg-zinc-500';
   };
 
-  // Merge services from YAML with container status
   const containerByService = {};
   for (const c of containers) {
     const name = c.Service || c.Name || c.service || c.name;
     if (name) containerByService[name] = c;
   }
 
-  // All service names: defined in YAML + any containers not in YAML
   const allServiceNames = [
     ...services,
     ...containers
@@ -428,7 +451,6 @@ function DockerTab() {
           const c = containerByService[name];
           const state = c ? c.State || c.state || '' : '';
           const image = c ? c.Image || c.image || '' : '';
-          const _isRunning = state.toLowerCase().includes('running');
           return (
             <div
               key={name}
@@ -487,9 +509,7 @@ function DockerTab() {
   );
 }
 
-// ─── PluginsTab ───────────────────────────────────────────────────────────────
-
-function PluginsTab() {
+export function PluginsTab() {
   const [plugins, setPlugins] = useState([]);
   const [input, setInput] = useState('');
   const [installing, setInstalling] = useState(false);
@@ -552,7 +572,6 @@ function PluginsTab() {
     }
   };
 
-  // Group plugins by marketplace_repo
   const grouped = plugins.reduce((acc, p) => {
     if (!acc[p.marketplace_repo]) acc[p.marketplace_repo] = [];
     acc[p.marketplace_repo].push(p);
@@ -562,9 +581,9 @@ function PluginsTab() {
   return (
     <div>
       <p className="text-zinc-400 text-sm mb-4">
-        Install Claude Code plugins from GitHub. Plugins are available when starting new sessions.
-        Each plugin must contain a <code className="text-zinc-300">.claude-plugin/plugin.json</code>{' '}
-        file.
+        Install Claude Code plugins from GitHub. Plugins are global — available to all users when
+        starting new sessions. Each plugin must contain a{' '}
+        <code className="text-zinc-300">.claude-plugin/plugin.json</code> file.
       </p>
 
       <form
@@ -642,52 +661,6 @@ function PluginsTab() {
           </div>
         ))
       )}
-    </div>
-  );
-}
-
-// ─── Admin page ───────────────────────────────────────────────────────────────
-
-const TABS = [
-  { id: 'secrets', label: 'Secrets' },
-  { id: 'repos', label: 'Repositories' },
-  { id: 'plugins', label: 'Plugins' },
-  { id: 'docker', label: 'Docker' },
-  { id: 'users', label: 'Users' },
-];
-
-export default function Admin() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'secrets';
-
-  const setTab = (tab) => setSearchParams({ tab });
-
-  return (
-    <div className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
-      <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Admin</h1>
-
-      <div className="flex border-b border-zinc-800 mb-6 gap-1 overflow-x-auto">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap ${
-              activeTab === tab.id ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            {tab.label}
-            {activeTab === tab.id && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 rounded-t" />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'secrets' && <SecretsTab />}
-      {activeTab === 'repos' && <RepositoriesTab />}
-      {activeTab === 'plugins' && <PluginsTab />}
-      {activeTab === 'docker' && <DockerTab />}
-      {activeTab === 'users' && <UsersTab />}
     </div>
   );
 }

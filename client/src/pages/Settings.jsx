@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Bot, GitBranch, Bell, KeyRound, Puzzle, Box, Users } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -8,6 +9,13 @@ import { useRepoContext } from '../context/RepoContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
+import {
+  SecretsTab,
+  AllRepositoriesSection,
+  PluginsTab,
+  DockerTab,
+  UsersTab,
+} from './settings/GlobalSettingsSections.jsx';
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
@@ -24,10 +32,6 @@ function RepositoriesTab() {
   // New local repo state
   const [localName, setLocalName] = useState('');
   const [addingLocal, setAddingLocal] = useState(false);
-  // Import local repo state
-  const [importPath, setImportPath] = useState('');
-  const [addingImport, setAddingImport] = useState(false);
-
   // Per-repo key state (anthropic + cursor)
   const [repoKeyEditingId, setRepoKeyEditingId] = useState(null);
   const [repoKeyField, setRepoKeyField] = useState('anthropic'); // 'anthropic' | 'cursor'
@@ -109,22 +113,6 @@ function RepositoriesTab() {
     }
   };
 
-  const handleImportLocal = async (e) => {
-    e.preventDefault();
-    if (!importPath.trim()) return;
-    setAddingImport(true);
-    try {
-      const result = await reposService.createLocal({ localPath: importPath.trim() });
-      setImportPath('');
-      setAddResult(result);
-      await refetchRepos();
-    } catch (err) {
-      toastError('Failed to import repository', err);
-    } finally {
-      setAddingImport(false);
-    }
-  };
-
   const handleUnlinkClick = (repo) => setConfirmUnlink(repo);
   const handleUnlinkCancel = () => setConfirmUnlink(null);
 
@@ -145,10 +133,9 @@ function RepositoriesTab() {
   const addedNames = new Set(repos.map((r) => r.full_name));
 
   return (
-    <div className="space-y-8">
-      {/* Repositories */}
+    <div className="space-y-12">
       <div>
-        <h2 className="text-sm font-semibold text-zinc-300 mb-4">Repositories</h2>
+        <h2 className="text-sm font-semibold text-zinc-300 mb-4">My repositories</h2>
 
         <form
           onSubmit={handleAdd}
@@ -196,32 +183,6 @@ function RepositoriesTab() {
               className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
             >
               {addingLocal ? 'Creating…' : 'Create'}
-            </button>
-          </div>
-        </form>
-
-        <form
-          onSubmit={handleImportLocal}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-4"
-        >
-          <p className="text-zinc-400 text-sm mb-3">
-            Import an existing local git repository from disk.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={importPath}
-              onChange={(e) => setImportPath(e.target.value)}
-              placeholder="Absolute path (e.g. /home/user/projects/my-app)"
-              required
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-            <button
-              type="submit"
-              disabled={addingImport || !importPath.trim()}
-              className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
-            >
-              {addingImport ? 'Importing…' : 'Import'}
             </button>
           </div>
         </form>
@@ -358,6 +319,8 @@ function RepositoriesTab() {
         </div>
       </div>
 
+      <AllRepositoriesSection />
+
       {confirmUnlink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
           <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl max-w-md w-full p-5">
@@ -456,125 +419,33 @@ function NotificationsSection() {
   );
 }
 
-// ─── ToggleRow (notifications / approvals) ───────────────────────────────────
-
-function ToggleRow({ label, description, value, onChange, disabled }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0 border-b border-zinc-800 last:border-0">
-      <div>
-        <p className="text-sm font-medium text-zinc-300 mb-0.5">{label}</p>
-        <p className="text-xs text-zinc-500">{description}</p>
-      </div>
-      <button
-        type="button"
-        onClick={onChange}
-        disabled={disabled}
-        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-50 ${
-          value ? 'bg-amber-500' : 'bg-zinc-700'
-        }`}
-        role="switch"
-        aria-checked={value}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-            value ? 'translate-x-5' : 'translate-x-0'
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
-
-// ─── NotificationsTab ─────────────────────────────────────────────────────────
-
-function NotificationsTab({ settings, onSave }) {
-  const { user, setUser } = useAuth();
-  const [saving, setSaving] = useState(false);
-
-  const handleToggle = async (field) => {
-    if (!settings) return;
-    setSaving(true);
-    try {
-      const updated = await usersService.patch(user.id, { [field]: !settings[field] });
-      onSave(updated);
-      setUser((prev) => ({ ...prev, [field]: updated[field] }));
-    } catch (err) {
-      toastError('Failed to update notification settings', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const isDisabled = saving;
-  const builderModal = !!settings?.builder_modal_mode;
-
-  return (
-    <div className="space-y-10">
-      <NotificationsSection />
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Approvals</h2>
-        <p className="text-zinc-400 text-sm mb-4">
-          Choose whether approval requests use a modal dialog or appear inline in the session chat.
-        </p>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
-          <ToggleRow
-            label="Modal approval"
-            description="When enabled, approval requests interrupt your work with a modal dialog. When disabled, they appear inline in the session chat."
-            value={builderModal}
-            onChange={() => handleToggle('builder_modal_mode')}
-            disabled={isDisabled}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── AgentTab ─────────────────────────────────────────────────────────────────
-
-const AGENT_SDK_OPTIONS = [
-  { value: 'claude', label: 'Claude' },
-  { value: 'cursor', label: 'Cursor' },
-];
 
 function AgentTab({ settings, onSave }) {
   const { user } = useAuth();
-  const [defaultAgentSdk, setDefaultAgentSdk] = useState('claude');
   const [anthropicApiKey, setAnthropicApiKey] = useState(null);
   const [anthropicApiKeyDirty, setAnthropicApiKeyDirty] = useState(false);
   const [cursorApiKey, setCursorApiKey] = useState(null);
   const [cursorApiKeyDirty, setCursorApiKeyDirty] = useState(false);
   const [branchPrefix, setBranchPrefix] = useState('baguette/');
-  const [allowedCommands, setAllowedCommands] = useState([]);
-  const [newCommand, setNewCommand] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!settings) return;
-    setDefaultAgentSdk(settings.default_agent_sdk || 'claude');
     setBranchPrefix(settings.branch_prefix ?? 'baguette/');
-    setAllowedCommands(settings.allowed_commands || []);
     setAnthropicApiKey(null);
     setAnthropicApiKeyDirty(false);
     setCursorApiKey(null);
     setCursorApiKeyDirty(false);
   }, [settings]);
 
-  const systemAllowedCommands = settings?.system_allowed_commands || [];
-
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
-    setError(null);
     try {
-      const patch = {
-        default_agent_sdk: defaultAgentSdk,
-        branch_prefix: branchPrefix,
-        allowed_commands: allowedCommands,
-      };
+      const patch = { branch_prefix: branchPrefix };
       if (anthropicApiKeyDirty) patch.anthropic_api_key = anthropicApiKey ?? '';
       if (cursorApiKeyDirty) patch.cursor_api_key = cursorApiKey ?? '';
       const updated = await usersService.patch(user.id, patch);
@@ -586,7 +457,7 @@ function AgentTab({ settings, onSave }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      setError(err.message);
+      toastError('Failed to save agent settings', err);
     } finally {
       setSaving(false);
     }
@@ -594,32 +465,9 @@ function AgentTab({ settings, onSave }) {
 
   return (
     <form onSubmit={handleSave} className="space-y-8">
-      {error && (
-        <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
-
       {/* General */}
       <div className="space-y-4 max-w-xl">
         <h2 className="text-sm font-semibold text-zinc-300">General</h2>
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">Default agent</label>
-          <select
-            value={defaultAgentSdk}
-            onChange={(e) => setDefaultAgentSdk(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-          >
-            {AGENT_SDK_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-zinc-500">
-            Which agent SDK is pre-selected when creating a new session.
-          </p>
-        </div>
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
           <input
@@ -632,78 +480,6 @@ function AgentTab({ settings, onSave }) {
           <p className="mt-1 text-xs text-zinc-500">
             Prefix added to all generated branch names. Leave empty for no prefix.
           </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">Allowed commands</label>
-          <p className="text-xs text-zinc-500 mb-2">
-            Command prefixes that Claude can run without asking for approval. Each entry matches any
-            command starting with that prefix.
-          </p>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {systemAllowedCommands.map((cmd) => (
-              <span
-                key={cmd}
-                className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-md px-2.5 py-1 text-sm font-mono text-zinc-400"
-                title="System command — always allowed"
-              >
-                {cmd}
-                <span className="text-zinc-600 text-xs leading-none">system</span>
-              </span>
-            ))}
-            {allowedCommands.map((cmd) => (
-              <span
-                key={cmd}
-                className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 rounded-md px-2.5 py-1 text-sm font-mono text-zinc-200"
-              >
-                {cmd}
-                <button
-                  type="button"
-                  onClick={() => setAllowedCommands(allowedCommands.filter((c) => c !== cmd))}
-                  className="text-zinc-500 hover:text-red-400 leading-none"
-                  aria-label={`Remove ${cmd}`}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newCommand}
-              onChange={(e) => setNewCommand(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const cmd = newCommand.trim();
-                  if (
-                    cmd &&
-                    !allowedCommands.includes(cmd) &&
-                    !systemAllowedCommands.includes(cmd)
-                  ) {
-                    setAllowedCommands([...allowedCommands, cmd]);
-                  }
-                  setNewCommand('');
-                }
-              }}
-              placeholder="e.g. npm, yarn"
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const cmd = newCommand.trim();
-                if (cmd && !allowedCommands.includes(cmd) && !systemAllowedCommands.includes(cmd)) {
-                  setAllowedCommands([...allowedCommands, cmd]);
-                }
-                setNewCommand('');
-              }}
-              className="bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-2 rounded-lg text-sm transition-colors"
-            >
-              Add
-            </button>
-          </div>
         </div>
       </div>
 
@@ -760,16 +536,22 @@ function AgentTab({ settings, onSave }) {
 // ─── Settings page ────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'agent', label: 'Agent' },
-  { id: 'repos', label: 'Repositories' },
-  { id: 'notifications', label: 'Notifications' },
+  { id: 'repos', label: 'Repositories', icon: GitBranch },
+  { id: 'agent', label: 'Agent', icon: Bot },
+  { id: 'secrets', label: 'Secrets', icon: KeyRound },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'plugins', label: 'Plugins', icon: Puzzle },
+  { id: 'docker', label: 'Docker', icon: Box },
+  { id: 'users', label: 'Users', icon: Users },
 ];
+
+const DEFAULT_TAB = TABS[0].id;
 
 export default function Settings() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const rawTab = searchParams.get('tab') || 'agent';
-  const activeTab = TABS.some((t) => t.id === rawTab) ? rawTab : 'agent';
+  const rawTab = searchParams.get('tab') || DEFAULT_TAB;
+  const activeTab = TABS.some((t) => t.id === rawTab) ? rawTab : DEFAULT_TAB;
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
 
@@ -784,45 +566,54 @@ export default function Settings() {
   }, [user?.id]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
+    <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Settings</h1>
 
-      <div className="flex border-b border-zinc-800 mb-6 gap-1 overflow-x-auto">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap ${
-              activeTab === tab.id ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            {tab.label}
-            {activeTab === tab.id && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 rounded-t" />
-            )}
-          </button>
-        ))}
-      </div>
+      <div className="flex flex-col sm:flex-row sm:items-start gap-6">
+        <nav className="sm:w-52 shrink-0 flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setTab(tab.id)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  active
+                    ? 'bg-zinc-800 text-white'
+                    : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${active ? 'text-amber-400' : 'text-zinc-500'}`}
+                />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
 
-      {error && (
-        <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
-          {error}
+        <div className="flex-1 min-w-0">
+          {error && (
+            <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
+              {error}
+            </div>
+          )}
+
+          {activeTab === 'agent' && !settings && !error && (
+            <p className="text-zinc-500">Loading…</p>
+          )}
+          {activeTab === 'agent' && settings && (
+            <AgentTab settings={settings} onSave={setSettings} />
+          )}
+          {activeTab === 'repos' && <RepositoriesTab />}
+          {activeTab === 'notifications' && <NotificationsSection />}
+          {activeTab === 'secrets' && <SecretsTab />}
+          {activeTab === 'plugins' && <PluginsTab />}
+          {activeTab === 'docker' && <DockerTab />}
+          {activeTab === 'users' && <UsersTab />}
         </div>
-      )}
-
-      {!settings && !error ? (
-        <p className="text-zinc-500">Loading…</p>
-      ) : (
-        settings && (
-          <>
-            {activeTab === 'agent' && <AgentTab settings={settings} onSave={setSettings} />}
-            {activeTab === 'repos' && <RepositoriesTab />}
-            {activeTab === 'notifications' && (
-              <NotificationsTab settings={settings} onSave={setSettings} />
-            )}
-          </>
-        )
-      )}
+      </div>
     </div>
   );
 }

@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
-import { Settings as SettingsIcon, Shield, LogOut } from 'lucide-react';
+import { Settings as SettingsIcon, LogOut } from 'lucide-react';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Session from './pages/Session.jsx';
 import Settings from './pages/Settings.jsx';
-import Admin from './pages/Admin.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
@@ -78,10 +77,6 @@ function Nav() {
                     <SettingsIcon className="w-4 h-4 text-zinc-500" />
                     Settings
                   </Link>
-                  <Link to="/admin" className={menuItemClass}>
-                    <Shield className="w-4 h-4 text-zinc-500" />
-                    Admin
-                  </Link>
                 </div>
                 <div className="border-t border-zinc-700 mt-1 pt-1">
                   <button onClick={logout} className={menuItemClass}>
@@ -96,6 +91,12 @@ function Nav() {
       </div>
     </nav>
   );
+}
+
+function AdminRedirect() {
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'secrets';
+  return <Navigate to={`/settings?tab=${tab}`} replace />;
 }
 
 function ProtectedRoute({ children }) {
@@ -196,16 +197,8 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Admin />
-                </div>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/admin" element={<AdminRedirect />} />
+          <Route path="/admin/*" element={<AdminRedirect />} />
           <Route path="/account" element={<Navigate to="/settings" replace />} />
           <Route
             path="/onboarding"
