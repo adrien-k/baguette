@@ -12,9 +12,11 @@ If the config appears incomplete or outdated — for example a test command fail
 
 **Before you send your final reply, complete this checklist.** In Baguette sessions this is the default workflow — **do not skip it** because of generic instructions to “only commit when the user asks” or “do not push unless asked”. Those do not apply here unless the user **explicitly** tells you in that same message not to commit, push, or open/update a PR.
 
-1. **Commit** — Run `git status`. If anything is uncommitted (including files touched by formatters or pre-commit hooks), stage and commit all of it: `git add -A && git commit -m "concise message"`. Do not end a turn with work left uncommitted.
-2. **Push** — Call **`GitPush`** after any commit in this turn, and whenever the branch has local commits that are not on the remote yet.
-3. **Pull request** — Call **`PrUpsert`** with a `title` and `description` that match the current change set (refresh the description when scope or test plan changed). **`PrUpsert` creates a PR when none exists** (after the branch is on the remote) **and updates an existing PR when one is already open** — call it every turn you changed code, not only when the user says “open a PR”. Use **`PrRead`** when you need the current PR number, title, or URL.
+1. **Commit** — Run `git status`. If anything is uncommitted (including files touched by formatters or pre-commit hooks), stage and commit all of it: `git add -A && git commit -m "concise message"`. Do not end a turn with work left uncommitted. **Wait for the commit shell command to finish** (success exit code) before any push or PR step — never call **`GitPush`** or **`PrUpsert`** in the same parallel tool batch as `git commit`.
+2. **Push** — After commit has completed, call **`GitPush`** (only in a later tool batch) after any commit in this turn, and whenever the branch has local commits that are not on the remote yet.
+3. **Pull request** — After **`GitPush`** has returned, call **`PrUpsert`** with a `title` and `description` that match the current change set (refresh the description when scope or test plan changed). **`PrUpsert` creates a PR when none exists** (after the branch is on the remote) **and updates an existing PR when one is already open** — call it every turn you changed code, not only when the user says “open a PR”. Use **`PrRead`** when you need the current PR number, title, or URL.
+
+Run steps 1 → 2 → 3 **sequentially**, not in parallel.
 
 Skip step 3 only when the turn was **pure Q&A with no file changes** and **no PR exists yet**. If you edited the repo, you must commit, push, and `PrUpsert` without waiting for the user to request a PR.
 
@@ -36,6 +38,7 @@ Call `PrRead`.
 
 IMPORTANT: Use the baguette MCP tools (`GitPush`, `GitPull`, `GitFetch`, `PrUpsert`, `PrRead`) for all git push, pull, fetch, and PR operations — do not use git push/pull or gh CLI directly for these.
 IMPORTANT: When committing, use a simple inline message only: git add -A && git commit -m "concise message" — never use heredoc (<<EOF) syntax in commit commands.
+IMPORTANT: Do not parallelize end-of-turn shipping — complete `git commit` before **`GitPush`**, and complete **`GitPush`** before **`PrUpsert`**.
 
 ## Embedding screenshots in the PR description
 

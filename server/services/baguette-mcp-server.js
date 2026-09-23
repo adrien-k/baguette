@@ -246,7 +246,7 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'GitPush',
       description:
-        'Push a branch to origin and set upstream. For normal pushes, omit all parameters. Use force: "lease" after a rebase (--force-with-lease). Use force: "force" or a non-session branch to open the Push modal for user confirmation before pushing.',
+        'Push a branch to origin and set upstream. Call only after any `git commit` in this turn has finished (do not invoke in parallel with commit). For normal pushes, omit all parameters. Use force: "lease" after a rebase (--force-with-lease). Use force: "force" or a non-session branch to open the Push modal for user confirmation before pushing.',
       schema: {
         branch: z
           .string()

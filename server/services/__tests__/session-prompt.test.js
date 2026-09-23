@@ -66,6 +66,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('End-of-turn shipping');
     expect(result).toContain('git add -A && git commit');
     expect(result).toContain('GitPush');
+    expect(result).toContain('Wait for the commit shell command to finish');
+    expect(result).toContain('sequentially');
   });
 
   it('always includes commit/push/PrUpsert instructions regardless of auto_push', async () => {
