@@ -7,6 +7,7 @@ import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
+import { formatCursorToolCallResult } from '../cursor-tool-call-result.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -568,13 +569,9 @@ ${systemPrompt}`;
           });
         }
 
-        const isError = sdkMsg.status === 'error';
-        const resultContent =
-          sdkMsg.result !== undefined
-            ? typeof sdkMsg.result === 'string'
-              ? sdkMsg.result
-              : JSON.stringify(sdkMsg.result)
-            : '';
+        const { content: resultContent, isError } = formatCursorToolCallResult(sdkMsg.result, {
+          toolCallStatus: sdkMsg.status,
+        });
 
         await this._persistMessage(sessionId, userId, {
           type: 'user',

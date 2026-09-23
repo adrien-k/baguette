@@ -1,4 +1,5 @@
 import ToolUseBlock from './ToolUseBlock.jsx';
+import { formatCursorToolCallResult } from '../../../../server/services/cursor-tool-call-result.js';
 
 /**
  * Cursor routes custom tool calls through its own `mcp` meta-tool.
@@ -9,30 +10,9 @@ export default function CursorMcpToolBlock({ block, worktreePath, sessionId }) {
   const toolName = block.input?.toolName ?? 'mcp';
   const toolArgs = block.input?.args ?? {};
 
-  let resultText = null;
-  let isResultError = block.isError ?? false;
-
-  if (block.result != null) {
-    try {
-      const r = typeof block.result === 'string' ? JSON.parse(block.result) : block.result;
-      isResultError = isResultError || r?.status === 'error' || r?.value?.isError === true;
-      const content = r?.value?.content;
-      if (Array.isArray(content) && content.length > 0) {
-        const item = content[0];
-        resultText =
-          typeof item?.text === 'string'
-            ? item.text
-            : typeof item?.text?.text === 'string'
-              ? item.text.text
-              : JSON.stringify(r, null, 2);
-      } else {
-        resultText = JSON.stringify(r, null, 2);
-      }
-    } catch {
-      resultText =
-        typeof block.result === 'string' ? block.result : JSON.stringify(block.result, null, 2);
-    }
-  }
+  const { content: resultText, isError: isResultError } = formatCursorToolCallResult(block.result, {
+    isErrorHint: block.isError ?? false,
+  });
 
   return (
     <ToolUseBlock

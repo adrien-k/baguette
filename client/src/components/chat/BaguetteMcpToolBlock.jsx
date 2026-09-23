@@ -25,7 +25,7 @@ export function QuietToolBlock({ icon, label, detail, isError, result }) {
       </div>
       {expanded && result != null && (
         <pre className="mt-1 pl-3 text-zinc-700 whitespace-pre-wrap overflow-auto max-h-48">
-          {result}
+          {typeof result === 'string' && !result.trim() && isError ? 'Tool call failed' : result}
         </pre>
       )}
     </div>
