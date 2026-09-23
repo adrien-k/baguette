@@ -119,7 +119,7 @@ export default function Onboarding() {
             <div className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-                  Claude API Key
+                  Claude credential
                 </label>
                 <MaskedSecretInput
                   maskedValue={null}
@@ -130,7 +130,11 @@ export default function Onboarding() {
                   }}
                 />
                 <p className="mt-1.5 text-xs text-zinc-500">
-                  Optional — leave empty to use Claude Code&apos;s default configuration.
+                  Optional. Console API key (<code className="text-zinc-400">sk-ant-api…</code>) or
+                  a subscription token from{' '}
+                  <code className="text-zinc-400">claude setup-token</code> (
+                  <code className="text-zinc-400">sk-ant-oat…</code>). Leave empty to use Claude
+                  Code&apos;s default configuration.
                 </p>
               </div>
 

@@ -105,14 +105,37 @@ export async function interpolateTaskCommand(db, sessionId, commandStr) {
   return interpolateString(commandStr, interpolateOpts);
 }
 
+const CLAUDE_AUTH_ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+];
+
+/** Long-lived Claude Pro/Max/Team/Enterprise tokens from `claude setup-token`. */
+export function isClaudeOAuthToken(value) {
+  return typeof value === 'string' && value.startsWith('sk-ant-oat');
+}
+
+function applyClaudeCredential(env, credential) {
+  if (!credential) return env;
+  const result = { ...env };
+  for (const key of CLAUDE_AUTH_ENV_KEYS) delete result[key];
+  if (isClaudeOAuthToken(credential)) {
+    result.CLAUDE_CODE_OAUTH_TOKEN = credential;
+  } else {
+    result.ANTHROPIC_API_KEY = credential;
+  }
+  return result;
+}
+
 /**
  * Build Claude subprocess env from a pre-decrypted user row.
  * All fields on `user` must already be plaintext (fetched via Feather service with no provider).
+ * `anthropicApiKey` may be a Console API key or a `claude setup-token` OAuth token.
  */
-function buildClaudeEnvFromPlainUser(user, anthropicApiKey) {
+export function buildClaudeEnvFromPlainUser(user, anthropicApiKey) {
   return {
-    ...stripServerEnv(process.env),
-    ...(anthropicApiKey ? { ANTHROPIC_API_KEY: anthropicApiKey } : {}),
+    ...applyClaudeCredential(stripServerEnv(process.env), anthropicApiKey),
     ...gitAuthorEnvFromUser(user),
   };
 }

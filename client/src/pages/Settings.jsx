@@ -268,7 +268,7 @@ function RepositoriesTab() {
                   <div className="px-4 pb-3 space-y-2">
                     <p className="text-xs text-zinc-400">
                       {editingAnthropicKey
-                        ? 'Claude (Anthropic) API key for this repo (overrides your account key)'
+                        ? 'Claude credential for this repo (overrides your account). Console API key or claude setup-token output.'
                         : 'Cursor API key for this repo (overrides your account key)'}
                     </p>
                     <div className="flex gap-2 items-center">
@@ -488,7 +488,7 @@ function AgentTab({ settings, onSave }) {
       <div className="space-y-4 max-w-xl">
         <h2 className="text-sm font-semibold text-zinc-300">Claude</h2>
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
+          <label className="block text-sm font-medium text-zinc-300 mb-1">Credential</label>
           <MaskedSecretInput
             maskedValue={settings?.anthropic_api_key}
             placeholder="sk-ant-…"
@@ -498,7 +498,11 @@ function AgentTab({ settings, onSave }) {
             }}
           />
           <p className="mt-1 text-xs text-zinc-500">
-            Leave empty to use Claude Code&apos;s default configuration.
+            Console API key (<code className="text-zinc-400">sk-ant-api…</code>, billed per token)
+            or a subscription token from <code className="text-zinc-400">claude setup-token</code> (
+            <code className="text-zinc-400">sk-ant-oat…</code>, Pro/Max/Team/Enterprise, lasts about
+            a year). Saving replaces the previous value; format is detected automatically. Leave
+            empty to use Claude Code&apos;s default configuration.
           </p>
         </div>
       </div>

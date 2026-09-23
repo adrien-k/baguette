@@ -13,7 +13,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 **What it isn't:**
 
 - **An isolated environment to run agents** -- Baguette runs agents with full shell access on the host. The good news is you can run it on a dedicated machine with limited access.
-- **A multi-tenant platform** -- This is primarily intended for a single user or a close group of builders who don't mind sharing the code (no filesystem isolation) they work on and the machine resources (CPU, memory, database servers, etc.).
+- **A secured multi-tenant platform** -- This is primarily intended for a single user or a close group of builders who don't mind sharing the code (no filesystem isolation) they work on and the machine resources (CPU, memory, database servers, etc.).
 
 ## Features
 
@@ -122,7 +122,7 @@ Notes:
 
 Configure your agent(s) in **Settings** > **Agent**.
 
-**Claude:** Enter your Anthropic API key and optionally set a default model. Claude Code must be installed (step 5 above).
+**Claude:** Enter a Console API key or a subscription token from `claude setup-token` (Pro/Max/Team/Enterprise). Format is detected automatically (`sk-ant-api…` vs `sk-ant-oat…`). Optionally set a default model. Claude Code must be installed (step 5 above).
 
 **Cursor:** Enter your Cursor API key and optionally set a default model and variant. No additional CLI installation required.
 
