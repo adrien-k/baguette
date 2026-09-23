@@ -133,7 +133,7 @@ Paste the full private key (including `BEGIN`/`END` lines) into the `SSH_PRIVATE
 
 The deploy key lives at `/home/ubuntu/.ssh/id_ed25519`. Kamal and `.kamal/secrets` read certs from `/home/ubuntu/.acme.sh/<DOMAIN>_ecc/` after `renew.sh` runs.
 
-Push to `main` to deploy, or follow [kamal.md §5.1](kamal.md#51-deploy-with-kamal) for a local `kamal deploy`.
+Run the **Deploy** workflow from GitHub Actions (see [kamal.md §5.2](kamal.md#52-deploy-using-github-actions)), or follow [kamal.md §5.1](kamal.md#51-deploy-with-kamal) for a local `kamal deploy`.
 
 ## Operations
 

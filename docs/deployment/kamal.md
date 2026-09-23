@@ -1,6 +1,6 @@
 # Production deployment with Kamal
 
-This repository ships with a [Kamal](https://kamal-deploy.org/) configuration for one-command deploys. The GitHub Actions workflow in `.github/workflows/deploy.yml` builds and deploys automatically on every push to `main`.
+This repository ships with a [Kamal](https://kamal-deploy.org/) configuration for one-command deploys. The GitHub Actions workflow in `.github/workflows/deploy.yml` deploys manually via **Actions → Deploy → Run workflow** (pick the target GitHub Environment).
 
 ## 1. Server setup
 
@@ -125,7 +125,7 @@ kamal deploy
 
 ### 5.2. Deploy using GitHub Actions
 
-The included workflow (`.github/workflows/deploy.yml`) deploys automatically on every push to `main`. On GitHub Actions, `config/deploy.yml` uses BuildKit `type: gha` for Docker layer cache; local `kamal deploy` uses the registry cache on the deploy server.
+The included workflow (`.github/workflows/deploy.yml`) runs only on manual **workflow_dispatch** (no deploy on push to `main`). On GitHub Actions, `config/deploy.yml` uses BuildKit `type: gha` for Docker layer cache; local `kamal deploy` uses the registry cache on the deploy server.
 
 1. **Fork** this repository to your own GitHub account.
 
@@ -149,4 +149,4 @@ The included workflow (`.github/workflows/deploy.yml`) deploys automatically on 
    | `AUTH_GITHUB_APP_SLUG`      | Your GitHub App slug (the `<slug>` in `github.com/apps/<slug>`) |
    | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)       |
 
-3. Push to `main` — the workflow will build and deploy automatically.
+3. In GitHub, open **Actions → Deploy → Run workflow**, choose the environment, and run the workflow.

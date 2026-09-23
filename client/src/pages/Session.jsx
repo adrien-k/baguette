@@ -333,6 +333,7 @@ export default function Session() {
         pid: t.pid,
         command: t.command,
         label: t.label,
+        task_key: t.task_key ?? null,
         created_at: t.created_at,
         exited_at: t.exited_at,
         ports: t.ports ?? {},
