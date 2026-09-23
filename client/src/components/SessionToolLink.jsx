@@ -1,8 +1,9 @@
-import { Code2, MonitorPlay } from 'lucide-react';
+import { MonitorPlay } from 'lucide-react';
+import VsCodeIcon from './VsCodeIcon.jsx';
 
 const TOOLS = {
   preview: { label: 'Preview', Icon: MonitorPlay },
-  code: { label: 'Code', Icon: Code2 },
+  code: { label: 'Code', Icon: VsCodeIcon },
 };
 
 const BASE_CLASS =

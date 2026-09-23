@@ -16,6 +16,7 @@ import { NotFound } from '@feathersjs/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
+import { registerReposService } from '../feathers/repos.service.js';
 import { createWorktree, getOpenPR, getPRStatus, removeWorktree } from '../github.js';
 
 // ── Module-level mocks ────────────────────────────────────────────────────────
@@ -463,7 +464,7 @@ describe('Sessions service - custom methods', (hooks) => {
         worktree_path: null,
       });
 
-      await app.service('sessions').removeByRepoId(repo.id, params({ id: userId }));
+      await app.service('sessions').removeByRepoId(repo.id);
 
       expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
       expect(stopSession).toHaveBeenCalledWith(sess2, expect.anything());
@@ -493,6 +494,141 @@ describe('Sessions service - custom methods', (hooks) => {
 
       expect(stopSession).not.toHaveBeenCalled();
     });
+
+    it('archives all users sessions when no user scope is passed (global repo delete)', async () => {
+      const repo = await db('repos').where({ full_name: 'test/repo' }).first();
+
+      const [otherSessId] = await db('sessions').insert({
+        user_id: otherUserId,
+        repo_id: repo.id,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'bob task',
+        short_id: 'bob123',
+        status: 'stopped',
+        worktree_path: null,
+      });
+
+      await app.service('sessions').removeByRepoId(repo.id);
+
+      const alice = await db('sessions').where({ id: sessId }).first();
+      const bob = await db('sessions').where({ id: otherSessId }).first();
+      expect(alice.archived_at).toBeTruthy();
+      expect(bob.archived_at).toBeTruthy();
+      expect(stopSession).toHaveBeenCalledWith(otherSessId, expect.anything());
+    });
+
+    it('archives only the scoped user sessions (repo unlink)', async () => {
+      const repo = await db('repos').where({ full_name: 'test/repo' }).first();
+
+      const [otherSessId] = await db('sessions').insert({
+        user_id: otherUserId,
+        repo_id: repo.id,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'bob task',
+        short_id: 'bob123',
+        status: 'stopped',
+        worktree_path: null,
+      });
+
+      await app.service('sessions').removeByRepoId(repo.id, { user: { id: userId } });
+
+      const alice = await db('sessions').where({ id: sessId }).first();
+      const bob = await db('sessions').where({ id: otherSessId }).first();
+      expect(alice.archived_at).toBeTruthy();
+      expect(bob.archived_at).toBeFalsy();
+      expect(stopSession).not.toHaveBeenCalledWith(otherSessId, expect.anything());
+    });
+
+    it('internal remove can archive another user session when provider is omitted', async () => {
+      const [otherSessId] = await db('sessions').insert({
+        user_id: otherUserId,
+        repo_id: (await db('repos').where({ full_name: 'test/repo' }).first()).id,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'bob task',
+        short_id: 'bob456',
+        status: 'stopped',
+        worktree_path: null,
+      });
+
+      await app.service('sessions').remove(otherSessId, { user: { id: userId } });
+
+      const row = await db('sessions').where({ id: otherSessId }).first();
+      expect(row.archived_at).toBeTruthy();
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repos unlink — session scope (real sessions + repos services)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Repos service - unlink', (hooks) => {
+  const db = createTestDb(hooks);
+
+  let app;
+  let userId;
+  let otherUserId;
+  let repoId;
+  let aliceSessId;
+  let bobSessId;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    stopSession.mockResolvedValue(undefined);
+    loadBaguetteConfig.mockResolvedValue(null);
+
+    const result = await seedUserAndSession(db, {
+      github_id: 1001,
+      username: 'alice',
+      shortId: 'abc123',
+    });
+    userId = result.user.id;
+    repoId = result.repo.id;
+    aliceSessId = result.sessId;
+
+    await db('users').insert({
+      github_id: 1002,
+      username: 'bob',
+      approved: true,
+    });
+    otherUserId = (await db('users').where({ username: 'bob' }).first()).id;
+
+    await db('user_repos').insert([
+      { user_id: userId, repo_id: repoId },
+      { user_id: otherUserId, repo_id: repoId },
+    ]);
+
+    [bobSessId] = await db('sessions').insert({
+      user_id: otherUserId,
+      repo_id: repoId,
+      repo_full_name: 'test/repo',
+      base_branch: 'main',
+      initial_prompt: 'bob task',
+      short_id: 'bob123',
+      status: 'stopped',
+      worktree_path: null,
+    });
+
+    app = makeApp(db);
+    registerReposService(app);
+    await app.setup();
+  });
+
+  it('does not archive another user sessions on the same repo', async () => {
+    await app.service('repos').unlink(repoId, params({ id: userId }));
+
+    const alice = await db('sessions').where({ id: aliceSessId }).first();
+    const bob = await db('sessions').where({ id: bobSessId }).first();
+    expect(alice.archived_at).toBeTruthy();
+    expect(bob.archived_at).toBeFalsy();
+
+    const aliceLink = await db('user_repos').where({ user_id: userId, repo_id: repoId }).first();
+    expect(aliceLink).toBeUndefined();
+    const bobLink = await db('user_repos').where({ user_id: otherUserId, repo_id: repoId }).first();
+    expect(bobLink).toBeTruthy();
   });
 });
 

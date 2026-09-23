@@ -239,7 +239,7 @@ class ReposService extends KnexService {
     const db = this.app.get('db');
     const repo = await db('repos').where({ id }).first();
     if (!repo) throw new NotFound('Repository not found');
-    await this.app.service('sessions').removeByRepoId(id, { user: params?.user });
+    await this.app.service('sessions').removeByRepoId(id);
 
     if (repo.stripped_name) {
       const repoDir = path.join(REPOS_DIR, repo.stripped_name);
@@ -261,9 +261,10 @@ class ReposService extends KnexService {
 
     await db('user_repos').where({ user_id: params.user.id, repo_id: id }).delete();
 
+    await this.app.service('sessions').removeByRepoId(id, { user: params.user });
+
     const remaining = await db('user_repos').where({ repo_id: id }).count('* as cnt').first();
     if (Number(remaining.cnt) === 0) {
-      await this.app.service('sessions').removeByRepoId(id, { user: params?.user });
       if (repo.stripped_name) {
         const repoDir = path.join(REPOS_DIR, repo.stripped_name);
         await fs.promises.rm(repoDir, { recursive: true, force: true }).catch(() => {});

@@ -286,18 +286,26 @@ export class SessionsService extends KnexService {
 
   async removeByRepoId(repoId, params) {
     const db = this.app.get('db');
-    const sessions = await db('sessions').where({ repo_id: repoId }).whereNull('archived_at');
+    let query = db('sessions').where({ repo_id: repoId }).whereNull('archived_at');
+    const scopedUserId = params?.user?.id;
+    if (scopedUserId != null) {
+      query = query.where({ user_id: scopedUserId });
+    }
+    const sessions = await query;
     for (const session of sessions) {
       // Archive is refused while status is still `provisioning`; wait for the
       // in-process job so repo deletion can finish the session afterwards.
       await this._awaitProvisioning(session.id);
-      await this.remove(session.id, { user: params?.user });
+      await this.remove(session.id);
     }
   }
 
   async remove(id, params) {
-    const userId = params?.user?.id;
-    let session = await this.options.Model('sessions').where({ id, user_id: userId }).first();
+    const query = this.options.Model('sessions').where({ id });
+    if (params?.provider) {
+      query.where({ user_id: params?.user?.id });
+    }
+    let session = await query.first();
     if (!session) throw new NotFound('Session not found');
     if (session.archived_at) throw new BadRequest('Session already archived');
     if (session.status === PROVISIONING_STATUS) {
@@ -312,12 +320,16 @@ export class SessionsService extends KnexService {
       if (session.status !== ARCHIVING_STATUS) {
         session = await this.app
           .service('sessions')
-          .patch(id, { status: ARCHIVING_STATUS }, { provider: undefined, user: params?.user });
+          .patch(
+            id,
+            { status: ARCHIVING_STATUS },
+            { provider: undefined, user: { id: session.user_id } }
+          );
       }
 
       await this._stopAgentSession(session);
       await this._runCleanupAndFinalize(session);
-      return await this.options.Model('sessions').where({ id, user_id: userId }).first();
+      return await this.options.Model('sessions').where({ id }).first();
     } finally {
       this._archivePendingSessionIds.delete(id);
     }
@@ -1058,7 +1070,11 @@ async function finalizeSessionAfterProvision(app, session, params) {
   const promptContext = {
     app,
     result: enriched,
-    params: { user: params.user, initialFiles: params.initialFiles },
+    params: {
+      user: params.user,
+      initialFiles: params.initialFiles,
+      skipFirstMessage: params.skipFirstMessage,
+    },
   };
   await persistSystemPrompt(promptContext);
   await createFirstMessage(promptContext);
@@ -1121,6 +1137,7 @@ async function scheduleSessionProvisioning(context) {
     initialFiles: context.params.initialFiles,
     createNewBranch: context.params._createNewBranch ?? true,
     requestedBranchName: context.params._requestedBranchName,
+    skipFirstMessage: context.params.skipFirstMessage,
   };
 
   const run = async () => {

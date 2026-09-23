@@ -463,7 +463,7 @@ describe('Repos service - remove', () => {
 
     await app.service('repos').remove(repoId, params(adminUser));
 
-    expect(removeByRepoId).toHaveBeenCalledWith(repoId, expect.anything());
+    expect(removeByRepoId).toHaveBeenCalledWith(repoId, {});
 
     const repo = await db('repos').where({ id: repoId }).first();
     expect(repo.deleted_at).toBeTruthy();
@@ -513,7 +513,7 @@ describe('Repos service - soft-delete lifecycle', () => {
 
     await app.service('repos').remove(repoId, params(adminUser));
 
-    expect(removeByRepoId).toHaveBeenCalledWith(repoId, expect.anything());
+    expect(removeByRepoId).toHaveBeenCalledWith(repoId, {});
 
     const repo = await db('repos').where({ id: repoId }).first();
     expect(repo).toBeTruthy();
