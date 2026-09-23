@@ -123,6 +123,8 @@ kamal deploy
 
 `.kamal/.env` is gitignored. `config/deploy.yml` loads it automatically via `Dotenv`.
 
+Kamal loads secrets from `.kamal/secrets-common` (shared). Local deploys without a destination may also read `.kamal/secrets` for overrides. CI uses the `ci` destination (`kamal … -d ci`), which reads `.kamal/secrets-common` plus `.kamal/secrets.ci` if present — **not** `.kamal/secrets`. SSL cert/key commands in `secrets-common` SSH to the server and read acme.sh paths under `~/.acme.sh/<DOMAIN>_ecc/`.
+
 ### 5.2. Deploy using GitHub Actions
 
 The included workflow (`.github/workflows/deploy.yml`) deploys automatically on every push to `main`. It uses the `ci` Kamal destination (`config/deploy.ci.yml`) so Docker layer cache is stored in the GitHub Actions cache (BuildKit `type=gha`), not the ephemeral local registry on the runner.
