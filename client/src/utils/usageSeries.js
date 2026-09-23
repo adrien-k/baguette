@@ -1,5 +1,5 @@
 /**
- * Chart-data helpers for the dashboard usage graph: they pivot the flat
+ * Chart-data helpers for usage graphs (Settings > Agent): they pivot the flat
  * (day, repo, sdk) rows from `/api/usage/breakdown` into stacked series along
  * whichever dimension is being shown.
  *

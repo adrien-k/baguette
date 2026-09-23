@@ -16,11 +16,12 @@ const execFileAsync = promisify(execFile);
 const COST_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Usage rows for the signed-in user over the reported window, optionally narrowed
-// to a single repository (`?repo=owner/name`).
-function usageQuery(userId, repo) {
+// by repository (`?repo=owner/name`) and/or agent SDK (`?sdk=claude|cursor`).
+function usageQuery(userId, { repo = null, sdk = null } = {}) {
   const since = new Date(Date.now() - COST_HISTORY_MS).toISOString();
   const q = db('usage').where({ user_id: userId }).where('created_at', '>=', since);
   if (repo) q.where({ repo_full_name: repo });
+  if (sdk) q.where({ agent_sdk: sdk });
   return q;
 }
 
@@ -63,11 +64,14 @@ export default function createSettingsRoutes(requireAuth) {
 
   // --- Usage ---
 
-  // One row per (day, repo, sdk) over the last 30 days, so the dashboard can break the
-  // cost graph down along either dimension without a second round trip.
+  // One row per (day, repo, sdk) over the last 30 days, so usage graphs can break token
+  // usage down by repo or agent without a second round trip.
   router.get('/api/usage/breakdown', requireAuth, async (req, res) => {
     try {
-      const rows = await usageQuery(req.user.id, req.query.repo || null)
+      const rows = await usageQuery(req.user.id, {
+        repo: req.query.repo || null,
+        sdk: req.query.sdk || null,
+      })
         .select(db.raw('date(created_at) as day'), 'repo_full_name', 'agent_sdk')
         .sum('cost_usd as cost_usd')
         .sum('input_tokens as input_tokens')

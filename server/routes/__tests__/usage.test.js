@@ -1,7 +1,7 @@
 /**
  * Tests for the usage endpoint backing the dashboard usage graph. It must scope rows to the
  * signed-in user, break them down by day/repo/sdk, sum both cost and tokens, and honour
- * the `?repo=` filter.
+ * the `?repo=` and `?sdk=` filters.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
@@ -104,6 +104,24 @@ async function insertUsage(rows) {
 }
 
 describe('GET /api/usage/breakdown', () => {
+  it('returns only the requested agent SDK when ?sdk= is given', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, input: 100, output: 10, created_at: day },
+      { repo: 'acme/alpha', cost: 0, input: 500, output: 50, sdk: 'cursor', created_at: day },
+    ]);
+
+    const claude = await getJson('/api/usage/breakdown?sdk=claude');
+    expect(claude).toHaveLength(1);
+    expect(claude[0].agent_sdk).toBe('claude');
+    expect(claude[0].total_tokens).toBe(110);
+
+    const cursor = await getJson('/api/usage/breakdown?sdk=cursor');
+    expect(cursor).toHaveLength(1);
+    expect(cursor[0].agent_sdk).toBe('cursor');
+    expect(cursor[0].total_tokens).toBe(550);
+  });
+
   it('returns only the requested repo when ?repo= is given', async () => {
     const day = daysAgo(1);
     await insertUsage([

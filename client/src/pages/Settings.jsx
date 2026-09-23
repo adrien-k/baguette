@@ -8,6 +8,7 @@ import { requestNotificationPermission } from '../utils/notifications.js';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
+import UsageGraph from '../components/UsageGraph.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import {
   SecretsTab,
@@ -505,6 +506,7 @@ function AgentTab({ settings, onSave }) {
             empty to use Claude Code&apos;s default configuration.
           </p>
         </div>
+        <UsageGraph agentSdkFilter="claude" />
       </div>
 
       {/* Cursor */}
@@ -522,6 +524,7 @@ function AgentTab({ settings, onSave }) {
           />
           <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
         </div>
+        <UsageGraph agentSdkFilter="cursor" />
       </div>
 
       <div className="flex items-center gap-3">
