@@ -43,6 +43,7 @@ RUN apt-get update && apt-get install -y \
     jq \
     python3 \
     ripgrep \
+    rsync \
     socat \
     zlib1g-dev \
   && rm -rf /var/lib/apt/lists/*
