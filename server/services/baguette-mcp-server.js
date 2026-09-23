@@ -28,6 +28,7 @@ import {
   buildSessionFooter,
 } from './github.js';
 import { loadBaguetteConfig, getAvailableCommands, getAvailableTasks } from './baguette-config.js';
+import { getSessionPreviewUrl } from './preview-services.js';
 import { isPortListening } from './port-utils.js';
 import loadPrompt from '../prompts/loadPrompt.js';
 import {
@@ -343,11 +344,16 @@ function buildBaguetteToolList(session, app) {
           }
         }
 
+        const prSession = freshSession ?? session;
+        const baguetteConfig = absoluteWorktreePath
+          ? await loadBaguetteConfig(absoluteWorktreePath)
+          : null;
+        const previewUrl = getSessionPreviewUrl(prSession, baguetteConfig);
         const pr = await upsertPR(await getToken(), {
           repoFullName: session.repo_full_name,
           prNumber: effectivePrNumber,
           title,
-          body: buildPrBody(userPrefix, description, buildSessionFooter(session)),
+          body: buildPrBody(userPrefix, description, buildSessionFooter(prSession, { previewUrl })),
           head,
           baseBranch,
           reopen,

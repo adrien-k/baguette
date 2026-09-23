@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Globe, Play, ScrollText, Wifi, Loader2, Square } from 'lucide-react';
+import { ExternalLink, Globe, Play, ScrollText, Wifi, Loader2, Square, Users } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { toastError } from '../../utils/toastError.jsx';
 import { sessionsService, tasksService } from '../../feathers.js';
@@ -56,6 +56,34 @@ function PreviewSettingsToggles({ session }) {
         >
           <span
             className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_public ? 'translate-x-4.5' : 'translate-x-0.5'}`}
+          />
+        </button>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <Users className="w-4 h-4 text-zinc-400 shrink-0" />
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium text-zinc-300">Baguette users</h3>
+            <p className="text-xs text-zinc-500">
+              Any signed-in Baguette user can open this preview link (after signing in).
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={session?.is_preview_users_public !== false}
+          onClick={() => {
+            if (!session?.id) return;
+            const next = session.is_preview_users_public === false;
+            sessionsService
+              .patch(session.id, { is_preview_users_public: next })
+              .catch((err) => toastError('Failed to update Baguette users preview setting', err));
+          }}
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.is_preview_users_public !== false ? 'bg-amber-500' : 'bg-zinc-600'}`}
+        >
+          <span
+            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_users_public !== false ? 'translate-x-4.5' : 'translate-x-0.5'}`}
           />
         </button>
       </div>

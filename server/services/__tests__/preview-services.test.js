@@ -2,10 +2,28 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 process.env.PUBLIC_API_HOST = 'https://preview.example.com';
 
-const { buildDeepLinkUrl, normalizePreviewScheme, getPreviewServiceDefinitions } =
-  await import('../preview-services.js');
+const {
+  buildDeepLinkUrl,
+  normalizePreviewScheme,
+  getPreviewServiceDefinitions,
+  getSessionPreviewUrl,
+} = await import('../preview-services.js');
 
 describe('preview-services', () => {
+  describe('getSessionPreviewUrl', () => {
+    it('returns portal URL when webserver is configured', () => {
+      const url = getSessionPreviewUrl(
+        { short_id: 'abc123' },
+        { webserver: { command: 'pnpm dev', port: 3000 } }
+      );
+      expect(url).toContain('session-abc123');
+    });
+
+    it('returns null without preview config', () => {
+      expect(getSessionPreviewUrl({ short_id: 'abc123' }, {})).toBeNull();
+    });
+  });
+
   beforeEach(() => {
     process.env.PUBLIC_API_URL = 'https://app.example.com';
   });

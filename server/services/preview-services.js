@@ -87,3 +87,9 @@ export function sessionHasPreviewConfig(baguetteConfig) {
   const services = resolveServicesConfig(baguetteConfig);
   return !!services?.length;
 }
+
+/** Preview portal URL when the session worktree has preview config; otherwise null. */
+export function getSessionPreviewUrl(session, baguetteConfig) {
+  if (!session?.short_id || !sessionHasPreviewConfig(baguetteConfig)) return null;
+  return getPreviewHost(session.short_id);
+}

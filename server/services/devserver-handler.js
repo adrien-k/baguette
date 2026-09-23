@@ -3,6 +3,13 @@ import { getPreviewServiceDefinitions, resolvePreviewServiceConfig } from './pre
 import { loadBaguetteConfig } from './baguette-config.js';
 import { PUBLIC_HOST } from '../config.js';
 
+const SESSION_UNAVAILABLE_TITLE = 'Session not found';
+const SESSION_UNAVAILABLE_MESSAGE = 'This session does not exist or was archived.';
+
+function isSessionUnavailable(session) {
+  return !session || session.archived_at;
+}
+
 export class DevserverHandler {
   startupTimeoutMs = 1 * 60 * 1000;
 
@@ -45,12 +52,14 @@ export class DevserverHandler {
   async allowUser(userId, res) {
     const session = await this.getSession();
 
-    if (!session) {
-      this._renderDenied(res, 404, 'Session not found', 'This preview session no longer exists.');
+    if (isSessionUnavailable(session)) {
+      this._renderDenied(res, 404, SESSION_UNAVAILABLE_TITLE, SESSION_UNAVAILABLE_MESSAGE);
       return false;
     }
 
     if (session.is_preview_public) return true;
+
+    if (userId && (session.is_preview_users_public ?? true)) return true;
 
     if (String(session.user_id) !== String(userId)) {
       this._renderDenied(
@@ -83,7 +92,7 @@ export class DevserverHandler {
   /** Unauthenticated access for the IP that started the dev server (when enabled on session). */
   async allowIpPublicAccess(clientIp, proxyState) {
     const session = await this.getSession();
-    if (!session?.is_preview_ip_public) return false;
+    if (isSessionUnavailable(session) || !session.is_preview_ip_public) return false;
     if (!proxyState?.starterIp || proxyState.starterIp !== clientIp) return false;
     if (proxyState.status === 'crashed') return false;
     return this._hasPreviewConfig();

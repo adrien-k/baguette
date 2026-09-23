@@ -1188,8 +1188,9 @@ export function splitPrBody(body) {
   return { userPrefix, baguetteContent };
 }
 
-export function buildSessionFooter(session) {
+export function buildSessionFooter(session, { previewUrl = null } = {}) {
   const parts = [];
+  if (previewUrl) parts.push(`Preview: ${previewUrl}`);
   if (session?.agent_sdk) parts.push(`Harness: ${session.agent_sdk}`);
   if (session?.model) parts.push(`Model: \`${session.model}\``);
   if (session?.model_params) {

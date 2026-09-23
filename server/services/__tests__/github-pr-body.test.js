@@ -38,6 +38,15 @@ describe('buildSessionFooter', () => {
     expect(footer).toBe(`\n\n${BAGUETTE_FOOTER_MARKER}\n\nHarness: cursor · Model: \`gpt-5\``);
   });
 
+  it('includes preview URL when provided', () => {
+    const footer = buildSessionFooter(
+      { agent_sdk: 'cursor' },
+      { previewUrl: 'https://session-abc.example.com/' }
+    );
+    expect(footer).toContain('Preview: https://session-abc.example.com/');
+    expect(footer).toContain('Harness: cursor');
+  });
+
   it('replaces prior footer on each build (no accumulation)', () => {
     const first = buildSessionFooter({ agent_sdk: 'claude', model: 'a' });
     const second = buildSessionFooter({ agent_sdk: 'cursor', model: 'b' });

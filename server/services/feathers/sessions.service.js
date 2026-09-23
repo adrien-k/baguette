@@ -32,6 +32,7 @@ import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../co
 import { getPreviewHost } from '../preview.js';
 import {
   getPreviewServiceDefinitions,
+  getSessionPreviewUrl,
   resolvePreviewServiceConfig,
   sessionHasPreviewConfig,
 } from '../preview-services.js';
@@ -550,11 +551,19 @@ export class SessionsService extends KnexService {
           // non-fatal — proceed without user prefix
         }
       }
+      const baguetteConfig = session.worktree_path
+        ? await loadBaguetteConfig(resolveDataDirRelativePath(session.worktree_path))
+        : null;
+      const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
       const pr = await upsertPR(token, {
         repoFullName: session.repo_full_name,
         prNumber: session.pr_number,
         title: session.label || session.repo_full_name,
-        body: buildPrBody(userPrefix, session.pr_description ?? '', buildSessionFooter(session)),
+        body: buildPrBody(
+          userPrefix,
+          session.pr_description ?? '',
+          buildSessionFooter(session, { previewUrl })
+        ),
         head: session.pr_number ? undefined : head,
         baseBranch: session.base_branch,
       });
@@ -906,6 +915,7 @@ async function withHasWebserver(session) {
     preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
+    is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
     codeserver_url: absoluteWorktreePath ? getCodeserverUrl(absoluteWorktreePath) : null,
   };
 }
