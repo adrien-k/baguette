@@ -16,7 +16,7 @@ import { NotFound } from '@feathersjs/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
-import { createWorktree, getOpenPR, getPRStatus } from '../github.js';
+import { createWorktree, getOpenPR, getPRStatus, removeWorktree } from '../github.js';
 
 // ── Module-level mocks ────────────────────────────────────────────────────────
 
@@ -333,7 +333,73 @@ describe('Sessions service - custom methods', (hooks) => {
 
       expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
       expect(deleteSessionTasks).toHaveBeenCalledWith(sessId, expect.anything());
+      expect(removeWorktree).toHaveBeenCalled();
       expect(result.id).toBe(sessId);
+      expect(result.archived_at).toBeTruthy();
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.archived_at).toBeTruthy();
+      expect(row.worktree_path).toBeNull();
+    });
+
+    it('sets archived_at only after removeWorktree runs', async () => {
+      removeWorktree.mockImplementationOnce(async () => {
+        const row = await db('sessions').where({ id: sessId }).first();
+        expect(row.archived_at).toBeFalsy();
+        expect(row.status).toBe('archiving');
+      });
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+    });
+
+    it('rejects a second archive while one is in progress', async () => {
+      let resolveRemove;
+      const removing = new Promise((resolve) => {
+        resolveRemove = resolve;
+      });
+      removeWorktree.mockImplementationOnce(() => removing);
+
+      try {
+        const first = app.service('sessions').remove(sessId, params({ id: userId }));
+        await vi.waitFor(async () => {
+          const row = await db('sessions').where({ id: sessId }).first();
+          expect(row.status).toBe('archiving');
+        });
+        await expect(
+          app.service('sessions').remove(sessId, params({ id: userId }))
+        ).rejects.toThrow(/already being archived/);
+        resolveRemove();
+        await first;
+      } finally {
+        resolveRemove?.();
+      }
+    });
+
+    it('rejects archive while the session is still provisioning', async () => {
+      await db('sessions').where({ id: sessId }).update({ status: 'provisioning' });
+
+      await expect(app.service('sessions').remove(sessId, params({ id: userId }))).rejects.toThrow(
+        /still being set up/
+      );
+
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.archived_at).toBeFalsy();
+      expect(row.status).toBe('provisioning');
+      expect(removeWorktree).not.toHaveBeenCalled();
+    });
+
+    it('removes worktree by short_id when worktree_path is not set yet', async () => {
+      await db('sessions').where({ id: sessId }).update({
+        worktree_path: null,
+        short_id: 'deadbeef',
+        status: 'stopped',
+      });
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      expect(removeWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({ id: sessId, short_id: 'deadbeef', worktree_path: null }),
+        expect.objectContaining({ full_name: 'test/repo' })
+      );
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();
     });
@@ -824,12 +890,13 @@ describe('Sessions service - find, get, create', (hooks) => {
       const createMessage = vi.fn().mockResolvedValue({ id: 99 });
       app.use('messages', { create: createMessage });
 
-      await app
+      const session = await app
         .service('sessions')
         .create(sessionData({ repo_id: repoId, initial_prompt: '' }), params({ id: userId1 }));
 
       const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
       expect(userMsgCall).toBeUndefined();
+      expect(session.status).toBe('stopped');
     });
 
     it('does not create a first message when skipFirstMessage is set', async () => {
@@ -948,6 +1015,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       await db('sessions').where({ id: sessId1 }).update({
         created_branch: 'feature/taken',
         remote_branch: 'feature/taken',
+        worktree_path: '/tmp/wt-taken',
       });
 
       await expect(
@@ -962,6 +1030,134 @@ describe('Sessions service - find, get, create', (hooks) => {
       ).rejects.toThrow(/already using branch/);
 
       expect(createWorktree).not.toHaveBeenCalled();
+    });
+
+    it('create_new_branch=false rejects when a failed session still has a worktree', async () => {
+      await db('sessions').where({ id: sessId1 }).update({
+        created_branch: 'feature/taken',
+        remote_branch: 'feature/taken',
+        status: 'failed',
+        worktree_path: '/tmp/wt-taken',
+      });
+
+      await expect(
+        app.service('sessions').create(
+          sessionData({
+            repo_id: repoId,
+            base_branch: 'feature/taken',
+            create_new_branch: false,
+          }),
+          params({ id: userId1 })
+        )
+      ).rejects.toThrow(/already using branch/);
+    });
+
+    it('create_new_branch=false rejects while another session is still provisioning that branch', async () => {
+      await db('sessions').where({ id: sessId1 }).update({
+        created_branch: 'feature/taken',
+        remote_branch: 'feature/taken',
+        status: 'provisioning',
+        worktree_path: null,
+      });
+
+      await expect(
+        app.service('sessions').create(
+          sessionData({
+            repo_id: repoId,
+            base_branch: 'feature/taken',
+            create_new_branch: false,
+          }),
+          params({ id: userId1 })
+        )
+      ).rejects.toThrow(/already using branch/);
+    });
+
+    it('create_new_branch=false allows retrying a branch after a failed setup', async () => {
+      createWorktree.mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(
+        app.service('sessions').create(
+          sessionData({
+            repo_id: repoId,
+            base_branch: 'feature/retry',
+            create_new_branch: false,
+          }),
+          params({ id: userId1 })
+        )
+      ).rejects.toThrow(/disk full/);
+
+      const failed = await db('sessions').where({ created_branch: 'feature/retry' }).first();
+      expect(failed.status).toBe('failed');
+      expect(failed.worktree_path).toBeFalsy();
+      expect(removeWorktree).toHaveBeenCalled();
+
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/retry',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+      expect(session.created_branch).toBe('feature/retry');
+      expect(session.status).not.toBe('failed');
+    });
+
+    it('returns the session before the worktree exists when syncProvision is false', async () => {
+      let resolveWorktree;
+      const worktreeReady = new Promise((resolve) => {
+        resolveWorktree = () => resolve({ worktreePath: '/tmp/test-worktree' });
+      });
+      createWorktree.mockImplementationOnce(() => worktreeReady);
+
+      try {
+        const session = await app
+          .service('sessions')
+          .create(sessionData({ repo_id: repoId, initial_prompt: '' }), {
+            ...params({ id: userId1 }),
+            syncProvision: false,
+          });
+
+        expect(session.status).toBe('provisioning');
+        expect(session.worktree_path).toBeFalsy();
+
+        resolveWorktree();
+        await app.service('sessions')._awaitProvisioning(session.id);
+
+        const row = await db('sessions').where({ id: session.id }).first();
+        expect(row.worktree_path).toBeTruthy();
+        expect(row.status).toBe('stopped');
+      } finally {
+        resolveWorktree?.();
+      }
+    });
+
+    it('rejects archive while a session is still provisioning', async () => {
+      let resolveWorktree;
+      const worktreeReady = new Promise((resolve) => {
+        resolveWorktree = () => resolve({ worktreePath: '/tmp/test-worktree' });
+      });
+      createWorktree.mockImplementationOnce(() => worktreeReady);
+
+      let session;
+      try {
+        session = await app.service('sessions').create(sessionData({ repo_id: repoId }), {
+          ...params({ id: userId1 }),
+          syncProvision: false,
+        });
+
+        await expect(
+          app.service('sessions').remove(session.id, params({ id: userId1 }))
+        ).rejects.toThrow(/still being set up/);
+
+        const row = await db('sessions').where({ id: session.id }).first();
+        expect(row.archived_at).toBeFalsy();
+        expect(row.status).toBe('provisioning');
+        expect(removeWorktree).not.toHaveBeenCalled();
+      } finally {
+        resolveWorktree?.();
+        if (session) await app.service('sessions')._awaitProvisioning(session.id);
+      }
     });
   });
 });
@@ -1111,6 +1307,27 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     expect(result).toEqual({ restarted: 0, stopped: 0, failed: 0 });
     expect(onMessageCreated).not.toHaveBeenCalled();
     expect(await db('session_messages')).toHaveLength(0);
+  });
+
+  it('marks sessions still provisioning as failed and wipes any partial worktree', async () => {
+    const sessId = await seedSession({ status: 'provisioning', worktree_path: null });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('failed');
+    expect(removeWorktree).toHaveBeenCalled();
+  });
+
+  it('finishes sessions left in archiving and sets archived_at', async () => {
+    const sessId = await seedSession({ status: 'archiving', worktree_path: '/tmp/wt' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    const row = await db('sessions').where({ id: sessId }).first();
+    expect(row.archived_at).toBeTruthy();
+    expect(removeWorktree).toHaveBeenCalled();
   });
 
   it('keeps going when one session cannot be recovered at all', async () => {

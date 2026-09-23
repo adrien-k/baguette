@@ -55,6 +55,9 @@ const RESTART_PROMPT =
   'Check the current state of the working tree (any edit or command you had started may or may ' +
   'not have completed), then continue the task from where you left off.';
 
+const PROVISIONING_STATUS = 'provisioning';
+const ARCHIVING_STATUS = 'archiving';
+
 /**
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
  */
@@ -69,6 +72,24 @@ export class SessionsService extends KnexService {
 
   setup(app) {
     this.app = app;
+    /** @type {Map<number, Promise<unknown>>} */
+    this._provisioningBySessionId = new Map();
+    /** Session ids currently in `remove()` — a second archive is rejected. */
+    this._archivePendingSessionIds = new Set();
+  }
+
+  _trackProvisioning(sessionId, promise) {
+    this._provisioningBySessionId.set(sessionId, promise);
+    promise.finally(() => {
+      if (this._provisioningBySessionId.get(sessionId) === promise) {
+        this._provisioningBySessionId.delete(sessionId);
+      }
+    });
+  }
+
+  async _awaitProvisioning(sessionId) {
+    const pending = this._provisioningBySessionId.get(sessionId);
+    if (pending) await pending.catch(() => {});
   }
 
   /**
@@ -85,6 +106,8 @@ export class SessionsService extends KnexService {
   async restartInterruptedSessions() {
     const db = this.app.get('db');
     const counts = { restarted: 0, stopped: 0, failed: 0 };
+    await this._abandonUnfinishedProvisioning(counts);
+    await this._completeInterruptedArchives(counts);
     let interrupted;
     try {
       interrupted = await db('sessions')
@@ -164,6 +187,70 @@ export class SessionsService extends KnexService {
     return true;
   }
 
+  /**
+   * Provisioning lives in-memory. After a reboot those jobs are gone, so a `provisioning`
+   * row would sit forever with a half-created worktree. Mark them failed and wipe anything
+   * that did land on disk.
+   */
+  async _abandonUnfinishedProvisioning(counts) {
+    const db = this.app.get('db');
+    let stuck;
+    try {
+      stuck = await db('sessions')
+        .where({ status: PROVISIONING_STATUS })
+        .whereNull('archived_at')
+        .select('id', 'user_id');
+    } catch (err) {
+      logger.error(err, 'Failed to load unfinished provisioning sessions on startup');
+      return;
+    }
+    for (const session of stuck) {
+      const user = { id: session.user_id };
+      try {
+        await failSessionProvisioning(
+          this.app,
+          session.id,
+          user,
+          new Error('server restarted before setup finished')
+        );
+        counts.stopped++;
+      } catch (err) {
+        counts.failed++;
+        logger.error(
+          { err, sessionId: session.id },
+          'Failed to abandon unfinished provisioning session'
+        );
+      }
+    }
+  }
+
+  /**
+   * Archive was waiting on worktree cleanup when the process died. Finish wiping
+   * the worktree and set `archived_at` so the session does not sit in `archiving`.
+   */
+  async _completeInterruptedArchives(counts) {
+    const db = this.app.get('db');
+    let stuck;
+    try {
+      stuck = await db('sessions')
+        .where({ status: ARCHIVING_STATUS })
+        .whereNull('archived_at')
+        .select('id');
+    } catch (err) {
+      logger.error(err, 'Failed to load unfinished archive sessions on startup');
+      return;
+    }
+    for (const session of stuck) {
+      try {
+        await this._finalizeRemoval(session.id);
+        counts.stopped++;
+      } catch (err) {
+        counts.failed++;
+        logger.error({ err, sessionId: session.id }, 'Failed to complete interrupted archive');
+      }
+    }
+  }
+
   async _stopInterruptedSession(sessionId, userParams, reason) {
     // `can_continue` drives the chat's one-click Continue button — the manual fallback for
     // everything auto-restart could not pick up itself.
@@ -201,19 +288,39 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const sessions = await db('sessions').where({ repo_id: repoId }).whereNull('archived_at');
     for (const session of sessions) {
+      // Archive is refused while status is still `provisioning`; wait for the
+      // in-process job so repo deletion can finish the session afterwards.
+      await this._awaitProvisioning(session.id);
       await this.remove(session.id, { user: params?.user });
     }
   }
 
   async remove(id, params) {
     const userId = params?.user?.id;
-    const session = await this.options.Model('sessions').where({ id, user_id: userId }).first();
+    let session = await this.options.Model('sessions').where({ id, user_id: userId }).first();
     if (!session) throw new NotFound('Session not found');
     if (session.archived_at) throw new BadRequest('Session already archived');
+    if (session.status === PROVISIONING_STATUS) {
+      throw new BadRequest('Cannot archive a session while it is still being set up');
+    }
+    if (this._archivePendingSessionIds.has(id)) {
+      throw new BadRequest('Session is already being archived');
+    }
 
-    await this._stopAgentSession(session);
-    await this._runCleanupAndFinalize(session);
-    return session;
+    this._archivePendingSessionIds.add(id);
+    try {
+      if (session.status !== ARCHIVING_STATUS) {
+        session = await this.app
+          .service('sessions')
+          .patch(id, { status: ARCHIVING_STATUS }, { provider: undefined, user: params?.user });
+      }
+
+      await this._stopAgentSession(session);
+      await this._runCleanupAndFinalize(session);
+      return await this.options.Model('sessions').where({ id, user_id: userId }).first();
+    } finally {
+      this._archivePendingSessionIds.delete(id);
+    }
   }
 
   async _runCleanupAndFinalize(session) {
@@ -265,7 +372,12 @@ export class SessionsService extends KnexService {
     await removeWorktree(session, repo);
     this.app.service('tasks').deleteSessionTasks(sessionId);
     const archivedAt = new Date().toISOString();
-    await db('sessions').where({ id: sessionId }).update({ archived_at: archivedAt });
+    // Only mark archived after the worktree is gone so a later create cannot
+    // reuse the branch while files are still on disk.
+    await db('sessions')
+      .where({ id: sessionId })
+      .whereNull('archived_at')
+      .update({ archived_at: archivedAt, worktree_path: null });
     const updated = await db('sessions').where({ id: sessionId }).first();
     this.emit('patched', updated);
   }
@@ -681,6 +793,7 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
+    if (session.archived_at || session.status === ARCHIVING_STATUS) return;
 
     const patch = {};
     if (status !== undefined && session.status !== status) patch.status = status;
@@ -769,32 +882,96 @@ async function ensureShortId(context) {
   return context;
 }
 
-async function prepareSessionEnvironment(context) {
-  const continueExistingBranch = !(context.data.create_new_branch ?? true);
+function sanitizeBranchName(requestedName, fallbackBranch) {
+  if (!requestedName) return fallbackBranch;
+  return (
+    requestedName
+      .toLowerCase()
+      .replace(/[^a-z0-9/_.-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || fallbackBranch
+  );
+}
+
+async function assertBranchNotInUse(db, repoFullName, workingBranch) {
+  const branchInUse = await db('sessions')
+    .where({ repo_full_name: repoFullName })
+    .whereNull('archived_at')
+    .where((q) => q.whereNotNull('worktree_path').orWhere('status', PROVISIONING_STATUS))
+    .where((q) => q.where('created_branch', workingBranch).orWhere('remote_branch', workingBranch))
+    .first();
+  if (branchInUse) {
+    throw new BadRequest(
+      `Another active session is already using branch "${workingBranch}". Stop or archive it before continuing on this branch.`
+    );
+  }
+}
+
+/** Fast checks and DB fields only — worktree/git/github run in {@link provisionSessionEnvironment}. */
+async function validateSessionCreate(context) {
+  const createNewBranch = context.data.create_new_branch ?? true;
+  context.params._createNewBranch = createNewBranch;
 
   const { repo_full_name: repoFullName, base_branch: baseBranch } = context.data;
-  if (!repoFullName) return context; // headless/system session — no worktree needed
+  if (!repoFullName) {
+    delete context.data.create_new_branch;
+    delete context.data.branch_name;
+    return context;
+  }
 
   const db = context.app.get('db');
-  const token = getGithubToken(context.params.user);
-  const shortId = context.data.short_id;
   const repo = await db('repos').where({ full_name: repoFullName }).first();
+  if (!repo) {
+    throw new BadRequest(`Repository "${repoFullName}" is not registered`);
+  }
+
+  const shortId = context.data.short_id;
+  const branchPrefix = context.params.user?.branch_prefix ?? '';
+  const fallbackBranch = `${branchPrefix}task-${shortId}`;
+
+  if (context.data.branch_name) {
+    context.params._requestedBranchName = context.data.branch_name;
+    delete context.data.branch_name;
+  }
+  delete context.data.create_new_branch;
+
+  context.data.repo_id = repo.id;
+  context.data.status = PROVISIONING_STATUS;
+
+  if (!createNewBranch) {
+    const workingBranch = baseBranch;
+    if (!workingBranch) {
+      throw new BadRequest('base_branch is required when continuing an existing branch');
+    }
+    await assertBranchNotInUse(db, repoFullName, workingBranch);
+    context.data.created_branch = workingBranch;
+    context.data.remote_branch = workingBranch;
+  } else if (context.params._requestedBranchName) {
+    const branchName = sanitizeBranchName(context.params._requestedBranchName, fallbackBranch);
+    await assertBranchNotInUse(db, repoFullName, branchName);
+    context.data.created_branch = branchName;
+    context.data.remote_branch = branchName;
+  }
+
+  return context;
+}
+
+async function provisionSessionEnvironment(app, session, params) {
+  const { user, createNewBranch, requestedBranchName } = params;
+  const continueExistingBranch = !createNewBranch;
+  const { repo_full_name: repoFullName, base_branch: baseBranch, short_id: shortId } = session;
+  if (!repoFullName) return session;
+
+  const db = app.get('db');
+  const token = getGithubToken(user);
+  const repo = await db('repos').where({ full_name: repoFullName }).first();
+  if (!repo) throw new BadRequest(`Repository "${repoFullName}" is not registered`);
+
+  const userParams = { provider: undefined, user };
+  let patch = {};
 
   if (continueExistingBranch) {
     const workingBranch = baseBranch;
-    const branchInUse = await db('sessions')
-      .where({ repo_full_name: repoFullName })
-      .whereNull('archived_at')
-      .where((q) =>
-        q.where('created_branch', workingBranch).orWhere('remote_branch', workingBranch)
-      )
-      .first();
-    if (branchInUse) {
-      throw new BadRequest(
-        `Another active session is already using branch "${workingBranch}". Stop or archive it before continuing on this branch.`
-      );
-    }
-
     const defaultForDiff = repo.default_branch || 'main';
     let openPr = null;
     try {
@@ -811,16 +988,15 @@ async function prepareSessionEnvironment(context) {
       token,
       { detach: false, baseBranch: baseBranchForWorktree }
     );
-    await configureWorktreeGitIdentity(absoluteWorktreePath, context.params.user);
-    Object.assign(context.data, {
+    await configureWorktreeGitIdentity(absoluteWorktreePath, user);
+    patch = {
       worktree_path: path.relative(DATA_DIR, absoluteWorktreePath),
-      repo_id: repo.id,
       created_branch: workingBranch,
       remote_branch: workingBranch,
-    });
+    };
 
     if (openPr) {
-      Object.assign(context.data, {
+      Object.assign(patch, {
         base_branch: openPr.base_ref,
         pr_url: openPr.html_url,
         pr_number: openPr.number,
@@ -829,8 +1005,8 @@ async function prepareSessionEnvironment(context) {
         pr_description: openPr.body ?? null,
       });
     } else {
-      context.data.base_branch = defaultForDiff;
-      context.data.label = `Continuing: ${workingBranch}`;
+      patch.base_branch = defaultForDiff;
+      patch.label = `Continuing: ${workingBranch}`;
     }
   } else {
     const { worktreePath: absoluteWorktreePath } = await createWorktree(
@@ -839,34 +1015,22 @@ async function prepareSessionEnvironment(context) {
       shortId,
       token
     );
-    await configureWorktreeGitIdentity(absoluteWorktreePath, context.params.user);
-    Object.assign(context.data, {
-      worktree_path: path.relative(DATA_DIR, absoluteWorktreePath),
-      repo_id: repo.id,
-    });
-    const branchPrefix = context.params.user?.branch_prefix ?? '';
+    await configureWorktreeGitIdentity(absoluteWorktreePath, user);
+    patch.worktree_path = path.relative(DATA_DIR, absoluteWorktreePath);
+
+    const branchPrefix = user?.branch_prefix ?? '';
     const fallbackBranch = `${branchPrefix}task-${shortId}`;
-    const requestedBranchName = context.data.branch_name;
-    let branchName = requestedBranchName
-      ? requestedBranchName
-          .toLowerCase()
-          .replace(/[^a-z0-9/_.-]/g, '-')
-          .replace(/-+/g, '-')
-          .replace(/^-|-$/g, '') || fallbackBranch
-      : fallbackBranch;
+    let branchName =
+      session.created_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
     try {
-      const agentService = context.data.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
-      const result = await context.app
+      const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
+      const result = await app
         .service(agentService)
-        .generateSessionMetadata(
-          context.data.initial_prompt || '',
-          shortId,
-          context.params.user,
-          repo
-        );
-      if (result.label) context.data.label = result.label;
-      if (!requestedBranchName)
+        .generateSessionMetadata(session.initial_prompt || '', shortId, user, repo);
+      if (result.label) patch.label = result.label;
+      if (!requestedBranchName && !session.created_branch) {
         branchName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
+      }
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
     }
@@ -882,11 +1046,112 @@ async function prepareSessionEnvironment(context) {
         stdio: 'pipe',
       });
     }
-    context.data.created_branch = branchName;
-    context.data.remote_branch = branchName;
+    patch.created_branch = branchName;
+    patch.remote_branch = branchName;
   }
-  // Remove transient field that is not a DB column
-  delete context.data.branch_name;
+
+  return await app.service('sessions').patch(session.id, patch, userParams);
+}
+
+async function finalizeSessionAfterProvision(app, session, params) {
+  const enriched = await withHasWebserver(session);
+  const promptContext = {
+    app,
+    result: enriched,
+    params: { user: params.user, initialFiles: params.initialFiles },
+  };
+  await persistSystemPrompt(promptContext);
+  await createFirstMessage(promptContext);
+  // Messages sent while the worktree was still being created were queued; flush
+  // the first one now that the session can actually run.
+  await app.service('sessions').onTurnComplete(session.id);
+  const row = await app.get('db')('sessions').where({ id: session.id }).first();
+  if (row?.status === PROVISIONING_STATUS) {
+    await app
+      .service('sessions')
+      .patch(session.id, { status: 'stopped' }, { provider: undefined, user: params.user });
+  }
+}
+
+async function failSessionProvisioning(app, sessionId, user, err) {
+  logger.error({ err, sessionId }, 'Session provisioning failed');
+  const userParams = { provider: undefined, user };
+  const message = err?.message || 'Session setup failed';
+  try {
+    const db = app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (session && !session.archived_at) {
+      const repo = session.repo_id
+        ? await db('repos').where({ id: session.repo_id }).first()
+        : null;
+      await removeWorktree(session, repo).catch((rmErr) =>
+        logger.warn({ err: rmErr, sessionId }, 'Failed to remove worktree after provisioning error')
+      );
+    }
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'system',
+        subtype: 'status',
+        message_json: JSON.stringify({
+          type: 'system',
+          subtype: 'status',
+          status: `Setup failed — ${message}`,
+        }),
+      },
+      userParams
+    );
+    await app
+      .service('sessions')
+      .patch(sessionId, { status: 'failed', worktree_path: null }, userParams);
+  } catch (patchErr) {
+    logger.error(
+      { err: patchErr, sessionId },
+      'Failed to mark session as failed after setup error'
+    );
+  }
+}
+
+async function scheduleSessionProvisioning(context) {
+  const session = context.result;
+  if (!session?.repo_full_name) return context;
+
+  const params = {
+    user: context.params.user,
+    initialFiles: context.params.initialFiles,
+    createNewBranch: context.params._createNewBranch ?? true,
+    requestedBranchName: context.params._requestedBranchName,
+  };
+
+  const run = async () => {
+    try {
+      const provisioned = await provisionSessionEnvironment(context.app, session, params);
+      await finalizeSessionAfterProvision(context.app, provisioned, params);
+      return {
+        session:
+          (await context.app.get('db')('sessions').where({ id: session.id }).first()) ||
+          provisioned,
+      };
+    } catch (err) {
+      await failSessionProvisioning(context.app, session.id, params.user, err);
+      return { error: err };
+    }
+  };
+
+  const sessionsService = context.app.service('sessions');
+  const promise = run();
+  sessionsService._trackProvisioning(session.id, promise);
+
+  // REST/socket clients return as soon as the row exists. Tests and internal
+  // callers (loops) still wait so they observe the provisioned session or a thrown error.
+  const waitForProvision =
+    context.params.syncProvision ?? (!context.params.provider || process.env.VITEST);
+
+  if (waitForProvision) {
+    const outcome = await promise;
+    if (outcome.error) throw outcome.error;
+    if (outcome.session) context.result = outcome.session;
+  }
   return context;
 }
 
@@ -1034,7 +1299,7 @@ export const sessionsHooks = {
     find: [applyGroupSort],
     create: [
       ensureShortId,
-      prepareSessionEnvironment,
+      validateSessionCreate,
       serializePlugins,
       extractInitialFiles,
       normalizeModelFields,
@@ -1056,7 +1321,7 @@ export const sessionsHooks = {
   after: {
     find: [addHasWebserver],
     get: [refreshPrStatusAfterGet, addHasWebserver],
-    create: [persistSystemPrompt, createFirstMessage, addHasWebserver],
+    create: [scheduleSessionProvisioning, addHasWebserver],
     patch: [syncSessionSettingsAfterPatch, addHasWebserver],
   },
 };

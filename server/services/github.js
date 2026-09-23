@@ -343,8 +343,19 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   return { worktreePath };
 }
 
+/** Resolve the on-disk worktree path from the DB row, or from repo + short_id when still provisioning. */
+export function resolveSessionWorktreePath(session, repo) {
+  const fromDb = resolveDataDirRelativePath(session?.worktree_path);
+  if (fromDb) return fromDb;
+  const stripped = repo?.stripped_name || (repo?.full_name ? toStrippedName(repo.full_name) : null);
+  if (session?.short_id && stripped) {
+    return path.join(REPOS_DIR, stripped, 'sessions', session.short_id, 'worktree');
+  }
+  return null;
+}
+
 export async function removeWorktree(session, repo) {
-  const absoluteWorktreePath = resolveDataDirRelativePath(session?.worktree_path);
+  const absoluteWorktreePath = resolveSessionWorktreePath(session, repo);
   if (!absoluteWorktreePath) return;
   try {
     await fs.promises.access(absoluteWorktreePath);

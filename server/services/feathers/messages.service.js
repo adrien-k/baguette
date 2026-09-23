@@ -31,7 +31,10 @@ async function queueIfRunning(context) {
   if (context.params._force) return context;
   const db = context.app.get('db');
   const session = await db('sessions').where({ id: context.data.session_id }).first();
-  if (!session || session.status !== 'running') return context;
+  if (!session) return context;
+  // Queue while the agent is mid-turn, and while the worktree is still being created
+  // so a prompt typed immediately after create is not dispatched with no cwd.
+  if (session.status !== 'running' && session.status !== 'provisioning') return context;
   await context.app.service('queued-messages').create(
     {
       session_id: context.data.session_id,

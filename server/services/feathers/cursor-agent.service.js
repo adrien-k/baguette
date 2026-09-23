@@ -89,7 +89,14 @@ export class CursorAgentService {
     }
 
     const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
-    if (!session || session.archived_at || session.agent_sdk !== 'cursor') return;
+    if (
+      !session ||
+      session.archived_at ||
+      session.status === 'archiving' ||
+      session.agent_sdk !== 'cursor'
+    )
+      return;
+    if (session.repo_full_name && !session.worktree_path) return;
 
     this._runTurn(session, parsed).catch((err) => {
       logger.error({ sessionId, err: err.message }, 'cursor-agent turn failed');

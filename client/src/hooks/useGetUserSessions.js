@@ -98,13 +98,9 @@ export function useGetUserSessions() {
       });
     };
     const onRemoved = (session) => {
-      // Backend emits 'patched' after archiving; this is a fallback to mark archived locally
+      if (!session?.archived_at) return;
       setSessions((prev) =>
-        sortSessions(
-          prev.map((s) =>
-            s.id === session.id ? { ...s, archived_at: new Date().toISOString() } : s
-          )
-        )
+        sortSessions(prev.map((s) => (s.id === session.id ? { ...s, ...session } : s)))
       );
     };
 

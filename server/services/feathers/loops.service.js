@@ -186,7 +186,7 @@ export class LoopsService extends KnexService {
 }
 
 /** A session in one of these is mid-turn: it cannot take a loop run right now. */
-const BUSY_SESSION_STATUSES = new Set(['running', 'approval']);
+const BUSY_SESSION_STATUSES = new Set(['running', 'approval', 'provisioning', 'archiving']);
 
 function loopSchedule(loop) {
   return {

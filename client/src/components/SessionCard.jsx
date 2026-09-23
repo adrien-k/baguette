@@ -22,6 +22,10 @@ function StatusIcon({ status }) {
   switch (status) {
     case 'running':
       return <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin shrink-0" />;
+    case 'provisioning':
+      return <Loader2 className="w-3.5 h-3.5 text-zinc-400 animate-spin shrink-0" />;
+    case 'archiving':
+      return <Loader2 className="w-3.5 h-3.5 text-amber-400/80 animate-spin shrink-0" />;
     case 'approval':
       return <AlertCircle className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />;
     case 'completed':
@@ -40,6 +44,7 @@ const STOPPABLE_STATUSES = new Set(['running']);
 export default function SessionCard({ session, showRepo = false }) {
   const navigate = useNavigate();
   const isArchived = !!session.archived_at;
+  const isArchiving = !isArchived && session.status === 'archiving';
 
   const handleStop = async (e) => {
     e.stopPropagation();
@@ -56,12 +61,14 @@ export default function SessionCard({ session, showRepo = false }) {
       className={`w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 sm:p-4 transition-colors border-l-2 cursor-pointer hover:border-zinc-700 active:bg-zinc-800/50 ${
         {
           running: 'border-l-emerald-500',
+          provisioning: 'border-l-zinc-500',
+          archiving: 'border-l-amber-500/50',
           approval: 'border-l-amber-500',
           completed: 'border-l-emerald-500/40',
           failed: 'border-l-red-500',
           error: 'border-l-red-500',
         }[session.status] ?? 'border-l-zinc-700'
-      } ${isArchived ? 'opacity-50' : ''}`}
+      } ${isArchived || isArchiving ? 'opacity-50' : ''}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -75,6 +82,11 @@ export default function SessionCard({ session, showRepo = false }) {
           <span className="text-white font-medium text-sm truncate">
             {session.label || session.repo_full_name}
           </span>
+          {isArchiving && (
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-400/90 border border-amber-500/20">
+              Archiving…
+            </span>
+          )}
           {session.loop_id && (
             <span
               title="Started by a loop"
@@ -101,7 +113,7 @@ export default function SessionCard({ session, showRepo = false }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-          {!isArchived && STOPPABLE_STATUSES.has(session.status) && (
+          {!isArchived && !isArchiving && STOPPABLE_STATUSES.has(session.status) && (
             <button
               onClick={handleStop}
               title="Stop session"
@@ -110,7 +122,9 @@ export default function SessionCard({ session, showRepo = false }) {
               <Square className="w-3.5 h-3.5" />
             </button>
           )}
-          {!isArchived && <ArchiveSession session={session} />}
+          {!isArchived && !isArchiving && session.status !== 'provisioning' && (
+            <ArchiveSession session={session} />
+          )}
         </div>
       </div>
       <div className="text-xs text-zinc-400 mt-1 mb-1.5 sm:mb-2 ml-5 flex flex-wrap items-center gap-x-2 gap-y-0.5">

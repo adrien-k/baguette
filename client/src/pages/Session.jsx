@@ -13,6 +13,7 @@ import {
   GitBranch,
   Copy,
   Archive,
+  Loader2,
   PanelLeft,
   Pencil,
   Upload,
@@ -197,9 +198,12 @@ function parseMessageRow(row) {
 /** Matches sidebar + session header — archive icon vs status dot */
 function SessionStatusIndicator({ session }) {
   const isArchived = !!session.archived_at;
+  const isArchiving = !isArchived && session.status === 'archiving';
   const statusColor =
     {
       running: 'bg-emerald-400 animate-pulse',
+      provisioning: 'bg-zinc-400 animate-pulse',
+      archiving: 'bg-amber-400 animate-pulse',
       approval: 'bg-amber-400 animate-pulse',
       completed: 'bg-emerald-400',
       stopped: 'bg-zinc-500',
@@ -210,16 +214,20 @@ function SessionStatusIndicator({ session }) {
   if (isArchived) {
     return <Archive className="w-3 h-3 text-zinc-600 shrink-0" aria-hidden />;
   }
+  if (isArchiving) {
+    return <Loader2 className="w-3 h-3 text-amber-400/80 animate-spin shrink-0" aria-hidden />;
+  }
   return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor}`} />;
 }
 
 function MiniSessionEntry({ session: s, currentId, onArchive }) {
   const isArchived = !!s.archived_at;
+  const isArchiving = !isArchived && s.status === 'archiving';
 
   return (
     <div
       className={`group flex items-center gap-2 px-3 py-2 text-xs transition-colors ${
-        isArchived ? 'opacity-50' : ''
+        isArchived || isArchiving ? 'opacity-50' : ''
       } ${
         s.short_id === currentId
           ? 'bg-zinc-800 text-white'
@@ -233,8 +241,9 @@ function MiniSessionEntry({ session: s, currentId, onArchive }) {
       >
         {s.label || s.repo_full_name}
       </Link>
+      {isArchiving && <span className="shrink-0 text-[10px] text-amber-400/90">Archiving…</span>}
       {s.pr_status && <PrStatusBadge status={s.pr_status} prUrl={s.pr_url} />}
-      {!s.archived_at && (
+      {!s.archived_at && !isArchiving && s.status !== 'provisioning' && (
         <div className="opacity-100 shrink-0">
           <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
         </div>
@@ -353,7 +362,13 @@ export default function Session() {
   }, [session?.preview_url]);
 
   useEffect(() => {
-    if (!sessionId || session?.status === 'running') return;
+    if (
+      !sessionId ||
+      session?.status === 'running' ||
+      session?.status === 'provisioning' ||
+      session?.status === 'archiving'
+    )
+      return;
     sessionsService
       .gitStatus(sessionId)
       .then((res) => setCommitsToPush(res.commitsToPush ?? 0))
@@ -522,15 +537,19 @@ export default function Session() {
 
   const handleArchive = async () => {
     setShowMenu(false);
+    setSession((prev) => (prev ? { ...prev, status: 'archiving' } : prev));
     try {
-      await sessionsService.remove(session.id);
-      setSession((prev) => (prev ? { ...prev, archived_at: new Date().toISOString() } : prev));
-      if (!showArchived) {
+      const archived = await sessionsService.remove(session.id);
+      if (archived?.archived_at) {
+        setSession((prev) => (prev ? { ...prev, ...archived } : prev));
+      }
+      if (!showArchived && archived?.archived_at) {
         const currentRepoId = repoId || session?.repo_id;
         const firstSession = sessions.find(
           (s) =>
             s.short_id !== short_id &&
             !s.archived_at &&
+            s.status !== 'archiving' &&
             (!currentRepoId || String(s.repo_id) === String(currentRepoId))
         );
         navigate(
@@ -558,7 +577,8 @@ export default function Session() {
     );
   }
 
-  const isReadonly = !!session.archived_at;
+  const isReadonly = !!session.archived_at || session.status === 'archiving';
+  const isArchiving = !session.archived_at && session.status === 'archiving';
 
   let sidebarClassName = 'hidden md:flex';
   if (showSidebar) {
@@ -853,12 +873,14 @@ export default function Session() {
                           Stop Session
                         </button>
                       )}
-                      <button
-                        onClick={handleArchive}
-                        className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 rounded"
-                      >
-                        Archive Session
-                      </button>
+                      {session.status !== 'archiving' && session.status !== 'provisioning' && (
+                        <button
+                          onClick={handleArchive}
+                          className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 rounded"
+                        >
+                          Archive Session
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -868,7 +890,13 @@ export default function Session() {
         </div>
       </div>
 
-      {isReadonly && (
+      {isArchiving && (
+        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-zinc-800/80 border-b border-zinc-700 text-zinc-400 text-xs">
+          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400/80" />
+          <span>Archiving session — removing worktree…</span>
+        </div>
+      )}
+      {isReadonly && session.archived_at && (
         <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-zinc-800/80 border-b border-zinc-700 text-zinc-400 text-xs">
           <span>This session has been deleted — read only</span>
         </div>

@@ -43,7 +43,11 @@ export function useGetSession(sessionId) {
     };
     const onRemoved = (removed) => {
       const matches = removed.id === sessionId || removed.short_id === sessionId;
-      if (matches) setSession(null);
+      if (!matches) return;
+      // Soft-archive: keep the row and wait for `patched` if cleanup is still running.
+      if (removed.archived_at) {
+        setSession((prev) => (prev ? { ...prev, ...removed } : removed));
+      }
     };
 
     sessionsService.on('patched', onPatched);
