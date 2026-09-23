@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'child_process';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -18,5 +19,10 @@ describe('frontend build', () => {
     }
 
     expect(result.status).toBe(0);
+
+    const swPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/sw.js');
+    const sw = readFileSync(swPath, 'utf-8');
+    expect(sw).not.toMatch(/url:"index\.html"/);
+    expect(sw).not.toContain('NavigationRoute');
   }, 120_000);
 });

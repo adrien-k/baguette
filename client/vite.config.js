@@ -23,8 +23,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        // Let /auth/* hit the network (OAuth redirects); do not serve the SPA shell.
-        navigateFallbackDenylist: [/^\/auth/],
+        // Do not precache HTML shells; always fetch document navigations from the network.
+        globIgnores: ['**/*.html'],
+        navigateFallback: null,
+        // If navigateFallback is re-enabled, keep OAuth and API paths off the SPA shell.
+        navigateFallbackDenylist: [/^\/auth/, /^\/api/],
       },
       manifest: {
         name: 'Baguette',
