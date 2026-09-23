@@ -11,7 +11,7 @@ import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import NoReposCard from '../components/NoReposCard.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
-import { buildSeries, recentDays, sumBy } from '../utils/usageSeries.js';
+import { buildSeries, formatTokens, metricOf, recentDays, sumBy } from '../utils/usageSeries.js';
 import GithubIcon from '../components/GithubIcon.jsx';
 
 function DimensionToggle({ value, onChange }) {
@@ -54,7 +54,7 @@ function UsageGraph({ repoFilter }) {
   }, [repoFilter]);
 
   const data = rows ?? [];
-  const total = data.reduce((sum, r) => sum + r.cost_usd, 0);
+  const total = data.reduce((sum, r) => sum + metricOf(r), 0);
 
   // A dimension with a single value can't be broken down — drop the toggle and show the
   // other one (picking one repo, for instance, leaves only the agent split worth seeing).
@@ -74,27 +74,27 @@ function UsageGraph({ repoFilter }) {
 
   const hoveredSeries = hoveredDay
     ? series
-        .map((s) => ({ ...s, cost: byDay.get(hoveredDay)?.get(s.key) ?? 0 }))
-        .filter((s) => s.cost > 0)
+        .map((s) => ({ ...s, tokens: byDay.get(hoveredDay)?.get(s.key) ?? 0 }))
+        .filter((s) => s.tokens > 0)
     : [];
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 mb-4 sm:mb-6 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-medium text-zinc-400">
-          Cost per day <span className="text-zinc-600 font-normal">(last 30d)</span>
+          Tokens per day <span className="text-zinc-600 font-normal">(last 30d)</span>
         </span>
         <div className="flex items-center gap-3">
           {showToggle && <DimensionToggle value={dimension} onChange={setDimension} />}
-          <span className="text-xs text-zinc-500">${total.toFixed(2)} total</span>
+          <span className="text-xs text-zinc-500">{formatTokens(total)} total</span>
         </div>
       </div>
 
       <div>
         <div className="flex items-stretch gap-px h-16" onMouseLeave={() => setHoveredDay(null)}>
           {days.map((day) => {
-            const costs = byDay.get(day);
-            const spent = dayTotal(day);
+            const perSeries = byDay.get(day);
+            const dayTokens = dayTotal(day);
             return (
               <div
                 key={day}
@@ -104,17 +104,17 @@ function UsageGraph({ repoFilter }) {
                 onMouseEnter={() => setHoveredDay(day)}
               >
                 {series.map((s) => {
-                  const cost = costs?.get(s.key) ?? 0;
-                  if (cost <= 0) return null;
+                  const tokens = perSeries?.get(s.key) ?? 0;
+                  if (tokens <= 0) return null;
                   return (
                     <div
                       key={s.key}
                       className={`${s.color} rounded-sm`}
-                      style={{ height: `${Math.max((cost / maxDay) * 100, 3)}%` }}
+                      style={{ height: `${Math.max((tokens / maxDay) * 100, 3)}%` }}
                     />
                   );
                 })}
-                {spent === 0 && (
+                {dayTokens === 0 && (
                   <div className="bg-zinc-700/30 rounded-sm" style={{ height: '1px' }} />
                 )}
               </div>
@@ -126,13 +126,13 @@ function UsageGraph({ repoFilter }) {
             <>
               <span className="text-xs text-zinc-400 shrink-0">{hoveredDay}</span>
               <span className="text-xs text-zinc-300 shrink-0">
-                ${dayTotal(hoveredDay).toFixed(4)}
+                {formatTokens(dayTotal(hoveredDay))}
               </span>
               {hoveredSeries.slice(0, 3).map((s) => (
                 <span key={s.key} className="flex items-center gap-1 min-w-0 shrink">
                   <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} />
                   <span className="text-xs text-zinc-500 truncate">{s.label}</span>
-                  <span className="text-xs text-zinc-600 shrink-0">${s.cost.toFixed(4)}</span>
+                  <span className="text-xs text-zinc-600 shrink-0">{formatTokens(s.tokens)}</span>
                 </span>
               ))}
               {hoveredSeries.length > 3 && (
@@ -153,7 +153,7 @@ function UsageGraph({ repoFilter }) {
                 key={s.key}
                 className={s.color}
                 style={{ width: `${(s.total / total) * 100}%` }}
-                title={`${s.title}: $${s.total.toFixed(3)}`}
+                title={`${s.title}: ${formatTokens(s.total)} tokens`}
               />
             ))}
           </div>
@@ -164,7 +164,7 @@ function UsageGraph({ repoFilter }) {
                 <span className="text-xs text-zinc-400 truncate max-w-48" title={s.title}>
                   {s.label}
                 </span>
-                <span className="text-xs text-zinc-600">${s.total.toFixed(2)}</span>
+                <span className="text-xs text-zinc-600">{formatTokens(s.total)}</span>
               </div>
             ))}
           </div>

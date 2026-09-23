@@ -1,6 +1,7 @@
 /**
- * Tests for the usage endpoint backing the dashboard cost graph. It must scope rows to the
- * signed-in user, break them down by day/repo/sdk, and honour the `?repo=` filter.
+ * Tests for the usage endpoint backing the dashboard usage graph. It must scope rows to the
+ * signed-in user, break them down by day/repo/sdk, sum both cost and tokens, and honour
+ * the `?repo=` filter.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
@@ -94,6 +95,10 @@ async function insertUsage(rows) {
       cost_usd: r.cost,
       agent_sdk: r.sdk ?? 'claude',
       created_at: r.created_at ?? daysAgo(1),
+      input_tokens: r.input ?? 0,
+      output_tokens: r.output ?? 0,
+      total_tokens: (r.input ?? 0) + (r.output ?? 0),
+      model: r.model ?? null,
     });
   }
 }
@@ -111,7 +116,17 @@ describe('GET /api/usage/breakdown', () => {
 
     const scoped = await getJson('/api/usage/breakdown?repo=acme%2Falpha');
     expect(scoped).toEqual([
-      { day: day.slice(0, 10), repo_full_name: 'acme/alpha', agent_sdk: 'claude', cost_usd: 1.5 },
+      {
+        day: day.slice(0, 10),
+        repo_full_name: 'acme/alpha',
+        agent_sdk: 'claude',
+        cost_usd: 1.5,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        total_tokens: 0,
+      },
     ]);
   });
 
@@ -143,6 +158,28 @@ describe('GET /api/usage/breakdown', () => {
 
     const rows = await getJson('/api/usage/breakdown');
     expect(rows.map((r) => r.cost_usd)).toEqual([2, 1]);
+  });
+
+  it('sums token columns alongside cost', async () => {
+    const day = daysAgo(2);
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, input: 1000, output: 200, created_at: day },
+      { repo: 'acme/alpha', cost: 2, input: 500, output: 50, created_at: day },
+    ]);
+
+    const [row] = await getJson('/api/usage/breakdown');
+    expect(row.input_tokens).toBe(1500);
+    expect(row.output_tokens).toBe(250);
+    expect(row.total_tokens).toBe(1750);
+  });
+
+  // Cursor local agents report tokens but never a cost, so a row can be all tokens.
+  it('reports tokens for rows that carry no cost', async () => {
+    await insertUsage([{ repo: 'acme/alpha', cost: 0, input: 8007, output: 12, sdk: 'cursor' }]);
+
+    const [row] = await getJson('/api/usage/breakdown');
+    expect(row.cost_usd).toBe(0);
+    expect(row.total_tokens).toBe(8019);
   });
 
   it('excludes other users and rows older than 30 days', async () => {

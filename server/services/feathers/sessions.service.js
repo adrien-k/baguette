@@ -40,6 +40,7 @@ import path from 'path';
 import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '../session-env.js';
 import { getGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import { delta, diffModelUsage } from '../turn-usage.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
 
@@ -57,6 +58,14 @@ const RESTART_PROMPT =
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
  */
 export class SessionsService extends KnexService {
+  constructor(options) {
+    super(options);
+    // Last result message's running totals per session, for differencing the next
+    // one. Held in memory only: a restart also restarts the agent's own counters,
+    // so an absent entry and a reset counter line up.
+    this._lastResultTotals = new Map();
+  }
+
   setup(app) {
     this.app = app;
   }
@@ -648,7 +657,7 @@ export class SessionsService extends KnexService {
     if (!sessionId) return;
 
     let status;
-    let costUpdate = null;
+    let result = null;
     if (message.type === 'user') {
       status = 'running';
     } else if (message.type === 'result') {
@@ -657,13 +666,13 @@ export class SessionsService extends KnexService {
       try {
         const parsed = JSON.parse(message.message_json || '{}');
         if (subtype === 'success' && !parsed.is_error) status = 'completed';
-        if (parsed.total_cost_usd != null) costUpdate = parsed.total_cost_usd;
+        result = parsed;
       } catch {
         /* invalid agent result JSON */
       }
     }
 
-    if (status === undefined && costUpdate === null) return;
+    if (status === undefined && result === null) return;
 
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -671,17 +680,40 @@ export class SessionsService extends KnexService {
 
     const patch = {};
     if (status !== undefined && session.status !== status) patch.status = status;
-    if (costUpdate !== null && costUpdate > 0) {
-      const prevCost = parseFloat(session.total_cost_usd ?? 0);
-      await db('usage').insert({
-        session_id: sessionId,
-        user_id: session.user_id,
-        repo_full_name: session.repo_full_name,
-        cost_usd: costUpdate,
-        agent_sdk: session.agent_sdk || 'claude',
+
+    if (result !== null) {
+      // `total_cost_usd` and `modelUsage` are running totals for the query, not
+      // per-turn figures, so this turn's share is the difference from the last
+      // result we saw. See server/services/turn-usage.js.
+      const prev = this._lastResultTotals.get(sessionId) ?? { cost: 0, models: {} };
+      const costUpdate = delta(prev.cost, result.total_cost_usd);
+      const turnUsage = diffModelUsage(prev.models, result.modelUsage);
+      this._lastResultTotals.set(sessionId, {
+        cost: Number(result.total_cost_usd) || 0,
+        models: result.modelUsage ?? {},
       });
-      patch.total_cost_usd = prevCost + costUpdate;
+
+      if (costUpdate > 0 || turnUsage.total_tokens > 0) {
+        await db('usage').insert({
+          session_id: sessionId,
+          user_id: session.user_id,
+          repo_full_name: session.repo_full_name,
+          cost_usd: costUpdate,
+          agent_sdk: session.agent_sdk || 'claude',
+          input_tokens: turnUsage.input_tokens,
+          output_tokens: turnUsage.output_tokens,
+          cache_read_tokens: turnUsage.cache_read_tokens,
+          cache_write_tokens: turnUsage.cache_write_tokens,
+          reasoning_tokens: turnUsage.reasoning_tokens,
+          total_tokens: turnUsage.total_tokens,
+          model: turnUsage.model ?? session.model ?? null,
+        });
+      }
+      if (costUpdate > 0) {
+        patch.total_cost_usd = parseFloat(session.total_cost_usd ?? 0) + costUpdate;
+      }
     }
+
     if (Object.keys(patch).length > 0) {
       await this.app.service('sessions').patch(sessionId, patch, {
         provider: undefined,

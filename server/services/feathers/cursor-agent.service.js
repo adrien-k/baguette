@@ -6,8 +6,31 @@ import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
+
+// Cursor's usage endpoint is "server-derived and eventually consistent: cost can
+// lag briefly after a run ends while billing events land" (see @cursor/sdk
+// usage-types.d.ts). Reading it once the moment a run finishes usually returns a
+// cost-less payload, so poll with a short backoff before giving up. The turn's
+// queued follow-up waits on this, so the total budget stays small (~7s).
+const COST_POLL_DELAYS_MS = [0, 1000, 2000, 4000];
+
+// GET /v1/agents/:id/usage answers 403 `feature_unavailable` for every local
+// agent id, including ids that never existed, while cloud ids on the same key
+// answer 200 (and 404 `agent_not_found` when unknown). So this is a server-side
+// feature flag on the local-agent runtime, not an account permission — despite
+// the "not available for your account" message. It is permanent for the runtime,
+// not a lag, so record it and stop asking.
+const USAGE_FEATURE_UNAVAILABLE = 'feature_unavailable';
+
+/** Cursor ids are `bc-<uuid>` for cloud agents and `agent-<uuid>` for local ones. */
+function agentRuntime(agentId) {
+  return String(agentId ?? '').startsWith('bc-') ? 'cloud' : 'local';
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isHumanUserMessage(parsed) {
   const content = parsed.message?.content;
@@ -31,6 +54,10 @@ function extractUserText(parsed) {
 export class CursorAgentService {
   constructor() {
     this._activeSessions = new Map();
+    // Agent runtimes ('local' / 'cloud') whose usage API answered
+    // `feature_unavailable`. Scoped to the process so Cursor enabling the flag
+    // is picked up on the next restart rather than needing a code change.
+    this._usageUnavailable = new Set();
   }
 
   setup(app) {
@@ -192,6 +219,7 @@ ${systemPrompt}`;
 
     const sessionState = { isProcessing: true, userId, currentRun: null };
     this._activeSessions.set(sessionId, sessionState);
+    const turnUsage = emptyTurnUsage();
 
     try {
       await this.app
@@ -224,7 +252,8 @@ ${systemPrompt}`;
 
       const { finishedOk: mainFinished, hasBackgroundTask } = await this._streamOneRun(
         session,
-        run
+        run,
+        turnUsage
       );
 
       if (mainFinished) {
@@ -244,7 +273,7 @@ ${systemPrompt}`;
             );
             sessionState.currentRun = followUpRun;
             const { finishedOk: followUpDone, hasBackgroundTask: moreFollowUps } =
-              await this._streamOneRun(session, followUpRun);
+              await this._streamOneRun(session, followUpRun, turnUsage);
 
             if (!followUpDone) {
               allDone = false;
@@ -264,8 +293,8 @@ ${systemPrompt}`;
       }
 
       if (turnFinishedOk) {
-        await this._recordTurnCost(session, agent).catch((err) =>
-          logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to record turn cost')
+        await this._recordTurnUsage(session, agent, turnUsage).catch((err) =>
+          logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to record turn usage')
         );
       }
     } catch (err) {
@@ -302,7 +331,7 @@ ${systemPrompt}`;
    * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message.
    * FINISHED is left for the caller to handle (so follow-up runs can be chained first).
    */
-  async _streamOneRun(session, run) {
+  async _streamOneRun(session, run, turnUsage = emptyTurnUsage()) {
     const sessionId = session.id;
     const userId = session.user_id;
     const pendingToolCalls = new Map();
@@ -382,6 +411,14 @@ ${systemPrompt}`;
 
       // task messages indicate a background subagent was spawned — a follow-up run may arrive after FINISHED
       if (sdkMsg.type === 'task') hasBackgroundTask = true;
+
+      // Emitted once at the end of each run, whenever the runtime reported usage.
+      if (sdkMsg.type === 'usage') {
+        addTokenUsage(turnUsage, sdkMsg.usage);
+        // `run.model` is resolved by the time usage lands, so the row records what
+        // actually served the turn rather than what the session asked for.
+        turnUsage.model = run.model?.id ?? session.model ?? turnUsage.model;
+      }
 
       await this._normalizeAndPersist(session, sdkMsg, pendingToolCalls);
 
@@ -584,32 +621,77 @@ ${systemPrompt}`;
     // SDKSystemMessage, SDKStatusMessage (non-terminal), SDKUsageMessage: not persisted as chat messages
   }
 
-  async _recordTurnCost(session, agent) {
+  /**
+   * Read the agent's cumulative cost in cents, polling through the backend's
+   * billing lag. Returns null when the usage API is closed to this runtime.
+   */
+  async _fetchAgentCostCents(session, agent) {
+    const sessionId = session.id;
+    const runtime = agentRuntime(agent.agentId);
+
+    for (let attempt = 0; attempt < COST_POLL_DELAYS_MS.length; attempt++) {
+      if (COST_POLL_DELAYS_MS[attempt] > 0) await sleep(COST_POLL_DELAYS_MS[attempt]);
+
+      let agentUsage;
+      try {
+        agentUsage = await agent.getUsage();
+      } catch (err) {
+        if (err?.code === USAGE_FEATURE_UNAVAILABLE) {
+          this._usageUnavailable.add(runtime);
+          logger.info(
+            { sessionId, runtime },
+            `cursor-agent: Cursor does not report usage for ${runtime} agents — session cost will not be tracked`
+          );
+          return null;
+        }
+        throw err;
+      }
+
+      // chargedCents is 0 for plan-included, BYOK and credit-grant usage, where
+      // rawCostCents still carries the undiscounted model cost. Prefer what was
+      // actually billed and fall back to the raw cost so those users see a figure.
+      const cents = agentUsage.cost?.chargedCents || agentUsage.cost?.rawCostCents || 0;
+      if (cents > 0) return cents;
+    }
+
+    logger.info(
+      { sessionId },
+      'cursor-agent: no cost reported for this turn after polling — backend may still be settling billing'
+    );
+    return 0;
+  }
+
+  /**
+   * Record one `usage` row for the finished turn: the tokens the runtime reported
+   * plus whatever cost the backend would admit to. Tokens are always available;
+   * cost is 0 for local agents, so a row is written either way.
+   */
+  async _recordTurnUsage(session, agent, turnUsage) {
     const db = this.app.get('db');
     const sessionId = session.id;
     const userId = session.user_id;
 
-    const agentUsage = await agent.getUsage();
-    const chargedCents = agentUsage.cost?.chargedCents ?? 0;
-    if (chargedCents <= 0) return;
+    const deltaCostUsd = await this._turnCostDeltaUsd(session, agent);
 
-    const newTotalCostUsd = chargedCents / 100;
-    const prevRow = await db('usage')
-      .where({ session_id: sessionId })
-      .sum('cost_usd as total')
-      .first();
-    const prevTotalCostUsd = parseFloat(prevRow?.total ?? 0);
-
-    const deltaCostUsd = newTotalCostUsd - prevTotalCostUsd;
-    if (deltaCostUsd <= 0) return;
+    // Nothing to say about this turn at all — don't write an empty row.
+    if (deltaCostUsd <= 0 && turnUsage.total_tokens <= 0) return;
 
     await db('usage').insert({
       session_id: sessionId,
       user_id: userId,
       repo_full_name: session.repo_full_name,
-      cost_usd: deltaCostUsd,
+      cost_usd: Math.max(deltaCostUsd, 0),
       agent_sdk: 'cursor',
+      input_tokens: turnUsage.input_tokens,
+      output_tokens: turnUsage.output_tokens,
+      cache_read_tokens: turnUsage.cache_read_tokens,
+      cache_write_tokens: turnUsage.cache_write_tokens,
+      reasoning_tokens: turnUsage.reasoning_tokens,
+      total_tokens: turnUsage.total_tokens,
+      model: turnUsage.model ?? session.model ?? null,
     });
+
+    if (deltaCostUsd <= 0) return;
 
     const currentSession = await db('sessions')
       .where({ id: sessionId })
@@ -623,6 +705,24 @@ ${systemPrompt}`;
         { total_cost_usd: prevSessionCost + deltaCostUsd },
         { provider: undefined, user: { id: userId } }
       );
+  }
+
+  /**
+   * Cursor reports cost cumulatively for the whole agent, so this turn's share is
+   * the total minus what the session already recorded. 0 when cost is unavailable.
+   */
+  async _turnCostDeltaUsd(session, agent) {
+    if (this._usageUnavailable.has(agentRuntime(agent.agentId))) return 0;
+
+    const totalCents = await this._fetchAgentCostCents(session, agent);
+    if (!totalCents) return 0;
+
+    const prevRow = await this.app
+      .get('db')('usage')
+      .where({ session_id: session.id })
+      .sum('cost_usd as total')
+      .first();
+    return totalCents / 100 - parseFloat(prevRow?.total ?? 0);
   }
 
   async _persistMessage(sessionId, userId, message) {

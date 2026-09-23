@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { buildSeries, recentDays, sumBy, SERIES_COLORS, OTHER_KEY } from '../usageSeries.js';
+import {
+  buildSeries,
+  formatTokens,
+  recentDays,
+  sumBy,
+  SERIES_COLORS,
+  OTHER_KEY,
+} from '../usageSeries.js';
 
-const row = (day, repo, sdk, cost) => ({
+const row = (day, repo, sdk, tokens) => ({
   day,
   repo_full_name: repo,
   agent_sdk: sdk,
-  cost_usd: cost,
+  cost_usd: 0,
+  total_tokens: tokens,
 });
 
 const rows = [
@@ -21,6 +29,28 @@ describe('sumBy', () => {
       ['claude', 13],
       ['cursor', 1],
     ]);
+  });
+
+  // Rows written before the token columns existed, and Cursor rows from before
+  // usage was recorded, carry no token count at all.
+  it('counts rows with no token column as zero', () => {
+    const legacy = [{ day: '2026-09-20', repo_full_name: 'acme/alpha', agent_sdk: 'claude' }];
+    expect([...sumBy(legacy, (r) => r.agent_sdk)]).toEqual([['claude', 0]]);
+  });
+});
+
+describe('formatTokens', () => {
+  it('scales to k and M, keeping one decimal only where it reads', () => {
+    expect(formatTokens(0)).toBe('0');
+    expect(formatTokens(910)).toBe('910');
+    expect(formatTokens(1_200)).toBe('1.2k');
+    expect(formatTokens(12_300)).toBe('12k');
+    expect(formatTokens(4_100_000)).toBe('4.1M');
+    expect(formatTokens(41_000_000)).toBe('41M');
+  });
+
+  it('treats a missing count as zero', () => {
+    expect(formatTokens(undefined)).toBe('0');
   });
 });
 

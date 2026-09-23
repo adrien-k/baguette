@@ -70,6 +70,11 @@ export default function createSettingsRoutes(requireAuth) {
       const rows = await usageQuery(req.user.id, req.query.repo || null)
         .select(db.raw('date(created_at) as day'), 'repo_full_name', 'agent_sdk')
         .sum('cost_usd as cost_usd')
+        .sum('input_tokens as input_tokens')
+        .sum('output_tokens as output_tokens')
+        .sum('cache_read_tokens as cache_read_tokens')
+        .sum('cache_write_tokens as cache_write_tokens')
+        .sum('total_tokens as total_tokens')
         .groupBy('day', 'repo_full_name', 'agent_sdk')
         .orderBy('day', 'asc');
 
@@ -79,6 +84,11 @@ export default function createSettingsRoutes(requireAuth) {
           repo_full_name: r.repo_full_name,
           agent_sdk: r.agent_sdk || 'claude',
           cost_usd: parseFloat(r.cost_usd),
+          input_tokens: Number(r.input_tokens ?? 0),
+          output_tokens: Number(r.output_tokens ?? 0),
+          cache_read_tokens: Number(r.cache_read_tokens ?? 0),
+          cache_write_tokens: Number(r.cache_write_tokens ?? 0),
+          total_tokens: Number(r.total_tokens ?? 0),
         }))
       );
     } catch (err) {

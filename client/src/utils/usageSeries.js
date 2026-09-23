@@ -1,9 +1,25 @@
 /**
- * Chart-data helpers for the dashboard cost graph: they pivot the flat
+ * Chart-data helpers for the dashboard usage graph: they pivot the flat
  * (day, repo, sdk) rows from `/api/usage/breakdown` into stacked series along
  * whichever dimension is being shown.
+ *
+ * The graph plots tokens rather than dollars. Cursor's usage API refuses to
+ * report cost for local agents — the only kind Baguette runs — so `cost_usd` is
+ * 0 on every Cursor row and a spend graph silently hid half the work. Tokens are
+ * reported by both SDKs.
  */
 import { repoDisplayName } from './repoDisplayName.js';
+
+/** The plotted metric. Rows written before the token columns existed count as 0. */
+export const metricOf = (row) => row.total_tokens ?? 0;
+
+/** Compact token counts for axis and legend labels: 910, 12.3k, 4.1M. */
+export function formatTokens(n) {
+  const value = Number(n) || 0;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  return String(Math.round(value));
+}
 
 // Categorical slots, assigned in fixed order and never cycled: the 9th series and
 // beyond fold into "Other". Validated for the dark chart surface (zinc-900) against
@@ -39,7 +55,7 @@ export function sumBy(rows, pick) {
   const totals = new Map();
   for (const row of rows) {
     const key = pick(row);
-    totals.set(key, (totals.get(key) ?? 0) + row.cost_usd);
+    totals.set(key, (totals.get(key) ?? 0) + metricOf(row));
   }
   return totals;
 }
@@ -47,7 +63,7 @@ export function sumBy(rows, pick) {
 /**
  * Turn the flat (day, repo, sdk) rows into stacked series along one dimension.
  * Colour follows the repository itself (alphabetical slot) rather than its rank, so
- * re-sorting the legend by spend never repaints the bars.
+ * re-sorting the legend by usage never repaints the bars.
  */
 export function buildSeries(rows, dimension) {
   const repoTotals = sumBy(rows, (r) => r.repo_full_name);
@@ -96,7 +112,7 @@ export function buildSeries(rows, dimension) {
   for (const row of rows) {
     if (!byDay.has(row.day)) byDay.set(row.day, new Map());
     const day = byDay.get(row.day);
-    day.set(keyOf(row), (day.get(keyOf(row)) ?? 0) + row.cost_usd);
+    day.set(keyOf(row), (day.get(keyOf(row)) ?? 0) + metricOf(row));
   }
 
   return { series, byDay };
