@@ -49,10 +49,16 @@ builder:
   arch:
     - amd64
   remote: ssh://<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>@<%= ENV.fetch('DEPLOY_SERVER') %>
+<% if ENV['GITHUB_ACTIONS'] == 'true' %>
+  cache:
+    type: gha
+    options: mode=max
+<% else %>
   cache:
     type: registry
     options: mode=max
     image: baguette-build-cache
+<% end %>
 
 # Inject ENV variables into containers (secrets come from .env).
 # Remember to run `kamal env push` after making changes!

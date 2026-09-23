@@ -7,7 +7,7 @@ import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
-import { formatCursorToolCallResult } from '../cursor-tool-call-result.js';
+import { formatCursorToolCallResult } from '../../../shared/cursor-tool-call-result.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 

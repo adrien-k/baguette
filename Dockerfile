@@ -11,6 +11,7 @@ COPY client/package*.json .
 RUN npm install
 
 COPY client .
+COPY shared ../shared
 RUN npm run build
 
 
@@ -86,6 +87,7 @@ COPY --chown=baguette:baguette package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm rebuild better-sqlite3
 
 COPY --chown=baguette:baguette --from=builder /client/dist client/dist/
+COPY --chown=baguette:baguette shared/ shared/
 COPY --chown=baguette:baguette server/ server/
 COPY --chown=baguette:baguette knexfile.js ./
 COPY --chown=baguette:baguette bin/ bin/

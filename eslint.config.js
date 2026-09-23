@@ -25,7 +25,7 @@ export default [
 
   // Server (Node.js ESM)
   {
-    files: ['server/**/*.js', 'bin/**', 'knexfile.js', 'vitest.config.js'],
+    files: ['server/**/*.js', 'shared/**/*.js', 'bin/**', 'knexfile.js', 'vitest.config.js'],
     ...js.configs.recommended,
     languageOptions: {
       ecmaVersion: 'latest',

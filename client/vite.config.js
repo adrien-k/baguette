@@ -1,12 +1,22 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
+
 const APP_PORT = process.env.PORT || 3000;
 const VITE_PORT = parseInt(process.env.VITE_PORT) || 5173;
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@baguette/shared': path.resolve(repoRoot, 'shared'),
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -48,6 +58,9 @@ export default defineConfig({
     host: '127.0.0.1',
     port: VITE_PORT,
     strictPort: true,
+    fs: {
+      allow: [repoRoot],
+    },
     allowedHosts: process.env.PUBLIC_HOST ? [new URL(process.env.PUBLIC_HOST).hostname] : undefined,
     proxy: {
       '/api': `http://127.0.0.1:${APP_PORT}`,

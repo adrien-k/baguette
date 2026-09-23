@@ -391,6 +391,34 @@ describe('PrUpsert', () => {
     );
   });
 
+  it('rewrites harness footer from session on each upsert', async () => {
+    getOpenPRByNumber.mockResolvedValueOnce({
+      title: 'PR',
+      body: `Notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld\n\n<!-- baguette-footer -->\n\nHarness: claude · Model: \`old\``,
+    });
+    upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
+    const { tools } = buildServer({
+      pr_number: 5,
+      agent_sdk: 'cursor',
+      model: 'new-model',
+    });
+    const result = parseResult(
+      await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'Summary' })
+    );
+    expect(result.ok).toBe(true);
+    expect(upsertPR).toHaveBeenCalledWith(
+      'ghtoken',
+      expect.objectContaining({
+        body: expect.stringContaining(
+          '<!-- baguette-footer -->\n\nHarness: cursor · Model: `new-model`'
+        ),
+      })
+    );
+    const sentBody = upsertPR.mock.calls[0][1].body;
+    expect(sentBody).not.toContain('Harness: claude');
+    expect(sentBody).not.toContain('Model: `old`');
+  });
+
   it('fails and links session when an open PR already exists for HEAD', async () => {
     execFile.mockImplementationOnce((_cmd, _args, _opts, cb) =>
       cb(null, { stdout: 'my-feature\n', stderr: '' })

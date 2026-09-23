@@ -1,5 +1,5 @@
 import ToolUseBlock from './ToolUseBlock.jsx';
-import { formatCursorToolCallResult } from '../../../../server/services/cursor-tool-call-result.js';
+import { formatCursorToolCallResult } from '@baguette/shared/cursor-tool-call-result.js';
 
 /**
  * Cursor routes custom tool calls through its own `mcp` meta-tool.

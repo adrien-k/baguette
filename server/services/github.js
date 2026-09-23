@@ -1168,19 +1168,29 @@ export async function listRepoTags(token, repoFullName) {
 }
 
 export const BAGUETTE_DESCRIPTION_MARKER = '<!-- baguette -->';
+export const BAGUETTE_FOOTER_MARKER = '<!-- baguette-footer -->';
+
+const LEGACY_FOOTER_RE = /\n\n---\n_[\s\S]*?_\s*$/;
+
+function stripBaguetteFooter(text) {
+  const idx = text.indexOf(BAGUETTE_FOOTER_MARKER);
+  if (idx >= 0) return text.slice(0, idx).trimEnd();
+  return text.replace(LEGACY_FOOTER_RE, '').trimEnd();
+}
 
 export function splitPrBody(body) {
   const idx = (body ?? '').indexOf(BAGUETTE_DESCRIPTION_MARKER);
   if (idx < 0) return { userPrefix: '', baguetteContent: body ?? '' };
   const userPrefix = body.slice(0, idx).trimEnd();
   const afterMarker = body.slice(idx + BAGUETTE_DESCRIPTION_MARKER.length).trimStart();
-  const baguetteContent = afterMarker.replace(/^---\n+/, '');
+  const withoutDivider = afterMarker.replace(/^---\n+/, '');
+  const baguetteContent = stripBaguetteFooter(withoutDivider);
   return { userPrefix, baguetteContent };
 }
 
-export function buildSessionFooter(session, existingPrBody = '') {
+export function buildSessionFooter(session) {
   const parts = [];
-  if (session?.agent_sdk) parts.push(`harness: ${session.agent_sdk}`);
+  if (session?.agent_sdk) parts.push(`Harness: ${session.agent_sdk}`);
   if (session?.model) parts.push(`Model: \`${session.model}\``);
   if (session?.model_params) {
     try {
@@ -1194,16 +1204,7 @@ export function buildSessionFooter(session, existingPrBody = '') {
   }
   if (!parts.length) return '';
 
-  const newCombo = parts.join(' · ');
-  const existingCombos = [];
-  const footerMatch = (existingPrBody ?? '').match(/\n\n---\n_([\s\S]*?)_\s*$/);
-  if (footerMatch) {
-    existingCombos.push(...footerMatch[1].split('\n').filter(Boolean));
-  }
-  if (!existingCombos.includes(newCombo)) {
-    existingCombos.push(newCombo);
-  }
-  return `\n\n---\n_${existingCombos.join('\n')}_`;
+  return `\n\n${BAGUETTE_FOOTER_MARKER}\n\n${parts.join(' · ')}`;
 }
 
 export function buildPrBody(userPrefix, baguetteContent, footer = '') {

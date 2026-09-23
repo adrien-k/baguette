@@ -56,7 +56,7 @@ jobs:
           DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
-        run: kamal build push -d ci
+        run: kamal build push
 
       - name: Deploy with Kamal
         env:
@@ -67,4 +67,4 @@ jobs:
           DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
-        run: kamal deploy --skip-push -d ci
+        run: kamal deploy --skip-push

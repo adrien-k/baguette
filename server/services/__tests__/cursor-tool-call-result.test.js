@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCursorToolCallResult } from '../cursor-tool-call-result.js';
+import { formatCursorToolCallResult } from '../../../shared/cursor-tool-call-result.js';
 
 describe('formatCursorToolCallResult', () => {
   it('extracts message from status:error payloads', () => {
