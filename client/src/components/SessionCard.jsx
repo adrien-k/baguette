@@ -156,6 +156,7 @@ export default function SessionCard({ session, showRepo = false }) {
             <SessionToolLink
               kind="preview"
               href={session.preview_url}
+              previewServices={session.preview_services}
               size="sm"
               onClick={(e) => e.stopPropagation()}
             />

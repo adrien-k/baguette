@@ -644,7 +644,11 @@ export default function Session() {
                 )}
                 {session.preview_url && (
                   <span className="shrink-0 flex items-center gap-1">
-                    <SessionToolLink kind="preview" href={session.preview_url} />
+                    <SessionToolLink
+                      kind="preview"
+                      href={session.preview_url}
+                      previewServices={session.preview_services}
+                    />
                     {session.is_preview_public && (
                       <span className="text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
                         public
