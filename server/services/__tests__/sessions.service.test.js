@@ -337,8 +337,10 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(removeWorktree).toHaveBeenCalled();
       expect(result.id).toBe(sessId);
       expect(result.archived_at).toBeTruthy();
+      expect(result.status).toBe('archived');
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();
+      expect(row.status).toBe('archived');
       expect(row.worktree_path).toBeNull();
     });
 
@@ -1463,7 +1465,22 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
     const row = await db('sessions').where({ id: sessId }).first();
     expect(row.archived_at).toBeTruthy();
+    expect(row.status).toBe('archived');
     expect(removeWorktree).toHaveBeenCalled();
+  });
+
+  it('repairs status when archived_at is set but status is still archiving', async () => {
+    const sessId = await seedSession({
+      status: 'archiving',
+      archived_at: new Date().toISOString(),
+      worktree_path: null,
+    });
+
+    await app.service('sessions').restartInterruptedSessions();
+
+    const row = await db('sessions').where({ id: sessId }).first();
+    expect(row.status).toBe('archived');
+    expect(removeWorktree).not.toHaveBeenCalled();
   });
 
   it('keeps going when one session cannot be recovered at all', async () => {

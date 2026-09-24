@@ -57,6 +57,7 @@ const RESTART_PROMPT =
 
 const PROVISIONING_STATUS = 'provisioning';
 const ARCHIVING_STATUS = 'archiving';
+const ARCHIVED_STATUS = 'archived';
 
 /**
  * Sessions service (table: sessions). All methods restricted to params.user's sessions.
@@ -108,6 +109,7 @@ export class SessionsService extends KnexService {
     const counts = { restarted: 0, stopped: 0, failed: 0 };
     await this._abandonUnfinishedProvisioning(counts);
     await this._completeInterruptedArchives(counts);
+    await this._repairArchivedSessionStatus();
     let interrupted;
     try {
       interrupted = await db('sessions')
@@ -224,9 +226,22 @@ export class SessionsService extends KnexService {
     }
   }
 
+  /** Sessions archived before status was persisted — fix `archiving` → `archived`. */
+  async _repairArchivedSessionStatus() {
+    const db = this.app.get('db');
+    try {
+      await db('sessions')
+        .whereNotNull('archived_at')
+        .where({ status: ARCHIVING_STATUS })
+        .update({ status: ARCHIVED_STATUS });
+    } catch (err) {
+      logger.error(err, 'Failed to repair archived session status on startup');
+    }
+  }
+
   /**
    * Archive was waiting on worktree cleanup when the process died. Finish wiping
-   * the worktree and set `archived_at` so the session does not sit in `archiving`.
+   * the worktree and set `archived_at` / `archived` status.
    */
   async _completeInterruptedArchives(counts) {
     const db = this.app.get('db');
@@ -389,7 +404,7 @@ export class SessionsService extends KnexService {
     await db('sessions')
       .where({ id: sessionId })
       .whereNull('archived_at')
-      .update({ archived_at: archivedAt, worktree_path: null });
+      .update({ archived_at: archivedAt, worktree_path: null, status: ARCHIVED_STATUS });
     const updated = await db('sessions').where({ id: sessionId }).first();
     this.emit('patched', updated);
   }
@@ -805,7 +820,12 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
-    if (session.archived_at || session.status === ARCHIVING_STATUS) return;
+    if (
+      session.archived_at ||
+      session.status === ARCHIVING_STATUS ||
+      session.status === ARCHIVED_STATUS
+    )
+      return;
 
     const patch = {};
     if (status !== undefined && session.status !== status) patch.status = status;

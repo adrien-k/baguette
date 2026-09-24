@@ -117,7 +117,13 @@ export class ClaudeAgentService {
     }
 
     const session = await this.app.service('sessions').get(sessionId);
-    if (!session || session.archived_at || session.status === 'archiving') return;
+    if (
+      !session ||
+      session.archived_at ||
+      session.status === 'archiving' ||
+      session.status === 'archived'
+    )
+      return;
     if (session.repo_full_name && !session.worktree_path) return;
 
     let agentSession;

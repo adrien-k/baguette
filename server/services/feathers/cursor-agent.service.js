@@ -93,6 +93,7 @@ export class CursorAgentService {
       !session ||
       session.archived_at ||
       session.status === 'archiving' ||
+      session.status === 'archived' ||
       session.agent_sdk !== 'cursor'
     )
       return;

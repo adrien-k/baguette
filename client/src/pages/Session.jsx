@@ -366,7 +366,8 @@ export default function Session() {
       !sessionId ||
       session?.status === 'running' ||
       session?.status === 'provisioning' ||
-      session?.status === 'archiving'
+      session?.status === 'archiving' ||
+      session?.status === 'archived'
     )
       return;
     sessionsService
@@ -550,6 +551,7 @@ export default function Session() {
             s.short_id !== short_id &&
             !s.archived_at &&
             s.status !== 'archiving' &&
+            s.status !== 'archived' &&
             (!currentRepoId || String(s.repo_id) === String(currentRepoId))
         );
         navigate(
