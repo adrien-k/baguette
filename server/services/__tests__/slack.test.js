@@ -134,4 +134,25 @@ describe('other methods', () => {
       { id: 'C2', name: 'secret', is_private: true, is_member: true },
     ]);
   });
+
+  it('listChannels paginates until next_cursor is empty', async () => {
+    const fetchMock = mockSlack(
+      {
+        ok: true,
+        channels: [{ id: 'C1', name: 'first-page' }],
+        response_metadata: { next_cursor: 'page-2' },
+      },
+      {
+        ok: true,
+        channels: [{ id: 'C2', name: 'second-page' }],
+        response_metadata: { next_cursor: '' },
+      }
+    );
+    expect(await listChannels(TOKEN)).toEqual([
+      { id: 'C1', name: 'first-page', is_private: false, is_member: false },
+      { id: 'C2', name: 'second-page', is_private: false, is_member: false },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toContain('cursor=page-2');
+  });
 });

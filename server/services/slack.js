@@ -134,12 +134,27 @@ export async function getPermalink(token, { channel, ts }) {
   return res.permalink;
 }
 
+/** Channels the bot user belongs to — the set we can actually post to after name resolution. */
 export async function listChannels(token, { types = 'public_channel', limit = 200 } = {}) {
-  const res = await get(token, 'conversations.list', { types, limit, exclude_archived: true });
-  return (res.channels ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    is_private: !!c.is_private,
-    is_member: !!c.is_member,
-  }));
+  const channels = [];
+  let cursor;
+  for (;;) {
+    const res = await get(token, 'users.conversations', {
+      types,
+      limit,
+      exclude_archived: true,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const c of res.channels ?? []) {
+      channels.push({
+        id: c.id,
+        name: c.name,
+        is_private: !!c.is_private,
+        is_member: !!c.is_member,
+      });
+    }
+    cursor = res.response_metadata?.next_cursor;
+    if (!cursor) break;
+  }
+  return channels;
 }
