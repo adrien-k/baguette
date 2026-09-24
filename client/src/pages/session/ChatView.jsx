@@ -28,6 +28,8 @@ import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
+import SessionModelSelect from '../../components/SessionModelSelect.jsx';
+import AnchoredMenu from '../../components/AnchoredMenu.jsx';
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
@@ -85,6 +87,10 @@ export default function ChatView({
   systemPrompt,
   onViewChange,
   readonly,
+  models,
+  onModelChange,
+  cursorFast,
+  cursorEffort,
 }) {
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
@@ -165,17 +171,6 @@ export default function ChatView({
   }, [session?.id]);
 
   useEffect(() => {
-    if (!scheduleMenuOpen) return;
-    const handleClick = (e) => {
-      if (sendLaterMenuRef.current && !sendLaterMenuRef.current.contains(e.target)) {
-        setScheduleMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [scheduleMenuOpen]);
-
-  useEffect(() => {
     if (!canOpenScheduleMenu) setScheduleMenuOpen(false);
   }, [canOpenScheduleMenu]);
 
@@ -251,7 +246,6 @@ export default function ChatView({
     }
   };
 
-  const sendLaterMenuRef = useRef(null);
   const chatInputRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const topSentinelRef = useRef(null);
@@ -317,7 +311,7 @@ export default function ChatView({
     setInput(e.target.value);
     const el = e.target;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 88) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
   };
 
   const handleChatKeyDown = (e) => {
@@ -530,151 +524,162 @@ export default function ChatView({
   return (
     <>
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4 space-y-3" ref={scrollContainerRef}>
-          {loading ? (
-            <div
-              className="flex h-full items-center justify-center"
-              role="status"
-              aria-label="Loading conversation"
-            >
-              <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              <div ref={topSentinelRef} className="h-px" />
-              {loadingMore && (
-                <div className="flex justify-center py-2">
-                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-              {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
-              {displayMessages.map((msg, i) => (
-                <ChatMessage
-                  key={i}
-                  message={msg}
-                  isLatestMessage={i === displayMessages.length - 1}
-                  worktreePath={session.absolute_worktree_path}
-                  sessionId={session.id}
-                  agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-                  messageIndex={i}
-                  allMessages={displayMessages}
-                />
-              ))}
-              {isProvisioning && (
-                <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
-                  <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
-                  Setting up worktree…
-                </div>
-              )}
-              {!readonly && canContinueAfterRestart && (
-                <div className="flex gap-2 flex-wrap py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSend('continue')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Continue
-                  </button>
-                </div>
-              )}
-              {session?.archived_at && (
-                <div className="flex gap-2 flex-wrap py-2">
-                  <Tooltip content="Recreate the worktree on the same branch and resume this session.">
-                    <button
-                      type="button"
-                      onClick={handleRestore}
-                      disabled={restoring}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      {restoring ? 'Restoring…' : 'Restore'}
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-              {!readonly &&
-                !isProvisioning &&
-                !isGlobalSession(session) &&
-                session?.status !== 'running' &&
-                session?.pr_status !== 'merged' && (
-                  <div className="flex gap-2 flex-wrap py-2">
-                    <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-                          )
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <GitPullRequest className="w-3.5 h-3.5" />
-                        Git sync
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Merge the pull request into the base branch.">
-                      <button
-                        type="button"
-                        onClick={() => setShowMergeModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <GitMerge className="w-3.5 h-3.5" />
-                        Merge
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Check all PR workflow statuses and fix problems.">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
-                          )
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <CircleCheck className="w-3.5 h-3.5" />
-                        Check CI
-                      </button>
-                    </Tooltip>
-                    <Tooltip
-                      content={
-                        isReviewerSession
-                          ? CHECK_COMMENTS_TOOLTIP_REVIEWER
-                          : CHECK_COMMENTS_TOOLTIP_BUILDER
-                      }
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            isReviewerSession
-                              ? CHECK_COMMENTS_PROMPT_REVIEWER
-                              : CHECK_COMMENTS_PROMPT_BUILDER
-                          )
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        Check comments
-                      </button>
-                    </Tooltip>
-                    {onViewChange && (
-                      <Tooltip content="View a diff of all changes in this session.">
-                        <button
-                          type="button"
-                          onClick={() => onViewChange('diff')}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                        >
-                          <GitCompare className="w-3.5 h-3.5" />
-                          Diff
-                        </button>
-                      </Tooltip>
-                    )}
+        <div className="relative flex-1 min-h-0 min-w-0">
+          <div
+            className="absolute inset-0 overflow-auto p-3 sm:p-4 space-y-3 pb-14"
+            ref={scrollContainerRef}
+          >
+            {loading ? (
+              <div
+                className="flex h-full items-center justify-center"
+                role="status"
+                aria-label="Loading conversation"
+              >
+                <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div ref={topSentinelRef} className="h-px" />
+                {loadingMore && (
+                  <div className="flex justify-center py-2">
+                    <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
-              <div ref={messagesEndRef} />
-            </>
+                {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
+                {displayMessages.map((msg, i) => (
+                  <ChatMessage
+                    key={i}
+                    message={msg}
+                    isLatestMessage={i === displayMessages.length - 1}
+                    worktreePath={session.absolute_worktree_path}
+                    sessionId={session.id}
+                    agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                    messageIndex={i}
+                    allMessages={displayMessages}
+                  />
+                ))}
+                {isProvisioning && (
+                  <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
+                    <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                    Setting up worktree…
+                  </div>
+                )}
+                {!readonly && canContinueAfterRestart && (
+                  <div className="flex gap-2 flex-wrap py-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickSend('continue')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Continue
+                    </button>
+                  </div>
+                )}
+                {session?.archived_at && (
+                  <div className="flex gap-2 flex-wrap py-2">
+                    <Tooltip content="Recreate the worktree on the same branch and resume this session.">
+                      <button
+                        type="button"
+                        onClick={handleRestore}
+                        disabled={restoring}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        {restoring ? 'Restoring…' : 'Restore'}
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
+                {!readonly &&
+                  !isProvisioning &&
+                  !isGlobalSession(session) &&
+                  session?.status !== 'running' &&
+                  session?.pr_status !== 'merged' && (
+                    <div className="flex gap-2 flex-wrap py-2">
+                      <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleQuickSend(
+                              'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <GitPullRequest className="w-3.5 h-3.5" />
+                          Git sync
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Merge the pull request into the base branch.">
+                        <button
+                          type="button"
+                          onClick={() => setShowMergeModal(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <GitMerge className="w-3.5 h-3.5" />
+                          Merge
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Check all PR workflow statuses and fix problems.">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleQuickSend(
+                              'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <CircleCheck className="w-3.5 h-3.5" />
+                          Check CI
+                        </button>
+                      </Tooltip>
+                      <Tooltip
+                        content={
+                          isReviewerSession
+                            ? CHECK_COMMENTS_TOOLTIP_REVIEWER
+                            : CHECK_COMMENTS_TOOLTIP_BUILDER
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleQuickSend(
+                              isReviewerSession
+                                ? CHECK_COMMENTS_PROMPT_REVIEWER
+                                : CHECK_COMMENTS_PROMPT_BUILDER
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          Check comments
+                        </button>
+                      </Tooltip>
+                      {onViewChange && (
+                        <Tooltip content="View a diff of all changes in this session.">
+                          <button
+                            type="button"
+                            onClick={() => onViewChange('diff')}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                          >
+                            <GitCompare className="w-3.5 h-3.5" />
+                            Diff
+                          </button>
+                        </Tooltip>
+                      )}
+                    </div>
+                  )}
+                <div ref={messagesEndRef} />
+              </>
+            )}
+          </div>
+          {!readonly && (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-zinc-950 to-transparent z-[1]"
+              aria-hidden
+            />
           )}
         </div>
 
@@ -703,103 +708,123 @@ export default function ChatView({
         {!readonly && (
           <form
             onSubmit={handleSend}
-            className="p-3 sm:p-4 border-t flex-row items-end border-zinc-800 shrink-0"
+            className="relative z-[2] shrink-0 bg-zinc-950 px-3 sm:px-4 pb-3 sm:pb-4 pt-1"
           >
-            <div className="flex gap-2 sm:gap-3 items-end">
-              <FileAttachmentPicker
-                className="flex-1"
-                files={files}
-                onAdd={(picked) => {
-                  setFileError(null);
-                  setFiles((prev) => [...prev, ...picked]);
-                }}
-                onRemove={(i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
-                error={fileError}
-              >
-                <textarea
-                  ref={chatInputRef}
-                  id="chat-input"
-                  rows={1}
-                  value={input}
-                  onChange={handleChatInputChange}
-                  onKeyDown={handleChatKeyDown}
-                  placeholder={`Message ${session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
-                  className="block w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 sm:px-4 py-2.5 pr-6 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-y-auto"
-                  style={{ maxHeight: '88px' }}
-                />
-              </FileAttachmentPicker>
-              <div className="flex gap-2 shrink-0 self-end">
-                {isRunning && (
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    disabled={stopping}
-                    title="Stop"
-                    className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    ■
-                  </button>
-                )}
-                <div className="relative flex shrink-0" ref={sendLaterMenuRef}>
-                  <button
-                    type="submit"
-                    disabled={!canSendDraft}
-                    className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-2.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
-                  >
-                    {sending ? '...' : isRunning || isProvisioning ? 'Queue' : 'Send'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canOpenScheduleMenu}
-                    onClick={() => setScheduleMenuOpen((v) => !v)}
-                    title="Schedule"
-                    aria-expanded={scheduleMenuOpen}
-                    aria-haspopup="menu"
-                    className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-2.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
-                  >
-                    <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
-                  </button>
-                  {scheduleMenuOpen && (
-                    <div
-                      role="menu"
-                      className="absolute right-0 bottom-full mb-1.5 w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50 py-1"
-                    >
-                      {[
-                        { label: 'Send in 1 hour', hours: 1 },
-                        { label: 'Send in 2 hours', hours: 2 },
-                        { label: 'Send in 4 hours', hours: 4 },
-                      ].map(({ label, hours }) => (
-                        <button
-                          key={hours}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => handleSchedulePreset(hours)}
-                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
-                        >
-                          {label}
-                        </button>
-                      ))}
+            <FileAttachmentPicker
+              className="w-full"
+              files={files}
+              onAdd={(picked) => {
+                setFileError(null);
+                setFiles((prev) => [...prev, ...picked]);
+              }}
+              onRemove={(i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+              error={fileError}
+            >
+              {({ attachButton }) => (
+                <div className="rounded-lg border border-zinc-700 bg-zinc-800 focus-within:ring-2 focus-within:ring-amber-500/50 overflow-visible">
+                  <textarea
+                    ref={chatInputRef}
+                    id="chat-input"
+                    rows={1}
+                    value={input}
+                    onChange={handleChatInputChange}
+                    onKeyDown={handleChatKeyDown}
+                    placeholder={`Message ${session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
+                    className="block w-full bg-transparent px-3 sm:px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-y-auto rounded-t-lg"
+                    style={{ maxHeight: '160px' }}
+                  />
+                  <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
+                    <SessionModelSelect
+                      session={session}
+                      models={models}
+                      cursorFast={cursorFast}
+                      cursorEffort={cursorEffort}
+                      onModelChange={onModelChange}
+                    />
+                    <div className="flex-1 min-w-0" />
+                    {attachButton}
+                    {isRunning && (
                       <button
                         type="button"
-                        role="menuitem"
-                        onClick={openScheduleModal}
-                        className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                        onClick={handleStop}
+                        disabled={stopping}
+                        title="Stop"
+                        className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0"
                       >
-                        Schedule
+                        ■
                       </button>
+                    )}
+                    <div className="flex shrink-0">
                       <button
-                        type="button"
-                        role="menuitem"
-                        onClick={openRegularlyModal}
-                        className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                        type="submit"
+                        disabled={!canSendDraft}
+                        className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-1.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
                       >
-                        Send regularly
+                        {sending ? '...' : isRunning || isProvisioning ? 'Queue' : 'Send'}
                       </button>
+                      <AnchoredMenu
+                        open={scheduleMenuOpen}
+                        onOpenChange={setScheduleMenuOpen}
+                        placement="top-end"
+                        className="w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden py-1"
+                        reference={({ ref, referenceProps }) => (
+                          <button
+                            type="button"
+                            ref={ref}
+                            {...referenceProps}
+                            disabled={!canOpenScheduleMenu}
+                            onClick={(e) => {
+                              referenceProps.onClick?.(e);
+                              if (canOpenScheduleMenu) setScheduleMenuOpen((v) => !v);
+                            }}
+                            title="Schedule"
+                            aria-expanded={scheduleMenuOpen}
+                            aria-haspopup="menu"
+                            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-1.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
+                          >
+                            <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
+                          </button>
+                        )}
+                      >
+                        <div role="menu">
+                          {[
+                            { label: 'Send in 1 hour', hours: 1 },
+                            { label: 'Send in 2 hours', hours: 2 },
+                            { label: 'Send in 4 hours', hours: 4 },
+                          ].map(({ label, hours }) => (
+                            <button
+                              key={hours}
+                              type="button"
+                              role="menuitem"
+                              onClick={() => handleSchedulePreset(hours)}
+                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={openScheduleModal}
+                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                          >
+                            Schedule
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={openRegularlyModal}
+                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                          >
+                            Send regularly
+                          </button>
+                        </div>
+                      </AnchoredMenu>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </FileAttachmentPicker>
           </form>
         )}
       </div>

@@ -41,7 +41,7 @@ import EditView from './session/EditView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
 import SessionToolLink from '../components/SessionToolLink.jsx';
-import { parseModelField, variantLabel, pickPreferredVariantIdx } from '../utils/models.js';
+import { parseModelField } from '../utils/models.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
@@ -319,7 +319,6 @@ export default function Session() {
   const [diffFiles, setDiffFiles] = useState([]);
   const [commitsToPush, setCommitsToPush] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
-  const [menuModelOverride, setMenuModelOverride] = useState(null);
   const [models, setModels] = useState([]);
   const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -474,10 +473,7 @@ export default function Session() {
   }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
 
   useEffect(() => {
-    if (!showMenu) {
-      setMenuModelOverride(null);
-      return;
-    }
+    if (!showMenu) return;
     const handleClick = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         setShowMenu(false);
@@ -774,100 +770,6 @@ export default function Session() {
                         <div className="px-2 py-1 text-xs text-zinc-400">{session.base_branch}</div>
                       </div>
                     )}
-                    {(() => {
-                      const isCursor = session.agent_sdk === 'cursor';
-                      const sessionModelId = session.model || null;
-                      const sessionParams = (() => {
-                        if (!session.model_params) return null;
-                        try {
-                          return JSON.parse(session.model_params);
-                        } catch {
-                          return null;
-                        }
-                      })();
-                      const menuModelId = menuModelOverride ?? sessionModelId;
-                      const menuModelObj = models.find((m) => m.id === menuModelId);
-                      const variants = menuModelObj?.variants ?? [];
-                      const currentVariantIdx = (() => {
-                        if (!variants.length) return 0;
-                        if (sessionParams) {
-                          const idx = variants.findIndex((v) =>
-                            v.params?.every((p) =>
-                              sessionParams.some((sp) => sp.id === p.id && sp.value === p.value)
-                            )
-                          );
-                          if (idx >= 0) return idx;
-                        }
-                        const prefIdx = pickPreferredVariantIdx(variants, cursorFast, cursorEffort);
-                        return prefIdx >= 0 ? prefIdx : 0;
-                      })();
-                      return (
-                        <div className="p-2 border-b border-zinc-800">
-                          <div className="text-[11px] text-zinc-500 px-2 py-1">Model</div>
-                          <select
-                            value={menuModelId || ''}
-                            onChange={(e) => {
-                              const newId = e.target.value;
-                              const newModelObj = models.find((m) => m.id === newId);
-                              const newVariants = newModelObj?.variants ?? [];
-                              if (isCursor && newVariants.length) {
-                                const prefIdx = pickPreferredVariantIdx(
-                                  newVariants,
-                                  cursorFast,
-                                  cursorEffort
-                                );
-                                const prefVariant = prefIdx >= 0 ? newVariants[prefIdx] : null;
-                                setMenuModelOverride(newId);
-                                handleModelChange(
-                                  newId,
-                                  prefVariant?.params?.length
-                                    ? JSON.stringify(prefVariant.params)
-                                    : null
-                                );
-                              } else {
-                                handleModelChange(newId);
-                                setShowMenu(false);
-                              }
-                            }}
-                            className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300 focus:outline-none mb-1"
-                          >
-                            {models.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.display_name}
-                              </option>
-                            ))}
-                            {menuModelId && !models.some((m) => m.id === menuModelId) && (
-                              <option value={menuModelId}>{menuModelId}</option>
-                            )}
-                          </select>
-                          {isCursor && variants.length > 0 && (
-                            <>
-                              <div className="text-[11px] text-zinc-500 px-2 py-1 mt-1">
-                                Variant
-                              </div>
-                              <select
-                                value={currentVariantIdx}
-                                onChange={(e) => {
-                                  const v = variants[parseInt(e.target.value)];
-                                  handleModelChange(
-                                    menuModelId,
-                                    v.params?.length ? JSON.stringify(v.params) : null
-                                  );
-                                }}
-                                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300 focus:outline-none mb-1"
-                              >
-                                {variants.map((v, i) => (
-                                  <option key={i} value={i}>
-                                    {variantLabel(v, menuModelObj.display_name)}
-                                    {v.is_default ? ' (default)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })()}
                     {!isGlobalSession(session) && (
                       <div className="p-2 border-b border-zinc-800 sm:hidden">
                         <button
@@ -1085,6 +987,10 @@ export default function Session() {
                 systemPrompt={systemPrompt}
                 onViewChange={setView}
                 readonly={isReadonly}
+                models={models}
+                onModelChange={handleModelChange}
+                cursorFast={cursorFast}
+                cursorEffort={cursorEffort}
               />
             )}
             {activeView === 'diff' && <DiffView session={session} onFilesChange={setDiffFiles} />}

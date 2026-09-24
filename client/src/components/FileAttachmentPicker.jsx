@@ -19,7 +19,8 @@ function formatSize(bytes) {
  *   onAdd    - (File[]) => void  called with newly picked files
  *   onRemove - (index) => void   called when user removes a file
  *   error    - string | null    file error message to display
- *   children - ReactNode        input element to wrap (e.g. textarea)
+ *   children - ReactNode | ((slot: { attachButton: ReactNode }) => ReactNode)
+ *              input/composer to wrap, or render prop for custom toolbar layout
  *   className - string          optional class for the root wrapper
  */
 export default function FileAttachmentPicker({
@@ -60,13 +61,15 @@ export default function FileAttachmentPicker({
     <button
       type="button"
       onClick={() => inputRef.current?.click()}
-      className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 transition-colors p-1.5 rounded-md"
+      className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 transition-colors p-1.5 rounded-md shrink-0"
       title="Attach files"
       aria-label="Attach files"
     >
       <Paperclip className="w-4 h-4" />
     </button>
   );
+
+  const attachSlot = { attachButton: triggerButton };
 
   const hiddenInput = (
     <input
@@ -80,6 +83,8 @@ export default function FileAttachmentPicker({
   );
 
   if (children) {
+    const rendered = typeof children === 'function' ? children(attachSlot) : children;
+
     return (
       <div className={`relative flex flex-col min-w-0 ${className}`.trim()}>
         {hiddenInput}
@@ -89,10 +94,14 @@ export default function FileAttachmentPicker({
             {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
         )}
-        <div className="relative">
-          {children}
-          <div className="absolute right-1 bottom-1">{triggerButton}</div>
-        </div>
+        {typeof children === 'function' ? (
+          rendered
+        ) : (
+          <div className="relative">
+            {rendered}
+            <div className="absolute right-1 bottom-1">{triggerButton}</div>
+          </div>
+        )}
       </div>
     );
   }
