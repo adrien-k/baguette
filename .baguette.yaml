@@ -15,6 +15,7 @@ config:
     tasks:
       run-tests:
         run: pnpm test
+        attach: false
       lint:
         run: pnpm run lint
       reset-db:

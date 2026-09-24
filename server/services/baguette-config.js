@@ -106,7 +106,8 @@ export function interpolateTaskPorts(commandStr, taskPortMap) {
 
 /**
  * Build a tasks hash from a baguette config.
- * Returns `{ [taskKey]: { run, ports?, depends_on?, env? } }`.
+ * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, attach? } }`.
+ * `attach: false` means RunProjectCommand must not use attach mode (detached only).
  *
  * Supports both the new `session.tasks` hash format and the legacy `session.commands` array.
  * Synthesizes `baguette:init` from `session.init` if defined.
@@ -131,12 +132,17 @@ export function getAvailableTasks(baguetteConfig) {
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
+        ...(val.attach === false ? { attach: false } : {}),
       };
     }
   } else if (Array.isArray(userCommands)) {
     for (const cmd of userCommands) {
       if (cmd?.label && cmd?.run) {
-        tasks[cmd.label] = { run: cmd.run, ...(cmd.ports ? { ports: cmd.ports } : {}) };
+        tasks[cmd.label] = {
+          run: cmd.run,
+          ...(cmd.ports ? { ports: cmd.ports } : {}),
+          ...(cmd.attach === false ? { attach: false } : {}),
+        };
       }
     }
   }
@@ -198,6 +204,7 @@ export function getAvailableCommands(baguetteConfig) {
       label: key,
       run: t.run,
       ...(t.ports?.length ? { ports: t.ports } : {}),
+      ...(t.attach === false ? { attach: false } : {}),
     }));
 }
 

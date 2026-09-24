@@ -130,11 +130,12 @@ tasks:
 
 #### Task fields
 
-| Field        | Type     | Description                                                          |
-| ------------ | -------- | -------------------------------------------------------------------- |
-| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks)) |
-| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching   |
-| `depends-on` | string[] | Task keys that must be running and listening before this task starts |
+| Field        | Type     | Description                                                                                     |
+| ------------ | -------- | ----------------------------------------------------------------------------------------------- |
+| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks))                            |
+| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching                              |
+| `depends-on` | string[] | Task keys that must be running and listening before this task starts                            |
+| `attach`     | boolean  | When `false`, `RunProjectCommand` rejects `attach: true` (use detached mode + `ReadTaskOutput`) |
 
 #### Multi-line tasks
 

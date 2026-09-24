@@ -844,6 +844,13 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           return fail(`Unknown command label: ${label}`);
         }
 
+        const taskDef = tasks[label];
+        if (attach && taskDef.attach === false) {
+          return fail(
+            `Task "${label}" has attach: false in .baguette.yaml; run without attach and poll with ReadTaskOutput or TaskStatus.`
+          );
+        }
+
         if (!attach) {
           try {
             const task = await app.service('tasks').create(

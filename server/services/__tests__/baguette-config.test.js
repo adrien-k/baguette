@@ -69,4 +69,11 @@ describe('getAvailableTasks', () => {
     const tasks = getAvailableTasks({ session: { tasks: { noop: { run: '  \n ' } } } });
     expect(tasks.noop).toBeUndefined();
   });
+
+  it('preserves attach: false on tasks', () => {
+    const tasks = getAvailableTasks({
+      session: { tasks: { 'run-tests': { run: 'pnpm test', attach: false } } },
+    });
+    expect(tasks['run-tests'].attach).toBe(false);
+  });
 });

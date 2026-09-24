@@ -577,6 +577,38 @@ describe('RunProjectCommand', () => {
     );
   });
 
+  it('attach: true — rejected when task has attach: false in config', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { tasks: { 'Run tests': { run: 'npm test', attach: false } } },
+    });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/attach: false/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('detached run allowed when task has attach: false in config', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { tasks: { 'Run tests': { run: 'npm test', attach: false } } },
+    });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: false })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.taskId).toBe(99);
+    expect(mockCreate).toHaveBeenCalled();
+  });
+
   it('attach: true — waits for exit and returns stdout on exit 0', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },

@@ -418,21 +418,12 @@ export default function BuilderForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* A loop being edited stays a loop, so the tabs give way to a title and a way out. */}
       {editingLoop ? (
-        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 pb-2 -mt-1">
-          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-white">
-            <Repeat className="w-4 h-4 shrink-0 text-amber-400" />
-            <span className="truncate">
-              Editing loop
-              {editingLoop.name ? <span className="text-zinc-400"> · {editingLoop.name}</span> : ''}
-            </span>
+        <div className="flex min-w-0 items-center gap-2 border-b border-zinc-800 pb-2 -mt-1 text-sm font-medium text-white">
+          <Repeat className="w-4 h-4 shrink-0 text-amber-400" />
+          <span className="truncate">
+            Editing loop
+            {editingLoop.name ? <span className="text-zinc-400"> · {editingLoop.name}</span> : ''}
           </span>
-          <button
-            type="button"
-            onClick={onCancelEdit}
-            className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            Cancel
-          </button>
         </div>
       ) : (
         onCreateLoop && (
@@ -864,6 +855,15 @@ export default function BuilderForm({
 
         {/* Right: Create for a loop, Start / Plan for a one-off session */}
         <div className="flex items-center gap-3 sm:ml-auto">
+          {editingLoop && (
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white px-5 py-2 rounded-md text-sm font-medium transition-colors border border-zinc-700"
+            >
+              Cancel
+            </button>
+          )}
           <button
             type="submit"
             disabled={!canSubmit}
