@@ -5,6 +5,14 @@ import fs from 'fs';
 import path from 'path';
 import { REPOS_DIR, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
+import {
+  buildLogRangeHeader,
+  DEFAULT_LOG_BYTES,
+  MAX_LOG_RANGE_BYTES,
+  rangeNeedsFullLogFetch,
+  sliceByteRange,
+  validateLogByteRange,
+} from './mcp-pagination.js';
 
 export { configureWorktreeGitIdentity } from './git-identity.js';
 
@@ -958,8 +966,6 @@ export async function getPRWorkflows(token, repoFullName, branch) {
   }));
 }
 
-const DEFAULT_LOG_BYTES = 8000;
-
 /**
  * Fetches logs for failed jobs (or all jobs if none failed) in a workflow run.
  * Supports byte-range pagination: pass startByte/endByte to read specific chunks.
@@ -968,6 +974,11 @@ const DEFAULT_LOG_BYTES = 8000;
  * @returns {{ jobs: Array<{ id, name, status, conclusion, log, totalBytes, startByte, endByte }> }}
  */
 export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte, endByte } = {}) {
+  const validationError = validateLogByteRange({ startByte, endByte });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github.v3+json',
@@ -1012,24 +1023,15 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
         };
       }
 
-      // Step 2: build Range header
-      let rangeHeader;
-      if (startByte != null && endByte != null) {
-        rangeHeader = `bytes=${startByte}-${endByte}`;
-      } else if (startByte != null) {
-        rangeHeader = `bytes=${startByte}-`;
-      } else {
-        rangeHeader = `bytes=-${DEFAULT_LOG_BYTES}`;
-      }
+      const rangeHeader = buildLogRangeHeader({ startByte, endByte });
 
-      // Step 3: fetch log with range
       const rangeRes = await fetch(logUrl, { headers: { Range: rangeHeader } });
-      const log = await rangeRes.text();
+      let log = await rangeRes.text();
 
-      // Parse Content-Range: bytes start-end/total
-      let totalBytes = 0;
-      let actualStart = startByte ?? 0;
-      let actualEnd = endByte ?? DEFAULT_LOG_BYTES;
+      let totalBytes = Buffer.byteLength(log, 'utf8');
+      let actualStart = 0;
+      let actualEnd = Math.max(0, totalBytes - 1);
+
       const contentRange = rangeRes.headers.get('content-range');
       if (contentRange) {
         const match = contentRange.match(/bytes (\d+)-(\d+)\/(\d+)/);
@@ -1037,6 +1039,20 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
           actualStart = parseInt(match[1], 10);
           actualEnd = parseInt(match[2], 10);
           totalBytes = parseInt(match[3], 10);
+        }
+      }
+
+      if (rangeNeedsFullLogFetch({ startByte, endByte })) {
+        const sliced = sliceByteRange(log, { startByte, endByte });
+        log = sliced.log;
+        totalBytes = sliced.totalBytes;
+        actualStart = sliced.startByte;
+        actualEnd = sliced.endByte;
+      } else if (startByte != null && endByte != null) {
+        const span = actualEnd - actualStart + 1;
+        if (span > MAX_LOG_RANGE_BYTES) {
+          actualEnd = actualStart + MAX_LOG_RANGE_BYTES - 1;
+          log = Buffer.from(log, 'utf8').subarray(0, MAX_LOG_RANGE_BYTES).toString('utf8');
         }
       }
 

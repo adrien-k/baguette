@@ -37,6 +37,12 @@ import {
 } from './slack.js';
 import loadPrompt from '../prompts/loadPrompt.js';
 import {
+  DEFAULT_LOG_BYTES,
+  MAX_LOG_RANGE_BYTES,
+  sliceByteRange,
+  validateLogByteRange,
+} from './mcp-pagination.js';
+import {
   DOCKER_COMPOSE_PATH,
   IMAGES_DIR,
   PUBLIC_API_HOST,
@@ -653,15 +659,27 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'PrWorkflowLogs',
       description:
-        'Get logs for a workflow run. Defaults to the last 8000 bytes (where errors appear). Use startByte to read earlier sections; the response includes totalBytes for pagination.',
+        'Get logs for a workflow run. Defaults to the last 5000 bytes. When endByte is omitted, returns max(5000, bytes from startByte through EOF). When both startByte and endByte are set, the range is capped at 5000 bytes. Negative indices count from the end; do not combine a negative startByte with a non-negative endByte.',
       schema: {
         runId: z.string().describe('Workflow run ID from PrWorkflows'),
-        startByte: z.number().optional().describe('Start byte offset for partial log fetch'),
-        endByte: z.number().optional().describe('End byte offset for partial log fetch'),
+        startByte: z
+          .number()
+          .optional()
+          .describe(
+            'Start byte (0-based). Negative values count from the end. Omit both bounds for the last 5000 bytes.'
+          ),
+        endByte: z
+          .number()
+          .optional()
+          .describe(
+            'Inclusive end byte (optional). Negative values count from the end. When omitted, end is startByte + max(5000, bytes remaining until EOF). Must be negative if startByte is negative.'
+          ),
       },
       handler: async ({ runId, startByte, endByte }) => {
         const localErr = await requireGitHubRepo();
         if (localErr) return localErr;
+        const validationError = validateLogByteRange({ startByte, endByte });
+        if (validationError) return fail(validationError);
         const session = await getSession();
         const result = await getPRWorkflowLogs(await getToken(), session.repo_full_name, runId, {
           startByte,
@@ -963,38 +981,46 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
     {
       name: 'ReadTaskOutput',
-      description:
-        'Read the log output of a running or exited baguette task. By default returns the last 200 lines. Use offset to read from a specific line position.',
+      description: `Read the log output of a running or exited baguette task. Defaults to the last ${DEFAULT_LOG_BYTES} bytes. When endByte is omitted, returns max(5000, bytes from startByte through EOF). When both startByte and endByte are set, the range is capped at ${MAX_LOG_RANGE_BYTES} bytes. Negative indices count from the end; do not combine a negative startByte with a non-negative endByte.`,
       schema: {
         taskId: z.number().int().describe('Task ID from ListRunningTasks'),
-        offset: z
+        startByte: z
           .number()
-          .int()
           .optional()
           .describe(
-            'Line offset to start reading from (0-based). If omitted, reads the last `limit` lines.'
+            'Start byte (0-based). Negative values count from the end. Omit both bounds for the last 5000 bytes.'
           ),
-        limit: z
+        endByte: z
           .number()
-          .int()
           .optional()
-          .describe('Maximum number of lines to return (default: 200)'),
+          .describe(
+            'Inclusive end byte (optional). Negative values count from the end. When omitted, end is startByte + max(5000, bytes remaining until EOF). Must be negative if startByte is negative.'
+          ),
       },
-      handler: async ({ taskId, offset, limit = 200 }) => {
+      handler: async ({ taskId, startByte, endByte }) => {
         const task = app.service('tasks').getTask(taskId);
         if (!task) return fail(`Task ${taskId} not found`);
         if (task.session_id !== session.id)
           return fail(`Task ${taskId} does not belong to this session`);
-        const allLines = streamToLines(task.getLogs());
-        const totalLines = allLines.length;
-        let start;
-        if (offset != null) {
-          start = Math.max(0, Math.min(offset, totalLines));
-        } else {
-          start = Math.max(0, totalLines - limit);
+        const validationError = validateLogByteRange({ startByte, endByte });
+        if (validationError) return fail(validationError);
+        try {
+          const {
+            log,
+            totalBytes,
+            startByte: actualStart,
+            endByte: actualEnd,
+          } = sliceByteRange(task.getLogs(), { startByte, endByte });
+          return ok({
+            taskId,
+            totalBytes,
+            startByte: actualStart,
+            endByte: actualEnd,
+            log,
+          });
+        } catch (err) {
+          return fail(err.message);
         }
-        const lines = allLines.slice(start, start + limit);
-        return ok({ taskId, totalLines, offset: start, lines });
       },
     },
 

@@ -329,13 +329,13 @@ Baguette polls all allocated ports until they are listening on 127.0.0.1 before 
 
 Baguette exposes these MCP tools for task management:
 
-| Tool                  | Description                                       |
-| --------------------- | ------------------------------------------------- |
-| `ListProjectCommands` | List all available tasks from `.baguette.yaml`    |
-| `RunProjectCommand`   | Run a task by label, with optional args           |
-| `ListRunningTasks`    | List currently running tasks with ports           |
-| `KillTask`            | Kill a running task by ID                         |
-| `ReadTaskOutput`      | Read log output of a task (supports offset/limit) |
+| Tool                  | Description                                            |
+| --------------------- | ------------------------------------------------------ |
+| `ListProjectCommands` | List all available tasks from `.baguette.yaml`         |
+| `RunProjectCommand`   | Run a task by label, with optional args                |
+| `ListRunningTasks`    | List currently running tasks with ports                |
+| `KillTask`            | Kill a running task by ID                              |
+| `ReadTaskOutput`      | Read log output of a task (supports startByte/endByte) |
 
 ## Examples
 

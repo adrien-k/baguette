@@ -404,8 +404,7 @@ function ReadTaskOutputBlock({ block }) {
 
   const taskId = block.input?.taskId ?? parsed?.taskId;
   const logsHtml = useMemo(() => {
-    const lines = parsed?.lines ?? [];
-    const text = lines.join('\n');
+    const text = parsed?.log ?? (Array.isArray(parsed?.lines) ? parsed.lines.join('\n') : '');
     return text ? ansiToHtml(text) : '';
   }, [parsed]);
 

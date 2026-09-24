@@ -938,6 +938,16 @@ describe('PrWorkflowLogs', () => {
     });
   });
 
+  it('passes negative startByte for suffix byte ranges', async () => {
+    getPRWorkflowLogs.mockResolvedValue({ jobs: [] });
+    const { tools } = await buildServer();
+    await callTool(tools, 'PrWorkflowLogs', { runId: '12345', startByte: -10 });
+    expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
+      startByte: -10,
+      endByte: undefined,
+    });
+  });
+
   it('passes undefined byte range when not specified', async () => {
     getPRWorkflowLogs.mockResolvedValue({ logs: '', totalBytes: 0 });
     const { tools } = await buildServer();
@@ -946,6 +956,57 @@ describe('PrWorkflowLogs', () => {
       startByte: undefined,
       endByte: undefined,
     });
+  });
+});
+
+describe('ReadTaskOutput', () => {
+  function makeLogTask(logText) {
+    return {
+      id: 42,
+      session_id: DEFAULT_SESSION.id,
+      getLogs: () => logText,
+    };
+  }
+
+  it('returns the last 10 bytes when startByte is -10 and endByte is -1', async () => {
+    const suffix = '0123456789';
+    const text = `${'a'.repeat(90)}${suffix}`;
+    const { tools } = await buildServer(
+      {},
+      { tasksGetTask: vi.fn().mockReturnValue(makeLogTask(text)) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'ReadTaskOutput', { taskId: 42, startByte: -10, endByte: -1 })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.log).toBe(suffix);
+  });
+
+  it('rejects negative startByte with non-negative endByte', async () => {
+    const { tools } = await buildServer(
+      {},
+      { tasksGetTask: vi.fn().mockReturnValue(makeLogTask('hello')) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'ReadTaskOutput', { taskId: 42, startByte: -1, endByte: 0 })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/negative startByte/i);
+  });
+
+  it('returns ok: false when task belongs to another session', async () => {
+    const { tools } = await buildServer(
+      {},
+      {
+        tasksGetTask: vi.fn().mockReturnValue({
+          id: 42,
+          session_id: 999,
+          getLogs: () => 'x\n',
+        }),
+      }
+    );
+    const result = parseResult(await callTool(tools, 'ReadTaskOutput', { taskId: 42 }));
+    expect(result.ok).toBe(false);
   });
 });
 
