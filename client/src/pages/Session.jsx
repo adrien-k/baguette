@@ -24,6 +24,7 @@ import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
+import { splitRepoPath } from '../utils/paths.js';
 import { apiFetch } from '../api.js';
 import { sessionsService, tasksService } from '../feathers.js';
 import { useGetSession } from '../hooks/useGetSession.js';
@@ -1138,6 +1139,7 @@ export default function Session() {
               ) : (
                 diffFiles.map((file, i) => {
                   const displayPath = file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
+                  const { basename, dirname } = splitRepoPath(displayPath);
                   return (
                     <button
                       key={i}
@@ -1147,13 +1149,22 @@ export default function Session() {
                           .getElementById(`diff-file-${i}`)
                           ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                       }}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800/50"
+                      className="w-full flex items-start justify-between gap-2 px-3 py-2 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800/50"
                     >
-                      <span className="font-mono text-xs text-zinc-300 truncate flex-1 min-w-0">
-                        {displayPath}
-                      </span>
-                      <span className="text-xs text-emerald-400 shrink-0">+{file.addedCount}</span>
-                      <span className="text-xs text-red-400 shrink-0">-{file.removedCount}</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-mono text-xs text-zinc-300 truncate block">
+                          {basename}
+                        </span>
+                        {dirname ? (
+                          <span className="font-mono text-[10px] text-zinc-500 truncate block mt-0.5">
+                            {dirname}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1 pt-0.5">
+                        <span className="text-xs text-emerald-400">+{file.addedCount}</span>
+                        <span className="text-xs text-red-400">-{file.removedCount}</span>
+                      </div>
                     </button>
                   );
                 })
