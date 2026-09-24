@@ -20,7 +20,7 @@ import {
   UsersTab,
   SlackTab,
 } from './settings/GlobalSettingsSections.jsx';
-import { SettingsSection } from './settings/SettingsSection.jsx';
+import { SettingsSection, SettingsTabHeader } from '../components/SettingsSection.jsx';
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
@@ -138,191 +138,194 @@ function RepositoriesTab() {
   const addedNames = new Set(repos.map((r) => r.full_name));
 
   return (
-    <div className="space-y-6">
-      <SettingsSection title="My repositories">
-        <form
-          onSubmit={handleAdd}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-4"
+    <div>
+      <SettingsTabHeader title="Repositories">
+        Repositories you can start sessions on. Link GitHub repositories or create local ones, and
+        set per-repo credentials that override your account keys.
+      </SettingsTabHeader>
+
+      <div className="space-y-6">
+        <SettingsSection
+          title="My repositories"
+          description="Repositories linked to your account. Removing one cleans up its data if no other users have it linked."
         >
-          <p className="text-zinc-400 text-sm mb-3">
-            Add repositories to use them as session targets. Removing one will clean up its data if
-            no other users have it linked.
-          </p>
-          <RepoSearchInput
-            value={selectedRepo}
-            onSelect={setSelectedRepo}
-            addedNames={addedNames}
-            trailing={
+          <div>
+            <h4 className="text-xs font-medium text-zinc-400 mb-2">Add from GitHub</h4>
+            <form onSubmit={handleAdd}>
+              <RepoSearchInput
+                value={selectedRepo}
+                onSelect={setSelectedRepo}
+                addedNames={addedNames}
+                trailing={
+                  <button
+                    type="submit"
+                    disabled={adding || !selectedRepo}
+                    className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+                  >
+                    {adding ? 'Adding…' : 'Add'}
+                  </button>
+                }
+              />
+            </form>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-medium text-zinc-400 mb-2">
+              Create a local repository (no GitHub required)
+            </h4>
+            <form onSubmit={handleAddLocal} className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={localName}
+                onChange={(e) => setLocalName(e.target.value)}
+                placeholder="Repository name (e.g. my-project)"
+                required
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
               <button
                 type="submit"
-                disabled={adding || !selectedRepo}
+                disabled={addingLocal || !localName.trim()}
                 className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
               >
-                {adding ? 'Adding…' : 'Add'}
+                {addingLocal ? 'Creating…' : 'Create'}
               </button>
-            }
-          />
-        </form>
-
-        <form
-          onSubmit={handleAddLocal}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-4"
-        >
-          <p className="text-zinc-400 text-sm mb-3">
-            Create a new local repository — no GitHub required.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={localName}
-              onChange={(e) => setLocalName(e.target.value)}
-              placeholder="Repository name (e.g. my-project)"
-              required
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-            <button
-              type="submit"
-              disabled={addingLocal || !localName.trim()}
-              className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
-            >
-              {addingLocal ? 'Creating…' : 'Create'}
-            </button>
+            </form>
           </div>
-        </form>
 
-        {addResult && !addResult.hasBaguetteConfig && (
-          <div className="bg-amber-900/20 border border-amber-700 rounded-xl px-4 py-3 mb-4">
-            <p className="text-sm text-amber-200">
-              <strong>{addResult.repo.full_name}</strong> doesn&apos;t have a baguette configuration
-              yet. Start a session on this repo — the agent will offer to configure it
-              automatically.
-            </p>
-            <button
-              onClick={() => setAddResult(null)}
-              className="mt-2 text-sm text-zinc-400 hover:text-zinc-300"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          {repos.length === 0 && (
-            <p className="text-zinc-600 text-sm text-center py-8">No repositories added</p>
+          {addResult && !addResult.hasBaguetteConfig && (
+            <div className="bg-amber-900/20 border border-amber-700 rounded-xl px-4 py-3">
+              <p className="text-sm text-amber-200">
+                <strong>{addResult.repo.full_name}</strong> doesn&apos;t have a baguette
+                configuration yet. Start a session on this repo — the agent will offer to configure
+                it automatically.
+              </p>
+              <button
+                onClick={() => setAddResult(null)}
+                className="mt-2 text-sm text-zinc-400 hover:text-zinc-300"
+              >
+                Dismiss
+              </button>
+            </div>
           )}
-          {repos.map((r) => {
-            const maskedAnthropicKey =
-              repoKeyOverrides[r.id] !== undefined ? repoKeyOverrides[r.id] : r.anthropic_api_key;
-            const maskedCursorKey =
-              repoCursorKeyOverrides[r.id] !== undefined
-                ? repoCursorKeyOverrides[r.id]
-                : r.cursor_api_key;
-            const isEditing = repoKeyEditingId === r.id;
-            const editingAnthropicKey = isEditing && repoKeyField === 'anthropic';
-            const _editingCursorKey = isEditing && repoKeyField === 'cursor';
-            const activeKeyMasked = editingAnthropicKey ? maskedAnthropicKey : maskedCursorKey;
-            return (
-              <div key={r.id} className="border-b border-zinc-800 last:border-0">
-                <div className="flex items-center justify-between px-4 py-3 gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm text-white font-medium">
-                        {repoDisplayName(r.full_name)}
-                      </code>
-                      {isLocalRepo(r.full_name) && (
-                        <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">
-                          local
-                        </span>
+
+          <div className="divide-y divide-zinc-800">
+            {repos.length === 0 && (
+              <p className="text-zinc-600 text-sm text-center py-8">No repositories added</p>
+            )}
+            {repos.map((r) => {
+              const maskedAnthropicKey =
+                repoKeyOverrides[r.id] !== undefined ? repoKeyOverrides[r.id] : r.anthropic_api_key;
+              const maskedCursorKey =
+                repoCursorKeyOverrides[r.id] !== undefined
+                  ? repoCursorKeyOverrides[r.id]
+                  : r.cursor_api_key;
+              const isEditing = repoKeyEditingId === r.id;
+              const editingAnthropicKey = isEditing && repoKeyField === 'anthropic';
+              const _editingCursorKey = isEditing && repoKeyField === 'cursor';
+              const activeKeyMasked = editingAnthropicKey ? maskedAnthropicKey : maskedCursorKey;
+              return (
+                <div key={r.id} className="py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <code className="text-sm text-white font-medium">
+                          {repoDisplayName(r.full_name)}
+                        </code>
+                        {isLocalRepo(r.full_name) && (
+                          <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">
+                            local
+                          </span>
+                        )}
+                      </div>
+                      {r.full_name.startsWith('/') && (
+                        <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">
+                          {r.full_name}
+                        </div>
+                      )}
+                      <div className="text-xs text-zinc-500 mt-0.5">
+                        {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => openRepoKeyEdit(r.id, 'anthropic')}
+                        className={`text-xs ${maskedAnthropicKey ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-zinc-300'}`}
+                      >
+                        {maskedAnthropicKey ? 'Claude Key ✓' : 'Claude Key'}
+                      </button>
+                      <button
+                        onClick={() => openRepoKeyEdit(r.id, 'cursor')}
+                        className={`text-xs ${maskedCursorKey ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-zinc-300'}`}
+                      >
+                        {maskedCursorKey ? 'Cursor Key ✓' : 'Cursor Key'}
+                      </button>
+                      <button
+                        onClick={() => handleUnlinkClick(r)}
+                        disabled={unlinkingId !== null}
+                        className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  {isEditing && (
+                    <div className="pb-3 space-y-2">
+                      <p className="text-xs text-zinc-400">
+                        {editingAnthropicKey
+                          ? 'Claude credential for this repo (overrides your account). Console API key or claude setup-token output.'
+                          : 'Cursor API key for this repo (overrides your account key)'}
+                      </p>
+                      <div className="flex gap-2 items-center">
+                        <div className="flex-1">
+                          <MaskedSecretInput
+                            key={`${r.id}-${repoKeyField}`}
+                            maskedValue={activeKeyMasked}
+                            placeholder={editingAnthropicKey ? 'sk-ant-…' : 'cursor-…'}
+                            onChange={(val, dirty) => {
+                              setRepoKeyValue(val);
+                              setRepoKeyDirty(dirty);
+                            }}
+                          />
+                        </div>
+                        <button
+                          onClick={() => handleRepoKeySave(r.id, r.user_repo_id)}
+                          disabled={repoKeySaving || !repoKeyDirty}
+                          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0"
+                        >
+                          {repoKeySaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRepoKeyEditingId(null);
+                            setRepoKeyValue(null);
+                            setRepoKeyDirty(false);
+                          }}
+                          className="text-xs text-zinc-400 hover:text-zinc-300 shrink-0"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {activeKeyMasked && (
+                        <button
+                          onClick={() => {
+                            setRepoKeyValue('');
+                            setRepoKeyDirty(true);
+                          }}
+                          className="text-xs text-zinc-500 hover:text-zinc-400"
+                        >
+                          Clear key (use account default)
+                        </button>
                       )}
                     </div>
-                    {r.full_name.startsWith('/') && (
-                      <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">
-                        {r.full_name}
-                      </div>
-                    )}
-                    <div className="text-xs text-zinc-500 mt-0.5">
-                      {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => openRepoKeyEdit(r.id, 'anthropic')}
-                      className={`text-xs ${maskedAnthropicKey ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-zinc-300'}`}
-                    >
-                      {maskedAnthropicKey ? 'Claude Key ✓' : 'Claude Key'}
-                    </button>
-                    <button
-                      onClick={() => openRepoKeyEdit(r.id, 'cursor')}
-                      className={`text-xs ${maskedCursorKey ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-zinc-300'}`}
-                    >
-                      {maskedCursorKey ? 'Cursor Key ✓' : 'Cursor Key'}
-                    </button>
-                    <button
-                      onClick={() => handleUnlinkClick(r)}
-                      disabled={unlinkingId !== null}
-                      className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                  )}
                 </div>
-                {isEditing && (
-                  <div className="px-4 pb-3 space-y-2">
-                    <p className="text-xs text-zinc-400">
-                      {editingAnthropicKey
-                        ? 'Claude credential for this repo (overrides your account). Console API key or claude setup-token output.'
-                        : 'Cursor API key for this repo (overrides your account key)'}
-                    </p>
-                    <div className="flex gap-2 items-center">
-                      <div className="flex-1">
-                        <MaskedSecretInput
-                          key={`${r.id}-${repoKeyField}`}
-                          maskedValue={activeKeyMasked}
-                          placeholder={editingAnthropicKey ? 'sk-ant-…' : 'cursor-…'}
-                          onChange={(val, dirty) => {
-                            setRepoKeyValue(val);
-                            setRepoKeyDirty(dirty);
-                          }}
-                        />
-                      </div>
-                      <button
-                        onClick={() => handleRepoKeySave(r.id, r.user_repo_id)}
-                        disabled={repoKeySaving || !repoKeyDirty}
-                        className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0"
-                      >
-                        {repoKeySaving ? 'Saving…' : 'Save'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setRepoKeyEditingId(null);
-                          setRepoKeyValue(null);
-                          setRepoKeyDirty(false);
-                        }}
-                        className="text-xs text-zinc-400 hover:text-zinc-300 shrink-0"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    {activeKeyMasked && (
-                      <button
-                        onClick={() => {
-                          setRepoKeyValue('');
-                          setRepoKeyDirty(true);
-                        }}
-                        className="text-xs text-zinc-500 hover:text-zinc-400"
-                      >
-                        Clear key (use account default)
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </SettingsSection>
+              );
+            })}
+          </div>
+        </SettingsSection>
 
-      <AllRepositoriesSection />
+        <AllRepositoriesSection />
+      </div>
 
       {confirmUnlink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
@@ -391,16 +394,14 @@ function NotificationsSection() {
     }[permission] ?? 'text-zinc-400';
 
   return (
-    <SettingsSection
-      title="Notifications"
-      description="Enable browser notifications to receive alerts when sessions complete or approvals are requested, even when the tab is hidden."
-    >
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
+    <div>
+      <SettingsTabHeader title="Notifications">
+        Get alerted when sessions complete or approvals are requested, even when this tab is hidden.
+      </SettingsTabHeader>
+
+      <SettingsSection title="Browser notifications">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-zinc-300 mb-0.5">Browser notifications</p>
-            <p className={`text-xs ${statusColor}`}>{statusLabel}</p>
-          </div>
+          <p className={`text-xs ${statusColor}`}>{statusLabel}</p>
           {permission === 'denied' ? (
             <p className="text-xs text-zinc-500 text-right max-w-[160px]">
               Unblock in browser settings to enable.
@@ -415,8 +416,8 @@ function NotificationsSection() {
             </button>
           ) : null}
         </div>
-      </div>
-    </SettingsSection>
+      </SettingsSection>
+    </div>
   );
 }
 
@@ -465,74 +466,87 @@ function AgentTab({ settings, onSave }) {
   };
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 max-w-xl">
-      <SettingsSection title="General">
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
-          <input
-            type="text"
-            value={branchPrefix}
-            onChange={(e) => setBranchPrefix(e.target.value)}
-            placeholder="baguette/"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-          />
-          <p className="mt-1 text-xs text-zinc-500">
-            Prefix added to all generated branch names. Leave empty for no prefix.
-          </p>
+    <div>
+      <SettingsTabHeader title="Agent">
+        Credentials and defaults for the agent SDKs that run your sessions. Per-repo keys can
+        override these account credentials.
+      </SettingsTabHeader>
+
+      <form onSubmit={handleSave} className="space-y-6">
+        <SettingsSection title="General">
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
+            <input
+              type="text"
+              value={branchPrefix}
+              onChange={(e) => setBranchPrefix(e.target.value)}
+              placeholder="baguette/"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Prefix added to all generated branch names. Leave empty for no prefix.
+            </p>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="Claude">
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1">Credential</label>
+            <MaskedSecretInput
+              maskedValue={settings?.anthropic_api_key}
+              placeholder="sk-ant-…"
+              onChange={(val, dirty) => {
+                setAnthropicApiKey(val);
+                setAnthropicApiKeyDirty(dirty);
+              }}
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Console API key (<code className="text-zinc-400">sk-ant-api…</code>, billed per token)
+              or a subscription token from <code className="text-zinc-400">claude setup-token</code>{' '}
+              (<code className="text-zinc-400">sk-ant-oat…</code>, Pro/Max/Team/Enterprise, lasts
+              about a year). Saving replaces the previous value; format is detected automatically.
+              Leave empty to use Claude Code&apos;s default configuration.
+            </p>
+          </div>
+          <UsageGraph agentSdkFilter="claude" />
+        </SettingsSection>
+
+        <SettingsSection title="Cursor">
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
+            <MaskedSecretInput
+              maskedValue={settings?.cursor_api_key}
+              placeholder="cursor-…"
+              onChange={(val, dirty) => {
+                setCursorApiKey(val);
+                setCursorApiKeyDirty(dirty);
+              }}
+            />
+            <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
+          </div>
+          <div>
+            <h4 className="text-xs font-medium text-zinc-400 mb-1">Model preferences</h4>
+            <p className="text-xs text-zinc-500 mb-2">
+              Applied when starting Cursor sessions (dashboard and MCP). Matches the preferences
+              control on the session builder.
+            </p>
+            <CursorModelPreferencesSection />
+          </div>
+          <UsageGraph agentSdkFilter="cursor" />
+        </SettingsSection>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {saved && <span className="text-sm text-emerald-400">Saved</span>}
         </div>
-      </SettingsSection>
-
-      <SettingsSection title="Claude">
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">Credential</label>
-          <MaskedSecretInput
-            maskedValue={settings?.anthropic_api_key}
-            placeholder="sk-ant-…"
-            onChange={(val, dirty) => {
-              setAnthropicApiKey(val);
-              setAnthropicApiKeyDirty(dirty);
-            }}
-          />
-          <p className="mt-1 text-xs text-zinc-500">
-            Console API key (<code className="text-zinc-400">sk-ant-api…</code>, billed per token)
-            or a subscription token from <code className="text-zinc-400">claude setup-token</code> (
-            <code className="text-zinc-400">sk-ant-oat…</code>, Pro/Max/Team/Enterprise, lasts about
-            a year). Saving replaces the previous value; format is detected automatically. Leave
-            empty to use Claude Code&apos;s default configuration.
-          </p>
-        </div>
-        <UsageGraph agentSdkFilter="claude" />
-      </SettingsSection>
-
-      <CursorModelPreferencesSection />
-
-      <SettingsSection title="Cursor">
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
-          <MaskedSecretInput
-            maskedValue={settings?.cursor_api_key}
-            placeholder="cursor-…"
-            onChange={(val, dirty) => {
-              setCursorApiKey(val);
-              setCursorApiKeyDirty(dirty);
-            }}
-          />
-          <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
-        </div>
-        <UsageGraph agentSdkFilter="cursor" />
-      </SettingsSection>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {saved && <span className="text-sm text-emerald-400">Saved</span>}
-      </div>
-    </form>
+      </form>
+    </div>
   );
 }
 
@@ -540,14 +554,21 @@ function AgentTab({ settings, onSave }) {
 
 function IntegrationsTab({ settings, onRefreshSettings }) {
   return (
-    <div className="space-y-12">
-      <McpAccessSection
-        configured={Boolean(settings?.mcp_token_configured)}
-        maskedToken={settings?.mcp_api_token}
-        endpoint={settings?.mcp_endpoint}
-        onTokenChange={onRefreshSettings}
-      />
-      <SlackTab />
+    <div>
+      <SettingsTabHeader title="Integrations">
+        Connect external tools to Baguette: MCP clients for remote access, and Slack bots so agents
+        can post updates to your channels.
+      </SettingsTabHeader>
+
+      <div className="space-y-6">
+        <McpAccessSection
+          configured={Boolean(settings?.mcp_token_configured)}
+          maskedToken={settings?.mcp_api_token}
+          endpoint={settings?.mcp_endpoint}
+          onTokenChange={onRefreshSettings}
+        />
+        <SlackTab />
+      </div>
     </div>
   );
 }

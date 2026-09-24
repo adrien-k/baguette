@@ -10,11 +10,11 @@ import {
   slackService,
 } from '../../feathers.js';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
-import { SettingsSection } from './SettingsSection.jsx';
+import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
 
 function SecretRow({ secret, onDelete }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-2">
+    <div className="flex items-center justify-between py-3 gap-2">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <code className="text-sm text-amber-400 font-medium shrink-0">{secret.key}</code>
         <code className="text-sm text-zinc-400 truncate hidden sm:block">{secret.safeValue}</code>
@@ -55,8 +55,8 @@ function SecretAddForm({ title, scope, onAdded }) {
   };
 
   return (
-    <form onSubmit={handleAdd} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
-      <h3 className="text-sm font-medium text-zinc-300 mb-3">{title}</h3>
+    <form onSubmit={handleAdd}>
+      <h4 className="text-xs font-medium text-zinc-400 mb-2">{title}</h4>
       <div className="flex flex-col sm:flex-row gap-3">
         <input
           type="text"
@@ -109,42 +109,44 @@ export function SecretsTab() {
   const personalSecrets = variables.filter((v) => v.user_id != null);
 
   return (
-    <div className="space-y-6">
-      <p className="text-zinc-400 text-sm">
+    <div>
+      <SettingsTabHeader title="Secrets">
         Secrets are available in <code className="text-zinc-300">.baguette.yaml</code> config where
         they can be assigned to environment variables. Personal secrets override global secrets with
         the same key.
-      </p>
+      </SettingsTabHeader>
 
-      <SettingsSection
-        title="Global secrets"
-        description="Shared across all users and sessions on this Baguette instance."
-      >
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          {globalSecrets.length === 0 && (
-            <p className="text-zinc-600 text-sm text-center py-8">No global secrets configured</p>
-          )}
-          {globalSecrets.map((v) => (
-            <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
-          ))}
-        </div>
-        <SecretAddForm title="Add global secret" scope="global" onAdded={load} />
-      </SettingsSection>
+      <div className="space-y-6">
+        <SettingsSection
+          title="Global secrets"
+          description="Shared across all users and sessions on this Baguette instance."
+        >
+          <div className="divide-y divide-zinc-800">
+            {globalSecrets.length === 0 && (
+              <p className="text-zinc-600 text-sm text-center py-8">No global secrets configured</p>
+            )}
+            {globalSecrets.map((v) => (
+              <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
+            ))}
+          </div>
+          <SecretAddForm title="Add global secret" scope="global" onAdded={load} />
+        </SettingsSection>
 
-      <SettingsSection
-        title="Personal secrets"
-        description="Only for your account. Same key as a global secret wins for your sessions."
-      >
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          {personalSecrets.length === 0 && (
-            <p className="text-zinc-600 text-sm text-center py-8">No personal secrets yet</p>
-          )}
-          {personalSecrets.map((v) => (
-            <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
-          ))}
-        </div>
-        <SecretAddForm title="Add personal secret" scope="personal" onAdded={load} />
-      </SettingsSection>
+        <SettingsSection
+          title="Personal secrets"
+          description="Only for your account. Same key as a global secret wins for your sessions."
+        >
+          <div className="divide-y divide-zinc-800">
+            {personalSecrets.length === 0 && (
+              <p className="text-zinc-600 text-sm text-center py-8">No personal secrets yet</p>
+            )}
+            {personalSecrets.map((v) => (
+              <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
+            ))}
+          </div>
+          <SecretAddForm title="Add personal secret" scope="personal" onAdded={load} />
+        </SettingsSection>
+      </div>
     </div>
   );
 }
@@ -190,15 +192,12 @@ export function AllRepositoriesSection() {
       title="All repositories"
       description="Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the clone for all users."
     >
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+      <div className="divide-y divide-zinc-800">
         {repos.length === 0 && (
           <p className="text-zinc-600 text-sm text-center py-8">No repositories registered</p>
         )}
         {repos.map((r) => (
-          <div
-            key={r.id}
-            className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-3"
-          >
+          <div key={r.id} className="flex items-center justify-between py-3 gap-3">
             <div className="min-w-0">
               <code className="text-sm text-white font-medium">{r.full_name}</code>
               <div className="text-xs text-zinc-500 mt-0.5">
@@ -278,57 +277,63 @@ export function UsersTab() {
   };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-      {users.length === 0 && (
-        <p className="text-zinc-600 text-sm text-center py-8">No users found</p>
-      )}
-      {users.map((u) => (
-        <div
-          key={u.id}
-          className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-3"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
-            <div className="min-w-0">
-              <div className="text-sm text-white font-medium truncate">{u.username}</div>
-              <div className="text-xs text-zinc-500">
-                Joined {new Date(u.created_at).toLocaleDateString()}
+    <div>
+      <SettingsTabHeader title="Users">
+        People who can sign in to this Baguette instance. New users must be approved before they can
+        start sessions.
+      </SettingsTabHeader>
+
+      <SettingsSection title="Accounts">
+        <div className="divide-y divide-zinc-800">
+          {users.length === 0 && (
+            <p className="text-zinc-600 text-sm text-center py-8">No users found</p>
+          )}
+          {users.map((u) => (
+            <div key={u.id} className="flex items-center justify-between py-3 gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm text-white font-medium truncate">{u.username}</div>
+                  <div className="text-xs text-zinc-500">
+                    Joined {new Date(u.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                {u.approved ? (
+                  <>
+                    <span className="text-xs text-emerald-400 hidden sm:inline">Approved</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 sm:hidden" />
+                    <button
+                      onClick={() => handleReject(u.id)}
+                      className="text-xs text-red-500 hover:text-red-400 ml-1"
+                    >
+                      Revoke
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs text-amber-400 hidden sm:inline">Pending</span>
+                    <span className="w-2 h-2 rounded-full bg-amber-400 sm:hidden" />
+                    <button
+                      onClick={() => handleApprove(u.id)}
+                      className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded ml-1"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleReject(u.id)}
+                      className="text-xs text-red-500 hover:text-red-400"
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            {u.approved ? (
-              <>
-                <span className="text-xs text-emerald-400 hidden sm:inline">Approved</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 sm:hidden" />
-                <button
-                  onClick={() => handleReject(u.id)}
-                  className="text-xs text-red-500 hover:text-red-400 ml-1"
-                >
-                  Revoke
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="text-xs text-amber-400 hidden sm:inline">Pending</span>
-                <span className="w-2 h-2 rounded-full bg-amber-400 sm:hidden" />
-                <button
-                  onClick={() => handleApprove(u.id)}
-                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded ml-1"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => handleReject(u.id)}
-                  className="text-xs text-red-500 hover:text-red-400"
-                >
-                  Reject
-                </button>
-              </>
-            )}
-          </div>
+          ))}
         </div>
-      ))}
+      </SettingsSection>
     </div>
   );
 }
@@ -420,100 +425,102 @@ export function DockerTab() {
 
   return (
     <div>
-      <p className="text-zinc-400 text-sm mb-4">
+      <SettingsTabHeader title="Docker">
         Global Docker Compose configuration stored in the data directory. Services defined here are
         available to all sessions.
-      </p>
+      </SettingsTabHeader>
 
-      <div className="mb-4">
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={18}
-          spellCheck={false}
-          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-y leading-relaxed"
-          placeholder="# docker-compose.yml"
-        />
-      </div>
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {saved && <span className="text-sm text-emerald-400">Saved</span>}
-      </div>
-
-      <h2 className="text-sm font-medium text-zinc-300 mb-3">Services</h2>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-        {loadingServices && allServiceNames.length === 0 && (
-          <p className="text-zinc-600 text-sm text-center py-6">Loading…</p>
-        )}
-        {!loadingServices && allServiceNames.length === 0 && (
-          <p className="text-zinc-600 text-sm text-center py-6">
-            No services defined. Add services to your docker-compose.yml and save.
-          </p>
-        )}
-        {allServiceNames.map((name) => {
-          const c = containerByService[name];
-          const state = c ? c.State || c.state || '' : '';
-          const image = c ? c.Image || c.image || '' : '';
-          return (
-            <div
-              key={name}
-              className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-3"
+      <div className="space-y-6">
+        <SettingsSection title="docker-compose.yml">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={18}
+            spellCheck={false}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-y leading-relaxed"
+            placeholder="# docker-compose.yml"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(state)}`} />
-                <div className="min-w-0">
-                  <code className="text-sm text-white font-medium">{name}</code>
-                  <div className="text-xs text-zinc-500 mt-0.5 truncate">
-                    {image && <span>{image}</span>}
-                    {state ? (
-                      <span className="ml-2">{state}</span>
-                    ) : (
-                      <span className="ml-2 italic">not started</span>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            {saved && <span className="text-sm text-emerald-400">Saved</span>}
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="Services">
+          <div className="divide-y divide-zinc-800">
+            {loadingServices && allServiceNames.length === 0 && (
+              <p className="text-zinc-600 text-sm text-center py-6">Loading…</p>
+            )}
+            {!loadingServices && allServiceNames.length === 0 && (
+              <p className="text-zinc-600 text-sm text-center py-6">
+                No services defined. Add services to your docker-compose.yml and save.
+              </p>
+            )}
+            {allServiceNames.map((name) => {
+              const c = containerByService[name];
+              const state = c ? c.State || c.state || '' : '';
+              const image = c ? c.Image || c.image || '' : '';
+              return (
+                <div key={name} className="flex items-center justify-between py-3 gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(state)}`} />
+                    <div className="min-w-0">
+                      <code className="text-sm text-white font-medium">{name}</code>
+                      <div className="text-xs text-zinc-500 mt-0.5 truncate">
+                        {image && <span>{image}</span>}
+                        {state ? (
+                          <span className="ml-2">{state}</span>
+                        ) : (
+                          <span className="ml-2 italic">not started</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!c && (
+                      <button
+                        onClick={() => handleContainerAction(name, 'up')}
+                        disabled={actionLoading !== null}
+                        className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading === `${name}:up` ? '…' : 'Start'}
+                      </button>
                     )}
+                    {c &&
+                      ['start', 'stop', 'restart'].map((action) => (
+                        <button
+                          key={action}
+                          onClick={() => handleContainerAction(name, action)}
+                          disabled={actionLoading !== null}
+                          className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50 capitalize"
+                        >
+                          {actionLoading === `${name}:${action}` ? '…' : action}
+                        </button>
+                      ))}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {!c && (
-                  <button
-                    onClick={() => handleContainerAction(name, 'up')}
-                    disabled={actionLoading !== null}
-                    className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50"
-                  >
-                    {actionLoading === `${name}:up` ? '…' : 'Start'}
-                  </button>
-                )}
-                {c &&
-                  ['start', 'stop', 'restart'].map((action) => (
-                    <button
-                      key={action}
-                      onClick={() => handleContainerAction(name, action)}
-                      disabled={actionLoading !== null}
-                      className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50 capitalize"
-                    >
-                      {actionLoading === `${name}:${action}` ? '…' : action}
-                    </button>
-                  ))}
-              </div>
+              );
+            })}
+          </div>
+          {allServiceNames.length > 0 && (
+            <div>
+              <button
+                onClick={loadServices}
+                disabled={loadingServices}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                {loadingServices ? 'Refreshing…' : 'Refresh'}
+              </button>
             </div>
-          );
-        })}
+          )}
+        </SettingsSection>
       </div>
-      {allServiceNames.length > 0 && (
-        <button
-          onClick={loadServices}
-          disabled={loadingServices}
-          className="mt-3 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          {loadingServices ? 'Refreshing…' : 'Refresh'}
-        </button>
-      )}
     </div>
   );
 }
@@ -589,87 +596,87 @@ export function PluginsTab() {
 
   return (
     <div>
-      <p className="text-zinc-400 text-sm mb-4">
+      <SettingsTabHeader title="Plugins">
         Install Claude Code plugins from GitHub. Plugins are global — available to all users when
         starting new sessions. Each plugin must contain a{' '}
         <code className="text-zinc-300">.claude-plugin/plugin.json</code> file.
-      </p>
+      </SettingsTabHeader>
 
-      <form
-        onSubmit={handleInstall}
-        className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-6"
-      >
-        <h2 className="text-sm font-medium text-zinc-300 mb-1">Install Plugin</h2>
-        <p className="text-xs text-zinc-500 mb-3">
-          Enter a GitHub URL: repo root (e.g. <code className="text-zinc-400">…/tree/main</code>) or
-          a subdirectory (e.g. <code className="text-zinc-400">…/tree/main/plugins/foo</code>).
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="https://github.com/owner/repo/tree/main"
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono min-w-0"
-          />
-          <button
-            type="submit"
-            disabled={installing || !input.trim()}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
-          >
-            {installing ? 'Installing…' : 'Install'}
-          </button>
-        </div>
-      </form>
+      <div className="space-y-6">
+        <SettingsSection
+          title="Install plugin"
+          description={
+            <>
+              Enter a GitHub URL: repo root (e.g. <code className="text-zinc-400">…/tree/main</code>
+              ) or a subdirectory (e.g.{' '}
+              <code className="text-zinc-400">…/tree/main/plugins/foo</code>).
+            </>
+          }
+        >
+          <form onSubmit={handleInstall} className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="https://github.com/owner/repo/tree/main"
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono min-w-0"
+            />
+            <button
+              type="submit"
+              disabled={installing || !input.trim()}
+              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
+            >
+              {installing ? 'Installing…' : 'Install'}
+            </button>
+          </form>
+        </SettingsSection>
 
-      {plugins.length === 0 ? (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl">
-          <p className="text-zinc-600 text-sm text-center py-8">No plugins installed</p>
-        </div>
-      ) : (
-        Object.entries(grouped).map(([marketplaceRepo, repoPlugins]) => (
-          <div key={marketplaceRepo} className="mb-4">
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">
-              {marketplaceRepo}
-            </h3>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              {repoPlugins.map((plugin) => (
-                <div
-                  key={plugin.id}
-                  className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0 gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm text-white font-medium">{plugin.name}</div>
-                    <div className="text-xs text-zinc-500 mt-0.5 flex items-center gap-2">
-                      <code className="text-zinc-600 truncate">{plugin.plugin_path}</code>
-                      {plugin.git_sha && (
-                        <span className="text-zinc-700 font-mono shrink-0">
-                          {plugin.git_sha.slice(0, 7)}
-                        </span>
-                      )}
+        <SettingsSection title="Installed plugins">
+          {plugins.length === 0 ? (
+            <p className="text-zinc-600 text-sm text-center py-8">No plugins installed</p>
+          ) : (
+            Object.entries(grouped).map(([marketplaceRepo, repoPlugins]) => (
+              <div key={marketplaceRepo}>
+                <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">
+                  {marketplaceRepo}
+                </h4>
+                <div className="divide-y divide-zinc-800">
+                  {repoPlugins.map((plugin) => (
+                    <div key={plugin.id} className="flex items-center justify-between py-3 gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm text-white font-medium">{plugin.name}</div>
+                        <div className="text-xs text-zinc-500 mt-0.5 flex items-center gap-2">
+                          <code className="text-zinc-600 truncate">{plugin.plugin_path}</code>
+                          {plugin.git_sha && (
+                            <span className="text-zinc-700 font-mono shrink-0">
+                              {plugin.git_sha.slice(0, 7)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleRefresh(plugin)}
+                          disabled={refreshingId !== null}
+                          className="text-xs text-zinc-400 hover:text-white disabled:opacity-50 transition-colors"
+                        >
+                          {refreshingId === plugin.id ? '…' : 'Refresh'}
+                        </button>
+                        <button
+                          onClick={() => handleRemove(plugin)}
+                          className="text-xs text-red-500 hover:text-red-400"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => handleRefresh(plugin)}
-                      disabled={refreshingId !== null}
-                      className="text-xs text-zinc-400 hover:text-white disabled:opacity-50 transition-colors"
-                    >
-                      {refreshingId === plugin.id ? '…' : 'Refresh'}
-                    </button>
-                    <button
-                      onClick={() => handleRemove(plugin)}
-                      className="text-xs text-red-500 hover:text-red-400"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        ))
-      )}
+              </div>
+            ))
+          )}
+        </SettingsSection>
+      </div>
     </div>
   );
 }
@@ -748,10 +755,7 @@ function SlackAppCard({ app, onChanged }) {
   };
 
   return (
-    <form
-      onSubmit={handleSave}
-      className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-4"
-    >
+    <form onSubmit={handleSave}>
       <Field label="Name" hint="How agents refer to this app in SlackPostMessage.">
         <input
           type="text"
@@ -837,29 +841,26 @@ export function SlackTab() {
   if (!apps) return <p className="text-zinc-600 text-sm text-center py-8">Loading…</p>;
 
   return (
-    <div>
-      <h2 className="text-sm font-semibold text-zinc-300 mb-3">Slack</h2>
-      <p className="text-zinc-400 text-sm mb-4">
-        Connect one or more Slack bots so agents can post updates to a channel. The{' '}
-        <code className="text-zinc-300">SlackPostMessage</code> tool only appears in sessions once
-        at least one app is saved. Bot token scopes:{' '}
-        <code className="text-zinc-400">{SLACK_SCOPES}</code>.
-      </p>
-
+    <SettingsSection
+      title="Slack"
+      description={
+        <>
+          Connect one or more Slack bots so agents can post updates to a channel. The{' '}
+          <code className="text-zinc-300">SlackPostMessage</code> tool only appears in sessions once
+          at least one app is saved. Bot token scopes:{' '}
+          <code className="text-zinc-400">{SLACK_SCOPES}</code>.
+        </>
+      }
+    >
       {apps.length === 0 && (
-        <p className="text-zinc-600 text-sm text-center py-8 bg-zinc-900 border border-zinc-800 rounded-xl mb-6">
-          No Slack apps configured
-        </p>
+        <p className="text-zinc-600 text-sm text-center py-8">No Slack apps configured</p>
       )}
       {apps.map((app) => (
         <SlackAppCard key={app.id} app={app} onChanged={load} />
       ))}
 
-      <form
-        onSubmit={handleAdd}
-        className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-6"
-      >
-        <h2 className="text-sm font-medium text-zinc-300 mb-4">Add Slack app</h2>
+      <form onSubmit={handleAdd}>
+        <h4 className="text-xs font-medium text-zinc-400 mb-2">Add Slack app</h4>
 
         <Field label="Name">
           <input
@@ -900,8 +901,8 @@ export function SlackTab() {
         </button>
       </form>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
-        <h2 className="text-sm font-medium text-zinc-300 mb-2">Tools exposed to agents</h2>
+      <div>
+        <h4 className="text-xs font-medium text-zinc-400 mb-2">Tools exposed to agents</h4>
         <p className="text-sm text-zinc-500">
           <code className="text-zinc-400">SlackPostMessage</code> — post a message to a channel.
           Requires a channel id or <code className="text-zinc-400">#name</code>
@@ -917,6 +918,6 @@ export function SlackTab() {
           Every message carries a footer linking back to the session that posted it.
         </p>
       </div>
-    </div>
+    </SettingsSection>
   );
 }

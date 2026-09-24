@@ -63,27 +63,25 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
   if (noInstallations) {
     return (
       <div className="flex-1">
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-          <p className="text-sm text-zinc-300 mb-1">No repositories connected yet</p>
-          <p className="text-xs text-zinc-500 mb-3 max-w-md leading-relaxed">
-            Install the Baguette GitHub App and choose which repositories it can access. You can
-            pick a single repository, and change the selection at any time.
-          </p>
-          <div className="flex items-center gap-3">
-            <a
-              href={installHref()}
-              className="inline-flex items-center gap-2 bg-amber-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors"
-            >
-              Install on GitHub
-            </a>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              Already installed? Refresh
-            </button>
-          </div>
+        <p className="text-sm text-zinc-300 mb-1">No repositories connected yet</p>
+        <p className="text-xs text-zinc-500 mb-3 max-w-md leading-relaxed">
+          Install the Baguette GitHub App and choose which repositories it can access. You can pick
+          a single repository, and change the selection at any time.
+        </p>
+        <div className="flex items-center gap-3">
+          <a
+            href={installHref()}
+            className="inline-flex items-center gap-2 bg-amber-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors"
+          >
+            Install on GitHub
+          </a>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Already installed? Refresh
+          </button>
         </div>
       </div>
     );

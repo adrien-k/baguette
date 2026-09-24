@@ -79,9 +79,7 @@ export default function UsageGraph({ repoFilter, agentSdkFilter, className = '' 
     : [];
 
   return (
-    <div
-      className={`bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 space-y-3 ${className}`}
-    >
+    <div className={`space-y-3 ${className}`}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-medium text-zinc-400">
           Tokens per day <span className="text-zinc-600 font-normal">(last 30d)</span>
