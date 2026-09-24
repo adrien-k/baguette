@@ -84,6 +84,20 @@ describe('Task', () => {
     expect(task.status).toBe('exited');
     expect(task.exit_code).toBe(0);
   });
+
+  it('kill() logs a manual stop with SIGTERM and the grace delay', async () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    await task.kill();
+    expect(task.getLogs()).toMatch(
+      /Stopped manually \(SIGTERM; force kill after 10s if still running\)/
+    );
+  });
+
+  it('kill({ reason: "ttl" }) does not log a manual stop', async () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    await task.kill({ reason: 'ttl' });
+    expect(task.getLogs()).not.toMatch(/Stopped manually/);
+  });
 });
 
 // ─── TasksService store ───────────────────────────────────────────────────────

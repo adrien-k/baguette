@@ -37,15 +37,21 @@ describe('Task kill integration', () => {
     await waitFor(() => task.getLogs().includes('signal-listener started'), {
       msg: `Logs: ${task.getLogs()}`,
     });
-    task.kill();
+    const killPromise = task.kill({ graceMs: 200, timeoutMs: 5000 });
     await waitFor(() => task.getLogs().includes('received SIGTERM'), {
       timeoutMs: 5000,
       msg: `Logs: ${task.getLogs()}`,
     });
+    expect(task.getLogs()).toMatch(
+      /Stopped manually \(SIGTERM; force kill after 0\.2s if still running\)/
+    );
     expect(task.status).toBe('running');
 
-    // We could wait for the auto-force-kill, but let's keep the test short.
-    task.forceKill();
+    await waitFor(() => task.getLogs().includes('sending SIGKILL'), {
+      timeoutMs: 5000,
+      msg: `Logs: ${task.getLogs()}`,
+    });
+    await killPromise;
     await waitFor(() => task.status === 'exited', { timeoutMs: 5000 });
 
     expect(task.status).toBe('exited');

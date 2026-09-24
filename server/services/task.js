@@ -12,6 +12,12 @@ export const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export const PREVIEW_WEBSERVICE_TTL_MS = 60 * 60 * 1000; // 1 hour
 /** How often a task heartbeats its depends_on tasks. */
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
+/** After SIGTERM, wait this long before escalating to SIGKILL. */
+export const KILL_GRACE_MS = 10_000;
+
+function baguetteStatusLine(message) {
+  return `\x1b[33m[baguette] ${message}\x1b[0m\n`;
+}
 
 /** Release stdio streams and listeners after the child exits (task row stays for UI/logs). */
 function detachChildProcess(child) {
@@ -124,7 +130,7 @@ export class Task {
     if (this.status === 'exited' || !this.hasPorts || !this._ttlMs) return;
     clearTimeout(this.#ttlTimer);
     this.#ttlTimer = setTimeout(() => {
-      this.addLog('stdout', `\x1b[33m[baguette] TTL expired, stopping task...\x1b[0m\n`);
+      this.addLog('stdout', baguetteStatusLine('TTL expired, stopping task...'));
       this.kill({ reason: 'ttl' }).catch(() => {});
     }, this._ttlMs);
   }
@@ -423,16 +429,25 @@ export class Task {
   }
 
   /**
-   * Send SIGTERM; escalate to SIGKILL after 5 s if still running; await until the child exits or `timeoutMs`.
-   * @param {{ timeoutMs?: number, reason?: 'stopped'|'ttl' }} opts - `reason` is recorded on the task so
+   * Send SIGTERM; escalate to SIGKILL after `graceMs` if still running; await until the child exits or `timeoutMs`.
+   * @param {{ timeoutMs?: number, graceMs?: number, reason?: 'stopped'|'ttl' }} opts - `reason` is recorded on the task so
    *   consumers can tell a deliberate stop from a crash (see DevProxy exit handling).
    * @returns {Promise<boolean>} true if a signal was sent, false if already exited/no process.
    */
-  async kill({ timeoutMs = 12000, reason = 'stopped' } = {}) {
+  async kill({ timeoutMs = 12000, graceMs = KILL_GRACE_MS, reason = 'stopped' } = {}) {
     if (this.status !== 'running') {
       return false;
     }
     this.kill_reason = reason;
+    if (reason === 'stopped') {
+      const graceSec = graceMs / 1000;
+      this.addLog(
+        'stdout',
+        baguetteStatusLine(
+          `Stopped manually (SIGTERM; force kill after ${graceSec}s if still running)`
+        )
+      );
+    }
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
     // forever and the Preview Start button stays disabled.
@@ -446,9 +461,13 @@ export class Task {
     this.#killProcessGroup('SIGTERM');
     const escalation = setTimeout(() => {
       if (this.status === 'running' && this.#process) {
+        this.addLog(
+          'stdout',
+          baguetteStatusLine('Still running after grace period, sending SIGKILL...')
+        );
         this.#killProcessGroup('SIGKILL');
       }
-    }, 10000);
+    }, graceMs);
     try {
       await this.#waitForChildExit({ timeoutMs });
     } finally {
