@@ -1,4 +1,14 @@
+import { useSearchParams } from 'react-router-dom';
+
+function withRedirectTo(path, redirectTo) {
+  if (!redirectTo) return path;
+  return `${path}?redirectTo=${encodeURIComponent(redirectTo)}`;
+}
+
 export default function Login() {
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirectTo');
+
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center relative overflow-hidden">
       {/* Atmospheric glow */}
@@ -11,7 +21,7 @@ export default function Login() {
         <h1 className="text-3xl font-bold text-white mb-2 font-display">Baguette</h1>
         <p className="text-zinc-400 mb-8 text-sm">AI-powered coding sessions</p>
         <a
-          href="/auth/github"
+          href={withRedirectTo('/auth/github', redirectTo)}
           className="inline-flex items-center gap-3 bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-zinc-200 transition-colors"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -22,7 +32,7 @@ export default function Login() {
         {import.meta.env.DEV && (
           <div className="mt-4 pt-4 border-t border-zinc-800">
             <a
-              href="/auth/dev"
+              href={withRedirectTo('/auth/dev', redirectTo)}
               className="inline-flex items-center gap-2 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
             >
               <span className="text-xs bg-zinc-800 px-1.5 py-0.5 rounded font-mono">DEV</span>

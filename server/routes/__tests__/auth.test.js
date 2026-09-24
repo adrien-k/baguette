@@ -175,6 +175,38 @@ describe('GET /auth/github/callback', () => {
   });
 });
 
+describe('GET /auth/proxy', () => {
+  it('sends unauthenticated users to login with a return URL', async () => {
+    const res = await get('/auth/proxy?service=my-session&redirectTo=%2Fpreview');
+
+    expect(res.status).toBe(302);
+    const location = new URL(res.headers.get('location'));
+    expect(location.origin + location.pathname).toBe('http://localhost:5173/login');
+    expect(location.searchParams.get('redirectTo')).toBe(
+      '/auth/proxy?service=my-session&redirectTo=%2Fpreview'
+    );
+  });
+
+  it('redirects signed-in users to the session auth URL with a safe redirectTo only', async () => {
+    const [userId] = await db('users').insert({ github_id: 5, username: 'alice', approved: true });
+
+    const safe = await get('/auth/proxy?service=sess&redirectTo=%2Ffoo%3Fq%3D1', {
+      cookie: signedUserCookie(userId),
+    });
+    expect(safe.status).toBe(302);
+    expect(safe.headers.get('location')).toBe(
+      'http://sess.localhost/_baguette/auth?sign=proxy-token&redirectTo=%2Ffoo%3Fq%3D1'
+    );
+
+    const external = await get('/auth/proxy?service=sess&redirectTo=https%3A%2F%2Fevil.example', {
+      cookie: signedUserCookie(userId),
+    });
+    expect(external.headers.get('location')).toBe(
+      'http://sess.localhost/_baguette/auth?sign=proxy-token'
+    );
+  });
+});
+
 describe('GET /auth/me', () => {
   it('reports the install URL when signed out', async () => {
     const res = await get('/auth/me');

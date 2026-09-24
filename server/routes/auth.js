@@ -10,6 +10,7 @@ import {
   PUBLIC_HOST,
   PUBLIC_API_URL,
 } from '../config.js';
+import { toSafePath } from '../lib/safe-path.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -46,12 +47,7 @@ export function createAuthRoutes(app) {
           maxAge: 30 * 24 * 60 * 60 * 1000,
         });
 
-        const redirectTo = req.query.redirectTo;
-        const dest =
-          redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')
-            ? redirectTo
-            : '/';
-        res.redirect(dest);
+        res.redirect(toSafePath(req.query.redirectTo) ?? '/');
       } catch (err) {
         logger.error(err, 'Dev sign-in error');
         res.status(500).send('Dev sign-in failed');
@@ -61,9 +57,9 @@ export function createAuthRoutes(app) {
 
   /** Stores a post-auth redirect target, ignoring anything that isn't a local path. */
   const setRedirectCookie = (req, res) => {
-    const { redirectTo } = req.query;
-    if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
-      res.cookie('auth_redirect', redirectTo, {
+    const dest = toSafePath(req.query.redirectTo);
+    if (dest) {
+      res.cookie('auth_redirect', dest, {
         httpOnly: true,
         sameSite: 'lax',
         maxAge: 10 * 60 * 1000,
@@ -97,9 +93,7 @@ export function createAuthRoutes(app) {
   const finishRedirect = (req, res) => {
     const redirectTo = req.cookies?.auth_redirect;
     res.clearCookie('auth_redirect');
-    const dest =
-      redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/';
-    res.redirect(dest);
+    res.redirect(toSafePath(redirectTo) ?? '/');
   };
 
   /** Drops cached repo/installation lists so newly granted repos appear immediately. */
@@ -229,17 +223,25 @@ export function createAuthRoutes(app) {
   // Signs a proxy token for the given service subdomain and redirects there.
   // Used by the dev-proxy middleware when the user has no baguette_proxy cookie.
   router.get('/auth/proxy', async (req, res, _next) => {
-    const userId = req.signedCookies?.userId;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     const service = req.query.service;
     if (!service) return res.status(400).json({ error: 'Missing service parameter' });
+
+    const safeRedirectTo = toSafePath(req.query.redirectTo);
+
+    const userId = req.signedCookies?.userId;
+    if (!userId) {
+      const returnParams = new URLSearchParams({ service });
+      if (safeRedirectTo) returnParams.set('redirectTo', safeRedirectTo);
+      const loginUrl = new URL('/login', PUBLIC_HOST);
+      loginUrl.searchParams.set('redirectTo', `/auth/proxy?${returnParams}`);
+      return res.redirect(loginUrl.toString());
+    }
 
     const token = signProxyToken(userId);
     const { protocol, hostname } = new URL(PUBLIC_API_URL);
 
-    const redirectToParam = req.query.redirectTo
-      ? `&redirectTo=${encodeURIComponent(req.query.redirectTo)}`
+    const redirectToParam = safeRedirectTo
+      ? `&redirectTo=${encodeURIComponent(safeRedirectTo)}`
       : '';
     const authUrl = `${protocol}//${buildSessionHostname(hostname, service)}/_baguette/auth?sign=${token}${redirectToParam}`;
     return res.redirect(authUrl);
