@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { useGetTaskLogs } from '../hooks/useGetTaskLogs.js';
 import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
 import { ansiToHtml } from '../utils/ansi.js';
+import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 
 export default function TaskLogModal({ task, session, onKill, onRetry, onClose }) {
   const { logs } = useGetTaskLogs(task?.id);
@@ -29,13 +30,12 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
   }, [onClose]);
 
   const location = useLocation();
+  const { sessionUrl } = useFilterRoutes();
 
   if (!task) return null;
 
   const isRunning = task.status === 'running';
-  const sessionPath = session?.short_id
-    ? `/repos/${session.repo_id}/sessions/${session.short_id}`
-    : null;
+  const sessionPath = session?.short_id ? sessionUrl(session.short_id) : null;
   const isOnSession = sessionPath && location.pathname === sessionPath;
 
   return (

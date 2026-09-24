@@ -15,6 +15,7 @@ const WRITABLE_FIELDS = [
   'auto_push',
   'plan_mode',
   'single_session',
+  'is_global',
   'agent_sdk',
   'model',
   'model_params',
@@ -25,6 +26,7 @@ const WRITABLE_FIELDS = [
   'days_of_week',
   'timezone',
   'enabled',
+  'session_id',
 ];
 
 const SCHEDULE_FIELDS = [
@@ -50,11 +52,12 @@ export class LoopsService extends KnexService {
    */
   async runDue(nowMs = Date.now()) {
     const db = this.app.get('db');
-    const due = await db('loops')
-      .where('enabled', true)
-      .whereNotNull('next_run_at')
-      .where('next_run_at', '<=', new Date(nowMs).toISOString())
-      .orderBy('next_run_at', 'asc');
+    const due = await applyActiveSessionLoopScope(
+      db('loops')
+        .where('loops.enabled', true)
+        .whereNotNull('loops.next_run_at')
+        .where('loops.next_run_at', '<=', new Date(nowMs).toISOString())
+    ).orderBy('loops.next_run_at', 'asc');
 
     const results = [];
     for (const loop of due) {
@@ -187,6 +190,54 @@ export class LoopsService extends KnexService {
 /** A session in one of these is mid-turn: it cannot take a loop run right now. */
 const BUSY_SESSION_STATUSES = new Set(['running', 'approval', 'provisioning', 'archiving']);
 
+/**
+ * Standalone loops, plus loops created from a session that is still active.
+ * Session-created loops whose session is archived (or gone) stay in the table
+ * but are hidden from find/get and skipped by `runDue`.
+ */
+export function applyActiveSessionLoopScope(query) {
+  return query.where(function () {
+    this.where('loops.created_from_session', 0).orWhereExists(function () {
+      this.select('*')
+        .from('sessions')
+        .whereRaw('sessions.id = loops.session_id')
+        .whereNull('sessions.archived_at');
+    });
+  });
+}
+
+const BOOLEAN_QUERY_FIELDS = [
+  'enabled',
+  'create_new_branch',
+  'auto_push',
+  'plan_mode',
+  'single_session',
+  'is_global',
+  'created_from_session',
+];
+
+/** REST query strings (`"true"`) do not match SQLite integer booleans. */
+function sqliteBool(value) {
+  if (value === true || value === 1 || value === '1' || value === 'true') return 1;
+  if (value === false || value === 0 || value === '0' || value === 'false') return 0;
+  return value;
+}
+
+function coerceBooleanQuery(context) {
+  const query = context.params.query;
+  if (!query) return context;
+  for (const field of BOOLEAN_QUERY_FIELDS) {
+    if (field in query) query[field] = sqliteBool(query[field]);
+  }
+  return context;
+}
+
+function scopeActiveSessionLoops(context) {
+  const query = context.params.knex ?? context.service.createQuery(context.params);
+  context.params.knex = applyActiveSessionLoopScope(query);
+  return context;
+}
+
 function loopSchedule(loop) {
   return {
     type: loop.schedule_type,
@@ -201,13 +252,17 @@ function loopSchedule(loop) {
 function sessionDataFromLoop(loop) {
   const data = {
     loop_id: loop.id,
-    repo_full_name: loop.repo_full_name,
-    base_branch: loop.base_branch,
     initial_prompt: loop.prompt,
     plan_mode: !!loop.plan_mode,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
   };
+  if (loop.is_global) {
+    data.is_global = true;
+  } else {
+    data.repo_full_name = loop.repo_full_name;
+    data.base_branch = loop.base_branch;
+  }
   if (loop.agent_sdk) data.agent_sdk = loop.agent_sdk;
   if (loop.model) data.model = loop.model;
   if (loop.model_params) data.model_params = loop.model_params;
@@ -243,6 +298,18 @@ function normalizeSchedulePayload(input) {
   }
 }
 
+async function resolveTiedSession(context) {
+  const sessionId = context.data.session_id;
+  if (sessionId == null) return context;
+  const userId = context.params.user?.id;
+  const session = await context.app.get('db')('sessions').where({ id: sessionId }).first();
+  if (!session || (userId && session.user_id !== userId) || session.archived_at) {
+    throw new NotFound('Session not found');
+  }
+  context.data.session_id = session.id;
+  return context;
+}
+
 function serializePlugins(context) {
   const { plugins } = context.data;
   if (Array.isArray(plugins)) context.data.plugins = JSON.stringify(plugins);
@@ -252,6 +319,12 @@ function serializePlugins(context) {
 }
 
 async function resolveRepo(context) {
+  if (context.data.is_global) {
+    context.data.repo_id = null;
+    context.data.repo_full_name = '';
+    context.data.base_branch = '';
+    return context;
+  }
   const fullName = context.data.repo_full_name;
   if (!fullName) throw new BadRequest('repo_full_name is required');
   const repo = await context.app.get('db')('repos').where({ full_name: fullName }).first();
@@ -262,7 +335,15 @@ async function resolveRepo(context) {
 
 function normalizeCreate(context) {
   const data = context.data;
-  if (!data.base_branch) throw new BadRequest('base_branch is required');
+  data.is_global = !!data.is_global;
+  if (data.is_global) {
+    data.repo_full_name = '';
+    data.base_branch = '';
+    data.create_new_branch = false;
+    data.auto_push = false;
+  } else if (!data.base_branch) {
+    throw new BadRequest('base_branch is required');
+  }
   if (!data.prompt?.trim()) throw new BadRequest('prompt is required');
 
   applySchedule(data, normalizeSchedulePayload(data));
@@ -271,6 +352,14 @@ function normalizeCreate(context) {
   data.auto_push = data.auto_push === undefined ? true : !!data.auto_push;
   data.plan_mode = !!data.plan_mode;
   data.single_session = !!data.single_session;
+  if (data.session_id != null) {
+    data.session_id = Number(data.session_id);
+    data.single_session = true;
+    data.created_from_session = true;
+  } else {
+    data.session_id = null;
+    data.created_from_session = false;
+  }
   data.next_run_at = data.enabled ? computeNextRun(loopSchedule(data)) : null;
   return context;
 }
@@ -295,6 +384,7 @@ async function requireOwnLoop(context) {
 function normalizePatch(context) {
   const data = context.data;
   const existing = context.params.existingLoop;
+  if (context.params.provider && 'session_id' in data) delete data.session_id;
 
   if ('prompt' in data && !data.prompt?.trim()) throw new BadRequest('prompt is required');
   for (const field of [
@@ -310,6 +400,7 @@ function normalizePatch(context) {
   // starts a new one on the next run rather than adopting whatever ran last.
   if ('single_session' in data && data.single_session !== !!existing.single_session) {
     data.session_id = null;
+    if (!data.single_session) data.created_from_session = false;
   }
 
   const scheduleTouched = SCHEDULE_FIELDS.some((f) => f in data);
@@ -351,6 +442,10 @@ function formatLoop(loop) {
     auto_push: !!loop.auto_push,
     plan_mode: !!loop.plan_mode,
     single_session: !!loop.single_session,
+    is_global: !!loop.is_global,
+    created_from_session: !!loop.created_from_session,
+    session_id: loop.session_id ?? null,
+    last_session_id: loop.last_session_id ?? null,
   };
 }
 
@@ -364,6 +459,51 @@ function formatResult(context) {
   return context;
 }
 
+function loopsFromResult(result) {
+  if (!result) return [];
+  if (Array.isArray(result?.data)) return result.data;
+  if (Array.isArray(result)) return result;
+  return [result];
+}
+
+function writeLoopsToResult(context, loops) {
+  const result = context.result;
+  if (Array.isArray(result?.data)) context.result = { ...result, data: loops };
+  else if (Array.isArray(result)) context.result = loops;
+  else context.result = loops[0];
+}
+
+function attachedSessionId(loop) {
+  return loop.session_id || loop.last_session_id || null;
+}
+
+async function attachTiedSessions(context) {
+  const loops = loopsFromResult(context.result);
+  const ids = [...new Set(loops.map(attachedSessionId).filter(Boolean))];
+  if (!ids.length) return context;
+  const rows = await context.app
+    .get('db')('sessions')
+    .whereIn('id', ids)
+    .select('id', 'short_id', 'label', 'repo_id', 'repo_full_name', 'is_global');
+  const byId = new Map(
+    rows.map((s) => [s.id, { ...s, is_global: !!s.is_global, repo_id: s.repo_id ?? null }])
+  );
+  writeLoopsToResult(
+    context,
+    loops.map((loop) => {
+      const id = attachedSessionId(loop);
+      const tied_session = id ? (byId.get(id) ?? null) : null;
+      if (!tied_session) return loop;
+      return {
+        ...loop,
+        tied_session,
+        session_link: loop.created_from_session ? 'strong' : 'weak',
+      };
+    })
+  );
+  return context;
+}
+
 async function orderByNewestFirst(context) {
   // Build on the query `scopeByUser` left behind — a fresh one would drop the user scoping.
   const query = context.params.knex ?? context.service.createQuery(context.params);
@@ -374,17 +514,24 @@ async function orderByNewestFirst(context) {
 export const loopsHooks = {
   before: {
     all: [requireUser],
-    find: [scopeByUser, orderByNewestFirst],
-    get: [scopeByUser],
-    create: [only(WRITABLE_FIELDS), scopeByUser, resolveRepo, serializePlugins, normalizeCreate],
+    find: [coerceBooleanQuery, scopeByUser, scopeActiveSessionLoops, orderByNewestFirst],
+    get: [scopeByUser, scopeActiveSessionLoops],
+    create: [
+      only(WRITABLE_FIELDS),
+      scopeByUser,
+      resolveTiedSession,
+      resolveRepo,
+      serializePlugins,
+      normalizeCreate,
+    ],
     patch: [scopeByUser, requireOwnLoop, only(WRITABLE_FIELDS), serializePlugins, normalizePatch],
     remove: [scopeByUser, requireOwnLoop],
   },
   after: {
-    find: [formatResult],
-    get: [formatResult],
-    create: [formatResult],
-    patch: [formatResult],
+    find: [formatResult, attachTiedSessions],
+    get: [formatResult, attachTiedSessions],
+    create: [formatResult, attachTiedSessions],
+    patch: [formatResult, attachTiedSessions],
     remove: [formatResult],
   },
 };

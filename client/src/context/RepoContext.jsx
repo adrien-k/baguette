@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useGetRepos } from '../hooks/useGetRepos.js';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { ALL_REPOS, GLOBAL_SCOPE } from '@baguette/shared/session-scope.js';
 
-export const ALL_REPOS = '__all__';
+export { ALL_REPOS, GLOBAL_SCOPE };
 
 const RepoContext = createContext(null);
 
@@ -13,7 +14,8 @@ export function RepoProvider({ children }) {
 
   // Drop selection if that repo is no longer available
   useEffect(() => {
-    if (loading || !selectedRepo || selectedRepo === ALL_REPOS) return;
+    if (loading || !selectedRepo || selectedRepo === ALL_REPOS || selectedRepo === GLOBAL_SCOPE)
+      return;
     const exists = repos.some((r) => r.full_name === selectedRepo);
     if (!exists) setSelectedRepo(null);
   }, [loading, repos, selectedRepo]);

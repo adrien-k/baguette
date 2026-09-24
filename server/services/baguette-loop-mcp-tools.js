@@ -25,6 +25,7 @@ const loopPatchSchema = {
   model_params: z.string().optional(),
   plugins: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
+  is_global: z.boolean().optional(),
   ...loopScheduleSchema,
 };
 
@@ -38,9 +39,12 @@ export function buildBaguetteLoopMcpTools(user, app) {
       description: 'List your scheduled session loops, newest first.',
       schema: {
         repo_full_name: z.string().optional().describe('Filter by repository full name'),
+        is_global: z.boolean().optional().describe('Filter to global loops'),
       },
-      handler: async ({ repo_full_name } = {}) => {
-        const query = repo_full_name ? { repo_full_name } : {};
+      handler: async ({ repo_full_name, is_global } = {}) => {
+        const query = {};
+        if (repo_full_name) query.repo_full_name = repo_full_name;
+        if (is_global) query.is_global = true;
         const result = await app.service('loops').find({ ...userParams, query });
         const loops = Array.isArray(result) ? result : (result?.data ?? []);
         return ok({ loops });
@@ -64,10 +68,11 @@ export function buildBaguetteLoopMcpTools(user, app) {
     {
       name: 'CreateLoop',
       description:
-        'Create a recurring session loop (same fields as the dashboard loop form). Requires repo_full_name, base_branch, prompt, and schedule fields.',
+        'Create a recurring session loop (same fields as the dashboard loop form). Requires prompt and schedule fields. Pass is_global for a global loop, or repo_full_name and base_branch for a repo loop.',
       schema: {
-        repo_full_name: z.string(),
-        base_branch: z.string(),
+        repo_full_name: z.string().optional(),
+        is_global: z.boolean().optional(),
+        base_branch: z.string().optional(),
         prompt: z.string(),
         ...loopPatchSchema,
       },

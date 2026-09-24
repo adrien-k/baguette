@@ -29,6 +29,7 @@ import {
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
 import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
+import { isGlobalSession } from '../../../shared/session-scope.js';
 import { getPreviewHost } from '../preview.js';
 import {
   getPreviewServiceDefinitions,
@@ -396,8 +397,11 @@ export class SessionsService extends KnexService {
           )
         );
     }
-    await removeWorktree(session, repo);
+    if (!isGlobalSession(session)) {
+      await removeWorktree(session, repo);
+    }
     this.app.service('tasks').deleteSessionTasks(sessionId);
+    await this._deleteStrongLoopsTiedToSession(sessionId);
     const archivedAt = new Date().toISOString();
     // Only mark archived after the worktree is gone so a later create cannot
     // reuse the branch while files are still on disk.
@@ -407,6 +411,26 @@ export class SessionsService extends KnexService {
       .update({ archived_at: archivedAt, worktree_path: null, status: ARCHIVED_STATUS });
     const updated = await db('sessions').where({ id: sessionId }).first();
     this.emit('patched', updated);
+  }
+
+  /**
+   * Strong (session-created) loops live and die with that session. Weak loops stay
+   * so the next run can start a replacement session.
+   */
+  async _deleteStrongLoopsTiedToSession(sessionId) {
+    const db = this.app.get('db');
+    const tied = await db('loops')
+      .where({ session_id: sessionId, created_from_session: true })
+      .select('id', 'user_id');
+    if (!tied.length) return;
+    const loopsService = this.app.services?.loops;
+    for (const loop of tied) {
+      if (loopsService) {
+        await this.app.service('loops').remove(loop.id, { user: { id: loop.user_id } });
+      } else {
+        await db('loops').where({ id: loop.id }).del();
+      }
+    }
   }
 
   _stopAgentSession(session) {
@@ -425,7 +449,7 @@ export class SessionsService extends KnexService {
 
   async commands(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) return { commands: [] };
+    if (!session?.worktree_path || isGlobalSession(session)) return { commands: [] };
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
     return { commands: getAvailableCommands(baguetteConfig) };
   }
@@ -563,7 +587,7 @@ export class SessionsService extends KnexService {
 
   async diff(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) return { diff: '' };
+    if (!session?.worktree_path || isGlobalSession(session)) return { diff: '' };
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
@@ -589,14 +613,16 @@ export class SessionsService extends KnexService {
 
   async gitStatus(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) return { commitsToPush: 0 };
+    if (!session?.worktree_path || isGlobalSession(session)) return { commitsToPush: 0 };
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     return { commitsToPush: await gitCommitsToPush(cwd) };
   }
 
   async shas(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) return { localSha: null, remoteSha: null };
+    if (!session?.worktree_path || isGlobalSession(session)) {
+      return { localSha: null, remoteSha: null };
+    }
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
@@ -611,7 +637,7 @@ export class SessionsService extends KnexService {
 
   async showDiff(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) return { path: data.path, diff: '' };
+    if (!session?.worktree_path || isGlobalSession(session)) return { path: data.path, diff: '' };
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     try {
       const diff = await gitDiff(cwd, session.base_branch, {
@@ -645,6 +671,7 @@ export class SessionsService extends KnexService {
 
   async push(data, params) {
     const session = params.resolvedSession;
+    if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
     if (!session?.worktree_path) throw new BadRequest('Session has no worktree');
     const cwd = resolveDataDirRelativePath(session.worktree_path);
     const user = await this.app.service('users').get(session.user_id, {});
@@ -750,7 +777,9 @@ export class SessionsService extends KnexService {
 
     const dbUpdate = { archived_at: null, status: 'stopped' };
 
-    if (!worktreeExists) {
+    if (isGlobalSession(session)) {
+      dbUpdate.worktree_path = 'repos';
+    } else if (!worktreeExists) {
       const repo = session.repo_id
         ? await db('repos').where({ id: session.repo_id }).first()
         : null;
@@ -944,12 +973,20 @@ async function validateSessionCreate(context) {
   const createNewBranch = context.data.create_new_branch ?? true;
   context.params._createNewBranch = createNewBranch;
 
-  const { repo_full_name: repoFullName, base_branch: baseBranch } = context.data;
-  if (!repoFullName) {
+  const isGlobal = !!context.data.is_global || !context.data.repo_full_name;
+  if (isGlobal) {
+    context.data.is_global = true;
+    context.data.repo_id = null;
+    context.data.repo_full_name = '';
+    context.data.base_branch = '';
+    context.data.auto_push = false;
+    context.data.status = PROVISIONING_STATUS;
     delete context.data.create_new_branch;
     delete context.data.branch_name;
     return context;
   }
+
+  const { repo_full_name: repoFullName, base_branch: baseBranch } = context.data;
 
   const db = context.app.get('db');
   const repo = await db('repos').where({ full_name: repoFullName }).first();
@@ -988,7 +1025,31 @@ async function validateSessionCreate(context) {
   return context;
 }
 
+async function provisionGlobalSession(app, session, params) {
+  const userParams = { provider: undefined, user: params.user };
+  const patch = {
+    worktree_path: 'repos',
+    auto_push: false,
+    is_global: true,
+  };
+  try {
+    const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
+    const result = await app
+      .service(agentService)
+      .generateSessionMetadata(session.initial_prompt || '', session.short_id, params.user, null);
+    if (result.label) patch.label = result.label;
+  } catch (err) {
+    logger.error(err, 'Metadata generation error (non-fatal)');
+  }
+  if (!patch.label) patch.label = 'Global session';
+  return await app.service('sessions').patch(session.id, patch, userParams);
+}
+
 async function provisionSessionEnvironment(app, session, params) {
+  if (isGlobalSession(session) || !session.repo_full_name) {
+    return provisionGlobalSession(app, session, params);
+  }
+
   const { user, createNewBranch, requestedBranchName } = params;
   const continueExistingBranch = !createNewBranch;
   const { repo_full_name: repoFullName, base_branch: baseBranch, short_id: shortId } = session;
@@ -1150,7 +1211,8 @@ async function failSessionProvisioning(app, sessionId, user, err) {
 
 async function scheduleSessionProvisioning(context) {
   const session = context.result;
-  if (!session?.repo_full_name) return context;
+  if (!session) return context;
+  if (!session.repo_full_name && !isGlobalSession(session)) return context;
 
   const params = {
     user: context.params.user,
@@ -1218,6 +1280,7 @@ async function withHasWebserver(session) {
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
+    is_global: Boolean(session.is_global),
     codeserver_url: absoluteWorktreePath ? getCodeserverUrl(absoluteWorktreePath) : null,
   };
 }
@@ -1393,7 +1456,8 @@ async function refreshPrStatusAfterGet(context) {
 
 async function persistSystemPrompt(context) {
   const session = context.result;
-  if (!session.repo_full_name) return context;
+  if (!session) return context;
+  if (!session.repo_full_name && !isGlobalSession(session)) return context;
 
   const promptAppend = await buildSystemPromptAppend(session);
 

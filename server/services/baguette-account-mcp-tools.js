@@ -115,10 +115,21 @@ export function buildBaguetteAccountToolList(user, app) {
     {
       name: 'CreateSession',
       description:
-        'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels for agent_sdk + model. Cursor variant is chosen from your Settings preferences with fallback to the model default.',
+        'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels for agent_sdk + model. Cursor variant is chosen from your Settings preferences with fallback to the model default. Pass is_global to start a global session from the shared repos folder (no repo_id or base_branch).',
       schema: {
-        repo_id: z.number().int().describe('Repository id from ListRepos'),
-        base_branch: z.string().describe('Base branch from ListBranches'),
+        repo_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('Repository id from ListRepos (omit when is_global)'),
+        base_branch: z
+          .string()
+          .optional()
+          .describe('Base branch from ListBranches (omit when is_global)'),
+        is_global: z
+          .boolean()
+          .optional()
+          .describe('Start a global session in the shared repos folder (no git/PR tools)'),
         initial_prompt: z.string().describe('Initial user prompt for the agent'),
         agent_sdk: z.enum(['claude', 'cursor']).optional().describe('Agent SDK (default: claude)'),
         model: z.string().optional().describe('Model id from ListModels for the chosen SDK'),
@@ -139,6 +150,7 @@ export function buildBaguetteAccountToolList(user, app) {
       handler: async ({
         repo_id,
         base_branch,
+        is_global = false,
         initial_prompt,
         agent_sdk = 'claude',
         model,
@@ -149,8 +161,9 @@ export function buildBaguetteAccountToolList(user, app) {
         plan_mode = false,
         plugins,
       }) => {
-        const repo = await requireRepoAccess(repo_id);
-        if (!repo) return fail(`Repository ${repo_id} not found or not linked to your account.`);
+        if (!is_global && (repo_id == null || !base_branch)) {
+          return fail('repo_id and base_branch are required unless is_global is true.');
+        }
 
         let fullUser;
         try {
@@ -159,7 +172,14 @@ export function buildBaguetteAccountToolList(user, app) {
           return fail(err.message);
         }
 
-        const repoWithKeys = await loadRepoWithKeys(repo_id);
+        let repo = null;
+        let repoWithKeys = null;
+        if (!is_global) {
+          repo = await requireRepoAccess(repo_id);
+          if (!repo) return fail(`Repository ${repo_id} not found or not linked to your account.`);
+          repoWithKeys = await loadRepoWithKeys(repo_id);
+        }
+
         const allowedSdks = availableAgentSdks(fullUser, repoWithKeys);
         if (!allowedSdks.includes(agent_sdk)) {
           return fail(
@@ -193,17 +213,21 @@ export function buildBaguetteAccountToolList(user, app) {
         }
 
         const payload = {
-          repo_full_name: repo.full_name,
-          base_branch,
           initial_prompt,
           plan_mode: Boolean(plan_mode),
-          create_new_branch,
-          auto_push,
           agent_sdk,
         };
+        if (is_global) {
+          payload.is_global = true;
+        } else {
+          payload.repo_full_name = repo.full_name;
+          payload.base_branch = base_branch;
+          payload.create_new_branch = create_new_branch;
+          payload.auto_push = auto_push;
+        }
         if (model) payload.model = model;
         if (modelParams) payload.model_params = modelParams;
-        if (branch_name) payload.branch_name = branch_name;
+        if (!is_global && branch_name) payload.branch_name = branch_name;
         if (plugins?.length) payload.plugins = plugins;
 
         try {

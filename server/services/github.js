@@ -363,8 +363,11 @@ export function resolveSessionWorktreePath(session, repo) {
 }
 
 export async function removeWorktree(session, repo) {
+  // Global sessions use the shared REPOS_DIR as cwd — never delete it.
+  if (session?.is_global) return;
   const absoluteWorktreePath = resolveSessionWorktreePath(session, repo);
   if (!absoluteWorktreePath) return;
+  if (path.resolve(absoluteWorktreePath) === path.resolve(REPOS_DIR)) return;
   try {
     await fs.promises.access(absoluteWorktreePath);
   } catch {

@@ -9,20 +9,29 @@ import {
   ChevronRight,
   ChevronDown,
   Terminal,
-  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { messagesService, sessionsService, queuedMessagesService } from '../../feathers.js';
+import {
+  messagesService,
+  sessionsService,
+  queuedMessagesService,
+  loopsService,
+} from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import QueuedMessages from '../../components/QueuedMessages.jsx';
+import TiedLoopMessages from '../../components/TiedLoopMessages.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { isMobile } from '../../utils/isMobile.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
+import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
 import Tooltip from '../../components/Tooltip.jsx';
+import { isGlobalSession } from '@baguette/shared/session-scope.js';
+import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
+import { schedulePayload } from '../../utils/loopSchedule.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
 const CHECK_COMMENTS_PROMPT_BUILDER =
@@ -93,11 +102,40 @@ export default function ChatView({
   const [queue, setQueue] = useState([]);
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showRegularlyModal, setShowRegularlyModal] = useState(false);
+  const [creatingLoop, setCreatingLoop] = useState(false);
+  const [tiedLoops, setTiedLoops] = useState([]);
+  const { loopEditUrl } = useFilterRoutes();
 
   const isRunning = session?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
   const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
+  const hasInputMessage = Boolean(input.trim());
+  const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
+
+  useEffect(() => {
+    if (!session?.id) {
+      setTiedLoops([]);
+      return;
+    }
+    const load = () => {
+      loopsService
+        .find({ query: { session_id: session.id, $limit: 50 } })
+        .then((d) => setTiedLoops(d.data ?? d))
+        .catch(() => {});
+    };
+    load();
+    loopsService.on('created', load);
+    loopsService.on('patched', load);
+    loopsService.on('removed', load);
+    return () => {
+      loopsService.off('created', load);
+      loopsService.off('patched', load);
+      loopsService.off('removed', load);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -138,8 +176,8 @@ export default function ChatView({
   }, [scheduleMenuOpen]);
 
   useEffect(() => {
-    if (!canSendDraft) setScheduleMenuOpen(false);
-  }, [canSendDraft]);
+    if (!canOpenScheduleMenu) setScheduleMenuOpen(false);
+  }, [canOpenScheduleMenu]);
 
   const displayMessages = useMemo(() => {
     const result = [];
@@ -376,6 +414,49 @@ export default function ChatView({
     scheduleMessageAt(sendAtIso);
   };
 
+  const openRegularlyModal = () => {
+    setScheduleMenuOpen(false);
+    setShowRegularlyModal(true);
+  };
+
+  const closeRegularlyModal = () => {
+    if (creatingLoop) return;
+    setShowRegularlyModal(false);
+  };
+
+  const handleSendRegularly = async ({ name, schedule }) => {
+    const prompt = input.trim();
+    if (!prompt || !session?.id) return;
+    setCreatingLoop(true);
+    try {
+      const payload = session.is_global
+        ? { is_global: true, prompt, name, single_session: true, session_id: session.id }
+        : {
+            repo_full_name: session.repo_full_name,
+            base_branch: session.base_branch,
+            prompt,
+            name,
+            single_session: true,
+            session_id: session.id,
+            create_new_branch: !!session.create_new_branch,
+            auto_push: !!session.auto_push,
+          };
+      if (session.agent_sdk) payload.agent_sdk = session.agent_sdk;
+      if (session.model) payload.model = session.model;
+      if (session.model_params) payload.model_params = session.model_params;
+      if (session.plugins?.length) payload.plugins = session.plugins;
+      await loopsService.create({ ...payload, ...schedulePayload(schedule) });
+      setInput('');
+      persistentState.clear();
+      setShowRegularlyModal(false);
+      toast.success('Loop created — this session will run on a schedule');
+    } catch (err) {
+      toastError('Failed to create loop', err);
+    } finally {
+      setCreatingLoop(false);
+    }
+  };
+
   const handleSend = async (e) => {
     e?.preventDefault();
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
@@ -417,6 +498,15 @@ export default function ChatView({
       await queuedMessagesService.remove(id);
     } catch (err) {
       toastError('Failed to delete queued message', err);
+    }
+  };
+
+  const handleTiedLoopDelete = async (loop) => {
+    if (!window.confirm(`Delete loop "${loop.name || loop.prompt.slice(0, 40)}"?`)) return;
+    try {
+      await loopsService.remove(loop.id);
+    } catch (err) {
+      toastError('Failed to delete loop', err);
     }
   };
 
@@ -505,6 +595,7 @@ export default function ChatView({
               )}
               {!readonly &&
                 !isProvisioning &&
+                !isGlobalSession(session) &&
                 session?.status !== 'running' &&
                 session?.pr_status !== 'merged' && (
                   <div className="flex gap-2 flex-wrap py-2">
@@ -593,13 +684,18 @@ export default function ChatView({
           </div>
         )}
 
-        {!readonly && queue.length > 0 && (
+        {!readonly && (queue.length > 0 || tiedLoops.length > 0) && (
           <div className="border-t border-zinc-800 pt-2">
             <QueuedMessages
               queue={queue}
               onDelete={handleQueueDelete}
               onSendNow={handleQueueSendNow}
               onEdit={handleQueueEdit}
+            />
+            <TiedLoopMessages
+              loops={tiedLoops}
+              editHref={(loop) => loopEditUrl(loop.id)}
+              onDelete={handleTiedLoopDelete}
             />
           </div>
         )}
@@ -654,9 +750,9 @@ export default function ChatView({
                   </button>
                   <button
                     type="button"
-                    disabled={!canSendDraft}
+                    disabled={!canOpenScheduleMenu}
                     onClick={() => setScheduleMenuOpen((v) => !v)}
-                    title="Send later"
+                    title="Schedule"
                     aria-expanded={scheduleMenuOpen}
                     aria-haspopup="menu"
                     className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-2.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
@@ -666,37 +762,39 @@ export default function ChatView({
                   {scheduleMenuOpen && (
                     <div
                       role="menu"
-                      className="absolute right-0 bottom-full mb-1.5 w-52 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50"
+                      className="absolute right-0 bottom-full mb-1.5 w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50 py-1"
                     >
-                      <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2 text-xs font-medium text-zinc-400">
-                        <Clock className="w-3.5 h-3.5 text-amber-400/90" />
-                        Send later
-                      </div>
-                      <div className="py-1">
-                        {[
-                          { label: 'In 1 hour', hours: 1 },
-                          { label: 'In 2 hours', hours: 2 },
-                          { label: 'In 4 hours', hours: 4 },
-                        ].map(({ label, hours }) => (
-                          <button
-                            key={hours}
-                            type="button"
-                            role="menuitem"
-                            onClick={() => handleSchedulePreset(hours)}
-                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
-                          >
-                            {label}
-                          </button>
-                        ))}
+                      {[
+                        { label: 'Send in 1 hour', hours: 1 },
+                        { label: 'Send in 2 hours', hours: 2 },
+                        { label: 'Send in 4 hours', hours: 4 },
+                      ].map(({ label, hours }) => (
                         <button
+                          key={hours}
                           type="button"
                           role="menuitem"
-                          onClick={openScheduleModal}
-                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
+                          onClick={() => handleSchedulePreset(hours)}
+                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
                         >
-                          Schedule a time…
+                          {label}
                         </button>
-                      </div>
+                      ))}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={openScheduleModal}
+                        className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                      >
+                        Schedule
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={openRegularlyModal}
+                        className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                      >
+                        Send regularly
+                      </button>
                     </div>
                   )}
                 </div>
@@ -710,6 +808,14 @@ export default function ChatView({
           onConfirm={handleScheduleConfirm}
           onCancel={closeScheduleModal}
           scheduling={sending}
+        />
+      )}
+      {showRegularlyModal && (
+        <SendRegularlyModal
+          onConfirm={handleSendRegularly}
+          onCancel={closeRegularlyModal}
+          saving={creatingLoop}
+          defaultName={input.trim().split('\n')[0].slice(0, 60)}
         />
       )}
       {showMergeModal && (

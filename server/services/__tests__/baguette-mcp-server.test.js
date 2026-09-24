@@ -176,6 +176,22 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('global sessions', () => {
+  it('omits git and PR tools', async () => {
+    const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('GitPull');
+    expect(names).not.toContain('GitFetch');
+    expect(names).not.toContain('GitPush');
+    expect(names).not.toContain('PrUpsert');
+    expect(names).not.toContain('PrRead');
+    expect(names).not.toContain('ConfigRepoPrompt');
+    expect(names).not.toContain('ListProjectCommands');
+    expect(names).toContain('UpdateSession');
+    expect(names).toContain('ReadSessionInfo');
+  });
+});
+
 describe('PrRead', () => {
   it('returns pr_url: null and a message when no PR exists', async () => {
     const { tools } = await buildServer({ pr_url: null, pr_number: null, remote_branch: 'feat' });

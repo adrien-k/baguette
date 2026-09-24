@@ -344,6 +344,60 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(row.worktree_path).toBeNull();
     });
 
+    it('deletes a strong loop when the session is archived', async () => {
+      const repo = await db('repos').first();
+      await db('loops').insert({
+        user_id: userId,
+        repo_id: repo.id,
+        repo_full_name: 'test/repo',
+        name: 'Regular send',
+        base_branch: 'main',
+        prompt: 'ping',
+        schedule_type: 'interval',
+        interval_minutes: 60,
+        timezone: 'UTC',
+        enabled: true,
+        single_session: true,
+        created_from_session: true,
+        session_id: sessId,
+        create_new_branch: false,
+        auto_push: false,
+        plan_mode: false,
+      });
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      expect(await db('loops').where({ session_id: sessId })).toEqual([]);
+    });
+
+    it('keeps a weak loop so the next run can start a new session', async () => {
+      const repo = await db('repos').first();
+      const [loopId] = await db('loops').insert({
+        user_id: userId,
+        repo_id: repo.id,
+        repo_full_name: 'test/repo',
+        name: 'Standalone',
+        base_branch: 'main',
+        prompt: 'ping',
+        schedule_type: 'interval',
+        interval_minutes: 60,
+        timezone: 'UTC',
+        enabled: true,
+        single_session: true,
+        created_from_session: false,
+        session_id: sessId,
+        create_new_branch: false,
+        auto_push: false,
+        plan_mode: false,
+      });
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      const loops = await db('loops').where({ id: loopId });
+      expect(loops).toHaveLength(1);
+      expect(loops[0].session_id).toBe(sessId);
+    });
+
     it('sets archived_at only after removeWorktree runs', async () => {
       removeWorktree.mockImplementationOnce(async () => {
         const row = await db('sessions').where({ id: sessId }).first();
@@ -1147,6 +1201,22 @@ describe('Sessions service - find, get, create', (hooks) => {
       const promptIdx = createMessage.mock.calls.indexOf(promptCall);
       const userMsgIdx = createMessage.mock.calls.findIndex(([data]) => data.type === 'user');
       expect(promptIdx).toBeLessThan(userMsgIdx);
+    });
+
+    it('creates a global session in the repos folder without a worktree clone', async () => {
+      const session = await app
+        .service('sessions')
+        .create(
+          { is_global: true, initial_prompt: 'Look across all repos' },
+          params({ id: userId1 })
+        );
+
+      expect(session.is_global).toBe(true);
+      expect(session.worktree_path).toBe('repos');
+      expect(session.repo_id).toBeNull();
+      expect(session.auto_push).toBeFalsy();
+      expect(createWorktree).not.toHaveBeenCalled();
+      expect(generateSessionMetadata).toHaveBeenCalled();
     });
 
     it('create_new_branch=false rejects when another unarchived session uses that branch', async () => {

@@ -10,6 +10,7 @@ const SESSION_LIST_COLUMNS = [
   'status',
   'repo_id',
   'repo_full_name',
+  'is_global',
   'base_branch',
   'created_branch',
   'remote_branch',
@@ -35,6 +36,7 @@ function applySessionSearchFilters(query, filters, userId) {
   query.where('sessions.user_id', userId);
   if (!filters.include_archived) query.whereNull('sessions.archived_at');
   if (filters.repo_id != null) query.where('sessions.repo_id', filters.repo_id);
+  if (filters.is_global) query.where('sessions.is_global', true);
   if (filters.base_branch) query.where('sessions.base_branch', filters.base_branch);
   if (filters.target_branch) {
     query.where((q) => {
@@ -84,6 +86,7 @@ export function buildBaguetteSessionMcpTools(user, app) {
         'Search your sessions with optional filters. Matches label and initial_prompt for `q`. `target_branch` matches created_branch or remote_branch.',
       schema: {
         repo_id: z.number().int().optional().describe('Filter by repository id from ListRepos'),
+        is_global: z.boolean().optional().describe('Filter to global sessions'),
         q: z.string().optional().describe('Search in session label and initial_prompt'),
         base_branch: z.string().optional(),
         target_branch: z.string().optional().describe('Matches created_branch or remote_branch'),

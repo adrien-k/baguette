@@ -15,8 +15,10 @@ import PrStatusBadge from './PrStatusBadge.jsx';
 import SessionToolLink from './SessionToolLink.jsx';
 import { formatRelativeTime } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
-import { parseModelField } from '../utils/models.js';
-import GithubIcon from './GithubIcon.jsx';
+import { isGlobalSession } from '@baguette/shared/session-scope.js';
+import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
+import CardRepoBadge from './CardRepoBadge.jsx';
+import CardBranchModel from './CardBranchModel.jsx';
 
 function StatusIcon({ status }) {
   switch (status) {
@@ -41,8 +43,12 @@ function StatusIcon({ status }) {
 
 const STOPPABLE_STATUSES = new Set(['running']);
 
-export default function SessionCard({ session, showRepo = false }) {
+const BADGE =
+  'inline-flex items-center gap-1 shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400';
+
+export default function SessionCard({ session }) {
   const navigate = useNavigate();
+  const { sessionUrl, showRepoDetails } = useFilterRoutes();
   const isArchived = !!session.archived_at;
   const isArchiving = !isArchived && session.status === 'archiving';
 
@@ -57,7 +63,7 @@ export default function SessionCard({ session, showRepo = false }) {
 
   return (
     <div
-      onClick={() => navigate(`/repos/${session.repo_id}/sessions/${session.short_id}`)}
+      onClick={() => navigate(sessionUrl(session.short_id))}
       className={`w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 sm:p-4 transition-colors border-l-2 cursor-pointer hover:border-zinc-700 active:bg-zinc-800/50 ${
         {
           running: 'border-l-emerald-500',
@@ -70,6 +76,15 @@ export default function SessionCard({ session, showRepo = false }) {
         }[session.status] ?? 'border-l-zinc-700'
       } ${isArchived || isArchiving ? 'opacity-50' : ''}`}
     >
+      {showRepoDetails && (
+        <div className="mb-1.5">
+          <CardRepoBadge
+            show
+            isGlobal={isGlobalSession(session)}
+            repoFullName={session.repo_full_name}
+          />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="shrink-0 cursor-default">
@@ -88,18 +103,9 @@ export default function SessionCard({ session, showRepo = false }) {
             </span>
           )}
           {session.loop_id && (
-            <span
-              title="Started by a loop"
-              className="flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-400/90 border border-amber-500/20"
-            >
-              <Repeat className="w-2.5 h-2.5" />
+            <span title="Started by a loop" className={BADGE}>
+              <Repeat className="w-3 h-3 text-amber-400" />
               Loop
-            </span>
-          )}
-          {showRepo && session.label && session.repo_full_name && (
-            <span className="flex items-center gap-1 shrink-0 text-xs text-zinc-500">
-              <GithubIcon className="w-3 h-3" />
-              {session.repo_full_name.split('/')[1] ?? session.repo_full_name}
             </span>
           )}
           {session.created_at && (
@@ -127,21 +133,13 @@ export default function SessionCard({ session, showRepo = false }) {
           )}
         </div>
       </div>
-      <div className="text-xs text-zinc-400 mt-1 mb-1.5 sm:mb-2 ml-5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <>
-          {session.base_branch && <span>{session.base_branch}</span>}
-          {session.created_branch && (
-            <span className="text-zinc-600">→ {session.created_branch}</span>
-          )}
-        </>
-        {session.model && (
-          <span className="text-zinc-700 flex items-center gap-1">
-            <span>·</span>
-            <span>{session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}</span>
-            {session.model && <span>{parseModelField(session.model)}</span>}
-          </span>
-        )}
-      </div>
+      <CardBranchModel
+        isGlobal={isGlobalSession(session)}
+        baseBranch={session.base_branch}
+        targetBranch={session.created_branch}
+        agentSdk={session.agent_sdk}
+        model={session.model}
+      />
       <p className="text-xs text-zinc-500 line-clamp-2 ml-5">{session.initial_prompt}</p>
       {(session.pr_url || session.preview_url || session.codeserver_url) && (
         <div className="mt-1.5 sm:mt-2 ml-5 flex flex-wrap items-center gap-2">

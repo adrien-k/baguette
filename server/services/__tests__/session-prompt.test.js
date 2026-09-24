@@ -93,4 +93,19 @@ describe('buildSystemPromptAppend', () => {
     const result = await buildSystemPromptAppend(session);
     expect(result).not.toContain('no .baguette.yaml config file');
   });
+
+  it('uses the light global prompt for is_global sessions', async () => {
+    const session = await seedSession({
+      is_global: true,
+      worktree_path: 'repos',
+    });
+    session.absolute_worktree_path = '/data/repos';
+    const result = await buildSystemPromptAppend(session);
+    expect(result).toContain('global session');
+    expect(result).toContain('/data/repos');
+    expect(result).toContain('CreateSession');
+    expect(result).toContain('do not modify repository files on disk');
+    expect(result).toContain('not available');
+    expect(result).not.toContain('End-of-turn shipping');
+  });
 });

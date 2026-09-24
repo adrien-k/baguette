@@ -5,6 +5,7 @@ import { CheckCircle, XCircle, X } from 'lucide-react';
 import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
 import { sessionsService } from '../feathers.js';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications.js';
+import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 
 const SessionsContext = createContext(null);
 
@@ -37,10 +38,8 @@ export function SessionsProvider({ children }) {
     sessions.forEach((s) => prevStatusRef.current.set(s.id, s.status));
   }, [sessions, loading]);
 
-  const sessionPath = useCallback(
-    (session) => `/repos/${session.repo_id}/sessions/${session.short_id}`,
-    []
-  );
+  const { sessionUrl } = useFilterRoutes();
+  const sessionPath = useCallback((session) => sessionUrl(session.short_id), [sessionUrl]);
 
   const isCurrentSession = useCallback(
     (session) => locationRef.current.pathname === sessionPath(session),

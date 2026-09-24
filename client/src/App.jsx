@@ -10,14 +10,15 @@ import Settings from './pages/Settings.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
-import { RepoProvider, useRepoContext, ALL_REPOS } from './context/RepoContext.jsx';
+import { RepoProvider } from './context/RepoContext.jsx';
+import { useFilterRoutes } from './hooks/useFilterRoutes.js';
 import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 
 function Nav() {
   const { user, logout } = useAuth();
-  const { selectedRepo, repos } = useRepoContext();
   const location = useLocation();
+  const { homeUrl } = useFilterRoutes();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
 
@@ -38,12 +39,6 @@ function Nav() {
 
   if (!user) return null;
 
-  const currentRepo =
-    selectedRepo && selectedRepo !== ALL_REPOS
-      ? repos?.find((r) => r.full_name === selectedRepo)
-      : null;
-  const logoLink = currentRepo ? `/repos/${currentRepo.id}` : '/';
-
   const menuItemClass =
     'flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700/50 transition-colors';
 
@@ -51,7 +46,7 @@ function Nav() {
     <nav className="bg-zinc-900 border-b border-zinc-800 relative z-40 shrink-0">
       <div className="px-4 flex items-center justify-between h-14">
         <div className="flex items-center shrink-0">
-          <Link to={logoLink} className="flex items-center gap-2">
+          <Link to={homeUrl} className="flex items-center gap-2">
             <img src="/baguette.svg" alt="" className="w-6 h-6 shrink-0" />
             <span className="text-white font-semibold text-sm font-display">Baguette</span>
           </Link>
@@ -171,7 +166,63 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/global"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Dashboard />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/global/sessions/:short_id"
+            element={
+              <ProtectedRoute>
+                <Session />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/global/loop/:loopId"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Dashboard />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/loop/:loopId"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Dashboard />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sessions/:short_id"
+            element={
+              <ProtectedRoute>
+                <Session />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/repos/:repoId"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Dashboard />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/repos/:repoId/loop/:loopId"
             element={
               <ProtectedRoute>
                 <div className="flex-1 min-h-0 overflow-auto">
@@ -225,16 +276,16 @@ export default function App() {
   return (
     <AuthProvider>
       <FilterProvider>
-        <SessionsProvider>
-          <RepoProvider>
+        <RepoProvider>
+          <SessionsProvider>
             <AppRoutes />
             <Toaster
               position="bottom-center"
               toastOptions={{ duration: 5000 }}
               containerStyle={{ bottom: '1.5rem' }}
             />
-          </RepoProvider>
-        </SessionsProvider>
+          </SessionsProvider>
+        </RepoProvider>
       </FilterProvider>
     </AuthProvider>
   );

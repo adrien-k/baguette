@@ -51,6 +51,7 @@ import {
 } from '../config.js';
 import { ok, fail } from './baguette-mcp-tool-result.js';
 import { buildBaguetteAccountToolList } from './baguette-account-mcp-tools.js';
+import { GLOBAL_SESSION_EXCLUDED_MCP_TOOLS, isGlobalSession } from '../../shared/session-scope.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -234,7 +235,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     },
   ];
 
-  return [
+  const tools = [
     ...accountTools,
 
     // ── Git ────────────────────────────────────────────────────────────────
@@ -1164,6 +1165,12 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
     ...(slackApps.length ? slackTools : []),
   ];
+
+  if (isGlobalSession(session)) {
+    const excluded = new Set(GLOBAL_SESSION_EXCLUDED_MCP_TOOLS);
+    return tools.filter((t) => !excluded.has(t.name));
+  }
+  return tools;
 }
 
 export async function buildBaguetteMcpServer(session, app) {

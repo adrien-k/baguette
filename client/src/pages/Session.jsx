@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom';
 import {
   ChevronLeft,
   MoreVertical,
@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
-import { useRepoContext } from '../context/RepoContext.jsx';
+import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
@@ -42,6 +42,9 @@ import PrStatusBadge from '../components/PrStatusBadge.jsx';
 import SessionToolLink from '../components/SessionToolLink.jsx';
 import { parseModelField, variantLabel, pickPreferredVariantIdx } from '../utils/models.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
+import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
+import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
+import CardRepoBadge from '../components/CardRepoBadge.jsx';
 
 /**
  * Processes a flat list of messages from session history:
@@ -223,10 +226,11 @@ function SessionStatusIndicator({ session }) {
 function MiniSessionEntry({ session: s, currentId, onArchive }) {
   const isArchived = !!s.archived_at;
   const isArchiving = !isArchived && s.status === 'archiving';
+  const { sessionUrl, showRepoDetails } = useFilterRoutes();
 
   return (
     <div
-      className={`group flex items-center gap-2 px-3 py-2 text-xs transition-colors ${
+      className={`group px-3 py-2 text-xs transition-colors ${
         isArchived || isArchiving ? 'opacity-50' : ''
       } ${
         s.short_id === currentId
@@ -234,20 +238,28 @@ function MiniSessionEntry({ session: s, currentId, onArchive }) {
           : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
       }`}
     >
-      <SessionStatusIndicator session={s} />
-      <Link
-        to={`/repos/${s.repo_id}/sessions/${s.short_id}`}
-        className="flex-1 min-w-0 line-clamp-2 wrap-break-word leading-snug text-left"
-      >
-        {s.label || s.repo_full_name}
-      </Link>
-      {isArchiving && <span className="shrink-0 text-[10px] text-amber-400/90">Archiving…</span>}
-      {s.pr_status && <PrStatusBadge status={s.pr_status} prUrl={s.pr_url} />}
-      {!s.archived_at && !isArchiving && s.status !== 'provisioning' && (
-        <div className="opacity-100 shrink-0">
-          <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
-        </div>
-      )}
+      <div className="flex items-start gap-2">
+        <Link to={sessionUrl(s.short_id)} className="flex-1 min-w-0 leading-snug text-left">
+          {showRepoDetails && (
+            <span className="mb-1 block truncate">
+              <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
+            </span>
+          )}
+          <span className="flex items-center gap-2">
+            <SessionStatusIndicator session={s} />
+            <span className="line-clamp-2 wrap-break-word">
+              {s.label || (isGlobalSession(s) ? 'Global session' : s.repo_full_name)}
+            </span>
+          </span>
+        </Link>
+        {isArchiving && <span className="shrink-0 text-[10px] text-amber-400/90">Archiving…</span>}
+        {s.pr_status && <PrStatusBadge status={s.pr_status} prUrl={s.pr_url} />}
+        {!s.archived_at && !isArchiving && s.status !== 'provisioning' && (
+          <div className="opacity-100 shrink-0">
+            <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -260,8 +272,27 @@ const BASE_VIEWS = [
 ];
 const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
 
+function nextVisibleSession({ sessions, short_id, session, repoId, fromAllSessions }) {
+  return sessions.find((s) => {
+    if (
+      s.short_id === short_id ||
+      s.archived_at ||
+      s.status === 'archiving' ||
+      s.status === 'archived'
+    )
+      return false;
+    if (fromAllSessions) return true;
+    if (isGlobalSession(session)) return isGlobalSession(s);
+    const currentRepoId = repoId || session?.repo_id;
+    return !currentRepoId || String(s.repo_id) === String(currentRepoId);
+  });
+}
+
 export default function Session() {
   const { short_id, repoId } = useParams();
+  const { pathname } = useLocation();
+  const fromAllSessions = isAllSessionsPath(pathname);
+  const { homeUrl, sessionUrl } = useFilterRoutes();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get('view') || 'chat';
@@ -354,16 +385,20 @@ export default function Session() {
   );
 
   const views = useMemo(() => {
+    if (isGlobalSession(session)) {
+      return BASE_VIEWS.filter((v) => v.id === 'chat' || v.id === 'logs');
+    }
     const list = [...BASE_VIEWS];
     if (session?.preview_url) {
       list.splice(3, 0, PREVIEW_VIEW);
     }
     return list;
-  }, [session?.preview_url]);
+  }, [session]);
 
   useEffect(() => {
     if (
       !sessionId ||
+      session?.is_global ||
       session?.status === 'running' ||
       session?.status === 'provisioning' ||
       session?.status === 'archiving' ||
@@ -374,7 +409,7 @@ export default function Session() {
       .gitStatus(sessionId)
       .then((res) => setCommitsToPush(res.commitsToPush ?? 0))
       .catch(() => {});
-  }, [sessionId, session?.status]);
+  }, [sessionId, session?.status, session?.is_global]);
 
   useEffect(() => {
     if (!session) return;
@@ -417,16 +452,25 @@ export default function Session() {
   useEffect(() => {
     if (sessionLoading || !short_id) return;
     if (!sessionFromHook) {
-      navigate(repoId ? `/repos/${repoId}` : '/');
+      navigate(homeUrl);
     }
-  }, [sessionLoading, short_id, sessionFromHook, navigate, repoId]);
+  }, [sessionLoading, short_id, sessionFromHook, navigate, homeUrl]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;
+  // Keep All sessions context on /sessions/:id so the logo and picker stay on `/`.
   useEffect(() => {
+    if (fromAllSessions) {
+      if (selectedRepo !== ALL_REPOS) setSelectedRepo(ALL_REPOS);
+      return;
+    }
+    if (isGlobalSession(sessionFromHook)) {
+      if (selectedRepo !== GLOBAL_SCOPE) setSelectedRepo(GLOBAL_SCOPE);
+      return;
+    }
     if (!sessionRepo) return;
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
-  }, [sessionRepo, selectedRepo, setSelectedRepo]);
+  }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
 
   useEffect(() => {
     if (!showMenu) {
@@ -545,22 +589,14 @@ export default function Session() {
         setSession((prev) => (prev ? { ...prev, ...archived } : prev));
       }
       if (!showArchived && archived?.archived_at) {
-        const currentRepoId = repoId || session?.repo_id;
-        const firstSession = sessions.find(
-          (s) =>
-            s.short_id !== short_id &&
-            !s.archived_at &&
-            s.status !== 'archiving' &&
-            s.status !== 'archived' &&
-            (!currentRepoId || String(s.repo_id) === String(currentRepoId))
-        );
-        navigate(
-          firstSession
-            ? `/repos/${firstSession.repo_id}/sessions/${firstSession.short_id}`
-            : currentRepoId
-              ? `/repos/${currentRepoId}`
-              : '/'
-        );
+        const firstSession = nextVisibleSession({
+          sessions,
+          short_id,
+          session,
+          repoId,
+          fromAllSessions,
+        });
+        navigate(firstSession ? sessionUrl(firstSession.short_id) : homeUrl);
       }
     } catch (err) {
       toastError('Failed to archive session', err);
@@ -595,17 +631,15 @@ export default function Session() {
       <div className="bg-zinc-900 border-b border-zinc-800 px-3 sm:px-4 py-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Link
-              to={repoId ? `/repos/${repoId}` : '/'}
-              className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden"
-            >
+            <Link to={homeUrl} className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden">
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="min-w-0">
               <div className="flex min-h-6 flex-nowrap items-center gap-2">
                 <SessionStatusIndicator session={session} />
                 <span className="min-w-0 truncate text-sm font-medium leading-snug text-zinc-300">
-                  {session.label || session.repo_full_name}
+                  {session.label ||
+                    (isGlobalSession(session) ? 'Global session' : session.repo_full_name)}
                 </span>
                 {prInfo && (
                   <PrStatusBadge
@@ -668,7 +702,7 @@ export default function Session() {
           <div className="flex items-center gap-1.5 shrink-0">
             {!isReadonly && (
               <>
-                {session?.pr_status !== 'merged' && (
+                {session?.pr_status !== 'merged' && !isGlobalSession(session) && (
                   <button
                     type="button"
                     onClick={handlePush}
@@ -833,24 +867,26 @@ export default function Session() {
                         </div>
                       );
                     })()}
-                    <div className="p-2 border-b border-zinc-800 sm:hidden">
-                      <button
-                        onClick={() => {
-                          handlePush();
-                          setShowMenu(false);
-                        }}
-                        disabled={pushing}
-                        className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
-                      >
-                        <Upload className="w-3 h-3 shrink-0" />
-                        <span>Push</span>
-                        {commitsToPush > 0 && (
-                          <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
-                            {commitsToPush}
-                          </span>
-                        )}
-                      </button>
-                    </div>
+                    {!isGlobalSession(session) && (
+                      <div className="p-2 border-b border-zinc-800 sm:hidden">
+                        <button
+                          onClick={() => {
+                            handlePush();
+                            setShowMenu(false);
+                          }}
+                          disabled={pushing}
+                          className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                        >
+                          <Upload className="w-3 h-3 shrink-0" />
+                          <span>Push</span>
+                          {commitsToPush > 0 && (
+                            <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+                              {commitsToPush}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    )}
                     <div className="p-2 border-b border-zinc-800 sm:hidden">
                       <button
                         onClick={handlePlanToggle}
@@ -931,7 +967,7 @@ export default function Session() {
         >
           <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
             <Link
-              to={repoId ? `/repos/${repoId}` : '/'}
+              to={homeUrl}
               className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
             >
               <Plus className="w-3 h-3" />
@@ -951,7 +987,11 @@ export default function Session() {
               ...sessions.filter(
                 (s) =>
                   (showArchived || !s.archived_at) &&
-                  (!repoId || String(s.repo_id) === String(repoId))
+                  (fromAllSessions
+                    ? true
+                    : repoId
+                      ? String(s.repo_id) === String(repoId)
+                      : isGlobalSession(s))
               ),
             ].map((s) => (
               <MiniSessionEntry
@@ -960,20 +1000,14 @@ export default function Session() {
                 currentId={short_id}
                 onArchive={(archived) => {
                   if (archived.short_id !== short_id || showArchived) return;
-                  const currentRepoId = repoId || session?.repo_id;
-                  const firstSession = sessions.find(
-                    (x) =>
-                      x.short_id !== short_id &&
-                      !x.archived_at &&
-                      (!currentRepoId || String(x.repo_id) === String(currentRepoId))
-                  );
-                  navigate(
-                    firstSession
-                      ? `/repos/${firstSession.repo_id}/sessions/${firstSession.short_id}`
-                      : currentRepoId
-                        ? `/repos/${currentRepoId}`
-                        : '/'
-                  );
+                  const firstSession = nextVisibleSession({
+                    sessions,
+                    short_id,
+                    session,
+                    repoId,
+                    fromAllSessions,
+                  });
+                  navigate(firstSession ? sessionUrl(firstSession.short_id) : homeUrl);
                 }}
               />
             ))}
@@ -1014,7 +1048,7 @@ export default function Session() {
                 </button>
               ))}
             </div>
-            {!isReadonly && session?.pr_status !== 'merged' && (
+            {!isReadonly && session?.pr_status !== 'merged' && !isGlobalSession(session) && (
               <div className="ml-auto shrink-0 flex items-center gap-2 py-2 pl-2">
                 <span className="text-xs text-zinc-500">Auto-push</span>
                 <button

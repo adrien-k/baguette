@@ -10,12 +10,13 @@ import { sessionsService, pluginsService, usersService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import { toastError } from '../utils/toastError.jsx';
-import { useRepoContext } from '../context/RepoContext.jsx';
+import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
+import RepoPicker from './RepoPicker.jsx';
 import { isMobile } from '../utils/isMobile.js';
 import { variantLabel, applyParamOverrides } from '../utils/models.js';
 
@@ -33,14 +34,35 @@ export default function BuilderForm({
   onCancelEdit,
   editingLoop,
   loading,
-  repoFullName,
+  repoFullName: repoFullNameProp,
+  isGlobal: isGlobalProp = false,
+  allowRepoChoice = false,
   defaultPrompt,
+  defaultTargetScope,
 }) {
-  // Editing runs on the same form but off the draft: a null key makes the store in-memory, so
-  // the loop's own values seed the fields and the pending new-session draft is left alone.
-  const persistentState = usePersistentState(editingLoop ? null : `builder-form-${repoFullName}`);
+  const persistKey = editingLoop
+    ? null
+    : allowRepoChoice
+      ? 'builder-form-all'
+      : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
+  const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
   const { cursorFast, cursorEffort, setCursorFast, setCursorEffort } = useCursorModelPrefs();
+  const defaultTarget = editingLoop
+    ? editingLoop.is_global
+      ? GLOBAL_SCOPE
+      : editingLoop.repo_full_name
+    : allowRepoChoice
+      ? defaultTargetScope
+      : isGlobalProp
+        ? GLOBAL_SCOPE
+        : repoFullNameProp;
+  const [targetScope, setTargetScope] = persistentState.useState(
+    'targetScope',
+    defaultTarget || GLOBAL_SCOPE
+  );
+  const isGlobal = allowRepoChoice ? targetScope === GLOBAL_SCOPE : isGlobalProp;
+  const repoFullName = allowRepoChoice ? (isGlobal ? null : targetScope) : repoFullNameProp;
   const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '');
   const [initialPrompt, setInitialPrompt] = persistentState.useState(
     'prompt',
@@ -261,7 +283,7 @@ export default function BuilderForm({
   // Populate form from the most recent session for this repo — but never over a loop being
   // edited, whose own harness and model are what should show.
   useEffect(() => {
-    if (!repoFullName || editingLoop) return;
+    if (!repoFullName || isGlobal || editingLoop) return;
     sessionsService
       .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
       .then((result) => {
@@ -285,12 +307,11 @@ export default function BuilderForm({
 
   const isLoop = mode === 'loop';
   // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions = (createNewBranch && !isLoop) || availablePlugins.length > 0;
+  const hasMoreOptions = (!isGlobal && createNewBranch && !isLoop) || availablePlugins.length > 0;
   const canSubmit =
     !loading &&
     availableSdks.length > 0 &&
-    repoFullName &&
-    branch &&
+    (isGlobal || (repoFullName && branch)) &&
     initialPrompt &&
     (!isLoop || isScheduleComplete(schedule));
 
@@ -303,7 +324,9 @@ export default function BuilderForm({
   }, [initialPrompt]);
 
   const clearForm = () => {
+    const keepTarget = allowRepoChoice ? targetScope : null;
     persistentState.clear();
+    if (keepTarget) setTargetScope(keepTarget);
     setFiles([]);
     setFileError(null);
     setLoopName('');
@@ -319,6 +342,7 @@ export default function BuilderForm({
       ? applyParamOverrides(selectedVariant?.params ?? [], cursorFast, cursorEffort)
       : null;
     return {
+      isGlobal,
       repoFullName,
       branch,
       initialPrompt,
@@ -349,6 +373,21 @@ export default function BuilderForm({
   // of starting anything now. Attached files are per-run inputs and are not carried over.
   const buildLoopPayload = () => {
     const payload = buildPayload({ planMode: false });
+    if (payload.isGlobal) {
+      return {
+        is_global: true,
+        name: loopName.trim() || null,
+        prompt: payload.initialPrompt,
+        single_session: singleSession,
+        create_new_branch: false,
+        auto_push: false,
+        agent_sdk: payload.agentSdk,
+        model: payload.model ?? null,
+        model_params: payload.modelParams ?? null,
+        plugins: payload.plugins ?? [],
+        ...schedulePayload(schedule),
+      };
+    }
     return {
       repo_full_name: payload.repoFullName,
       base_branch: payload.branch,
@@ -491,47 +530,67 @@ export default function BuilderForm({
         </div>
       )}
 
-      <div className="space-y-2">
+      {allowRepoChoice && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-zinc-300">Base branch</label>
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <SearchableSelect
-                value={branch}
-                onChange={setBranch}
-                options={branches}
-                loading={loadingBranches}
-                disabled={!repoFullName}
-                placeholder="Search branches..."
-                loadingText="Loading branches..."
-                emptyText="No branches found"
-                disabledText="Select a repository first"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => clearCacheAndReload()}
-              disabled={!repoFullName || loadingBranches || clearingCache}
-              title="Clear cache and reload branches"
-              className="shrink-0 self-start px-1 py-2.5 text-sm leading-none text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
-            >
-              ↺
-            </button>
-          </div>
+          <label className="mb-1 block text-sm font-medium text-zinc-300">Repository</label>
+          <RepoPicker
+            includeAllSessions={false}
+            includeManage
+            navigateOnSelect={false}
+            syncContext={false}
+            showOrgInLabel
+            fullWidth
+            value={targetScope}
+            onChange={setTargetScope}
+          />
         </div>
-        <p className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
-          <GithubIcon className="h-3.5 w-3.5 shrink-0 opacity-80" />
-          {repoFullName ? (
-            <span className="min-w-0 truncate">
-              <span className="text-zinc-500">{repoOwner}</span>
-              <span className="text-zinc-600"> / </span>
-              <span className="text-zinc-400">{repoName}</span>
-            </span>
-          ) : (
-            <span className="text-zinc-600">No repository selected</span>
+      )}
+
+      {!isGlobal && (
+        <div className="space-y-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-300">Base branch</label>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <SearchableSelect
+                  value={branch}
+                  onChange={setBranch}
+                  options={branches}
+                  loading={loadingBranches}
+                  disabled={!repoFullName}
+                  placeholder="Search branches..."
+                  loadingText="Loading branches..."
+                  emptyText="No branches found"
+                  disabledText="Select a repository first"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => clearCacheAndReload()}
+                disabled={!repoFullName || loadingBranches || clearingCache}
+                title="Clear cache and reload branches"
+                className="shrink-0 self-start px-1 py-2.5 text-sm leading-none text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
+              >
+                ↺
+              </button>
+            </div>
+          </div>
+          {!allowRepoChoice && (
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
+              <GithubIcon className="h-3.5 w-3.5 shrink-0 opacity-80" />
+              {repoFullName ? (
+                <span className="min-w-0 truncate">
+                  <span className="text-zinc-500">{repoOwner}</span>
+                  <span className="text-zinc-600"> / </span>
+                  <span className="text-zinc-400">{repoName}</span>
+                </span>
+              ) : (
+                <span className="text-zinc-600">No repository selected</span>
+              )}
+            </p>
           )}
-        </p>
-      </div>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-zinc-300 mb-1">
@@ -613,7 +672,7 @@ export default function BuilderForm({
           {showMore && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
               {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
-              {createNewBranch && !isLoop && (
+              {createNewBranch && !isLoop && !isGlobal && (
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-zinc-300 mb-1">
                     Branch name{' '}
@@ -669,7 +728,7 @@ export default function BuilderForm({
       )}
 
       {/* Both are fixed on for a loop: every run needs its own branch, pushed for review. */}
-      {!isLoop && (
+      {!isLoop && !isGlobal && (
         <div className="flex items-center gap-4">
           <button
             type="button"

@@ -104,6 +104,21 @@ describe('Loops service', (hooks) => {
       ).rejects.toBeInstanceOf(NotFound);
     });
 
+    it('creates a global loop without a repository', async () => {
+      const loop = await app.service('loops').create(
+        loopData({
+          is_global: true,
+          repo_full_name: undefined,
+          base_branch: undefined,
+        }),
+        params(aliceId)
+      );
+      expect(loop.is_global).toBe(true);
+      expect(loop.repo_id).toBeNull();
+      expect(loop.create_new_branch).toBe(false);
+      expect(loop.auto_push).toBe(false);
+    });
+
     it('ignores client-supplied bookkeeping fields', async () => {
       const loop = await app
         .service('loops')
@@ -111,6 +126,73 @@ describe('Loops service', (hooks) => {
 
       expect(loop.user_id).toBe(aliceId);
       expect(loop.last_error).toBeNull();
+    });
+
+    it('ties the loop to an existing session when session_id is set', async () => {
+      const [sessionId] = await db('sessions').insert({
+        user_id: aliceId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'hi',
+        status: 'completed',
+        short_id: 'tied01',
+        label: 'Tied session',
+      });
+      const loop = await app
+        .service('loops')
+        .create(
+          loopData({ single_session: true, session_id: sessionId, name: 'Regular send' }),
+          params(aliceId)
+        );
+
+      expect(loop.session_id).toBe(sessionId);
+      expect(loop.single_session).toBe(true);
+      expect(loop.created_from_session).toBe(true);
+      expect(loop.session_link).toBe('strong');
+      expect(loop.tied_session).toMatchObject({
+        id: sessionId,
+        short_id: 'tied01',
+        label: 'Tied session',
+      });
+    });
+
+    it('exposes a loose link to the last session a loop started', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      const [sessionId] = await db('sessions').insert({
+        user_id: aliceId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'hi',
+        status: 'completed',
+        short_id: 'spawn1',
+        label: 'Spawned session',
+      });
+      await db('loops').where({ id: loop.id }).update({ last_session_id: sessionId });
+
+      const got = await app.service('loops').get(loop.id, params(aliceId));
+      expect(got.created_from_session).toBe(false);
+      expect(got.session_link).toBe('weak');
+      expect(got.tied_session).toMatchObject({
+        id: sessionId,
+        short_id: 'spawn1',
+        label: 'Spawned session',
+      });
+    });
+
+    it('rejects tying a loop to another user’s session', async () => {
+      const [sessionId] = await db('sessions').insert({
+        user_id: bobId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'hi',
+        status: 'completed',
+        short_id: 'bobses',
+      });
+      await expect(
+        app
+          .service('loops')
+          .create(loopData({ single_session: true, session_id: sessionId }), params(aliceId))
+      ).rejects.toBeInstanceOf(NotFound);
     });
 
     it('leaves a loop created disabled unscheduled', async () => {
@@ -121,6 +203,26 @@ describe('Loops service', (hooks) => {
   });
 
   describe('find / scoping', () => {
+    it('finds global loops when is_global is a boolean or a REST string', async () => {
+      const globalLoop = await app
+        .service('loops')
+        .create(
+          loopData({ is_global: true, repo_full_name: undefined, base_branch: undefined }),
+          params(aliceId)
+        );
+      await app.service('loops').create(loopData(), params(aliceId));
+
+      const asBool = await app
+        .service('loops')
+        .find({ ...params(aliceId), query: { is_global: true } });
+      expect(asBool.data.map((l) => l.id)).toEqual([globalLoop.id]);
+
+      const asString = await app
+        .service('loops')
+        .find({ ...params(aliceId), query: { is_global: 'true' } });
+      expect(asString.data.map((l) => l.id)).toEqual([globalLoop.id]);
+    });
+
     it('only returns the caller’s loops', async () => {
       await app.service('loops').create(loopData(), params(aliceId));
       await app.service('loops').create(loopData({ prompt: 'bob task' }), params(bobId));
@@ -139,6 +241,63 @@ describe('Loops service', (hooks) => {
       await expect(app.service('loops').remove(loop.id, params(bobId))).rejects.toBeInstanceOf(
         NotFound
       );
+    });
+
+    const seedSession = async (overrides = {}) => {
+      const [id] = await db('sessions').insert({
+        user_id: aliceId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'hi',
+        status: 'completed',
+        short_id: `s${Math.random().toString(16).slice(2, 8)}`,
+        ...overrides,
+      });
+      return id;
+    };
+
+    it('lists a session-created loop while that session is active', async () => {
+      const sessionId = await seedSession({ short_id: 'live01' });
+      const loop = await app
+        .service('loops')
+        .create(loopData({ session_id: sessionId, name: 'Regular send' }), params(aliceId));
+
+      const result = await app.service('loops').find(params(aliceId));
+      expect(result.data.map((l) => l.id)).toContain(loop.id);
+      await expect(app.service('loops').get(loop.id, params(aliceId))).resolves.toMatchObject({
+        id: loop.id,
+      });
+    });
+
+    it('hides a session-created loop once that session is archived', async () => {
+      const sessionId = await seedSession({ short_id: 'arch01' });
+      const loop = await app
+        .service('loops')
+        .create(loopData({ session_id: sessionId, name: 'Regular send' }), params(aliceId));
+      await db('sessions')
+        .where({ id: sessionId })
+        .update({ archived_at: new Date().toISOString() });
+
+      const result = await app.service('loops').find(params(aliceId));
+      expect(result.data.map((l) => l.id)).not.toContain(loop.id);
+      await expect(app.service('loops').get(loop.id, params(aliceId))).rejects.toBeInstanceOf(
+        NotFound
+      );
+      expect(await db('loops').where({ id: loop.id }).first()).toBeTruthy();
+    });
+
+    it('still lists a standalone loop after the session it started is archived', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      const sessionId = await seedSession({
+        short_id: 'spawn2',
+        archived_at: new Date().toISOString(),
+      });
+      await db('loops')
+        .where({ id: loop.id })
+        .update({ session_id: sessionId, last_session_id: sessionId });
+
+      const result = await app.service('loops').find(params(aliceId));
+      expect(result.data.map((l) => l.id)).toContain(loop.id);
     });
   });
 
@@ -370,6 +529,36 @@ describe('Loops service', (hooks) => {
       expect(messagesCreate).not.toHaveBeenCalled();
       const row = await db('loops').where({ id: loop.id }).first();
       expect(row.session_id).toBe(77);
+    });
+
+    it('does not run a session-created loop whose session is archived', async () => {
+      const sessionId = await seedSession({ short_id: 'from01' });
+      const loop = await makeDueSingleSessionLoop({ session_id: sessionId });
+      expect(loop.created_from_session).toBe(true);
+      await db('sessions')
+        .where({ id: sessionId })
+        .update({ archived_at: new Date().toISOString() });
+
+      const results = await app.service('loops').runDue();
+
+      expect(results).toEqual([]);
+      expect(sessionsCreate).not.toHaveBeenCalled();
+      expect(messagesCreate).not.toHaveBeenCalled();
+      expect(await db('loops').where({ id: loop.id }).first()).toMatchObject({
+        session_id: sessionId,
+        last_run_at: null,
+      });
+    });
+
+    it('runs a session-created loop while that session is active', async () => {
+      const sessionId = await seedSession({ short_id: 'from02' });
+      const loop = await makeDueSingleSessionLoop({ session_id: sessionId });
+
+      const results = await app.service('loops').runDue();
+
+      expect(results).toEqual([{ loop_id: loop.id, session_id: sessionId }]);
+      expect(sessionsCreate).not.toHaveBeenCalled();
+      expect(sentContent(messagesCreate)).toBe('/compact');
     });
 
     it('unties the loop when single-session mode is switched off and back on', async () => {

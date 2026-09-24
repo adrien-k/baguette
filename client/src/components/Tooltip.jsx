@@ -10,7 +10,7 @@ import {
   autoUpdate,
 } from '@floating-ui/react';
 
-export default function Tooltip({ children, content, placement = 'top' }) {
+export default function Tooltip({ children, content, placement = 'top', wrap = false }) {
   const [open, setOpen] = useState(false);
 
   const { refs, floatingStyles, context } = useFloating({
@@ -36,7 +36,9 @@ export default function Tooltip({ children, content, placement = 'top' }) {
           ref={setFloating}
           style={{ ...floatingStyles, display: open ? undefined : 'none' }}
           {...getFloatingProps()}
-          className="z-[9999] px-2 py-1 bg-zinc-700 text-zinc-200 text-xs rounded whitespace-nowrap pointer-events-none"
+          className={`z-[9999] px-2 py-1 bg-zinc-700 text-zinc-200 text-xs rounded pointer-events-none ${
+            wrap ? 'max-w-[240px] whitespace-normal' : 'whitespace-nowrap'
+          }`}
         >
           {content}
         </div>
