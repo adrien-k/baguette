@@ -1,6 +1,9 @@
+import crypto from 'crypto';
 import { KnexService } from '@feathersjs/knex';
 import { NotAuthenticated } from '@feathersjs/errors';
 import { requireUser, encryptFields, decryptFields } from './hooks.js';
+import { encrypt } from '../../lib/encrypt.js';
+import { MCP_HTTP_ENDPOINT } from '../../config.js';
 import {
   mergeCursorModelPrefs,
   parseCursorModelPrefsJson,
@@ -26,6 +29,34 @@ class UsersService extends KnexService {
     await db('users').where({ id }).update({ approved: false });
     return db('users').where({ id }).first();
   }
+
+  /** Generate a new MCP API token (plaintext returned once). Replaces any previous token. */
+  async generateMcpToken(_data, params) {
+    assertSelfOnly(params);
+    const token = `bgmcp_${crypto.randomBytes(32).toString('base64url')}`;
+    const db = this.options.Model;
+    await db('users')
+      .where({ id: params.user.id })
+      .update({ mcp_api_token_encrypted: encrypt(token) });
+    return {
+      token,
+      endpoint: MCP_HTTP_ENDPOINT,
+      message:
+        'Copy this token now — it will not be shown again. Use Authorization: Bearer <token> when connecting external MCP clients.',
+    };
+  }
+
+  /** Remove the MCP API token (external access disabled until regenerated). */
+  async revokeMcpToken(_data, params) {
+    assertSelfOnly(params);
+    const db = this.options.Model;
+    await db('users').where({ id: params.user.id }).update({ mcp_api_token_encrypted: null });
+    return { ok: true };
+  }
+}
+
+function assertSelfOnly(params) {
+  if (!params.user?.id) throw new NotAuthenticated('Not authenticated');
 }
 
 async function orderByCreatedAt(context) {
@@ -51,6 +82,8 @@ function formatUserExternal(context) {
   const process = (user) => {
     // access_token is always hidden from external callers (even masked)
     delete user.access_token;
+    user.mcp_token_configured = Boolean(user.mcp_api_token);
+    user.mcp_endpoint = MCP_HTTP_ENDPOINT;
     user.agent_preferences = parseCursorModelPrefsJson(user.agent_preferences);
     return user;
   };
@@ -68,12 +101,14 @@ const encryptUserSecrets = encryptFields({
   access_token: 'access_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
+  mcp_api_token: 'mcp_api_token_encrypted',
 });
 
 const decryptUserSecrets = decryptFields({
   access_token: 'access_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
+  mcp_api_token: 'mcp_api_token_encrypted',
 });
 
 function restrictPatchToSelf(context) {
@@ -107,7 +142,17 @@ export function registerUsersService(app, path = 'users') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new UsersService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'approve', 'reject'],
+    methods: [
+      'find',
+      'get',
+      'create',
+      'patch',
+      'remove',
+      'approve',
+      'reject',
+      'generateMcpToken',
+      'revokeMcpToken',
+    ],
   });
   app.service(path).hooks(usersHooks);
 }

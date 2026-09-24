@@ -70,18 +70,17 @@ async function buildBuilderQueryOptions(
   const baseOptions = await baseBuildQueryOptions(app, sessionRow, systemPrompt);
   return {
     ...baseOptions,
-    // For bypassPermissions, use acceptEdits as the SDK-level mode — full bypass is handled
-    // in canUseTool which auto-approves all tool calls when permissionMode is bypassPermissions.
-    permissionMode: sessionRow.plan_mode
-      ? 'plan'
-      : sessionRow.permission_mode === 'bypassPermissions'
-        ? 'acceptEdits'
-        : sessionRow.permission_mode,
+    // acceptEdits at the SDK layer; canUseTool auto-approves tool calls (except plan-only tools).
+    permissionMode: claudeSdkPermissionMode(sessionRow),
     canUseTool,
     abortController,
     ...(allowedTools?.length ? { allowedTools } : {}),
     ...(pluginConfigs.length ? { plugins: pluginConfigs } : {}),
   };
+}
+
+function claudeSdkPermissionMode(sessionRow) {
+  return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
 }
 
 // ─── ClaudeAgentService class ─────────────────────────────────────────────────
@@ -263,7 +262,7 @@ export class ClaudeAgentService {
     const abortController = new AbortController();
 
     const sessionSettings = {
-      permissionMode: sessionRow.plan_mode ? 'plan' : sessionRow.permission_mode,
+      permissionMode: claudeSdkPermissionMode(sessionRow),
     };
     const canUseTool = this.createCanUseTool();
     const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser(user));
@@ -502,13 +501,11 @@ export class ClaudeAgentService {
   syncSessionSettingsFromPatch(sessionId, sessionRow) {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
-    const effectiveMode = sessionRow.plan_mode ? 'plan' : sessionRow.permission_mode;
+    const effectiveMode = claudeSdkPermissionMode(sessionRow);
     if (session.sessionSettings) {
       session.sessionSettings.permissionMode = effectiveMode;
     }
-    session.queryInstance.setPermissionMode(
-      effectiveMode === 'bypassPermissions' ? 'acceptEdits' : effectiveMode
-    );
+    session.queryInstance.setPermissionMode(effectiveMode);
     session.queryInstance.setModel(sessionRow.model);
   }
 

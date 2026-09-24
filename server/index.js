@@ -9,6 +9,7 @@ import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
 import { createAuthRoutes } from './routes/auth.js';
 import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';
+import createMcpRoutes from './routes/mcp.js';
 import createImagesRoutes from './routes/images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
@@ -63,6 +64,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieAuthMiddleware(app));
 
 const requireAuth = createRequireAuth(app);
+app.use(createMcpRoutes(app));
 app.use(createSettingsRoutes(requireAuth));
 app.use(createAuthRoutes(app));
 app.use(createImagesRoutes());

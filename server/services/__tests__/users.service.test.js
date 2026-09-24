@@ -142,6 +142,19 @@ describe('Users service - patch', () => {
     });
   });
 
+  it('generateMcpToken returns plaintext once and sets encrypted column', async () => {
+    const result = await app.service('users').generateMcpToken(null, params(user1));
+    expect(result.token).toMatch(/^bgmcp_/);
+    expect(result.endpoint).toContain('/api/mcp');
+    const row = await db('users').where({ id: user1.id }).first();
+    expect(row.mcp_api_token_encrypted).toBeTruthy();
+    const external = await app.service('users').get(user1.id, params(user1));
+    expect(external.mcp_token_configured).toBe(true);
+    expect(external.mcp_api_token).toBeTruthy();
+    expect(external.mcp_api_token).not.toBe(result.token);
+    expect(external.mcp_endpoint).toContain('/api/mcp');
+  });
+
   it('merges partial agent_preferences patches', async () => {
     await app
       .service('users')

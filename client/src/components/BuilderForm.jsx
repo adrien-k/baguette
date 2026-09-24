@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Repeat, HelpCircle } from 'lucide-react';
 import GithubIcon from './GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
 import { apiFetch } from '../api.js';
-import { sessionsService, pluginsService } from '../feathers.js';
+import { sessionsService, pluginsService, usersService } from '../feathers.js';
+import { useAuth } from '../hooks/useAuth.jsx';
+import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
@@ -47,7 +50,9 @@ export default function BuilderForm({
   const [createNewBranch, setCreateNewBranch] = persistentState.useState('createNewBranch', true);
   const [branchName, setBranchName] = persistentState.useState('branchName', '');
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
+  const { user } = useAuth();
   const { repos } = useRepoContext();
+  const [userSettings, setUserSettings] = useState(null);
   const [agentSdk, setAgentSdkRaw] = persistentState.useState(
     'agentSdk',
     editingLoop?.agent_sdk ?? 'claude'
@@ -89,6 +94,28 @@ export default function BuilderForm({
     () => repos.find((r) => r.full_name === repoFullName),
     [repos, repoFullName]
   );
+
+  const availableSdks = useMemo(
+    () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
+    [userSettings, selectedRepo]
+  );
+
+  useEffect(() => {
+    if (!user?.id) {
+      setUserSettings(null);
+      return;
+    }
+    usersService
+      .get(user.id)
+      .then((d) => setUserSettings(d))
+      .catch(() => setUserSettings({}));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!availableSdks.length) return;
+    if (!availableSdks.includes(agentSdk)) setAgentSdk(availableSdks[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setAgentSdk resets model state intentionally
+  }, [availableSdks, agentSdk]);
   const {
     branches,
     loading: loadingBranches,
@@ -128,10 +155,11 @@ export default function BuilderForm({
 
   // Load models for current harness whenever agentSdk changes
   useEffect(() => {
+    if (!availableSdks.includes(agentSdk)) return;
     setModels([]);
     loadModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSdk]);
+  }, [agentSdk, availableSdks]);
 
   // Validate/default model when models load; also resolve pendingModelParams variant
   useEffect(() => {
@@ -260,6 +288,7 @@ export default function BuilderForm({
   const hasMoreOptions = (createNewBranch && !isLoop) || availablePlugins.length > 0;
   const canSubmit =
     !loading &&
+    availableSdks.length > 0 &&
     repoFullName &&
     branch &&
     initialPrompt &&
@@ -294,7 +323,6 @@ export default function BuilderForm({
       branch,
       initialPrompt,
       files,
-      permissionMode: 'bypassPermissions',
       planMode,
       model: model || undefined,
       modelParams: isCursor && finalParams?.length ? JSON.stringify(finalParams) : undefined,
@@ -326,7 +354,6 @@ export default function BuilderForm({
       base_branch: payload.branch,
       name: loopName.trim() || null,
       prompt: payload.initialPrompt,
-      permission_mode: payload.permissionMode,
       single_session: singleSession,
       // Every run needs its own branch pushed somewhere reviewable, so neither is optional.
       create_new_branch: true,
@@ -687,47 +714,68 @@ export default function BuilderForm({
       <div className="flex flex-col sm:flex-row sm:items-start gap-2">
         {/* Left: selects + variant link */}
         <div>
+          {userSettings && availableSdks.length === 0 && (
+            <p className="text-sm text-amber-200/90 mb-2">
+              Add a Claude or Cursor API key in{' '}
+              <Link
+                to="/settings?tab=agent"
+                className="text-amber-400 hover:text-amber-300 underline"
+              >
+                Settings → Agent
+              </Link>{' '}
+              (or a per-repo key under Settings → Repositories) to start a session.
+            </p>
+          )}
           <div className="flex items-center gap-2">
-            <select
-              value={agentSdk}
-              onChange={(e) => setAgentSdk(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            >
-              <option value="claude">Claude</option>
-              <option value="cursor">Cursor</option>
-            </select>
-
-            <div className="flex items-center gap-1">
+            {userSettings && availableSdks.length === 1 && (
+              <span className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white">
+                {availableSdks[0] === 'cursor' ? 'Cursor' : 'Claude'}
+              </span>
+            )}
+            {userSettings && availableSdks.length > 1 && (
               <select
-                value={model}
-                onChange={(e) => {
-                  setModel(e.target.value);
-                  setCursorVariantIdx(null);
-                  setVariantExpanded(false);
-                }}
+                value={agentSdk}
+                onChange={(e) => setAgentSdk(e.target.value)}
                 className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               >
-                {models.length === 0 && <option value="">Loading…</option>}
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.display_name}
-                  </option>
-                ))}
+                {availableSdks.includes('claude') && <option value="claude">Claude</option>}
+                {availableSdks.includes('cursor') && <option value="cursor">Cursor</option>}
               </select>
-              <button
-                type="button"
-                onClick={() => loadModels(true)}
-                disabled={refreshingModels}
-                title="Refresh models"
-                className="px-1.5 py-2 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
-              >
-                ↻
-              </button>
-            </div>
+            )}
+
+            {availableSdks.length > 0 && (
+              <div className="flex items-center gap-1">
+                <select
+                  value={model}
+                  onChange={(e) => {
+                    setModel(e.target.value);
+                    setCursorVariantIdx(null);
+                    setVariantExpanded(false);
+                  }}
+                  className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                >
+                  {models.length === 0 && <option value="">Loading…</option>}
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.display_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => loadModels(true)}
+                  disabled={refreshingModels}
+                  title="Refresh models"
+                  className="px-1.5 py-2 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
+                >
+                  ↻
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Cursor variant + preferences selectors */}
-          {isCursor && (
+          {availableSdks.length > 0 && isCursor && (
             <div className="mt-1 ml-px">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 {variants.length > 0 && (

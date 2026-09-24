@@ -53,12 +53,19 @@ const DEFAULT_PUBLIC_HOST = process.env.VITE_SERVER_ENABLED
 const DEFAULT_PUBLIC_API_HOST = 'http://localhost:3000';
 
 export const PUBLIC_HOST = process.env.PUBLIC_HOST || DEFAULT_PUBLIC_HOST;
+/** API base URL reachable by browsers and external clients (MCP, uploaded images, etc.). */
 export const PUBLIC_API_HOST =
   process.env.PUBLIC_API_HOST ||
-  (process.env.VITE_SERVER_ENABLED ? DEFAULT_PUBLIC_API_HOST : PUBLIC_HOST);
+  (process.env.PUBLIC_HOST
+    ? PUBLIC_HOST
+    : process.env.VITE_SERVER_ENABLED
+      ? DEFAULT_PUBLIC_API_HOST
+      : PUBLIC_HOST);
 export const PUBLIC_API_URL = /^https?:\/\//.test(PUBLIC_API_HOST)
   ? PUBLIC_API_HOST
   : `https://${PUBLIC_API_HOST}`;
+/** Streamable HTTP MCP — always on the same public origin as the Baguette UI (`/api/mcp`). */
+export const MCP_HTTP_ENDPOINT = `${PUBLIC_HOST.replace(/\/$/, '')}/api/mcp`;
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 export const AUTH_GITHUB_CLIENT_ID = process.env.AUTH_GITHUB_CLIENT_ID;
 export const AUTH_GITHUB_CLIENT_SECRET = process.env.AUTH_GITHUB_CLIENT_SECRET;

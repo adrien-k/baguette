@@ -8,6 +8,8 @@ import { requestNotificationPermission } from '../utils/notifications.js';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
+import McpAccessSection from '../components/McpAccessSection.jsx';
+import CursorModelPreferencesSection from '../components/CursorModelPreferencesSection.jsx';
 import UsageGraph from '../components/UsageGraph.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import {
@@ -502,6 +504,8 @@ function AgentTab({ settings, onSave }) {
         <UsageGraph agentSdkFilter="claude" />
       </SettingsSection>
 
+      <CursorModelPreferencesSection />
+
       <SettingsSection title="Cursor">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
@@ -529,6 +533,22 @@ function AgentTab({ settings, onSave }) {
         {saved && <span className="text-sm text-emerald-400">Saved</span>}
       </div>
     </form>
+  );
+}
+
+// ─── IntegrationsTab ──────────────────────────────────────────────────────────
+
+function IntegrationsTab({ settings, onRefreshSettings }) {
+  return (
+    <div className="space-y-12">
+      <McpAccessSection
+        configured={Boolean(settings?.mcp_token_configured)}
+        maskedToken={settings?.mcp_api_token}
+        endpoint={settings?.mcp_endpoint}
+        onTokenChange={onRefreshSettings}
+      />
+      <SlackTab />
+    </div>
   );
 }
 
@@ -607,10 +627,22 @@ export default function Settings() {
           {activeTab === 'agent' && settings && (
             <AgentTab settings={settings} onSave={setSettings} />
           )}
+          {activeTab === 'integrations' && !settings && !error && (
+            <p className="text-zinc-500">Loading…</p>
+          )}
+          {activeTab === 'integrations' && settings && (
+            <IntegrationsTab
+              settings={settings}
+              onRefreshSettings={async () => {
+                if (!user?.id) return;
+                const d = await usersService.get(user.id);
+                setSettings(d);
+              }}
+            />
+          )}
           {activeTab === 'repos' && <RepositoriesTab />}
           {activeTab === 'notifications' && <NotificationsSection />}
           {activeTab === 'secrets' && <SecretsTab />}
-          {activeTab === 'integrations' && <SlackTab />}
           {activeTab === 'plugins' && <PluginsTab />}
           {activeTab === 'docker' && <DockerTab />}
           {activeTab === 'users' && <UsersTab />}

@@ -49,19 +49,10 @@ import {
   PUBLIC_HOST,
   resolveDataDirRelativePath,
 } from '../config.js';
+import { ok, fail } from './baguette-mcp-tool-result.js';
+import { buildBaguetteAccountToolList } from './baguette-account-mcp-tools.js';
 
 const execFileAsync = promisify(execFile);
-
-function ok(data) {
-  // Pretty-print so spilled tool-result files are multi-line; line-based Read offset/limit can paginate.
-  return { content: [{ type: 'text', text: JSON.stringify({ ok: true, ...data }, null, 2) }] };
-}
-
-function fail(message) {
-  return {
-    content: [{ type: 'text', text: JSON.stringify({ ok: false, error: message }, null, 2) }],
-  };
-}
 
 /** Split stream text into lines for JSON arrays (drops trailing empty segment from final newline). */
 function streamToLines(text) {
@@ -94,7 +85,7 @@ function formatSlackAppList(apps) {
  *
  * Slack tools are included only when at least one Slack app has a bot token.
  */
-function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
+async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
   const db = app.get('db');
 
   const getSession = async () => {
@@ -204,6 +195,14 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     }
   };
 
+  let accountTools = [];
+  try {
+    const owner = await app.service('users').get(session.user_id, {});
+    accountTools = buildBaguetteAccountToolList(owner, app);
+  } catch {
+    accountTools = [];
+  }
+
   const slackTools = [
     {
       name: 'SlackPostMessage',
@@ -236,6 +235,8 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
   ];
 
   return [
+    ...accountTools,
+
     // ── Git ────────────────────────────────────────────────────────────────
 
     {
@@ -1167,7 +1168,7 @@ function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
 export async function buildBaguetteMcpServer(session, app) {
   const slackApps = await loadConfiguredSlackApps(app);
-  const toolList = buildBaguetteToolList(session, app, { slackApps });
+  const toolList = await buildBaguetteToolList(session, app, { slackApps });
   return createSdkMcpServer({
     name: 'baguette',
     tools: toolList.map(({ name, description, schema, handler }) =>
@@ -1178,7 +1179,7 @@ export async function buildBaguetteMcpServer(session, app) {
 
 export async function buildCursorCustomTools(session, app) {
   const slackApps = await loadConfiguredSlackApps(app);
-  const toolList = buildBaguetteToolList(session, app, { slackApps });
+  const toolList = await buildBaguetteToolList(session, app, { slackApps });
   return Object.fromEntries(
     toolList.map(({ name, description, schema, handler }) => {
       const hasSchema = Object.keys(schema).length > 0;
