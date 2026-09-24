@@ -10,6 +10,7 @@ import {
   slackService,
 } from '../../feathers.js';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
+import { SettingsSection } from './SettingsSection.jsx';
 
 function SecretRow({ secret, onDelete }) {
   return (
@@ -108,16 +109,18 @@ export function SecretsTab() {
   const personalSecrets = variables.filter((v) => v.user_id != null);
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <p className="text-zinc-400 text-sm">
         Secrets are available in <code className="text-zinc-300">.baguette.yaml</code> config where
         they can be assigned to environment variables. Personal secrets override global secrets with
         the same key.
       </p>
 
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Global secrets</h2>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+      <SettingsSection
+        title="Global secrets"
+        description="Shared across all users and sessions on this Baguette instance."
+      >
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           {globalSecrets.length === 0 && (
             <p className="text-zinc-600 text-sm text-center py-8">No global secrets configured</p>
           )}
@@ -126,11 +129,13 @@ export function SecretsTab() {
           ))}
         </div>
         <SecretAddForm title="Add global secret" scope="global" onAdded={load} />
-      </div>
+      </SettingsSection>
 
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-300 mb-3">Personal secrets</h2>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+      <SettingsSection
+        title="Personal secrets"
+        description="Only for your account. Same key as a global secret wins for your sessions."
+      >
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           {personalSecrets.length === 0 && (
             <p className="text-zinc-600 text-sm text-center py-8">No personal secrets yet</p>
           )}
@@ -139,7 +144,7 @@ export function SecretsTab() {
           ))}
         </div>
         <SecretAddForm title="Add personal secret" scope="personal" onAdded={load} />
-      </div>
+      </SettingsSection>
     </div>
   );
 }
@@ -181,14 +186,11 @@ export function AllRepositoriesSection() {
   };
 
   return (
-    <div>
-      <h2 className="text-sm font-semibold text-zinc-300 mb-3">All repositories</h2>
-      <p className="text-zinc-400 text-sm mb-4">
-        Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the
-        clone for all users.
-      </p>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6">
+    <SettingsSection
+      title="All repositories"
+      description="Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the clone for all users."
+    >
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
         {repos.length === 0 && (
           <p className="text-zinc-600 text-sm text-center py-8">No repositories registered</p>
         )}
@@ -244,7 +246,7 @@ export function AllRepositoriesSection() {
           </div>
         </div>
       )}
-    </div>
+    </SettingsSection>
   );
 }
 

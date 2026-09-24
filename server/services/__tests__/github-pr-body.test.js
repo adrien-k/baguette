@@ -17,6 +17,8 @@ describe('splitPrBody', () => {
       '',
       'Summary',
       '',
+      '---',
+      '',
       BAGUETTE_FOOTER_MARKER,
       '',
       'Harness: cursor · Model: `claude-4`',
@@ -35,7 +37,9 @@ describe('splitPrBody', () => {
 describe('buildSessionFooter', () => {
   it('uses Harness label and baguette-footer marker', () => {
     const footer = buildSessionFooter({ agent_sdk: 'cursor', model: 'gpt-5' });
-    expect(footer).toBe(`\n\n${BAGUETTE_FOOTER_MARKER}\n\nHarness: cursor · Model: \`gpt-5\``);
+    expect(footer).toBe(
+      `\n\n---\n\n${BAGUETTE_FOOTER_MARKER}\n\nHarness: cursor · Model: \`gpt-5\``
+    );
   });
 
   it('includes preview URL when provided', () => {
@@ -71,6 +75,8 @@ describe('buildPrBody', () => {
         '---',
         '',
         'Agent summary',
+        '',
+        '---',
         '',
         BAGUETTE_FOOTER_MARKER,
         '',

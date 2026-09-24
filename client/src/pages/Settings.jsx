@@ -18,6 +18,7 @@ import {
   UsersTab,
   SlackTab,
 } from './settings/GlobalSettingsSections.jsx';
+import { SettingsSection } from './settings/SettingsSection.jsx';
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
@@ -135,10 +136,8 @@ function RepositoriesTab() {
   const addedNames = new Set(repos.map((r) => r.full_name));
 
   return (
-    <div className="space-y-12">
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-300 mb-4">My repositories</h2>
-
+    <div className="space-y-6">
+      <SettingsSection title="My repositories">
         <form
           onSubmit={handleAdd}
           className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 mb-4"
@@ -319,7 +318,7 @@ function RepositoriesTab() {
             );
           })}
         </div>
-      </div>
+      </SettingsSection>
 
       <AllRepositoriesSection />
 
@@ -390,12 +389,10 @@ function NotificationsSection() {
     }[permission] ?? 'text-zinc-400';
 
   return (
-    <div>
-      <h2 className="text-sm font-semibold text-zinc-300 mb-3">Notifications</h2>
-      <p className="text-zinc-400 text-sm mb-4">
-        Enable browser notifications to receive alerts when sessions complete or approvals are
-        requested, even when the tab is hidden.
-      </p>
+    <SettingsSection
+      title="Notifications"
+      description="Enable browser notifications to receive alerts when sessions complete or approvals are requested, even when the tab is hidden."
+    >
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -417,7 +414,7 @@ function NotificationsSection() {
           ) : null}
         </div>
       </div>
-    </div>
+    </SettingsSection>
   );
 }
 
@@ -466,10 +463,8 @@ function AgentTab({ settings, onSave }) {
   };
 
   return (
-    <form onSubmit={handleSave} className="space-y-8">
-      {/* General */}
-      <div className="space-y-4 max-w-xl">
-        <h2 className="text-sm font-semibold text-zinc-300">General</h2>
+    <form onSubmit={handleSave} className="space-y-6 max-w-xl">
+      <SettingsSection title="General">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
           <input
@@ -483,11 +478,9 @@ function AgentTab({ settings, onSave }) {
             Prefix added to all generated branch names. Leave empty for no prefix.
           </p>
         </div>
-      </div>
+      </SettingsSection>
 
-      {/* Claude */}
-      <div className="space-y-4 max-w-xl">
-        <h2 className="text-sm font-semibold text-zinc-300">Claude</h2>
+      <SettingsSection title="Claude">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">Credential</label>
           <MaskedSecretInput
@@ -507,11 +500,9 @@ function AgentTab({ settings, onSave }) {
           </p>
         </div>
         <UsageGraph agentSdkFilter="claude" />
-      </div>
+      </SettingsSection>
 
-      {/* Cursor */}
-      <div className="space-y-4 max-w-xl">
-        <h2 className="text-sm font-semibold text-zinc-300">Cursor</h2>
+      <SettingsSection title="Cursor">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
           <MaskedSecretInput
@@ -525,7 +516,7 @@ function AgentTab({ settings, onSave }) {
           <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
         </div>
         <UsageGraph agentSdkFilter="cursor" />
-      </div>
+      </SettingsSection>
 
       <div className="flex items-center gap-3">
         <button

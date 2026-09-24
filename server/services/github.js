@@ -1201,8 +1201,9 @@ const LEGACY_FOOTER_RE = /\n\n---\n_[\s\S]*?_\s*$/;
 
 function stripBaguetteFooter(text) {
   const idx = text.indexOf(BAGUETTE_FOOTER_MARKER);
-  if (idx >= 0) return text.slice(0, idx).trimEnd();
-  return text.replace(LEGACY_FOOTER_RE, '').trimEnd();
+  let content =
+    idx >= 0 ? text.slice(0, idx).trimEnd() : text.replace(LEGACY_FOOTER_RE, '').trimEnd();
+  return content.replace(/\n*---\s*$/, '').trimEnd();
 }
 
 export function splitPrBody(body) {
@@ -1232,7 +1233,7 @@ export function buildSessionFooter(session, { previewUrl = null } = {}) {
   }
   if (!parts.length) return '';
 
-  return `\n\n${BAGUETTE_FOOTER_MARKER}\n\n${parts.join(' · ')}`;
+  return `\n\n---\n\n${BAGUETTE_FOOTER_MARKER}\n\n${parts.join(' · ')}`;
 }
 
 export function buildPrBody(userPrefix, baguetteContent, footer = '') {
