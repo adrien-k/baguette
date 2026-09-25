@@ -46,7 +46,6 @@ import ReviewAgentPanel from './session/ReviewAgentPanel.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
 import SessionToolLink from '../components/SessionToolLink.jsx';
 import Toggle from '../components/Toggle.jsx';
-import { parseModelField } from '../utils/models.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
@@ -592,17 +591,6 @@ export default function Session() {
     }
   };
 
-  const handleStop = async () => {
-    setShowMenu(false);
-    try {
-      await sessionsService.stop(session.id);
-    } catch (err) {
-      toastError('Failed to stop session', err);
-    } finally {
-      setSession((prev) => (prev ? { ...prev, status: 'stopped' } : prev));
-    }
-  };
-
   const handleArchive = async () => {
     setShowMenu(false);
     setSession((prev) => (prev ? { ...prev, status: 'archiving' } : prev));
@@ -714,15 +702,6 @@ export default function Session() {
                     prNumber={prInfo.number}
                     prUrl={prInfo.url}
                   />
-                )}
-                {session.model && (
-                  <span className="hidden sm:inline-flex items-center gap-1 shrink-0 text-xs text-zinc-600">
-                    <span className="text-zinc-700">·</span>
-                    {session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-                    {session.model && (
-                      <span className="text-zinc-700">{parseModelField(session.model)}</span>
-                    )}
-                  </span>
                 )}
               </div>
               <div className="flex min-w-0 items-center gap-2 text-xs">
@@ -850,14 +829,6 @@ export default function Session() {
                         </div>
                       )}
                       <div className="p-1">
-                        {session.status === 'running' && (
-                          <button
-                            onClick={handleStop}
-                            className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-zinc-800 rounded"
-                          >
-                            Stop Session
-                          </button>
-                        )}
                         {session.status !== 'archiving' && session.status !== 'provisioning' && (
                           <button
                             onClick={handleArchive}

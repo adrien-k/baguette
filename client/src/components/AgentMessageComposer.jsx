@@ -4,8 +4,11 @@ import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
 import Tooltip from './Tooltip.jsx';
 import { isMobile } from '../utils/isMobile.js';
 
-const SEND_BUTTON_BASE =
-  'bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-4 sm:px-5 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed shrink-0';
+/** Shared height/layout with Send so toolbar actions (e.g. Stop) align. */
+export const COMPOSER_ACTION_BUTTON_LAYOUT =
+  'inline-flex items-center justify-center shrink-0 py-1.5 text-sm font-medium leading-5';
+
+const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-4 sm:px-5 transition-colors disabled:cursor-not-allowed`;
 
 /**
  * Chat-style message box: auto-growing textarea, model + variant row, Send.
@@ -85,9 +88,9 @@ export default function AgentMessageComposer({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={disabled || sending}
-        className="block w-full bg-transparent px-3 sm:px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none rounded-t-lg"
+        className="block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none rounded-t-lg"
       />
-      <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
+      <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
         <SessionModelSelect
           session={session}
           models={models}

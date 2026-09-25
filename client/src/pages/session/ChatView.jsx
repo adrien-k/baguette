@@ -22,7 +22,9 @@ import {
 import { toastError } from '../../utils/toastError.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
-import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
+import AgentMessageComposer, {
+  COMPOSER_ACTION_BUTTON_LAYOUT,
+} from '../../components/AgentMessageComposer.jsx';
 import Toggle from '../../components/Toggle.jsx';
 import QueuedMessages from '../../components/QueuedMessages.jsx';
 import TiedLoopMessages from '../../components/TiedLoopMessages.jsx';
@@ -50,9 +52,6 @@ const CHECK_COMMENTS_PROMPT_REVIEWER =
 
 const CHECK_COMMENTS_TOOLTIP_BUILDER = 'Check review comments and fix problems.';
 const CHECK_COMMENTS_TOOLTIP_REVIEWER = 'Check review comments.';
-
-const SEND_BLOCKED_WHILE_TURN_TOOLTIP =
-  'The agent is still working on this turn. Use the schedule menu (▼) to queue a message, or stop the agent first.';
 
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
@@ -480,7 +479,6 @@ export default function ChatView({
 
   const handleSend = async (e) => {
     e?.preventDefault();
-    if (isRunning) return;
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
     const text = input.trim();
     setError(null);
@@ -774,9 +772,7 @@ export default function ChatView({
                   }
                   textareaId="chat-input"
                   canSend={canSendDraft}
-                  submitDisabled={isRunning}
-                  submitLabel={isProvisioning ? 'Queue' : 'Send'}
-                  submitTooltip={isRunning ? SEND_BLOCKED_WHILE_TURN_TOOLTIP : undefined}
+                  submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
                   toolbarExtra={
                     <>
                       {attachButton}
@@ -786,7 +782,7 @@ export default function ChatView({
                           onClick={handleStop}
                           disabled={stopping}
                           title="Stop"
-                          className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+                          className={`${COMPOSER_ACTION_BUTTON_LAYOUT} bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-2.5 rounded-lg transition-colors`}
                         >
                           <Square className="w-3.5 h-3.5" />
                         </button>

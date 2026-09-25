@@ -186,6 +186,7 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
     {
       name: 'CreateSessionMessage',
       description:
+        'IMPORTANT: Do not use this tool unless the user explicitly asks you to send or schedule a message to a session. ' +
         'Send a user message to a session now, or schedule it with send_at (ISO timestamp in the future). ' +
         'Repo session agents may only post to their own session_id; global session agents and external MCP may post to any of your sessions. ' +
         'Immediate sends while the agent is running are queued for the next turn, like the UI Send button.',

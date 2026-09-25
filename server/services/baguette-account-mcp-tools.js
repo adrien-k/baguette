@@ -115,6 +115,7 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
     {
       name: 'CreateSession',
       description:
+        'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
         'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels for agent_sdk + model. Cursor variant is chosen from your Settings preferences with fallback to the model default. Pass is_global to start a global session from the shared repos folder (no repo_id or base_branch).',
       schema: {
         repo_id: z
