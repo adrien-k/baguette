@@ -11,7 +11,7 @@ import { buildBaguetteLoopMcpTools } from './baguette-loop-mcp-tools.js';
  * Account-scoped MCP tools (repos, sessions, branches, models, create session).
  * Used by external HTTP MCP and appended to in-session baguette MCP.
  */
-export function buildBaguetteAccountToolList(user, app) {
+export function buildBaguetteAccountToolList(user, app, { callerSession = null } = {}) {
   const userId = user.id;
   const userParams = { provider: undefined, user: { id: userId } };
 
@@ -247,7 +247,7 @@ export function buildBaguetteAccountToolList(user, app) {
       },
     },
 
-    ...buildBaguetteSessionMcpTools(user, app),
+    ...buildBaguetteSessionMcpTools(user, app, { callerSession }),
     ...buildBaguetteLoopMcpTools(user, app),
   ];
 }

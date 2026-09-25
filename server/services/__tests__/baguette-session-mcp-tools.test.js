@@ -1,14 +1,29 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerMessagesService } from '../feathers/messages.service.js';
+import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { buildBaguetteSessionMcpTools } from '../baguette-session-mcp-tools.js';
+
+vi.mock('../baguette-config.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    loadBaguetteConfig: vi.fn().mockResolvedValue(null),
+  };
+});
 
 const db = createTestDb({ beforeEach, afterEach });
 
+function parseResult(result) {
+  return JSON.parse(result.content[0].text);
+}
+
 function parseOk(result) {
-  const text = result.content[0].text;
-  return JSON.parse(text);
+  const out = parseResult(result);
+  expect(out.ok).toBe(true);
+  return out;
 }
 
 describe('baguette session MCP tools', () => {
@@ -51,8 +66,20 @@ describe('baguette session MCP tools', () => {
     app = feathers();
     app.set('db', db);
     registerSessionsService(app);
+    app.use(
+      'claude-agent',
+      {
+        onMessageCreated: vi.fn().mockResolvedValue(undefined),
+        syncSessionSettingsFromPatch: vi.fn(),
+      },
+      { methods: ['onMessageCreated', 'syncSessionSettingsFromPatch'] }
+    );
+    registerQueuedMessagesService(app);
+    registerMessagesService(app);
     await app.setup();
-    tools = buildBaguetteSessionMcpTools({ id: userId }, app);
+    tools = buildBaguetteSessionMcpTools({ id: userId }, app, {
+      callerSession: { id: sessionId, is_global: false },
+    });
   });
 
   it('SearchSessions filters by q and base_branch', async () => {
@@ -78,5 +105,85 @@ describe('baguette session MCP tools', () => {
     const getMsg = tools.find((t) => t.name === 'GetSessionMessage');
     const out = parseOk(await getMsg.handler({ session_id: sessionId, message_id: msgId }));
     expect(out.message_json).toContain('hello');
+  });
+
+  it('CreateSessionMessage sends immediately when session is idle', async () => {
+    const create = tools.find((t) => t.name === 'CreateSessionMessage');
+    const out = parseOk(await create.handler({ session_id: sessionId, text: 'ping' }));
+    expect(out.message_id).toBeTruthy();
+    const row = await db('session_messages').where({ id: out.message_id }).first();
+    const parsed = JSON.parse(row.message_json);
+    expect(parsed.message.content).toBe('ping');
+    expect(parsed.source).toBe('mcp');
+    expect(row.subtype).toBe('mcp');
+  });
+
+  it('CreateSessionMessage schedules with send_at', async () => {
+    const sendAt = new Date(Date.now() + 120_000).toISOString();
+    const create = tools.find((t) => t.name === 'CreateSessionMessage');
+    const out = parseOk(
+      await create.handler({ session_id: sessionId, text: 'later', send_at: sendAt })
+    );
+    expect(out.scheduled).toBe(true);
+    expect(out.queued_message_id).toBeTruthy();
+    const queued = await db('queued_messages').where({ id: out.queued_message_id }).first();
+    expect(queued.kind).toBe('scheduled');
+    expect(JSON.parse(queued.message_json).message.content).toBe('later');
+  });
+
+  it('CreateSessionMessage rejects another session for repo agents', async () => {
+    const [otherId] = await db('sessions').insert({
+      user_id: userId,
+      repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+      repo_full_name: 'o/r',
+      short_id: 'efgh',
+      label: 'Other',
+      initial_prompt: 'Other task',
+      base_branch: 'main',
+      created_branch: 'feat/other',
+      status: 'stopped',
+    });
+    const create = tools.find((t) => t.name === 'CreateSessionMessage');
+    const out = parseResult(await create.handler({ session_id: otherId, text: 'nope' }));
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/global Baguette session/);
+  });
+
+  it('CreateSessionMessage allows global agent to post to another session', async () => {
+    const [globalId] = await db('sessions').insert({
+      user_id: userId,
+      is_global: true,
+      repo_full_name: '',
+      worktree_path: 'repos',
+      base_branch: '',
+      short_id: 'glob01',
+      label: 'Global',
+      initial_prompt: 'Orchestrate',
+      status: 'stopped',
+    });
+    const [targetId] = await db('sessions').insert({
+      user_id: userId,
+      repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+      repo_full_name: 'o/r',
+      short_id: 'targ01',
+      label: 'Target',
+      initial_prompt: 'Work',
+      base_branch: 'main',
+      created_branch: 'feat/target',
+      status: 'stopped',
+    });
+    const globalTools = buildBaguetteSessionMcpTools({ id: userId }, app, {
+      callerSession: { id: globalId, is_global: true },
+    });
+    const create = globalTools.find((t) => t.name === 'CreateSessionMessage');
+    const out = parseOk(await create.handler({ session_id: targetId, text: 'from global' }));
+    expect(out.message_id).toBeTruthy();
+  });
+
+  it('CreateSessionMessage allows external MCP to post to an owned session', async () => {
+    const externalTools = buildBaguetteSessionMcpTools({ id: userId }, app);
+    const create = externalTools.find((t) => t.name === 'CreateSessionMessage');
+    const out = parseOk(await create.handler({ session_id: sessionId, text: 'from external mcp' }));
+    expect(out.message_id).toBeTruthy();
   });
 });

@@ -199,7 +199,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
   let accountTools = [];
   try {
     const owner = await app.service('users').get(session.user_id, {});
-    accountTools = buildBaguetteAccountToolList(owner, app);
+    accountTools = buildBaguetteAccountToolList(owner, app, { callerSession: session });
   } catch {
     accountTools = [];
   }

@@ -3,6 +3,7 @@ import { Copy, Check } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
 import ThinkingBlock from './chat/ThinkingBlock.jsx';
 import BaguetteBlock from './chat/BaguetteBlock.jsx';
+import McpAgentBlock, { isMcpAgentMessage } from './chat/McpAgentBlock.jsx';
 import ToolUseBlock from './chat/ToolUseBlock.jsx';
 
 /**
@@ -11,6 +12,10 @@ import ToolUseBlock from './chat/ToolUseBlock.jsx';
  */
 function isBaguetteMessage(message) {
   return message.source === 'baguette' || message.subtype === 'baguette';
+}
+
+function isMcpMessage(message) {
+  return isMcpAgentMessage(message);
 }
 
 /**
@@ -108,6 +113,10 @@ export default function ChatMessage({
 
   if (message.type === 'user' && isBaguetteMessage(message)) {
     return <BaguetteBlock message={message} />;
+  }
+
+  if (message.type === 'user' && isMcpMessage(message)) {
+    return <McpAgentBlock message={message} copyButton={(text) => <CopyButton text={text} />} />;
   }
 
   if (message.type === 'user') {
