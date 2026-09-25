@@ -18,6 +18,36 @@ import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListe
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="text-zinc-400">Loading...</div>
+    </div>
+  );
+}
+
+function AccountPendingScreen({ user, logout }) {
+  return (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="bg-zinc-900 rounded-xl p-8 text-center max-w-md">
+        <img src={user.avatar_url} alt="" className="w-14 h-14 rounded-full mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-white mb-2">Account Pending</h2>
+        <p className="text-zinc-400 mb-6">
+          Your account is awaiting admin approval. Please check back later.
+        </p>
+        <button
+          type="button"
+          onClick={logout}
+          className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Nav() {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -104,27 +134,9 @@ function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="text-zinc-400">Loading...</div>
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   if (!user) return <Navigate to="/login" />;
-  if (!user.approved) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="bg-zinc-900 rounded-xl p-8 text-center max-w-md">
-          <h2 className="text-xl font-semibold text-white mb-2">Account Pending</h2>
-          <p className="text-zinc-400">
-            Your account is awaiting admin approval. Please check back later.
-          </p>
-        </div>
-      </div>
-    );
-  }
   if (!user.onboarding_completed && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" />;
   }
@@ -135,13 +147,7 @@ function ProtectedRoute({ children }) {
 function AppRoutes() {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="text-zinc-400">Loading...</div>
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   return (
     <div className="h-screen min-h-screen bg-zinc-950 flex flex-col">
@@ -260,7 +266,7 @@ function AppRoutes() {
           <Route
             path="/onboarding"
             element={
-              !user || !user.approved ? (
+              !user ? (
                 <Navigate to="/login" />
               ) : user.onboarding_completed ? (
                 <Navigate to="/" />
@@ -277,22 +283,42 @@ function AppRoutes() {
   );
 }
 
+function AppContent() {
+  const { user, loading, logout } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+
+  if (user && !user.approved) {
+    return <AccountPendingScreen user={user} logout={logout} />;
+  }
+
+  const routes = <AppRoutes />;
+
+  if (!user) {
+    return routes;
+  }
+
+  return (
+    <FilterProvider>
+      <RepoProvider>
+        <SessionsProvider>
+          <GitHubBadCredentialsListener />
+          {routes}
+        </SessionsProvider>
+      </RepoProvider>
+    </FilterProvider>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <FilterProvider>
-        <RepoProvider>
-          <SessionsProvider>
-            <GitHubBadCredentialsListener />
-            <AppRoutes />
-            <Toaster
-              position="bottom-center"
-              toastOptions={{ duration: 5000 }}
-              containerStyle={{ bottom: '1.5rem' }}
-            />
-          </SessionsProvider>
-        </RepoProvider>
-      </FilterProvider>
+      <AppContent />
+      <Toaster
+        position="bottom-center"
+        toastOptions={{ duration: 5000 }}
+        containerStyle={{ bottom: '1.5rem' }}
+      />
     </AuthProvider>
   );
 }

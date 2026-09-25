@@ -761,7 +761,7 @@ export default function BuilderForm({
               >
                 Settings → Agent
               </Link>{' '}
-              (or a per-repo key under Settings → Repositories) to start a session.
+              to start a session.
             </p>
           )}
           <div className="flex items-center gap-2">

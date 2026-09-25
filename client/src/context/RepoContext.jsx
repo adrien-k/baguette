@@ -9,7 +9,7 @@ const RepoContext = createContext(null);
 
 export function RepoProvider({ children }) {
   const { user } = useAuth();
-  const { repos, loading, refetch } = useGetRepos(!!user);
+  const { repos, loading, refetch } = useGetRepos(!!user?.approved);
   const [selectedRepo, setSelectedRepo] = useState(null);
 
   // Drop selection if that repo is no longer available
