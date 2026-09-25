@@ -99,9 +99,6 @@ function Nav() {
               <div
                 className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
               >
-                <div className="px-4 pt-2 pb-2 border-b border-zinc-700 mb-1">
-                  <div className="text-zinc-500 text-sm">{user.username}</div>
-                </div>
                 <div>
                   <Link to="/settings" className={menuItemClass}>
                     <SettingsIcon className="w-4 h-4 text-zinc-500" />
