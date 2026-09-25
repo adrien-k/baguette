@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Bot, CheckSquare2, Square, Loader2 } from 'lucide-react';
+import { Bot, CheckSquare2, ChevronDown, Loader2, Square } from 'lucide-react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { messagesService, sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
@@ -246,14 +246,9 @@ function CursorPlanBlock({ block, sessionId }) {
       >
         <span className="text-amber-400 text-xs font-mono shrink-0">Plan</span>
         <span className="text-zinc-200 text-xs font-medium truncate flex-1">{firstHeading}</span>
-        <svg
+        <ChevronDown
           className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
 
       {expanded && planMarkdown && (
@@ -538,14 +533,9 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
         {!hasResult ? (
           <div className="w-3.5 h-3.5 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
-          <svg
+          <ChevronDown
             className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          />
         )}
       </button>
 

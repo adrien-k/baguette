@@ -14,6 +14,11 @@ import createImagesRoutes from './routes/images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
+import {
+  registerAppErrorHandler,
+  handleAppError,
+  createExpressErrorHandler,
+} from './lib/app-error-handler.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
@@ -23,21 +28,9 @@ import db from './db.js';
 
 const { rest } = express;
 
-process.on('unhandledRejection', (reason) => {
-  if (
-    reason &&
-    typeof reason === 'object' &&
-    'message' in reason &&
-    reason.message === SDK_QUERY_CLOSED_MESSAGE
-  ) {
-    logger.debug({ err: reason }, 'Ignored Claude agent SDK query-close rejection');
-    return;
-  }
-  logger.error({ err: reason }, 'Unhandled promise rejection');
-});
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = createFeathersApp();
+registerAppErrorHandler(app);
 const feathersSse = new SseManager();
 
 app.set('db', db);
@@ -62,6 +55,23 @@ app.use(devProxy.middleware);
 app.use(express.json({ strict: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieAuthMiddleware(app));
+
+process.on('unhandledRejection', (reason) => {
+  if (
+    reason &&
+    typeof reason === 'object' &&
+    'message' in reason &&
+    reason.message === SDK_QUERY_CLOSED_MESSAGE
+  ) {
+    logger.debug({ err: reason }, 'Ignored Claude agent SDK query-close rejection');
+    return;
+  }
+  if (app.get('handleAppError')?.(reason, {})) {
+    logger.warn({ err: reason }, 'Handled unhandled rejection');
+    return;
+  }
+  logger.error({ err: reason }, 'Unhandled promise rejection');
+});
 
 const requireAuth = createRequireAuth(app);
 app.use(createMcpRoutes(app));
@@ -113,6 +123,7 @@ app.hooks({
     all: [
       async (context) => {
         const error = context.error;
+        handleAppError(app, error, { userId: context.params?.user?.id });
 
         // Log full error internally
         if (!error.code || error.code >= 500) {
@@ -125,7 +136,7 @@ app.hooks({
   },
 });
 
-app.use(express.errorHandler());
+app.use(createExpressErrorHandler(app));
 // Sessions interrupted by the last shutdown are resumed once every service is set up — the
 // restart path dispatches through the agent services, which need their own setup() to have run.
 const loopScheduler = new LoopScheduler(app);

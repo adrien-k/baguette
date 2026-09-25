@@ -142,6 +142,7 @@ export function registerUsersService(app, path = 'users') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new UsersService(options), {
+    events: ['github:bad-credentials'],
     methods: [
       'find',
       'get',

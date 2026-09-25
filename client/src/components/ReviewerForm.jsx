@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
@@ -116,14 +117,7 @@ export default function ReviewerForm({ repoFullName, onSubmit, loading }) {
           onClick={() => setShowMore((v) => !v)}
           className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
         >
-          <svg
-            className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`} />
           More options
         </button>
 

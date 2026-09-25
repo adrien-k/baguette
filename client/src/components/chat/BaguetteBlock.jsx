@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 export default function BaguetteBlock({ message }) {
@@ -18,14 +19,9 @@ export default function BaguetteBlock({ message }) {
           <span className="text-amber-500 text-xs font-medium shrink-0">Baguette</span>
           <span className="text-zinc-400 text-xs truncate">{title}</span>
         </div>
-        <svg
+        <ChevronDown
           className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
       {expanded && (
         <div className="px-3 sm:px-4 py-3 border-t border-amber-900/30 text-xs text-zinc-400 whitespace-pre-wrap">

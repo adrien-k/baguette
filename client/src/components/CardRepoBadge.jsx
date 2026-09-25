@@ -1,5 +1,5 @@
 import { Bot } from 'lucide-react';
-import GithubIcon from './GithubIcon.jsx';
+import GithubIcon from './svg/GithubIcon.jsx';
 import { formatRepoLabel } from '../utils/repoDisplayName.js';
 
 /** Org/repo (or Global) label for All Sessions lists. */

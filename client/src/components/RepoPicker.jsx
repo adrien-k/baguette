@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronDown, Plus, Layers, Bot } from 'lucide-react';
-import GithubIcon from './GithubIcon.jsx';
+import GithubIcon from './svg/GithubIcon.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import {
   repoDisplayName,

@@ -14,6 +14,7 @@ import { RepoProvider } from './context/RepoContext.jsx';
 import { useFilterRoutes } from './hooks/useFilterRoutes.js';
 import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
+import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -278,6 +279,7 @@ export default function App() {
       <FilterProvider>
         <RepoProvider>
           <SessionsProvider>
+            <GitHubBadCredentialsListener />
             <AppRoutes />
             <Toaster
               position="bottom-center"

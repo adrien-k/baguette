@@ -6,9 +6,11 @@ import path from 'path';
 import * as yaml from 'js-yaml';
 import { DOCKER_COMPOSE_PATH } from '../config.js';
 import { getGithubToken } from '../services/agent-settings.js';
+import { githubFetch } from '../services/github-api.js';
 import { listModels, refreshModels } from '../services/anthropic-models.js';
 import { listCursorModels, refreshCursorModels } from '../services/cursor-models.js';
 import { decrypt } from '../lib/encrypt.js';
+import { asyncHandler } from '../lib/app-error-handler.js';
 import db from '../db.js';
 import { getSystemInfo } from '../services/system-info.js';
 
@@ -29,8 +31,10 @@ function usageQuery(userId, { repo = null, sdk = null } = {}) {
 export default function createSettingsRoutes(requireAuth) {
   const router = Router();
 
-  router.get('/api/settings/models', requireAuth, async (req, res) => {
-    try {
+  router.get(
+    '/api/settings/models',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       if (req.query.sdk === 'cursor') {
         const userRow = await db('users').where({ id: req.user.id }).first();
         const apiKey = userRow?.cursor_api_key_encrypted
@@ -41,13 +45,13 @@ export default function createSettingsRoutes(requireAuth) {
       }
       const models = await listModels();
       res.json({ models });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    })
+  );
 
-  router.post('/api/settings/models/refresh', requireAuth, async (req, res) => {
-    try {
+  router.post(
+    '/api/settings/models/refresh',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       if (req.query.sdk === 'cursor') {
         const userRow = await db('users').where({ id: req.user.id }).first();
         const apiKey = userRow?.cursor_api_key_encrypted
@@ -58,17 +62,17 @@ export default function createSettingsRoutes(requireAuth) {
       }
       const models = await refreshModels();
       res.json({ models });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    })
+  );
 
   // --- Usage ---
 
   // One row per (day, repo, sdk) over the last 30 days, so usage graphs can break token
   // usage down by repo or agent without a second round trip.
-  router.get('/api/usage/breakdown', requireAuth, async (req, res) => {
-    try {
+  router.get(
+    '/api/usage/breakdown',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       const rows = await usageQuery(req.user.id, {
         repo: req.query.repo || null,
         sdk: req.query.sdk || null,
@@ -96,10 +100,8 @@ export default function createSettingsRoutes(requireAuth) {
           total_tokens: Number(r.total_tokens ?? 0),
         }))
       );
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    })
+  );
 
   router.get('/api/settings/system-info', requireAuth, async (req, res) => {
     try {
@@ -111,20 +113,22 @@ export default function createSettingsRoutes(requireAuth) {
 
   // --- Docker Compose ---
 
-  router.get('/api/settings/docker-compose', requireAuth, async (req, res) => {
-    try {
+  router.get(
+    '/api/settings/docker-compose',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       const content = await fs.promises.readFile(DOCKER_COMPOSE_PATH, 'utf8').catch((err) => {
         if (err.code === 'ENOENT') return '';
         throw err;
       });
       res.json({ content });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    })
+  );
 
-  router.get('/api/settings/docker-compose/services', requireAuth, async (req, res) => {
-    try {
+  router.get(
+    '/api/settings/docker-compose/services',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       let content;
       try {
         content = await fs.promises.readFile(DOCKER_COMPOSE_PATH, 'utf8');
@@ -132,20 +136,24 @@ export default function createSettingsRoutes(requireAuth) {
         if (err.code === 'ENOENT') return res.json({ services: [] });
         throw err;
       }
-      const parsed = yaml.load(content);
-      const services =
-        parsed && typeof parsed.services === 'object' && parsed.services !== null
-          ? Object.keys(parsed.services)
-          : [];
-      res.json({ services });
-    } catch (err) {
-      // Graceful failure for missing file or invalid YAML
-      res.json({ services: [], error: err.message });
-    }
-  });
+      try {
+        const parsed = yaml.load(content);
+        const services =
+          parsed && typeof parsed.services === 'object' && parsed.services !== null
+            ? Object.keys(parsed.services)
+            : [];
+        res.json({ services });
+      } catch (err) {
+        // Graceful failure for invalid YAML
+        res.json({ services: [], error: err.message });
+      }
+    })
+  );
 
-  router.put('/api/settings/docker-compose', requireAuth, async (req, res) => {
-    try {
+  router.put(
+    '/api/settings/docker-compose',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       const { content } = req.body;
       if (typeof content !== 'string') {
         return res.status(400).json({ error: 'content must be a string' });
@@ -153,81 +161,75 @@ export default function createSettingsRoutes(requireAuth) {
       await fs.promises.mkdir(path.dirname(DOCKER_COMPOSE_PATH), { recursive: true });
       await fs.promises.writeFile(DOCKER_COMPOSE_PATH, content, 'utf8');
       res.json({ ok: true });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    })
+  );
 
-  router.get('/api/settings/docker-compose/containers', requireAuth, async (req, res) => {
-    try {
+  router.get(
+    '/api/settings/docker-compose/containers',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       try {
         await fs.promises.access(DOCKER_COMPOSE_PATH);
       } catch {
         return res.json({ containers: [] });
       }
-      const { stdout } = await execFileAsync(
-        'docker',
-        ['compose', '-f', DOCKER_COMPOSE_PATH, 'ps', '--format', 'json', '-a'],
-        { timeout: 15000 }
-      );
-      const containers = stdout.trim()
-        ? stdout
-            .trim()
-            .split('\n')
-            .map((line) => JSON.parse(line))
-        : [];
-      res.json({ containers });
-    } catch (err) {
-      res.json({ containers: [], error: err.message });
-    }
-  });
+      try {
+        const { stdout } = await execFileAsync(
+          'docker',
+          ['compose', '-f', DOCKER_COMPOSE_PATH, 'ps', '--format', 'json', '-a'],
+          { timeout: 15000 }
+        );
+        const containers = stdout.trim()
+          ? stdout
+              .trim()
+              .split('\n')
+              .map((line) => JSON.parse(line))
+          : [];
+        res.json({ containers });
+      } catch (err) {
+        res.json({ containers: [], error: err.stderr || err.message });
+      }
+    })
+  );
 
   router.post(
     '/api/settings/docker-compose/containers/:name/:action',
     requireAuth,
-    async (req, res) => {
+    asyncHandler(async (req, res) => {
       const { name, action } = req.params;
       const allowed = ['start', 'stop', 'restart', 'up', 'down'];
       if (!allowed.includes(action)) {
         return res.status(400).json({ error: `Invalid action: ${action}` });
       }
       try {
-        try {
-          await fs.promises.access(DOCKER_COMPOSE_PATH);
-        } catch {
-          return res.status(400).json({ error: 'No docker-compose.yml configured' });
-        }
-        const args = ['compose', '-f', DOCKER_COMPOSE_PATH, action];
-        if (action === 'up') args.push('-d');
-        args.push(name);
-        await execFileAsync('docker', args, { timeout: 60000 });
-        res.json({ ok: true });
-      } catch (err) {
-        res.status(500).json({ error: err.stderr || err.message });
+        await fs.promises.access(DOCKER_COMPOSE_PATH);
+      } catch {
+        return res.status(400).json({ error: 'No docker-compose.yml configured' });
       }
-    }
+      const args = ['compose', '-f', DOCKER_COMPOSE_PATH, action];
+      if (action === 'up') args.push('-d');
+      args.push(name);
+      await execFileAsync('docker', args, { timeout: 60000 });
+      res.json({ ok: true });
+    })
   );
 
   /**
    * GET /api/repos/:repoFullName/prs
    * Lists open pull requests for a repository (for the reviewer session form).
    */
-  router.get('/api/repos/:repoFullName/prs', requireAuth, async (req, res) => {
-    try {
+  router.get(
+    '/api/repos/:repoFullName/prs',
+    requireAuth,
+    asyncHandler(async (req, res) => {
       const token = getGithubToken(req.user);
       if (!token) {
         return res.status(401).json({ error: 'No GitHub token configured' });
       }
       const repoFullName = req.params.repoFullName;
-      const ghRes = await fetch(
+      const ghRes = await githubFetch(
         `https://api.github.com/repos/${repoFullName}/pulls?state=open&per_page=50&sort=updated`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'baguette-app',
-          },
-        }
+        { token }
       );
       if (!ghRes.ok) {
         const text = await ghRes.text().catch(() => '');
@@ -245,10 +247,8 @@ export default function createSettingsRoutes(requireAuth) {
           html_url: pr.html_url,
         }))
       );
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+    })
+  );
 
   return router;
 }

@@ -46,6 +46,9 @@ const CHECK_COMMENTS_PROMPT_REVIEWER =
 const CHECK_COMMENTS_TOOLTIP_BUILDER = 'Check review comments and fix problems.';
 const CHECK_COMMENTS_TOOLTIP_REVIEWER = 'Check review comments.';
 
+const SEND_BLOCKED_WHILE_TURN_TOOLTIP =
+  'The agent is still working on this turn. Use the schedule menu (▼) to queue a message, or stop the agent first.';
+
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -117,6 +120,7 @@ export default function ChatView({
   const isProvisioning = session?.status === 'provisioning';
   const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
+  const canSubmitSend = canSendDraft && !isRunning;
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
 
@@ -316,6 +320,7 @@ export default function ChatView({
   const handleChatKeyDown = (e) => {
     if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (isRunning) return;
       handleSend();
     }
   };
@@ -452,6 +457,7 @@ export default function ChatView({
 
   const handleSend = async (e) => {
     e?.preventDefault();
+    if (isRunning) return;
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
     const text = input.trim();
     setError(null);
@@ -754,13 +760,25 @@ export default function ChatView({
                       </button>
                     )}
                     <div className="flex shrink-0">
-                      <button
-                        type="submit"
-                        disabled={!canSendDraft}
-                        className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-1.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
-                      >
-                        {sending ? '...' : isRunning || isProvisioning ? 'Queue' : 'Send'}
-                      </button>
+                      {isRunning ? (
+                        <Tooltip content={SEND_BLOCKED_WHILE_TURN_TOOLTIP} wrap placement="top-end">
+                          <button
+                            type="submit"
+                            disabled={!canSubmitSend}
+                            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-1.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+                          >
+                            {sending ? '...' : 'Send'}
+                          </button>
+                        </Tooltip>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={!canSendDraft}
+                          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-1.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+                        >
+                          {sending ? '...' : isProvisioning ? 'Queue' : 'Send'}
+                        </button>
+                      )}
                       <AnchoredMenu
                         open={scheduleMenuOpen}
                         onOpenChange={setScheduleMenuOpen}

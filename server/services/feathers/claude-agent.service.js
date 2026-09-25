@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
 import { remoteHasNewCommits } from '../github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
+import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { getClaudeEnv } from '../session-env.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createMessageChannel } from '../message-channel.js';
@@ -302,7 +303,10 @@ export class ClaudeAgentService {
 
     this._activeSessions.set(sessionRow.id, sessionState);
 
-    this.processMessages(sessionState).catch((err) => {
+    attachAppErrorHandler(this.app, this.processMessages(sessionState), {
+      userId: sessionRow.user_id,
+      sessionId,
+    }).catch((err) => {
       logger.error({ sessionId }, err.message);
     });
 
@@ -419,6 +423,7 @@ export class ClaudeAgentService {
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
+        handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId }, 'Session stream error');
         logger.error(err, 'Session stream error');
         await this.app

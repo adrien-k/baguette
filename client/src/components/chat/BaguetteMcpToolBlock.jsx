@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { sessionsService } from '../../feathers.js';
@@ -87,14 +88,9 @@ export function CommandBlock({ baguetteOp, block }) {
         {isRunning ? (
           <div className="w-3.5 h-3.5 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
-          <svg
+          <ChevronDown
             className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          />
         )}
       </button>
       {expanded && (
@@ -161,14 +157,9 @@ export function PrUpsertBlock({ title, body, result, isError }) {
         {isRunning ? (
           <div className="w-3.5 h-3.5 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
-          <svg
+          <ChevronDown
             className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          />
         )}
       </button>
       {!expanded && body && (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ExternalLink, MonitorPlay } from 'lucide-react';
-import VsCodeIcon from './VsCodeIcon.jsx';
+import VsCodeIcon from './svg/VsCodeIcon.jsx';
 
 const TOOLS = {
   preview: { label: 'Preview', Icon: MonitorPlay },

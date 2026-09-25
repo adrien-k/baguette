@@ -13,6 +13,7 @@ import {
   sliceByteRange,
   validateLogByteRange,
 } from './mcp-pagination.js';
+import { githubFetch } from './github-api.js';
 
 export { configureWorktreeGitIdentity } from './git-identity.js';
 
@@ -104,12 +105,11 @@ function repoHash(repoFullName) {
  * @returns {Promise<T[]>}
  */
 async function fetchAllPages(url, token, mapFn, { itemsKey } = {}) {
-  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3+json' };
   const results = [];
   const separator = url.includes('?') ? '&' : '?';
   let page = 1;
   while (true) {
-    const res = await fetch(`${url}${separator}per_page=100&page=${page}`, { headers });
+    const res = await githubFetch(`${url}${separator}per_page=100&page=${page}`, { token });
     if (!res.ok) break;
     const body = await res.json();
     const data = itemsKey ? body?.[itemsKey] : body;
@@ -403,15 +403,9 @@ export async function removeWorktree(session, repo) {
 export async function getOpenPR(token, repoFullName, branch) {
   if (!token) return null;
   const [owner] = repoFullName.split('/');
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=open&per_page=1`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'baguette-app',
-      },
-    }
+    { token }
   );
   if (!res.ok) return null;
   const data = await res.json();
@@ -655,12 +649,8 @@ export async function gitDiff(
  * @returns {'open' | 'draft' | 'closed' | 'merged'}
  */
 export async function getPRStatus(token, repoFullName, prNumber) {
-  const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'baguette-app',
-    },
+  const res = await githubFetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
+    token,
   });
   if (!res.ok) throw new Error('Failed to fetch PR status');
   const data = await res.json();
@@ -675,23 +665,17 @@ export async function getPRStatus(token, repoFullName, prNumber) {
  */
 export async function markPRReady(token, repoFullName, prNumber) {
   // First fetch the PR node ID required by GraphQL
-  const prRes = await fetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'baguette-app',
-    },
-  });
+  const prRes = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
+    { token }
+  );
   if (!prRes.ok) throw new Error('Failed to fetch PR node ID');
   const { node_id } = await prRes.json();
 
-  const gqlRes = await fetch('https://api.github.com/graphql', {
+  const gqlRes = await githubFetch('https://api.github.com/graphql', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'baguette-app',
-    },
+    token,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       query: `mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }`,
       variables: { id: node_id },
@@ -706,16 +690,15 @@ export async function markPRReady(token, repoFullName, prNumber) {
  * Squash-merges a pull request via the GitHub API.
  */
 export async function mergePR(token, repoFullName, prNumber) {
-  const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/merge`, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json',
-      'User-Agent': 'baguette-app',
-    },
-    body: JSON.stringify({ merge_method: 'squash' }),
-  });
+  const res = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/merge`,
+    {
+      method: 'PUT',
+      token,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merge_method: 'squash' }),
+    }
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message || 'Failed to merge PR');
@@ -727,12 +710,8 @@ export async function mergePR(token, repoFullName, prNumber) {
  * @returns {{ number, html_url, title, body, state, draft, author, head: { ref }, base: { ref }, labels, created_at, updated_at, merged_at }}
  */
 export async function getOpenPRByNumber(token, repoFullName, prNumber) {
-  const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'baguette-app',
-    },
+  const res = await githubFetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
+    token,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -766,11 +745,7 @@ export async function getOpenPRByNumber(token, repoFullName, prNumber) {
  * @returns {{ issueComments: object[], reviewComments: object[] }}
  */
 export async function getPRComments(token, repoFullName, prNumber) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'baguette-app',
-  };
+  const ghInit = { token, accept: 'application/vnd.github+json' };
   const mapComment = (c) => ({
     id: c.id,
     user: c.user?.login,
@@ -790,12 +765,14 @@ export async function getPRComments(token, repoFullName, prNumber) {
 
   const [issueRes, reviewRes] = await Promise.all([
     // PR conversation thread — same resource as issue comments because PR #n === issue #n
-    fetch(`https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments?per_page=100`, {
-      headers,
-    }),
-    fetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/comments?per_page=100`, {
-      headers,
-    }),
+    githubFetch(
+      `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments?per_page=100`,
+      ghInit
+    ),
+    githubFetch(
+      `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/comments?per_page=100`,
+      ghInit
+    ),
   ]);
 
   const issueComments = issueRes.ok
@@ -823,14 +800,11 @@ export async function addReactionToComment(
     commentType === 'review'
       ? `https://api.github.com/repos/${repoFullName}/pulls/comments/${commentId}/reactions`
       : `https://api.github.com/repos/${repoFullName}/issues/comments/${commentId}/reactions`;
-  const res = await fetch(endpoint, {
+  const res = await githubFetch(endpoint, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'baguette-app',
-    },
+    token,
+    accept: 'application/vnd.github+json',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
   if (!res.ok) {
@@ -845,16 +819,12 @@ export async function addReactionToComment(
  * @returns {{ id, url, body }}
  */
 export async function createPRComment(token, repoFullName, prNumber, body) {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'baguette-app',
-      },
+      token,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body }),
     }
   );
@@ -876,16 +846,12 @@ export async function createPRLineComment(
   prNumber,
   { body, path, line, commitId, side = 'RIGHT' }
 ) {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/comments`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'baguette-app',
-      },
+      token,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body, path, line, commit_id: commitId, side }),
     }
   );
@@ -923,16 +889,12 @@ export async function createPRReview(
     }));
     if (commitId) payload.commit_id = commitId;
   }
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/reviews`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'baguette-app',
-      },
+      token,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }
   );
@@ -950,13 +912,7 @@ export async function createPRReview(
  */
 export async function getPRWorkflows(token, repoFullName, branch) {
   const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=10`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'baguette-app',
-    },
-  });
+  const res = await githubFetch(url, { token });
   if (!res.ok) return [];
   const data = await res.json();
   return (data.workflow_runs || []).map((r) => ({
@@ -982,16 +938,9 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
     throw new Error(validationError);
   }
 
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github.v3+json',
-    'User-Agent': 'baguette-app',
-  };
-
-  // Get jobs list for this run
-  const jobsRes = await fetch(
+  const jobsRes = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=30`,
-    { headers }
+    { token }
   );
   if (!jobsRes.ok) {
     throw new Error(`Failed to fetch jobs for run ${runId}: ${jobsRes.status}`);
@@ -1008,9 +957,9 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
   const results = await Promise.all(
     targetJobs.map(async (job) => {
       // Step 1: get the redirect URL for this job's logs (GitHub returns 302)
-      const logRes = await fetch(
+      const logRes = await githubFetch(
         `https://api.github.com/repos/${repoFullName}/actions/jobs/${job.id}/logs`,
-        { headers, redirect: 'manual' }
+        { token, redirect: 'manual' }
       );
       const logUrl = logRes.headers.get('location');
       if (!logUrl) {
@@ -1028,7 +977,7 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
 
       const rangeHeader = buildLogRangeHeader({ startByte, endByte });
 
-      const rangeRes = await fetch(logUrl, { headers: { Range: rangeHeader } });
+      const rangeRes = await githubFetch(logUrl, { token, headers: { Range: rangeHeader } });
       let log = await rangeRes.text();
 
       let totalBytes = Buffer.byteLength(log, 'utf8');
@@ -1083,21 +1032,18 @@ export async function upsertPR(
   token,
   { repoFullName, prNumber, title, body, head, baseBranch, reopen = false }
 ) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-    Accept: 'application/vnd.github.v3+json',
-    'User-Agent': 'baguette-app',
-  };
-
   if (prNumber) {
     const patchBody = { title, body };
     if (reopen) patchBody.state = 'open';
-    const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify(patchBody),
-    });
+    const res = await githubFetch(
+      `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
+      {
+        method: 'PATCH',
+        token,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patchBody),
+      }
+    );
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`GitHub PATCH failed: ${text}`);
@@ -1106,9 +1052,10 @@ export async function upsertPR(
     return { url: data.html_url, number: data.number };
   }
 
-  const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls`, {
+  const res = await githubFetch(`https://api.github.com/repos/${repoFullName}/pulls`, {
     method: 'POST',
-    headers,
+    token,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, body, head, base: baseBranch, draft: true }),
   });
   if (!res.ok) {
@@ -1119,28 +1066,20 @@ export async function upsertPR(
   return { url: data.html_url, number: data.number };
 }
 
-const GH_HEADERS = (token) => ({
-  Authorization: `Bearer ${token}`,
-  Accept: 'application/vnd.github.v3+json',
-  'User-Agent': 'baguette-app',
-});
-
 export async function listRepoPRs(
   token,
   repoFullName,
   { state = 'open', author, label, base, text } = {}
 ) {
-  const headers = GH_HEADERS(token);
-
   if (author || label || text) {
     const parts = ['is:pr', `repo:${repoFullName}`, `is:${state}`];
     if (author) parts.push(`author:${author}`);
     if (label) parts.push(`label:${label}`);
     if (text) parts.push(text);
     const q = encodeURIComponent(parts.join(' '));
-    const res = await fetch(
+    const res = await githubFetch(
       `https://api.github.com/search/issues?q=${q}&per_page=30&sort=updated`,
-      { headers }
+      { token }
     );
     if (!res.ok) throw new Error(`GitHub API error: ${await res.text()}`);
     const data = await res.json();
@@ -1157,8 +1096,8 @@ export async function listRepoPRs(
 
   const params = new URLSearchParams({ state, sort: 'updated', per_page: '50' });
   if (base) params.set('base', base);
-  const res = await fetch(`https://api.github.com/repos/${repoFullName}/pulls?${params}`, {
-    headers,
+  const res = await githubFetch(`https://api.github.com/repos/${repoFullName}/pulls?${params}`, {
+    token,
   });
   if (!res.ok) throw new Error(`GitHub API error: ${await res.text()}`);
   const prs = await res.json();
@@ -1177,10 +1116,9 @@ export async function listRepoPRs(
 }
 
 export async function addLabelsToPR(token, repoFullName, prNumber, labels) {
-  const headers = GH_HEADERS(token);
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/labels`,
-    { method: 'POST', headers, body: JSON.stringify({ labels }) }
+    { method: 'POST', token, body: JSON.stringify({ labels }) }
   );
   if (!res.ok) throw new Error(`GitHub API error: ${await res.text()}`);
   const data = await res.json();
@@ -1188,9 +1126,8 @@ export async function addLabelsToPR(token, repoFullName, prNumber, labels) {
 }
 
 export async function listRepoTags(token, repoFullName) {
-  const headers = GH_HEADERS(token);
-  const res = await fetch(`https://api.github.com/repos/${repoFullName}/tags?per_page=50`, {
-    headers,
+  const res = await githubFetch(`https://api.github.com/repos/${repoFullName}/tags?per_page=50`, {
+    token,
   });
   if (!res.ok) throw new Error(`GitHub API error: ${await res.text()}`);
   const tags = await res.json();

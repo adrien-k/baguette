@@ -69,6 +69,15 @@ export function registerFeathersServices(app, sseManager) {
       sseManager.send(data.user_id, { service: 'sessions', event: 'app:error', data });
   });
 
+  app.service('users').on('github:bad-credentials', (data) => {
+    if (data?.user_id)
+      sseManager.send(data.user_id, {
+        service: 'users',
+        event: 'github:bad-credentials',
+        data,
+      });
+  });
+
   app.service('tasks').on('log', async (data) => {
     if (!data.session_id) return;
     const session = await db('sessions').where({ id: data.session_id }).first();

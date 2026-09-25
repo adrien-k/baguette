@@ -8,6 +8,7 @@ import {
   removePluginFiles,
 } from '../plugins-service.js';
 import { getGithubToken } from '../agent-settings.js';
+import { githubFetch } from '../github-api.js';
 import { requireUser } from './hooks.js';
 
 class PluginsService extends KnexService {
@@ -88,13 +89,7 @@ class PluginsService extends KnexService {
     const token = getGithubToken(params.user) || undefined;
     const [owner, repo] = plugin.marketplace_repo.split('/');
 
-    const ghRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-      headers: {
-        'User-Agent': 'baguette-app',
-        Accept: 'application/vnd.github.v3+json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    const ghRes = await githubFetch(`https://api.github.com/repos/${owner}/${repo}`, { token });
     const repoData = ghRes.ok ? await ghRes.json() : {};
     const branch = repoData.default_branch || 'main';
 

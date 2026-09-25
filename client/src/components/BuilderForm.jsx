@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Repeat, HelpCircle } from 'lucide-react';
-import GithubIcon from './GithubIcon.jsx';
+import { ChevronDown, ChevronRight, HelpCircle, Repeat } from 'lucide-react';
+import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
@@ -658,14 +658,9 @@ export default function BuilderForm({
             onClick={() => setShowMore((v) => !v)}
             className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
           >
-            <svg
+            <ChevronRight
               className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            />
             More options
           </button>
 
@@ -851,19 +846,9 @@ export default function BuilderForm({
                         ? variantLabel(selectedVariant, selectedModel?.display_name)
                         : 'Select variant'}
                     </span>
-                    <svg
+                    <ChevronDown
                       className={`w-2.5 h-2.5 transition-transform ${variantExpanded ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
+                    />
                   </button>
                 )}
                 <button
@@ -875,19 +860,9 @@ export default function BuilderForm({
                   className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
                 >
                   <span>preferences</span>
-                  <svg
+                  <ChevronDown
                     className={`w-2.5 h-2.5 transition-transform ${prefsExpanded ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
+                  />
                 </button>
               </div>
               {variants.length > 0 && variantExpanded && (

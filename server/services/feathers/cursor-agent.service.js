@@ -8,6 +8,7 @@ import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 import { formatCursorToolCallResult } from '../../../shared/cursor-tool-call-result.js';
+import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -99,7 +100,10 @@ export class CursorAgentService {
       return;
     if (session.repo_full_name && !session.worktree_path) return;
 
-    this._runTurn(session, parsed).catch((err) => {
+    attachAppErrorHandler(this.app, this._runTurn(session, parsed), {
+      userId: session.user_id,
+      sessionId: session.id,
+    }).catch((err) => {
       logger.error({ sessionId, err: err.message }, 'cursor-agent turn failed');
     });
   }
@@ -307,6 +311,7 @@ ${systemPrompt}`;
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
+        handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId, err: err.message }, 'Cursor session stream error');
         try {
           await this.app
