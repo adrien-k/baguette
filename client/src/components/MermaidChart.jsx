@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-
-mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+import { useColorScheme } from '../hooks/useColorScheme.jsx';
 
 let idCounter = 0;
 
 export default function MermaidChart({ chart }) {
+  const { colorScheme } = useColorScheme();
   const ref = useRef(null);
   const [error, setError] = useState(null);
   const id = useRef(`mermaid-${++idCounter}`);
@@ -13,6 +13,10 @@ export default function MermaidChart({ chart }) {
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: colorScheme === 'light' ? 'default' : 'dark',
+    });
     mermaid
       .render(id.current, chart)
       .then(({ svg }) => {
@@ -24,7 +28,7 @@ export default function MermaidChart({ chart }) {
     return () => {
       cancelled = true;
     };
-  }, [chart]);
+  }, [chart, colorScheme]);
 
   if (error) {
     return (

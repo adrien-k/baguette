@@ -65,6 +65,12 @@ async function orderByCreatedAt(context) {
   return context;
 }
 
+async function normalizeColorSchemePatch(context) {
+  if (context.data.color_scheme === undefined) return context;
+  context.data.color_scheme = context.data.color_scheme === 'light' ? 'light' : 'dark';
+  return context;
+}
+
 async function normalizeCursorModelPrefsPatch(context) {
   if (context.data.agent_preferences === undefined) return context;
 
@@ -123,8 +129,13 @@ export const usersHooks = {
   before: {
     all: [requireUser],
     find: [orderByCreatedAt],
-    create: [normalizeCursorModelPrefsPatch, encryptUserSecrets],
-    patch: [restrictPatchToSelf, normalizeCursorModelPrefsPatch, encryptUserSecrets],
+    create: [normalizeColorSchemePatch, normalizeCursorModelPrefsPatch, encryptUserSecrets],
+    patch: [
+      restrictPatchToSelf,
+      normalizeColorSchemePatch,
+      normalizeCursorModelPrefsPatch,
+      encryptUserSecrets,
+    ],
   },
   after: {
     find: [decryptUserSecrets, formatUserExternal],

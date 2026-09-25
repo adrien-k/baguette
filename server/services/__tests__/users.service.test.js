@@ -126,6 +126,18 @@ describe('Users service - patch', () => {
     expect(result.model).toBe('claude-opus-4-6');
   });
 
+  it('persists color_scheme and normalizes invalid values to dark', async () => {
+    const light = await app
+      .service('users')
+      .patch(user1.id, { color_scheme: 'light' }, params(user1));
+    expect(light.color_scheme).toBe('light');
+
+    const dark = await app
+      .service('users')
+      .patch(user1.id, { color_scheme: 'solarized' }, params(user1));
+    expect(dark.color_scheme).toBe('dark');
+  });
+
   it('stores and returns cursor fast/effort in agent_preferences', async () => {
     const result = await app
       .service('users')

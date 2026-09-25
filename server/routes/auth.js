@@ -216,6 +216,7 @@ export function createAuthRoutes(app) {
         avatar_url: user.avatar_url,
         approved: !!user.approved,
         onboarding_completed: !!user.onboarding_completed,
+        color_scheme: user.color_scheme === 'light' ? 'light' : 'dark',
       },
     });
   });

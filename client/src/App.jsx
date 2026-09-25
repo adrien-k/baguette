@@ -16,6 +16,8 @@ import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
+import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
+import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 
 function LoadingScreen() {
@@ -85,6 +87,7 @@ function Nav() {
           </Link>
         </div>
         <div className="flex items-center gap-3">
+          <ColorSchemeToggle />
           <RepoPicker />
           <RunningTasksDropdown />
           <div className="relative" ref={userMenuRef}>
@@ -310,12 +313,14 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
-      <Toaster
-        position="bottom-center"
-        toastOptions={{ duration: 5000 }}
-        containerStyle={{ bottom: '1.5rem' }}
-      />
+      <ColorSchemeProvider>
+        <AppContent />
+        <Toaster
+          position="bottom-center"
+          toastOptions={{ duration: 5000 }}
+          containerStyle={{ bottom: '1.5rem' }}
+        />
+      </ColorSchemeProvider>
     </AuthProvider>
   );
 }

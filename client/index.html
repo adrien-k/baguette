@@ -16,6 +16,21 @@
     <title>Baguette</title>
   </head>
   <body>
+    <script>
+      (function () {
+        try {
+          var s = localStorage.getItem('baguette-color-scheme');
+          if (s === 'light' || s === 'dark') {
+            document.documentElement.dataset.theme = s;
+            document.documentElement.style.colorScheme = s;
+          } else {
+            document.documentElement.dataset.theme = 'dark';
+          }
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

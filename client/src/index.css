@@ -14,6 +14,10 @@
 }
 
 @layer base {
+  html {
+    color-scheme: dark;
+  }
+
   body {
     background-image: radial-gradient(
       ellipse 80% 40% at 50% -5%,
@@ -29,4 +33,57 @@
     background-position: right 0.5rem center;
     padding-right: 1.75rem !important;
   }
+}
+
+/*
+ * Light theme — unlayered so these beat Tailwind utilities (text-white lived in
+ * @layer base before and lost, leaving white type on zinc-900 cards).
+ *
+ * Surfaces (700–950) stay light. Muted steps (400–600) stay dark enough for
+ * AA contrast on those surfaces. Pale amber text tokens are darkened so
+ * labels/links read on gray cards. text-zinc-950 is overridden separately
+ * because the same token is the page background.
+ */
+html[data-theme='light'] {
+  color-scheme: light;
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #27272a;
+  --color-zinc-400: #3f3f46;
+  --color-zinc-500: #52525b;
+  --color-zinc-600: #3f3f46;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #f4f4f5;
+  --color-zinc-950: #fafafa;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #b45309;
+  --color-red-200: #991b1b;
+  --color-red-400: #b91c1c;
+  --color-emerald-400: #047857;
+  --color-sky-400: #0369a1;
+}
+
+html[data-theme='light'] body {
+  background-image: radial-gradient(
+    ellipse 80% 40% at 50% -5%,
+    rgba(217, 119, 6, 0.1) 0%,
+    transparent 100%
+  );
+}
+
+html[data-theme='light'] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%233f3f46' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+html[data-theme='light'] :is(.text-white, .hover\:text-white:hover),
+html[data-theme='light'] .group:hover .group-hover\:text-white,
+html[data-theme='light'] .text-zinc-950 {
+  color: #18181b;
+}
+
+html[data-theme='light'] :is(.placeholder-zinc-500, .placeholder-zinc-600)::placeholder {
+  color: #52525b;
 }

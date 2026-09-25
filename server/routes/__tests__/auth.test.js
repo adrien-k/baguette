@@ -232,7 +232,12 @@ describe('GET /auth/me', () => {
     const res = await get('/auth/me', { cookie: signedUserCookie(userId) });
 
     const body = await res.json();
-    expect(body.user).toMatchObject({ id: userId, username: 'alice', approved: true });
+    expect(body.user).toMatchObject({
+      id: userId,
+      username: 'alice',
+      approved: true,
+      color_scheme: 'dark',
+    });
     expect(body.github.install_url).toBe('https://github.com/apps/baguette-test/installations/new');
   });
 });
