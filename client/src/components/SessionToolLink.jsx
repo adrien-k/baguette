@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ExternalLink, MonitorPlay } from 'lucide-react';
 import VsCodeIcon from './svg/VsCodeIcon.jsx';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 const TOOLS = {
   preview: { label: 'Preview', Icon: MonitorPlay },
@@ -56,7 +57,7 @@ function PreviewServicesDropdown({
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1 min-w-[12rem] max-w-xs overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl"
+          className={`absolute left-0 top-full z-50 mt-1 min-w-[12rem] max-w-xs overflow-hidden ${DROPDOWN_PANEL_CLASS}`}
         >
           <div className="border-b border-zinc-800 px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
             Preview services

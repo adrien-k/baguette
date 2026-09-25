@@ -40,7 +40,6 @@ export default function BuilderForm({
   isGlobal: isGlobalProp = false,
   allowRepoChoice = false,
   defaultPrompt,
-  defaultTargetScope,
 }) {
   const persistKey = editingLoop
     ? null
@@ -49,13 +48,14 @@ export default function BuilderForm({
       : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
   const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
+  const { repos } = useRepoContext();
   const { cursorFast, cursorEffort, setCursorFast, setCursorEffort } = useCursorModelPrefs();
   const defaultTarget = editingLoop
     ? editingLoop.is_global
       ? GLOBAL_SCOPE
       : editingLoop.repo_full_name
     : allowRepoChoice
-      ? defaultTargetScope
+      ? (repos[0]?.full_name ?? GLOBAL_SCOPE)
       : isGlobalProp
         ? GLOBAL_SCOPE
         : repoFullNameProp;
@@ -75,7 +75,6 @@ export default function BuilderForm({
   const [branchName, setBranchName] = persistentState.useState('branchName', '');
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
   const { user } = useAuth();
-  const { repos } = useRepoContext();
   const [userSettings, setUserSettings] = useState(null);
   const [agentSdk, setAgentSdkRaw] = persistentState.useState(
     'agentSdk',
@@ -513,6 +512,8 @@ export default function BuilderForm({
             syncContext={false}
             showOrgInLabel
             fullWidth
+            matchTriggerWidth
+            triggerClassName="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-white hover:text-white justify-between focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
             value={targetScope}
             onChange={setTargetScope}
           />

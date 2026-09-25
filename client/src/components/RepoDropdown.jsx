@@ -35,6 +35,8 @@ export default function RepoDropdown({
   id,
   triggerTitle,
   fullWidth = false,
+  matchTriggerWidth = false,
+  triggerClassName = '',
   className = '',
   ariaLabel = 'Choose repository',
 }) {
@@ -62,6 +64,8 @@ export default function RepoDropdown({
         placement={placement}
         triggerTitle={triggerTitle ?? display.label}
         fullWidth={fullWidth}
+        matchTriggerWidth={matchTriggerWidth}
+        triggerClassName={triggerClassName}
       />
     </div>
   );

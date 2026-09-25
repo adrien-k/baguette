@@ -5,6 +5,7 @@ import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import TaskLogModal from './TaskLogModal.jsx';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 export default function RunningTasksDropdown() {
   const { tasks: runningTasks } = useGetTasks({ status: 'running' });
@@ -86,7 +87,9 @@ export default function RunningTasksDropdown() {
         )}
 
         {open && (
-          <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50">
+          <div
+            className={`absolute right-0 top-full mt-2 w-80 ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
+          >
             <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5 text-zinc-500" />
               <span className="text-xs font-medium text-zinc-400">Running Tasks</span>

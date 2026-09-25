@@ -23,6 +23,8 @@ export default function RepoPicker({
   syncContext = true,
   showOrgInLabel = false,
   fullWidth = false,
+  matchTriggerWidth = false,
+  triggerClassName = '',
   value,
   onChange,
 }) {
@@ -113,6 +115,8 @@ export default function RepoPicker({
       footer={footer}
       selectedDisplay={selectedDisplay}
       fullWidth={fullWidth}
+      matchTriggerWidth={matchTriggerWidth}
+      triggerClassName={triggerClassName}
       className={className}
       placement="bottom-end"
     />

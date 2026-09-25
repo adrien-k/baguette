@@ -49,6 +49,7 @@ import Toggle from '../components/Toggle.jsx';
 import { parseModelField } from '../utils/models.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 import {
   createFileReferenceBlock,
   fileReferenceAgentText,
@@ -802,7 +803,9 @@ export default function Session() {
                   </button>
 
                   {showMenu && (
-                    <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50">
+                    <div
+                      className={`absolute right-0 top-full mt-1 w-56 ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
+                    >
                       {session.agent_sdk && (
                         <div className="p-2 border-b border-zinc-800 sm:hidden">
                           <div className="text-[11px] text-zinc-500 px-2 py-1">Agent</div>

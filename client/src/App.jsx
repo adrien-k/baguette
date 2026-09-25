@@ -16,6 +16,7 @@ import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
+import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -65,7 +66,9 @@ function Nav() {
               <span className="hidden sm:block text-zinc-300 text-sm">{user.username}</span>
             </button>
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg py-1 z-50">
+              <div
+                className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+              >
                 <div className="px-4 pt-2 pb-2 border-b border-zinc-700 mb-1">
                   <div className="text-zinc-500 text-sm">{user.username}</div>
                 </div>

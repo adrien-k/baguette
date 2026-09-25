@@ -4,6 +4,7 @@ import {
   flip,
   offset,
   shift,
+  size,
   useDismiss,
   useFloating,
   useInteractions,
@@ -19,6 +20,7 @@ export default function AnchoredMenu({
   reference,
   children,
   className = '',
+  matchReferenceWidth = false,
 }) {
   const { refs, floatingStyles, context } = useFloating({
     open,
@@ -26,7 +28,20 @@ export default function AnchoredMenu({
     placement,
     strategy: 'fixed',
     whileElementsMounted: autoUpdate,
-    middleware: [offset(6), flip(), shift({ padding: 8 })],
+    middleware: [
+      offset(6),
+      flip(),
+      shift({ padding: 8 }),
+      ...(matchReferenceWidth
+        ? [
+            size({
+              apply({ rects, elements }) {
+                Object.assign(elements.floating.style, { width: `${rects.reference.width}px` });
+              },
+            }),
+          ]
+        : []),
+    ],
   });
 
   const dismiss = useDismiss(context);

@@ -33,6 +33,7 @@ import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import AnchoredMenu from '../../components/AnchoredMenu.jsx';
+import { DROPDOWN_PANEL_CLASS } from '../../utils/dropdownPanel.js';
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
@@ -797,7 +798,7 @@ export default function ChatView({
                       open={scheduleMenuOpen}
                       onOpenChange={setScheduleMenuOpen}
                       placement="top-end"
-                      className="w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden py-1"
+                      className={`w-44 ${DROPDOWN_PANEL_CLASS} overflow-hidden py-1`}
                       reference={({ ref, referenceProps }) => (
                         <button
                           type="button"

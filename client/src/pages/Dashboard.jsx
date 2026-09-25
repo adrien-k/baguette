@@ -205,15 +205,6 @@ export default function Dashboard() {
     : isGlobal || isAllSessions
       ? null
       : selectedRepo;
-  const lastCreatedTargetScope = useMemo(() => {
-    if (!sessions.length) return null;
-    const last = sessions.reduce((a, b) =>
-      new Date(a.created_at) >= new Date(b.created_at) ? a : b
-    );
-    if (last.is_global) return GLOBAL_SCOPE;
-    return last.repo_full_name || null;
-  }, [sessions]);
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
       {isAllSessions && (
@@ -263,7 +254,6 @@ export default function Dashboard() {
             repoFullName={builderRepoFullName}
             isGlobal={builderIsGlobal}
             allowRepoChoice={isAllSessions}
-            defaultTargetScope={isAllSessions ? lastCreatedTargetScope : undefined}
             defaultPrompt={initPrompt || ''}
           />
         )}

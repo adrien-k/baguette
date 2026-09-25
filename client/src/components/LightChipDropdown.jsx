@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import AnchoredMenu from './AnchoredMenu.jsx';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 /** Chip button styles shared with session model / variant pickers. */
 export function chipOptionClassName(selected) {
@@ -18,10 +19,14 @@ export function listOptionClassName(selected) {
 }
 
 export const lightChipPanelClassName =
-  'max-w-[min(100vw-2rem,20rem)] max-h-72 overflow-y-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-2.5';
+  `max-w-[min(100vw-2rem,20rem)] max-h-72 overflow-y-auto ${DROPDOWN_PANEL_CLASS} p-2.5`;
 
 export const lightListPanelClassName =
-  'min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max-h-[min(24rem,70vh)] overflow-y-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1';
+  `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
+
+/** List panel without min/max width — pair with `matchTriggerWidth` on the dropdown. */
+export const lightListPanelMatchTriggerClassName =
+  `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
  * @typedef {{ value: string, label: string, icon?: import('react').ReactNode }} LightDropdownOption
@@ -55,6 +60,7 @@ export default function LightChipDropdown({
   panelClassName,
   triggerClassName = '',
   fullWidth = false,
+  matchTriggerWidth = false,
   /** Override trigger when `value` is not in the option list */
   selectedDisplay,
   /** Show only `triggerIcon` (no label text) */
@@ -68,7 +74,12 @@ export default function LightChipDropdown({
   const triggerIcon = selectedDisplay?.icon ?? selected?.icon;
 
   const resolvedPanelClassName =
-    panelClassName ?? (layout === 'list' ? lightListPanelClassName : lightChipPanelClassName);
+    panelClassName ??
+    (layout === 'list'
+      ? matchTriggerWidth
+        ? lightListPanelMatchTriggerClassName
+        : lightListPanelClassName
+      : lightChipPanelClassName);
 
   const pick = (next) => {
     onChange(next);
@@ -114,6 +125,7 @@ export default function LightChipDropdown({
         open={open && !disabled}
         onOpenChange={setOpen}
         placement={placement}
+        matchReferenceWidth={matchTriggerWidth}
         className={resolvedPanelClassName}
         reference={({ ref, referenceProps }) => (
           <button

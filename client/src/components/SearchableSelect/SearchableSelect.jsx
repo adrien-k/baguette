@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchableSelectAsync } from './useSearchableSelectAsync.js';
+import { DROPDOWN_PANEL_CLASS } from '../../utils/dropdownPanel.js';
 
 const COLOR_CLASSES = {
   amber: { ring: 'focus:ring-amber-500/50', border: 'border-amber-500/50' },
@@ -180,7 +181,7 @@ export default function SearchableSelect({
           ))}
       </div>
       <div
-        className={`mt-1 max-h-48 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-800 divide-y divide-zinc-700/50 ${
+        className={`mt-1 max-h-48 overflow-y-auto ${DROPDOWN_PANEL_CLASS} divide-y divide-zinc-800 ${
           search === null ? 'hidden' : ''
         }`}
       >
@@ -201,7 +202,7 @@ export default function SearchableSelect({
                 className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
                   optionDisabled
                     ? 'text-zinc-500 cursor-not-allowed'
-                    : 'text-white hover:bg-zinc-700'
+                    : 'text-white hover:bg-zinc-800/50'
                 }`}
               >
                 {renderOption ? renderOption(o) : getOptionLabel(o)}
