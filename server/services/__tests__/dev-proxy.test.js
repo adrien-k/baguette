@@ -127,4 +127,27 @@ describe('DevProxy exit after the server came up', () => {
     expect(proxy.states.has(key)).toBe(false);
     expect(replayedEvents(proxy, key)).toEqual([]);
   });
+
+  it('drops the state when TTL fires during startup (SIGTERM exit code)', () => {
+    const proxy = new DevProxy({}, []);
+    const task = stubTask();
+    proxy.attachWebserverTask(key, task, 'PORT');
+
+    task.kill_reason = 'ttl';
+    task.exit(1);
+
+    expect(proxy.states.has(key)).toBe(false);
+  });
+
+  it('drops the state when TTL fires after a startup-timeout crash', () => {
+    const proxy = new DevProxy({}, []);
+    const task = stubTask();
+    const state = proxy.attachWebserverTask(key, task, 'PORT');
+    proxy._onCrashed(key, state, new Error('ports not ready'));
+
+    task.kill_reason = 'ttl';
+    task.exit(1);
+
+    expect(proxy.states.has(key)).toBe(false);
+  });
 });

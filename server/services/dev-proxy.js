@@ -264,14 +264,18 @@ export class DevProxy {
     );
     state.unsubExit = task.onExit((_id, code) => {
       if (this.states.get(key) !== state) return;
+      // An idle-TTL stop is transparent at any lifecycle stage: drop proxy state so the next
+      // request boots a fresh server (including after a startup-timeout crash while the child
+      // was still running).
+      if (task.kill_reason === 'ttl') {
+        this._releaseProxyState(key, state);
+        return;
+      }
       if (state.status === 'starting') {
         if (code !== 0) this._onCrashed(key, state);
       } else if (state.status === 'listening') {
-        // An idle-TTL stop is transparent: drop the state so the next request boots a fresh
-        // server. Any other exit (Stop from the Preview tab, or a crash) keeps the state so
-        // opening the preview link shows the task logs and the Retry button.
-        if (task.kill_reason === 'ttl') this._releaseProxyState(key, state);
-        else this._onExited(key, state, code);
+        // Stop from the Preview tab or a crash — keep state so the preview link shows logs + Retry.
+        this._onExited(key, state, code);
       }
     });
 
