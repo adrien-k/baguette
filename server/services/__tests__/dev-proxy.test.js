@@ -1,6 +1,26 @@
+import { PassThrough } from 'stream';
 import { describe, it, expect, vi } from 'vitest';
 import { DevProxy } from '../dev-proxy.js';
 import { Task } from '../task.js';
+
+describe('DevProxy._forwardProxyResponse', () => {
+  it('flushes response headers before piping the upstream body', () => {
+    const proxy = new DevProxy({}, []);
+    const events = [];
+    const mockRes = new PassThrough();
+    mockRes.writeHead = () => events.push('headers');
+    mockRes.flushHeaders = () => events.push('flush');
+
+    const proxyRes = new PassThrough();
+    proxyRes.statusCode = 200;
+    proxyRes.headers = { 'content-type': 'text/plain' };
+
+    proxy._forwardProxyResponse(proxyRes, mockRes);
+
+    expect(events).toEqual(['headers', 'flush']);
+    proxyRes.end('hello');
+  });
+});
 
 describe('DevProxy._releaseProxyState', () => {
   it('does not remove the task from the task store', () => {

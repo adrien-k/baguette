@@ -140,7 +140,6 @@ export default function ChatView({
       loopsService.off('patched', load);
       loopsService.off('removed', load);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id]);
 
   useEffect(() => {

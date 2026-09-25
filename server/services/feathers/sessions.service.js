@@ -1281,7 +1281,10 @@ async function withHasWebserver(session) {
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
     is_global: Boolean(session.is_global),
-    codeserver_url: absoluteWorktreePath ? getCodeserverUrl(absoluteWorktreePath) : null,
+    codeserver_url:
+      absoluteWorktreePath && !isGlobalSession(session)
+        ? getCodeserverUrl(absoluteWorktreePath)
+        : null,
   };
 }
 

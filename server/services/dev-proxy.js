@@ -371,13 +371,17 @@ export class DevProxy {
     return signed.startsWith('s:') ? unsign(signed.slice(2), ENCRYPTION_KEY) : false;
   }
 
+  _forwardProxyResponse(proxyRes, res) {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    // Upstream may send headers long before the first body chunk (SSE, slow SSR, etc.).
+    res.flushHeaders?.();
+    proxyRes.pipe(res);
+  }
+
   _proxyRequest(req, res, port, hostname = '127.0.0.1') {
     const proxyReq = http.request(
       { hostname, port, path: req.url, method: req.method, headers: req.headers },
-      (proxyRes) => {
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
-        proxyRes.pipe(res);
-      }
+      (proxyRes) => this._forwardProxyResponse(proxyRes, res)
     );
     proxyReq.on('error', () => {
       if (!res.headersSent) res.writeHead(502);

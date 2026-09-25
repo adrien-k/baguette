@@ -1212,6 +1212,7 @@ describe('Sessions service - find, get, create', (hooks) => {
         );
 
       expect(session.is_global).toBe(true);
+      expect(session.codeserver_url).toBeNull();
       expect(session.worktree_path).toBe('repos');
       expect(session.repo_id).toBeNull();
       expect(session.auto_push).toBeFalsy();
