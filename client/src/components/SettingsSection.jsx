@@ -7,12 +7,15 @@ export function SettingsTabHeader({ title, children }) {
   );
 }
 
-export function SettingsSection({ title, description, children }) {
+export function SettingsSection({ title, description, headerAside, children }) {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-6 space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
-        {description ? <p className="text-sm text-zinc-500 mt-1">{description}</p> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+          {description ? <p className="text-sm text-zinc-500 mt-1">{description}</p> : null}
+        </div>
+        {headerAside ? <div className="shrink-0 pt-0.5">{headerAside}</div> : null}
       </div>
       {children}
     </section>

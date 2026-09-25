@@ -51,7 +51,12 @@ import {
 } from '../config.js';
 import { ok, fail } from './baguette-mcp-tool-result.js';
 import { buildBaguetteAccountToolList } from './baguette-account-mcp-tools.js';
+import {
+  buildReviewerIssueMcpTools,
+  buildSessionAgentIssueMcpTools,
+} from './baguette-issue-mcp-tools.js';
 import { GLOBAL_SESSION_EXCLUDED_MCP_TOOLS, isGlobalSession } from '../../shared/session-scope.js';
+import { createCurrentSessionInfoTool } from './current-session-info.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -237,6 +242,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
   const tools = [
     ...accountTools,
+    ...buildSessionAgentIssueMcpTools(session, app),
 
     // ── Git ────────────────────────────────────────────────────────────────
 
@@ -328,18 +334,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
     // ── PR info ────────────────────────────────────────────────────────────
 
-    {
-      name: 'ReadSessionInfo',
-      description: 'Get the current session label and stored PR description.',
-      schema: {},
-      handler: async () => {
-        const session = await getSession();
-        return ok({
-          label: session?.label ?? null,
-          description: session?.pr_description ?? null,
-        });
-      },
-    },
+    createCurrentSessionInfoTool(getSession),
 
     {
       name: 'UpdateSession',
@@ -1184,9 +1179,7 @@ export async function buildBaguetteMcpServer(session, app) {
   });
 }
 
-export async function buildCursorCustomTools(session, app) {
-  const slackApps = await loadConfiguredSlackApps(app);
-  const toolList = await buildBaguetteToolList(session, app, { slackApps });
+function toolListToCursorCustomTools(toolList) {
   return Object.fromEntries(
     toolList.map(({ name, description, schema, handler }) => {
       const hasSchema = Object.keys(schema).length > 0;
@@ -1194,4 +1187,24 @@ export async function buildCursorCustomTools(session, app) {
       return [name, { description, inputSchema, execute: (args) => handler(args) }];
     })
   );
+}
+
+export async function buildCursorCustomTools(session, app) {
+  const slackApps = await loadConfiguredSlackApps(app);
+  const toolList = await buildBaguetteToolList(session, app, { slackApps });
+  return toolListToCursorCustomTools(toolList);
+}
+
+export function buildReviewerMcpServer(session, app) {
+  const toolList = buildReviewerIssueMcpTools(session, app);
+  return createSdkMcpServer({
+    name: 'baguette',
+    tools: toolList.map(({ name, description, schema, handler }) =>
+      tool(name, description, schema, handler)
+    ),
+  });
+}
+
+export function buildReviewerCursorCustomTools(session, app) {
+  return toolListToCursorCustomTools(buildReviewerIssueMcpTools(session, app));
 }

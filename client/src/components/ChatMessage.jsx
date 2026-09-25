@@ -5,6 +5,8 @@ import ThinkingBlock from './chat/ThinkingBlock.jsx';
 import BaguetteBlock from './chat/BaguetteBlock.jsx';
 import McpAgentBlock, { isMcpAgentMessage } from './chat/McpAgentBlock.jsx';
 import ToolUseBlock from './chat/ToolUseBlock.jsx';
+import { isHumanUserMessage } from '@baguette/shared/turn-model.js';
+import { messageModelLabel } from '../utils/messageModelLabel.js';
 
 /**
  * A `user` message Baguette wrote on the session's behalf. `source` rides in the message payload;
@@ -25,10 +27,7 @@ function isMcpMessage(message) {
  * Neither is the user replying.
  */
 function isHumanReply(message) {
-  if (message.type !== 'user' || isBaguetteMessage(message)) return false;
-  const content = message.message?.content;
-  if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');
-  return true;
+  return isHumanUserMessage(message) && !isBaguetteMessage(message);
 }
 
 function CopyButton({ text }) {
@@ -64,6 +63,7 @@ export default function ChatMessage({
   agentName = 'Claude',
   messageIndex,
   allMessages,
+  models = [],
 }) {
   // True once the user sends a real message after this assistant turn — used to hide action
   // buttons on ExitPlanMode / AskUserQuestion blocks once the user has interacted.
@@ -121,6 +121,13 @@ export default function ChatMessage({
 
   if (message.type === 'user') {
     const content = message.message?.content;
+    const turnModelLabel = isHumanReply(message)
+      ? messageModelLabel({
+          model: message.model,
+          modelParams: message.model_params,
+          models,
+        })
+      : null;
     const userText = Array.isArray(content)
       ? content
           .filter((b) => b.type === 'text')
@@ -139,6 +146,11 @@ export default function ChatMessage({
                 hour: '2-digit',
                 minute: '2-digit',
               })}
+            </span>
+          )}
+          {turnModelLabel && (
+            <span className="text-zinc-500 font-normal truncate max-w-[12rem] sm:max-w-xs">
+              {turnModelLabel}
             </span>
           )}
           {userText && (
@@ -176,6 +188,19 @@ export default function ChatMessage({
                   >
                     <span>📄</span>
                     <span>{block.name || 'document'}</span>
+                  </div>
+                );
+              }
+              if (block.type === 'file_reference') {
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-1.5 text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1 w-fit font-mono"
+                  >
+                    <span className="text-amber-400/80">@</span>
+                    <span>
+                      {block.path}:{block.line}
+                    </span>
                   </div>
                 );
               }

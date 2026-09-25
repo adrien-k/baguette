@@ -12,6 +12,9 @@ import { registerPluginsService } from './plugins.service.js';
 import { registerSlackService } from './slack.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerLoopsService } from './loops.service.js';
+import { registerSessionIssuesService } from './session-issues.service.js';
+import { registerSessionReviewMessagesService } from './session-review-messages.service.js';
+import { registerSessionReviewService } from './session-review.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
 /**
@@ -32,6 +35,9 @@ export function registerFeathersServices(app, sseManager) {
   registerPluginsService(app);
   registerSlackService(app);
   registerLoopsService(app);
+  registerSessionIssuesService(app);
+  registerSessionReviewMessagesService(app);
+  registerSessionReviewService(app);
 
   // Route service CRUD events to the right SSE connections
   for (const event of CRUD_EVENTS) {
@@ -60,6 +66,19 @@ export function registerFeathersServices(app, sseManager) {
 
     app.service('loops').on(event, (data) => {
       if (data?.user_id) sseManager.send(data.user_id, { service: 'loops', event, data });
+    });
+
+    app.service('session-issues').on(event, async (data) => {
+      if (!data?.session_id) return;
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session) sseManager.send(session.user_id, { service: 'session-issues', event, data });
+    });
+
+    app.service('session-review-messages').on(event, async (data) => {
+      if (!data?.session_id) return;
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session)
+        sseManager.send(session.user_id, { service: 'session-review-messages', event, data });
     });
   }
 

@@ -479,6 +479,19 @@ describe('Loops service', (hooks) => {
       );
     });
 
+    it('attaches the loop model to the tied-session prompt', async () => {
+      const sessionId = await seedSession();
+      const loop = await makeDueSingleSessionLoop({ model: 'sonnet' });
+      await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+
+      await app.service('loops').runDue();
+
+      expect(queuedCreate.mock.calls[0][0]).toMatchObject({
+        session_id: sessionId,
+        model: 'sonnet',
+      });
+    });
+
     it('takes the queued prompt back out if compaction cannot be started', async () => {
       const sessionId = await seedSession();
       const loop = await makeDueSingleSessionLoop();

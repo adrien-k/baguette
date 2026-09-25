@@ -5,10 +5,12 @@ import {
   CircleCheck,
   MessageSquare,
   GitCompare,
+  ClipboardCheck,
   RotateCcw,
   ChevronRight,
   ChevronDown,
   Terminal,
+  Square,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -20,20 +22,22 @@ import {
 import { toastError } from '../../utils/toastError.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
+import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
+import Toggle from '../../components/Toggle.jsx';
 import QueuedMessages from '../../components/QueuedMessages.jsx';
 import TiedLoopMessages from '../../components/TiedLoopMessages.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
-import { isMobile } from '../../utils/isMobile.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
-import SessionModelSelect from '../../components/SessionModelSelect.jsx';
+import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import AnchoredMenu from '../../components/AnchoredMenu.jsx';
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import { schedulePayload } from '../../utils/loopSchedule.js';
+import { turnModelCreateFields } from '@baguette/shared/turn-model.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
 const CHECK_COMMENTS_PROMPT_BUILDER =
@@ -115,12 +119,34 @@ export default function ChatView({
   const [creatingLoop, setCreatingLoop] = useState(false);
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
+  const [composerModel, setComposerModel] = useState(session?.model ?? null);
+  const [composerModelParams, setComposerModelParams] = useState(session?.model_params ?? null);
+
+  useEffect(() => {
+    setComposerModel(session?.model ?? null);
+    setComposerModelParams(session?.model_params ?? null);
+  }, [session?.id, session?.model, session?.model_params]);
+
+  const composerTurnFields = () =>
+    turnModelCreateFields({ model: composerModel, model_params: composerModelParams });
+
+  const handleComposerModelChange = (modelId, modelParamsJson) => {
+    setComposerModel(modelId);
+    setComposerModelParams(modelParamsJson ?? null);
+    onModelChange?.(modelId, modelParamsJson);
+  };
+
+  const handlePlanModeChange = (enabled) => {
+    if (!session?.id) return;
+    sessionsService
+      .patch(session.id, { plan_mode: enabled })
+      .catch((err) => toastError('Failed to toggle plan mode', err));
+  };
 
   const isRunning = session?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
   const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
-  const canSubmitSend = canSendDraft && !isRunning;
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
 
@@ -249,13 +275,16 @@ export default function ChatView({
     }
   };
 
-  const chatInputRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const topSentinelRef = useRef(null);
   const messagesEndRef = useRef(null);
   const scrollAnchor = useRef(null);
   const isLoadingMoreRef = useRef(false);
   const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    isAtBottomRef.current = true;
+  }, [session?.id]);
 
   useLayoutEffect(() => {
     if (scrollAnchor.current && scrollContainerRef.current) {
@@ -277,13 +306,20 @@ export default function ChatView({
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isLoadingMoreRef.current && isAtBottomRef.current && scrollContainerRef.current) {
       const container = scrollContainerRef.current;
       container.scrollTop = container.scrollHeight;
     }
     isLoadingMoreRef.current = false;
   }, [messages]);
+
+  useLayoutEffect(() => {
+    if (loading || !scrollContainerRef.current || isLoadingMoreRef.current) return;
+    if (!isAtBottomRef.current) return;
+    const container = scrollContainerRef.current;
+    container.scrollTop = container.scrollHeight;
+  }, [loading, session?.id]);
 
   const handleLoadMore = useCallback(() => {
     if (!hasMore || loadingMore) return;
@@ -310,21 +346,6 @@ export default function ChatView({
     return () => observer.disconnect();
   }, [handleLoadMore, hasMore]);
 
-  const handleChatInputChange = (e) => {
-    setInput(e.target.value);
-    const el = e.target;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
-  };
-
-  const handleChatKeyDown = (e) => {
-    if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (isRunning) return;
-      handleSend();
-    }
-  };
-
   const buildContent = async (text, filesToSend) => {
     if (filesToSend.length) {
       const fileBlocks = await Promise.all(filesToSend.map(fileToContentBlock));
@@ -333,11 +354,12 @@ export default function ChatView({
     return text;
   };
 
-  const sendMessage = async (messageJson, { force = false } = {}) => {
+  const sendMessage = async (messageJson, { force = false, model, model_params } = {}) => {
     await messagesService.create({
       session_id: session.id,
       type: 'user',
       message_json: messageJson,
+      ...turnModelCreateFields({ model, model_params }),
       ...(force ? { force: true } : {}),
     });
   };
@@ -354,7 +376,6 @@ export default function ChatView({
     setFileError(null);
     const filesToSend = files;
     setFiles([]);
-    if (chatInputRef.current) chatInputRef.current.style.height = 'auto';
 
     setSending(true);
     let messageJson;
@@ -373,6 +394,7 @@ export default function ChatView({
         session_id: session.id,
         message_json: messageJson,
         send_at: sendAtIso,
+        ...composerTurnFields(),
       });
       setInput('');
       persistentState.clear();
@@ -440,8 +462,8 @@ export default function ChatView({
             auto_push: !!session.auto_push,
           };
       if (session.agent_sdk) payload.agent_sdk = session.agent_sdk;
-      if (session.model) payload.model = session.model;
-      if (session.model_params) payload.model_params = session.model_params;
+      if (composerModel) payload.model = composerModel;
+      if (composerModelParams) payload.model_params = composerModelParams;
       if (session.plugins?.length) payload.plugins = session.plugins;
       await loopsService.create({ ...payload, ...schedulePayload(schedule) });
       setInput('');
@@ -464,7 +486,6 @@ export default function ChatView({
     setFileError(null);
     const filesToSend = files;
     setFiles([]);
-    if (chatInputRef.current) chatInputRef.current.style.height = 'auto';
 
     setSending(true);
     let content;
@@ -481,7 +502,7 @@ export default function ChatView({
     const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
 
     try {
-      await sendMessage(messageJson);
+      await sendMessage(messageJson, composerTurnFields());
       persistentState.clear();
     } catch (err) {
       setInput(text);
@@ -512,7 +533,11 @@ export default function ChatView({
   const handleQueueSendNow = async (item) => {
     try {
       await queuedMessagesService.remove(item.id);
-      await sendMessage(item.message_json, { force: true });
+      await sendMessage(item.message_json, {
+        force: true,
+        model: item.model,
+        model_params: item.model_params,
+      });
     } catch (err) {
       toastError('Failed to send message', err);
     }
@@ -529,140 +554,148 @@ export default function ChatView({
   return (
     <>
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <div className="relative flex-1 min-h-0 min-w-0">
-          <div
-            className="absolute inset-0 overflow-auto p-3 sm:p-4 space-y-3 pb-14"
-            ref={scrollContainerRef}
-          >
-            {loading ? (
-              <div
-                className="flex h-full items-center justify-center"
-                role="status"
-                aria-label="Loading conversation"
-              >
-                <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <>
-                <div ref={topSentinelRef} className="h-px" />
-                {loadingMore && (
-                  <div className="flex justify-center py-2">
-                    <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-                {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
-                {displayMessages.map((msg, i) => (
-                  <ChatMessage
-                    key={i}
-                    message={msg}
-                    isLatestMessage={i === displayMessages.length - 1}
-                    worktreePath={session.absolute_worktree_path}
-                    sessionId={session.id}
-                    agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-                    messageIndex={i}
-                    allMessages={displayMessages}
-                  />
-                ))}
-                {isProvisioning && (
-                  <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
-                    <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
-                    Setting up worktree…
-                  </div>
-                )}
-                {!readonly && canContinueAfterRestart && (
-                  <div className="flex gap-2 flex-wrap py-2">
+        <ChatMessagesViewport showBottomFade={!readonly} scrollRef={scrollContainerRef}>
+          {loading ? (
+            <div
+              className="flex h-full items-center justify-center"
+              role="status"
+              aria-label="Loading conversation"
+            >
+              <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              <div ref={topSentinelRef} className="h-px" />
+              {loadingMore && (
+                <div className="flex justify-center py-2">
+                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
+              {displayMessages.map((msg, i) => (
+                <ChatMessage
+                  key={i}
+                  message={msg}
+                  isLatestMessage={i === displayMessages.length - 1}
+                  worktreePath={session.absolute_worktree_path}
+                  sessionId={session.id}
+                  agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                  messageIndex={i}
+                  allMessages={displayMessages}
+                  models={models}
+                />
+              ))}
+              {isProvisioning && (
+                <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
+                  <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                  Setting up worktree…
+                </div>
+              )}
+              {!readonly && canContinueAfterRestart && (
+                <div className="flex gap-2 flex-wrap py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickSend('continue')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Continue
+                  </button>
+                </div>
+              )}
+              {session?.archived_at && (
+                <div className="flex gap-2 flex-wrap py-2">
+                  <Tooltip content="Recreate the worktree on the same branch and resume this session.">
                     <button
                       type="button"
-                      onClick={() => handleQuickSend('continue')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      onClick={handleRestore}
+                      disabled={restoring}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      Continue
+                      {restoring ? 'Restoring…' : 'Restore'}
                     </button>
-                  </div>
-                )}
-                {session?.archived_at && (
+                  </Tooltip>
+                </div>
+              )}
+              {!readonly &&
+                !isProvisioning &&
+                !isGlobalSession(session) &&
+                session?.status !== 'running' &&
+                session?.pr_status !== 'merged' && (
                   <div className="flex gap-2 flex-wrap py-2">
-                    <Tooltip content="Recreate the worktree on the same branch and resume this session.">
+                    <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
                       <button
                         type="button"
-                        onClick={handleRestore}
-                        disabled={restoring}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        onClick={() =>
+                          handleQuickSend(
+                            'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
+                          )
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        {restoring ? 'Restoring…' : 'Restore'}
+                        <GitPullRequest className="w-3.5 h-3.5" />
+                        Git sync
                       </button>
                     </Tooltip>
-                  </div>
-                )}
-                {!readonly &&
-                  !isProvisioning &&
-                  !isGlobalSession(session) &&
-                  session?.status !== 'running' &&
-                  session?.pr_status !== 'merged' && (
-                    <div className="flex gap-2 flex-wrap py-2">
-                      <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleQuickSend(
-                              'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-                            )
-                          }
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                        >
-                          <GitPullRequest className="w-3.5 h-3.5" />
-                          Git sync
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Merge the pull request into the base branch.">
-                        <button
-                          type="button"
-                          onClick={() => setShowMergeModal(true)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                        >
-                          <GitMerge className="w-3.5 h-3.5" />
-                          Merge
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Check all PR workflow statuses and fix problems.">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleQuickSend(
-                              'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
-                            )
-                          }
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                        >
-                          <CircleCheck className="w-3.5 h-3.5" />
-                          Check CI
-                        </button>
-                      </Tooltip>
-                      <Tooltip
-                        content={
-                          isReviewerSession
-                            ? CHECK_COMMENTS_TOOLTIP_REVIEWER
-                            : CHECK_COMMENTS_TOOLTIP_BUILDER
-                        }
+                    <Tooltip content="Merge the pull request into the base branch.">
+                      <button
+                        type="button"
+                        onClick={() => setShowMergeModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
                       >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleQuickSend(
-                              isReviewerSession
-                                ? CHECK_COMMENTS_PROMPT_REVIEWER
-                                : CHECK_COMMENTS_PROMPT_BUILDER
-                            )
-                          }
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          Check comments
-                        </button>
-                      </Tooltip>
-                      {onViewChange && (
+                        <GitMerge className="w-3.5 h-3.5" />
+                        Merge
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Check all PR workflow statuses and fix problems.">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleQuickSend(
+                            'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
+                          )
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      >
+                        <CircleCheck className="w-3.5 h-3.5" />
+                        Check CI
+                      </button>
+                    </Tooltip>
+                    <Tooltip
+                      content={
+                        isReviewerSession
+                          ? CHECK_COMMENTS_TOOLTIP_REVIEWER
+                          : CHECK_COMMENTS_TOOLTIP_BUILDER
+                      }
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleQuickSend(
+                            isReviewerSession
+                              ? CHECK_COMMENTS_PROMPT_REVIEWER
+                              : CHECK_COMMENTS_PROMPT_BUILDER
+                          )
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        Check comments
+                      </button>
+                    </Tooltip>
+                    {onViewChange && (
+                      <>
+                        <Tooltip content="Open the Issues tab to run a code review.">
+                          <button
+                            type="button"
+                            onClick={() => onViewChange('review')}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                          >
+                            <ClipboardCheck className="w-3.5 h-3.5" />
+                            Review code
+                          </button>
+                        </Tooltip>
                         <Tooltip content="View a diff of all changes in this session.">
                           <button
                             type="button"
@@ -673,20 +706,14 @@ export default function ChatView({
                             Diff
                           </button>
                         </Tooltip>
-                      )}
-                    </div>
-                  )}
-                <div ref={messagesEndRef} />
-              </>
-            )}
-          </div>
-          {!readonly && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-zinc-950 to-transparent z-[1]"
-              aria-hidden
-            />
+                      </>
+                    )}
+                  </div>
+                )}
+              <div ref={messagesEndRef} />
+            </>
           )}
-        </div>
+        </ChatMessagesViewport>
 
         {error && (
           <div className="shrink-0 px-3 py-2 bg-red-950/80 border-t border-red-800 text-red-200 text-xs">
@@ -695,7 +722,7 @@ export default function ChatView({
         )}
 
         {!readonly && (queue.length > 0 || tiedLoops.length > 0) && (
-          <div className="border-t border-zinc-800 pt-2">
+          <div className={`shrink-0 flex flex-col gap-2 pb-1 ${CHAT_COLUMN_CLASS}`}>
             <QueuedMessages
               queue={queue}
               onDelete={handleQueueDelete}
@@ -711,12 +738,9 @@ export default function ChatView({
         )}
 
         {!readonly && (
-          <form
-            onSubmit={handleSend}
-            className="relative z-[2] shrink-0 bg-zinc-950 px-3 sm:px-4 pb-3 sm:pb-4 pt-1"
-          >
+          <div className="relative z-[2] shrink-0 bg-zinc-950 pb-3 sm:pb-4 pt-1">
             <FileAttachmentPicker
-              className="w-full"
+              className={`w-full ${CHAT_COLUMN_CLASS}`}
               files={files}
               onAdd={(picked) => {
                 setFileError(null);
@@ -726,124 +750,113 @@ export default function ChatView({
               error={fileError}
             >
               {({ attachButton }) => (
-                <div className="rounded-lg border border-zinc-700 bg-zinc-800 focus-within:ring-2 focus-within:ring-amber-500/50 overflow-visible">
-                  <textarea
-                    ref={chatInputRef}
-                    id="chat-input"
-                    rows={1}
-                    value={input}
-                    onChange={handleChatInputChange}
-                    onKeyDown={handleChatKeyDown}
-                    placeholder={`Message ${session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
-                    className="block w-full bg-transparent px-3 sm:px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-y-auto rounded-t-lg"
-                    style={{ maxHeight: '160px' }}
-                  />
-                  <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
-                    <SessionModelSelect
-                      session={session}
-                      models={models}
-                      cursorFast={cursorFast}
-                      cursorEffort={cursorEffort}
-                      onModelChange={onModelChange}
+                <AgentMessageComposer
+                  skipColumn
+                  formClassName=""
+                  value={input}
+                  onChange={setInput}
+                  onSubmit={handleSend}
+                  placeholder={`Message ${session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
+                  sending={sending}
+                  session={session}
+                  models={models}
+                  cursorFast={cursorFast}
+                  cursorEffort={cursorEffort}
+                  onModelChange={handleComposerModelChange}
+                  toolbarStart={
+                    <Toggle
+                      checked={!!session.plan_mode}
+                      onChange={handlePlanModeChange}
+                      label="Plan"
+                      title={session.plan_mode ? 'Disable plan mode' : 'Enable plan mode'}
                     />
-                    <div className="flex-1 min-w-0" />
-                    {attachButton}
-                    {isRunning && (
-                      <button
-                        type="button"
-                        onClick={handleStop}
-                        disabled={stopping}
-                        title="Stop"
-                        className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0"
-                      >
-                        ■
-                      </button>
-                    )}
-                    <div className="flex shrink-0">
-                      {isRunning ? (
-                        <Tooltip content={SEND_BLOCKED_WHILE_TURN_TOOLTIP} wrap placement="top-end">
-                          <button
-                            type="submit"
-                            disabled={!canSubmitSend}
-                            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-1.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
-                          >
-                            {sending ? '...' : 'Send'}
-                          </button>
-                        </Tooltip>
-                      ) : (
+                  }
+                  textareaId="chat-input"
+                  canSend={canSendDraft}
+                  submitDisabled={isRunning}
+                  submitLabel={isProvisioning ? 'Queue' : 'Send'}
+                  submitTooltip={isRunning ? SEND_BLOCKED_WHILE_TURN_TOOLTIP : undefined}
+                  toolbarExtra={
+                    <>
+                      {attachButton}
+                      {isRunning && (
                         <button
-                          type="submit"
-                          disabled={!canSendDraft}
-                          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 px-4 sm:px-5 py-1.5 rounded-l-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+                          type="button"
+                          onClick={handleStop}
+                          disabled={stopping}
+                          title="Stop"
+                          className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0"
                         >
-                          {sending ? '...' : isProvisioning ? 'Queue' : 'Send'}
+                          <Square className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      <AnchoredMenu
-                        open={scheduleMenuOpen}
-                        onOpenChange={setScheduleMenuOpen}
-                        placement="top-end"
-                        className="w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden py-1"
-                        reference={({ ref, referenceProps }) => (
+                    </>
+                  }
+                  sendAddon={
+                    <AnchoredMenu
+                      open={scheduleMenuOpen}
+                      onOpenChange={setScheduleMenuOpen}
+                      placement="top-end"
+                      className="w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden py-1"
+                      reference={({ ref, referenceProps }) => (
+                        <button
+                          type="button"
+                          ref={ref}
+                          {...referenceProps}
+                          disabled={!canOpenScheduleMenu}
+                          onClick={(e) => {
+                            referenceProps.onClick?.(e);
+                            if (canOpenScheduleMenu) setScheduleMenuOpen((v) => !v);
+                          }}
+                          title="Schedule"
+                          aria-expanded={scheduleMenuOpen}
+                          aria-haspopup="menu"
+                          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-1.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
+                        >
+                          <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
+                        </button>
+                      )}
+                    >
+                      <div role="menu">
+                        {[
+                          { label: 'Send in 30 minutes', delayMs: 30 * 60_000 },
+                          { label: 'Send in 1 hour', delayMs: 3_600_000 },
+                          { label: 'Send in 2 hours', delayMs: 2 * 3_600_000 },
+                          { label: 'Send in 4 hours', delayMs: 4 * 3_600_000 },
+                        ].map(({ label, delayMs }) => (
                           <button
-                            type="button"
-                            ref={ref}
-                            {...referenceProps}
-                            disabled={!canOpenScheduleMenu}
-                            onClick={(e) => {
-                              referenceProps.onClick?.(e);
-                              if (canOpenScheduleMenu) setScheduleMenuOpen((v) => !v);
-                            }}
-                            title="Schedule"
-                            aria-expanded={scheduleMenuOpen}
-                            aria-haspopup="menu"
-                            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-1.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
-                          >
-                            <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
-                          </button>
-                        )}
-                      >
-                        <div role="menu">
-                          {[
-                            { label: 'Send in 30 minutes', delayMs: 30 * 60_000 },
-                            { label: 'Send in 1 hour', delayMs: 3_600_000 },
-                            { label: 'Send in 2 hours', delayMs: 2 * 3_600_000 },
-                            { label: 'Send in 4 hours', delayMs: 4 * 3_600_000 },
-                          ].map(({ label, delayMs }) => (
-                            <button
-                              key={delayMs}
-                              type="button"
-                              role="menuitem"
-                              onClick={() => handleSchedulePreset(delayMs)}
-                              className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
-                            >
-                              {label}
-                            </button>
-                          ))}
-                          <button
+                            key={delayMs}
                             type="button"
                             role="menuitem"
-                            onClick={openScheduleModal}
+                            onClick={() => handleSchedulePreset(delayMs)}
                             className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
                           >
-                            Schedule
+                            {label}
                           </button>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={openRegularlyModal}
-                            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
-                          >
-                            Send regularly
-                          </button>
-                        </div>
-                      </AnchoredMenu>
-                    </div>
-                  </div>
-                </div>
+                        ))}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={openScheduleModal}
+                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                        >
+                          Schedule
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={openRegularlyModal}
+                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                        >
+                          Send regularly
+                        </button>
+                      </div>
+                    </AnchoredMenu>
+                  }
+                />
               )}
             </FileAttachmentPicker>
-          </form>
+          </div>
         )}
       </div>
       {showScheduleModal && (

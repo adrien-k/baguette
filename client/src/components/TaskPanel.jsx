@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Play, RotateCw, Square, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/dates.js';
 import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
+import { SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
+import BaguetteIcon from './svg/BaguetteIcon.jsx';
 
 function TaskMetaLine({ task }) {
   const duration = useTaskRunDuration(task);
@@ -146,10 +148,7 @@ export default function TaskPanel({
               placeholder="Run a command..."
               className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
             />
-            <button
-              type="submit"
-              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
-            >
+            <button type="submit" className={`${SECONDARY_BUTTON_CLASS} rounded-lg shrink-0`}>
               Run
             </button>
           </div>
@@ -159,7 +158,7 @@ export default function TaskPanel({
       <div className="flex-1 overflow-auto">
         {tasks.length === 0 && (
           <div className="flex flex-col items-center py-10 gap-2 opacity-40">
-            <img src="/baguette.svg" alt="" className="w-7 h-7" />
+            <BaguetteIcon className="w-7 h-7" />
             <p className="text-zinc-600 text-xs">No tasks yet</p>
           </div>
         )}

@@ -200,4 +200,27 @@ describe('claude usage recording', () => {
       expect.anything()
     );
   });
+
+  it('records review usage without mixing chat running totals', async () => {
+    const { sessionId } = await seed();
+    const service = makeService();
+    const session = await db('sessions').where({ id: sessionId }).first();
+
+    await service.onMessageCreated(
+      resultMessage(sessionId, { cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } })
+    );
+    await service.recordClaudeUsage(
+      session,
+      { total_cost_usd: 0.01, modelUsage: { 'claude-opus-5': modelUsage(10, 5) } },
+      { kind: 'review', totalsKey: `review:${sessionId}`, patchSessionCost: true }
+    );
+
+    const rows = await usageRows(sessionId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].kind).toBeNull();
+    expect(rows[1].kind).toBe('review');
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.01, 6);
+    expect(rows[1].input_tokens).toBe(10);
+    expect(rows[1].output_tokens).toBe(5);
+  });
 });

@@ -188,11 +188,47 @@ describe('global sessions', () => {
     expect(names).not.toContain('ConfigRepoPrompt');
     expect(names).not.toContain('ListProjectCommands');
     expect(names).toContain('UpdateSession');
-    expect(names).toContain('ReadSessionInfo');
+    expect(names).toContain('CurrentSessionInfo');
+    expect(names).toContain('ListIssues');
+    expect(names).toContain('ReadIssue');
+    expect(names).toContain('UpdateIssueStatus');
+    expect(names).not.toContain('CreateIssue');
+  });
+});
+
+describe('CurrentSessionInfo', () => {
+  it('returns worktree path and branches for repo sessions', async () => {
+    const { tools } = await buildServer({
+      base_branch: 'develop',
+      created_branch: 'feat/x',
+      remote_branch: 'feat/x-remote',
+    });
+    const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
+    expect(result.ok).toBe(true);
+    expect(result.worktree_path).toBe('/tmp/wt');
+    expect(result.base_branch).toBe('develop');
+    expect(result.session_branch).toBe('feat/x-remote');
+    expect(result.git_diff_against_base).toBe('git diff origin/develop...HEAD');
+  });
+
+  it('does not report .baguette.yaml status (that lives in the build prompt)', async () => {
+    const { tools } = await buildServer();
+    const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
+    expect(result.has_baguette_yaml).toBeUndefined();
+    expect(result.baguette_config_notice).toBeUndefined();
   });
 });
 
 describe('PrRead', () => {
+  it('includes ListIssues, ReadIssue and UpdateIssueStatus but not reviewer CRUD', async () => {
+    const { tools } = await buildServer();
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('ListIssues');
+    expect(names).toContain('ReadIssue');
+    expect(names).toContain('UpdateIssueStatus');
+    expect(names).not.toContain('CreateIssue');
+    expect(names).not.toContain('DeleteIssue');
+  });
   it('returns pr_url: null and a message when no PR exists', async () => {
     const { tools } = await buildServer({ pr_url: null, pr_number: null, remote_branch: 'feat' });
     const result = parseResult(await callTool(tools, 'PrRead'));

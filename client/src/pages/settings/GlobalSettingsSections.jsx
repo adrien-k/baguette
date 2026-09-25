@@ -415,8 +415,8 @@ export function SystemTab() {
   return (
     <div>
       <SettingsTabHeader title="System">
-        CPU, memory, and disk on the host running Baguette. Disk usage is for the data directory
-        where repositories, sessions, and the database are stored.
+        Host resources, every repository registered on this server, and the shared Docker Compose
+        stack used by sessions. Disk usage is for the data directory.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -495,12 +495,15 @@ export function SystemTab() {
             </div>
           </SettingsSection>
         ) : null}
+
+        <AllRepositoriesSection />
+        <DockerComposeSection />
       </div>
     </div>
   );
 }
 
-export function DockerTab() {
+function DockerComposeSection() {
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -586,103 +589,99 @@ export function DockerTab() {
   ];
 
   return (
-    <div>
-      <SettingsTabHeader title="Docker">
-        Global Docker Compose configuration stored in the data directory. Services defined here are
-        available to all sessions.
-      </SettingsTabHeader>
+    <div className="space-y-6">
+      <SettingsSection
+        title="Docker"
+        description="Global Docker Compose configuration stored in the data directory. Services defined here are available to all sessions."
+      >
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={18}
+          spellCheck={false}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-y leading-relaxed"
+          placeholder="# docker-compose.yml"
+        />
+        <div className="flex items-center gap-3 mt-4">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {saved && <span className="text-sm text-emerald-400">Saved</span>}
+        </div>
+      </SettingsSection>
 
-      <div className="space-y-6">
-        <SettingsSection title="docker-compose.yml">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={18}
-            spellCheck={false}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-y leading-relaxed"
-            placeholder="# docker-compose.yml"
-          />
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            {saved && <span className="text-sm text-emerald-400">Saved</span>}
-          </div>
-        </SettingsSection>
-
-        <SettingsSection title="Services">
-          <div className="divide-y divide-zinc-800">
-            {loadingServices && allServiceNames.length === 0 && (
-              <p className="text-zinc-600 text-sm text-center py-6">Loading…</p>
-            )}
-            {!loadingServices && allServiceNames.length === 0 && (
-              <p className="text-zinc-600 text-sm text-center py-6">
-                No services defined. Add services to your docker-compose.yml and save.
-              </p>
-            )}
-            {allServiceNames.map((name) => {
-              const c = containerByService[name];
-              const state = c ? c.State || c.state || '' : '';
-              const image = c ? c.Image || c.image || '' : '';
-              return (
-                <div key={name} className="flex items-center justify-between py-3 gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(state)}`} />
-                    <div className="min-w-0">
-                      <code className="text-sm text-white font-medium">{name}</code>
-                      <div className="text-xs text-zinc-500 mt-0.5 truncate">
-                        {image && <span>{image}</span>}
-                        {state ? (
-                          <span className="ml-2">{state}</span>
-                        ) : (
-                          <span className="ml-2 italic">not started</span>
-                        )}
-                      </div>
+      <SettingsSection title="Docker services">
+        <div className="divide-y divide-zinc-800">
+          {loadingServices && allServiceNames.length === 0 && (
+            <p className="text-zinc-600 text-sm text-center py-6">Loading…</p>
+          )}
+          {!loadingServices && allServiceNames.length === 0 && (
+            <p className="text-zinc-600 text-sm text-center py-6">
+              No services defined. Add services to your docker-compose.yml and save.
+            </p>
+          )}
+          {allServiceNames.map((name) => {
+            const c = containerByService[name];
+            const state = c ? c.State || c.state || '' : '';
+            const image = c ? c.Image || c.image || '' : '';
+            return (
+              <div key={name} className="flex items-center justify-between py-3 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(state)}`} />
+                  <div className="min-w-0">
+                    <code className="text-sm text-white font-medium">{name}</code>
+                    <div className="text-xs text-zinc-500 mt-0.5 truncate">
+                      {image && <span>{image}</span>}
+                      {state ? (
+                        <span className="ml-2">{state}</span>
+                      ) : (
+                        <span className="ml-2 italic">not started</span>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!c && (
-                      <button
-                        onClick={() => handleContainerAction(name, 'up')}
-                        disabled={actionLoading !== null}
-                        className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50"
-                      >
-                        {actionLoading === `${name}:up` ? '…' : 'Start'}
-                      </button>
-                    )}
-                    {c &&
-                      ['start', 'stop', 'restart'].map((action) => (
-                        <button
-                          key={action}
-                          onClick={() => handleContainerAction(name, action)}
-                          disabled={actionLoading !== null}
-                          className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50 capitalize"
-                        >
-                          {actionLoading === `${name}:${action}` ? '…' : action}
-                        </button>
-                      ))}
-                  </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-1 shrink-0">
+                  {!c && (
+                    <button
+                      onClick={() => handleContainerAction(name, 'up')}
+                      disabled={actionLoading !== null}
+                      className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading === `${name}:up` ? '…' : 'Start'}
+                    </button>
+                  )}
+                  {c &&
+                    ['start', 'stop', 'restart'].map((action) => (
+                      <button
+                        key={action}
+                        onClick={() => handleContainerAction(name, action)}
+                        disabled={actionLoading !== null}
+                        className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50 capitalize"
+                      >
+                        {actionLoading === `${name}:${action}` ? '…' : action}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {allServiceNames.length > 0 && (
+          <div>
+            <button
+              onClick={loadServices}
+              disabled={loadingServices}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              {loadingServices ? 'Refreshing…' : 'Refresh'}
+            </button>
           </div>
-          {allServiceNames.length > 0 && (
-            <div>
-              <button
-                onClick={loadServices}
-                disabled={loadingServices}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                {loadingServices ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-          )}
-        </SettingsSection>
-      </div>
+        )}
+      </SettingsSection>
     </div>
   );
 }

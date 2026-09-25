@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
-import { buildSystemPromptAppend } from '../session-prompt.js';
+import { buildSystemPromptAppend, buildReviewSystemPromptAppend } from '../session-prompt.js';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -52,12 +52,12 @@ async function seedSession(fields = {}) {
 // ── buildSystemPromptAppend ───────────────────────────────────────────────────
 
 describe('buildSystemPromptAppend', () => {
-  it('returns a non-empty string containing the base_branch', async () => {
+  it('returns a non-empty string that points agents at CurrentSessionInfo', async () => {
     const session = await seedSession({ base_branch: 'my-feature' });
     const result = await buildSystemPromptAppend(session);
     expect(typeof result).toBe('string');
     expect(result.length).toBeGreaterThan(0);
-    expect(result).toContain('my-feature');
+    expect(result).toContain('CurrentSessionInfo');
   });
 
   it('includes commit/push instructions when auto_push=1', async () => {
@@ -80,18 +80,23 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('only commit when the user asks');
   });
 
-  it('includes baguette config notice when loadBaguetteConfig returns null', async () => {
+  it('tells agents to call ConfigRepoPrompt when .baguette.yaml is missing', async () => {
     const session = await seedSession();
     const result = await buildSystemPromptAppend(session);
-    expect(result).toContain('no .baguette.yaml config file');
+    expect(result).toContain('no `.baguette.yaml`');
+    expect(result).toContain('ConfigRepoPrompt');
+    expect(result).not.toContain('has_baguette_yaml');
+    expect(result).not.toContain('baguette_config_notice');
   });
 
-  it('omits baguette config notice when loadBaguetteConfig returns a config', async () => {
-    const { loadBaguetteConfig } = await import('../baguette-config.js');
-    loadBaguetteConfig.mockResolvedValueOnce({ webserver: { port: 3000 } });
-    const session = await seedSession();
-    const result = await buildSystemPromptAppend(session);
-    expect(result).not.toContain('no .baguette.yaml config file');
+  it('appends user agent_prompt to the base prompt block', async () => {
+    const session = await seedSession({ base_branch: 'main' });
+    session.absolute_worktree_path = '/tmp/wt';
+    const result = await buildSystemPromptAppend(session, {
+      agentPrompt: 'Always add unit tests.',
+    });
+    expect(result).toContain('Always add unit tests');
+    expect(result).toContain('Additional instructions');
   });
 
   it('uses the light global prompt for is_global sessions', async () => {
@@ -102,10 +107,31 @@ describe('buildSystemPromptAppend', () => {
     session.absolute_worktree_path = '/data/repos';
     const result = await buildSystemPromptAppend(session);
     expect(result).toContain('global session');
-    expect(result).toContain('/data/repos');
+    expect(result).toContain('CurrentSessionInfo');
     expect(result).toContain('CreateSession');
     expect(result).toContain('do not modify repository files on disk');
     expect(result).toContain('not available');
     expect(result).not.toContain('End-of-turn shipping');
+  });
+});
+
+describe('buildReviewSystemPromptAppend', () => {
+  it('tells the reviewer to open issues and reconcile resolved ones', async () => {
+    const session = await seedSession({
+      base_branch: 'main',
+      created_branch: 'feat/review',
+    });
+    session.absolute_worktree_path = '/tmp/wt';
+    const result = await buildReviewSystemPromptAppend(session, 'Watch for SQL injection.');
+    expect(result).toContain('CurrentSessionInfo');
+    expect(result).toContain('session_branch');
+    expect(result).toContain('CreateIssue');
+    expect(result).toContain('ListIssues');
+    expect(result).toContain('DeleteIssue');
+    expect(result).toContain('builder agent');
+    expect(result).toContain('you **must** delete');
+    expect(result).toContain('Watch for SQL injection');
+    expect(result).toContain('implement fixes');
+    expect(result).toContain('submitted');
   });
 });

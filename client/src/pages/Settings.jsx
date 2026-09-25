@@ -1,32 +1,54 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, GitBranch, Bell, KeyRound, Puzzle, Box, Users, Blocks, Monitor } from 'lucide-react';
+import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, Monitor } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
-import { usersService, reposService, userReposService } from '../feathers.js';
+import { usersService, reposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { requestNotificationPermission } from '../utils/notifications.js';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
-import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
 import McpAccessSection from '../components/McpAccessSection.jsx';
-import CursorModelPreferencesSection from '../components/CursorModelPreferencesSection.jsx';
-import UsageGraph from '../components/UsageGraph.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import {
   SecretsTab,
-  AllRepositoriesSection,
   PluginsTab,
-  DockerTab,
+  SystemTab,
   UsersTab,
   SlackTab,
-  SystemTab,
 } from './settings/GlobalSettingsSections.jsx';
+import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import { SettingsSection, SettingsTabHeader } from '../components/SettingsSection.jsx';
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
-function RepositoriesTab() {
+function RepositoriesTab({ settings, onSave }) {
+  const { user } = useAuth();
   const { repos, refetch: refetchRepos } = useRepoContext();
+  const [branchPrefix, setBranchPrefix] = useState('baguette/');
+  const [branchSaving, setBranchSaving] = useState(false);
+  const [branchSaved, setBranchSaved] = useState(false);
+
+  useEffect(() => {
+    if (!settings) return;
+    setBranchPrefix(settings.branch_prefix ?? 'baguette/');
+  }, [settings]);
+
+  const handleBranchSave = async (e) => {
+    e.preventDefault();
+    if (!user?.id) return;
+    setBranchSaving(true);
+    setBranchSaved(false);
+    try {
+      const updated = await usersService.patch(user.id, { branch_prefix: branchPrefix });
+      onSave(updated);
+      setBranchSaved(true);
+      setTimeout(() => setBranchSaved(false), 2000);
+    } catch (err) {
+      toastError('Failed to save branch settings', err);
+    } finally {
+      setBranchSaving(false);
+    }
+  };
 
   // GitHub repo state
   const [selectedRepo, setSelectedRepo] = useState('');
@@ -38,54 +60,6 @@ function RepositoriesTab() {
   // New local repo state
   const [localName, setLocalName] = useState('');
   const [addingLocal, setAddingLocal] = useState(false);
-  // Per-repo key state (anthropic + cursor)
-  const [repoKeyEditingId, setRepoKeyEditingId] = useState(null);
-  const [repoKeyField, setRepoKeyField] = useState('anthropic'); // 'anthropic' | 'cursor'
-  const [repoKeyValue, setRepoKeyValue] = useState(null);
-  const [repoKeyDirty, setRepoKeyDirty] = useState(false);
-  const [repoKeySaving, setRepoKeySaving] = useState(false);
-  // Local overrides per repo after save, until refetch
-  const [repoKeyOverrides, setRepoKeyOverrides] = useState({});
-  const [repoCursorKeyOverrides, setRepoCursorKeyOverrides] = useState({});
-
-  const openRepoKeyEdit = (repoId, field) => {
-    if (repoKeyEditingId === repoId && repoKeyField === field) {
-      setRepoKeyEditingId(null);
-    } else {
-      setRepoKeyEditingId(repoId);
-      setRepoKeyField(field);
-      setRepoKeyValue(null);
-      setRepoKeyDirty(false);
-    }
-  };
-
-  const handleRepoKeySave = async (repoId, userRepoId) => {
-    setRepoKeySaving(true);
-    try {
-      if (repoKeyField === 'anthropic') {
-        const result = await userReposService.patch(userRepoId, {
-          anthropic_api_key: repoKeyValue ?? '',
-        });
-        setRepoKeyOverrides((prev) => ({ ...prev, [repoId]: result.anthropic_api_key }));
-      } else {
-        const result = await userReposService.patch(userRepoId, {
-          cursor_api_key: repoKeyValue ?? '',
-        });
-        setRepoCursorKeyOverrides((prev) => ({ ...prev, [repoId]: result.cursor_api_key }));
-      }
-      setRepoKeyEditingId(null);
-      setRepoKeyValue(null);
-      setRepoKeyDirty(false);
-    } catch (err) {
-      toastError(
-        `Failed to save ${repoKeyField === 'anthropic' ? 'Anthropic' : 'Cursor'} Key`,
-        err
-      );
-    } finally {
-      setRepoKeySaving(false);
-    }
-  };
-
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!selectedRepo) return;
@@ -141,11 +115,42 @@ function RepositoriesTab() {
   return (
     <div>
       <SettingsTabHeader title="Repositories">
-        Repositories you can start sessions on. Link GitHub repositories or create local ones, and
-        set per-repo credentials that override your account keys.
+        Repositories you can start sessions on. Link GitHub repositories or create local ones.
+        Per-repo API keys and prompts are configured under Agent.
       </SettingsTabHeader>
 
       <div className="space-y-6">
+        <SettingsSection
+          title="Branch"
+          description="Default prefix for new session branches created from the dashboard or MCP."
+        >
+          <form onSubmit={handleBranchSave} className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
+              <input
+                type="text"
+                value={branchPrefix}
+                onChange={(e) => setBranchPrefix(e.target.value)}
+                placeholder="baguette/"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
+              <p className="mt-1 text-xs text-zinc-500">
+                Prefix added to all generated branch names. Leave empty for no prefix.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={branchSaving}
+                className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {branchSaving ? 'Saving…' : 'Save'}
+              </button>
+              {branchSaved && <span className="text-sm text-emerald-400">Saved</span>}
+            </div>
+          </form>
+        </SettingsSection>
+
         <SettingsSection
           title="My repositories"
           description="Repositories linked to your account. Removing one cleans up its data if no other users have it linked."
@@ -213,119 +218,39 @@ function RepositoriesTab() {
             {repos.length === 0 && (
               <p className="text-zinc-600 text-sm text-center py-8">No repositories added</p>
             )}
-            {repos.map((r) => {
-              const maskedAnthropicKey =
-                repoKeyOverrides[r.id] !== undefined ? repoKeyOverrides[r.id] : r.anthropic_api_key;
-              const maskedCursorKey =
-                repoCursorKeyOverrides[r.id] !== undefined
-                  ? repoCursorKeyOverrides[r.id]
-                  : r.cursor_api_key;
-              const isEditing = repoKeyEditingId === r.id;
-              const editingAnthropicKey = isEditing && repoKeyField === 'anthropic';
-              const _editingCursorKey = isEditing && repoKeyField === 'cursor';
-              const activeKeyMasked = editingAnthropicKey ? maskedAnthropicKey : maskedCursorKey;
-              return (
-                <div key={r.id} className="py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <code className="text-sm text-white font-medium">
-                          {repoDisplayName(r.full_name)}
-                        </code>
-                        {isLocalRepo(r.full_name) && (
-                          <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">
-                            local
-                          </span>
-                        )}
-                      </div>
-                      {r.full_name.startsWith('/') && (
-                        <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">
-                          {r.full_name}
-                        </div>
-                      )}
-                      <div className="text-xs text-zinc-500 mt-0.5">
-                        {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => openRepoKeyEdit(r.id, 'anthropic')}
-                        className={`text-xs ${maskedAnthropicKey ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-zinc-300'}`}
-                      >
-                        {maskedAnthropicKey ? 'Claude Key ✓' : 'Claude Key'}
-                      </button>
-                      <button
-                        onClick={() => openRepoKeyEdit(r.id, 'cursor')}
-                        className={`text-xs ${maskedCursorKey ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-zinc-300'}`}
-                      >
-                        {maskedCursorKey ? 'Cursor Key ✓' : 'Cursor Key'}
-                      </button>
-                      <button
-                        onClick={() => handleUnlinkClick(r)}
-                        disabled={unlinkingId !== null}
-                        className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50"
-                      >
-                        Remove
-                      </button>
-                    </div>
+            {repos.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm text-white font-medium">
+                      {repoDisplayName(r.full_name)}
+                    </code>
+                    {isLocalRepo(r.full_name) && (
+                      <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">
+                        local
+                      </span>
+                    )}
                   </div>
-                  {isEditing && (
-                    <div className="pb-3 space-y-2">
-                      <p className="text-xs text-zinc-400">
-                        {editingAnthropicKey
-                          ? 'Claude credential for this repo (overrides your account). Console API key or claude setup-token output.'
-                          : 'Cursor API key for this repo (overrides your account key)'}
-                      </p>
-                      <div className="flex gap-2 items-center">
-                        <div className="flex-1">
-                          <MaskedSecretInput
-                            key={`${r.id}-${repoKeyField}`}
-                            maskedValue={activeKeyMasked}
-                            placeholder={editingAnthropicKey ? 'sk-ant-…' : 'cursor-…'}
-                            onChange={(val, dirty) => {
-                              setRepoKeyValue(val);
-                              setRepoKeyDirty(dirty);
-                            }}
-                          />
-                        </div>
-                        <button
-                          onClick={() => handleRepoKeySave(r.id, r.user_repo_id)}
-                          disabled={repoKeySaving || !repoKeyDirty}
-                          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0"
-                        >
-                          {repoKeySaving ? 'Saving…' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setRepoKeyEditingId(null);
-                            setRepoKeyValue(null);
-                            setRepoKeyDirty(false);
-                          }}
-                          className="text-xs text-zinc-400 hover:text-zinc-300 shrink-0"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      {activeKeyMasked && (
-                        <button
-                          onClick={() => {
-                            setRepoKeyValue('');
-                            setRepoKeyDirty(true);
-                          }}
-                          className="text-xs text-zinc-500 hover:text-zinc-400"
-                        >
-                          Clear key (use account default)
-                        </button>
-                      )}
+                  {r.full_name.startsWith('/') && (
+                    <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">
+                      {r.full_name}
                     </div>
                   )}
+                  <div className="text-xs text-zinc-500 mt-0.5">
+                    {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
+                  </div>
                 </div>
-              );
-            })}
+                <button
+                  onClick={() => handleUnlinkClick(r)}
+                  disabled={unlinkingId !== null}
+                  className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 shrink-0"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
         </SettingsSection>
-
-        <AllRepositoriesSection />
       </div>
 
       {confirmUnlink && (
@@ -422,135 +347,6 @@ function NotificationsSection() {
   );
 }
 
-// ─── AgentTab ─────────────────────────────────────────────────────────────────
-
-function AgentTab({ settings, onSave }) {
-  const { user } = useAuth();
-  const [anthropicApiKey, setAnthropicApiKey] = useState(null);
-  const [anthropicApiKeyDirty, setAnthropicApiKeyDirty] = useState(false);
-  const [cursorApiKey, setCursorApiKey] = useState(null);
-  const [cursorApiKeyDirty, setCursorApiKeyDirty] = useState(false);
-  const [branchPrefix, setBranchPrefix] = useState('baguette/');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    if (!settings) return;
-    setBranchPrefix(settings.branch_prefix ?? 'baguette/');
-    setAnthropicApiKey(null);
-    setAnthropicApiKeyDirty(false);
-    setCursorApiKey(null);
-    setCursorApiKeyDirty(false);
-  }, [settings]);
-
-  const handleSave = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setSaved(false);
-    try {
-      const patch = { branch_prefix: branchPrefix };
-      if (anthropicApiKeyDirty) patch.anthropic_api_key = anthropicApiKey ?? '';
-      if (cursorApiKeyDirty) patch.cursor_api_key = cursorApiKey ?? '';
-      const updated = await usersService.patch(user.id, patch);
-      onSave(updated);
-      setAnthropicApiKey(null);
-      setAnthropicApiKeyDirty(false);
-      setCursorApiKey(null);
-      setCursorApiKeyDirty(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      toastError('Failed to save agent settings', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div>
-      <SettingsTabHeader title="Agent">
-        Credentials and defaults for the agent SDKs that run your sessions. Per-repo keys can
-        override these account credentials.
-      </SettingsTabHeader>
-
-      <form onSubmit={handleSave} className="space-y-6">
-        <SettingsSection title="General">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
-            <input
-              type="text"
-              value={branchPrefix}
-              onChange={(e) => setBranchPrefix(e.target.value)}
-              placeholder="baguette/"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-            <p className="mt-1 text-xs text-zinc-500">
-              Prefix added to all generated branch names. Leave empty for no prefix.
-            </p>
-          </div>
-        </SettingsSection>
-
-        <SettingsSection title="Claude">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">Credential</label>
-            <MaskedSecretInput
-              maskedValue={settings?.anthropic_api_key}
-              placeholder="sk-ant-…"
-              onChange={(val, dirty) => {
-                setAnthropicApiKey(val);
-                setAnthropicApiKeyDirty(dirty);
-              }}
-            />
-            <p className="mt-1 text-xs text-zinc-500">
-              Console API key (<code className="text-zinc-400">sk-ant-api…</code>, billed per token)
-              or a subscription token from <code className="text-zinc-400">claude setup-token</code>{' '}
-              (<code className="text-zinc-400">sk-ant-oat…</code>, Pro/Max/Team/Enterprise, lasts
-              about a year). Saving replaces the previous value; format is detected automatically.
-              Leave empty to use Claude Code&apos;s default configuration.
-            </p>
-          </div>
-          <UsageGraph agentSdkFilter="claude" />
-        </SettingsSection>
-
-        <SettingsSection title="Cursor">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
-            <MaskedSecretInput
-              maskedValue={settings?.cursor_api_key}
-              placeholder="cursor-…"
-              onChange={(val, dirty) => {
-                setCursorApiKey(val);
-                setCursorApiKeyDirty(dirty);
-              }}
-            />
-            <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
-          </div>
-          <div>
-            <h4 className="text-xs font-medium text-zinc-400 mb-1">Model preferences</h4>
-            <p className="text-xs text-zinc-500 mb-2">
-              Applied when starting Cursor sessions (dashboard and MCP). Matches the preferences
-              control on the session builder.
-            </p>
-            <CursorModelPreferencesSection />
-          </div>
-          <UsageGraph agentSdkFilter="cursor" />
-        </SettingsSection>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          {saved && <span className="text-sm text-emerald-400">Saved</span>}
-        </div>
-      </form>
-    </div>
-  );
-}
-
 // ─── IntegrationsTab ──────────────────────────────────────────────────────────
 
 function IntegrationsTab({ settings, onRefreshSettings }) {
@@ -583,7 +379,6 @@ const TABS = [
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
-  { id: 'docker', label: 'Docker', icon: Box },
   { id: 'system', label: 'System', icon: Monitor },
   { id: 'users', label: 'Users', icon: Users },
 ];
@@ -594,7 +389,8 @@ export default function Settings() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') || DEFAULT_TAB;
-  const requestedTab = rawTab === 'slack' ? 'integrations' : rawTab;
+  const requestedTab =
+    rawTab === 'slack' ? 'integrations' : rawTab === 'docker' ? 'system' : rawTab;
   const activeTab = TABS.some((t) => t.id === requestedTab) ? requestedTab : DEFAULT_TAB;
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
@@ -648,7 +444,7 @@ export default function Settings() {
             <p className="text-zinc-500">Loading…</p>
           )}
           {activeTab === 'agent' && settings && (
-            <AgentTab settings={settings} onSave={setSettings} />
+            <AgentSettingsTab settings={settings} onSave={setSettings} />
           )}
           {activeTab === 'integrations' && !settings && !error && (
             <p className="text-zinc-500">Loading…</p>
@@ -663,11 +459,15 @@ export default function Settings() {
               }}
             />
           )}
-          {activeTab === 'repos' && <RepositoriesTab />}
+          {activeTab === 'repos' && !settings && !error && (
+            <p className="text-zinc-500">Loading…</p>
+          )}
+          {activeTab === 'repos' && settings && (
+            <RepositoriesTab settings={settings} onSave={setSettings} />
+          )}
           {activeTab === 'notifications' && <NotificationsSection />}
           {activeTab === 'secrets' && <SecretsTab />}
           {activeTab === 'plugins' && <PluginsTab />}
-          {activeTab === 'docker' && <DockerTab />}
           {activeTab === 'system' && <SystemTab />}
           {activeTab === 'users' && <UsersTab />}
         </div>

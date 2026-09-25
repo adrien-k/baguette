@@ -6,8 +6,11 @@ import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
-import { formatCursorToolCallResult } from '../../../shared/cursor-tool-call-result.js';
+import { processCursorRunStream } from '../cursor-sdk-turn.js';
+import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
+import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
@@ -44,12 +47,7 @@ function isHumanUserMessage(parsed) {
 function extractUserText(parsed) {
   const content = parsed.message?.content;
   if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
-  }
+  if (Array.isArray(content)) return expandUserContentForAgent(content);
   return '';
 }
 
@@ -64,6 +62,73 @@ export class CursorAgentService {
 
   setup(app) {
     this.app = app;
+  }
+
+  async writeAlwaysApplyRule(rulesRoot, { filename, description, body }) {
+    const rulesDir = join(rulesRoot, '.cursor', 'rules');
+    await mkdir(rulesDir, { recursive: true });
+    await writeFile(
+      join(rulesDir, filename),
+      `---
+description: ${description}
+alwaysApply: true
+---
+
+${body}`,
+      'utf8'
+    );
+    return rulesRoot;
+  }
+
+  async resolveApiKey(session) {
+    const user = await this.app.service('users').get(session.user_id, {});
+    let repoApiKey = null;
+    if (session.repo_id) {
+      const userRepos = await this.app.service('user-repos').find({
+        query: { repo_id: session.repo_id },
+        user: { id: session.user_id },
+        paginate: false,
+      });
+      repoApiKey = userRepos?.[0]?.cursor_api_key || null;
+    }
+    return repoApiKey || user.cursor_api_key || undefined;
+  }
+
+  parseModelParams(modelParams) {
+    if (!modelParams) return null;
+    if (typeof modelParams !== 'string') return modelParams;
+    try {
+      return JSON.parse(modelParams);
+    } catch {
+      return null;
+    }
+  }
+
+  async buildAgentOptions(
+    session,
+    { customTools, settingSources = ['project'], dirs, model, modelParams, apiKey } = {}
+  ) {
+    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const resolvedApiKey = apiKey !== undefined ? apiKey : await this.resolveApiKey(session);
+    const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
+    const agentOptions = {
+      apiKey: resolvedApiKey,
+      local: {
+        cwd,
+        settingSources,
+        dirs: dirs ?? [],
+        customTools: resolvedTools,
+        stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
+      },
+    };
+    const modelId = model !== undefined ? model : session.model;
+    if (modelId) {
+      const params = this.parseModelParams(
+        modelParams !== undefined ? modelParams : session.model_params
+      );
+      agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
+    }
+    return agentOptions;
   }
 
   async onMessageCreated(message) {
@@ -100,7 +165,9 @@ export class CursorAgentService {
       return;
     if (session.repo_full_name && !session.worktree_path) return;
 
-    attachAppErrorHandler(this.app, this._runTurn(session, parsed), {
+    const turnModel =
+      message.model != null && message.model !== '' ? resolveTurnModel(message, session) : {};
+    attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel), {
       userId: session.user_id,
       sessionId: session.id,
     }).catch((err) => {
@@ -116,21 +183,19 @@ export class CursorAgentService {
       basename(absoluteCwd) === 'worktree'
         ? join(dirname(absoluteCwd), 'cursor-dir')
         : join(DATA_DIR, 'cursor-rules', String(session.id));
-    const rulesDir = join(sessionRulesRoot, '.cursor', 'rules');
-    // DB rows don't have absolute_worktree_path (added by the Feathers serializer), so inject it.
-    const systemPrompt = await buildSystemPromptAppend({
-      ...session,
-      absolute_worktree_path: absoluteCwd,
+    const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
+    const systemPrompt = await buildSystemPromptAppend(
+      {
+        ...session,
+        absolute_worktree_path: absoluteCwd,
+      },
+      { agentPrompt }
+    );
+    return this.writeAlwaysApplyRule(sessionRulesRoot, {
+      filename: 'baguette.mdc',
+      description: 'Baguette session rules (always applied)',
+      body: systemPrompt,
     });
-    const mdcContent = `---
-description: Baguette session rules (always applied)
-alwaysApply: true
----
-
-${systemPrompt}`;
-    await mkdir(rulesDir, { recursive: true });
-    await writeFile(join(rulesDir, 'baguette.mdc'), mdcContent, 'utf8');
-    return sessionRulesRoot;
   }
 
   async _getPluginDirs(session) {
@@ -155,62 +220,19 @@ ${systemPrompt}`;
     }
   }
 
-  async _getOrCreateAgent(session) {
+  async createOrResumeAgent(session, { agentOptions, resumeAgentId, persistAgentId }) {
     const sessionId = session.id;
-
-    const db = this.app.get('db');
-    const user = await this.app.service('users').get(session.user_id, {});
-
-    let repoApiKey = null;
-    if (session.repo_id) {
-      const userRepos = await this.app.service('user-repos').find({
-        query: { repo_id: session.repo_id },
-        user: { id: session.user_id },
-        paginate: false,
-      });
-      repoApiKey = userRepos?.[0]?.cursor_api_key || null;
-    }
-
-    const apiKey = repoApiKey || user.cursor_api_key || undefined;
-    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
-
-    const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
-    const pluginDirs = await this._getPluginDirs(session);
-    const agentOptions = {
-      apiKey,
-      local: {
-        cwd,
-        settingSources: ['project'],
-        dirs: [baguetteRulesDir, ...pluginDirs],
-        customTools: await buildCursorCustomTools(session, this.app),
-        stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
-      },
-    };
-
-    const modelId = session.model || user.cursor_model || null;
-    if (modelId) {
-      let params = null;
-      if (session.model_params) {
-        try {
-          params = JSON.parse(session.model_params);
-        } catch {
-          /* invalid JSON */
-        }
-      }
-      agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
-    }
-
     let agent;
-    if (session.cursor_agent_id) {
+    if (resumeAgentId) {
       logger.info(
-        { sessionId, storedAgentId: session.cursor_agent_id },
-        'cursor-agent: cache miss — resuming stored agent'
+        { sessionId, storedAgentId: resumeAgentId },
+        'cursor-agent: resuming stored agent'
       );
       try {
-        agent = await Agent.resume(session.cursor_agent_id, agentOptions);
+        agent = await Agent.resume(resumeAgentId, agentOptions);
       } catch (err) {
         logger.warn(
-          { sessionId, storedAgentId: session.cursor_agent_id, err: err.message },
+          { sessionId, storedAgentId: resumeAgentId, err: err.message },
           'cursor-agent: resume failed, will create fresh agent'
         );
       }
@@ -218,13 +240,119 @@ ${systemPrompt}`;
     if (!agent) {
       logger.info({ sessionId }, 'cursor-agent: creating new agent');
       agent = await Agent.create(agentOptions);
-      await db('sessions').where({ id: sessionId }).update({ cursor_agent_id: agent.agentId });
+      await persistAgentId?.(agent.agentId);
     }
-
-    return { agent };
+    return agent;
   }
 
-  async _runTurn(session, parsed) {
+  async _sessionAgentOptions(session, { model, modelParams } = {}) {
+    const user = await this.app.service('users').get(session.user_id, {});
+    const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
+    const pluginDirs = await this._getPluginDirs(session);
+    return this.buildAgentOptions(session, {
+      dirs: [baguetteRulesDir, ...pluginDirs],
+      model: model !== undefined ? model : session.model || user.cursor_model || null,
+      modelParams: modelParams !== undefined ? modelParams : session.model_params,
+    });
+  }
+
+  async _sendWithBusyRetry(agent, session, userText, sendOptions = {}) {
+    try {
+      return await agent.send(userText, sendOptions);
+    } catch (err) {
+      const isActiveRunError =
+        err instanceof AgentBusyError || err?.message?.includes('already has active run');
+      if (!isActiveRunError) throw err;
+      const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+      const { items } = await Agent.listRuns(agent.agentId, { cwd });
+      const stale = items.find((r) => r.status === 'running');
+      if (stale) await stale.cancel();
+      return agent.send(userText, sendOptions);
+    }
+  }
+
+  /**
+   * Create/resume a Cursor agent, send one prompt, and stream until the run ends.
+   * Session chat adds follow-up runs and usage on top; review uses this directly.
+   */
+  async runTurn({
+    session,
+    userText,
+    agentOptions,
+    resumeAgentId,
+    persistAgentId,
+    persistMessage,
+    patchMessage,
+    persistStatus,
+    onStatus,
+    onUsage,
+    sendOptions = {},
+    activeKey,
+    abortController,
+  }) {
+    const key = activeKey ?? session.id;
+    const sessionState = {
+      isProcessing: true,
+      userId: session.user_id,
+      currentRun: null,
+      abortController: abortController ?? new AbortController(),
+    };
+    this._activeSessions.set(key, sessionState);
+
+    let outcome = 'failed';
+    try {
+      const agent = await this.createOrResumeAgent(session, {
+        agentOptions,
+        resumeAgentId,
+        persistAgentId,
+      });
+      const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
+      sessionState.currentRun = run;
+      const { finishedOk } = await processCursorRunStream(run, {
+        persistMessage,
+        patchMessage,
+        onUsage,
+        onStatus,
+        abortSignal: sessionState.abortController.signal,
+      });
+      outcome = finishedOk ? 'completed' : 'failed';
+      return { outcome, agent, run };
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        logger.error({ sessionId: session.id, err: err.message }, 'Cursor session stream error');
+        try {
+          await persistStatus?.(err.message);
+        } catch {
+          // ignore secondary errors
+        }
+        this.app.service('sessions').emit('app:error', {
+          sessionId: session.id,
+          message: err.message,
+          user_id: session.user_id,
+        });
+        outcome = 'failed';
+      } else {
+        outcome = 'stopped';
+      }
+      return { outcome };
+    } finally {
+      this._activeSessions.delete(key);
+    }
+  }
+
+  async stopTurn(activeKey) {
+    const session = this._activeSessions.get(activeKey);
+    if (!session) return;
+    try {
+      session.abortController?.abort();
+      await session.currentRun?.cancel();
+    } catch {
+      // ignore cancellation errors
+    }
+    this._activeSessions.delete(activeKey);
+  }
+
+  async _runTurn(session, parsed, turnModel = {}) {
     const sessionId = session.id;
     const userId = session.user_id;
     let turnFinishedOk = false;
@@ -238,28 +366,24 @@ ${systemPrompt}`;
         .service('sessions')
         .patch(sessionId, { status: 'running' }, { user: { id: userId } });
 
-      const { agent } = await this._getOrCreateAgent(session);
+      const db = this.app.get('db');
+      const agentOptions = await this._sessionAgentOptions(session, {
+        model: turnModel.model,
+        modelParams: turnModel.modelParams,
+      });
+      const agent = await this.createOrResumeAgent(session, {
+        agentOptions,
+        resumeAgentId: session.cursor_agent_id,
+        persistAgentId: (agentId) =>
+          db('sessions').where({ id: sessionId }).update({ cursor_agent_id: agentId }),
+      });
       const userText = extractUserText(parsed);
-
       const sendOptions = {};
       if (session.plan_mode) {
         sendOptions.mode = 'plan';
       }
 
-      let run;
-      try {
-        run = await agent.send(userText, sendOptions);
-      } catch (err) {
-        const isActiveRunError =
-          err instanceof AgentBusyError || err?.message?.includes('already has active run');
-        if (!isActiveRunError) throw err;
-        // Server restarted while a run was active. Cancel the stale run and retry once.
-        const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
-        const { items } = await Agent.listRuns(agent.agentId, { cwd });
-        const stale = items.find((r) => r.status === 'running');
-        if (stale) await stale.cancel();
-        run = await agent.send(userText, sendOptions);
-      }
+      const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
       sessionState.currentRun = run;
 
       const { finishedOk: mainFinished, hasBackgroundTask } = await this._streamOneRun(
@@ -347,99 +471,25 @@ ${systemPrompt}`;
   async _streamOneRun(session, run, turnUsage = emptyTurnUsage()) {
     const sessionId = session.id;
     const userId = session.user_id;
-    const pendingToolCalls = new Map();
-    let finishedOk = false;
-    let hasBackgroundTask = false;
 
-    // Cursor streams assistant text and thinking in per-word chunks.
-    // Buffer each type and flush as a single message on type switch or non-streaming message.
-    let streamBuffer = null; // { kind: 'assistant'|'thinking', msg: object, text: string }
-
-    const flushStreamBuffer = async () => {
-      if (!streamBuffer) return;
-      if (streamBuffer.kind === 'assistant') {
-        await this._persistMessage(sessionId, userId, streamBuffer.msg);
-      } else {
-        await this._persistMessage(sessionId, userId, {
-          type: 'assistant',
-          agent_id: streamBuffer.agentId,
-          run_id: streamBuffer.runId,
-          message: {
-            role: 'assistant',
-            content: [{ type: 'thinking', thinking: streamBuffer.text }],
-          },
-        });
-      }
-      streamBuffer = null;
-    };
-
-    for await (const sdkMsg of run.stream()) {
-      if (sdkMsg.type === 'assistant') {
-        if (streamBuffer?.kind !== 'assistant') {
-          await flushStreamBuffer();
-          streamBuffer = {
-            kind: 'assistant',
-            msg: {
-              ...sdkMsg,
-              message: {
-                ...sdkMsg.message,
-                content: sdkMsg.message.content.map((b) => ({ ...b })),
-              },
-            },
-          };
-        } else {
-          for (const block of sdkMsg.message.content) {
-            if (block.type === 'text') {
-              const existing = streamBuffer.msg.message.content.find((b) => b.type === 'text');
-              if (existing) {
-                existing.text += block.text;
-              } else {
-                streamBuffer.msg.message.content.push({ ...block });
-              }
-            } else {
-              streamBuffer.msg.message.content.push({ ...block });
-            }
-          }
-        }
-        continue;
-      }
-
-      if (sdkMsg.type === 'thinking') {
-        if (streamBuffer?.kind !== 'thinking') {
-          await flushStreamBuffer();
-          streamBuffer = {
-            kind: 'thinking',
-            agentId: sdkMsg.agent_id,
-            runId: sdkMsg.run_id,
-            text: sdkMsg.text ?? '',
-          };
-        } else {
-          streamBuffer.text += sdkMsg.text ?? '';
-        }
-        continue;
-      }
-
-      // Any other message: flush the buffer first, then handle normally
-      await flushStreamBuffer();
-
-      // task messages indicate a background subagent was spawned — a follow-up run may arrive after FINISHED
-      if (sdkMsg.type === 'task') hasBackgroundTask = true;
-
-      // Emitted once at the end of each run, whenever the runtime reported usage.
-      if (sdkMsg.type === 'usage') {
+    return processCursorRunStream(run, {
+      persistMessage: (message) => this._persistMessage(sessionId, userId, message),
+      patchMessage: (id, message) =>
+        this.app
+          .service('messages')
+          .patch(
+            id,
+            { message_json: JSON.stringify(message) },
+            { provider: undefined, user: { id: userId } }
+          ),
+      onUsage: (sdkMsg) => {
         addTokenUsage(turnUsage, sdkMsg.usage);
-        // `run.model` is resolved by the time usage lands, so the row records what
-        // actually served the turn rather than what the session asked for.
         turnUsage.model = run.model?.id ?? session.model ?? turnUsage.model;
-      }
-
-      await this._normalizeAndPersist(session, sdkMsg, pendingToolCalls);
-
-      if (sdkMsg.type === 'status') {
+      },
+      onStatus: async (sdkMsg) => {
         const { status } = sdkMsg;
         if (status === 'FINISHED') {
-          finishedOk = true;
-          break;
+          return { break: true, finishedOk: true };
         }
         if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
           logger.warn(
@@ -465,13 +515,10 @@ ${systemPrompt}`;
             .service('sessions')
             .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
           await this._persistStatusMessage(sessionId, userId, statusMsg);
-          break;
+          return { break: true, finishedOk: false };
         }
-      }
-    }
-
-    await flushStreamBuffer();
-    return { finishedOk, hasBackgroundTask };
+      },
+    });
   }
 
   /**
@@ -498,136 +545,6 @@ ${systemPrompt}`;
       }
     }
     return null;
-  }
-
-  async _normalizeAndPersist(session, sdkMsg, pendingToolCalls) {
-    const sessionId = session.id;
-    const userId = session.user_id;
-
-    if (sdkMsg.type === 'tool_call') {
-      if (sdkMsg.status === 'running') {
-        if (!pendingToolCalls.has(sdkMsg.call_id)) {
-          // First running event — persist tool_use immediately so it appears in the UI
-          // before the tool finishes executing (args may still be streaming in).
-          const persistedMsg = await this._persistMessage(sessionId, userId, {
-            type: 'assistant',
-            agent_id: sdkMsg.agent_id,
-            run_id: sdkMsg.run_id,
-            message: {
-              role: 'assistant',
-              content: [
-                {
-                  type: 'tool_use',
-                  id: sdkMsg.call_id,
-                  name: sdkMsg.name,
-                  input: sdkMsg.args ?? {},
-                },
-              ],
-            },
-          });
-          pendingToolCalls.set(sdkMsg.call_id, {
-            name: sdkMsg.name,
-            args: sdkMsg.args,
-            agentId: sdkMsg.agent_id,
-            runId: sdkMsg.run_id,
-            persistedMsgId: persistedMsg.id,
-          });
-        } else {
-          // Subsequent running events — accumulate args
-          const pending = pendingToolCalls.get(sdkMsg.call_id);
-          pendingToolCalls.set(sdkMsg.call_id, {
-            ...pending,
-            name: sdkMsg.name ?? pending.name,
-            args: sdkMsg.args ?? pending.args,
-          });
-        }
-      } else {
-        // completed or error — update tool_use with final args, then persist tool_result
-        const pending = pendingToolCalls.get(sdkMsg.call_id);
-        const finalName = pending?.name ?? sdkMsg.name;
-        const finalArgs = pending?.args ?? sdkMsg.args ?? {};
-
-        if (pending?.persistedMsgId) {
-          // Patch the already-persisted tool_use message with final args
-          const finalToolUse = {
-            type: 'assistant',
-            agent_id: pending.agentId ?? sdkMsg.agent_id,
-            run_id: pending.runId ?? sdkMsg.run_id,
-            message: {
-              role: 'assistant',
-              content: [
-                { type: 'tool_use', id: sdkMsg.call_id, name: finalName, input: finalArgs },
-              ],
-            },
-          };
-          await this.app
-            .service('messages')
-            .patch(
-              pending.persistedMsgId,
-              { message_json: JSON.stringify(finalToolUse) },
-              { provider: undefined, user: { id: userId } }
-            );
-        } else {
-          await this._persistMessage(sessionId, userId, {
-            type: 'assistant',
-            agent_id: pending?.agentId ?? sdkMsg.agent_id,
-            run_id: pending?.runId ?? sdkMsg.run_id,
-            message: {
-              role: 'assistant',
-              content: [
-                { type: 'tool_use', id: sdkMsg.call_id, name: finalName, input: finalArgs },
-              ],
-            },
-          });
-        }
-
-        const { content: resultContent, isError } = formatCursorToolCallResult(sdkMsg.result, {
-          toolCallStatus: sdkMsg.status,
-        });
-
-        await this._persistMessage(sessionId, userId, {
-          type: 'user',
-          message: {
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result',
-                tool_use_id: sdkMsg.call_id,
-                content: resultContent,
-                is_error: isError,
-              },
-            ],
-          },
-        });
-
-        pendingToolCalls.delete(sdkMsg.call_id);
-      }
-      return;
-    }
-
-    if (sdkMsg.type === 'task') {
-      // Only persist if there's meaningful text to show
-      if (sdkMsg.text) {
-        await this._persistMessage(sessionId, userId, {
-          type: 'system',
-          subtype: 'task',
-          task_status: sdkMsg.status ?? null,
-          text: sdkMsg.text,
-        });
-      }
-      return;
-    }
-
-    if (sdkMsg.type === 'request') {
-      await this._persistMessage(sessionId, userId, {
-        type: 'system',
-        subtype: 'request',
-        request_id: sdkMsg.request_id,
-      });
-      return;
-    }
-
-    // SDKSystemMessage, SDKStatusMessage (non-terminal), SDKUsageMessage: not persisted as chat messages
   }
 
   /**
@@ -674,13 +591,20 @@ ${systemPrompt}`;
    * Record one `usage` row for the finished turn: the tokens the runtime reported
    * plus whatever cost the backend would admit to. Tokens are always available;
    * cost is 0 for local agents, so a row is written either way.
+   *
+   * `kind: 'review'` isolates reviewer cost from session-chat Cursor agents on
+   * the same session (each agent reports cumulative cost independently).
    */
-  async _recordTurnUsage(session, agent, turnUsage) {
+  async recordTurnUsage(session, agent, turnUsage, { kind } = {}) {
+    return this._recordTurnUsage(session, agent, turnUsage, { kind });
+  }
+
+  async _recordTurnUsage(session, agent, turnUsage, { kind } = {}) {
     const db = this.app.get('db');
     const sessionId = session.id;
     const userId = session.user_id;
 
-    const deltaCostUsd = await this._turnCostDeltaUsd(session, agent);
+    const deltaCostUsd = await this._turnCostDeltaUsd(session, agent, { kind });
 
     // Nothing to say about this turn at all — don't write an empty row.
     if (deltaCostUsd <= 0 && turnUsage.total_tokens <= 0) return;
@@ -691,13 +615,14 @@ ${systemPrompt}`;
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(deltaCostUsd, 0),
       agent_sdk: 'cursor',
+      kind: kind ?? null,
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
       cache_write_tokens: turnUsage.cache_write_tokens,
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
-      model: turnUsage.model ?? session.model ?? null,
+      model: turnUsage.model ?? session.review_model ?? session.model ?? null,
     });
 
     if (deltaCostUsd <= 0) return;
@@ -720,17 +645,16 @@ ${systemPrompt}`;
    * Cursor reports cost cumulatively for the whole agent, so this turn's share is
    * the total minus what the session already recorded. 0 when cost is unavailable.
    */
-  async _turnCostDeltaUsd(session, agent) {
+  async _turnCostDeltaUsd(session, agent, { kind } = {}) {
     if (this._usageUnavailable.has(agentRuntime(agent.agentId))) return 0;
 
     const totalCents = await this._fetchAgentCostCents(session, agent);
     if (!totalCents) return 0;
 
-    const prevRow = await this.app
-      .get('db')('usage')
-      .where({ session_id: session.id })
-      .sum('cost_usd as total')
-      .first();
+    const q = this.app.get('db')('usage').where({ session_id: session.id });
+    if (kind === 'review') q.where({ kind: 'review' });
+    else q.where((b) => b.whereNull('kind').orWhere('kind', '<>', 'review'));
+    const prevRow = await q.sum('cost_usd as total').first();
     return totalCents / 100 - parseFloat(prevRow?.total ?? 0);
   }
 
@@ -762,14 +686,7 @@ ${systemPrompt}`;
   }
 
   async stopSession(sessionId) {
-    const session = this._activeSessions.get(sessionId);
-    if (!session) return;
-    try {
-      await session.currentRun?.cancel();
-    } catch {
-      // ignore cancellation errors
-    }
-    this._activeSessions.delete(sessionId);
+    await this.stopTurn(sessionId);
   }
 
   getActiveSession(sessionId) {
@@ -873,6 +790,17 @@ Task: ${initialPrompt}`;
 
 export function registerCursorAgentService(app, path = 'cursor-agent') {
   app.use(path, new CursorAgentService(), {
-    methods: ['onMessageCreated', 'stopSession', 'generateSessionMetadata', 'deleteAgent'],
+    methods: [
+      'onMessageCreated',
+      'stopSession',
+      'stopTurn',
+      'runTurn',
+      'buildAgentOptions',
+      'writeAlwaysApplyRule',
+      'createOrResumeAgent',
+      'generateSessionMetadata',
+      'deleteAgent',
+      'recordTurnUsage',
+    ],
   });
 }

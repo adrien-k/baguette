@@ -7,8 +7,11 @@ import { getClaudeEnv } from '../session-env.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createMessageChannel } from '../message-channel.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from '../../claude-agent-sdk-constants.js';
+import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
+import { attachSessionTurnModelFields, resolveTurnModel } from '../../../shared/turn-model.js';
 
 function isHumanUserMessage(message) {
   if (message.type !== 'user') return false;
@@ -22,66 +25,13 @@ function commandsToAllowedTools(commands) {
   return commands.map((cmd) => `Bash(${cmd}*)`);
 }
 
-async function baseBuildQueryOptions(app, sessionRow, systemPrompt) {
-  const claudeEnv = await app.service('sessions').getClaudeEnv(sessionRow.id);
-  const mcpServer = await buildBaguetteMcpServer(sessionRow, app);
-
-  const cwd =
-    resolveDataDirRelativePath(sessionRow.worktree_path) || sessionRow.absolute_worktree_path || '';
-
-  return {
-    cwd,
-    env: claudeEnv,
-    resume: sessionRow.claude_session_id,
-    model: sessionRow.model,
-    tools: { type: 'preset', preset: 'claude_code' },
-    settingSources: ['project'],
-    mcpServers: { baguette: mcpServer },
-    systemPrompt: {
-      type: 'preset',
-      preset: 'claude_code',
-      append: systemPrompt,
-    },
-  };
-}
-
-async function buildBuilderQueryOptions(
-  app,
-  sessionRow,
-  { canUseTool, abortController, allowedTools }
-) {
-  // Resolve installed plugins selected for this session
-  let pluginRows = [];
-  if (sessionRow.plugins) {
-    try {
-      const pluginIds = JSON.parse(sessionRow.plugins);
-      if (Array.isArray(pluginIds) && pluginIds.length > 0) {
-        pluginRows = await app.get('db')('plugins').whereIn('id', pluginIds);
-      }
-    } catch {
-      // malformed plugins JSON — ignore
-    }
-  }
-
-  const pluginConfigs = (pluginRows || []).map((p) => ({
-    type: 'local',
-    path: resolveDataDirRelativePath(p.local_path),
-  }));
-  const systemPrompt = await buildSystemPromptAppend(sessionRow);
-  const baseOptions = await baseBuildQueryOptions(app, sessionRow, systemPrompt);
-  return {
-    ...baseOptions,
-    // acceptEdits at the SDK layer; canUseTool auto-approves tool calls (except plan-only tools).
-    permissionMode: claudeSdkPermissionMode(sessionRow),
-    canUseTool,
-    abortController,
-    ...(allowedTools?.length ? { allowedTools } : {}),
-    ...(pluginConfigs.length ? { plugins: pluginConfigs } : {}),
-  };
-}
-
 function claudeSdkPermissionMode(sessionRow) {
   return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
+}
+
+function toSdkUserMessage(prompt) {
+  if (prompt && typeof prompt === 'object') return prompt;
+  return { type: 'user', message: { role: 'user', content: prompt ?? '' } };
 }
 
 // ─── ClaudeAgentService class ─────────────────────────────────────────────────
@@ -96,15 +46,156 @@ export class ClaudeAgentService {
     this.app = app;
   }
 
+  /**
+   * SDK query options for a Claude turn. Callers override MCP, prompt, tools, resume, etc.
+   */
+  async buildQueryOptions(
+    sessionRow,
+    {
+      systemPrompt,
+      mcpServer,
+      allowedTools,
+      permissionMode = 'acceptEdits',
+      settingSources = ['project'],
+      resume,
+      model,
+      canUseTool,
+      plugins,
+    } = {}
+  ) {
+    const claudeEnv = await this.app.service('sessions').getClaudeEnv(sessionRow.id);
+    const cwd =
+      resolveDataDirRelativePath(sessionRow.worktree_path) ||
+      sessionRow.absolute_worktree_path ||
+      '';
+    const resolvedMcp = mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app));
+    return {
+      cwd,
+      env: claudeEnv,
+      resume: resume !== undefined ? resume || undefined : sessionRow.claude_session_id,
+      model: model !== undefined ? model : sessionRow.model,
+      tools: { type: 'preset', preset: 'claude_code' },
+      settingSources,
+      mcpServers: { baguette: resolvedMcp },
+      permissionMode,
+      systemPrompt: {
+        type: 'preset',
+        preset: 'claude_code',
+        append: systemPrompt ?? '',
+      },
+      ...(canUseTool ? { canUseTool } : {}),
+      ...(allowedTools?.length ? { allowedTools } : {}),
+      ...(plugins?.length ? { plugins } : {}),
+    };
+  }
+
+  async _buildSessionQueryOptions(sessionRow, { canUseTool, allowedTools, model } = {}) {
+    let pluginRows = [];
+    if (sessionRow.plugins) {
+      try {
+        const pluginIds = JSON.parse(sessionRow.plugins);
+        if (Array.isArray(pluginIds) && pluginIds.length > 0) {
+          pluginRows = await this.app.get('db')('plugins').whereIn('id', pluginIds);
+        }
+      } catch {
+        // malformed plugins JSON — ignore
+      }
+    }
+    const plugins = (pluginRows || []).map((p) => ({
+      type: 'local',
+      path: resolveDataDirRelativePath(p.local_path),
+    }));
+    const agentPrompt = await getEffectiveAgentPrompt(
+      this.app,
+      sessionRow.user_id,
+      sessionRow.repo_id
+    );
+    const systemPrompt = await buildSystemPromptAppend(sessionRow, { agentPrompt });
+    return this.buildQueryOptions(sessionRow, {
+      systemPrompt,
+      canUseTool,
+      allowedTools,
+      permissionMode: claudeSdkPermissionMode(sessionRow),
+      plugins,
+      ...(model !== undefined ? { model } : {}),
+    });
+  }
+
+  _openQuery({ sessionId, userId, queryOptions, extraState = {}, activeKey }) {
+    const channel = createMessageChannel();
+    const abortController = new AbortController();
+    const queryInstance = query({
+      prompt: channel,
+      options: { ...queryOptions, abortController },
+    });
+    const state = {
+      sessionId,
+      userId,
+      channel,
+      queryInstance,
+      abortController,
+      ...extraState,
+    };
+    this._activeSessions.set(activeKey ?? sessionId, state);
+    return state;
+  }
+
+  /**
+   * Run one Claude query turn: open the SDK, push a prompt, consume the stream, dispose.
+   * Used by session chat (via _startAgentLoop) and session review.
+   */
+  async runTurn({
+    sessionId,
+    userId,
+    prompt,
+    queryOptions,
+    persistMessage,
+    persistStatus,
+    onInitSessionId,
+    onResult,
+    onStreamError,
+    trackBackgroundTasks = false,
+    activeKey,
+    extraState,
+    connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
+  }) {
+    const key = activeKey ?? sessionId;
+    const state = this._openQuery({
+      sessionId,
+      userId,
+      queryOptions,
+      extraState,
+      activeKey: key,
+    });
+    if (prompt != null) {
+      state.channel.push(toSdkUserMessage(prompt));
+    }
+    return this._consumeQuery(state, {
+      persistMessage,
+      persistStatus,
+      onInitSessionId,
+      onResult,
+      onStreamError,
+      trackBackgroundTasks,
+      activeKey: key,
+      connectionClosedHint,
+    });
+  }
+
+  async stopTurn(activeKey) {
+    await this._disposeActiveSession(activeKey);
+  }
+
   async onMessageCreated(message) {
     if (message.type !== 'user') return;
 
     const sessionId = message.session_id;
 
-    const parsed =
+    const rawParsed =
       typeof message.message_json === 'string'
         ? JSON.parse(message.message_json)
         : message.message_json;
+    const parsed = normalizeUserMessageForAgentSdk(rawParsed);
 
     // Only respond to human user messages, not tool_result rows we persisted from the SDK stream.
     // Baguette-injected messages use source: 'baguette' and are delivered via this hook only.
@@ -127,18 +218,20 @@ export class ClaudeAgentService {
       return;
     if (session.repo_full_name && !session.worktree_path) return;
 
+    const { model } = resolveTurnModel(message, session);
+
     let agentSession;
     if (session.claude_session_id) {
-      agentSession = await this.ensureActiveSession(session);
+      agentSession = await this.ensureActiveSession(session, { model });
     } else {
-      agentSession = await this.createAgentSession(session);
+      agentSession = await this.createAgentSession(session, { model });
     }
 
     agentSession.channel.push(parsed);
   }
 
-  async createAgentSession(session) {
-    const sessionState = await this._startAgentLoop(session);
+  async createAgentSession(session, { model } = {}) {
+    const sessionState = await this._startAgentLoop(session, { model });
 
     await this.app.service('sessions').patch(session.id, { status: 'running' });
     return sessionState;
@@ -185,18 +278,21 @@ export class ClaudeAgentService {
     }
   }
 
-  async _disposeActiveSession(sessionId) {
-    const session = this._activeSessions.get(sessionId);
+  async _disposeActiveSession(activeKey) {
+    const session = this._activeSessions.get(activeKey);
     if (!session) return;
     try {
       // No further user turns on this query; abort signals the SDK side to stop.
       session.channel.end();
       session.abortController.abort();
     } catch (err) {
-      logger.warn({ sessionId, err: err.message }, 'claude-agent session dispose cleanup');
+      logger.warn(
+        { sessionId: session.sessionId, err: err.message },
+        'claude-agent session dispose cleanup'
+      );
     }
-    this._activeSessions.delete(sessionId);
-    await this._closeQueryInstanceSafe(sessionId, session.queryInstance);
+    this._activeSessions.delete(activeKey);
+    await this._closeQueryInstanceSafe(session.sessionId, session.queryInstance);
   }
 
   async _persistSessionStatusMessage(sessionId, userId, statusText) {
@@ -261,47 +357,36 @@ export class ClaudeAgentService {
    * channel, query instance, session state, and kicks off the
    * message-processing loop.
    */
-  async _startAgentLoop(sessionRow) {
+  async _startAgentLoop(sessionRow, { model } = {}) {
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
-
-    const channel = createMessageChannel();
-    const abortController = new AbortController();
-
     const sessionSettings = {
       permissionMode: claudeSdkPermissionMode(sessionRow),
     };
     const canUseTool = this.createCanUseTool();
     const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser(user));
-
-    const queryOptions = await buildBuilderQueryOptions(this.app, sessionRow, {
+    const queryOptions = await this._buildSessionQueryOptions(sessionRow, {
       canUseTool,
-      abortController,
       allowedTools,
+      ...(model !== undefined ? { model } : {}),
     });
 
-    const queryInstance = query({ prompt: channel, options: queryOptions });
-
     const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path) || '';
-    const sessionState = {
+    const sessionState = this._openQuery({
       sessionId,
       userId: sessionRow.user_id,
-      repoFullName: sessionRow.repo_full_name,
-      branch: sessionRow.base_branch,
-      absoluteWorktreePath,
-      repoId: sessionRow.repo_id,
-      token: getGithubToken(user),
-      channel,
-      queryInstance,
-      abortController,
-      sessionSettings,
-    };
-
-    if (sessionRow.claude_session_id) {
-      sessionState.claudeSessionId = sessionRow.claude_session_id;
-    }
-
-    this._activeSessions.set(sessionRow.id, sessionState);
+      queryOptions,
+      extraState: {
+        repoFullName: sessionRow.repo_full_name,
+        branch: sessionRow.base_branch,
+        absoluteWorktreePath,
+        repoId: sessionRow.repo_id,
+        token: getGithubToken(user),
+        sessionSettings,
+        ...(sessionRow.claude_session_id ? { claudeSessionId: sessionRow.claude_session_id } : {}),
+      },
+      activeKey: sessionId,
+    });
 
     attachAppErrorHandler(this.app, this.processMessages(sessionState), {
       userId: sessionRow.user_id,
@@ -313,10 +398,10 @@ export class ClaudeAgentService {
     return sessionState;
   }
 
-  async resumeSession(session) {
+  async resumeSession(session, { model } = {}) {
     if (!session.claude_session_id) throw new Error('No Claude session to resume');
 
-    const sessionState = await this._startAgentLoop(session);
+    const sessionState = await this._startAgentLoop(session, { model });
 
     logger.info(
       { sessionId: session.id, claudeSessionId: session.claude_session_id },
@@ -326,7 +411,7 @@ export class ClaudeAgentService {
     return sessionState;
   }
 
-  async ensureActiveSession(sessionOrId) {
+  async ensureActiveSession(sessionOrId, { model } = {}) {
     const sessionRow =
       typeof sessionOrId === 'object' && sessionOrId !== null
         ? sessionOrId
@@ -338,7 +423,7 @@ export class ClaudeAgentService {
     if (existing) return existing;
 
     if (!this._resumePromises.has(sessionId)) {
-      const promise = this.resumeSession(sessionRow).finally(() => {
+      const promise = this.resumeSession(sessionRow, { model }).finally(() => {
         this._resumePromises.delete(sessionId);
       });
       this._resumePromises.set(sessionId, promise);
@@ -348,75 +433,111 @@ export class ClaudeAgentService {
   }
 
   async processMessages(sessionState) {
-    const { queryInstance, sessionId, userId } = sessionState;
+    const { sessionId, userId } = sessionState;
     const db = this.app.get('db');
+    const { turnComplete } = await this._consumeQuery(sessionState, {
+      persistMessage: (message) => this.persistMessage(sessionState, message),
+      persistStatus: (text) => this._persistSessionStatusMessage(sessionId, userId, text),
+      onInitSessionId: async (id) => {
+        await db('sessions').where({ id: sessionId }).update({ claude_session_id: id });
+        sessionState.claudeSessionId = id;
+      },
+      onResult: async (message) => {
+        const ok = message.subtype === 'success' && !message.is_error;
+        await this.app
+          .service('sessions')
+          .patch(sessionId, { status: ok ? 'completed' : 'failed' }, { user: { id: userId } });
+      },
+      onStreamError: async () => {
+        await this.app
+          .service('sessions')
+          .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+      },
+      onBackgroundAutoResume: async () => {
+        await this.app
+          .service('sessions')
+          .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+      },
+      trackBackgroundTasks: true,
+      activeKey: sessionId,
+    });
 
-    // Track non-ambient background tasks via edge signals (task_started / task_notification).
-    // We must not close the query while tasks are still running, because closing terminates
-    // the CLI subprocess and kills them before they can emit task_notification.
-    // When the last pending task notifies after the main turn result, the SDK auto-starts a
-    // continuation turn so Claude can process the result; awaitingAutoResume tracks that window.
+    if (turnComplete) {
+      try {
+        await this.app.service('sessions').onTurnComplete(sessionId);
+      } catch (err) {
+        logger.warn({ sessionId, err: err.message }, 'Failed to send queued message');
+      }
+    }
+  }
+
+  /**
+   * Consume an open Claude query until the turn ends (result, abort, or stream error).
+   * @returns {Promise<{ turnComplete: boolean, outcome: 'completed' | 'failed' | 'stopped' }>}
+   */
+  async _consumeQuery(
+    sessionState,
+    {
+      persistMessage,
+      persistStatus,
+      onInitSessionId,
+      onResult,
+      onStreamError,
+      onBackgroundAutoResume,
+      trackBackgroundTasks = false,
+      activeKey,
+      connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
+    }
+  ) {
+    const { queryInstance, sessionId, userId } = sessionState;
+    const key = activeKey ?? sessionId;
     let pendingBackgroundTaskIds = new Set();
     let awaitingAutoResume = false;
     let turnComplete = false;
+    let outcome = 'failed';
 
     try {
       for await (const message of queryInstance) {
-        if (message.type === 'system' && message.subtype === 'init') {
-          await db('sessions')
-            .where({ id: sessionId })
-            .update({ claude_session_id: message.session_id });
-          sessionState.claudeSessionId = message.session_id;
+        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
+          await onInitSessionId?.(message.session_id);
         }
 
         if (message.isReplay) continue;
         if (isHumanUserMessage(message)) continue;
 
-        // Edge: a new task started — track it so we don't close the query while it runs.
-        if (message.type === 'system' && message.subtype === 'task_started' && !message.ambient) {
-          pendingBackgroundTaskIds.add(message.task_id);
-        }
-
-        // Edge: a task finished — remove it. If the main turn already ended and all tasks are
-        // now done, the SDK will auto-continue so Claude can process the notification.
-        if (
-          message.type === 'system' &&
-          message.subtype === 'task_notification' &&
-          !message.ambient
-        ) {
-          const isTerminal =
-            message.status === 'completed' ||
-            message.status === 'failed' ||
-            message.status === 'error';
-          if (isTerminal) {
-            pendingBackgroundTaskIds.delete(message.task_id);
-            if (turnComplete && pendingBackgroundTaskIds.size === 0) {
-              awaitingAutoResume = true;
-              await this.app
-                .service('sessions')
-                .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+        if (trackBackgroundTasks) {
+          if (message.type === 'system' && message.subtype === 'task_started' && !message.ambient) {
+            pendingBackgroundTaskIds.add(message.task_id);
+          }
+          if (
+            message.type === 'system' &&
+            message.subtype === 'task_notification' &&
+            !message.ambient
+          ) {
+            const isTerminal =
+              message.status === 'completed' ||
+              message.status === 'failed' ||
+              message.status === 'error';
+            if (isTerminal) {
+              pendingBackgroundTaskIds.delete(message.task_id);
+              if (turnComplete && pendingBackgroundTaskIds.size === 0) {
+                awaitingAutoResume = true;
+                await onBackgroundAutoResume?.();
+              }
             }
           }
         }
 
-        await this.persistMessage(sessionState, message);
+        await persistMessage(message);
 
-        // The result message ends the current agent turn (or the SDK auto-continuation turn).
         if (message.type === 'result') {
           turnComplete = true;
           awaitingAutoResume = false;
-          if (message.subtype === 'success' && !message.is_error) {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
-          } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-          }
+          const ok = message.subtype === 'success' && !message.is_error;
+          outcome = ok ? 'completed' : 'failed';
+          await onResult?.(message);
         }
 
-        // Exit once the turn (and any auto-continuation) is done and no tasks are still running.
         if (turnComplete && pendingBackgroundTaskIds.size === 0 && !awaitingAutoResume) {
           break;
         }
@@ -426,43 +547,33 @@ export class ClaudeAgentService {
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId }, 'Session stream error');
         logger.error(err, 'Session stream error');
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
         const userFacing =
-          err.message === SDK_QUERY_CLOSED_MESSAGE
-            ? 'Agent connection closed before the response finished. Try sending your message again.'
-            : err.message;
+          err.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : err.message;
         try {
-          await this._persistSessionStatusMessage(sessionId, userId, userFacing);
+          await persistStatus?.(userFacing);
         } catch (persistErr) {
           logger.warn(
             { sessionId, err: persistErr.message },
             'Failed to persist session error status'
           );
         }
+        await onStreamError?.(err);
         this.app
           .service('sessions')
           .emit('app:error', { sessionId, message: userFacing, user_id: userId });
+        outcome = 'failed';
+      } else {
+        outcome = 'stopped';
       }
     } finally {
-      // Single dispose path: success (`break` after `result`), stream error, or abort — avoids double-close
-      // and keeps deferred `queryInstance.close()` logic in one place.
       try {
-        await this._disposeActiveSession(sessionId);
+        await this._disposeActiveSession(key);
       } catch (disposeErr) {
         logger.warn({ sessionId, err: disposeErr?.message }, 'claude-agent dispose failed');
       }
     }
 
-    // Agent is fully disposed — safe to start the next queued message as a fresh turn.
-    if (turnComplete) {
-      try {
-        await this.app.service('sessions').onTurnComplete(sessionId);
-      } catch (err) {
-        logger.warn({ sessionId, err: err.message }, 'Failed to send queued message');
-      }
-    }
+    return { turnComplete, outcome };
   }
 
   async sendMessage(sessionId, content) {
@@ -497,11 +608,13 @@ export class ClaudeAgentService {
     }
 
     const sdkMessage = { type: 'user', message: { role: 'user', content } };
-    await db('session_messages').insert({
+    const row = {
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify(sdkMessage),
-    });
+    };
+    attachSessionTurnModelFields(row, sessionRow);
+    await db('session_messages').insert(row);
 
     session.channel.push({
       type: 'user',
@@ -594,6 +707,9 @@ export function registerClaudeAgentService(app, path = 'claude-agent') {
       'ensureActiveSession',
       'sendMessage',
       'stopSession',
+      'stopTurn',
+      'runTurn',
+      'buildQueryOptions',
       'syncSessionSettingsFromPatch',
       'onMessageCreated',
     ],

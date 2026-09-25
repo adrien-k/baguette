@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import { requireUser, scopeBySessionUser } from './hooks.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
+import { attachSessionTurnModelFields, turnModelCreateFields } from '../../../shared/turn-model.js';
 
 /**
  * Messages service (table: session_messages). Scoped by session; access restricted to sessions owned by params.user.
@@ -26,6 +27,15 @@ function extractForceParam(context) {
   return context;
 }
 
+async function snapshotSessionModelOnUserMessage(context) {
+  const data = context.data;
+  if (!data?.session_id || data.type !== 'user') return context;
+  const session = await context.app.get('db')('sessions').where({ id: data.session_id }).first();
+  if (!session) return context;
+  attachSessionTurnModelFields(data, session);
+  return context;
+}
+
 async function queueIfRunning(context) {
   if (!context.params?.provider || context.data?.type !== 'user') return context;
   if (context.params._force) return context;
@@ -40,6 +50,7 @@ async function queueIfRunning(context) {
       session_id: context.data.session_id,
       message_json: context.data.message_json,
       kind: 'turn',
+      ...turnModelCreateFields(context.data),
     },
     { user: context.params.user }
   );
@@ -63,7 +74,7 @@ async function afterCreateNotifySessionsAndAgent(context) {
 export const messagesHooks = {
   before: {
     all: [requireUser, scopeBySessionUser],
-    create: [extractForceParam, queueIfRunning],
+    create: [extractForceParam, snapshotSessionModelOnUserMessage, queueIfRunning],
   },
   after: {
     create: [afterCreateNotifySessionsAndAgent],

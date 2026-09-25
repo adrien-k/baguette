@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, HelpCircle, Repeat } from 'lucide-react';
+import { ChevronDown, ChevronRight, HelpCircle, Repeat, RefreshCw } from 'lucide-react';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -14,11 +14,13 @@ import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
+import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
 import RepoPicker from './RepoPicker.jsx';
 import { isMobile } from '../utils/isMobile.js';
-import { variantLabel, applyParamOverrides } from '../utils/models.js';
+import CursorVariantFields from './CursorVariantFields.jsx';
+import { applyParamOverrides } from '../utils/models.js';
 
 function parseRepoFullName(full) {
   if (!full) return { owner: '', name: '' };
@@ -81,8 +83,6 @@ export default function BuilderForm({
   );
   const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '');
   const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
-  const [variantExpanded, setVariantExpanded] = useState(false);
-  const [prefsExpanded, setPrefsExpanded] = useState(false);
   const [models, setModels] = useState([]);
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState(
@@ -108,8 +108,6 @@ export default function BuilderForm({
     setAgentSdkRaw(sdk);
     setModel('');
     setCursorVariantIdx(null);
-    setVariantExpanded(false);
-    setPrefsExpanded(false);
   };
 
   const selectedRepo = useMemo(
@@ -315,14 +313,6 @@ export default function BuilderForm({
     initialPrompt &&
     (!isLoop || isScheduleComplete(schedule));
 
-  useEffect(() => {
-    if (!initialPromptRef.current) return;
-    const el = initialPromptRef.current;
-    el.style.height = 'auto';
-    const lineHeight = parseInt(getComputedStyle(el).lineHeight);
-    el.style.height = Math.min(el.scrollHeight, lineHeight * 20) + 'px';
-  }, [initialPrompt]);
-
   const clearForm = () => {
     const keepTarget = allowRepoChoice ? targetScope : null;
     persistentState.clear();
@@ -443,34 +433,17 @@ export default function BuilderForm({
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
 
   const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
-  const selectedVariant =
-    selectedModel?.variants != null && cursorVariantIdx != null
-      ? selectedModel.variants[cursorVariantIdx]
-      : null;
   const variants = selectedModel?.variants ?? [];
 
-  const retryVariantWithPreference = (newFast, newEffort) => {
-    const baseParams = selectedVariant?.params ?? [];
-    const mergedParams = applyParamOverrides(baseParams, newFast, newEffort);
-    const mergedStr = JSON.stringify(mergedParams);
-    const withPreferenceVariantIdx = variants.findIndex((v) => {
-      try {
-        return JSON.stringify(v.params) === mergedStr;
-      } catch {
-        return false;
-      }
-    });
-    if (withPreferenceVariantIdx >= 0) setCursorVariantIdx(withPreferenceVariantIdx);
-  };
-
   const promptTextarea = (
-    <textarea
+    <AutoGrowTextarea
       ref={initialPromptRef}
       value={initialPrompt}
       onChange={(e) => setInitialPrompt(e.target.value)}
       onKeyDown={handleKeyDown}
       rows={3}
-      className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 pr-9 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent overflow-y-auto resize-none"
+      maxLines={20}
+      className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 pr-9 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent resize-none"
       placeholder={
         isLoop
           ? 'Describe what the agent should do on every run...'
@@ -593,9 +566,19 @@ export default function BuilderForm({
       )}
 
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-1">
-          {isLoop ? 'Prompt' : 'Initial Prompt'}
-        </label>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+          <label className="text-sm font-medium text-zinc-300">Prompt</label>
+          {!isLoop && (
+            <Link
+              to="/settings?tab=agent&prompt=session#settings-agent-prompts"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-amber-400 hover:text-amber-300 underline"
+            >
+              Configure the system prompt
+            </Link>
+          )}
+        </div>
         {/* Attachments are a one-off input for a single run, so a loop takes the prompt alone. */}
         {isLoop ? (
           promptTextarea
@@ -804,7 +787,6 @@ export default function BuilderForm({
                   onChange={(e) => {
                     setModel(e.target.value);
                     setCursorVariantIdx(null);
-                    setVariantExpanded(false);
                   }}
                   className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                 >
@@ -822,116 +804,24 @@ export default function BuilderForm({
                   title="Refresh models"
                   className="px-1.5 py-2 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
                 >
-                  ↻
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingModels ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             )}
           </div>
 
-          {/* Cursor variant + preferences selectors */}
           {availableSdks.length > 0 && isCursor && (
-            <div className="mt-1 ml-px">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                {variants.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVariantExpanded((v) => !v);
-                      setPrefsExpanded(false);
-                    }}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-                  >
-                    <span>
-                      {selectedVariant
-                        ? variantLabel(selectedVariant, selectedModel?.display_name)
-                        : 'Select variant'}
-                    </span>
-                    <ChevronDown
-                      className={`w-2.5 h-2.5 transition-transform ${variantExpanded ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrefsExpanded((v) => !v);
-                    setVariantExpanded(false);
-                  }}
-                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-                >
-                  <span>preferences</span>
-                  <ChevronDown
-                    className={`w-2.5 h-2.5 transition-transform ${prefsExpanded ? 'rotate-180' : ''}`}
-                  />
-                </button>
-              </div>
-              {variants.length > 0 && variantExpanded && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {variants.map((v, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        setCursorVariantIdx(i);
-                        setVariantExpanded(false);
-                      }}
-                      className={`px-2.5 py-1 rounded text-xs transition-colors border ${
-                        cursorVariantIdx === i
-                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                          : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
-                      }`}
-                    >
-                      {variantLabel(v, selectedModel?.display_name)}
-                      {v.is_default && <span className="ml-1 text-zinc-500">(default)</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {prefsExpanded && (
-                <div className="mt-1.5 flex flex-col gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-zinc-500 w-10">fast:</span>
-                    {['default', 'yes', 'no'].map((val) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => {
-                          setCursorFast(val);
-                          retryVariantWithPreference(val, cursorEffort);
-                        }}
-                        className={`px-2.5 py-1 rounded text-xs transition-colors border ${
-                          cursorFast === val
-                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-zinc-500 w-10">effort:</span>
-                    {['default', 'low', 'medium', 'high', 'xhigh'].map((val) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => {
-                          setCursorEffort(val);
-                          retryVariantWithPreference(cursorFast, val);
-                        }}
-                        className={`px-2.5 py-1 rounded text-xs transition-colors border ${
-                          cursorEffort === val
-                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <CursorVariantFields
+              key={model}
+              variants={variants}
+              modelDisplayName={selectedModel?.display_name}
+              variantIdx={cursorVariantIdx}
+              onVariantIdxChange={setCursorVariantIdx}
+              cursorFast={cursorFast}
+              cursorEffort={cursorEffort}
+              onCursorFastChange={setCursorFast}
+              onCursorEffortChange={setCursorEffort}
+            />
           )}
         </div>
 

@@ -6,6 +6,7 @@ import { useRepoContext } from '../context/RepoContext.jsx';
 import { toastError } from '../utils/toastError.jsx';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
+import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
 
 const TOTAL_STEPS = 2;
 
@@ -102,7 +103,7 @@ export default function Onboarding() {
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
         <div className="flex items-center gap-3 mb-10">
-          <img src="/baguette.svg" alt="" className="w-7 h-7" />
+          <BaguetteIcon className="w-7 h-7" />
           <span className="text-white font-semibold font-display">Baguette</span>
         </div>
 

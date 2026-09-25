@@ -42,9 +42,11 @@ import path from 'path';
 import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '../session-env.js';
 import { getGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
+import { turnModelCreateFields } from '../../../shared/turn-model.js';
 
 /**
  * Sent to an agent whose turn was cut short by a server restart. The transcript is resumed, but
@@ -101,6 +103,7 @@ export class SessionsService extends KnexService {
    * would otherwise sit there forever. Sessions whose agent conversation can be resumed
    * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
    * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
+   * Reviews left in `review_status: 'running'` are resumed the same way when a review agent id is stored.
    *
    * Call this after `app.setup()` — restarting reaches into the agent services, which need their
    * own `setup()` to have run first.
@@ -137,6 +140,9 @@ export class SessionsService extends KnexService {
     if (interrupted.length > 0) {
       logger.info(counts, 'Recovered interrupted session(s) on startup');
     }
+
+    await this._resumeInterruptedReviews();
+
     return counts;
   }
 
@@ -344,6 +350,7 @@ export class SessionsService extends KnexService {
       }
 
       await this._stopAgentSession(session);
+      await this._stopReviewer(session);
       await this._runCleanupAndFinalize(session);
       return await this.options.Model('sessions').where({ id }).first();
     } finally {
@@ -436,6 +443,32 @@ export class SessionsService extends KnexService {
   _stopAgentSession(session) {
     const service = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
     return this.app.service(service).stopSession(session.id);
+  }
+
+  async _stopReviewer(session) {
+    if (!this.app.services?.['session-review']) return;
+    try {
+      await this.app
+        .service('session-review')
+        .stop({ session_id: session.id }, { user: { id: session.user_id } });
+    } catch (err) {
+      logger.warn(
+        { sessionId: session.id, err: err.message },
+        'Failed to stop session reviewer on archive'
+      );
+    }
+  }
+
+  async _resumeInterruptedReviews() {
+    if (!this.app.services?.['session-review']) return;
+    try {
+      const reviewCounts = await this.app.service('session-review').resumeInterrupted();
+      if (reviewCounts && (reviewCounts.resumed || reviewCounts.failed)) {
+        logger.info(reviewCounts, 'Recovered interrupted review(s) on startup');
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Failed to resume interrupted reviews on startup');
+    }
   }
 
   async stop(data, params) {
@@ -860,33 +893,7 @@ export class SessionsService extends KnexService {
     if (status !== undefined && session.status !== status) patch.status = status;
 
     if (result !== null) {
-      // `total_cost_usd` and `modelUsage` are running totals for the query, not
-      // per-turn figures, so this turn's share is the difference from the last
-      // result we saw. See server/services/turn-usage.js.
-      const prev = this._lastResultTotals.get(sessionId) ?? { cost: 0, models: {} };
-      const costUpdate = delta(prev.cost, result.total_cost_usd);
-      const turnUsage = diffModelUsage(prev.models, result.modelUsage);
-      this._lastResultTotals.set(sessionId, {
-        cost: Number(result.total_cost_usd) || 0,
-        models: result.modelUsage ?? {},
-      });
-
-      if (costUpdate > 0 || turnUsage.total_tokens > 0) {
-        await db('usage').insert({
-          session_id: sessionId,
-          user_id: session.user_id,
-          repo_full_name: session.repo_full_name,
-          cost_usd: costUpdate,
-          agent_sdk: session.agent_sdk || 'claude',
-          input_tokens: turnUsage.input_tokens,
-          output_tokens: turnUsage.output_tokens,
-          cache_read_tokens: turnUsage.cache_read_tokens,
-          cache_write_tokens: turnUsage.cache_write_tokens,
-          reasoning_tokens: turnUsage.reasoning_tokens,
-          total_tokens: turnUsage.total_tokens,
-          model: turnUsage.model ?? session.model ?? null,
-        });
-      }
+      const costUpdate = await this.recordClaudeUsage(session, result);
       if (costUpdate > 0) {
         patch.total_cost_usd = parseFloat(session.total_cost_usd ?? 0) + costUpdate;
       }
@@ -900,6 +907,64 @@ export class SessionsService extends KnexService {
     }
   }
 
+  /**
+   * Incremental Claude cost/tokens for one SDK `result`. Chat goes through
+   * `onMessageCreated`; review results never land on `messages`, so review
+   * calls this directly with `{ kind: 'review', totalsKey }`.
+   *
+   * `total_cost_usd` and `modelUsage` are running totals for the query, so this
+   * turn's share is the difference from the last result for `totalsKey`. See
+   * server/services/turn-usage.js.
+   *
+   * @returns {Promise<number>} cost delta to add to `sessions.total_cost_usd`
+   */
+  async recordClaudeUsage(session, result, { kind, model, totalsKey, patchSessionCost } = {}) {
+    if (!session || !result) return 0;
+    const key = totalsKey ?? session.id;
+    const prev = this._lastResultTotals.get(key) ?? { cost: 0, models: {} };
+    const costUpdate = delta(prev.cost, result.total_cost_usd);
+    const turnUsage = diffModelUsage(prev.models, result.modelUsage);
+    this._lastResultTotals.set(key, {
+      cost: Number(result.total_cost_usd) || 0,
+      models: result.modelUsage ?? {},
+    });
+    if (costUpdate <= 0 && turnUsage.total_tokens <= 0) return 0;
+
+    const db = this.app.get('db');
+    const row = {
+      session_id: session.id,
+      user_id: session.user_id,
+      repo_full_name: session.repo_full_name,
+      cost_usd: Math.max(costUpdate, 0),
+      agent_sdk: session.agent_sdk || 'claude',
+      input_tokens: turnUsage.input_tokens,
+      output_tokens: turnUsage.output_tokens,
+      cache_read_tokens: turnUsage.cache_read_tokens,
+      cache_write_tokens: turnUsage.cache_write_tokens,
+      reasoning_tokens: turnUsage.reasoning_tokens,
+      total_tokens: turnUsage.total_tokens,
+      model: turnUsage.model ?? model ?? session.model ?? null,
+    };
+    if (kind) row.kind = kind;
+    await db('usage').insert(row);
+
+    if (patchSessionCost && costUpdate > 0) {
+      const latest = await db('sessions').where({ id: session.id }).first();
+      await this.app
+        .service('sessions')
+        .patch(
+          session.id,
+          { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUpdate },
+          { provider: undefined, user: { id: session.user_id } }
+        );
+    }
+    return costUpdate;
+  }
+
+  resetClaudeUsageTotals(totalsKey) {
+    this._lastResultTotals.delete(totalsKey);
+  }
+
   async onTurnComplete(sessionId) {
     const db = this.app.get('db');
     const queued = await db('queued_messages')
@@ -910,12 +975,15 @@ export class SessionsService extends KnexService {
     await this.app.service('queued-messages').remove(queued.id, {
       user: { id: queued.user_id },
     });
-    await this.app
-      .service('messages')
-      .create(
-        { session_id: sessionId, type: 'user', message_json: queued.message_json },
-        { user: { id: queued.user_id } }
-      );
+    await this.app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: queued.message_json,
+        ...turnModelCreateFields(queued),
+      },
+      { user: { id: queued.user_id } }
+    );
   }
 }
 
@@ -1350,6 +1418,20 @@ function normalizeModelFields(context) {
   return context;
 }
 
+/** Reviewer starts from the session's SDK/model; later edits write review_* only. */
+function seedReviewModelFromSession(context) {
+  if (context.data.review_agent_sdk === undefined) {
+    context.data.review_agent_sdk = context.data.agent_sdk || 'claude';
+  }
+  if (context.data.review_model === undefined) {
+    context.data.review_model = context.data.model ?? null;
+  }
+  if (context.data.review_model_params === undefined) {
+    context.data.review_model_params = context.data.model_params ?? null;
+  }
+  return context;
+}
+
 export function registerSessionsService(app, path = 'sessions') {
   const options = {
     Model: app.get('db'),
@@ -1406,6 +1488,7 @@ export const sessionsHooks = {
       serializePlugins,
       extractInitialFiles,
       normalizeModelFields,
+      seedReviewModelFromSession,
     ],
     patch: [requireOwnSession, normalizeModelFields],
     stop: [resolveSessionFromData],
@@ -1462,7 +1545,8 @@ async function persistSystemPrompt(context) {
   if (!session) return context;
   if (!session.repo_full_name && !isGlobalSession(session)) return context;
 
-  const promptAppend = await buildSystemPromptAppend(session);
+  const agentPrompt = await getEffectiveAgentPrompt(context.app, session.user_id, session.repo_id);
+  const promptAppend = await buildSystemPromptAppend(session, { agentPrompt });
 
   if (!promptAppend) return context;
 

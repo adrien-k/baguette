@@ -3,7 +3,6 @@ import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'reac
 import {
   ChevronLeft,
   MoreVertical,
-  ListTodo,
   FolderOpen,
   X,
   Plus,
@@ -15,9 +14,11 @@ import {
   Archive,
   Loader2,
   PanelLeft,
+  PanelRight,
   Pencil,
   Upload,
   MonitorPlay,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
@@ -26,10 +27,11 @@ import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
 import { splitRepoPath } from '../utils/paths.js';
 import { apiFetch } from '../api.js';
-import { sessionsService, tasksService } from '../feathers.js';
+import { sessionsService, tasksService, messagesService } from '../feathers.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
+import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import TaskPanel from '../components/TaskPanel.jsx';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
@@ -39,13 +41,26 @@ import DiffView from './session/DiffView.jsx';
 import LogsView from './session/LogsView.jsx';
 import EditView from './session/EditView.jsx';
 import PreviewView from './session/PreviewView.jsx';
+import ReviewView from './session/ReviewView.jsx';
+import ReviewAgentPanel from './session/ReviewAgentPanel.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
 import SessionToolLink from '../components/SessionToolLink.jsx';
+import Toggle from '../components/Toggle.jsx';
 import { parseModelField } from '../utils/models.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
+import {
+  createFileReferenceBlock,
+  fileReferenceAgentText,
+} from '@baguette/shared/user-message-content.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
+import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
+
+const TASK_PANEL_WIDTH_DEFAULT = 320;
+const REVIEW_PANEL_WIDTH_DEFAULT = 480;
+const SIDE_PANEL_WIDTH_MIN = 240;
+const SIDE_PANEL_WIDTH_MAX = 800;
 
 /**
  * Processes a flat list of messages from session history:
@@ -267,6 +282,7 @@ function MiniSessionEntry({ session: s, currentId, onArchive }) {
 
 const BASE_VIEWS = [
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
+  { id: 'review', label: 'Issues', Icon: ClipboardCheck },
   { id: 'diff', label: 'Diff', Icon: FolderOpen },
   { id: 'logs', label: 'Logs', Icon: ScrollText },
   { id: 'edit', label: 'Edit', Icon: Pencil },
@@ -310,12 +326,22 @@ export default function Session() {
     hasMore,
   } = useGetMessages(sessionId);
   const { tasks: tasksFromHook } = useGetTasks({ sessionId, skip: !sessionId });
+  const { issues: sessionIssues } = useGetSessionIssues(sessionId);
 
   const [session, setSession] = useState(null);
   const [prInfo, setPrInfo] = useState(null);
   const [killedTaskIds, setKilledTaskIds] = useState(new Set());
   const [showTasks, setShowTasks] = useState(false);
   const [showSidebar, setShowSidebar] = useState(null);
+  const sidePanelPersist = usePersistentState('session-side-panel');
+  const [tasksPanelWidth, setTasksPanelWidth] = sidePanelPersist.useState(
+    'tasksWidth',
+    TASK_PANEL_WIDTH_DEFAULT
+  );
+  const [reviewPanelWidth, setReviewPanelWidth] = sidePanelPersist.useState(
+    'reviewWidth',
+    REVIEW_PANEL_WIDTH_DEFAULT
+  );
   const [diffFiles, setDiffFiles] = useState([]);
   const [commitsToPush, setCommitsToPush] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
@@ -390,7 +416,7 @@ export default function Session() {
     }
     const list = [...BASE_VIEWS];
     if (session?.preview_url) {
-      list.splice(3, 0, PREVIEW_VIEW);
+      list.splice(4, 0, PREVIEW_VIEW);
     }
     return list;
   }, [session]);
@@ -483,14 +509,6 @@ export default function Session() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showMenu]);
 
-  const handlePlanToggle = () => {
-    if (!session?.id) return;
-    sessionsService
-      .patch(session.id, { plan_mode: !session?.plan_mode })
-      .catch((err) => toastError('Failed to toggle plan mode', err));
-    setShowMenu(false);
-  };
-
   const handleModelChange = (modelId, modelParams = null) => {
     if (!session?.id) return;
     const patch = { model: modelId };
@@ -539,6 +557,13 @@ export default function Session() {
 
   const handleViewTaskLogs = (taskId) => {
     setActiveTaskModal(taskId);
+  };
+
+  const handleAutoPushChange = (enabled) => {
+    if (!session?.id) return;
+    sessionsService
+      .patch(session.id, { auto_push: enabled })
+      .catch((err) => toastError('Failed to update auto-push setting', err));
   };
 
   const handlePush = () => {
@@ -615,6 +640,25 @@ export default function Session() {
   const isReadonly = !!session.archived_at || session.status === 'archiving';
   const isArchiving = !session.archived_at && session.status === 'archiving';
 
+  const handleDiffLineReference = async ({ path, line }) => {
+    if (!session?.id || isReadonly) return;
+    try {
+      const block = createFileReferenceBlock(path, line);
+      await messagesService.create({
+        session_id: session.id,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: [block] },
+        }),
+      });
+      setView('chat');
+      toast.success(`Referenced ${fileReferenceAgentText(block)}`);
+    } catch (err) {
+      toastError('Failed to send line reference', err);
+    }
+  };
+
   let sidebarClassName = 'hidden md:flex';
   if (showSidebar) {
     sidebarClassName = 'flex';
@@ -622,6 +666,31 @@ export default function Session() {
   if (showSidebar === false) {
     sidebarClassName = 'hidden';
   }
+
+  const isReviewPanel = activeView === 'review';
+  const sidePanelWidth = isReviewPanel ? reviewPanelWidth : tasksPanelWidth;
+  const setSidePanelWidth = isReviewPanel ? setReviewPanelWidth : setTasksPanelWidth;
+  const handleSidePanelResizeStart = (event) => {
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startW = sidePanelWidth;
+    const onMove = (ev) => {
+      const max = Math.min(SIDE_PANEL_WIDTH_MAX, Math.floor(window.innerWidth * 0.65));
+      const next = Math.round(
+        Math.min(max, Math.max(SIDE_PANEL_WIDTH_MIN, startW + (startX - ev.clientX)))
+      );
+      setSidePanelWidth(next);
+    };
+    const onUp = () => {
+      handle.releasePointerCapture(event.pointerId);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+  };
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* Top Bar */}
@@ -700,136 +769,105 @@ export default function Session() {
             {!isReadonly && (
               <>
                 {session?.pr_status !== 'merged' && !isGlobalSession(session) && (
-                  <button
-                    type="button"
-                    onClick={handlePush}
-                    disabled={pushing}
-                    title="Push commits"
-                    className="relative hidden sm:flex items-center gap-1 px-2 py-1 rounded border text-xs transition-colors border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300 disabled:opacity-50"
-                  >
-                    <Upload className="w-3 h-3" />
-                    Push
-                    {commitsToPush > 0 && (
-                      <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
-                        {commitsToPush}
-                      </span>
-                    )}
-                  </button>
-                )}
-                <button
-                  onClick={handlePlanToggle}
-                  title={session.plan_mode ? 'Disable Plan Mode' : 'Enable Plan Mode'}
-                  className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded border text-xs transition-colors ${
-                    session.plan_mode
-                      ? 'border-amber-500 text-amber-400 bg-amber-500/10'
-                      : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-                  }`}
-                >
-                  Plan mode
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={() => setShowTasks(!showTasks)}
-              className={`xl:hidden p-1.5 sm:px-3 sm:py-1 rounded border text-xs transition-colors relative ${
-                showTasks
-                  ? 'border-amber-500 text-amber-400'
-                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-              }`}
-            >
-              {activeView === 'diff' ? (
-                <FolderOpen className="w-4 h-4 sm:hidden" />
-              ) : (
-                <ListTodo className="w-4 h-4 sm:hidden" />
-              )}
-              <span className="hidden sm:inline">{activeView === 'diff' ? 'Files' : 'Tasks'}</span>
-            </button>
-            {!isReadonly && (
-              <div className="relative" ref={menuRef}>
-                <button
-                  onClick={() => setShowMenu(!showMenu)}
-                  className="p-1.5 rounded border border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-
-                {showMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50">
-                    {session.agent_sdk && (
-                      <div className="p-2 border-b border-zinc-800 sm:hidden">
-                        <div className="text-[11px] text-zinc-500 px-2 py-1">Agent</div>
-                        <div className="px-2 py-1 text-xs text-zinc-400">
-                          {session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-                        </div>
-                      </div>
-                    )}
-                    {session.base_branch && (
-                      <div className="p-2 border-b border-zinc-800 sm:hidden">
-                        <div className="text-[11px] text-zinc-500 px-2 py-1">Base branch</div>
-                        <div className="px-2 py-1 text-xs text-zinc-400">{session.base_branch}</div>
-                      </div>
-                    )}
-                    {!isGlobalSession(session) && (
-                      <div className="p-2 border-b border-zinc-800 sm:hidden">
-                        <button
-                          onClick={() => {
-                            handlePush();
-                            setShowMenu(false);
-                          }}
-                          disabled={pushing}
-                          className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
-                        >
-                          <Upload className="w-3 h-3 shrink-0" />
-                          <span>Push</span>
-                          {commitsToPush > 0 && (
-                            <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
-                              {commitsToPush}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                    <div className="p-2 border-b border-zinc-800 sm:hidden">
-                      <button
-                        onClick={handlePlanToggle}
-                        className={`w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center justify-between ${
-                          session.plan_mode
-                            ? 'text-amber-400 bg-amber-500/10'
-                            : 'text-zinc-300 hover:bg-zinc-800'
-                        }`}
-                      >
-                        <span>Plan Mode</span>
-                        <div
-                          className={`relative w-7 h-3.5 rounded-full transition-colors ${session.plan_mode ? 'bg-amber-500' : 'bg-zinc-600'}`}
-                        >
-                          <span
-                            className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform ${session.plan_mode ? 'translate-x-3.5' : 'translate-x-0'}`}
-                          />
-                        </div>
-                      </button>
-                    </div>
-                    <div className="p-1">
-                      {session.status === 'running' && (
-                        <button
-                          onClick={handleStop}
-                          className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-zinc-800 rounded"
-                        >
-                          Stop Session
-                        </button>
+                  <div className="hidden sm:flex items-center gap-2">
+                    <Toggle
+                      checked={!!session.auto_push}
+                      onChange={handleAutoPushChange}
+                      label="Auto-push"
+                      title="Automatically push after the agent commits"
+                    />
+                    <button
+                      type="button"
+                      onClick={handlePush}
+                      disabled={pushing}
+                      title="Push commits"
+                      className="relative flex items-center gap-1 h-8 px-2.5 rounded border text-xs transition-colors border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300 disabled:opacity-50"
+                    >
+                      <Upload className="w-3 h-3" />
+                      Push
+                      {commitsToPush > 0 && (
+                        <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+                          {commitsToPush}
+                        </span>
                       )}
-                      {session.status !== 'archiving' && session.status !== 'provisioning' && (
-                        <button
-                          onClick={handleArchive}
-                          className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 rounded"
-                        >
-                          Archive Session
-                        </button>
-                      )}
-                    </div>
+                    </button>
                   </div>
                 )}
-              </div>
+                <div className="relative" ref={menuRef}>
+                  <button
+                    onClick={() => setShowMenu(!showMenu)}
+                    className="h-8 w-8 inline-flex items-center justify-center rounded border border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {showMenu && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-50">
+                      {session.agent_sdk && (
+                        <div className="p-2 border-b border-zinc-800 sm:hidden">
+                          <div className="text-[11px] text-zinc-500 px-2 py-1">Agent</div>
+                          <div className="px-2 py-1 text-xs text-zinc-400">
+                            {session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                          </div>
+                        </div>
+                      )}
+                      {session.base_branch && (
+                        <div className="p-2 border-b border-zinc-800 sm:hidden">
+                          <div className="text-[11px] text-zinc-500 px-2 py-1">Base branch</div>
+                          <div className="px-2 py-1 text-xs text-zinc-400">
+                            {session.base_branch}
+                          </div>
+                        </div>
+                      )}
+                      {!isGlobalSession(session) && session?.pr_status !== 'merged' && (
+                        <div className="p-2 border-b border-zinc-800 sm:hidden space-y-1.5">
+                          <Toggle
+                            checked={!!session.auto_push}
+                            onChange={handleAutoPushChange}
+                            label="Auto-push"
+                            title="Automatically push after the agent commits"
+                            className="w-full px-2 py-1.5"
+                          />
+                          <button
+                            onClick={() => {
+                              handlePush();
+                              setShowMenu(false);
+                            }}
+                            disabled={pushing}
+                            className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                          >
+                            <Upload className="w-3 h-3 shrink-0" />
+                            <span>Push</span>
+                            {commitsToPush > 0 && (
+                              <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+                                {commitsToPush}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                      <div className="p-1">
+                        {session.status === 'running' && (
+                          <button
+                            onClick={handleStop}
+                            className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-zinc-800 rounded"
+                          >
+                            Stop Session
+                          </button>
+                        )}
+                        {session.status !== 'archiving' && session.status !== 'provisioning' && (
+                          <button
+                            onClick={handleArchive}
+                            className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 rounded"
+                          >
+                            Archive Session
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -878,10 +916,10 @@ export default function Session() {
             </Link>
             <button
               onClick={() => setShowSidebar(false)}
-              className="text-zinc-600 hover:text-zinc-400 transition-colors"
+              className="text-zinc-600 hover:text-zinc-400 transition-colors p-0.5"
               title="Hide sidebar"
             >
-              <PanelLeft className="w-3.5 h-3.5" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
           <div className="flex-1 overflow-auto min-h-0">
@@ -948,30 +986,36 @@ export default function Session() {
                 >
                   <Icon className="w-3.5 h-3.5" />
                   {label}
+                  {id === 'review' &&
+                    sessionIssues.filter((i) => i.status === 'opened').length > 0 && (
+                      <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-zinc-950 text-[10px] font-bold leading-4">
+                        {sessionIssues.filter((i) => i.status === 'opened').length}
+                      </span>
+                    )}
                 </button>
               ))}
             </div>
-            {!isReadonly && session?.pr_status !== 'merged' && !isGlobalSession(session) && (
-              <div className="ml-auto shrink-0 flex items-center gap-2 py-2 pl-2">
-                <span className="text-xs text-zinc-500">Auto-push</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={!!session?.auto_push}
-                  onClick={() => {
-                    if (!session?.id) return;
-                    sessionsService
-                      .patch(session.id, { auto_push: !session.auto_push })
-                      .catch((err) => toastError('Failed to update auto-push setting', err));
-                  }}
-                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.auto_push ? 'bg-amber-500' : 'bg-zinc-600'}`}
-                >
-                  <span
-                    className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${session?.auto_push ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-                  />
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowTasks(!showTasks)}
+              title={
+                activeView === 'diff'
+                  ? 'Open files panel'
+                  : activeView === 'review'
+                    ? 'Open reviewer panel'
+                    : 'Open tasks panel'
+              }
+              className={`xl:hidden ml-auto shrink-0 flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1 rounded border text-xs transition-colors ${
+                showTasks
+                  ? 'border-amber-500 text-amber-400'
+                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
+              }`}
+            >
+              <PanelRight className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">
+                {activeView === 'diff' ? 'Files' : activeView === 'review' ? 'Reviewer' : 'Tasks'}
+              </span>
+            </button>
           </div>
 
           <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -993,7 +1037,21 @@ export default function Session() {
                 cursorEffort={cursorEffort}
               />
             )}
-            {activeView === 'diff' && <DiffView session={session} onFilesChange={setDiffFiles} />}
+            {activeView === 'review' && (
+              <ReviewView
+                session={session}
+                readonly={isReadonly}
+                onReviewStarted={() => setShowTasks(true)}
+              />
+            )}
+            {activeView === 'diff' && (
+              <DiffView
+                session={session}
+                onFilesChange={setDiffFiles}
+                onLineReference={handleDiffLineReference}
+                readonly={isReadonly}
+              />
+            )}
             {activeView === 'logs' && (
               <LogsView
                 rawMessages={rawMessages}
@@ -1023,13 +1081,23 @@ export default function Session() {
         <div
           className={
             showTasks
-              ? 'flex fixed inset-y-0 right-0 w-[85vw] max-w-sm z-40 xl:relative xl:inset-auto xl:w-80 xl:z-auto border-l border-zinc-800 bg-zinc-900 flex-col'
-              : 'hidden xl:flex xl:w-80 border-l border-zinc-800 bg-zinc-900 flex-col'
+              ? `flex fixed inset-y-0 right-0 z-40 w-[85vw] xl:relative xl:inset-auto xl:z-auto xl:w-[var(--side-panel-w)] ${
+                  isReviewPanel ? 'max-w-xl xl:max-w-none' : 'max-w-sm xl:max-w-none'
+                } border-l border-zinc-800 bg-zinc-900 flex-col shrink-0`
+              : 'hidden xl:flex relative xl:w-[var(--side-panel-w)] border-l border-zinc-800 bg-zinc-900 flex-col shrink-0'
           }
+          style={{ '--side-panel-w': `${sidePanelWidth}px` }}
         >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize side panel"
+            onPointerDown={handleSidePanelResizeStart}
+            className="hidden xl:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-amber-500/50 active:bg-amber-500/70"
+          />
           <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
             <h3 className="text-sm font-medium text-zinc-300">
-              {activeView === 'diff' ? 'Files' : 'Tasks'}
+              {activeView === 'diff' ? 'Files' : activeView === 'review' ? 'Reviewer' : 'Tasks'}
             </h3>
             <button
               onClick={() => setShowTasks(false)}
@@ -1076,6 +1144,8 @@ export default function Session() {
                 })
               )}
             </div>
+          ) : activeView === 'review' ? (
+            <ReviewAgentPanel session={session} readonly={isReadonly} sidePanelOpen={showTasks} />
           ) : (
             <TaskPanel
               tasks={tasks}

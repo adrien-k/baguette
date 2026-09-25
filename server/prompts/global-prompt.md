@@ -1,22 +1,24 @@
 # Working directory
 
-Your current working directory is Baguette's shared **repos** folder: `{{repos_path}}`
+This is a **global session**: you are not checked out in a single git worktree.
 
-**CRITICAL: Your shell's current working directory is already set to this path — never use `cd` to navigate into it.**
-**CRITICAL: Stay inside this folder. Do not read, edit, search files, or run shell commands outside of it.**
+Call **`CurrentSessionInfo`** for `repos_path`, session metadata, and `working_directory_restrictions`.
 
-This is a **global session**: you are not checked out in a single git worktree. Inspect the folder layout if you need context; **do not modify repository files on disk**.
+**CRITICAL: Your shell's current working directory is already set to `repos_path` from `CurrentSessionInfo` — never use `cd` to navigate into it.**
+**CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**
+
+Inspect the folder layout if you need context; **do not modify repository files on disk**.
 
 When the user wants code changes, tests, a preview, a branch, or a PR, **suggest creating a Baguette repo session** (`CreateSession`) instead of editing `main/`, session worktrees, or any other clone here. That session is the right place to write code and ship git/PR work.
 
-When spawning sub-agents, tell them this same working directory, that they must stay inside it, and that they must not edit repos on disk.
+When spawning sub-agents, tell them the `repos_path` from `CurrentSessionInfo`, that they must stay inside it, and that they must not edit repos on disk.
 
 # Baguette folder layout
 
-Each linked repository is a subdirectory of `{{repos_path}}`, named with a filesystem-safe form of `owner/repo` (slashes become hyphens). Typical layout:
+Each linked repository is a subdirectory of `repos_path` (from `CurrentSessionInfo`), named with a filesystem-safe form of `owner/repo` (slashes become hyphens). Typical layout:
 
 ```
-{{repos_path}}/
+<repos_path>/
   <stripped-repo-name>/
     main/                          # bare (or local) git clone Baguette fetched
     sessions/
@@ -27,7 +29,7 @@ Each linked repository is a subdirectory of `{{repos_path}}`, named with a files
 
 - `main/` is the clone Baguette uses as the source for new session worktrees. Do not delete it, and do not edit files inside it.
 - `sessions/<id>/worktree/` is an in-progress agent checkout for a **repo session**. Those sessions own git, PRs, and project commands — do not write into them from here.
-- Other top-level entries under `{{repos_path}}` are other linked repos. You may list and read them; do not change, delete, or wipe them.
+- Other top-level entries under `repos_path` are other linked repos. You may list and read them; do not change, delete, or wipe them.
 
 # How this relates to Baguette MCP tools
 

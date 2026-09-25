@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Loader2, Archive, Repeat } from 'lucide-react';
+import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { sessionsService, loopsService } from '../feathers.js';
@@ -298,7 +299,7 @@ export default function Dashboard() {
         )}
         {!loading && filteredSessions.length === 0 && sessions.length === 0 && (
           <div className="flex flex-col items-center py-16 gap-3 opacity-50">
-            <img src="/baguette.svg" alt="" className="w-10 h-10" />
+            <BaguetteIcon className="w-10 h-10" />
             <p className="text-zinc-500 text-sm">No sessions yet. Create one to get started.</p>
           </div>
         )}

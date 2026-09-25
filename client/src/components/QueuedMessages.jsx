@@ -162,7 +162,7 @@ function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
 export default function QueuedMessages({ queue, onDelete, onSendNow, onEdit }) {
   if (!queue.length) return null;
   return (
-    <div className="flex flex-col gap-2 px-3 sm:px-4 pb-1">
+    <div className="flex flex-col gap-2">
       {queue.map((item) => (
         <QueuedItem
           key={item.id}

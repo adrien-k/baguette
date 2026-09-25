@@ -79,6 +79,22 @@ describe('queued-messages schedule', () => {
     expect(row.message_json).toBe(messageJson);
   });
 
+  it('stores model snapshot on schedule()', async () => {
+    const sendAt = new Date(Date.now() + 60_000).toISOString();
+    const row = await app.service('queued-messages').schedule(
+      {
+        session_id: sessionId,
+        message_json: messageJson,
+        send_at: sendAt,
+        model: 'sonnet',
+        model_params: '[{"id":"fast"}]',
+      },
+      params({ id: userId })
+    );
+    expect(row.model).toBe('sonnet');
+    expect(row.model_params).toBe('[{"id":"fast"}]');
+  });
+
   it('forbids external create', async () => {
     await expect(
       app
@@ -139,6 +155,27 @@ describe('scheduled dispatcher', () => {
 
     const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
     expect(messages).toHaveLength(1);
+    expect(messages[0].model).toBeNull();
+  });
+
+  it('passes the queued model onto the created message', async () => {
+    const sendAt = new Date(Date.now() - 1_000).toISOString();
+    await db('queued_messages').insert({
+      session_id: sessionId,
+      user_id: userId,
+      message_json: messageJson,
+      kind: 'scheduled',
+      send_at: sendAt,
+      model: 'sonnet',
+      model_params: '[{"id":"fast"}]',
+    });
+
+    await app.service('queued-messages').runDue();
+
+    const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
+    expect(messages).toHaveLength(1);
+    expect(messages[0].model).toBe('sonnet');
+    expect(messages[0].model_params).toBe('[{"id":"fast"}]');
   });
 
   it('queues into turn queue when session is running at dispatch time', async () => {

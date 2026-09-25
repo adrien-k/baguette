@@ -1,4 +1,5 @@
 import GithubIcon from '../components/svg/GithubIcon.jsx';
+import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
 import { useSearchParams } from 'react-router-dom';
 
 function withRedirectTo(path, redirectTo) {
@@ -18,7 +19,7 @@ export default function Login() {
       </div>
 
       <div className="bg-zinc-900 rounded-2xl p-10 text-center max-w-sm w-full shadow-2xl border border-zinc-800 relative">
-        <img src="/baguette.svg" alt="" className="w-16 h-16 mx-auto mb-4" />
+        <BaguetteIcon className="w-16 h-16 mx-auto mb-4" />
         <h1 className="text-3xl font-bold text-white mb-2 font-display">Baguette</h1>
         <p className="text-zinc-400 mb-8 text-sm">AI-powered coding sessions</p>
         <a

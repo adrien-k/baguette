@@ -12,8 +12,11 @@ import { listCursorModels, refreshCursorModels } from '../services/cursor-models
 import { decrypt } from '../lib/encrypt.js';
 import { asyncHandler } from '../lib/app-error-handler.js';
 import db from '../db.js';
+import {
+  loadFullSessionPromptTemplate,
+  loadFullReviewPromptTemplate,
+} from '../services/session-prompt.js';
 import { getSystemInfo } from '../services/system-info.js';
-
 const execFileAsync = promisify(execFile);
 
 const COST_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
@@ -45,6 +48,18 @@ export default function createSettingsRoutes(requireAuth) {
       }
       const models = await listModels();
       res.json({ models });
+    })
+  );
+
+  router.get(
+    '/api/settings/prompt-templates',
+    requireAuth,
+    asyncHandler(async (_req, res) => {
+      const [session, review] = await Promise.all([
+        loadFullSessionPromptTemplate(),
+        loadFullReviewPromptTemplate(),
+      ]);
+      res.json({ session, review });
     })
   );
 

@@ -29,6 +29,8 @@ const {
   generateSessionMetadata,
   buildSystemPromptAppend,
   deleteAgent,
+  reviewStop,
+  resumeInterruptedReviews,
 } = vi.hoisted(() => ({
   stopSession: vi.fn().mockResolvedValue(undefined),
   onMessageCreated: vi.fn().mockResolvedValue(undefined),
@@ -39,6 +41,8 @@ const {
     .mockResolvedValue({ label: 'Test task', branchName: 'test-task-abc' }),
   buildSystemPromptAppend: vi.fn().mockResolvedValue('mocked builder system prompt'),
   deleteAgent: vi.fn().mockResolvedValue(undefined),
+  reviewStop: vi.fn().mockResolvedValue({ ok: true }),
+  resumeInterruptedReviews: vi.fn().mockResolvedValue({ resumed: 0, failed: 0 }),
 }));
 
 vi.mock('child_process', () => ({
@@ -117,6 +121,11 @@ function makeApp(db) {
     { methods: ['stopSession', 'deleteAgent', 'generateSessionMetadata', 'onMessageCreated'] }
   );
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
+  app.use(
+    'session-review',
+    { stop: reviewStop, resumeInterrupted: resumeInterruptedReviews },
+    { methods: ['stop', 'resumeInterrupted'] }
+  );
   registerSessionsService(app);
   registerMessagesService(app);
   return app;
@@ -333,6 +342,10 @@ describe('Sessions service - custom methods', (hooks) => {
       const result = await app.service('sessions').remove(sessId, params({ id: userId }));
 
       expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
+      expect(reviewStop).toHaveBeenCalledWith(
+        { session_id: sessId },
+        expect.objectContaining({ user: { id: userId } })
+      );
       expect(deleteSessionTasks).toHaveBeenCalledWith(sessId, expect.anything());
       expect(removeWorktree).toHaveBeenCalled();
       expect(result.id).toBe(sessId);
@@ -1014,6 +1027,22 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(session.base_branch).toBe('main');
     });
 
+    it('copies model and sdk onto reviewer fields at create', async () => {
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          agent_sdk: 'cursor',
+          model: 'composer-2',
+          model_params: '[{"id":"fast","value":"true"}]',
+        }),
+        params({ id: userId1 })
+      );
+
+      expect(session.review_agent_sdk).toBe('cursor');
+      expect(session.review_model).toBe('composer-2');
+      expect(session.review_model_params).toBe('[{"id":"fast","value":"true"}]');
+    });
+
     it('auto-generates short_id if not provided', async () => {
       const data = sessionData({ repo_id: repoId });
       delete data.short_id;
@@ -1430,6 +1459,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
 
     expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
     expect(await statusTextsFor(sessId)).toEqual(['Server restarted — resuming session']);
+    expect(resumeInterruptedReviews).toHaveBeenCalled();
 
     // The nudge reaches the agent as a collapsible Baguette message, not as a user message.
     const dispatched = userDispatches(onMessageCreated);

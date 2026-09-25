@@ -122,8 +122,46 @@ function buildSideBySideRows(lines) {
 
 const NUM_CLS = 'w-10 shrink-0 text-right text-zinc-600 select-none pr-2 border-r border-zinc-800';
 
-function InlineDiff({ lines }) {
+function lineRefFromRow(row, filePath) {
+  if (row.type === 'hunk') return null;
+  if (row.type === 'added' && row.newNum) return { path: filePath, line: row.newNum };
+  if (row.type === 'removed' && row.oldNum) return { path: filePath, line: row.oldNum };
+  const line = row.newNum ?? row.oldNum;
+  if (!line) return null;
+  return { path: filePath, line };
+}
+
+function DiffCodeRow({ rowClass, onLineReference, title, children }) {
+  const clickable = Boolean(onLineReference);
+  return (
+    <div
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={title}
+      onClick={clickable ? onLineReference : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onLineReference();
+              }
+            }
+          : undefined
+      }
+      className={`flex ${rowClass} ${clickable ? 'cursor-pointer hover:ring-1 hover:ring-inset hover:ring-amber-500/40 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-amber-500/50' : ''}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function InlineDiff({ lines, filePath, onLineReference }) {
   const rows = buildInlineRows(lines);
+  const sendRef = (row) => {
+    const ref = lineRefFromRow(row, filePath);
+    if (ref) onLineReference?.(ref);
+  };
   return (
     <div className="font-mono text-xs leading-5">
       {rows.map((row, i) => {
@@ -138,36 +176,54 @@ function InlineDiff({ lines }) {
         }
         if (row.type === 'removed') {
           return (
-            <div key={i} className="flex text-red-400 bg-red-950/30">
+            <DiffCodeRow
+              key={i}
+              rowClass="text-red-400 bg-red-950/30"
+              onLineReference={onLineReference ? () => sendRef(row) : undefined}
+              title={onLineReference ? 'Send line reference to chat' : undefined}
+            >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}></span>
               <span className="px-2 flex-1 whitespace-pre">{row.content || ' '}</span>
-            </div>
+            </DiffCodeRow>
           );
         }
         if (row.type === 'added') {
           return (
-            <div key={i} className="flex text-emerald-400 bg-emerald-950/30">
+            <DiffCodeRow
+              key={i}
+              rowClass="text-emerald-400 bg-emerald-950/30"
+              onLineReference={onLineReference ? () => sendRef(row) : undefined}
+              title={onLineReference ? 'Send line reference to chat' : undefined}
+            >
               <span className={NUM_CLS}></span>
               <span className={NUM_CLS}>{row.newNum}</span>
               <span className="px-2 flex-1 whitespace-pre">{row.content || ' '}</span>
-            </div>
+            </DiffCodeRow>
           );
         }
         return (
-          <div key={i} className="flex text-zinc-400 hover:bg-zinc-800/30">
+          <DiffCodeRow
+            key={i}
+            rowClass="text-zinc-400 hover:bg-zinc-800/30"
+            onLineReference={onLineReference ? () => sendRef(row) : undefined}
+            title={onLineReference ? 'Send line reference to chat' : undefined}
+          >
             <span className={NUM_CLS}>{row.oldNum}</span>
             <span className={NUM_CLS}>{row.newNum}</span>
             <span className="px-2 flex-1 whitespace-pre">{row.content || ' '}</span>
-          </div>
+          </DiffCodeRow>
         );
       })}
     </div>
   );
 }
 
-function SideBySideDiff({ lines }) {
+function SideBySideDiff({ lines, filePath, onLineReference }) {
   const rows = buildSideBySideRows(lines);
+  const sendRef = (line) => {
+    if (line?.num) onLineReference?.({ path: filePath, line: line.num });
+  };
   return (
     <div className="font-mono text-xs leading-5 flex divide-x divide-zinc-800">
       {/* Left column */}
@@ -182,12 +238,17 @@ function SideBySideDiff({ lines }) {
           }
           if (row.type === 'change') {
             return row.left ? (
-              <div key={i} className="flex text-red-400 bg-red-950/30">
+              <DiffCodeRow
+                key={i}
+                rowClass="text-red-400 bg-red-950/30"
+                onLineReference={onLineReference ? () => sendRef(row.left) : undefined}
+                title={onLineReference ? 'Send line reference to chat' : undefined}
+              >
                 <span className={NUM_CLS}>{row.left.num}</span>
                 <span className="px-2 flex-1 whitespace-pre overflow-hidden">
                   {row.left.content || ' '}
                 </span>
-              </div>
+              </DiffCodeRow>
             ) : (
               <div key={i} className="flex bg-zinc-900/50">
                 <span className={NUM_CLS}></span>
@@ -196,12 +257,17 @@ function SideBySideDiff({ lines }) {
             );
           }
           return (
-            <div key={i} className="flex text-zinc-400 hover:bg-zinc-800/30">
+            <DiffCodeRow
+              key={i}
+              rowClass="text-zinc-400 hover:bg-zinc-800/30"
+              onLineReference={onLineReference ? () => sendRef(row.left) : undefined}
+              title={onLineReference ? 'Send line reference to chat' : undefined}
+            >
               <span className={NUM_CLS}>{row.left?.num}</span>
               <span className="px-2 flex-1 whitespace-pre overflow-hidden">
                 {row.left?.content || ' '}
               </span>
-            </div>
+            </DiffCodeRow>
           );
         })}
       </div>
@@ -217,12 +283,17 @@ function SideBySideDiff({ lines }) {
           }
           if (row.type === 'change') {
             return row.right ? (
-              <div key={i} className="flex text-emerald-400 bg-emerald-950/30">
+              <DiffCodeRow
+                key={i}
+                rowClass="text-emerald-400 bg-emerald-950/30"
+                onLineReference={onLineReference ? () => sendRef(row.right) : undefined}
+                title={onLineReference ? 'Send line reference to chat' : undefined}
+              >
                 <span className={NUM_CLS}>{row.right.num}</span>
                 <span className="px-2 flex-1 whitespace-pre overflow-hidden">
                   {row.right.content || ' '}
                 </span>
-              </div>
+              </DiffCodeRow>
             ) : (
               <div key={i} className="flex bg-zinc-900/50">
                 <span className={NUM_CLS}></span>
@@ -231,12 +302,17 @@ function SideBySideDiff({ lines }) {
             );
           }
           return (
-            <div key={i} className="flex text-zinc-400 hover:bg-zinc-800/30">
+            <DiffCodeRow
+              key={i}
+              rowClass="text-zinc-400 hover:bg-zinc-800/30"
+              onLineReference={onLineReference ? () => sendRef(row.right) : undefined}
+              title={onLineReference ? 'Send line reference to chat' : undefined}
+            >
               <span className={NUM_CLS}>{row.right?.num}</span>
               <span className="px-2 flex-1 whitespace-pre overflow-hidden">
                 {row.right?.content || ' '}
               </span>
-            </div>
+            </DiffCodeRow>
           );
         })}
       </div>
@@ -244,7 +320,7 @@ function SideBySideDiff({ lines }) {
   );
 }
 
-function FileDiff({ file, viewMode, scrollId }) {
+function FileDiff({ file, viewMode, scrollId, onLineReference }) {
   const [collapsed, setCollapsed] = useState(false);
   const displayPath = file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
   return (
@@ -265,9 +341,17 @@ function FileDiff({ file, viewMode, scrollId }) {
       {!collapsed && (
         <div className="overflow-x-auto bg-zinc-900">
           {viewMode === 'inline' ? (
-            <InlineDiff lines={file.lines} />
+            <InlineDiff
+              lines={file.lines}
+              filePath={displayPath}
+              onLineReference={onLineReference}
+            />
           ) : (
-            <SideBySideDiff lines={file.lines} />
+            <SideBySideDiff
+              lines={file.lines}
+              filePath={displayPath}
+              onLineReference={onLineReference}
+            />
           )}
         </div>
       )}
@@ -275,7 +359,7 @@ function FileDiff({ file, viewMode, scrollId }) {
   );
 }
 
-export default function DiffView({ session, onFilesChange }) {
+export default function DiffView({ session, onFilesChange, onLineReference, readonly }) {
   const [diff, setDiff] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -352,9 +436,12 @@ export default function DiffView({ session, onFilesChange }) {
         {!loading && !error && hasDiff && (
           <div className="space-y-3">
             {/* Header: file count + view mode toggle */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-zinc-500">
                 {files.length} file{files.length !== 1 ? 's' : ''} changed
+                {onLineReference && !readonly && (
+                  <span className="text-zinc-600"> · click a line to reference it in chat</span>
+                )}
               </span>
               <div className="flex items-center gap-0.5 bg-zinc-800 rounded-lg p-0.5">
                 <button
@@ -375,7 +462,13 @@ export default function DiffView({ session, onFilesChange }) {
             </div>
             {/* Per-file diffs */}
             {files.map((file, i) => (
-              <FileDiff key={i} file={file} viewMode={viewMode} scrollId={`diff-file-${i}`} />
+              <FileDiff
+                key={i}
+                file={file}
+                viewMode={viewMode}
+                scrollId={`diff-file-${i}`}
+                onLineReference={readonly ? undefined : onLineReference}
+              />
             ))}
           </div>
         )}

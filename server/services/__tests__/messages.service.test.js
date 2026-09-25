@@ -68,6 +68,8 @@ beforeEach(async () => {
     initial_prompt: 'Task',
     short_id: 'aa11bb',
     status: 'active',
+    model: 'sonnet',
+    model_params: '[{"id":"effort","value":"high"}]',
   });
   [otherSessionId] = await db('sessions').insert({
     user_id: otherUserId,
@@ -165,6 +167,24 @@ describe('Messages service - create', () => {
     );
     expect(msg.session_id).toBe(sessionId);
     expect(msg.type).toBe('user');
+    expect(msg.model).toBe('sonnet');
+    expect(msg.model_params).toBe('[{"id":"effort","value":"high"}]');
+  });
+
+  it('stores an explicit turn model without changing the session', async () => {
+    await db('sessions').where({ id: sessionId }).update({ model: 'opus' });
+    const msg = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        model: 'sonnet',
+      },
+      params({ id: userId })
+    );
+    expect(msg.model).toBe('sonnet');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(session.model).toBe('opus');
   });
 
   it('calls sessions.onMessageCreated and claude-agent.onMessageCreated after create', async () => {

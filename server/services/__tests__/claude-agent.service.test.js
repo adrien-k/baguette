@@ -737,6 +737,32 @@ describe('ClaudeAgentService', (hooks) => {
         expect(service.getActiveSession(BASE_SESSION_ID)).toBeUndefined();
       });
     });
+
+    it('starts the query with the message model and leaves the session model unchanged', async () => {
+      await db('sessions').where({ id: BASE_SESSION_ID }).update({ model: 'opus' });
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      let capturedOptions;
+      query.mockImplementation(({ options }) => {
+        capturedOptions = options;
+        return makeAsyncIterable([]);
+      });
+
+      await service.onMessageCreated({
+        session_id: BASE_SESSION_ID,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Start' } }),
+        model: 'sonnet',
+      });
+
+      expect(capturedOptions.model).toBe('sonnet');
+      expect((await db('sessions').where({ id: BASE_SESSION_ID }).first()).model).toBe('opus');
+      await vi.waitFor(() => {
+        expect(service.getActiveSession(BASE_SESSION_ID)).toBeUndefined();
+      });
+    });
   });
 
   // ── 7. injectBaguetteMessage ───────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { useFilterRoutes } from './hooks/useFilterRoutes.js';
 import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
+import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -48,7 +49,7 @@ function Nav() {
       <div className="px-4 flex items-center justify-between h-14">
         <div className="flex items-center shrink-0">
           <Link to={homeUrl} className="flex items-center gap-2">
-            <img src="/baguette.svg" alt="" className="w-6 h-6 shrink-0" />
+            <BaguetteIcon className="w-6 h-6 shrink-0" />
             <span className="text-white font-semibold text-sm font-display">Baguette</span>
           </Link>
         </div>
