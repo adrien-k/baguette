@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, GitBranch, Bell, KeyRound, Puzzle, Box, Users, Blocks } from 'lucide-react';
+import { Bot, GitBranch, Bell, KeyRound, Puzzle, Box, Users, Blocks, Monitor } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -19,6 +19,7 @@ import {
   DockerTab,
   UsersTab,
   SlackTab,
+  SystemTab,
 } from './settings/GlobalSettingsSections.jsx';
 import { SettingsSection, SettingsTabHeader } from '../components/SettingsSection.jsx';
 
@@ -583,6 +584,7 @@ const TABS = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
   { id: 'docker', label: 'Docker', icon: Box },
+  { id: 'system', label: 'System', icon: Monitor },
   { id: 'users', label: 'Users', icon: Users },
 ];
 
@@ -666,6 +668,7 @@ export default function Settings() {
           {activeTab === 'secrets' && <SecretsTab />}
           {activeTab === 'plugins' && <PluginsTab />}
           {activeTab === 'docker' && <DockerTab />}
+          {activeTab === 'system' && <SystemTab />}
           {activeTab === 'users' && <UsersTab />}
         </div>
       </div>

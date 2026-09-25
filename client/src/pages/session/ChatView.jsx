@@ -383,9 +383,9 @@ export default function ChatView({
     }
   };
 
-  const handleSchedulePreset = (hours) => {
+  const handleSchedulePreset = (delayMs) => {
     setScheduleMenuOpen(false);
-    scheduleMessageAt(new Date(Date.now() + hours * 3_600_000).toISOString());
+    scheduleMessageAt(new Date(Date.now() + delayMs).toISOString());
   };
 
   const openScheduleModal = () => {
@@ -787,15 +787,16 @@ export default function ChatView({
                       >
                         <div role="menu">
                           {[
-                            { label: 'Send in 1 hour', hours: 1 },
-                            { label: 'Send in 2 hours', hours: 2 },
-                            { label: 'Send in 4 hours', hours: 4 },
-                          ].map(({ label, hours }) => (
+                            { label: 'Send in 30 minutes', delayMs: 30 * 60_000 },
+                            { label: 'Send in 1 hour', delayMs: 3_600_000 },
+                            { label: 'Send in 2 hours', delayMs: 2 * 3_600_000 },
+                            { label: 'Send in 4 hours', delayMs: 4 * 3_600_000 },
+                          ].map(({ label, delayMs }) => (
                             <button
-                              key={hours}
+                              key={delayMs}
                               type="button"
                               role="menuitem"
-                              onClick={() => handleSchedulePreset(hours)}
+                              onClick={() => handleSchedulePreset(delayMs)}
                               className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
                             >
                               {label}

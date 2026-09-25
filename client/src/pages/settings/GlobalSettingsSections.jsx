@@ -338,6 +338,168 @@ export function UsersTab() {
   );
 }
 
+function formatBytes(bytes) {
+  if (bytes == null || Number.isNaN(bytes)) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  const digits = i === 0 ? 0 : n >= 100 ? 0 : 1;
+  return `${n.toFixed(digits)} ${units[i]}`;
+}
+
+function formatUptime(seconds) {
+  if (!seconds) return '—';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (d) parts.push(`${d}d`);
+  if (h || d) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  return parts.join(' ');
+}
+
+function UsageMeter({ used, total }) {
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  return (
+    <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+      <div
+        className="h-full rounded-full bg-amber-500 transition-all"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+function SystemStat({ label, value, sub }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-4 py-2 border-b border-zinc-800 last:border-0">
+      <span className="text-sm text-zinc-400">{label}</span>
+      <div className="text-sm text-zinc-200 text-left sm:text-right">
+        <div>{value}</div>
+        {sub ? <div className="text-xs text-zinc-500 mt-0.5">{sub}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+export function SystemTab() {
+  const [info, setInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback((isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    apiFetch('/api/settings/system-info')
+      .then(setInfo)
+      .catch((err) => toastError('Failed to load system information', err))
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const mem = info?.memory;
+  const disk = info?.disk;
+  const loadAvg = info?.loadAvg;
+
+  return (
+    <div>
+      <SettingsTabHeader title="System">
+        CPU, memory, and disk on the host running Baguette. Disk usage is for the data directory
+        where repositories, sessions, and the database are stored.
+      </SettingsTabHeader>
+
+      <div className="space-y-6">
+        <SettingsSection
+          title="Host"
+          description="Refreshed when you open this tab or click Refresh."
+        >
+          <div className="flex justify-end -mt-2 mb-2">
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={loading || refreshing}
+              className="text-xs text-amber-400 hover:text-amber-300 disabled:text-zinc-600"
+            >
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+
+          {loading && !info ? (
+            <p className="text-sm text-zinc-500">Loading…</p>
+          ) : info ? (
+            <div>
+              <SystemStat
+                label="Hostname"
+                value={info.hostname}
+                sub={`${info.platform} · ${info.arch}`}
+              />
+              <SystemStat label="Uptime" value={formatUptime(info.uptimeSeconds)} />
+              <SystemStat
+                label="CPU"
+                value={`${info.cpu.count} core${info.cpu.count === 1 ? '' : 's'}`}
+                sub={[
+                  info.cpu.model,
+                  info.cpu.speedMhz ? `${info.cpu.speedMhz} MHz` : null,
+                  loadAvg?.length ? `Load ${loadAvg.map((n) => n.toFixed(2)).join(' / ')}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              />
+            </div>
+          ) : null}
+        </SettingsSection>
+
+        {info && mem ? (
+          <SettingsSection title="Memory">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-zinc-400">Used</span>
+                <span className="text-zinc-200">
+                  {formatBytes(mem.usedBytes)} / {formatBytes(mem.totalBytes)}
+                </span>
+              </div>
+              <UsageMeter used={mem.usedBytes} total={mem.totalBytes} />
+              <p className="text-xs text-zinc-500">
+                {formatBytes(mem.freeBytes)} free for the OS and other processes
+              </p>
+            </div>
+          </SettingsSection>
+        ) : null}
+
+        {info && disk ? (
+          <SettingsSection title="Disk">
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-500 font-mono break-all">{disk.path}</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-zinc-400">Used</span>
+                <span className="text-zinc-200">
+                  {formatBytes(disk.totalBytes - disk.availableBytes)} /{' '}
+                  {formatBytes(disk.totalBytes)}
+                </span>
+              </div>
+              <UsageMeter used={disk.totalBytes - disk.availableBytes} total={disk.totalBytes} />
+              <p className="text-xs text-zinc-500">
+                {formatBytes(disk.availableBytes)} available on this filesystem
+              </p>
+            </div>
+          </SettingsSection>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function DockerTab() {
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);

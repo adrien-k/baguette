@@ -10,6 +10,7 @@ import { listModels, refreshModels } from '../services/anthropic-models.js';
 import { listCursorModels, refreshCursorModels } from '../services/cursor-models.js';
 import { decrypt } from '../lib/encrypt.js';
 import db from '../db.js';
+import { getSystemInfo } from '../services/system-info.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -95,6 +96,14 @@ export default function createSettingsRoutes(requireAuth) {
           total_tokens: Number(r.total_tokens ?? 0),
         }))
       );
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/api/settings/system-info', requireAuth, async (req, res) => {
+    try {
+      res.json(getSystemInfo());
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
