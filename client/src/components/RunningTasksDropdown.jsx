@@ -146,13 +146,8 @@ export default function RunningTasksDropdown() {
               ? {
                   id: s.id,
                   short_id: s.short_id,
-                  repo_id: s.repo_id,
-                  is_global: s.is_global,
                   label: s.label,
                   repo_full_name: s.repo_full_name,
-                  base_branch: s.base_branch,
-                  pr_url: s.pr_url,
-                  pr_number: s.pr_number,
                 }
               : null;
           })()}

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Upload, Pencil, AlertTriangle } from 'lucide-react';
+import { X, Upload, AlertTriangle } from 'lucide-react';
 import SearchableSelect from './SearchableSelect/index.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { sessionsService } from '../feathers.js';
+import Toggle from './Toggle.jsx';
 
 export default function PushConfirmModal({
   sessionId,
@@ -10,9 +11,10 @@ export default function PushConfirmModal({
   commitsToPush,
   initialBranch,
   initialForceMode,
+  autoPush,
+  onAutoPushChange,
   onConfirm,
   onCancel,
-  onEditDetails,
 }) {
   const [forceMode, setForceMode] = useState(initialForceMode || '');
   const [branch, setBranch] = useState(initialBranch || '');
@@ -74,11 +76,8 @@ export default function PushConfirmModal({
           )}{' '}
           to GitHub and create/update the PR.
         </p>
-        <p className="text-zinc-500 text-xs mb-4">
-          Would you like to review the PR title and description before pushing?
-        </p>
 
-        <div className="flex flex-col gap-3 mb-6">
+        <div className="flex flex-col gap-3 mb-6 mt-4">
           <div>
             <label className="block text-xs text-zinc-400 mb-1">Branch</label>
             <SearchableSelect
@@ -128,35 +127,42 @@ export default function PushConfirmModal({
               </span>
             </div>
           )}
+
+          {onAutoPushChange && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm text-zinc-200">Auto-push</p>
+                <p className="text-xs text-zinc-500 leading-snug">
+                  Automatically push after the agent commits
+                </p>
+              </div>
+              <Toggle
+                checked={!!autoPush}
+                onChange={onAutoPushChange}
+                title="Automatically push after the agent commits"
+              />
+            </div>
+          )}
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex gap-3">
           <button
-            onClick={onEditDetails}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+            onClick={onCancel}
+            className="flex-1 px-4 py-2 text-sm text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg transition-colors"
           >
-            <Pencil className="w-3.5 h-3.5 shrink-0" />
-            Review PR details first
+            Cancel
           </button>
-          <div className="flex gap-3">
-            <button
-              onClick={onCancel}
-              className="flex-1 px-4 py-2 text-sm text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => onConfirm({ forceMode: forceMode || null, branch: branch || null })}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                isPureForce
-                  ? 'bg-red-700 hover:bg-red-600 text-white'
-                  : 'bg-amber-600 hover:bg-amber-500 text-white'
-              }`}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              {isPureForce ? 'Force Push' : forceMode === 'lease' ? 'Force Push' : 'Push'}
-            </button>
-          </div>
+          <button
+            onClick={() => onConfirm({ forceMode: forceMode || null, branch: branch || null })}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              isPureForce
+                ? 'bg-red-700 hover:bg-red-600 text-white'
+                : 'bg-amber-600 hover:bg-amber-500 text-white'
+            }`}
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {isPureForce ? 'Force Push' : forceMode === 'lease' ? 'Force Push' : 'Push'}
+          </button>
         </div>
       </div>
     </div>

@@ -354,11 +354,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-3`}>
           <div className="flex items-center justify-end gap-2">
             {!readonly && opened.length > 0 && (
-              <button
-                type="button"
-                onClick={handleFixAllOpened}
-                className={`${SECONDARY_BUTTON_CLASS} rounded-md`}
-              >
+              <button type="button" onClick={handleFixAllOpened} className={SECONDARY_BUTTON_CLASS}>
                 Fix all opened ({opened.length})
               </button>
             )}
@@ -419,7 +415,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
                   <button
                     type="button"
                     onClick={() => handleFixIssue(issue)}
-                    className={`${SECONDARY_BUTTON_CLASS} rounded-md`}
+                    className={SECONDARY_BUTTON_CLASS}
                   >
                     Ask agent to fix
                   </button>

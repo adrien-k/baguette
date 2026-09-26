@@ -4,15 +4,15 @@ import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
 import Tooltip from './Tooltip.jsx';
 import { isMobile } from '../utils/isMobile.js';
 
-/** Shared height/layout with Send so toolbar actions (e.g. Stop) align. */
+/** Shared height/layout with Send so toolbar actions (e.g. Stop, attach) align. */
 export const COMPOSER_ACTION_BUTTON_LAYOUT =
-  'inline-flex items-center justify-center shrink-0 py-1.5 text-sm font-medium leading-5';
+  'inline-flex items-center justify-center shrink-0 h-8 text-sm font-medium';
 
 const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-4 sm:px-5 transition-colors disabled:cursor-not-allowed`;
 
 /**
  * Chat-style message box: auto-growing textarea, model + variant row, Send.
- * Optional toolbar/send slots cover session-chat extras (plan mode, attach, stop, schedule).
+ * Optional toolbar/send slots cover session-chat extras (attach, stop, schedule).
  */
 export default function AgentMessageComposer({
   value,
@@ -34,7 +34,6 @@ export default function AgentMessageComposer({
   submitLabel = 'Send',
   submitTooltip,
   toolbarExtra,
-  toolbarStart,
   sendAddon,
 }) {
   const handleChange = (e) => {
@@ -99,10 +98,9 @@ export default function AgentMessageComposer({
           onModelChange={onModelChange}
           disabled={disabled || sending}
         />
-        {toolbarStart}
         <div className="flex-1 min-w-0" />
         {toolbarExtra}
-        <div className="flex shrink-0">
+        <div className="flex shrink-0 items-center">
           {submitTooltip ? (
             <Tooltip content={submitTooltip} wrap placement="top-end">
               {sendButton}

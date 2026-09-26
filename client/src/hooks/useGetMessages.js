@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { messagesService } from '../feathers.js';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
 
 /**
  * Returns messages for a session with cursor-based pagination.
- * - Initial load: last 50 messages (newest first, then reversed for display)
- * - loadMore(): prepends the next 50 older messages
+ * - Initial load: last 100 messages (newest first, then reversed for display)
+ * - loadMore(): prepends the next 100 older messages
  * - Real-time created events always append to the tail
  */
 export function useGetMessages(sessionId) {

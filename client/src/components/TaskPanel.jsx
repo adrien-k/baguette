@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Play, RotateCw, Square, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/dates.js';
 import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
-import { SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
+import { SECONDARY_BUTTON_CLASS, TASK_STOP_CONTROL_CLASS } from '../utils/buttonStyles.js';
 import BaguetteIcon from './svg/BaguetteIcon.jsx';
 
 function TaskMetaLine({ task }) {
@@ -98,7 +98,7 @@ export default function TaskPanel({
               e.stopPropagation();
               onKill(task.id);
             }}
-            className="text-red-400 hover:text-red-300 opacity-60 hover:opacity-100 transition-all"
+            className={TASK_STOP_CONTROL_CLASS}
             title="Stop"
           >
             <Square className="w-3.5 h-3.5 fill-current" />
@@ -128,10 +128,10 @@ export default function TaskPanel({
             <button
               key={i}
               onClick={() => onStartTask(cmd.label)}
-              className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 transition-colors"
+              className={SECONDARY_BUTTON_CLASS}
               title={cmd.run}
             >
-              <Play className="w-3 h-3 text-emerald-400" />
+              <Play className="w-3 h-3" />
               {cmd.label}
             </button>
           ))}
@@ -148,7 +148,7 @@ export default function TaskPanel({
               placeholder="Run a command..."
               className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
             />
-            <button type="submit" className={`${SECONDARY_BUTTON_CLASS} rounded-lg shrink-0`}>
+            <button type="submit" className={`${SECONDARY_BUTTON_CLASS} shrink-0`}>
               Run
             </button>
           </div>

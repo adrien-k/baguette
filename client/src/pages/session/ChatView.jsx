@@ -25,7 +25,6 @@ import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer, {
   COMPOSER_ACTION_BUTTON_LAYOUT,
 } from '../../components/AgentMessageComposer.jsx';
-import Toggle from '../../components/Toggle.jsx';
 import QueuedMessages from '../../components/QueuedMessages.jsx';
 import TiedLoopMessages from '../../components/TiedLoopMessages.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
@@ -34,6 +33,7 @@ import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
+import LogsView from './LogsView.jsx';
 import AnchoredMenu from '../../components/AnchoredMenu.jsx';
 import { DROPDOWN_PANEL_CLASS } from '../../utils/dropdownPanel.js';
 import Tooltip from '../../components/Tooltip.jsx';
@@ -41,6 +41,7 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import { schedulePayload } from '../../utils/loopSchedule.js';
 import { turnModelCreateFields } from '@baguette/shared/turn-model.js';
+import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
 const CHECK_COMMENTS_PROMPT_BUILDER =
@@ -86,6 +87,7 @@ function SystemPromptEntry({ content }) {
 
 export default function ChatView({
   messages,
+  rawMessages,
   loading,
   loadMore,
   loadingMore,
@@ -98,6 +100,8 @@ export default function ChatView({
   onModelChange,
   cursorFast,
   cursorEffort,
+  showLogs = false,
+  onShowLogsChange,
 }) {
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
@@ -134,13 +138,6 @@ export default function ChatView({
     setComposerModel(modelId);
     setComposerModelParams(modelParamsJson ?? null);
     onModelChange?.(modelId, modelParamsJson);
-  };
-
-  const handlePlanModeChange = (enabled) => {
-    if (!session?.id) return;
-    sessionsService
-      .patch(session.id, { plan_mode: enabled })
-      .catch((err) => toastError('Failed to toggle plan mode', err));
   };
 
   const isRunning = session?.status === 'running';
@@ -550,177 +547,200 @@ export default function ChatView({
     }
   };
 
+  const chatLogsToggle = (
+    <div className={`shrink-0 flex justify-end px-3 sm:px-4 pb-1 ${showLogs ? 'pt-2' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onShowLogsChange?.(!showLogs)}
+        className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        {showLogs ? 'Show chat' : 'Show logs'}
+      </button>
+    </div>
+  );
+
   return (
     <>
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <ChatMessagesViewport showBottomFade={!readonly} scrollRef={scrollContainerRef}>
-          {loading ? (
-            <div
-              className="flex h-full items-center justify-center"
-              role="status"
-              aria-label="Loading conversation"
-            >
-              <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              <div ref={topSentinelRef} className="h-px" />
-              {loadingMore && (
-                <div className="flex justify-center py-2">
-                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-              {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
-              {displayMessages.map((msg, i) => (
-                <ChatMessage
-                  key={i}
-                  message={msg}
-                  isLatestMessage={i === displayMessages.length - 1}
-                  worktreePath={session.absolute_worktree_path}
-                  sessionId={session.id}
-                  agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-                  messageIndex={i}
-                  allMessages={displayMessages}
-                  models={models}
-                />
-              ))}
-              {isProvisioning && (
-                <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
-                  <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
-                  Setting up worktree…
-                </div>
-              )}
-              {!readonly && canContinueAfterRestart && (
-                <div className="flex gap-2 flex-wrap py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSend('continue')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Continue
-                  </button>
-                </div>
-              )}
-              {session?.archived_at && (
-                <div className="flex gap-2 flex-wrap py-2">
-                  <Tooltip content="Recreate the worktree on the same branch and resume this session.">
-                    <button
-                      type="button"
-                      onClick={handleRestore}
-                      disabled={restoring}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      {restoring ? 'Restoring…' : 'Restore'}
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-              {!readonly &&
-                !isProvisioning &&
-                !isGlobalSession(session) &&
-                session?.status !== 'running' &&
-                session?.pr_status !== 'merged' && (
-                  <div className="flex gap-2 flex-wrap py-2">
-                    <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-                          )
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <GitPullRequest className="w-3.5 h-3.5" />
-                        Git sync
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Merge the pull request into the base branch.">
-                      <button
-                        type="button"
-                        onClick={() => setShowMergeModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <GitMerge className="w-3.5 h-3.5" />
-                        Merge
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Check all PR workflow statuses and fix problems.">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
-                          )
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <CircleCheck className="w-3.5 h-3.5" />
-                        Check CI
-                      </button>
-                    </Tooltip>
-                    <Tooltip
-                      content={
-                        isReviewerSession
-                          ? CHECK_COMMENTS_TOOLTIP_REVIEWER
-                          : CHECK_COMMENTS_TOOLTIP_BUILDER
-                      }
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            isReviewerSession
-                              ? CHECK_COMMENTS_PROMPT_REVIEWER
-                              : CHECK_COMMENTS_PROMPT_BUILDER
-                          )
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        Check comments
-                      </button>
-                    </Tooltip>
-                    {onViewChange && (
-                      <>
-                        <Tooltip content="Open the Issues tab to run a code review.">
-                          <button
-                            type="button"
-                            onClick={() => onViewChange('review')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                          >
-                            <ClipboardCheck className="w-3.5 h-3.5" />
-                            Review code
-                          </button>
-                        </Tooltip>
-                        <Tooltip content="View a diff of all changes in this session.">
-                          <button
-                            type="button"
-                            onClick={() => onViewChange('diff')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
-                          >
-                            <GitCompare className="w-3.5 h-3.5" />
-                            Diff
-                          </button>
-                        </Tooltip>
-                      </>
-                    )}
+        {showLogs ? (
+          <LogsView
+            rawMessages={rawMessages}
+            loadMore={loadMore}
+            loadingMore={loadingMore}
+            hasMore={hasMore}
+          />
+        ) : (
+          <ChatMessagesViewport showBottomFade={!readonly} scrollRef={scrollContainerRef}>
+            {loading ? (
+              <div
+                className="flex h-full items-center justify-center"
+                role="status"
+                aria-label="Loading conversation"
+              >
+                <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div ref={topSentinelRef} className="h-px" />
+                {loadingMore && (
+                  <div className="flex justify-center py-2">
+                    <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
-              <div ref={messagesEndRef} />
-            </>
-          )}
-        </ChatMessagesViewport>
+                {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
+                {displayMessages.map((msg, i) => (
+                  <ChatMessage
+                    key={i}
+                    message={msg}
+                    isLatestMessage={i === displayMessages.length - 1}
+                    worktreePath={session.absolute_worktree_path}
+                    sessionId={session.id}
+                    agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                    messageIndex={i}
+                    allMessages={displayMessages}
+                    models={models}
+                  />
+                ))}
+                {isProvisioning && (
+                  <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
+                    <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                    Setting up worktree…
+                  </div>
+                )}
+                {!readonly && canContinueAfterRestart && (
+                  <div className="flex gap-2 flex-wrap py-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickSend('continue')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Continue
+                    </button>
+                  </div>
+                )}
+                {session?.archived_at && (
+                  <div className="flex gap-2 flex-wrap py-2">
+                    <Tooltip content="Recreate the worktree on the same branch and resume this session.">
+                      <button
+                        type="button"
+                        onClick={handleRestore}
+                        disabled={restoring}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        {restoring ? 'Restoring…' : 'Restore'}
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
+                {!readonly &&
+                  !isProvisioning &&
+                  !isGlobalSession(session) &&
+                  session?.status !== 'running' &&
+                  session?.pr_status !== 'merged' && (
+                    <div className="flex gap-2 flex-wrap py-2">
+                      <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleQuickSend(
+                              'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <GitPullRequest className="w-3.5 h-3.5" />
+                          Git sync
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Merge the pull request into the base branch.">
+                        <button
+                          type="button"
+                          onClick={() => setShowMergeModal(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <GitMerge className="w-3.5 h-3.5" />
+                          Merge
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Check all PR workflow statuses and fix problems.">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleQuickSend(
+                              'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <CircleCheck className="w-3.5 h-3.5" />
+                          Check CI
+                        </button>
+                      </Tooltip>
+                      <Tooltip
+                        content={
+                          isReviewerSession
+                            ? CHECK_COMMENTS_TOOLTIP_REVIEWER
+                            : CHECK_COMMENTS_TOOLTIP_BUILDER
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleQuickSend(
+                              isReviewerSession
+                                ? CHECK_COMMENTS_PROMPT_REVIEWER
+                                : CHECK_COMMENTS_PROMPT_BUILDER
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          Check comments
+                        </button>
+                      </Tooltip>
+                      {onViewChange && (
+                        <>
+                          <Tooltip content="Open the Issues tab to run a code review.">
+                            <button
+                              type="button"
+                              onClick={() => onViewChange('review')}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                            >
+                              <ClipboardCheck className="w-3.5 h-3.5" />
+                              Review code
+                            </button>
+                          </Tooltip>
+                          <Tooltip content="View a diff of all changes in this session.">
+                            <button
+                              type="button"
+                              onClick={() => onViewChange('diff')}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                            >
+                              <GitCompare className="w-3.5 h-3.5" />
+                              Diff
+                            </button>
+                          </Tooltip>
+                        </>
+                      )}
+                    </div>
+                  )}
+                <div ref={messagesEndRef} />
+              </>
+            )}
+          </ChatMessagesViewport>
+        )}
 
-        {error && (
+        {chatLogsToggle}
+
+        {error && !showLogs && (
           <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-red-400 text-xs">
             {error}
           </div>
         )}
 
-        {!readonly && (queue.length > 0 || tiedLoops.length > 0) && (
+        {!showLogs && !readonly && (queue.length > 0 || tiedLoops.length > 0) && (
           <div className={`shrink-0 flex flex-col gap-2 pb-1 ${CHAT_COLUMN_CLASS}`}>
             <QueuedMessages
               queue={queue}
@@ -736,7 +756,7 @@ export default function ChatView({
           </div>
         )}
 
-        {!readonly && (
+        {!showLogs && !readonly && (
           <div className="relative z-[2] shrink-0 bg-zinc-950 pb-3 sm:pb-4 pt-1">
             <FileAttachmentPicker
               className={`w-full ${CHAT_COLUMN_CLASS}`}
@@ -762,14 +782,6 @@ export default function ChatView({
                   cursorFast={cursorFast}
                   cursorEffort={cursorEffort}
                   onModelChange={handleComposerModelChange}
-                  toolbarStart={
-                    <Toggle
-                      checked={!!session.plan_mode}
-                      onChange={handlePlanModeChange}
-                      label="Plan"
-                      title={session.plan_mode ? 'Disable plan mode' : 'Enable plan mode'}
-                    />
-                  }
                   textareaId="chat-input"
                   canSend={canSendDraft}
                   submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
@@ -782,9 +794,9 @@ export default function ChatView({
                           onClick={handleStop}
                           disabled={stopping}
                           title="Stop"
-                          className={`${COMPOSER_ACTION_BUTTON_LAYOUT} bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 border border-transparent px-2.5 rounded-lg transition-colors`}
+                          className={COMPOSER_STOP_BUTTON_CLASS}
                         >
-                          <Square className="w-3.5 h-3.5" />
+                          <Square className="w-3.5 h-3.5 fill-current" />
                         </button>
                       )}
                     </>
@@ -808,7 +820,7 @@ export default function ChatView({
                           title="Schedule"
                           aria-expanded={scheduleMenuOpen}
                           aria-haspopup="menu"
-                          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 py-1.5 rounded-r-lg text-sm transition-colors disabled:cursor-not-allowed"
+                          className={`${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-1.5 rounded-r-lg transition-colors disabled:cursor-not-allowed`}
                         >
                           <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
                         </button>

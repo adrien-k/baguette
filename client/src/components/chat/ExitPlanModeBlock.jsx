@@ -2,6 +2,7 @@ import { useState } from 'react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { messagesService, sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
+import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 function planInputToMarkdown(input) {
   if (!input) return null;
@@ -105,11 +106,7 @@ export default function ExitPlanModeBlock({ block, sessionId, userReplied = fals
             </>
           ) : (
             <div className="flex gap-3">
-              <button
-                onClick={handleRun}
-                disabled={loading}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-              >
+              <button onClick={handleRun} disabled={loading} className={SECONDARY_BUTTON_CLASS}>
                 Run
               </button>
               <button

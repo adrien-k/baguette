@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo } from 'react';
-import { ExternalLink, GitBranch, RotateCw, Square, X } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { RotateCw, Square, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useGetTaskLogs } from '../hooks/useGetTaskLogs.js';
 import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
 import { ansiToHtml } from '../utils/ansi.js';
@@ -29,14 +29,12 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const location = useLocation();
   const { sessionUrl } = useFilterRoutes();
 
   if (!task) return null;
 
   const isRunning = task.status === 'running';
   const sessionPath = session?.short_id ? sessionUrl(session.short_id) : null;
-  const isOnSession = sessionPath && location.pathname === sessionPath;
 
   return (
     <div
@@ -105,41 +103,26 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
         </div>
 
         {/* Session info */}
-        {session && (
-          <div className="px-4 sm:px-5 py-2 border-b border-zinc-800 flex items-center gap-2 sm:gap-3 text-xs flex-wrap">
-            {session.label && (
-              <span
-                className="text-zinc-400 font-medium truncate max-w-[160px]"
-                title={session.label}
-              >
-                {session.label}
-              </span>
+        {session && (session.repo_full_name || session.label) && (
+          <div className="px-4 sm:px-5 py-2 border-b border-zinc-800 flex items-center gap-2 text-xs min-w-0">
+            {session.repo_full_name && (
+              <span className="text-zinc-500 shrink-0">{session.repo_full_name}</span>
             )}
-            <span className="text-zinc-500">{session.repo_full_name}</span>
-            <span className="flex items-center gap-1 text-zinc-600">
-              <GitBranch className="w-3 h-3" />
-              {session.base_branch}
-            </span>
-            {session.pr_url && (
-              <a
-                href={session.pr_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-amber-400 hover:text-amber-300 transition-colors"
-              >
-                <ExternalLink className="w-3 h-3" />
-                PR #{session.pr_number}
-              </a>
-            )}
-            {sessionPath && !isOnSession && (
-              <a
-                href={sessionPath}
-                className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 transition-colors ml-auto"
-              >
-                <ExternalLink className="w-3 h-3" />
-                Open session
-              </a>
-            )}
+            {session.label &&
+              (sessionPath ? (
+                <Link
+                  to={sessionPath}
+                  onClick={onClose}
+                  className="text-zinc-300 hover:text-white font-medium truncate min-w-0 transition-colors"
+                  title={session.label}
+                >
+                  {session.label}
+                </Link>
+              ) : (
+                <span className="text-zinc-400 font-medium truncate min-w-0" title={session.label}>
+                  {session.label}
+                </span>
+              ))}
           </div>
         )}
 

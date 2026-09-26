@@ -1,13 +1,15 @@
 import { GitPullRequest, GitPullRequestDraft, GitMerge, GitPullRequestClosed } from 'lucide-react';
 
+const BADGE_SURFACE = 'border-zinc-700 bg-zinc-800/40';
+
 const STATUS_CONFIG = {
   open: {
     icon: GitPullRequest,
-    className: 'text-emerald-400 border-emerald-800 bg-emerald-950/40',
+    className: `text-emerald-400 ${BADGE_SURFACE}`,
   },
-  draft: { icon: GitPullRequestDraft, className: 'text-zinc-400 border-zinc-700 bg-zinc-800/40' },
-  merged: { icon: GitMerge, className: 'text-purple-400 border-purple-800 bg-purple-950/40' },
-  closed: { icon: GitPullRequestClosed, className: 'text-red-400 border-red-800 bg-red-950/40' },
+  draft: { icon: GitPullRequestDraft, className: `text-zinc-400 ${BADGE_SURFACE}` },
+  merged: { icon: GitMerge, className: `text-indigo-400 ${BADGE_SURFACE}` },
+  closed: { icon: GitPullRequestClosed, className: `text-red-400 ${BADGE_SURFACE}` },
 };
 
 const FALLBACK = STATUS_CONFIG.open;

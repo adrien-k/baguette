@@ -61,7 +61,7 @@ export default function FileAttachmentPicker({
     <button
       type="button"
       onClick={() => inputRef.current?.click()}
-      className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 transition-colors p-1.5 rounded-md shrink-0"
+      className="inline-flex items-center justify-center shrink-0 h-8 w-8 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 transition-colors rounded-md"
       title="Attach files"
       aria-label="Attach files"
     >

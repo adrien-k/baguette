@@ -3,6 +3,7 @@ import { ExternalLink, Globe, Play, ScrollText, Wifi, Loader2, Square, Users } f
 import QRCode from 'react-qr-code';
 import { toastError } from '../../utils/toastError.jsx';
 import { sessionsService, tasksService } from '../../feathers.js';
+import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 function ServiceQrCode({ url }) {
   if (!url) return null;
@@ -197,10 +198,10 @@ function ServiceRow({
             <button
               type="button"
               onClick={() => onStart(svc.name)}
-              className={actionBtnClass}
+              className={SECONDARY_BUTTON_CLASS}
               title="Start preview service (1 hour idle timeout)"
             >
-              <Play className="w-3.5 h-3.5 text-emerald-400" />
+              <Play className="w-3.5 h-3.5" />
               Start
             </button>
           )}

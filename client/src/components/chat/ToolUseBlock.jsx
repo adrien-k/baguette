@@ -3,6 +3,7 @@ import { Bot, CheckSquare2, ChevronDown, Loader2, Square } from 'lucide-react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { messagesService, sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
+import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import ExitPlanModeBlock from './ExitPlanModeBlock.jsx';
 import AskUserQuestionBlock from './AskUserQuestionBlock.jsx';
 import { stripWorktreePath } from '../../utils/paths.js';
@@ -259,11 +260,7 @@ function CursorPlanBlock({ block, sessionId }) {
 
       {!continuePlanning && (
         <div className="px-3 sm:px-4 py-2.5 border-t border-amber-500/10 flex gap-2">
-          <button
-            onClick={handleRun}
-            disabled={loading}
-            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
-          >
+          <button onClick={handleRun} disabled={loading} className={SECONDARY_BUTTON_CLASS}>
             Run the plan
           </button>
           <button

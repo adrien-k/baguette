@@ -2,20 +2,17 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom';
 import {
   ChevronLeft,
-  MoreVertical,
   FolderOpen,
   X,
   Plus,
   AlertCircle,
   MessageSquare,
-  ScrollText,
   GitBranch,
   Copy,
   Archive,
   Loader2,
   PanelLeft,
   PanelRight,
-  Pencil,
   Upload,
   MonitorPlay,
   ClipboardCheck,
@@ -38,17 +35,13 @@ import ArchiveSession from '../components/ArchiveSession.jsx';
 import PushConfirmModal from '../components/PushConfirmModal.jsx';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
-import LogsView from './session/LogsView.jsx';
-import EditView from './session/EditView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
 import ReviewAgentPanel from './session/ReviewAgentPanel.jsx';
 import PrStatusBadge from '../components/PrStatusBadge.jsx';
 import SessionToolLink from '../components/SessionToolLink.jsx';
-import Toggle from '../components/Toggle.jsx';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
-import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 import {
   createFileReferenceBlock,
   fileReferenceAgentText,
@@ -284,8 +277,6 @@ const BASE_VIEWS = [
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
   { id: 'review', label: 'Issues', Icon: ClipboardCheck },
   { id: 'diff', label: 'Diff', Icon: FolderOpen },
-  { id: 'logs', label: 'Logs', Icon: ScrollText },
-  { id: 'edit', label: 'Edit', Icon: Pencil },
 ];
 const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
 
@@ -344,7 +335,6 @@ export default function Session() {
   );
   const [diffFiles, setDiffFiles] = useState([]);
   const [commitsToPush, setCommitsToPush] = useState(0);
-  const [showMenu, setShowMenu] = useState(false);
   const [models, setModels] = useState([]);
   const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -353,7 +343,7 @@ export default function Session() {
   const [activeTaskModal, setActiveTaskModal] = useState(null);
   const [configCommands, setConfigCommands] = useState([]);
   const [error, setError] = useState(null);
-  const menuRef = useRef(null);
+  const [showChatLogs, setShowChatLogs] = useState(false);
 
   const rawMessages = useMemo(() => (hookMessages || []).map(parseMessageRow), [hookMessages]);
   const messages = useMemo(() => reconcileMessages(rawMessages), [rawMessages]);
@@ -412,11 +402,11 @@ export default function Session() {
 
   const views = useMemo(() => {
     if (isGlobalSession(session)) {
-      return BASE_VIEWS.filter((v) => v.id === 'chat' || v.id === 'logs');
+      return BASE_VIEWS.filter((v) => v.id === 'chat');
     }
     const list = [...BASE_VIEWS];
     if (session?.preview_url) {
-      list.splice(4, 0, PREVIEW_VIEW);
+      list.push(PREVIEW_VIEW);
     }
     return list;
   }, [session]);
@@ -497,17 +487,6 @@ export default function Session() {
     if (!sessionRepo) return;
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
   }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleClick = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setShowMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showMenu]);
 
   const handleModelChange = (modelId, modelParams = null) => {
     if (!session?.id) return;
@@ -591,32 +570,20 @@ export default function Session() {
     }
   };
 
-  const handleArchive = async () => {
-    setShowMenu(false);
-    setSession((prev) => (prev ? { ...prev, status: 'archiving' } : prev));
-    try {
-      const archived = await sessionsService.remove(session.id);
-      if (archived?.archived_at) {
-        setSession((prev) => (prev ? { ...prev, ...archived } : prev));
-      }
-      if (!showArchived && archived?.archived_at) {
-        const firstSession = nextVisibleSession({
-          sessions,
-          short_id,
-          session,
-          repoId,
-          fromAllSessions,
-        });
-        navigate(firstSession ? sessionUrl(firstSession.short_id) : homeUrl);
-      }
-    } catch (err) {
-      toastError('Failed to archive session', err);
-    }
-  };
-
   const setView = (view) => {
+    if (view === 'chat') {
+      setShowChatLogs(false);
+    }
     setSearchParams(view === 'chat' ? {} : { view });
   };
+
+  useEffect(() => {
+    const legacyLogsTab = searchParams.get('view') === 'logs';
+    setShowChatLogs(legacyLogsTab);
+    if (legacyLogsTab) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [short_id]);
 
   if (!session) {
     return (
@@ -696,13 +663,6 @@ export default function Session() {
                   {session.label ||
                     (isGlobalSession(session) ? 'Global session' : session.repo_full_name)}
                 </span>
-                {prInfo && (
-                  <PrStatusBadge
-                    status={session?.pr_status}
-                    prNumber={prInfo.number}
-                    prUrl={prInfo.url}
-                  />
-                )}
               </div>
               <div className="flex min-w-0 items-center gap-2 text-xs">
                 <span className="hidden sm:inline shrink-0 text-zinc-600">
@@ -724,124 +684,58 @@ export default function Session() {
                     </button>
                   </span>
                 )}
-                {session.preview_url && (
-                  <span className="shrink-0 flex items-center gap-1">
-                    <SessionToolLink
-                      kind="preview"
-                      href={session.preview_url}
-                      previewServices={session.preview_services}
-                    />
-                    {session.is_preview_public && (
-                      <span className="text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
-                        public
-                      </span>
-                    )}
-                  </span>
-                )}
-                {session.codeserver_url && (
-                  <SessionToolLink kind="code" href={session.codeserver_url} hideLabelBelowSm />
-                )}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {!isReadonly && (
-              <>
-                {session?.pr_status !== 'merged' && !isGlobalSession(session) && (
-                  <div className="hidden sm:flex items-center gap-2">
-                    <Toggle
-                      checked={!!session.auto_push}
-                      onChange={handleAutoPushChange}
-                      label="Auto-push"
-                      title="Automatically push after the agent commits"
-                    />
-                    <button
-                      type="button"
-                      onClick={handlePush}
-                      disabled={pushing}
-                      title="Push commits"
-                      className="relative flex items-center gap-1 h-8 px-2.5 rounded border text-xs transition-colors border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300 disabled:opacity-50"
-                    >
-                      <Upload className="w-3 h-3" />
-                      Push
-                      {commitsToPush > 0 && (
-                        <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
-                          {commitsToPush}
-                        </span>
-                      )}
-                    </button>
-                  </div>
+            {prInfo && (
+              <PrStatusBadge
+                status={session?.pr_status}
+                prNumber={prInfo.number}
+                prUrl={prInfo.url}
+              />
+            )}
+            {session.preview_url && (
+              <span className="shrink-0 flex items-center gap-1">
+                <SessionToolLink
+                  kind="preview"
+                  href={session.preview_url}
+                  previewServices={session.preview_services}
+                  className="h-8 px-2"
+                  hideLabelBelowSm
+                />
+                {session.is_preview_public && (
+                  <span className="hidden sm:inline text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
+                    public
+                  </span>
                 )}
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setShowMenu(!showMenu)}
-                    className="h-8 w-8 inline-flex items-center justify-center rounded border border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-
-                  {showMenu && (
-                    <div
-                      className={`absolute right-0 top-full mt-1 w-56 ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
-                    >
-                      {session.agent_sdk && (
-                        <div className="p-2 border-b border-zinc-800 sm:hidden">
-                          <div className="text-[11px] text-zinc-500 px-2 py-1">Agent</div>
-                          <div className="px-2 py-1 text-xs text-zinc-400">
-                            {session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
-                          </div>
-                        </div>
-                      )}
-                      {session.base_branch && (
-                        <div className="p-2 border-b border-zinc-800 sm:hidden">
-                          <div className="text-[11px] text-zinc-500 px-2 py-1">Base branch</div>
-                          <div className="px-2 py-1 text-xs text-zinc-400">
-                            {session.base_branch}
-                          </div>
-                        </div>
-                      )}
-                      {!isGlobalSession(session) && session?.pr_status !== 'merged' && (
-                        <div className="p-2 border-b border-zinc-800 sm:hidden space-y-1.5">
-                          <Toggle
-                            checked={!!session.auto_push}
-                            onChange={handleAutoPushChange}
-                            label="Auto-push"
-                            title="Automatically push after the agent commits"
-                            className="w-full px-2 py-1.5"
-                          />
-                          <button
-                            onClick={() => {
-                              handlePush();
-                              setShowMenu(false);
-                            }}
-                            disabled={pushing}
-                            className="w-full text-left px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-2 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
-                          >
-                            <Upload className="w-3 h-3 shrink-0" />
-                            <span>Push</span>
-                            {commitsToPush > 0 && (
-                              <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
-                                {commitsToPush}
-                              </span>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                      <div className="p-1">
-                        {session.status !== 'archiving' && session.status !== 'provisioning' && (
-                          <button
-                            onClick={handleArchive}
-                            className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 rounded"
-                          >
-                            Archive Session
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
+              </span>
+            )}
+            {session.codeserver_url && (
+              <SessionToolLink
+                kind="code"
+                href={session.codeserver_url}
+                className="h-8 px-2"
+                hideLabelBelowSm
+              />
+            )}
+            {!isReadonly && session?.pr_status !== 'merged' && !isGlobalSession(session) && (
+              <button
+                type="button"
+                onClick={handlePush}
+                disabled={pushing}
+                title="Push commits"
+                className="relative inline-flex items-center justify-center gap-1.5 h-8 shrink-0 rounded-md border text-xs font-medium transition-colors border-zinc-700/80 bg-zinc-800/50 text-zinc-300 hover:border-sky-500/35 hover:bg-sky-500/10 hover:text-sky-200 disabled:opacity-50 px-2"
+              >
+                <Upload className="w-3 h-3 shrink-0 opacity-90" />
+                Push
+                {commitsToPush > 0 && (
+                  <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+                    {commitsToPush}
+                  </span>
+                )}
+              </button>
             )}
           </div>
         </div>
@@ -997,6 +891,7 @@ export default function Session() {
             {activeView === 'chat' && (
               <ChatView
                 messages={messages}
+                rawMessages={rawMessages}
                 loading={chatLoading}
                 loadMore={loadMore}
                 loadingMore={loadingMore}
@@ -1009,6 +904,8 @@ export default function Session() {
                 onModelChange={handleModelChange}
                 cursorFast={cursorFast}
                 cursorEffort={cursorEffort}
+                showLogs={showChatLogs}
+                onShowLogsChange={setShowChatLogs}
               />
             )}
             {activeView === 'review' && (
@@ -1026,14 +923,6 @@ export default function Session() {
                 readonly={isReadonly}
               />
             )}
-            {activeView === 'logs' && (
-              <LogsView
-                rawMessages={rawMessages}
-                loadMore={loadMore}
-                loadingMore={loadingMore}
-                hasMore={hasMore}
-              />
-            )}
             {activeView === 'preview' && (
               <PreviewView
                 session={session}
@@ -1041,7 +930,6 @@ export default function Session() {
                 onViewLogs={handleViewTaskLogs}
               />
             )}
-            {activeView === 'edit' && <EditView session={session} />}
           </div>
         </div>
 
@@ -1144,15 +1032,12 @@ export default function Session() {
           commitsToPush={commitsToPush}
           initialBranch={pushRequest?.branch || session?.remote_branch || session?.created_branch}
           initialForceMode={pushRequest?.forceMode || null}
+          autoPush={!!session?.auto_push}
+          onAutoPushChange={handleAutoPushChange}
           onConfirm={handlePushConfirmed}
           onCancel={() => {
             setShowPushModal(false);
             setPushRequest(null);
-          }}
-          onEditDetails={() => {
-            setShowPushModal(false);
-            setPushRequest(null);
-            setView('edit');
           }}
         />
       )}
@@ -1161,11 +1046,9 @@ export default function Session() {
           task={tasks.find((t) => t.id === activeTaskModal)}
           session={{
             id: session.id,
+            short_id: session.short_id,
             label: session.label,
             repo_full_name: session.repo_full_name,
-            base_branch: session.base_branch,
-            pr_url: prInfo?.url,
-            pr_number: prInfo?.number,
           }}
           onKill={handleTaskKill}
           onRetry={handleTaskRetry}

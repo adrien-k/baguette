@@ -12,6 +12,7 @@ import { sessionsService } from '../../feathers.js';
 import toast from 'react-hot-toast';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
+import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 // Parse unified diff string into per-file sections
 function parseDiff(diffText) {
@@ -494,10 +495,7 @@ export default function DiffView({ session, onFilesChange, onLineReference, read
                 prUrl={session.pr_url}
               />
               {!isMerged && canMerge && (
-                <button
-                  onClick={() => setShowMergeModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
-                >
+                <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
                   <GitMerge className="w-3.5 h-3.5" />
                   Merge PR
                 </button>
