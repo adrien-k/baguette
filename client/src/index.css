@@ -61,9 +61,17 @@ html[data-theme='light'] {
   --color-amber-300: #b45309;
   --color-amber-400: #b45309;
   --color-red-200: #991b1b;
+  --color-red-300: #991b1b;
   --color-red-400: #b91c1c;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
   --color-emerald-400: #047857;
+  --color-sky-200: #075985;
+  --color-sky-300: #0369a1;
   --color-sky-400: #0369a1;
+  --color-indigo-200: #3730a3;
+  --color-indigo-300: #4338ca;
+  --color-indigo-400: #4338ca;
 }
 
 html[data-theme='light'] body {

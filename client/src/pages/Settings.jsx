@@ -435,7 +435,7 @@ export default function Settings() {
 
         <div className="flex-1 min-w-0">
           {error && (
-            <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
+            <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-400 mb-6">
               {error}
             </div>
           )}

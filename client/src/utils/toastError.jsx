@@ -23,7 +23,7 @@ function ErrorToast({ t, label, detail }) {
             </button>
           )}
           {open && detail && (
-            <pre className="mt-2 text-xs text-red-300 bg-red-950/40 border border-red-900/40 rounded px-2 py-1.5 overflow-auto max-h-32 whitespace-pre-wrap break-words">
+            <pre className="mt-2 text-xs text-red-400 bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 overflow-auto max-h-32 whitespace-pre-wrap break-words">
               {detail}
             </pre>
           )}

@@ -860,13 +860,13 @@ export default function Session() {
       )}
 
       {error && (
-        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-red-950/80 border-b border-red-800 text-red-200 text-sm">
+        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-red-900/30 border-b border-red-700 text-red-400 text-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span className="flex-1 min-w-0">{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="shrink-0 p-1 rounded hover:bg-red-800/50 text-red-200"
+            className="shrink-0 p-1 rounded hover:bg-red-800/50 text-red-400"
             aria-label="Dismiss"
           >
             <X className="w-4 h-4" />

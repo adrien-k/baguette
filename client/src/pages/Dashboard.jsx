@@ -226,7 +226,7 @@ export default function Dashboard() {
           </div>
         )}
         {createError && (
-          <div className="mb-4 bg-red-900/30 border border-red-700 rounded-md px-3 sm:px-4 py-3 text-sm text-red-300">
+          <div className="mb-4 bg-red-900/30 border border-red-700 rounded-md px-3 sm:px-4 py-3 text-sm text-red-400">
             <div className="flex items-start justify-between gap-2">
               <p className="break-all">{createError}</p>
               <button

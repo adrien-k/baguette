@@ -17,7 +17,7 @@ import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
-import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
+import { ColorSchemeProvider, useColorScheme } from './hooks/useColorScheme.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 
 function LoadingScreen() {
@@ -310,16 +310,38 @@ function AppContent() {
   );
 }
 
+function ThemedToaster() {
+  const { colorScheme } = useColorScheme();
+  const isLight = colorScheme === 'light';
+
+  return (
+    <Toaster
+      position="bottom-center"
+      containerStyle={{ bottom: '1.5rem' }}
+      toastOptions={{
+        duration: 5000,
+        style: isLight
+          ? {
+              background: '#f4f4f5',
+              color: '#18181b',
+              border: '1px solid #d4d4d8',
+            }
+          : {
+              background: '#27272a',
+              color: '#fafafa',
+              border: '1px solid #3f3f46',
+            },
+      }}
+    />
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <ColorSchemeProvider>
         <AppContent />
-        <Toaster
-          position="bottom-center"
-          toastOptions={{ duration: 5000 }}
-          containerStyle={{ bottom: '1.5rem' }}
-        />
+        <ThemedToaster />
       </ColorSchemeProvider>
     </AuthProvider>
   );
