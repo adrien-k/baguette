@@ -10,10 +10,12 @@ import {
 } from '../../feathers.js';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
+import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useGetSessionIssues } from '../../hooks/useGetSessionIssues.js';
+import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
@@ -23,6 +25,9 @@ import MarkdownContent from '../../components/MarkdownContent.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
+
+const NEW_REVIEW_TOOLTIP =
+  'Starts a new review and clears the reviewer chat history (issues are kept).';
 
 function issueFixPrompt(issue, sessionId) {
   return (
@@ -92,6 +97,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
   const { repos } = useRepoContext();
   const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const { issues, loading: issuesLoading } = useGetSessionIssues(session?.id);
+  const { messages: reviewMessages } = useGetReviewMessages(session?.id);
   const [userSettings, setUserSettings] = useState(null);
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
@@ -163,6 +169,9 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
   const opened = issues.filter((i) => i.status === 'opened');
   const isRunning = session?.review_status === 'running';
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
+  const hasReviewConversation = reviewMessages.some(
+    (m) => m.type === 'user' || m.type === 'assistant'
+  );
 
   const sendFixMessage = async (text) => {
     await messagesService.create({
@@ -257,13 +266,10 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
         <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6`}>
           <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-5 sm:p-6 space-y-4">
             {userSettings && !hasSdkKey && (
-              <p className="text-sm text-amber-200/90">
+              <Alert variant="alert">
                 Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
-                <Link to="/settings?tab=agent" className="text-amber-400 underline">
-                  Settings → Agent
-                </Link>{' '}
-                to run a review.
-              </p>
+                <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
+              </Alert>
             )}
             <div>
               <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
@@ -327,6 +333,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
                         type="button"
                         onClick={handleStart}
                         disabled={starting || !hasSdkKey || !session?.worktree_path}
+                        title={hasReviewConversation ? NEW_REVIEW_TOOLTIP : undefined}
                         className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-4 py-1.5 rounded-lg text-sm font-medium"
                       >
                         {starting ? (
@@ -334,7 +341,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
                         ) : (
                           <Play className="w-3.5 h-3.5" />
                         )}
-                        Start review
+                        {hasReviewConversation ? 'New review' : 'Start review'}
                       </button>
                     ))}
                   {isRunning && (

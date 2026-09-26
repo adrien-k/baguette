@@ -11,8 +11,7 @@ import {
 } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
-import PrStatusBadge from './PrStatusBadge.jsx';
-import SessionToolLink from './SessionToolLink.jsx';
+import SessionTools, { sessionToolsVisible } from './SessionTools.jsx';
 import { formatRelativeTime } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
@@ -141,33 +140,14 @@ export default function SessionCard({ session }) {
         model={session.model}
       />
       <p className="text-xs text-zinc-500 line-clamp-2 ml-5">{session.initial_prompt}</p>
-      {(session.pr_url || session.preview_url || session.codeserver_url) && (
-        <div className="mt-1.5 sm:mt-2 ml-5 flex flex-wrap items-center gap-2">
-          {session.pr_url && (
-            <PrStatusBadge
-              status={session.pr_status}
-              prNumber={session.pr_number}
-              prUrl={session.pr_url}
-            />
-          )}
-          {session.preview_url && (
-            <SessionToolLink
-              kind="preview"
-              href={session.preview_url}
-              previewServices={session.preview_services}
-              size="sm"
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
-          {session.codeserver_url && (
-            <SessionToolLink
-              kind="code"
-              href={session.codeserver_url}
-              size="sm"
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
-        </div>
+      {sessionToolsVisible(session, ['pr', 'preview', 'code']) && (
+        <SessionTools
+          session={session}
+          tools={['pr', 'preview', 'code']}
+          size="compact"
+          className="mt-1.5 sm:mt-2 ml-5 flex flex-wrap"
+          onToolClick={() => {}}
+        />
       )}
     </div>
   );

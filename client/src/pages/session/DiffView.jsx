@@ -14,6 +14,13 @@ import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
+const DIFF_HUNK_ROW = 'text-sky-400 bg-sky-500/10';
+const DIFF_HUNK_NUM = 'text-sky-500/70';
+const DIFF_REMOVED_ROW = 'text-red-400 bg-red-500/10';
+const DIFF_ADDED_ROW = 'text-emerald-400 bg-emerald-500/10';
+const DIFF_CONTEXT_ROW = 'text-zinc-400 hover:bg-zinc-800/30';
+const DIFF_EMPTY_SIDE = 'flex bg-zinc-800/20';
+
 // Parse unified diff string into per-file sections
 function parseDiff(diffText) {
   const files = [];
@@ -168,9 +175,9 @@ function InlineDiff({ lines, filePath, onLineReference }) {
       {rows.map((row, i) => {
         if (row.type === 'hunk') {
           return (
-            <div key={i} className="flex text-sky-400 bg-sky-950/20">
-              <span className={`${NUM_CLS} text-sky-900`}></span>
-              <span className={`${NUM_CLS} text-sky-900`}></span>
+            <div key={i} className={`flex ${DIFF_HUNK_ROW}`}>
+              <span className={`${NUM_CLS} ${DIFF_HUNK_NUM}`}></span>
+              <span className={`${NUM_CLS} ${DIFF_HUNK_NUM}`}></span>
               <span className="px-2 flex-1">{row.content}</span>
             </div>
           );
@@ -179,7 +186,7 @@ function InlineDiff({ lines, filePath, onLineReference }) {
           return (
             <DiffCodeRow
               key={i}
-              rowClass="text-red-400 bg-red-950/30"
+              rowClass={DIFF_REMOVED_ROW}
               onLineReference={onLineReference ? () => sendRef(row) : undefined}
               title={onLineReference ? 'Send line reference to chat' : undefined}
             >
@@ -193,7 +200,7 @@ function InlineDiff({ lines, filePath, onLineReference }) {
           return (
             <DiffCodeRow
               key={i}
-              rowClass="text-emerald-400 bg-emerald-950/30"
+              rowClass={DIFF_ADDED_ROW}
               onLineReference={onLineReference ? () => sendRef(row) : undefined}
               title={onLineReference ? 'Send line reference to chat' : undefined}
             >
@@ -206,7 +213,7 @@ function InlineDiff({ lines, filePath, onLineReference }) {
         return (
           <DiffCodeRow
             key={i}
-            rowClass="text-zinc-400 hover:bg-zinc-800/30"
+            rowClass={DIFF_CONTEXT_ROW}
             onLineReference={onLineReference ? () => sendRef(row) : undefined}
             title={onLineReference ? 'Send line reference to chat' : undefined}
           >
@@ -232,7 +239,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
         {rows.map((row, i) => {
           if (row.type === 'hunk') {
             return (
-              <div key={i} className="text-sky-400 bg-sky-950/20 px-2">
+              <div key={i} className={`${DIFF_HUNK_ROW} px-2`}>
                 {row.content}
               </div>
             );
@@ -241,7 +248,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
             return row.left ? (
               <DiffCodeRow
                 key={i}
-                rowClass="text-red-400 bg-red-950/30"
+                rowClass={DIFF_REMOVED_ROW}
                 onLineReference={onLineReference ? () => sendRef(row.left) : undefined}
                 title={onLineReference ? 'Send line reference to chat' : undefined}
               >
@@ -251,7 +258,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
                 </span>
               </DiffCodeRow>
             ) : (
-              <div key={i} className="flex bg-zinc-900/50">
+              <div key={i} className={DIFF_EMPTY_SIDE}>
                 <span className={NUM_CLS}></span>
                 <span className="px-2 flex-1"> </span>
               </div>
@@ -260,7 +267,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
           return (
             <DiffCodeRow
               key={i}
-              rowClass="text-zinc-400 hover:bg-zinc-800/30"
+              rowClass={DIFF_CONTEXT_ROW}
               onLineReference={onLineReference ? () => sendRef(row.left) : undefined}
               title={onLineReference ? 'Send line reference to chat' : undefined}
             >
@@ -277,7 +284,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
         {rows.map((row, i) => {
           if (row.type === 'hunk') {
             return (
-              <div key={i} className="text-sky-400 bg-sky-950/20 px-2">
+              <div key={i} className={`${DIFF_HUNK_ROW} px-2`}>
                 {row.content}
               </div>
             );
@@ -286,7 +293,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
             return row.right ? (
               <DiffCodeRow
                 key={i}
-                rowClass="text-emerald-400 bg-emerald-950/30"
+                rowClass={DIFF_ADDED_ROW}
                 onLineReference={onLineReference ? () => sendRef(row.right) : undefined}
                 title={onLineReference ? 'Send line reference to chat' : undefined}
               >
@@ -296,7 +303,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
                 </span>
               </DiffCodeRow>
             ) : (
-              <div key={i} className="flex bg-zinc-900/50">
+              <div key={i} className={DIFF_EMPTY_SIDE}>
                 <span className={NUM_CLS}></span>
                 <span className="px-2 flex-1"> </span>
               </div>
@@ -305,7 +312,7 @@ function SideBySideDiff({ lines, filePath, onLineReference }) {
           return (
             <DiffCodeRow
               key={i}
-              rowClass="text-zinc-400 hover:bg-zinc-800/30"
+              rowClass={DIFF_CONTEXT_ROW}
               onLineReference={onLineReference ? () => sendRef(row.right) : undefined}
               title={onLineReference ? 'Send line reference to chat' : undefined}
             >

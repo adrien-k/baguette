@@ -547,17 +547,17 @@ export default function ChatView({
     }
   };
 
-  const chatLogsToggle = (
-    <div className={`shrink-0 flex justify-end px-3 sm:px-4 pb-1 ${showLogs ? 'pt-2' : ''}`}>
+  const chatLogsToggleButton = onShowLogsChange ? (
+    <div className="flex justify-end pt-2 pb-1">
       <button
         type="button"
-        onClick={() => onShowLogsChange?.(!showLogs)}
+        onClick={() => onShowLogsChange(!showLogs)}
         className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
       >
         {showLogs ? 'Show chat' : 'Show logs'}
       </button>
     </div>
-  );
+  ) : null;
 
   return (
     <>
@@ -568,6 +568,7 @@ export default function ChatView({
             loadMore={loadMore}
             loadingMore={loadingMore}
             hasMore={hasMore}
+            logsToggle={chatLogsToggleButton}
           />
         ) : (
           <ChatMessagesViewport showBottomFade={!readonly} scrollRef={scrollContainerRef}>
@@ -727,12 +728,11 @@ export default function ChatView({
                     </div>
                   )}
                 <div ref={messagesEndRef} />
+                {chatLogsToggleButton}
               </>
             )}
           </ChatMessagesViewport>
         )}
-
-        {chatLogsToggle}
 
         {error && !showLogs && (
           <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-red-400 text-xs">

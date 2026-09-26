@@ -87,7 +87,6 @@ function Nav() {
           </Link>
         </div>
         <div className="flex items-center gap-3">
-          <ColorSchemeToggle />
           <RepoPicker />
           <RunningTasksDropdown />
           <div className="relative" ref={userMenuRef}>
@@ -107,6 +106,9 @@ function Nav() {
                     <SettingsIcon className="w-4 h-4 text-zinc-500" />
                     Settings
                   </Link>
+                </div>
+                <div className="border-t border-zinc-700 mt-1 pt-1">
+                  <ColorSchemeToggle menuItem />
                 </div>
                 <div className="border-t border-zinc-700 mt-1 pt-1">
                   <button onClick={logout} className={menuItemClass}>

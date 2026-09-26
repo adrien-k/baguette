@@ -2,11 +2,18 @@
 
 ## Before committing
 
-Run tests and fix format - both must pass:
+Always run format (must pass):
+
+```
+pnpm run fix
+```
+
+Run the test suite **only when the change touches the backend** — for example under `server/`, `server/migrations/`, or `shared/` when server code depends on it. Client-only work (e.g. `client/`, styling, copy) does not require `pnpm test` before commit.
+
+When backend code changed:
 
 ```
 pnpm test
-pnpm run fix
 ```
 
 ## API routes: prefer Feathers services over Express routes

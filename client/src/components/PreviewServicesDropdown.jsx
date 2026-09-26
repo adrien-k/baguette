@@ -1,27 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ExternalLink, MonitorPlay } from 'lucide-react';
-import VsCodeIcon from './svg/VsCodeIcon.jsx';
+import ToolbarButton from './ToolbarButton.jsx';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
-const TOOLS = {
-  preview: { label: 'Preview', Icon: MonitorPlay },
-  code: { label: 'Code', Icon: VsCodeIcon },
-};
+const PREVIEW_LABEL = 'Preview';
 
-const BASE_CLASS =
-  'inline-flex items-center gap-1.5 rounded-md border text-xs font-medium transition-colors border-zinc-700/80 bg-zinc-800/50 text-zinc-300 hover:border-sky-500/35 hover:bg-sky-500/10 hover:text-sky-200 shrink-0';
-
-function PreviewServicesDropdown({
+/** Preview toolbar control when the session exposes multiple preview services. */
+export default function PreviewServicesDropdown({
   services,
   className = '',
-  size = 'md',
-  hideLabelBelowSm,
+  hideLabelBelowSm = false,
   onClick,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
-  const { label, Icon } = TOOLS.preview;
-  const sizeClass = size === 'sm' ? 'px-1.5 py-0.5 text-[11px] gap-1' : 'px-2 py-1';
 
   useEffect(() => {
     if (!open) return;
@@ -36,24 +28,24 @@ function PreviewServicesDropdown({
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
-      <button
-        type="button"
-        title={label}
+      <ToolbarButton
+        icon={MonitorPlay}
+        label={PREVIEW_LABEL}
+        hideLabelBelowSm={hideLabelBelowSm}
+        className={className}
+        title={PREVIEW_LABEL}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={(e) => {
           onClick?.(e);
           setOpen((v) => !v);
         }}
-        className={`${BASE_CLASS} ${sizeClass} ${className}`}
       >
-        <Icon className="w-3 h-3 shrink-0 opacity-90" aria-hidden />
-        <span className={hideLabelBelowSm ? 'hidden sm:inline' : undefined}>{label}</span>
         <ChevronDown
           className={`w-3 h-3 shrink-0 opacity-70 transition-transform ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
-      </button>
+      </ToolbarButton>
       {open && (
         <div
           role="menu"
@@ -91,47 +83,5 @@ function PreviewServicesDropdown({
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * External link styled as a compact tool button (preview proxy, code-server, etc.).
- */
-export default function SessionToolLink({
-  kind,
-  href,
-  previewServices,
-  className = '',
-  onClick,
-  size = 'md',
-  hideLabelBelowSm = false,
-}) {
-  if (kind === 'preview' && previewServices?.length > 1) {
-    return (
-      <PreviewServicesDropdown
-        services={previewServices}
-        className={className}
-        size={size}
-        hideLabelBelowSm={hideLabelBelowSm}
-        onClick={onClick}
-      />
-    );
-  }
-
-  const { label, Icon } = TOOLS[kind];
-  const sizeClass = size === 'sm' ? 'px-1.5 py-0.5 text-[11px] gap-1' : 'px-2 py-1';
-
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={onClick}
-      title={label}
-      className={`${BASE_CLASS} ${sizeClass} ${className}`}
-    >
-      <Icon className="w-3 h-3 shrink-0 opacity-90" aria-hidden />
-      <span className={hideLabelBelowSm ? 'hidden sm:inline' : undefined}>{label}</span>
-    </a>
   );
 }

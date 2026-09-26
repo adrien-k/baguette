@@ -72,6 +72,15 @@ html[data-theme='light'] {
   --color-indigo-200: #3730a3;
   --color-indigo-300: #4338ca;
   --color-indigo-400: #4338ca;
+  --color-red-900: #fee2e2;
+  --color-red-950: #fef2f2;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+  --color-green-300: #047857;
+  --color-green-900: #d1fae5;
+  --color-green-950: #ecfdf5;
+  --color-sky-900: #e0f2fe;
+  --color-sky-950: #f0f9ff;
 }
 
 html[data-theme='light'] body {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Globe, Play, ScrollText, Wifi, Loader2, Square, Users } from 'lucide-react';
+import { ExternalLink, Globe, ScrollText, Wifi, Loader2, Square, Users } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { toastError } from '../../utils/toastError.jsx';
 import { sessionsService, tasksService } from '../../feathers.js';
-import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import StartButton from '../../components/StartButton.jsx';
 
 function ServiceQrCode({ url }) {
   if (!url) return null;
@@ -195,15 +195,10 @@ function ServiceRow({
             </button>
           )}
           {!readonly && canStart && (
-            <button
-              type="button"
+            <StartButton
               onClick={() => onStart(svc.name)}
-              className={SECONDARY_BUTTON_CLASS}
               title="Start preview service (1 hour idle timeout)"
-            >
-              <Play className="w-3.5 h-3.5" />
-              Start
-            </button>
+            />
           )}
           <button
             type="button"

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Play, RotateCw, Square, Trash2 } from 'lucide-react';
+import { RotateCw, Square, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/dates.js';
 import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
-import { SECONDARY_BUTTON_CLASS, TASK_STOP_CONTROL_CLASS } from '../utils/buttonStyles.js';
+import { NEUTRAL_BUTTON_CLASS, TASK_STOP_CONTROL_CLASS } from '../utils/buttonStyles.js';
 import BaguetteIcon from './svg/BaguetteIcon.jsx';
+import StartButton from './StartButton.jsx';
 
 function TaskMetaLine({ task }) {
   const duration = useTaskRunDuration(task);
@@ -121,41 +122,18 @@ export default function TaskPanel({
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {!readonly && configCommands.length > 0 && (
-        <div className="p-2 border-b border-zinc-800 flex flex-wrap gap-1.5">
+        <div className="shrink-0 p-2 border-b border-zinc-800 flex flex-wrap gap-1.5">
           {configCommands.map((cmd, i) => (
-            <button
-              key={i}
-              onClick={() => onStartTask(cmd.label)}
-              className={SECONDARY_BUTTON_CLASS}
-              title={cmd.run}
-            >
-              <Play className="w-3 h-3" />
+            <StartButton key={i} onClick={() => onStartTask(cmd.label)} title={cmd.run}>
               {cmd.label}
-            </button>
+            </StartButton>
           ))}
         </div>
       )}
 
-      {!readonly && (
-        <form onSubmit={handleSubmit} className="p-3 border-b border-zinc-800">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="Run a command..."
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
-            />
-            <button type="submit" className={`${SECONDARY_BUTTON_CLASS} shrink-0`}>
-              Run
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto">
         {tasks.length === 0 && (
           <div className="flex flex-col items-center py-10 gap-2 opacity-40">
             <BaguetteIcon className="w-7 h-7" />
@@ -179,6 +157,23 @@ export default function TaskPanel({
           </>
         )}
       </div>
+
+      {!readonly && (
+        <form onSubmit={handleSubmit} className="shrink-0 border-t border-zinc-800 bg-zinc-950 p-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="Run a command..."
+              className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-600/40 font-mono"
+            />
+            <button type="submit" className={`${NEUTRAL_BUTTON_CLASS} shrink-0`}>
+              Run
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

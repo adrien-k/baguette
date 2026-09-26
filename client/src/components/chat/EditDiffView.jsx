@@ -121,9 +121,9 @@ export default function EditDiffView({
           {diffLines(oldString ?? '', newString ?? '').flatMap((part, i) => {
             const prefix = part.added ? '+' : part.removed ? '-' : ' ';
             const cls = part.added
-              ? 'bg-green-950/60 text-green-300'
+              ? 'bg-emerald-500/12 text-emerald-400'
               : part.removed
-                ? 'bg-red-950/60 text-red-300'
+                ? 'bg-red-500/12 text-red-400'
                 : 'text-zinc-600';
             const lines = part.value.split('\n');
             if (lines[lines.length - 1] === '') lines.pop();

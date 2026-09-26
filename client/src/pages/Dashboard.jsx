@@ -10,7 +10,6 @@ import SessionCard from '../components/SessionCard.jsx';
 import BuilderForm from '../components/BuilderForm.jsx';
 import LoopsPanel from '../components/LoopsPanel.jsx';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
-import NoReposCard from '../components/NoReposCard.jsx';
 import { toastError } from '../utils/toastError.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
@@ -49,7 +48,7 @@ export default function Dashboard() {
   const { repoId, loopId } = useParams();
   const { homeUrl, loopEditUrl } = useFilterRoutes();
   const { sessions, loading, hasMore, loadMore } = useSessionsContext();
-  const { repos, loading: loadingRepos, selectedRepo, setSelectedRepo } = useRepoContext();
+  const { repos, selectedRepo, setSelectedRepo } = useRepoContext();
   const { showArchived, setShowArchived, showLoopRuns, setShowLoopRuns } = useFilters();
 
   const [initDefaults, setInitDefaults] = useState(() => location.state ?? {});
@@ -239,24 +238,20 @@ export default function Dashboard() {
           </div>
         )}
 
-        {!loadingRepos && repos.length === 0 && !builderIsGlobal && !isAllSessions ? (
-          <NoReposCard />
-        ) : (
-          <BuilderForm
-            // Remounting on the edited loop reseeds every field from it.
-            key={`builder-${formKey}-${selectedRepo}-${editingLoop?.id ?? 'new'}`}
-            onSubmit={handleCreate}
-            onCreateLoop={handleCreateLoop}
-            onUpdateLoop={handleUpdateLoop}
-            onCancelEdit={() => navigate(homeUrl)}
-            editingLoop={editingLoop}
-            loading={creating}
-            repoFullName={builderRepoFullName}
-            isGlobal={builderIsGlobal}
-            allowRepoChoice={isAllSessions}
-            defaultPrompt={initPrompt || ''}
-          />
-        )}
+        <BuilderForm
+          // Remounting on the edited loop reseeds every field from it.
+          key={`builder-${formKey}-${selectedRepo}-${editingLoop?.id ?? 'new'}`}
+          onSubmit={handleCreate}
+          onCreateLoop={handleCreateLoop}
+          onUpdateLoop={handleUpdateLoop}
+          onCancelEdit={() => navigate(homeUrl)}
+          editingLoop={editingLoop}
+          loading={creating}
+          repoFullName={builderRepoFullName}
+          isGlobal={builderIsGlobal}
+          allowRepoChoice={isAllSessions}
+          defaultPrompt={initPrompt || ''}
+        />
       </div>
 
       {loopsQuery && (

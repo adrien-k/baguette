@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, HelpCircle, Repeat, RefreshCw } from 'lucide-react';
+import { ChevronRight, HelpCircle, Repeat, RefreshCw } from 'lucide-react';
+import Alert from './Alert.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -48,7 +49,7 @@ export default function BuilderForm({
       : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
   const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
-  const { repos } = useRepoContext();
+  const { repos, loading: loadingRepos } = useRepoContext();
   const { cursorFast, cursorEffort, setCursorFast, setCursorEffort } = useCursorModelPrefs();
   const defaultTarget = editingLoop
     ? editingLoop.is_global
@@ -308,7 +309,7 @@ export default function BuilderForm({
   const canSubmit =
     !loading &&
     availableSdks.length > 0 &&
-    (isGlobal || (repoFullName && branch)) &&
+    (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
     initialPrompt &&
     (!isLoop || isScheduleComplete(schedule));
 
@@ -454,6 +455,18 @@ export default function BuilderForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {userSettings && availableSdks.length === 0 && (
+        <Alert variant="alert">
+          Add a Claude or Cursor API key in <Link to="/settings?tab=agent">Settings → Agent</Link>{' '}
+          to start a session.
+        </Alert>
+      )}
+      {!loadingRepos && !isGlobal && repos.length === 0 && (
+        <Alert variant="info">
+          Add a repository in <Link to="/settings?tab=repos">Settings → Repositories</Link> to start
+          a coding session.
+        </Alert>
+      )}
       {/* A loop being edited stays a loop, so the tabs give way to a title and a way out. */}
       {editingLoop ? (
         <div className="flex min-w-0 items-center gap-2 border-b border-zinc-800 pb-2 -mt-1 text-sm font-medium text-white">
@@ -752,18 +765,6 @@ export default function BuilderForm({
       <div className="flex flex-col sm:flex-row sm:items-start gap-2">
         {/* Left: selects + variant link */}
         <div>
-          {userSettings && availableSdks.length === 0 && (
-            <p className="text-sm text-amber-200/90 mb-2">
-              Add a Claude or Cursor API key in{' '}
-              <Link
-                to="/settings?tab=agent"
-                className="text-amber-400 hover:text-amber-300 underline"
-              >
-                Settings → Agent
-              </Link>{' '}
-              to start a session.
-            </p>
-          )}
           <div className="flex items-center gap-2">
             {userSettings && availableSdks.length === 1 && (
               <span className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white">

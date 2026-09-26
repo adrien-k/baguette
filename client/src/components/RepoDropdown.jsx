@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import LightChipDropdown from './LightChipDropdown.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
-import { repoDisplayName, isLocalRepo, groupReposByOrg } from '../utils/repoDisplayName.js';
+import { repoDisplayName, groupReposByOrg } from '../utils/repoDisplayName.js';
 
 const ICON_CLS = 'w-3.5 h-3.5 shrink-0';
 
@@ -17,7 +17,6 @@ export function repoDropdownRepoSections(repos, getValue = (r) => r.full_name) {
       value: String(getValue(r)),
       label: repoDisplayName(r.full_name),
       icon: <GithubIcon className={ICON_CLS} />,
-      detail: isLocalRepo(r.full_name) ? 'local' : undefined,
     })),
   }));
 }

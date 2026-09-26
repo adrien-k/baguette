@@ -284,7 +284,13 @@ function LogMessage({ msg }) {
   );
 }
 
-export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore }) {
+export default function LogsView({
+  rawMessages,
+  loadMore,
+  loadingMore,
+  hasMore,
+  logsToggle = null,
+}) {
   const scrollContainerRef = useRef(null);
   const topSentinelRef = useRef(null);
   const scrollAnchor = useRef(null);
@@ -343,6 +349,7 @@ export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore }
         {rawMessages.map((msg, i) => (
           <LogMessage key={msg.id ?? i} msg={msg} />
         ))}
+        {logsToggle}
       </div>
     </div>
   );

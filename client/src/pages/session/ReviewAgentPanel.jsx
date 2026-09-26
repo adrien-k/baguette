@@ -10,8 +10,6 @@ import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ChatMessagesViewport from '../../components/ChatMessagesViewport.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
 
-const REVIEW_FOLLOW_UP_LINK = 'Add a follow-up to steer the reviewer';
-
 function parseMessageRow(row) {
   try {
     return { ...row, ...JSON.parse(row.message_json || '{}'), id: row.id };
@@ -115,8 +113,6 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
   } = useGetReviewMessages(session?.id);
   const [models, setModels] = useState([]);
   const [sendingFollowUp, setSendingFollowUp] = useState(false);
-  const [reviewFollowUpExpanded, setReviewFollowUpExpanded] = useState(false);
-  const reviewFollowUpRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const isXlUp = useMediaQuery('(min-width: 1280px)');
@@ -160,30 +156,6 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
   const showReviewComposer = !readonly && rawMessages.length > 0;
   const reviewFollowUpTextareaId = session?.id ? `review-follow-up-${session.id}` : undefined;
 
-  useEffect(() => {
-    setReviewFollowUpExpanded(false);
-  }, [session?.id]);
-
-  useEffect(() => {
-    if (followUpText.trim()) setReviewFollowUpExpanded(true);
-  }, [session?.id, followUpText]);
-
-  const openReviewFollowUp = () => {
-    setReviewFollowUpExpanded(true);
-    requestAnimationFrame(() => {
-      document.getElementById(reviewFollowUpTextareaId)?.focus();
-    });
-  };
-
-  const handleReviewFollowUpBlur = () => {
-    if (followUpText.trim()) return;
-    requestAnimationFrame(() => {
-      if (!reviewFollowUpRef.current?.contains(document.activeElement)) {
-        setReviewFollowUpExpanded(false);
-      }
-    });
-  };
-
   const handleReviewModelChange = async (modelId, modelParamsJson) => {
     if (!session?.id || readonly) return;
     try {
@@ -204,7 +176,6 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     try {
       await sessionReviewService.send({ session_id: session.id, message: text });
       setFollowUpText('');
-      setReviewFollowUpExpanded(false);
       reloadReviewMessages();
     } catch (err) {
       toastError('Failed to send review message', err);
@@ -287,37 +258,24 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
           </>
         )}
       </ChatMessagesViewport>
-      {showReviewComposer && !reviewFollowUpExpanded && (
-        <div className="relative z-[2] shrink-0 bg-zinc-950 px-3 pb-3 pt-1">
-          <button
-            type="button"
-            onClick={openReviewFollowUp}
-            className="text-sm text-amber-400 hover:text-amber-300 underline text-left"
-          >
-            {REVIEW_FOLLOW_UP_LINK}
-          </button>
-        </div>
-      )}
-      {showReviewComposer && reviewFollowUpExpanded && (
-        <div ref={reviewFollowUpRef} onBlur={handleReviewFollowUpBlur}>
-          <AgentMessageComposer
-            value={followUpText}
-            onChange={setFollowUpText}
-            onSubmit={handleFollowUpSend}
-            placeholder={reviewComposerPlaceholder}
-            disabled={readonly}
-            submitDisabled={reviewTurnActive}
-            sending={sendingFollowUp}
-            session={sessionForReviewComposer}
-            models={models}
-            cursorFast={cursorFast}
-            cursorEffort={cursorEffort}
-            onModelChange={handleReviewModelChange}
-            textareaId={reviewFollowUpTextareaId}
-            skipColumn
-            formClassName="relative z-[2] shrink-0 bg-zinc-950 px-2 pb-3 pt-1"
-          />
-        </div>
+      {showReviewComposer && (
+        <AgentMessageComposer
+          value={followUpText}
+          onChange={setFollowUpText}
+          onSubmit={handleFollowUpSend}
+          placeholder={reviewComposerPlaceholder}
+          disabled={readonly}
+          submitDisabled={reviewTurnActive}
+          sending={sendingFollowUp}
+          session={sessionForReviewComposer}
+          models={models}
+          cursorFast={cursorFast}
+          cursorEffort={cursorEffort}
+          onModelChange={handleReviewModelChange}
+          textareaId={reviewFollowUpTextareaId}
+          skipColumn
+          formClassName="relative z-[2] shrink-0 bg-zinc-950 px-2 pb-3 pt-1"
+        />
       )}
     </div>
   );

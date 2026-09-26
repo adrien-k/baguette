@@ -13,7 +13,6 @@ import {
   Loader2,
   PanelLeft,
   PanelRight,
-  Upload,
   MonitorPlay,
   ClipboardCheck,
 } from 'lucide-react';
@@ -38,8 +37,7 @@ import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
 import ReviewAgentPanel from './session/ReviewAgentPanel.jsx';
-import PrStatusBadge from '../components/PrStatusBadge.jsx';
-import SessionToolLink from '../components/SessionToolLink.jsx';
+import SessionTools from '../components/SessionTools.jsx';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import { isGlobalSession, isAllSessionsPath } from '@baguette/shared/session-scope.js';
 import {
@@ -262,7 +260,9 @@ function MiniSessionEntry({ session: s, currentId, onArchive }) {
           </span>
         </Link>
         {isArchiving && <span className="shrink-0 text-[10px] text-amber-400/90">Archiving…</span>}
-        {s.pr_status && <PrStatusBadge status={s.pr_status} prUrl={s.pr_url} />}
+        {s.pr_url && (
+          <SessionTools session={s} tools={['pr']} size="compact" onToolClick={() => {}} />
+        )}
         {!s.archived_at && !isArchiving && s.status !== 'provisioning' && (
           <div className="opacity-100 shrink-0">
             <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
@@ -688,56 +688,18 @@ export default function Session() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {prInfo && (
-              <PrStatusBadge
-                status={session?.pr_status}
-                prNumber={prInfo.number}
-                prUrl={prInfo.url}
-              />
-            )}
-            {session.preview_url && (
-              <span className="shrink-0 flex items-center gap-1">
-                <SessionToolLink
-                  kind="preview"
-                  href={session.preview_url}
-                  previewServices={session.preview_services}
-                  className="h-8 px-2"
-                  hideLabelBelowSm
-                />
-                {session.is_preview_public && (
-                  <span className="hidden sm:inline text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
-                    public
-                  </span>
-                )}
-              </span>
-            )}
-            {session.codeserver_url && (
-              <SessionToolLink
-                kind="code"
-                href={session.codeserver_url}
-                className="h-8 px-2"
-                hideLabelBelowSm
-              />
-            )}
-            {!isReadonly && session?.pr_status !== 'merged' && !isGlobalSession(session) && (
-              <button
-                type="button"
-                onClick={handlePush}
-                disabled={pushing}
-                title="Push commits"
-                className="relative inline-flex items-center justify-center gap-1.5 h-8 shrink-0 rounded-md border text-xs font-medium transition-colors border-zinc-700/80 bg-zinc-800/50 text-zinc-300 hover:border-sky-500/35 hover:bg-sky-500/10 hover:text-sky-200 disabled:opacity-50 px-2"
-              >
-                <Upload className="w-3 h-3 shrink-0 opacity-90" />
-                Push
-                {commitsToPush > 0 && (
-                  <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
-                    {commitsToPush}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
+          <SessionTools
+            session={session}
+            tools={['pr', 'preview', 'code', 'push']}
+            hideLabelBelowSm
+            readonly={isReadonly}
+            onPush={handlePush}
+            pushing={pushing}
+            commitsToPush={commitsToPush}
+            prUrl={prInfo?.url}
+            prNumber={prInfo?.number}
+            showPreviewPublicBadge
+          />
         </div>
       </div>
 
