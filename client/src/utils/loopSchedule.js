@@ -1,3 +1,5 @@
+import { formatRelativeTime } from './dates.js';
+
 export const WEEKDAYS = [
   { value: 0, label: 'Sun' },
   { value: 1, label: 'Mon' },
@@ -96,4 +98,19 @@ export function formatCountdown(isoString) {
   if (hours < 24) return `in ${hours}h`;
   const days = Math.round(hours / 24);
   return `in ${days}d`;
+}
+
+/** Loop card subtitle: last run and next run, e.g. "Last 2h ago · Next in 3h". */
+export function formatLoopRunSubtitle(loop) {
+  if (!loop) return null;
+  const parts = [];
+  if (loop.last_run_at) {
+    const last = formatRelativeTime(loop.last_run_at);
+    if (last) parts.push(`last ${last}`);
+  }
+  if (loop.enabled && loop.next_run_at) {
+    const next = formatCountdown(loop.next_run_at);
+    if (next) parts.push(`next ${next}`);
+  }
+  return parts.length ? parts.join(' · ') : null;
 }

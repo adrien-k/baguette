@@ -22,6 +22,7 @@ const SESSION_LIST_COLUMNS = [
   'pr_number',
   'created_at',
   'updated_at',
+  'last_activity_at',
   'archived_at',
 ];
 
@@ -145,7 +146,10 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
         const limit = args.limit ?? 50;
         let query = db('sessions').select(...SESSION_LIST_COLUMNS);
         query = applySessionSearchFilters(query, args, userId);
-        const sessions = await query.orderBy('sessions.created_at', 'desc').limit(limit);
+        const sessions = await query
+          .orderByRaw('CASE WHEN sessions.archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')
+          .orderBy('sessions.last_activity_at', 'desc')
+          .limit(limit);
         return ok({ sessions, count: sessions.length });
       },
     },

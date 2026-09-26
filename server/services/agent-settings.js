@@ -16,8 +16,8 @@ export function getAllowedCommandsFromUser() {
   return [...SYSTEM_ALLOWED_COMMANDS];
 }
 
-// The user-to-server token obtained from the GitHub App sign-in flow.
-// Expects a user that has been fetched via the Feather service (plaintext secrets, no _encrypted fields).
+// Optional PAT overrides the GitHub App user-to-server token from sign-in.
+// Expects a user fetched via the Feathers service (plaintext secrets, no _encrypted fields).
 export function getGithubToken(user) {
-  return user?.access_token || null;
+  return user?.github_token || user?.access_token || null;
 }

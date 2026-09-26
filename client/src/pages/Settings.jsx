@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, Monitor } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
-import { usersService, reposService } from '../feathers.js';
+import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { requestNotificationPermission } from '../utils/notifications.js';
 import { useRepoContext } from '../context/RepoContext.jsx';
+import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 import McpAccessSection from '../components/McpAccessSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
@@ -18,12 +19,30 @@ import {
 } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import { SettingsSection, SettingsTabHeader } from '../components/SettingsSection.jsx';
+import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
+
+function SettingsSaveRow({ saving, saved, onSave, disabled }) {
+  return (
+    <div className="flex items-center gap-3 pt-1">
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving || disabled}
+        className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      {saved && <span className="text-sm text-emerald-400">Saved</span>}
+    </div>
+  );
+}
 
 // ─── RepositoriesTab ──────────────────────────────────────────────────────────
 
 function RepositoriesTab({ settings, onSave }) {
   const { user } = useAuth();
   const { repos, refetch: refetchRepos } = useRepoContext();
+  const { refetch: refetchSessions } = useSessionsContext();
   const [branchPrefix, setBranchPrefix] = useState('baguette/');
   const [branchSaving, setBranchSaving] = useState(false);
   const [branchSaved, setBranchSaved] = useState(false);
@@ -56,6 +75,11 @@ function RepositoriesTab({ settings, onSave }) {
   const [addResult, setAddResult] = useState(null);
   const [unlinkingId, setUnlinkingId] = useState(null);
   const [confirmUnlink, setConfirmUnlink] = useState(null);
+  const [togglingShowInAllId, setTogglingShowInAllId] = useState(null);
+  const [githubToken, setGithubToken] = useState(null);
+  const [githubTokenDirty, setGithubTokenDirty] = useState(false);
+  const [githubTokenSaving, setGithubTokenSaving] = useState(false);
+  const [githubTokenSaved, setGithubTokenSaved] = useState(false);
 
   // New local repo state
   const [localName, setLocalName] = useState('');
@@ -90,6 +114,40 @@ function RepositoriesTab({ settings, onSave }) {
       toastError('Failed to create repository', err);
     } finally {
       setAddingLocal(false);
+    }
+  };
+
+  const handleShowInAllSessionsChange = async (repo, checked) => {
+    if (!repo.user_repo_id) return;
+    setTogglingShowInAllId(repo.id);
+    try {
+      await userReposService.patch(repo.user_repo_id, { show_in_all_sessions: checked });
+      await refetchRepos();
+      refetchSessions();
+    } catch (err) {
+      toastError('Failed to update repository setting', err);
+    } finally {
+      setTogglingShowInAllId(null);
+    }
+  };
+
+  const handleGithubTokenSave = async () => {
+    if (!user?.id || !githubTokenDirty) return;
+    setGithubTokenSaving(true);
+    setGithubTokenSaved(false);
+    try {
+      const updated = await usersService.patch(user.id, {
+        github_token: githubToken ?? '',
+      });
+      onSave(updated);
+      setGithubToken(null);
+      setGithubTokenDirty(false);
+      setGithubTokenSaved(true);
+      setTimeout(() => setGithubTokenSaved(false), 2000);
+    } catch (err) {
+      toastError('Failed to save GitHub token', err);
+    } finally {
+      setGithubTokenSaving(false);
     }
   };
 
@@ -239,17 +297,56 @@ function RepositoriesTab({ settings, onSave }) {
                   <div className="text-xs text-zinc-500 mt-0.5">
                     {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
                   </div>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="rounded border-zinc-600 bg-zinc-800 text-amber-500 focus:ring-amber-500/50"
+                      checked={r.show_in_all_sessions !== false}
+                      disabled={togglingShowInAllId === r.id}
+                      onChange={(e) => handleShowInAllSessionsChange(r, e.target.checked)}
+                    />
+                    Include in "All sessions" view
+                  </label>
                 </div>
                 <button
                   onClick={() => handleUnlinkClick(r)}
                   disabled={unlinkingId !== null}
-                  className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 shrink-0"
+                  className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 shrink-0 self-start"
                 >
                   Remove
                 </button>
               </div>
             ))}
           </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title="GitHub token"
+          description="Optional personal access token for GitHub API calls (listing repos, branches, PRs). When set, it is used instead of the token from GitHub App sign-in."
+        >
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1">
+              Personal access token
+            </label>
+            <MaskedSecretInput
+              maskedValue={settings?.github_token}
+              placeholder="ghp_… or github_pat_…"
+              onChange={(val, dirty) => {
+                setGithubToken(val);
+                setGithubTokenDirty(dirty);
+              }}
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Fine-grained or classic PAT with access to the repositories you use in Baguette. Leave
+              blank and save to clear a stored token.
+            </p>
+          </div>
+          <SettingsSaveRow
+            saving={githubTokenSaving}
+            saved={githubTokenSaved}
+            onSave={handleGithubTokenSave}
+            disabled={!githubTokenDirty}
+          />
         </SettingsSection>
       </div>
 

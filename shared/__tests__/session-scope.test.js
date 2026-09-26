@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   homeUrlForScope,
   isAllSessionsPath,
+  isNewSessionRouteId,
   loopEditUrlForScope,
+  NEW_SESSION_ROUTE_ID,
   sessionHref,
   sessionUrlForScope,
 } from '../session-scope.js';
@@ -36,6 +38,21 @@ describe('homeUrlForScope / sessionUrlForScope', () => {
     expect(homeUrlForScope(scope)).toBe('/repos/3');
     expect(sessionUrlForScope('abc', scope)).toBe('/repos/3/sessions/abc');
     expect(loopEditUrlForScope(9, scope)).toBe('/repos/3/loop/9');
+  });
+});
+
+describe('new session route id', () => {
+  it('recognizes the new-session URL segment', () => {
+    expect(NEW_SESSION_ROUTE_ID).toBe('new');
+    expect(isNewSessionRouteId('new')).toBe(true);
+    expect(isNewSessionRouteId('abc')).toBe(false);
+  });
+
+  it('maps to scoped /sessions/new URLs', () => {
+    const all = { fromAllSessions: true, selectedRepo: '__all__', repoId: 3 };
+    expect(sessionUrlForScope(NEW_SESSION_ROUTE_ID, all)).toBe('/sessions/new');
+    const repo = { fromAllSessions: false, selectedRepo: 'acme/app', repoId: 3 };
+    expect(sessionUrlForScope(NEW_SESSION_ROUTE_ID, repo)).toBe('/repos/3/sessions/new');
   });
 });
 

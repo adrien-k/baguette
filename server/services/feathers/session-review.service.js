@@ -236,6 +236,27 @@ export class SessionReviewService {
     return { ok: true };
   }
 
+  async clearContext(data, params) {
+    const sessionId = data?.session_id ?? data?.id;
+    if (!sessionId) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    if (this._active.has(sessionId) || session.review_status === 'running') {
+      throw new BadRequest(REVIEW_TURN_ACTIVE_MESSAGE);
+    }
+    await this._wipeReviewMessages(session);
+    this.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(session.id));
+    await this.app.service('sessions').patch(
+      session.id,
+      {
+        review_claude_session_id: null,
+        review_cursor_agent_id: null,
+        review_status: 'stopped',
+      },
+      { user: { id: session.user_id } }
+    );
+    return { ok: true };
+  }
+
   async _persist(session, message) {
     return await this.app.service('session-review-messages').create(
       {
@@ -541,13 +562,14 @@ export class SessionReviewService {
 
 export function registerSessionReviewService(app, path = 'session-review') {
   app.use(path, new SessionReviewService(), {
-    methods: ['start', 'stop', 'send', 'resumeInterrupted'],
+    methods: ['start', 'stop', 'send', 'clearContext', 'resumeInterrupted'],
   });
   app.service(path).hooks({
     before: {
       start: [requireUser],
       stop: [requireUser],
       send: [requireUser],
+      clearContext: [requireUser],
       resumeInterrupted: [disableExternal],
     },
   });

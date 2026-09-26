@@ -10,6 +10,7 @@ import {
   stringifyCursorModelPrefs,
 } from '../../services/agent-preferences.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
+import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -105,6 +106,7 @@ function formatUserExternal(context) {
 
 const encryptUserSecrets = encryptFields({
   access_token: 'access_token_encrypted',
+  github_token: 'github_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
@@ -112,6 +114,7 @@ const encryptUserSecrets = encryptFields({
 
 const decryptUserSecrets = decryptFields({
   access_token: 'access_token_encrypted',
+  github_token: 'github_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
@@ -125,6 +128,12 @@ function restrictPatchToSelf(context) {
   return context;
 }
 
+async function clearGithubPickerCacheOnTokenPatch(context) {
+  if (context.data?.github_token === undefined) return context;
+  clearUserReposPickerCache(cacheScopeForUser({ id: context.id }));
+  return context;
+}
+
 export const usersHooks = {
   before: {
     all: [requireUser],
@@ -134,6 +143,7 @@ export const usersHooks = {
       restrictPatchToSelf,
       normalizeColorSchemePatch,
       normalizeCursorModelPrefsPatch,
+      clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,
     ],
   },

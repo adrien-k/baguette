@@ -1,9 +1,15 @@
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { messageModelLabel } from '../../utils/messageModelLabel.js';
 
-export default function BaguetteBlock({ message }) {
+export default function BaguetteBlock({ message, models = [], session }) {
   const [expanded, setExpanded] = useState(false);
   const title = message.title || 'Baguette';
+  const turnModelLabel = messageModelLabel({
+    model: message.model ?? session?.model,
+    modelParams: message.model_params ?? session?.model_params,
+    models,
+  });
   const content =
     typeof message.message?.content === 'string'
       ? message.message.content
@@ -15,9 +21,14 @@ export default function BaguetteBlock({ message }) {
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-amber-900/10 transition-colors gap-2"
       >
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
           <span className="text-amber-500 text-xs font-medium shrink-0">Baguette</span>
-          <span className="text-zinc-400 text-xs truncate">{title}</span>
+          {turnModelLabel ? (
+            <span className="text-zinc-500 text-xs font-normal truncate max-w-[12rem] sm:max-w-xs">
+              {turnModelLabel}
+            </span>
+          ) : null}
+          <span className="text-zinc-400 text-xs truncate min-w-0">{title}</span>
         </div>
         <ChevronDown
           className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}

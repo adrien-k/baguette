@@ -37,3 +37,9 @@ export function formatRelativeTime(isoString) {
   if (days < 7) return `${days}d ago`;
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+/** Dashboard session list: "active 2h ago", "active just now", … */
+export function formatSessionActiveLabel(isoString) {
+  const rel = formatRelativeTime(isoString);
+  return rel ? `active ${rel}` : '';
+}

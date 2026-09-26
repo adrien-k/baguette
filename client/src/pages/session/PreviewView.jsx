@@ -28,10 +28,12 @@ const STATUS_LABEL = {
 const actionBtnClass =
   'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-700/80 bg-zinc-800/40 text-xs text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800 transition-colors';
 
-function PreviewSettingsToggles({ session }) {
+function PreviewSettingsToggles({ session, compact = false }) {
   if (!session?.preview_url) return null;
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-4">
+    <div
+      className={`rounded-lg border border-zinc-800 bg-zinc-900/50 space-y-4 ${compact ? 'p-3' : 'p-4'}`}
+    >
       <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Preview access</h2>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 min-w-0">
@@ -129,6 +131,7 @@ function ServiceRow({
   onViewLogs,
   starting,
   stopping,
+  compact = false,
 }) {
   const statusMeta = STATUS_LABEL[svc.status] ?? STATUS_LABEL.stopped;
   const isActive = svc.status === 'ready' || svc.status === 'starting';
@@ -141,7 +144,9 @@ function ServiceRow({
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5">
+      <div
+        className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4 sm:p-5'}`}
+      >
         <div className="min-w-0 flex-1">
           <div className="mb-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -215,7 +220,7 @@ function ServiceRow({
   );
 }
 
-export default function PreviewView({ session, readonly, onViewLogs }) {
+export default function PreviewView({ session, readonly, onViewLogs, compact = false }) {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingService, setStartingService] = useState(null);
@@ -264,20 +269,24 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Preview</h1>
-          <p className="text-sm text-zinc-500">
-            Start dev servers on demand and share preview links. Optional descriptions come from{' '}
-            <code className="text-zinc-400 text-xs">.baguette.yaml</code>.
-          </p>
-        </header>
+    <div className={`flex-1 min-h-0 overflow-y-auto ${compact ? 'p-3' : 'p-4 sm:p-6'}`}>
+      <div className={compact ? 'space-y-4' : 'max-w-2xl mx-auto space-y-6'}>
+        {!compact && (
+          <header className="space-y-1">
+            <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Preview</h1>
+            <p className="text-sm text-zinc-500">
+              Start dev servers on demand and share preview links. Optional descriptions come from{' '}
+              <code className="text-zinc-400 text-xs">.baguette.yaml</code>.
+            </p>
+          </header>
+        )}
 
-        <PreviewSettingsToggles session={session} />
+        <PreviewSettingsToggles session={session} compact={compact} />
 
         <div className="space-y-3">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Services</h2>
+          {!compact && (
+            <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Services</h2>
+          )}
           {loading && services.length === 0 ? (
             <p className="text-sm text-zinc-500">Loading…</p>
           ) : services.length === 0 ? (
@@ -294,6 +303,7 @@ export default function PreviewView({ session, readonly, onViewLogs }) {
                 onViewLogs={onViewLogs}
                 starting={startingService === svc.name}
                 stopping={svc.task_id != null && stoppingTaskId === svc.task_id}
+                compact={compact}
               />
             ))
           )}

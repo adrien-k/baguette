@@ -79,45 +79,50 @@ function Nav() {
 
   return (
     <nav className="bg-zinc-900 border-b border-zinc-800 relative z-40 shrink-0">
-      <div className="px-4 flex items-center justify-between h-14">
-        <div className="flex items-center shrink-0">
-          <Link to={homeUrl} className="flex items-center gap-2">
-            <BaguetteIcon className="w-6 h-6 shrink-0" />
-            <span className="text-white font-semibold text-sm font-display">Baguette</span>
-          </Link>
-        </div>
-        <div className="flex items-center gap-3">
-          <RepoPicker />
-          <RunningTasksDropdown />
-          <div className="relative" ref={userMenuRef}>
-            <button
-              onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-zinc-800/50 transition-colors"
-            >
-              <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
-              <span className="hidden sm:block text-zinc-300 text-sm">{user.username}</span>
-            </button>
-            {userMenuOpen && (
-              <div
-                className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+      <div className="px-4 flex items-center gap-2 sm:gap-3 h-14 min-w-0">
+        <Link to={homeUrl} className="flex items-center gap-2 shrink-0">
+          <BaguetteIcon className="w-6 h-6 shrink-0" />
+          <span className="text-white font-semibold text-sm font-display whitespace-nowrap">
+            Baguette
+          </span>
+        </Link>
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
+          <div className="hidden sm:block shrink-0">
+            <ColorSchemeToggle />
+          </div>
+          <RepoPicker className="shrink" shrinkableTrigger />
+          <div className="relative z-10 flex items-center gap-2 sm:gap-3 shrink-0">
+            <RunningTasksDropdown />
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-zinc-800/50 transition-colors"
               >
-                <div>
-                  <Link to="/settings" className={menuItemClass}>
-                    <SettingsIcon className="w-4 h-4 text-zinc-500" />
-                    Settings
-                  </Link>
+                <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
+                <span className="hidden sm:block text-zinc-300 text-sm">{user.username}</span>
+              </button>
+              {userMenuOpen && (
+                <div
+                  className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+                >
+                  <div className="sm:hidden">
+                    <ColorSchemeToggle menuItem />
+                  </div>
+                  <div className="border-t border-zinc-700 mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
+                    <Link to="/settings" className={menuItemClass}>
+                      <SettingsIcon className="w-4 h-4 text-zinc-500" />
+                      Settings
+                    </Link>
+                  </div>
+                  <div className="border-t border-zinc-700 mt-1 pt-1">
+                    <button onClick={logout} className={menuItemClass}>
+                      <LogOut className="w-4 h-4 text-zinc-500" />
+                      Sign out
+                    </button>
+                  </div>
                 </div>
-                <div className="border-t border-zinc-700 mt-1 pt-1">
-                  <ColorSchemeToggle menuItem />
-                </div>
-                <div className="border-t border-zinc-700 mt-1 pt-1">
-                  <button onClick={logout} className={menuItemClass}>
-                    <LogOut className="w-4 h-4 text-zinc-500" />
-                    Sign out
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

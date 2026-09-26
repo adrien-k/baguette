@@ -12,35 +12,49 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerReposService } from '../feathers/repos.service.js';
+import { registerUsersService } from '../feathers/users.service.js';
+import { encrypt } from '../../lib/encrypt.js';
 import { NotFound } from '@feathersjs/errors';
 
-vi.mock('../agent-settings.js', () => ({
-  getGithubToken: vi.fn((user) => user?.access_token || null),
-}));
+vi.mock('../agent-settings.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGithubToken: vi.fn((user) => user?.github_token || user?.access_token || null),
+  };
+});
 
-vi.mock('../github.js', () => ({
-  listUserInstallations: vi.fn(),
-  listInstallationRepos: vi.fn(),
-  cacheScopeForUser: vi.fn((user) => `u${user?.id}`),
-  clearReposCache: vi.fn(),
-  clearInstallationsCache: vi.fn(),
-  clearBranchesCache: vi.fn(),
-  listBranches: vi.fn(),
-  ensureBareClone: vi.fn(),
-  toStrippedName: vi.fn(
-    (name) =>
-      name
-        .replace(/\//g, '-')
-        .replace(/[^a-zA-Z0-9-]/g, '')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '') || 'repo'
-  ),
-}));
+vi.mock('../github.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    listUserInstallations: vi.fn(),
+    listInstallationRepos: vi.fn(),
+    listUserReposForPicker: vi.fn(),
+    cacheScopeForUser: vi.fn((user) => `u${user?.id}`),
+    clearReposCache: vi.fn(),
+    clearUserReposPickerCache: vi.fn(),
+    clearInstallationsCache: vi.fn(),
+    clearBranchesCache: vi.fn(),
+    listBranches: vi.fn(),
+    ensureBareClone: vi.fn(),
+    toStrippedName: vi.fn(
+      (name) =>
+        name
+          .replace(/\//g, '-')
+          .replace(/[^a-zA-Z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '') || 'repo'
+    ),
+  };
+});
 
 import {
   listUserInstallations,
   listInstallationRepos,
+  listUserReposForPicker,
   clearReposCache,
+  clearUserReposPickerCache,
   clearInstallationsCache,
   clearBranchesCache,
   listBranches,
@@ -67,6 +81,7 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   app.use('sessions', { removeByRepoId }, { methods: ['removeByRepoId'] });
+  registerUsersService(app);
   registerReposService(app);
   return app;
 }
@@ -287,6 +302,25 @@ describe('Repos service - findOrgs', () => {
     );
     expect(listUserInstallations).not.toHaveBeenCalled();
   });
+
+  it('lists orgs from PAT-visible repos when github_token is set', async () => {
+    await db('users')
+      .where({ id: regularUser.id })
+      .update({ github_token_encrypted: encrypt('ghp_pat_override') });
+    listUserReposForPicker.mockResolvedValue([
+      { full_name: 'pat-org/alpha', private: false },
+      { full_name: 'other/one', private: true },
+    ]);
+
+    const result = await app.service('repos').findOrgs({}, params({ id: regularUser.id }));
+
+    expect(listUserReposForPicker).toHaveBeenCalledWith('ghp_pat_override', scope());
+    expect(listUserInstallations).not.toHaveBeenCalled();
+    expect(result).toEqual([
+      { login: 'other', name: 'other', avatar_url: null },
+      { login: 'pat-org', name: 'pat-org', avatar_url: null },
+    ]);
+  });
 });
 
 describe('Repos service - findRemote', () => {
@@ -332,6 +366,28 @@ describe('Repos service - findRemote', () => {
     );
     expect(listUserInstallations).not.toHaveBeenCalled();
   });
+
+  it('filters PAT-visible repos by org and query', async () => {
+    await db('users')
+      .where({ id: regularUser.id })
+      .update({ github_token_encrypted: encrypt('ghp_pat_override') });
+    listUserReposForPicker.mockResolvedValue([
+      { full_name: 'pat-org/alpha', private: false },
+      { full_name: 'pat-org/beta', private: false },
+      { full_name: 'other/one', private: true },
+    ]);
+
+    const result = await app
+      .service('repos')
+      .findRemote({ org: 'pat-org', query: 'alp' }, params({ id: regularUser.id }));
+
+    expect(listUserReposForPicker).toHaveBeenCalledWith('ghp_pat_override', scope());
+    expect(listUserInstallations).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      repos: [{ full_name: 'pat-org/alpha', private: false }],
+      hasMore: false,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -343,6 +399,7 @@ describe('Repos service - refresh', () => {
     const result = await app.service('repos').refresh({}, params(regularUser));
 
     expect(clearReposCache).toHaveBeenCalledWith(scope());
+    expect(clearUserReposPickerCache).toHaveBeenCalledWith(scope());
     expect(clearInstallationsCache).toHaveBeenCalledWith(scope());
     expect(clearBranchesCache).toHaveBeenCalledWith(scope());
     expect(result).toEqual({ ok: true });

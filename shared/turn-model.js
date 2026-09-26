@@ -3,10 +3,15 @@
  * session default. Creating a message with an explicit model must not patch the session.
  */
 
+/** Baguette-injected user message (collapsed Baguette block in chat). */
+export function isBaguetteUserMessage(parsed) {
+  return parsed?.type === 'user' && (parsed.source === 'baguette' || parsed.subtype === 'baguette');
+}
+
 /** User-typed chat message (not Baguette-injected, not a tool-result carrier). */
 export function isHumanUserMessage(parsed) {
   if (parsed?.type !== 'user') return false;
-  if (parsed.source === 'baguette' || parsed.subtype === 'baguette') return false;
+  if (isBaguetteUserMessage(parsed)) return false;
   const content = parsed.message?.content;
   if (typeof content === 'string') return true;
   if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');
@@ -47,7 +52,7 @@ export function attachSessionTurnModelFields(data, session) {
   } catch {
     return data;
   }
-  if (!isHumanUserMessage(parsed)) return data;
+  if (!isHumanUserMessage(parsed) && !isBaguetteUserMessage(parsed)) return data;
   const { model, modelParams } = resolveTurnModel(data, session);
   if (model) data.model = model;
   if (modelParams != null) data.model_params = modelParams;

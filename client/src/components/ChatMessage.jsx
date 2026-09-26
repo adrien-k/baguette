@@ -64,6 +64,7 @@ export default function ChatMessage({
   messageIndex,
   allMessages,
   models = [],
+  session,
 }) {
   // True once the user sends a real message after this assistant turn — used to hide action
   // buttons on ExitPlanMode / AskUserQuestion blocks once the user has interacted.
@@ -112,7 +113,7 @@ export default function ChatMessage({
   }
 
   if (message.type === 'user' && isBaguetteMessage(message)) {
-    return <BaguetteBlock message={message} />;
+    return <BaguetteBlock message={message} models={models} session={session} />;
   }
 
   if (message.type === 'user' && isMcpMessage(message)) {

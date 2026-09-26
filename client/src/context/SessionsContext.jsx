@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { CheckCircle, XCircle, X } from 'lucide-react';
@@ -6,6 +6,9 @@ import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
 import { sessionsService } from '../feathers.js';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
+import { useFilters } from './FilterContext.jsx';
+import { useRepoContext } from './RepoContext.jsx';
+import { sessionsListQueryFromPath } from '@baguette/shared/session-list-query.js';
 
 const SessionsContext = createContext(null);
 
@@ -14,14 +17,26 @@ function isTabHidden() {
 }
 
 export function SessionsProvider({ children }) {
-  const { sessions, loading, refetch, hasMore, loadMore } = useGetUserSessions();
+  const location = useLocation();
+  const { showArchived, showLoopRuns } = useFilters() ?? {};
+  const { repos } = useRepoContext() ?? {};
+  const listQuery = useMemo(
+    () =>
+      sessionsListQueryFromPath(location.pathname, {
+        showArchived,
+        showLoopRuns,
+      }),
+    [location.pathname, showArchived, showLoopRuns]
+  );
+  const { sessions, loading, refetch, hasMore, loadMore } = useGetUserSessions(listQuery, {
+    repos,
+  });
   const prevStatusRef = useRef(new Map());
   const sessionsRef = useRef(sessions);
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
   const initializedRef = useRef(false);
-  const location = useLocation();
   const locationRef = useRef(location);
   useEffect(() => {
     locationRef.current = location;

@@ -1,6 +1,8 @@
 /** Highest severity first (critical → low). */
 export const ISSUE_SEVERITY_ORDER = ['critical', 'high', 'medium', 'low'];
 
+export const ISSUE_SEVERITIES = ISSUE_SEVERITY_ORDER;
+
 const SEVERITY_RANK = Object.fromEntries(ISSUE_SEVERITY_ORDER.map((s, i) => [s, i]));
 
 /** @param {{ severity?: string, status?: string, id?: number }} a @param {{ severity?: string, status?: string, id?: number }} b */

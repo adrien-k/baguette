@@ -86,7 +86,7 @@ export default function SessionModelSelect({
   };
 
   return (
-    <div className={`flex items-center gap-0.5 shrink-0 ${className}`}>
+    <div className={`flex items-center gap-0.5 min-w-0 max-w-full ${className}`}>
       <LightChipDropdown
         layout="list"
         value={selectedModelId ?? ''}
@@ -97,7 +97,8 @@ export default function SessionModelSelect({
         placement="top-start"
         triggerTitle="Model for the next message"
         disabled={disabled}
-        triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 max-w-[7.5rem] sm:max-w-[10rem] leading-none py-1 disabled:opacity-50 disabled:pointer-events-none"
+        shrinkableTrigger
+        triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
       />
 
       {isCursor && variants.length > 0 && (

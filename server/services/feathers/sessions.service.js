@@ -47,6 +47,11 @@ import { delta, diffModelUsage } from '../turn-usage.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
+import {
+  queryFlagDisabled,
+  queryFlagEnabled,
+  SESSION_LIST_QUERY_FLAGS,
+} from '../../../shared/session-list-query.js';
 
 /**
  * Sent to an agent whose turn was cut short by a server restart. The transcript is resumed, but
@@ -860,6 +865,7 @@ export class SessionsService extends KnexService {
   async onMessageCreated(message) {
     const sessionId = message.session_id;
     if (!sessionId) return;
+    if (message.type !== 'user' && message.type !== 'result') return;
 
     let status;
     let result = null;
@@ -877,8 +883,6 @@ export class SessionsService extends KnexService {
       }
     }
 
-    if (status === undefined && result === null) return;
-
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
@@ -889,7 +893,7 @@ export class SessionsService extends KnexService {
     )
       return;
 
-    const patch = {};
+    const patch = { last_activity_at: new Date().toISOString() };
     if (status !== undefined && session.status !== status) patch.status = status;
 
     if (result !== null) {
@@ -899,12 +903,10 @@ export class SessionsService extends KnexService {
       }
     }
 
-    if (Object.keys(patch).length > 0) {
-      await this.app.service('sessions').patch(sessionId, patch, {
-        provider: undefined,
-        user: { id: session.user_id },
-      });
-    }
+    await this.app.service('sessions').patch(sessionId, patch, {
+      provider: undefined,
+      user: { id: session.user_id },
+    });
   }
 
   /**
@@ -1007,6 +1009,13 @@ async function requireOwnSession(context) {
 async function ensureShortId(context) {
   if (!context.data.short_id) {
     context.data.short_id = crypto.randomBytes(4).toString('hex');
+  }
+  return context;
+}
+
+function seedLastActivityOnCreate(context) {
+  if (!context.data.last_activity_at) {
+    context.data.last_activity_at = new Date().toISOString();
   }
   return context;
 }
@@ -1464,26 +1473,70 @@ export function registerSessionsService(app, path = 'sessions') {
   app.service(path).hooks(sessionsHooks);
 }
 
+function sqliteBool(value) {
+  if (queryFlagEnabled(value)) return 1;
+  if (queryFlagDisabled(value)) return 0;
+  return value;
+}
+
+/** Pull list-only flags off the query so they are not treated as session columns. */
+function sanitizeSessionFindQuery(context) {
+  if (context.method !== 'find') return context;
+  const query = context.params.query || {};
+  const filters = {};
+  for (const key of SESSION_LIST_QUERY_FLAGS) {
+    if (key in query) {
+      filters[key] = query[key];
+      delete query[key];
+    }
+  }
+  if ('is_global' in query) query.is_global = sqliteBool(query.is_global);
+  context.params.sessionListFilters = filters;
+  return context;
+}
+
+function applySessionListFilters(context) {
+  const filters = context.params.sessionListFilters || {};
+  const knex = context.params.knex ?? context.service.createQuery(context.params);
+  if (queryFlagDisabled(filters.include_archived)) {
+    knex.whereNull('archived_at');
+  }
+  if (queryFlagDisabled(filters.include_loop_runs)) {
+    knex.whereNull('loop_id');
+  }
+  if (queryFlagEnabled(filters.all_sessions)) {
+    const userId = context.params.user?.id;
+    knex.where(function hideOptedOutRepos() {
+      this.where('is_global', 1).orWhereNotExists(function () {
+        const sub = this.select(1)
+          .from('user_repos')
+          .whereRaw('user_repos.repo_id = sessions.repo_id')
+          .andWhere('user_repos.show_in_all_sessions', 0);
+        if (userId != null) sub.andWhere('user_repos.user_id', userId);
+      });
+    });
+  }
+  context.params.knex = knex;
+  return context;
+}
+
 function applyGroupSort(context) {
   if (context.params.knex) {
     delete context.params.query?.$sort;
-    context.params.knex = context.params.knex.orderByRaw(`
-      CASE WHEN archived_at IS NOT NULL THEN 2
-           WHEN pr_status = 'merged' THEN 1
-           ELSE 0
-      END ASC,
-      created_at DESC
-    `);
+    context.params.knex = context.params.knex
+      .orderByRaw('CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')
+      .orderBy('last_activity_at', 'desc');
   }
   return context;
 }
 
 export const sessionsHooks = {
   before: {
-    all: [requireUser, scopeByUser],
-    find: [applyGroupSort],
+    all: [requireUser, sanitizeSessionFindQuery, scopeByUser],
+    find: [applySessionListFilters, applyGroupSort],
     create: [
       ensureShortId,
+      seedLastActivityOnCreate,
       validateSessionCreate,
       serializePlugins,
       extractInitialFiles,

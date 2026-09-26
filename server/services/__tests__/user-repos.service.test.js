@@ -74,6 +74,21 @@ describe('UserRepos service - find', () => {
   });
 });
 
+describe('UserRepos service - show_in_all_sessions', () => {
+  it('defaults to true for new links', async () => {
+    const row = await db('user_repos').where({ id: userRepo1.id }).first();
+    expect(row.show_in_all_sessions).toBe(1);
+  });
+
+  it('can be turned off via patch', async () => {
+    await app
+      .service('user-repos')
+      .patch(userRepo1.id, { show_in_all_sessions: false }, params(user1));
+    const row = await db('user_repos').where({ id: userRepo1.id }).first();
+    expect(row.show_in_all_sessions).toBe(0);
+  });
+});
+
 describe('UserRepos service - patch (encrypt + mask)', () => {
   it('stores anthropic_api_key encrypted', async () => {
     await app

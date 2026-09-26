@@ -38,7 +38,16 @@ export class SessionIssuesService extends KnexService {
     } catch (err) {
       throw new BadRequest(err.message);
     }
-    return super.patch(id, { ...data, updated_at: new Date().toISOString() }, params);
+    const patch = { ...data };
+    if (patch.title !== undefined) {
+      const title = String(patch.title).trim();
+      if (!title) throw new BadRequest('title is required');
+      patch.title = title;
+    }
+    if (patch.description !== undefined) {
+      patch.description = String(patch.description);
+    }
+    return super.patch(id, { ...patch, updated_at: new Date().toISOString() }, params);
   }
 }
 
@@ -63,7 +72,7 @@ export function registerSessionIssuesService(app, path = 'session-issues') {
     before: {
       all: [requireUser, scopeBySessionUser],
       create: [rejectExternalCreate],
-      patch: [only(['status'])],
+      patch: [only(['status', 'title', 'description', 'severity'])],
     },
   });
 }

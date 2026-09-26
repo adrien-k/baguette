@@ -1,9 +1,22 @@
 /**
  * Integration tests for the users Feathers service.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
+
+const mockClearUserReposPickerCache = vi.fn();
+vi.mock('../github.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    clearUserReposPickerCache: (...args) => {
+      mockClearUserReposPickerCache(...args);
+      return actual.clearUserReposPickerCache(...args);
+    },
+  };
+});
+
 import { registerUsersService } from '../feathers/users.service.js';
 
 const db = createTestDb({ beforeEach, afterEach });
@@ -262,6 +275,28 @@ describe('Users service - patch', () => {
     const result = await app.service('users').get(user1.id, { user: user1 });
     expect(result.access_token).toBe('gho_testtoken');
     expect(result.access_token_encrypted).toBeUndefined();
+  });
+
+  it('encrypts github_token on patch and masks for external callers', async () => {
+    await app
+      .service('users')
+      .patch(user1.id, { github_token: 'ghp_testpat123456' }, params(user1));
+    const row = await db('users').where({ id: user1.id }).first();
+    expect(row.github_token_encrypted).toBeTruthy();
+    expect(row.github_token_encrypted).not.toBe('ghp_testpat123456');
+    const external = await app.service('users').get(user1.id, params(user1));
+    expect(external.github_token).toBeTruthy();
+    expect(external.github_token).not.toBe('ghp_testpat123456');
+    const internal = await app.service('users').get(user1.id, { user: user1 });
+    expect(internal.github_token).toBe('ghp_testpat123456');
+  });
+
+  it('clears PAT repo-picker cache when github_token is patched', async () => {
+    mockClearUserReposPickerCache.mockClear();
+    await app
+      .service('users')
+      .patch(user1.id, { github_token: 'ghp_rotated123456' }, params(user1));
+    expect(mockClearUserReposPickerCache).toHaveBeenCalledWith(`u${user1.id}`);
   });
 });
 

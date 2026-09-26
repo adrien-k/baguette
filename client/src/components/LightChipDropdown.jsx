@@ -18,15 +18,12 @@ export function listOptionClassName(selected) {
   }`;
 }
 
-export const lightChipPanelClassName =
-  `max-w-[min(100vw-2rem,20rem)] max-h-72 overflow-y-auto ${DROPDOWN_PANEL_CLASS} p-2.5`;
+export const lightChipPanelClassName = `max-w-[min(100vw-2rem,20rem)] max-h-72 overflow-y-auto ${DROPDOWN_PANEL_CLASS} p-2.5`;
 
-export const lightListPanelClassName =
-  `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
+export const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /** List panel without min/max width — pair with `matchTriggerWidth` on the dropdown. */
-export const lightListPanelMatchTriggerClassName =
-  `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
+export const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
  * @typedef {{ value: string, label: string, icon?: import('react').ReactNode }} LightDropdownOption
@@ -61,6 +58,8 @@ export default function LightChipDropdown({
   triggerClassName = '',
   fullWidth = false,
   matchTriggerWidth = false,
+  /** Navbar-style trigger: shrink with truncated label instead of a fixed max width */
+  shrinkableTrigger = false,
   /** Override trigger when `value` is not in the option list */
   selectedDisplay,
   /** Show only `triggerIcon` (no label text) */
@@ -112,7 +111,7 @@ export default function LightChipDropdown({
       : 'text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none';
 
   return (
-    <div className={fullWidth ? 'w-full' : ''}>
+    <div className={fullWidth ? 'w-full' : shrinkableTrigger ? 'min-w-0 max-w-full w-fit' : ''}>
       {label ? (
         <span
           id={id ? `${id}-label` : undefined}
@@ -142,9 +141,17 @@ export default function LightChipDropdown({
             aria-haspopup="dialog"
             aria-labelledby={label && id ? `${id}-label` : undefined}
             title={triggerTitle ?? triggerLabel}
-            className={`${triggerBase} ${fullWidth ? 'w-full max-w-none justify-between' : 'max-w-full sm:max-w-md'} ${triggerClassName}`}
+            className={`${triggerBase} ${
+              fullWidth
+                ? 'w-full max-w-none justify-between'
+                : shrinkableTrigger
+                  ? 'min-w-0 max-w-full w-fit'
+                  : 'max-w-full sm:max-w-md'
+            } ${triggerClassName}`}
           >
-            <span className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={`flex items-center gap-1.5 min-w-0 overflow-hidden${shrinkableTrigger ? '' : ' flex-1'}`}
+            >
               {triggerIcon ? (
                 <span className="shrink-0 flex items-center">{triggerIcon}</span>
               ) : null}

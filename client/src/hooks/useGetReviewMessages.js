@@ -51,12 +51,18 @@ export function useGetReviewMessages(sessionId) {
       if (message.session_id !== sessionId) return;
       setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
     };
+    const onRemoved = (message) => {
+      if (message.session_id !== sessionId) return;
+      setMessages((prev) => prev.filter((m) => m.id !== message.id));
+    };
     sessionReviewMessagesService.on('created', onCreated);
     sessionReviewMessagesService.on('patched', onPatched);
+    sessionReviewMessagesService.on('removed', onRemoved);
     return () => {
       cancelled = true;
       sessionReviewMessagesService.off('created', onCreated);
       sessionReviewMessagesService.off('patched', onPatched);
+      sessionReviewMessagesService.off('removed', onRemoved);
     };
   }, [sessionId]);
 

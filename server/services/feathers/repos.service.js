@@ -9,8 +9,11 @@ import { NotFound } from '@feathersjs/errors';
 import {
   listUserInstallations,
   listInstallationRepos,
+  listUserReposForPicker,
+  orgLoginsFromRepos,
   cacheScopeForUser,
   clearReposCache,
+  clearUserReposPickerCache,
   clearInstallationsCache,
   clearBranchesCache,
   listBranches,
@@ -33,6 +36,23 @@ class ReposService extends KnexService {
     this.app = app;
   }
 
+  /** Load decrypted user secrets (PAT override) for GitHub API calls. */
+  async _loadUserForGithub(params) {
+    const fromParams = params.user;
+    const id = fromParams?.id;
+    if (!id) return fromParams;
+    try {
+      const fromDb = await this.app.service('users').get(id, {});
+      return {
+        ...fromDb,
+        github_token: fromDb.github_token || fromParams.github_token || null,
+        access_token: fromDb.access_token || fromParams.access_token || null,
+      };
+    } catch {
+      return fromParams;
+    }
+  }
+
   /**
    * Returns repos linked to the current user via user_repos, with session_count and exists_on_fs.
    * Plain array (no pagination) — repos list is small.
@@ -53,7 +73,8 @@ class ReposService extends KnexService {
         'user_repos.anthropic_api_key_encrypted',
         'user_repos.cursor_api_key_encrypted',
         'user_repos.agent_prompt',
-        'user_repos.review_prompt'
+        'user_repos.review_prompt',
+        'user_repos.show_in_all_sessions'
       )
       .whereNull('repos.deleted_at')
       .orderBy('repos.full_name');
@@ -85,6 +106,7 @@ class ReposService extends KnexService {
       ...r,
       session_count: countMap[r.id] ?? 0,
       exists_on_fs: existsOnFs[i],
+      show_in_all_sessions: r.show_in_all_sessions !== 0 && r.show_in_all_sessions !== false,
     }));
   }
 
@@ -162,9 +184,10 @@ class ReposService extends KnexService {
       }
     }
 
+    const ghUser = await this._loadUserForGithub(params);
     const barePath = await ensureBareClone(
       { full_name: fullName, stripped_name: strippedName, bare_path: repo?.bare_path },
-      getGithubToken(params.user)
+      getGithubToken(ghUser)
     );
 
     let defaultBranch;
@@ -282,8 +305,17 @@ class ReposService extends KnexService {
    * (personal or org) the App is installed on.
    */
   async findOrgs(data, params) {
-    const token = getGithubToken(params.user);
-    const scope = cacheScopeForUser(params.user);
+    const user = await this._loadUserForGithub(params);
+    const token = getGithubToken(user);
+    const scope = cacheScopeForUser(user);
+    if (user?.github_token) {
+      const repos = await listUserReposForPicker(token, scope);
+      return orgLoginsFromRepos(repos).map((login) => ({
+        login,
+        name: login,
+        avatar_url: null,
+      }));
+    }
     const installations = await listUserInstallations(token, scope);
     return installations.map((i) => ({
       login: i.login,
@@ -295,21 +327,35 @@ class ReposService extends KnexService {
   /** List and filter the repos granted to an App installation. Returns { repos, hasMore }. */
   async findRemote(data, params) {
     const { org = '', query = '' } = typeof data === 'string' ? { query: data } : data || {};
-    const token = getGithubToken(params.user);
-    const scope = cacheScopeForUser(params.user);
+    const user = await this._loadUserForGithub(params);
+    const token = getGithubToken(user);
+    const scope = cacheScopeForUser(user);
+    const q = query.trim().toLowerCase();
+
+    if (user?.github_token) {
+      const allRepos = await listUserReposForPicker(token, scope);
+      const orgPrefix = org ? `${org.toLowerCase()}/` : '';
+      const scoped = orgPrefix
+        ? allRepos.filter((r) => r.full_name.toLowerCase().startsWith(orgPrefix))
+        : allRepos;
+      const filtered = q ? scoped.filter((r) => r.full_name.toLowerCase().includes(q)) : scoped;
+      return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
+    }
+
     // `org` is the installation account login; resolve it to an installation id. The
     // installations list is cached, so this costs no extra request.
     const installations = await listUserInstallations(token, scope);
     const installation = installations.find((i) => i.login === org);
     const allRepos = installation ? await listInstallationRepos(token, scope, installation.id) : [];
-    const q = query.trim().toLowerCase();
     const filtered = q ? allRepos.filter((r) => r.full_name.toLowerCase().includes(q)) : allRepos;
     return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
   }
 
   async refresh(data, params) {
-    const scope = cacheScopeForUser(params.user);
+    const user = await this._loadUserForGithub(params);
+    const scope = cacheScopeForUser(user);
     clearReposCache(scope);
+    clearUserReposPickerCache(scope);
     clearInstallationsCache(scope);
     clearBranchesCache(scope);
     return { ok: true };
@@ -334,17 +380,14 @@ class ReposService extends KnexService {
       }
       return { branches: [] };
     }
-    const branches = await listBranches(
-      getGithubToken(params.user),
-      cacheScopeForUser(params.user),
-      fullName
-    );
+    const user = await this._loadUserForGithub(params);
+    const branches = await listBranches(getGithubToken(user), cacheScopeForUser(user), fullName);
     return { branches };
   }
 
   /**
    * Create a brand-new local repo (by name) or import an existing local git directory (by path).
-   * Settings UI only uses { name }; seed/dev still imports via { localPath }.
+   * Settings UI only uses { name }; imports via { localPath } for existing git dirs.
    */
   async createLocal(data, params) {
     const { name, localPath } = data;

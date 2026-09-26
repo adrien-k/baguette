@@ -35,6 +35,20 @@ export function normalizeUserContentBlocks(content) {
   });
 }
 
+/** Build user content from a diff-line composer draft (`@path:line` plus optional note). */
+export function contentBlocksFromLineDraft(text, { path, line }) {
+  const ref = createFileReferenceBlock(path, line);
+  const refText = fileReferenceAgentText(ref);
+  const trimmed = (text ?? '').trim();
+  if (!trimmed || trimmed === refText) return [ref];
+  let rest = trimmed;
+  if (trimmed.startsWith(refText)) {
+    rest = trimmed.slice(refText.length).replace(/^\s+/, '');
+  }
+  if (!rest) return [ref];
+  return [ref, { type: 'text', text: rest }];
+}
+
 export function normalizeUserMessageForAgentSdk(parsed) {
   const content = parsed?.message?.content;
   if (!Array.isArray(content) || !content.some((b) => b.type === 'file_reference')) {

@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Play, Square, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2, Play, Square } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   messagesService,
@@ -10,6 +10,7 @@ import {
 } from '../../feathers.js';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
+import { isMobile } from '../../utils/isMobile.js';
 import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
@@ -21,7 +22,7 @@ import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import AutoGrowTextarea from '../../components/AutoGrowTextarea.jsx';
-import MarkdownContent from '../../components/MarkdownContent.jsx';
+import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
@@ -46,52 +47,6 @@ function issuesFixAllPrompt(sessionId) {
   );
 }
 
-const SEVERITY_CLASS = {
-  critical: 'bg-red-500/20 text-red-300 border-red-500/40',
-  high: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
-  medium: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-  low: 'bg-zinc-700 text-zinc-300 border-zinc-600',
-};
-
-const ISSUE_META_CHIP =
-  'inline-flex items-center justify-center h-7 shrink-0 rounded-md border text-xs capitalize';
-
-function IssueDescription({ description }) {
-  const [expanded, setExpanded] = useState(false);
-  const [overflows, setOverflows] = useState(false);
-  const ref = useRef(null);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || expanded) return;
-    setOverflows(el.scrollHeight > el.clientHeight + 1);
-  }, [description, expanded]);
-
-  if (!description?.trim()) return null;
-
-  return (
-    <div>
-      <div
-        ref={ref}
-        className={expanded ? 'text-zinc-400' : 'max-h-[12.5rem] overflow-hidden text-zinc-400'}
-      >
-        <MarkdownContent className="!text-xs [&_p]:!text-xs [&_p]:my-1 [&_p]:leading-relaxed">
-          {description}
-        </MarkdownContent>
-      </div>
-      {(overflows || expanded) && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function ReviewView({ session, readonly, onReviewStarted }) {
   const { user } = useAuth();
   const { repos } = useRepoContext();
@@ -102,6 +57,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [savingIssueId, setSavingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
     session?.id ? `session-review-chat-${session.id}` : undefined
   );
@@ -172,6 +128,7 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
   const hasReviewConversation = reviewMessages.some(
     (m) => m.type === 'user' || m.type === 'assistant'
   );
+  const showMiddleStartForm = reviewMessages.length === 0;
 
   const sendFixMessage = async (text) => {
     await messagesService.create({
@@ -211,6 +168,19 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
     }
   };
 
+  const handleIssueSave = async (issueId, fields) => {
+    setSavingIssueId(issueId);
+    try {
+      await sessionIssuesService.patch(issueId, fields);
+      return true;
+    } catch (err) {
+      toastError('Failed to save issue', err);
+      return false;
+    } finally {
+      setSavingIssueId(null);
+    }
+  };
+
   const handleDeleteIssue = async (issue) => {
     if (!window.confirm(`Delete issue #${issue.id} permanently?`)) return;
     try {
@@ -220,8 +190,11 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
     }
   };
 
+  const canStartReview =
+    !readonly && !isRunning && !starting && hasSdkKey && Boolean(session?.worktree_path);
+
   const handleStart = async () => {
-    if (!session?.id || starting) return;
+    if (!session?.id || starting || !canStartReview) return;
     setStarting(true);
     try {
       await sessionReviewService.start({
@@ -233,6 +206,14 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
       toastError('Failed to start review', err);
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handleReviewPromptKeyDown = (e) => {
+    if (!canStartReview) return;
+    if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleStart();
     }
   };
 
@@ -260,106 +241,118 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
     }
   };
 
+  const reviewActionButtons = !readonly && (
+    <>
+      {isRunning ? (
+        <button
+          type="button"
+          onClick={handleStop}
+          disabled={stopping}
+          className="inline-flex items-center gap-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 px-3 py-1.5 rounded-lg text-sm font-medium border border-zinc-600"
+        >
+          {stopping ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Square className="w-3.5 h-3.5" />
+          )}
+          Stop
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleStart}
+          disabled={starting || !hasSdkKey || !session?.worktree_path}
+          title={hasReviewConversation ? NEW_REVIEW_TOOLTIP : undefined}
+          className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
+        >
+          {starting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Play className="w-3.5 h-3.5" />
+          )}
+          {hasReviewConversation ? 'New review' : 'Start review'}
+        </button>
+      )}
+      {isRunning && (
+        <span className="text-xs text-amber-400 flex items-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Running
+        </span>
+      )}
+    </>
+  );
+
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-      <div className="shrink-0 overflow-auto">
-        <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6`}>
-          <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-5 sm:p-6 space-y-4">
-            {userSettings && !hasSdkKey && (
-              <Alert variant="alert">
-                Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
-                <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
-              </Alert>
-            )}
-            <div>
-              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                <label className="text-sm font-medium text-zinc-300">Prompt</label>
-                <Link
-                  to="/settings?tab=agent&prompt=review#settings-agent-prompts"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-amber-400 hover:text-amber-300 underline"
+      {showMiddleStartForm && (
+        <div className="shrink-0 overflow-auto">
+          <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6`}>
+            <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-5 sm:p-6 space-y-4">
+              {userSettings && !hasSdkKey && (
+                <Alert variant="alert">
+                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                  <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
+                </Alert>
+              )}
+              <div>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                  <label className="text-sm font-medium text-zinc-300">Prompt</label>
+                  <Link
+                    to="/settings?tab=agent&prompt=review#settings-agent-prompts"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-amber-400 hover:text-amber-300 underline"
+                  >
+                    Configure the system prompt
+                  </Link>
+                </div>
+                <div
+                  className={`w-full rounded-lg border border-zinc-700 bg-zinc-800 overflow-visible ${
+                    readonly || isRunning
+                      ? 'opacity-60'
+                      : 'focus-within:ring-2 focus-within:ring-amber-500/50'
+                  }`}
                 >
-                  Configure the system prompt
-                </Link>
-              </div>
-              <div
-                className={`w-full rounded-lg border border-zinc-700 bg-zinc-800 overflow-visible ${
-                  readonly || isRunning
-                    ? 'opacity-60'
-                    : 'focus-within:ring-2 focus-within:ring-amber-500/50'
-                }`}
-              >
-                <AutoGrowTextarea
-                  value={reviewUserMessage}
-                  onChange={(e) => setReviewUserMessage(e.target.value)}
-                  disabled={readonly || isRunning}
-                  rows={1}
-                  maxLines={20}
-                  fitPlaceholderWhenEmpty
-                  spellCheck={false}
-                  placeholder={REVIEW_FOCUS_PLACEHOLDER}
-                  className="block w-full bg-transparent px-3 sm:px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none leading-relaxed rounded-t-lg"
-                />
-                <div className="relative flex flex-wrap items-center gap-1 sm:gap-1.5 px-2 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
-                  {hasSdkKey && (
-                    <SessionModelSelect
-                      session={sessionForReviewComposer}
-                      models={models}
-                      cursorFast={cursorFast}
-                      cursorEffort={cursorEffort}
-                      onModelChange={handleReviewModelChange}
-                      disabled={readonly || isRunning}
-                    />
-                  )}
-                  <div className="flex-1 min-w-0" />
-                  {!readonly &&
-                    (isRunning ? (
-                      <button
-                        type="button"
-                        onClick={handleStop}
-                        disabled={stopping}
-                        className="inline-flex items-center gap-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 px-4 py-1.5 rounded-lg text-sm font-medium border border-zinc-600"
-                      >
-                        {stopping ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Square className="w-3.5 h-3.5" />
-                        )}
-                        Stop
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleStart}
-                        disabled={starting || !hasSdkKey || !session?.worktree_path}
-                        title={hasReviewConversation ? NEW_REVIEW_TOOLTIP : undefined}
-                        className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-4 py-1.5 rounded-lg text-sm font-medium"
-                      >
-                        {starting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Play className="w-3.5 h-3.5" />
-                        )}
-                        {hasReviewConversation ? 'New review' : 'Start review'}
-                      </button>
-                    ))}
-                  {isRunning && (
-                    <span className="text-xs text-amber-400 flex items-center gap-1.5">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Running
-                    </span>
-                  )}
+                  <AutoGrowTextarea
+                    value={reviewUserMessage}
+                    onChange={(e) => setReviewUserMessage(e.target.value)}
+                    onKeyDown={handleReviewPromptKeyDown}
+                    disabled={readonly || isRunning}
+                    rows={1}
+                    maxLines={20}
+                    fitPlaceholderWhenEmpty
+                    spellCheck={false}
+                    placeholder={REVIEW_FOCUS_PLACEHOLDER}
+                    className="block w-full bg-transparent px-3 sm:px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none leading-relaxed rounded-t-lg"
+                  />
+                  <div className="relative flex flex-wrap items-center gap-1 sm:gap-1.5 px-2 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
+                    {hasSdkKey && (
+                      <SessionModelSelect
+                        session={sessionForReviewComposer}
+                        models={models}
+                        cursorFast={cursorFast}
+                        cursorEffort={cursorEffort}
+                        onModelChange={handleReviewModelChange}
+                        disabled={readonly || isRunning}
+                      />
+                    )}
+                    <div className="flex-1 min-w-0" />
+                    {reviewActionButtons}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-auto">
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-3`}>
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {!showMiddleStartForm && (
+              <div className="flex flex-wrap items-center gap-2">{reviewActionButtons}</div>
+            )}
+            <div className="flex-1 min-w-0" />
             {!readonly && opened.length > 0 && (
               <button type="button" onClick={handleFixAllOpened} className={SECONDARY_BUTTON_CLASS}>
                 Fix all opened ({opened.length})
@@ -369,65 +362,23 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
           {issuesLoading ? (
             <p className="text-xs text-zinc-500">Loading issues…</p>
           ) : issues.length === 0 ? (
-            <p className="text-xs text-zinc-500">No issues yet. Start a review to open some.</p>
+            <p className="text-xs text-zinc-500">
+              {showMiddleStartForm
+                ? 'No issues yet. Start a review to open some.'
+                : 'No open issues. Run New review for another pass, or follow up with the reviewer in the sidebar.'}
+            </p>
           ) : (
             issues.map((issue) => (
-              <div
+              <SessionIssueCard
                 key={issue.id}
-                className={`rounded-lg border p-4 space-y-3 ${
-                  issue.status === 'opened' || issue.status === 'submitted'
-                    ? 'border-zinc-700 bg-zinc-900/60'
-                    : 'border-zinc-800 opacity-70'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  <h3 className="flex-1 min-w-0 text-base font-semibold text-zinc-50 leading-snug">
-                    {issue.title}
-                  </h3>
-                  {!readonly && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteIssue(issue)}
-                      title="Delete issue"
-                      className="shrink-0 p-1.5 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors -mt-0.5"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`${ISSUE_META_CHIP} text-[10px] uppercase tracking-wide px-2 border ${SEVERITY_CLASS[issue.severity] || SEVERITY_CLASS.low}`}
-                  >
-                    {issue.severity}
-                  </span>
-                  {readonly || issue.status === 'resolved' ? (
-                    <span className={`${ISSUE_META_CHIP} border-zinc-700 text-zinc-500 px-2`}>
-                      {issue.status}
-                    </span>
-                  ) : (
-                    <select
-                      value={issue.status}
-                      onChange={(e) => handleIssueStatus(issue.id, e.target.value)}
-                      className={`${ISSUE_META_CHIP} bg-zinc-800 border-zinc-700 px-2 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50`}
-                    >
-                      <option value="opened">opened</option>
-                      <option value="submitted">submitted</option>
-                      <option value="ignored">ignored</option>
-                    </select>
-                  )}
-                </div>
-                <IssueDescription description={issue.description} />
-                {!readonly && issue.status === 'opened' && (
-                  <button
-                    type="button"
-                    onClick={() => handleFixIssue(issue)}
-                    className={SECONDARY_BUTTON_CLASS}
-                  >
-                    Ask agent to fix
-                  </button>
-                )}
-              </div>
+                issue={issue}
+                readonly={readonly}
+                saving={savingIssueId === issue.id}
+                onStatusChange={handleIssueStatus}
+                onDelete={handleDeleteIssue}
+                onFix={handleFixIssue}
+                onSave={handleIssueSave}
+              />
             ))
           )}
         </div>

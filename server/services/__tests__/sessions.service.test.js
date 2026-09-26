@@ -830,6 +830,180 @@ describe('Sessions service - find, get, create', (hooks) => {
         'Not authenticated'
       );
     });
+
+    it('orders non-archived before archived, then by last activity (not pr_status)', async () => {
+      const [mergedRecentId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Merged PR',
+        short_id: 'mrg111',
+        status: 'completed',
+        pr_status: 'merged',
+        last_activity_at: '2026-03-01T00:00:00.000Z',
+      });
+      const [staleActiveId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Older active',
+        short_id: 'old222',
+        status: 'completed',
+        pr_status: 'open',
+        last_activity_at: '2026-01-01T00:00:00.000Z',
+      });
+      await db('sessions').where({ id: sessId1 }).update({
+        last_activity_at: '2026-02-01T00:00:00.000Z',
+      });
+      const [archivedId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Archived',
+        short_id: 'arc333',
+        status: 'completed',
+        archived_at: '2026-04-01T00:00:00.000Z',
+        last_activity_at: '2026-05-01T00:00:00.000Z',
+      });
+
+      const result = await app.service('sessions').find({ query: {}, ...params({ id: userId1 }) });
+      const ids = (result.data ?? result).map((s) => s.id);
+
+      expect(ids.indexOf(archivedId)).toBeGreaterThan(ids.indexOf(mergedRecentId));
+      expect(ids.indexOf(archivedId)).toBeGreaterThan(ids.indexOf(staleActiveId));
+      expect(ids.slice(0, 3)).toEqual([mergedRecentId, sessId1, staleActiveId]);
+      expect(ids[ids.length - 1]).toBe(archivedId);
+    });
+
+    it('excludes archived sessions when include_archived is false', async () => {
+      await db('sessions').where({ id: sessId1 }).update({
+        archived_at: '2026-04-01T00:00:00.000Z',
+      });
+      const [openId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Open',
+        short_id: 'opn111',
+        status: 'completed',
+      });
+
+      const hidden = await app.service('sessions').find({
+        query: { include_archived: false },
+        ...params({ id: userId1 }),
+      });
+      const shown = await app.service('sessions').find({
+        query: { include_archived: true },
+        ...params({ id: userId1 }),
+      });
+
+      expect((hidden.data ?? hidden).map((s) => s.id)).toEqual([openId]);
+      expect((shown.data ?? shown).map((s) => s.id).sort()).toEqual([sessId1, openId].sort());
+    });
+
+    it('excludes loop runs when include_loop_runs is false', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ loop_id: 7 });
+      const [plainId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Manual',
+        short_id: 'man111',
+        status: 'completed',
+      });
+
+      const result = await app.service('sessions').find({
+        query: { include_loop_runs: false },
+        ...params({ id: userId1 }),
+      });
+      expect((result.data ?? result).map((s) => s.id)).toEqual([plainId]);
+    });
+
+    it('hides opted-out repos on all_sessions and keeps the same filter on later pages', async () => {
+      const [hiddenRepoId] = await db('repos').insert({
+        full_name: 'test/hidden',
+        bare_path: '/tmp/hidden',
+      });
+      await db('user_repos').insert([
+        { user_id: userId1, repo_id: repoId, show_in_all_sessions: 1 },
+        { user_id: userId1, repo_id: hiddenRepoId, show_in_all_sessions: 0 },
+      ]);
+      const [hiddenSessId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: hiddenRepoId,
+        repo_full_name: 'test/hidden',
+        base_branch: 'main',
+        initial_prompt: 'Hidden repo',
+        short_id: 'hid111',
+        status: 'completed',
+        last_activity_at: '2026-01-01T00:00:00.000Z',
+      });
+      await db('sessions').where({ id: sessId1 }).update({
+        last_activity_at: '2026-03-01T00:00:00.000Z',
+      });
+      const extraIds = [];
+      for (let i = 0; i < 3; i++) {
+        const [id] = await db('sessions').insert({
+          user_id: userId1,
+          repo_id: repoId,
+          repo_full_name: 'test/repo',
+          base_branch: 'main',
+          initial_prompt: `Extra ${i}`,
+          short_id: `ex${i}111`,
+          status: 'completed',
+          last_activity_at: `2026-02-0${i + 1}T00:00:00.000Z`,
+        });
+        extraIds.push(id);
+      }
+
+      const pageQuery = { all_sessions: true, include_archived: false, $limit: 2, $skip: 0 };
+      const page1 = await app.service('sessions').find({
+        query: pageQuery,
+        ...params({ id: userId1 }),
+      });
+      const page2 = await app.service('sessions').find({
+        query: { ...pageQuery, $skip: 2 },
+        ...params({ id: userId1 }),
+      });
+
+      const page1Ids = (page1.data ?? page1).map((s) => s.id);
+      const page2Ids = (page2.data ?? page2).map((s) => s.id);
+      expect(page1.total).toBe(4);
+      expect(page1Ids).toHaveLength(2);
+      expect(page1Ids).not.toContain(hiddenSessId);
+      expect(page2Ids).not.toContain(hiddenSessId);
+      expect([...page1Ids, ...page2Ids].sort()).toEqual([sessId1, ...extraIds].sort());
+    });
+
+    it('filters by is_global and repo_id', async () => {
+      const [globalId] = await db('sessions').insert({
+        user_id: userId1,
+        repo_id: null,
+        repo_full_name: '',
+        is_global: 1,
+        base_branch: '',
+        initial_prompt: 'Global',
+        short_id: 'glb111',
+        status: 'completed',
+      });
+
+      const globalOnly = await app.service('sessions').find({
+        query: { is_global: true },
+        ...params({ id: userId1 }),
+      });
+      const repoOnly = await app.service('sessions').find({
+        query: { repo_id: repoId },
+        ...params({ id: userId1 }),
+      });
+
+      expect((globalOnly.data ?? globalOnly).map((s) => s.id)).toEqual([globalId]);
+      expect((repoOnly.data ?? repoOnly).map((s) => s.id)).toEqual([sessId1]);
+    });
   });
 
   // ── get ────────────────────────────────────────────────────────────────────

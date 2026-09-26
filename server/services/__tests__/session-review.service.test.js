@@ -346,4 +346,38 @@ describe('session-review service', () => {
     expect(result).toEqual({ resumed: 0, failed: 1 });
     expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe('failed');
   });
+
+  it('clearContext wipes review messages and agent ids', async () => {
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'pass' }, params(user));
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    const cleared = await app
+      .service('session-review')
+      .clearContext({ session_id: sessionId }, params(user));
+    expect(cleared.ok).toBe(true);
+    const rows = await db('session_review_messages').where({ session_id: sessionId });
+    expect(rows.length).toBe(0);
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(session.review_claude_session_id).toBeNull();
+    expect(session.review_cursor_agent_id).toBeNull();
+    expect(session.review_status).toBe('stopped');
+  });
+
+  it('clearContext rejects while a review turn is active', async () => {
+    await db('session_review_messages').insert({
+      session_id: sessionId,
+      type: 'user',
+      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+    });
+    app.service('session-review')._active.set(sessionId, { pending: true });
+
+    await expect(
+      app.service('session-review').clearContext({ session_id: sessionId }, params(user))
+    ).rejects.toThrow('review turn is in progress');
+  });
 });

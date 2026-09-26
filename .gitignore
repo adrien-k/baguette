@@ -4,7 +4,6 @@ dist/
 client/node_modules/
 client/dist/
 .data/
-dev/preview-fixtures/demo-repo/
 .DS_Store
 config/credentials/
 .kamal/.env

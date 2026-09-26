@@ -1,36 +1,32 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { sessionsService } from '../feathers.js';
+import { sortSessionsForList } from '@baguette/shared/session-sort.js';
+import { sessionMatchesListQuery } from '@baguette/shared/session-list-query.js';
 
 const PAGE_SIZE = 50;
 
-function sessionGroup(s) {
-  if (s.archived_at) return 2;
-  if (s.pr_status === 'merged') return 1;
-  return 0;
-}
-
-function sortSessions(sessions) {
-  return [...sessions].sort((a, b) => {
-    const gd = sessionGroup(a) - sessionGroup(b);
-    if (gd !== 0) return gd;
-    return new Date(b.created_at) - new Date(a.created_at);
-  });
+function queryKey(query) {
+  return JSON.stringify(query ?? {});
 }
 
 /**
- * Returns all sessions for the current user (server filters by auth).
- * Sessions are grouped: active → merged → archived, then by created_at desc.
- * Supports pagination via loadMore().
+ * Returns sessions for the current user, filtered on the server.
+ * `listQuery` is sent on every page; only `$skip` / `$limit` change on load more.
  */
-export function useGetUserSessions() {
+export function useGetUserSessions(listQuery = {}, { repos } = {}) {
   const [sessions, setSessions] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const skipRef = useRef(0);
+  const listQueryRef = useRef(listQuery);
+  listQueryRef.current = listQuery;
+  const reposRef = useRef(repos);
+  reposRef.current = repos;
+  const listKey = queryKey(listQuery);
 
   const fetchPage = useCallback((skip, replace) => {
-    const query = { $limit: PAGE_SIZE, $skip: skip };
+    const query = { $limit: PAGE_SIZE, $skip: skip, ...listQueryRef.current };
     if (replace) {
       setLoading(true);
       setHasMore(false);
@@ -50,7 +46,7 @@ export function useGetUserSessions() {
           const merged = replace
             ? list
             : [...prev, ...list.filter((s) => !prev.some((p) => p.id === s.id))];
-          return sortSessions(merged);
+          return sortSessionsForList(merged);
         });
         setError(null);
       })
@@ -75,33 +71,46 @@ export function useGetUserSessions() {
 
   useEffect(() => {
     refetch();
+  }, [refetch, listKey]);
 
-    const onCreated = (session) => {
-      setSessions((prev) => {
-        if (prev.some((s) => s.id === session.id)) return prev;
-        skipRef.current += 1;
-        return sortSessions([session, ...prev]);
-      });
-    };
-    const onUpdated = (session) => {
-      setSessions((prev) =>
-        sortSessions(prev.map((s) => (s.id === session.id ? { ...s, ...session } : s)))
+  useEffect(() => {
+    setSessions((prev) => {
+      const filtered = prev.filter((s) =>
+        sessionMatchesListQuery(s, listQueryRef.current, reposRef.current)
       );
-    };
-    const onPatched = (session) => {
+      if (filtered.length === prev.length) return prev;
+      return sortSessionsForList(filtered);
+    });
+  }, [repos]);
+
+  useEffect(() => {
+    const matches = (session) =>
+      sessionMatchesListQuery(session, listQueryRef.current, reposRef.current);
+
+    const mergeRealtime = (session) => {
       setSessions((prev) => {
         const exists = prev.some((s) => s.id === session.id);
-        if (exists)
-          return sortSessions(prev.map((s) => (s.id === session.id ? { ...s, ...session } : s)));
-        // Session may not be loaded yet (e.g., archive event for paginated session)
-        return prev;
+        if (!matches(session)) {
+          if (!exists) return prev;
+          skipRef.current = Math.max(0, skipRef.current - 1);
+          return sortSessionsForList(prev.filter((s) => s.id !== session.id));
+        }
+        if (exists) {
+          return sortSessionsForList(
+            prev.map((s) => (s.id === session.id ? { ...s, ...session } : s))
+          );
+        }
+        skipRef.current += 1;
+        return sortSessionsForList([session, ...prev]);
       });
     };
+
+    const onCreated = (session) => mergeRealtime(session);
+    const onUpdated = (session) => mergeRealtime(session);
+    const onPatched = (session) => mergeRealtime(session);
     const onRemoved = (session) => {
       if (!session?.archived_at) return;
-      setSessions((prev) =>
-        sortSessions(prev.map((s) => (s.id === session.id ? { ...s, ...session } : s)))
-      );
+      mergeRealtime(session);
     };
 
     sessionsService.on('created', onCreated);
@@ -115,7 +124,7 @@ export function useGetUserSessions() {
       sessionsService.off('patched', onPatched);
       sessionsService.off('removed', onRemoved);
     };
-  }, [refetch]);
+  }, []);
 
   return { sessions, loading, error, refetch, hasMore, loadMore };
 }

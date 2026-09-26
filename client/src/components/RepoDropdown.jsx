@@ -35,6 +35,7 @@ export default function RepoDropdown({
   triggerTitle,
   fullWidth = false,
   matchTriggerWidth = false,
+  shrinkableTrigger = false,
   triggerClassName = '',
   className = '',
   ariaLabel = 'Choose repository',
@@ -49,9 +50,14 @@ export default function RepoDropdown({
     selectedDisplay ??
     (selected ? { label: selected.label, icon: selected.icon } : { label: 'Select', icon: null });
 
+  const rootClassName = [shrinkableTrigger ? 'w-fit min-w-0 max-w-full' : '', className]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={className}>
+    <div className={rootClassName || undefined}>
       <LightChipDropdown
+        shrinkableTrigger={shrinkableTrigger}
         id={id}
         layout="list"
         value={resolvedValue}

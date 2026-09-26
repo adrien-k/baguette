@@ -35,6 +35,7 @@ export default function AgentMessageComposer({
   submitTooltip,
   toolbarExtra,
   sendAddon,
+  autoFocus = false,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -87,9 +88,10 @@ export default function AgentMessageComposer({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={disabled || sending}
+        autoFocus={autoFocus}
         className="block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none rounded-t-lg"
       />
-      <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
+      <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible min-w-0">
         <SessionModelSelect
           session={session}
           models={models}

@@ -74,6 +74,21 @@ describe('attachSessionTurnModelFields', () => {
     expect(data.model).toBe('sonnet');
     expect(data.model_params).toBeUndefined();
   });
+
+  it('copies session model onto baguette user messages', () => {
+    const data = {
+      type: 'user',
+      message_json: JSON.stringify({
+        type: 'user',
+        source: 'baguette',
+        title: 'Loop',
+        message: { role: 'user', content: 'run' },
+      }),
+    };
+    attachSessionTurnModelFields(data, session);
+    expect(data.model).toBe('opus');
+    expect(data.model_params).toBe('[{"id":"fast"}]');
+  });
 });
 
 describe('turnModelCreateFields', () => {

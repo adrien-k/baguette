@@ -10,6 +10,8 @@ import {
   Wrench,
   Activity,
 } from 'lucide-react';
+import { useStickToBottomScroll } from '../../hooks/useStickToBottomScroll.js';
+import StickToBottomScrollArea from '../../components/StickToBottomScrollArea.jsx';
 
 function getMessageIcon(type, subtype) {
   if (type === 'user') return <User className="w-3.5 h-3.5 shrink-0" />;
@@ -284,29 +286,18 @@ function LogMessage({ msg }) {
   );
 }
 
-export default function LogsView({
-  rawMessages,
-  loadMore,
-  loadingMore,
-  hasMore,
-  logsToggle = null,
-}) {
-  const scrollContainerRef = useRef(null);
+export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore, resetKey }) {
   const topSentinelRef = useRef(null);
-  const scrollAnchor = useRef(null);
-  const isLoadingMoreRef = useRef(false);
+  const { scrollContainerRef, prepareLoadMore } = useStickToBottomScroll({
+    resetKey,
+    contentLength: rawMessages.length,
+  });
 
   const handleLoadMore = useCallback(() => {
     if (!hasMore || loadingMore) return;
-    if (scrollContainerRef.current) {
-      scrollAnchor.current = {
-        scrollTop: scrollContainerRef.current.scrollTop,
-        scrollHeight: scrollContainerRef.current.scrollHeight,
-      };
-    }
-    isLoadingMoreRef.current = true;
+    prepareLoadMore();
     loadMore();
-  }, [hasMore, loadMore, loadingMore]);
+  }, [hasMore, loadMore, loadingMore, prepareLoadMore]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -321,36 +312,31 @@ export default function LogsView({
     return () => observer.disconnect();
   }, [handleLoadMore, hasMore]);
 
-  // Restore scroll position after loading more
-  useEffect(() => {
-    if (scrollAnchor.current && scrollContainerRef.current) {
-      const { scrollTop, scrollHeight } = scrollAnchor.current;
-      const newScrollHeight = scrollContainerRef.current.scrollHeight;
-      scrollContainerRef.current.scrollTop = scrollTop + (newScrollHeight - scrollHeight);
-      scrollAnchor.current = null;
-    }
-    isLoadingMoreRef.current = false;
-  }, [rawMessages]);
-
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
-      <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4 space-y-1" ref={scrollContainerRef}>
-        <div ref={topSentinelRef} className="h-px" />
-        {loadingMore && (
-          <div className="flex justify-center py-2">
-            <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-        {rawMessages.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-zinc-500 text-sm">
-            No messages yet
-          </div>
-        )}
-        {rawMessages.map((msg, i) => (
-          <LogMessage key={msg.id ?? i} msg={msg} />
-        ))}
-        {logsToggle}
-      </div>
+      <StickToBottomScrollArea
+        scrollRef={scrollContainerRef}
+        className="relative flex-1 min-h-0 min-w-0"
+        scrollClassName="absolute inset-0 overflow-auto p-3 sm:p-4"
+        scrollButtonClassName="bottom-4 right-4"
+      >
+        <div className="space-y-1 min-h-full flex flex-col justify-end">
+          <div ref={topSentinelRef} className="h-px shrink-0 order-first" />
+          {loadingMore && (
+            <div className="flex justify-center py-2 shrink-0">
+              <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+          {rawMessages.length === 0 && (
+            <div className="flex items-center justify-center h-32 text-zinc-500 text-sm shrink-0">
+              No messages yet
+            </div>
+          )}
+          {rawMessages.map((msg, i) => (
+            <LogMessage key={msg.id ?? i} msg={msg} />
+          ))}
+        </div>
+      </StickToBottomScrollArea>
     </div>
   );
 }

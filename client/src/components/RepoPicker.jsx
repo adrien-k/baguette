@@ -24,6 +24,7 @@ export default function RepoPicker({
   showOrgInLabel = false,
   fullWidth = false,
   matchTriggerWidth = false,
+  shrinkableTrigger = false,
   triggerClassName = '',
   value,
   onChange,
@@ -116,6 +117,7 @@ export default function RepoPicker({
       selectedDisplay={selectedDisplay}
       fullWidth={fullWidth}
       matchTriggerWidth={matchTriggerWidth}
+      shrinkableTrigger={shrinkableTrigger}
       triggerClassName={triggerClassName}
       className={className}
       placement="bottom-end"

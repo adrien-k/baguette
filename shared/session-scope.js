@@ -1,5 +1,12 @@
 /** Navbar / dashboard: list sessions across every repository. */
 export const ALL_REPOS = '__all__';
+
+/** URL segment for the in-app “new session” form (`…/sessions/new`). */
+export const NEW_SESSION_ROUTE_ID = 'new';
+
+export function isNewSessionRouteId(shortId) {
+  return shortId === NEW_SESSION_ROUTE_ID;
+}
 /** Navbar / dashboard: sessions that are not tied to a single repository. */
 export const GLOBAL_SCOPE = '__global__';
 

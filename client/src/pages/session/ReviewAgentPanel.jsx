@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Square } from 'lucide-react';
 import { sessionReviewService, sessionsService } from '../../feathers.js';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
@@ -7,8 +7,11 @@ import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
+import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import ChatMessagesViewport from '../../components/ChatMessagesViewport.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
+import ChatWorkSummary from '../../components/chat/ChatWorkSummary.jsx';
+import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 
 function parseMessageRow(row) {
   try {
@@ -113,6 +116,8 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
   } = useGetReviewMessages(session?.id);
   const [models, setModels] = useState([]);
   const [sendingFollowUp, setSendingFollowUp] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [clearingContext, setClearingContext] = useState(false);
   const scrollContainerRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const isXlUp = useMediaQuery('(min-width: 1280px)');
@@ -146,6 +151,10 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
 
   const rawMessages = useMemo(() => (hookMessages || []).map(parseMessageRow), [hookMessages]);
   const displayMessages = useMemo(() => reconcileMessages(rawMessages), [rawMessages]);
+  const chatDisplayItems = useMemo(
+    () => groupChatDisplayMessages(displayMessages),
+    [displayMessages]
+  );
   const systemPrompt = useMemo(
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
     [rawMessages]
@@ -153,7 +162,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
 
   const isRunning = session?.review_status === 'running';
   const reviewTurnActive = isRunning || sendingFollowUp;
-  const showReviewComposer = !readonly && rawMessages.length > 0;
+  const showReviewComposer = !readonly && (rawMessages.length > 0 || isRunning);
   const reviewFollowUpTextareaId = session?.id ? `review-follow-up-${session.id}` : undefined;
 
   const handleReviewModelChange = async (modelId, modelParamsJson) => {
@@ -165,6 +174,36 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
       });
     } catch (err) {
       toastError('Failed to update review model', err);
+    }
+  };
+
+  const handleClearContext = async () => {
+    if (!session?.id || reviewTurnActive || clearingContext) return;
+    const ok = window.confirm(
+      'Clear reviewer chat history? Issues on the Issues tab are kept. You can start a new review from there afterward.'
+    );
+    if (!ok) return;
+    setClearingContext(true);
+    try {
+      await sessionReviewService.clearContext({ session_id: session.id });
+      setFollowUpText('');
+      reloadReviewMessages();
+    } catch (err) {
+      toastError('Failed to clear reviewer context', err);
+    } finally {
+      setClearingContext(false);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!session?.id || stopping) return;
+    setStopping(true);
+    try {
+      await sessionReviewService.stop({ session_id: session.id });
+    } catch (err) {
+      toastError('Failed to stop review', err);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -212,8 +251,22 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
   }, [panelRevealed, messagesLoading, session?.id, displayMessages.length, reviewTurnActive]);
 
+  const showClearContext = !readonly && rawMessages.length > 0;
+
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+      {showClearContext && (
+        <div className="shrink-0 flex justify-end px-3 py-1.5 border-b border-zinc-800/80">
+          <button
+            type="button"
+            onClick={handleClearContext}
+            disabled={reviewTurnActive || clearingContext}
+            className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {clearingContext ? 'Clearing…' : 'Clear context'}
+          </button>
+        </div>
+      )}
       <ChatMessagesViewport showBottomFade={showReviewComposer} scrollRef={scrollContainerRef}>
         {messagesLoading ? (
           <div className="flex justify-center py-8">
@@ -232,18 +285,32 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
               </button>
             )}
             {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
-            {displayMessages.map((msg, i) => (
-              <ChatMessage
-                key={msg.id ?? i}
-                message={msg}
-                isLatestMessage={i === displayMessages.length - 1}
-                worktreePath={session.absolute_worktree_path}
-                sessionId={session.id}
-                agentName="Reviewer"
-                messageIndex={i}
-                allMessages={displayMessages}
-              />
-            ))}
+            {chatDisplayItems.map((item) =>
+              item.kind === 'work' ? (
+                <ChatWorkSummary
+                  key={`work-${item.indices[0]}`}
+                  messages={item.messages}
+                  indices={item.indices}
+                  callCount={item.callCount}
+                  durationMs={item.durationMs}
+                  displayMessages={displayMessages}
+                  worktreePath={session.absolute_worktree_path}
+                  sessionId={session.id}
+                  agentName="Reviewer"
+                />
+              ) : (
+                <ChatMessage
+                  key={item.message.id ?? item.index}
+                  message={item.message}
+                  isLatestMessage={item.index === displayMessages.length - 1}
+                  worktreePath={session.absolute_worktree_path}
+                  sessionId={session.id}
+                  agentName="Reviewer"
+                  messageIndex={item.index}
+                  allMessages={displayMessages}
+                />
+              )
+            )}
             {displayMessages.length === 0 && !reviewTurnActive && (
               <p className="text-xs text-zinc-500">
                 Review progress and MCP tool calls appear here.
@@ -267,6 +334,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
           disabled={readonly}
           submitDisabled={reviewTurnActive}
           sending={sendingFollowUp}
+          submitLabel={isRunning ? 'Queue' : 'Send'}
           session={sessionForReviewComposer}
           models={models}
           cursorFast={cursorFast}
@@ -275,6 +343,19 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
           textareaId={reviewFollowUpTextareaId}
           skipColumn
           formClassName="relative z-[2] shrink-0 bg-zinc-950 px-2 pb-3 pt-1"
+          toolbarExtra={
+            isRunning ? (
+              <button
+                type="button"
+                onClick={handleStop}
+                disabled={stopping}
+                title="Stop"
+                className={COMPOSER_STOP_BUTTON_CLASS}
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+              </button>
+            ) : null
+          }
         />
       )}
     </div>

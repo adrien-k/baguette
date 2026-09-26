@@ -1,18 +1,24 @@
 import { useState, useEffect } from 'react';
 import { sessionsService } from '../feathers.js';
 
+function sessionMatches(session, sessionId) {
+  if (!session || sessionId == null || sessionId === '') return false;
+  return session.short_id === sessionId || String(session.id) === String(sessionId);
+}
+
 /**
  * Returns a single session by id or short_id. Updates in realtime (patched, removed).
+ * Keeps the last loaded session while a new id is fetching so callers can avoid UI flicker.
+ * `loading` is derived synchronously (requested id vs last completed fetch).
  */
 export function useGetSession(sessionId) {
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [loadedFor, setLoadedFor] = useState(null);
 
   useEffect(() => {
     if (!sessionId) {
-      setSession(null);
-      setLoading(false);
+      setError(null);
       return;
     }
     let cancelled = false;
@@ -25,15 +31,13 @@ export function useGetSession(sessionId) {
         if (!s) throw new Error('Session not found');
         setSession(s);
         setError(null);
+        setLoadedFor(sessionId);
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(err);
-          setSession(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        setError(err);
+        setSession(null);
+        setLoadedFor(sessionId);
       });
 
     const onPatched = (updated) => {
@@ -44,7 +48,6 @@ export function useGetSession(sessionId) {
     const onRemoved = (removed) => {
       const matches = removed.id === sessionId || removed.short_id === sessionId;
       if (!matches) return;
-      // Soft-archive: keep the row and wait for `patched` if cleanup is still running.
       if (removed.archived_at) {
         setSession((prev) => (prev ? { ...prev, ...removed } : removed));
       }
@@ -60,5 +63,8 @@ export function useGetSession(sessionId) {
     };
   }, [sessionId]);
 
-  return { session, loading, error };
+  const loading = Boolean(sessionId) && loadedFor !== sessionId;
+  const matched = sessionMatches(session, sessionId);
+
+  return { session: matched ? session : null, loading, error };
 }

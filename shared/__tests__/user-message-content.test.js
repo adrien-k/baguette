@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  contentBlocksFromLineDraft,
   createFileReferenceBlock,
   expandUserContentForAgent,
   normalizeUserMessageForAgentSdk,
@@ -30,5 +31,14 @@ describe('user-message-content', () => {
       { type: 'text', text: 'Check this' },
       { type: 'text', text: '@lib/x.ts:3' },
     ]);
+  });
+
+  it('builds line-comment content from a preloaded draft', () => {
+    expect(contentBlocksFromLineDraft('@src/a.js:12', { path: 'src/a.js', line: 12 })).toEqual([
+      createFileReferenceBlock('src/a.js', 12),
+    ]);
+    expect(
+      contentBlocksFromLineDraft('@src/a.js:12  please fix', { path: 'src/a.js', line: 12 })
+    ).toEqual([createFileReferenceBlock('src/a.js', 12), { type: 'text', text: 'please fix' }]);
   });
 });

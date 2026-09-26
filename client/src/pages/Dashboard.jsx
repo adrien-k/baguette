@@ -181,14 +181,6 @@ export default function Dashboard() {
   const isAllSessions = selectedRepo === ALL_REPOS;
   const isGlobal = selectedRepo === GLOBAL_SCOPE;
   const repoFilter = isAllSessions || isGlobal ? null : selectedRepo;
-  const filteredSessions = sessions
-    .filter((s) => showArchived || !s.archived_at)
-    .filter((s) => showLoopRuns || !s.loop_id)
-    .filter((s) => {
-      if (isGlobal) return !!s.is_global;
-      if (!repoFilter) return true;
-      return s.repo_full_name === repoFilter;
-    });
 
   const loopsQuery = useMemo(() => {
     if (isAllSessions) return {};
@@ -282,22 +274,26 @@ export default function Dashboard() {
         {loading && sessions.length === 0 && (
           <p className="text-zinc-500 text-center py-12">Loading sessions...</p>
         )}
-        {!loading && filteredSessions.length === 0 && sessions.length === 0 && (
+        {!loading && sessions.length === 0 && !repoFilter && (
           <div className="flex flex-col items-center py-16 gap-3 opacity-50">
             <BaguetteIcon className="w-10 h-10" />
             <p className="text-zinc-500 text-sm">No sessions yet. Create one to get started.</p>
           </div>
         )}
-        {!loading && filteredSessions.length === 0 && sessions.length > 0 && repoFilter && (
+        {!loading && sessions.length === 0 && repoFilter && (
           <div className="flex flex-col items-center py-12 gap-2 opacity-50">
             <p className="text-zinc-500 text-sm">
               No sessions for {repoFilter.split('/')[1] ?? repoFilter}.
             </p>
           </div>
         )}
-        {filteredSessions.map((s) => (
-          <SessionCard key={s.id} session={s} />
-        ))}
+        {sessions.length > 0 && (
+          <div className="space-y-3">
+            {sessions.map((s) => (
+              <SessionCard key={s.id} session={s} />
+            ))}
+          </div>
+        )}
         {hasMore && sessions.length > 0 && (
           <button
             onClick={loadMore}

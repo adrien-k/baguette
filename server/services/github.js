@@ -166,6 +166,26 @@ export function listInstallationRepos(token, scope, installationId) {
   );
 }
 
+/** Repos visible to a personal access token (Settings → GitHub token override). */
+export function listUserReposForPicker(token, scope) {
+  return cache.fetch(`github-user-repos-${scope}`, REPOS_CACHE_TTL, () =>
+    fetchAllPages(
+      'https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=updated',
+      token,
+      mapRepo
+    )
+  );
+}
+
+export function orgLoginsFromRepos(repos) {
+  const logins = new Set();
+  for (const r of repos) {
+    const login = r.full_name?.split('/')[0];
+    if (login) logins.add(login);
+  }
+  return [...logins].sort((a, b) => a.localeCompare(b));
+}
+
 const BRANCHES_CACHE_TTL = 60;
 export function listBranches(token, scope, repoFullName) {
   return cache.fetch(`github-branches-${scope}-${repoHash(repoFullName)}`, BRANCHES_CACHE_TTL, () =>
@@ -175,6 +195,10 @@ export function listBranches(token, scope, repoFullName) {
 
 export function clearReposCache(scope) {
   return cache.clearByPrefix(`github-repos-${scope}-`);
+}
+
+export function clearUserReposPickerCache(scope) {
+  return cache.clearByPrefix(`github-user-repos-${scope}`);
 }
 
 export function clearInstallationsCache(scope) {

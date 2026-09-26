@@ -132,7 +132,7 @@ export function CommandBlock({ baguetteOp, block }) {
 export function PrUpsertBlock({ title, body, result, isError }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = result == null;
-  const PREVIEW_LINES = 4;
+  const PREVIEW_LINES = 10;
   const bodyLines = (body ?? '').split('\n');
   const previewBody = bodyLines.slice(0, PREVIEW_LINES).join('\n');
   const remaining = bodyLines.length - PREVIEW_LINES;
@@ -166,12 +166,24 @@ export function PrUpsertBlock({ title, body, result, isError }) {
         <div className="px-3 sm:px-4 pb-2 text-xs text-zinc-500">
           <MarkdownContent>{previewBody}</MarkdownContent>
           {remaining > 0 && (
-            <button
-              onClick={() => setExpanded(true)}
-              className="text-zinc-600 hover:text-zinc-400 transition-colors mt-1 font-mono"
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setExpanded(true);
+                }
+              }}
+              className="text-zinc-600 hover:text-zinc-400 transition-colors mt-1 font-mono cursor-pointer"
             >
               &hellip; {remaining} more line{remaining !== 1 ? 's' : ''}
-            </button>
+            </span>
           )}
         </div>
       )}
@@ -180,14 +192,10 @@ export function PrUpsertBlock({ title, body, result, isError }) {
           <div className="text-zinc-400">
             <MarkdownContent>{body ?? ''}</MarkdownContent>
           </div>
-          {result != null && (
+          {result != null && isError && (
             <div>
-              <div className={`font-medium mb-1 ${isError ? 'text-red-400' : 'text-zinc-500'}`}>
-                {isError ? 'Error' : 'Result'}
-              </div>
-              <pre
-                className={`whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 ${isError ? 'text-red-300 bg-red-950/30' : 'text-zinc-400 bg-zinc-950/50'}`}
-              >
+              <div className="font-medium mb-1 text-red-400">Error</div>
+              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-red-300 bg-red-950/30">
                 {result}
               </pre>
             </div>

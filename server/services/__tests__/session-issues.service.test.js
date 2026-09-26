@@ -117,6 +117,36 @@ describe('session-issues service', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('lets the owner edit title, description, and severity', async () => {
+    const created = await app
+      .service('session-issues')
+      .create(
+        { session_id: sessionId, severity: 'low', title: 'Before', description: 'Old' },
+        { user }
+      );
+    const patched = await app.service('session-issues').patch(
+      created.id,
+      {
+        title: 'After',
+        description: 'New details',
+        severity: 'critical',
+      },
+      params(user)
+    );
+    expect(patched.title).toBe('After');
+    expect(patched.description).toBe('New details');
+    expect(patched.severity).toBe('critical');
+  });
+
+  it('rejects empty title on patch', async () => {
+    const created = await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'low', title: 'X' }, { user });
+    await expect(
+      app.service('session-issues').patch(created.id, { title: '   ' }, params(user))
+    ).rejects.toThrow('title is required');
+  });
+
   it('rejects invalid status', async () => {
     const created = await app
       .service('session-issues')
