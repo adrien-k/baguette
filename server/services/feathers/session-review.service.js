@@ -17,16 +17,27 @@ const BAGUETTE_REVIEW_START_TITLE = 'Start review';
 const BAGUETTE_REVIEW_START_CONTENT = 'Begin the code review following your system instructions.';
 
 function newCommitsReviewText(marker, count) {
-  const noun = count === 1 ? 'commit' : 'commits';
+  if (count === 0) {
+    return (
+      `Review the latest changes since ${marker}. ` +
+      `Focus on \`git diff ${marker}\` (including uncommitted work) and reconcile findings with existing issues.`
+    );
+  }
   return (
-    `Review the ${count} new ${noun} since ${marker}. ` +
-    `Focus on \`git diff ${marker}..HEAD\` and reconcile findings with existing issues.`
+    `Review the latest changes since ${marker}. ` +
+    `Focus on \`git diff ${marker}..HEAD\` and uncommitted work, and reconcile findings with existing issues.`
   );
 }
 
-function newCommitsReviewTitle(count) {
-  return count === 1 ? 'Review 1 new commit' : `Review ${count} new commits`;
+function latestChangesFromBaseText(baseBranch) {
+  const base = baseBranch || 'main';
+  return (
+    `Review the latest changes against the base branch \`${base}\`. ` +
+    `Focus on \`git diff ${base}...HEAD\` and uncommitted work, and reconcile findings with existing issues.`
+  );
 }
+
+const BAGUETTE_REVIEW_LATEST_TITLE = 'Review latest changes';
 
 function commandsToAllowedTools(commands) {
   return commands.map((cmd) => `Bash(${cmd}*)`);
@@ -50,7 +61,7 @@ export function reviewTurnKey(sessionId) {
 }
 
 function reviewSdk(session) {
-  return session.agent_sdk || 'claude';
+  return session.review_agent_sdk || session.agent_sdk || 'claude';
 }
 
 function reviewTurnModel(session, data = {}) {
@@ -267,16 +278,11 @@ export class SessionReviewService {
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
     await this._assertCanReview(session);
     const marker = session.last_reviewed_commit_sha;
-    if (!marker) {
-      throw new BadRequest('No completed review yet — start a full review first');
-    }
     const cwd = resolveDataDirRelativePath(session.worktree_path);
-    const count = await gitCommitCountSince(cwd, marker);
-    if (count === 0) {
-      throw new BadRequest('No new commits since the last review');
-    }
-    const message = newCommitsReviewText(marker, count);
-    const baguette_title = newCommitsReviewTitle(count);
+    const message = marker
+      ? newCommitsReviewText(marker, await gitCommitCountSince(cwd, marker))
+      : latestChangesFromBaseText(session.base_branch);
+    const baguette_title = BAGUETTE_REVIEW_LATEST_TITLE;
     return this.send({ ...data, session_id: sessionId, message, baguette_title }, params);
   }
 

@@ -168,6 +168,30 @@ describe('session-review service', () => {
     expect(usage[0].output_tokens).toBe(5);
   });
 
+  it('uses review_agent_sdk when it differs from the session sdk', async () => {
+    const runTurn = vi.fn(async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }));
+    app.service('cursor-agent').runTurn = runTurn;
+    await db('sessions').where({ id: sessionId }).update({
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      review_agent_sdk: 'cursor',
+      review_model: 'composer',
+    });
+
+    await app.service('session-review').start({ session_id: sessionId }, params(user));
+
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    expect(runTurn).toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    const row = await db('sessions').where({ id: sessionId }).first();
+    expect(row.review_agent_sdk).toBe('cursor');
+    expect(row.agent_sdk).toBe('claude');
+  });
+
   it('uses the session sdk even if start requests a different one', async () => {
     const runTurn = vi.fn(async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }));
     app.service('cursor-agent').runTurn = runTurn;
@@ -478,7 +502,77 @@ describe('session-review service', () => {
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.source).toBe('baguette');
-    expect(latest.title).toMatch(/Review \d+ new commit/);
+    expect(latest.title).toBe('Review latest changes');
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    await fs.promises.rm(wt, { recursive: true, force: true });
+  });
+
+  it('reviewNewCommits allows a follow-up with no new commits', async () => {
+    const wt = await initGitWorktree();
+    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'first' }, params(user));
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+
+    await app.service('session-review').reviewNewCommits({ session_id: sessionId }, params(user));
+    const rows = await db('session_review_messages')
+      .where({ session_id: sessionId, type: 'user' })
+      .orderBy('id', 'desc');
+    const latest = JSON.parse(rows[0].message_json);
+    expect(latest.title).toBe('Review latest changes');
+    expect(latest.message.content).toMatch(/uncommitted work/);
+    await fs.promises.rm(wt, { recursive: true, force: true });
+  });
+
+  it('reviewNewCommits uses the base branch when the commit marker is unset', async () => {
+    let release;
+    const blocked = new Promise((resolve) => {
+      release = resolve;
+    });
+    query.mockImplementation(() => {
+      const gen = (async function* () {
+        await blocked;
+        yield {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+        };
+        yield { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 };
+      })();
+      gen.close = vi.fn();
+      return gen;
+    });
+    const wt = await initGitWorktree();
+    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt, base_branch: 'main' });
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'first' }, params(user));
+    await vi.waitFor(() => {
+      expect(app.service('session-review')._active.has(sessionId)).toBe(true);
+    });
+    await app.service('session-review').stop({ session_id: sessionId }, params(user));
+    release();
+    expect(
+      (await db('sessions').where({ id: sessionId }).first()).last_reviewed_commit_sha
+    ).toBeNull();
+
+    query.mockImplementation(() => makeQueryResult());
+    await app.service('session-review').reviewNewCommits({ session_id: sessionId }, params(user));
+    const rows = await db('session_review_messages')
+      .where({ session_id: sessionId, type: 'user' })
+      .orderBy('id', 'desc');
+    const latest = JSON.parse(rows[0].message_json);
+    expect(latest.title).toBe('Review latest changes');
+    expect(latest.message.content).toMatch(/base branch `main`/);
+    expect(latest.message.content).toMatch(/git diff main\.\.\.HEAD/);
     await vi.waitFor(async () => {
       expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
         'completed'

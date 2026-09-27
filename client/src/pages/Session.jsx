@@ -471,7 +471,6 @@ export default function Session() {
   }, [isNewSessionRoute, session]);
 
   const [commitsToPush, setCommitsToPush] = useState(0);
-  const [commitsSinceReview, setCommitsSinceReview] = useState(0);
 
   useEffect(() => {
     if (
@@ -482,14 +481,12 @@ export default function Session() {
       session?.status === 'archived'
     ) {
       setCommitsToPush(0);
-      setCommitsSinceReview(0);
       return;
     }
     sessionsService
       .sessionGitStatus(sessionId)
       .then((res) => {
         setCommitsToPush(res.commitsToPush ?? 0);
-        setCommitsSinceReview(res.commitsSinceReview ?? 0);
       })
       .catch(() => {});
   }, [
@@ -633,7 +630,6 @@ export default function Session() {
       await sessionsService.push({ id: session.id, forceMode, branch });
       const status = await sessionsService.sessionGitStatus(session.id);
       setCommitsToPush(status.commitsToPush ?? 0);
-      setCommitsSinceReview(status.commitsSinceReview ?? 0);
       toast.success('Pushed successfully');
     } catch (err) {
       if (err.data?.conflict) {
@@ -1074,7 +1070,14 @@ export default function Session() {
               type="button"
               disabled={isNewSessionRoute}
               onClick={toggleSidePanel}
-              className="xl:hidden ml-auto flex items-center justify-center shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              className={`xl:hidden ml-auto flex items-center justify-center shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                !isNewSessionRoute &&
+                activeView === 'review' &&
+                session?.review_status === 'running' &&
+                !showTasks
+                  ? 'text-amber-400 motion-safe:animate-pulse'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
               title={showTasks ? 'Hide side panel' : 'Show side panel'}
             >
               <PanelRight className="w-4 h-4" />
@@ -1165,8 +1168,8 @@ export default function Session() {
               <ReviewView
                 session={session}
                 readonly={isReadonly}
-                commitsSinceReview={commitsSinceReview}
-                onReviewStarted={() => setShowTasks(true)}
+                reviewerDrawerOpen={isXlScreen || showTasks}
+                onOpenReviewer={() => setShowTasks(true)}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'diff' && (

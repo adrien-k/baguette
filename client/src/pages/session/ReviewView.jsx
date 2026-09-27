@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Play, Square } from 'lucide-react';
+import { Bot, Loader2, PanelRight, Play, Square } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   messagesService,
@@ -10,18 +10,18 @@ import {
 } from '../../feathers.js';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { isMobile } from '../../utils/isMobile.js';
 import Alert from '../../components/Alert.jsx';
 import ClearReviewConfirmModal from '../../components/ClearReviewConfirmModal.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
-import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useGetSessionIssues } from '../../hooks/useGetSessionIssues.js';
+import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
-import SessionModelSelect from '../../components/SessionModelSelect.jsx';
+import { pickPreferredVariantIdx } from '../../utils/models.js';
+import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
-import AutoGrowTextarea from '../../components/AutoGrowTextarea.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 
@@ -44,11 +44,19 @@ function issuesFixAllPrompt(sessionId) {
   );
 }
 
-export default function ReviewView({ session, readonly, commitsSinceReview = 0, onReviewStarted }) {
+export default function ReviewView({
+  session,
+  readonly,
+  reviewerDrawerOpen = true,
+  onOpenReviewer,
+}) {
   const { user } = useAuth();
   const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { issues, loading: issuesLoading } = useGetSessionIssues(session?.id);
+  const { messages: reviewMessages, loading: reviewMessagesLoading } = useGetReviewMessages(
+    session?.id
+  );
   const [userSettings, setUserSettings] = useState(null);
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
@@ -79,14 +87,21 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
       .catch(() => setUserSettings({}));
   }, [user?.id]);
 
-  const reviewAgentSdk = session?.agent_sdk || 'claude';
-  const reviewModel = session?.review_model || session?.model || '';
-  const reviewModelParams = session?.review_model_params ?? session?.model_params ?? null;
+  const hasStoredReviewSdk = session?.review_agent_sdk != null && session.review_agent_sdk !== '';
+  const reviewAgentSdk = hasStoredReviewSdk
+    ? session.review_agent_sdk
+    : session?.agent_sdk || 'claude';
+  const reviewModel = hasStoredReviewSdk
+    ? session?.review_model || ''
+    : session?.review_model || session?.model || '';
+  const reviewModelParams = hasStoredReviewSdk
+    ? (session?.review_model_params ?? null)
+    : (session?.review_model_params ?? session?.model_params ?? null);
 
   useEffect(() => {
     if (!session?.id || readonly) return;
-    if (session.review_model != null) return;
-    if (session.model == null && session.model_params == null) return;
+    if (session.review_agent_sdk != null || session.review_model != null) return;
+    if (session.model == null && session.model_params == null && !session.agent_sdk) return;
     sessionsService
       .patch(session.id, {
         review_agent_sdk: session.agent_sdk || 'claude',
@@ -96,6 +111,7 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
       .catch((err) => toastError('Failed to initialize review model', err));
   }, [
     session?.id,
+    session?.review_agent_sdk,
     session?.review_model,
     session?.model,
     session?.model_params,
@@ -104,11 +120,12 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
   ]);
 
   useEffect(() => {
+    setModels([]);
     const url =
       reviewAgentSdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
     apiFetch(url)
       .then((d) => setModels(d.models || []))
-      .catch(() => {});
+      .catch(() => setModels([]));
   }, [reviewAgentSdk]);
 
   const sessionForReviewComposer = useMemo(
@@ -123,10 +140,10 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
 
   const opened = issues.filter((i) => i.status === 'opened');
   const isRunning = session?.review_status === 'running';
-  const hasBeenReviewed = session?.last_reviewed_commit_sha != null;
-  const unreviewedCount = commitsSinceReview;
+  const hasReviewThread = reviewMessages.length > 0;
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
-  const showStartForm = !hasBeenReviewed;
+  const showStartForm = !hasReviewThread && !isRunning && !starting && !reviewMessagesLoading;
+  const showFollowUpPanel = hasReviewThread || isRunning;
 
   const sendFixMessage = async (text) => {
     await messagesService.create({
@@ -199,7 +216,6 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
         session_id: session.id,
         user_message: reviewUserMessage.trim(),
       });
-      onReviewStarted?.();
     } catch (err) {
       toastError('Failed to start review', err);
     } finally {
@@ -208,23 +224,14 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
   };
 
   const handleReviewNewCommits = async () => {
-    if (!session?.id || reviewingNewCommits || !canStartReview || unreviewedCount === 0) return;
+    if (!session?.id || reviewingNewCommits || isRunning) return;
     setReviewingNewCommits(true);
     try {
       await sessionReviewService.reviewNewCommits({ session_id: session.id });
-      onReviewStarted?.();
     } catch (err) {
-      toastError('Failed to review new commits', err);
+      toastError('Failed to review latest changes', err);
     } finally {
       setReviewingNewCommits(false);
-    }
-  };
-
-  const handleReviewPromptKeyDown = (e) => {
-    if (!canStartReview) return;
-    if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleStart();
     }
   };
 
@@ -266,68 +273,90 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
     }
   };
 
-  const startReviewButton = (
-    <button
-      type="button"
-      onClick={handleStart}
-      disabled={starting || !hasSdkKey || !session?.worktree_path}
-      className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
-    >
-      {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-      Start review
-    </button>
-  );
+  const handleReviewSdkChange = async (sdk) => {
+    if (!session?.id || readonly || !sdk || sdk === reviewAgentSdk) return;
+    try {
+      await sessionsService.patch(session.id, {
+        review_agent_sdk: sdk,
+        review_model: null,
+        review_model_params: null,
+      });
+    } catch (err) {
+      toastError('Failed to update review agent', err);
+    }
+  };
 
-  const stopReviewButton = (
-    <button
-      type="button"
-      onClick={handleStop}
-      disabled={stopping}
-      className="inline-flex items-center gap-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 px-3 py-1.5 rounded-lg text-sm font-medium border border-zinc-600"
-    >
-      {stopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
-      Stop
-    </button>
-  );
+  useEffect(() => {
+    if (!session?.id || readonly || !models.length) return;
+    if (reviewModel && models.some((m) => m.id === reviewModel)) return;
+    const first = models[0];
+    if (!first) return;
+    const isCursor = reviewAgentSdk === 'cursor';
+    const variants = first.variants ?? [];
+    let paramsJson = null;
+    if (isCursor && variants.length) {
+      const prefIdx = pickPreferredVariantIdx(variants, cursorModelPrefs);
+      const prefVariant = prefIdx >= 0 ? variants[prefIdx] : variants[0];
+      paramsJson = prefVariant?.params?.length ? JSON.stringify(prefVariant.params) : null;
+    }
+    handleReviewModelChange(first.id, paramsJson);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- default the review model once the SDK's list loads
+  }, [models, reviewModel, reviewAgentSdk, readonly, session?.id]);
 
-  const followUpReviewControls = !readonly && hasBeenReviewed && (
+  const followUpReviewControls = !readonly && showFollowUpPanel && !isRunning && (
     <div className="flex flex-wrap items-center gap-2">
-      {isRunning ? (
-        stopReviewButton
-      ) : (
+      <button
+        type="button"
+        onClick={handleReviewNewCommits}
+        disabled={reviewingNewCommits}
+        className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
+      >
+        {reviewingNewCommits ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Play className="w-3.5 h-3.5" />
+        )}
+        Review latest changes
+      </button>
+      <div className="flex-1 min-w-2" />
+      <button
+        type="button"
+        onClick={() => setShowClearReviewModal(true)}
+        className="text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
+      >
+        Review the entire change
+      </button>
+    </div>
+  );
+
+  const runningReviewStatus = isRunning && (
+    <div className="relative flex flex-wrap items-center gap-2">
+      {!readonly && (
         <button
           type="button"
-          onClick={handleReviewNewCommits}
-          disabled={
-            unreviewedCount === 0 || reviewingNewCommits || !hasSdkKey || !session?.worktree_path
-          }
-          className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
+          onClick={handleStop}
+          disabled={stopping}
+          title="Stop"
+          className={COMPOSER_STOP_BUTTON_CLASS}
         >
-          {reviewingNewCommits ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Play className="w-3.5 h-3.5" />
-          )}
-          Review new commits ({unreviewedCount})
+          <Square className="w-3.5 h-3.5 fill-current" />
         </button>
       )}
-      {isRunning && (
-        <span className="text-xs text-amber-400 flex items-center gap-1.5">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Running
-        </span>
-      )}
-      {!isRunning && (
-        <>
-          <div className="flex-1 min-w-2" />
-          <button
-            type="button"
-            onClick={() => setShowClearReviewModal(true)}
-            className="text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
-          >
-            Review the entire change
-          </button>
-        </>
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+        <span className="absolute inset-0 rounded-full bg-amber-400/15 motion-safe:animate-pulse" />
+        <Bot className="relative h-4 w-4 text-amber-400 motion-safe:animate-pulse" aria-hidden />
+      </div>
+      <p className="text-sm font-medium text-zinc-200">Review in progress</p>
+      <div className="flex-1 min-w-2" />
+      {!reviewerDrawerOpen && onOpenReviewer && (
+        <button
+          type="button"
+          onClick={onOpenReviewer}
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
+        >
+          <PanelRight className="h-3.5 w-3.5" />
+          Open the reviewer
+        </button>
       )}
     </div>
   );
@@ -336,67 +365,43 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
       {showStartForm && (
         <div className="shrink-0 overflow-auto">
-          <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6`}>
-            <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-5 sm:p-6 space-y-4">
-              {userSettings && !hasSdkKey && (
-                <Alert variant="alert">
-                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
-                  <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
-                </Alert>
-              )}
-              <div>
-                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                  <label className="text-sm font-medium text-zinc-300">Prompt</label>
-                  <Link
-                    to="/settings?tab=agent&prompt=review#settings-agent-prompts"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-amber-400 hover:text-amber-300 underline"
-                  >
-                    Configure the system prompt
-                  </Link>
-                </div>
-                <div
-                  className={`w-full rounded-lg border border-zinc-700 bg-zinc-800 overflow-visible ${
-                    readonly || isRunning
-                      ? 'opacity-60'
-                      : 'focus-within:ring-2 focus-within:ring-amber-500/50'
-                  }`}
+          <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6 space-y-4`}>
+            {userSettings && !hasSdkKey && (
+              <Alert variant="alert">
+                Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
+              </Alert>
+            )}
+            <div>
+              <div className="flex flex-wrap items-baseline justify-end gap-2 mb-1">
+                <Link
+                  to="/settings?tab=agent&prompt=review#settings-agent-prompts"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-amber-400 hover:text-amber-300 underline"
                 >
-                  <AutoGrowTextarea
-                    value={reviewUserMessage}
-                    onChange={(e) => setReviewUserMessage(e.target.value)}
-                    onKeyDown={handleReviewPromptKeyDown}
-                    disabled={readonly || isRunning}
-                    rows={1}
-                    maxLines={20}
-                    fitPlaceholderWhenEmpty
-                    spellCheck={false}
-                    placeholder={REVIEW_FOCUS_PLACEHOLDER}
-                    className="block w-full bg-transparent px-3 sm:px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none leading-relaxed rounded-t-lg"
-                  />
-                  <div className="relative flex flex-wrap items-center gap-1 sm:gap-1.5 px-2 pb-1.5 pt-0.5 rounded-b-lg overflow-visible">
-                    {hasSdkKey && (
-                      <SessionModelSelect
-                        session={sessionForReviewComposer}
-                        models={models}
-                        cursorModelPrefs={cursorModelPrefs}
-                        onCursorModelPrefChange={setCursorModelPref}
-                        onModelChange={handleReviewModelChange}
-                        disabled={readonly || isRunning}
-                      />
-                    )}
-                    <div className="flex-1 min-w-0" />
-                    {!readonly && (isRunning ? stopReviewButton : startReviewButton)}
-                    {!readonly && isRunning && (
-                      <span className="text-xs text-amber-400 flex items-center gap-1.5">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Running
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  Configure the system prompt
+                </Link>
               </div>
+              <AgentMessageComposer
+                skipColumn
+                formClassName=""
+                value={reviewUserMessage}
+                onChange={setReviewUserMessage}
+                onSubmit={handleStart}
+                placeholder={REVIEW_FOCUS_PLACEHOLDER}
+                disabled={readonly}
+                sending={starting}
+                session={sessionForReviewComposer}
+                models={models}
+                cursorModelPrefs={cursorModelPrefs}
+                onCursorModelPrefChange={setCursorModelPref}
+                onModelChange={handleReviewModelChange}
+                availableSdks={availableSdks}
+                onSdkChange={handleReviewSdkChange}
+                canSend={canStartReview}
+                submitLabel="Start review"
+              />
             </div>
           </div>
         </div>
@@ -404,7 +409,7 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
 
       <div className="flex-1 min-h-0 overflow-auto">
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-4`}>
-          {hasBeenReviewed && (
+          {showFollowUpPanel && (
             <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
@@ -412,7 +417,7 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
                   <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
                 </Alert>
               )}
-              {followUpReviewControls}
+              {isRunning ? runningReviewStatus : followUpReviewControls}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
@@ -426,13 +431,13 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
           {issuesLoading ? (
             <p className="text-xs text-zinc-500">Loading issues…</p>
           ) : issues.length === 0 ? (
-            <p className="text-xs text-zinc-500">
-              {showStartForm
-                ? 'No issues yet. Start a review to open some.'
-                : unreviewedCount > 0
-                  ? 'No issues yet. Review new commits for another pass.'
-                  : 'No open issues. Push new commits, then review them when ready.'}
-            </p>
+            !isRunning && (
+              <p className="text-xs text-zinc-500">
+                {showStartForm
+                  ? 'No issues yet. Start a review to open some.'
+                  : 'No issues yet. Review latest changes for another pass.'}
+              </p>
+            )
           ) : (
             issues.map((issue) => (
               <SessionIssueCard
