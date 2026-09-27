@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { formatRepoLabel, groupReposByOrg, repoOrg } from '../repoDisplayName.js';
+import {
+  duplicateRepoDisplayNames,
+  formatRepoLabel,
+  groupReposByOrg,
+  repoOrg,
+} from '../repoDisplayName.js';
 
 describe('repoOrg', () => {
   it('returns the owner for GitHub full names', () => {
@@ -12,13 +17,30 @@ describe('repoOrg', () => {
   });
 });
 
+describe('duplicateRepoDisplayNames', () => {
+  it('marks names that appear on more than one repo', () => {
+    const dupes = duplicateRepoDisplayNames(['acme/app', 'other/app', 'acme/unique']);
+    expect(dupes.has('app')).toBe(true);
+    expect(dupes.has('unique')).toBe(false);
+  });
+});
+
 describe('formatRepoLabel', () => {
-  it('shows org and repo name', () => {
-    expect(formatRepoLabel('acme/app')).toBe('acme / app');
+  const noDupes = duplicateRepoDisplayNames(['acme/app']);
+  const withDupes = duplicateRepoDisplayNames(['acme/app', 'other/app']);
+
+  it('shows only the repo name when the short name is unique', () => {
+    expect(formatRepoLabel('acme/app', noDupes)).toBe('app');
   });
 
-  it('uses Local for path repos', () => {
-    expect(formatRepoLabel('/tmp/local')).toBe('Local / local');
+  it('shows org and repo name when the short name is duplicated', () => {
+    expect(formatRepoLabel('acme/app', withDupes)).toBe('acme / app');
+    expect(formatRepoLabel('other/app', withDupes)).toBe('other / app');
+  });
+
+  it('uses Local for path repos when duplicated', () => {
+    const dupes = duplicateRepoDisplayNames(['/tmp/a', '/var/a']);
+    expect(formatRepoLabel('/tmp/a', dupes)).toBe('Local / a');
   });
 });
 

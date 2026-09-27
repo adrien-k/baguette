@@ -21,10 +21,29 @@ export function repoOrg(fullName) {
   return fullName.split('/')[0];
 }
 
-/** `org / name` for mixed session lists (All sessions). */
-export function formatRepoLabel(fullName) {
+/** Display names that appear on more than one repo (needs org prefix to disambiguate). */
+export function duplicateRepoDisplayNames(fullNames) {
+  const counts = new Map();
+  for (const fullName of fullNames) {
+    if (!fullName) continue;
+    const name = repoDisplayName(fullName);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const dupes = new Set();
+  for (const [name, count] of counts) {
+    if (count > 1) dupes.add(name);
+  }
+  return dupes;
+}
+
+/** Repo label for mixed lists: `org / name` only when the short name is duplicated. */
+export function formatRepoLabel(fullName, duplicateDisplayNames) {
   if (!fullName) return '';
-  return `${repoOrg(fullName)} / ${repoDisplayName(fullName)}`;
+  const name = repoDisplayName(fullName);
+  if (duplicateDisplayNames?.has(name)) {
+    return `${repoOrg(fullName)} / ${name}`;
+  }
+  return name;
 }
 
 /**

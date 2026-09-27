@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useGetRepos } from '../hooks/useGetRepos.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { ALL_REPOS, GLOBAL_SCOPE } from '@baguette/shared/session-scope.js';
+import { duplicateRepoDisplayNames, formatRepoLabel } from '../utils/repoDisplayName.js';
 
 export { ALL_REPOS, GLOBAL_SCOPE };
 
@@ -20,8 +21,20 @@ export function RepoProvider({ children }) {
     if (!exists) setSelectedRepo(null);
   }, [loading, repos, selectedRepo]);
 
+  const duplicateDisplayNames = useMemo(
+    () => duplicateRepoDisplayNames(repos.map((r) => r.full_name)),
+    [repos]
+  );
+
+  const uniqueLabel = useCallback(
+    (fullName) => formatRepoLabel(fullName, duplicateDisplayNames),
+    [duplicateDisplayNames]
+  );
+
   return (
-    <RepoContext.Provider value={{ repos, loading, refetch, selectedRepo, setSelectedRepo }}>
+    <RepoContext.Provider
+      value={{ repos, loading, refetch, selectedRepo, setSelectedRepo, uniqueLabel }}
+    >
       {children}
     </RepoContext.Provider>
   );

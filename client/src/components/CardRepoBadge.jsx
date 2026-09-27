@@ -1,12 +1,13 @@
 import { Bot } from 'lucide-react';
 import GithubIcon from './svg/GithubIcon.jsx';
-import { formatRepoLabel } from '../utils/repoDisplayName.js';
+import { useRepoContext } from '../context/RepoContext.jsx';
 
 /** Org/repo (or Global) label for All Sessions lists. */
 export default function CardRepoBadge({ show, isGlobal, repoFullName }) {
+  const { uniqueLabel } = useRepoContext();
   if (!show) return null;
   const Icon = isGlobal ? Bot : GithubIcon;
-  const label = isGlobal ? 'Global' : formatRepoLabel(repoFullName);
+  const label = isGlobal ? 'Global' : uniqueLabel(repoFullName);
   if (!label) return null;
 
   return (

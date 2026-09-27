@@ -4,7 +4,7 @@ import { Bot, Layers, Plus } from 'lucide-react';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from './RepoDropdown.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
-import { formatRepoLabel, repoDisplayName } from '../utils/repoDisplayName.js';
+import { repoDisplayName } from '../utils/repoDisplayName.js';
 
 const ICON_CLS = 'w-3.5 h-3.5 shrink-0';
 
@@ -29,7 +29,7 @@ export default function RepoPicker({
   value,
   onChange,
 }) {
-  const { repos, selectedRepo, setSelectedRepo } = useRepoContext();
+  const { repos, selectedRepo, setSelectedRepo, uniqueLabel } = useRepoContext();
   const navigate = useNavigate();
 
   const current = value !== undefined ? value : selectedRepo;
@@ -68,7 +68,7 @@ export default function RepoPicker({
     if (hit) {
       let label = hit.label;
       if (showOrgInLabel && current && current !== ALL_REPOS && current !== GLOBAL_SCOPE) {
-        label = formatRepoLabel(current);
+        label = uniqueLabel(current);
       }
       return { label, icon: hit.icon };
     }
@@ -79,11 +79,11 @@ export default function RepoPicker({
       return { label: 'Global', icon: navIcon(GLOBAL_SCOPE) };
     }
     if (current) {
-      const label = showOrgInLabel ? formatRepoLabel(current) : repoDisplayName(current);
+      const label = showOrgInLabel ? uniqueLabel(current) : repoDisplayName(current);
       return { label, icon: navIcon(current) };
     }
     return { label: 'Select repo', icon: null };
-  }, [sections, current, showOrgInLabel]);
+  }, [sections, current, showOrgInLabel, uniqueLabel]);
 
   const handleChange = (next) => {
     onChange?.(next);
