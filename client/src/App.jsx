@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
-import { Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined } from 'lucide-react';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Session from './pages/Session.jsx';
 import Settings from './pages/Settings.jsx';
+import Usage from './pages/Usage.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
@@ -109,6 +110,10 @@ function Nav() {
                     <ColorSchemeToggle menuItem />
                   </div>
                   <div className="border-t border-zinc-700 mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
+                    <Link to="/usage" className={menuItemClass}>
+                      <ChartNoAxesCombined className="w-4 h-4 text-zinc-500" />
+                      Usage
+                    </Link>
                     <Link to="/settings" className={menuItemClass}>
                       <SettingsIcon className="w-4 h-4 text-zinc-500" />
                       Settings
@@ -263,6 +268,16 @@ function AppRoutes() {
               <ProtectedRoute>
                 <div className="flex-1 min-h-0 overflow-auto">
                   <Settings />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/usage"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <Usage />
                 </div>
               </ProtectedRoute>
             }

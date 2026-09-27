@@ -99,6 +99,7 @@ async function insertUsage(rows) {
       output_tokens: r.output ?? 0,
       total_tokens: (r.input ?? 0) + (r.output ?? 0),
       model: r.model ?? null,
+      kind: r.kind ?? null,
     });
   }
 }
@@ -138,6 +139,7 @@ describe('GET /api/usage/breakdown', () => {
         day: day.slice(0, 10),
         repo_full_name: 'acme/alpha',
         agent_sdk: 'claude',
+        kind: 'session',
         cost_usd: 1.5,
         input_tokens: 0,
         output_tokens: 0,
@@ -207,5 +209,49 @@ describe('GET /api/usage/breakdown', () => {
     ]);
 
     expect(await getJson('/api/usage/breakdown')).toEqual([]);
+  });
+
+  it('honours ?days=7 and ?days=90 windows', async () => {
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, input: 10, output: 0, created_at: daysAgo(10) },
+      { repo: 'acme/alpha', cost: 2, input: 20, output: 0, created_at: daysAgo(45) },
+    ]);
+
+    expect(await getJson('/api/usage/breakdown?days=7')).toEqual([]);
+    expect((await getJson('/api/usage/breakdown')).map((r) => r.total_tokens)).toEqual([10]);
+    expect(
+      (await getJson('/api/usage/breakdown?days=90')).map((r) => r.total_tokens).sort()
+    ).toEqual([10, 20]);
+  });
+
+  it('splits session vs review activity and honours ?kind=', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, input: 100, output: 0, created_at: day },
+      { repo: 'acme/alpha', cost: 2, input: 50, output: 0, created_at: day, kind: 'review' },
+    ]);
+
+    const all = await getJson('/api/usage/breakdown');
+    expect(all).toHaveLength(2);
+    expect(all.find((r) => r.kind === 'session').total_tokens).toBe(100);
+    expect(all.find((r) => r.kind === 'review').total_tokens).toBe(50);
+
+    const review = await getJson('/api/usage/breakdown?kind=review');
+    expect(review).toHaveLength(1);
+    expect(review[0].kind).toBe('review');
+    expect(review[0].total_tokens).toBe(50);
+  });
+
+  it('treats ?repo=__global__ as sessions with an empty repo', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: '', cost: 0, input: 40, output: 0, created_at: day },
+      { repo: 'acme/alpha', cost: 0, input: 10, output: 0, created_at: day },
+    ]);
+
+    const scoped = await getJson('/api/usage/breakdown?repo=__global__');
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].repo_full_name).toBe('');
+    expect(scoped[0].total_tokens).toBe(40);
   });
 });

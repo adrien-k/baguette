@@ -1,7 +1,7 @@
 /**
- * Chart-data helpers for usage graphs (Settings > Agent): they pivot the flat
- * (day, repo, sdk) rows from `/api/usage/breakdown` into stacked series along
- * whichever dimension is being shown.
+ * Chart-data helpers for the Usage page: they pivot the flat
+ * (day, repo, sdk, kind) rows from `/api/usage/breakdown` into stacked series
+ * along whichever dimension is being shown, and into a coarser table.
  *
  * The graph plots tokens rather than dollars. Cursor's usage API refuses to
  * report cost for local agents — the only kind Baguette runs — so `cost_usd` is
@@ -21,6 +21,41 @@ export function formatTokens(n) {
   return String(Math.round(value));
 }
 
+/** Compact USD for the rare rows that actually carry a cost (Claude). */
+export function formatUsd(n) {
+  const value = Number(n) || 0;
+  if (value <= 0) return '$0';
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 100) return `$${value.toFixed(2)}`;
+  return `$${value.toFixed(0)}`;
+}
+
+export const USAGE_DAY_OPTIONS = [7, 30, 90];
+export const DEFAULT_USAGE_DAYS = 30;
+
+export function parseUsageDays(value) {
+  const n = Number(value);
+  return USAGE_DAY_OPTIONS.includes(n) ? n : DEFAULT_USAGE_DAYS;
+}
+
+/** Reviewer vs session-chat. Null / `turn` / anything else counts as session. */
+export function usageKindOf(row) {
+  return row?.kind === 'review' ? 'review' : 'session';
+}
+
+export const KIND_LABELS = { session: 'Session', review: 'Review' };
+export const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
+
+export function usageRepoLabel(fullName) {
+  if (!fullName || fullName === '__global__') return 'Global';
+  return repoDisplayName(fullName);
+}
+
+export function usageRepoTitle(fullName) {
+  if (!fullName || fullName === '__global__') return 'Global sessions';
+  return fullName;
+}
+
 // Categorical slots, assigned in fixed order and never cycled: the 9th series and
 // beyond fold into "Other". Validated for the dark chart surface (zinc-900) against
 // the lightness band, chroma floor, CVD separation and contrast.
@@ -38,14 +73,13 @@ const OTHER_COLOR = 'bg-zinc-600';
 export const OTHER_KEY = '__other__';
 
 const SDK_COLORS = { claude: SERIES_COLORS[0], cursor: SERIES_COLORS[1] };
-const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
+const KIND_COLORS = { session: SERIES_COLORS[0], review: SERIES_COLORS[2] };
 
-const GRAPH_DAYS = 30;
-
-/** The last `GRAPH_DAYS` UTC days, oldest first — `date(created_at)` on the server is UTC too. */
-export function recentDays() {
+/** The last `count` UTC days, oldest first — `date(created_at)` on the server is UTC too. */
+export function recentDays(count = DEFAULT_USAGE_DAYS) {
   const days = [];
-  for (let i = GRAPH_DAYS - 1; i >= 0; i--) {
+  const n = Math.max(1, Number(count) || DEFAULT_USAGE_DAYS);
+  for (let i = n - 1; i >= 0; i--) {
     days.push(new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
   }
   return days;
@@ -61,7 +95,7 @@ export function sumBy(rows, pick) {
 }
 
 /**
- * Turn the flat (day, repo, sdk) rows into stacked series along one dimension.
+ * Turn the flat (day, repo, sdk, kind) rows into stacked series along one dimension.
  * Colour follows the repository itself (alphabetical slot) rather than its rank, so
  * re-sorting the legend by usage never repaints the bars.
  */
@@ -72,30 +106,30 @@ export function buildSeries(rows, dimension) {
   const repoColors = new Map([...named].sort().map((repo, i) => [repo, SERIES_COLORS[i]]));
   const otherCount = ranked.length - named.length;
 
-  const keyOf = (r) =>
-    dimension === 'sdk'
-      ? r.agent_sdk
-      : repoColors.has(r.repo_full_name)
-        ? r.repo_full_name
-        : OTHER_KEY;
+  const keyOf = (r) => {
+    if (dimension === 'sdk') return r.agent_sdk;
+    if (dimension === 'kind') return usageKindOf(r);
+    return repoColors.has(r.repo_full_name) ? r.repo_full_name : OTHER_KEY;
+  };
 
-  const colorOf = (key) =>
-    key === OTHER_KEY
-      ? OTHER_COLOR
-      : dimension === 'sdk'
-        ? (SDK_COLORS[key] ?? OTHER_COLOR)
-        : (repoColors.get(key) ?? OTHER_COLOR);
+  const colorOf = (key) => {
+    if (key === OTHER_KEY) return OTHER_COLOR;
+    if (dimension === 'sdk') return SDK_COLORS[key] ?? OTHER_COLOR;
+    if (dimension === 'kind') return KIND_COLORS[key] ?? OTHER_COLOR;
+    return repoColors.get(key) ?? OTHER_COLOR;
+  };
 
-  const labelOf = (key) =>
-    key === OTHER_KEY
-      ? `Other (${otherCount} ${otherCount === 1 ? 'repo' : 'repos'})`
-      : dimension === 'sdk'
-        ? (SDK_LABELS[key] ?? key)
-        : repoDisplayName(key);
+  const labelOf = (key) => {
+    if (key === OTHER_KEY) return `Other (${otherCount} ${otherCount === 1 ? 'repo' : 'repos'})`;
+    if (dimension === 'sdk') return SDK_LABELS[key] ?? key;
+    if (dimension === 'kind') return KIND_LABELS[key] ?? key;
+    return usageRepoLabel(key);
+  };
 
   // The label is shortened for display (`repoDisplayName` drops the owner), so carry the
   // full name along for the tooltip that a truncated legend entry needs.
-  const titleOf = (key) => (dimension === 'repo' && key !== OTHER_KEY ? key : labelOf(key));
+  const titleOf = (key) =>
+    dimension === 'repo' && key !== OTHER_KEY ? usageRepoTitle(key) : labelOf(key);
 
   const series = [...sumBy(rows, keyOf).entries()]
     // Biggest first, so the tallest block sits at the bottom of every column; "Other" last.
@@ -116,4 +150,49 @@ export function buildSeries(rows, dimension) {
   }
 
   return { series, byDay };
+}
+
+/**
+ * Collapse daily rows into one line per (repo, agent, kind) — coarse enough for a
+ * table without listing every turn.
+ */
+export function aggregateUsage(rows) {
+  const totals = new Map();
+  for (const row of rows) {
+    const kind = usageKindOf(row);
+    const key = `${row.repo_full_name}\t${row.agent_sdk}\t${kind}`;
+    const prev = totals.get(key) ?? {
+      repo_full_name: row.repo_full_name,
+      agent_sdk: row.agent_sdk,
+      kind,
+      total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cost_usd: 0,
+    };
+    prev.total_tokens += metricOf(row);
+    prev.input_tokens += Number(row.input_tokens ?? 0);
+    prev.output_tokens += Number(row.output_tokens ?? 0);
+    prev.cache_read_tokens += Number(row.cache_read_tokens ?? 0);
+    prev.cost_usd += Number(row.cost_usd ?? 0);
+    totals.set(key, prev);
+  }
+  return [...totals.values()].sort(
+    (a, b) => b.total_tokens - a.total_tokens || b.cost_usd - a.cost_usd
+  );
+}
+
+export function sumUsageMetrics(rows) {
+  return rows.reduce(
+    (acc, row) => {
+      acc.total_tokens += metricOf(row);
+      acc.input_tokens += Number(row.input_tokens ?? 0);
+      acc.output_tokens += Number(row.output_tokens ?? 0);
+      acc.cache_read_tokens += Number(row.cache_read_tokens ?? 0);
+      acc.cost_usd += Number(row.cost_usd ?? 0);
+      return acc;
+    },
+    { total_tokens: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cost_usd: 0 }
+  );
 }

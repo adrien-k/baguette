@@ -9,7 +9,6 @@ import { useRepoContext } from '../../context/RepoContext.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
-import UsageGraph from '../../components/UsageGraph.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from '../../components/RepoDropdown.jsx';
 import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
 
@@ -318,7 +317,6 @@ export default function AgentSettingsTab({ settings, onSave }) {
             </p>
           </div>
           <AgentSdkModelsSection sdk="claude" />
-          <UsageGraph agentSdkFilter="claude" />
           <SaveRow
             saving={claudeSaving}
             saved={claudeSaved}
@@ -349,7 +347,6 @@ export default function AgentSettingsTab({ settings, onSave }) {
             sdk="cursor"
             credentialConfigured={Boolean(cursorMasked)}
           />
-          <UsageGraph agentSdkFilter="cursor" />
           <SaveRow
             saving={cursorSaving}
             saved={cursorSaved}

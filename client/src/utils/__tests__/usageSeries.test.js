@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
+  aggregateUsage,
   buildSeries,
   formatTokens,
+  formatUsd,
   recentDays,
   sumBy,
   SERIES_COLORS,
   OTHER_KEY,
+  usageRepoLabel,
 } from '../usageSeries.js';
 
 const row = (day, repo, sdk, tokens) => ({
@@ -142,5 +145,56 @@ describe('recentDays', () => {
     expect(new Set(days).size).toBe(30);
     expect([...days].sort()).toEqual(days);
     expect(days.at(-1)).toBe(new Date().toISOString().slice(0, 10));
+  });
+
+  it('can return a shorter window', () => {
+    expect(recentDays(7)).toHaveLength(7);
+  });
+});
+
+describe('buildSeries by kind', () => {
+  it('stacks session vs review', () => {
+    const mixed = [
+      row('2026-09-20', 'acme/alpha', 'claude', 5),
+      { ...row('2026-09-20', 'acme/alpha', 'claude', 3), kind: 'review' },
+    ];
+    const { series, byDay } = buildSeries(mixed, 'kind');
+    expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
+      ['session', 'Session', 5],
+      ['review', 'Review', 3],
+    ]);
+    expect([...byDay.get('2026-09-20')]).toEqual([
+      ['session', 5],
+      ['review', 3],
+    ]);
+  });
+});
+
+describe('aggregateUsage', () => {
+  it('collapses days into one row per repo, agent, and activity', () => {
+    const aggregated = aggregateUsage([
+      row('2026-09-20', 'acme/alpha', 'claude', 3),
+      row('2026-09-21', 'acme/alpha', 'claude', 2),
+      { ...row('2026-09-21', 'acme/alpha', 'claude', 4), kind: 'review' },
+    ]);
+    expect(aggregated.map((r) => [r.repo_full_name, r.kind, r.total_tokens])).toEqual([
+      ['acme/alpha', 'session', 5],
+      ['acme/alpha', 'review', 4],
+    ]);
+  });
+});
+
+describe('formatUsd', () => {
+  it('keeps small Claude costs readable', () => {
+    expect(formatUsd(0)).toBe('$0');
+    expect(formatUsd(0.0042)).toBe('$0.0042');
+    expect(formatUsd(1.5)).toBe('$1.50');
+  });
+});
+
+describe('usageRepoLabel', () => {
+  it('labels empty repo names as Global', () => {
+    expect(usageRepoLabel('')).toBe('Global');
+    expect(usageRepoLabel('acme/alpha')).toBe('alpha');
   });
 });
