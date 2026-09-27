@@ -7,10 +7,12 @@ import MarkdownContent from './MarkdownContent.jsx';
 import { issueAgentSubtitle } from '../utils/messageModelLabel.js';
 
 const SEVERITY_CLASS = {
-  critical: 'bg-red-500/15 text-red-400 border-red-500/35',
-  high: 'bg-orange-500/15 text-orange-300 border-orange-500/35',
-  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/35',
-  low: 'bg-zinc-800/80 text-zinc-400 border-zinc-600/80',
+  critical:
+    'bg-red-500/15 text-red-400 border-red-500/35 light:bg-red-800 light:text-red-300 light:border-red-600',
+  high: 'bg-orange-500/15 text-orange-300 border-orange-500/35 light:bg-orange-800 light:text-orange-300 light:border-orange-500',
+  medium:
+    'bg-amber-500/15 text-amber-400 border-amber-500/35 light:bg-amber-800 light:text-amber-300 light:border-amber-500',
+  low: 'bg-zinc-800/80 text-zinc-400 border-zinc-600/80 light:bg-zinc-800 light:text-zinc-500 light:border-zinc-500',
 };
 
 const ISSUE_META_CHIP =
