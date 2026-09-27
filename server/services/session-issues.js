@@ -20,6 +20,16 @@ export function assertIssueSeverity(severity) {
   }
 }
 
+/** Snapshot from the review turn MCP tool closure (not the session row). */
+export function issueAgentMetadataFromTurn(turnAgent = {}) {
+  const agent_sdk = turnAgent.agent_sdk ?? null;
+  return {
+    agent_sdk,
+    model: turnAgent.model ?? null,
+    model_params: agent_sdk === 'cursor' ? (turnAgent.model_params ?? null) : null,
+  };
+}
+
 export function serializeIssue(row) {
   if (!row) return null;
   return {
@@ -29,6 +39,9 @@ export function serializeIssue(row) {
     title: row.title,
     description: row.description ?? '',
     status: row.status,
+    agent_sdk: row.agent_sdk ?? null,
+    model: row.model ?? null,
+    model_params: row.model_params ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

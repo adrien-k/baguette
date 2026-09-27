@@ -26,6 +26,9 @@ export class SessionIssuesService extends KnexService {
         title: data.title,
         description: data.description ?? '',
         status: data.status ?? 'opened',
+        agent_sdk: data.agent_sdk ?? null,
+        model: data.model ?? null,
+        model_params: data.model_params ?? null,
       },
       params
     );

@@ -10,6 +10,7 @@ import {
   assertIssueSeverity,
   assertIssueStatus,
   assertAgentIssueStatus,
+  issueAgentMetadataFromTurn,
 } from './session-issues.js';
 import { createCurrentSessionInfoTool } from './current-session-info.js';
 
@@ -23,10 +24,11 @@ async function requireIssue(app, sessionId, issueId, userId) {
   }
 }
 
-function createHandlers(session, app) {
+function createHandlers(session, app, turnAgent = {}) {
   const userId = session.user_id;
   const sessionId = session.id;
   const userParams = { user: { id: userId } };
+  const issueTurnAgent = issueAgentMetadataFromTurn(turnAgent);
 
   const fetchIssues = async ({ status, session_id: sessionIdArg } = {}) => {
     const targetSessionId = sessionIdArg ?? sessionId;
@@ -70,6 +72,7 @@ function createHandlers(session, app) {
           title: title.trim(),
           description: description ?? '',
           status: 'opened',
+          ...issueTurnAgent,
         },
         userParams
       );
@@ -150,8 +153,8 @@ function loadSessionRow(session, app) {
   };
 }
 
-export function buildReviewerIssueMcpTools(session, app) {
-  const h = createHandlers(session, app);
+export function buildReviewerIssueMcpTools(session, app, turnAgent = {}) {
+  const h = createHandlers(session, app, turnAgent);
   return [
     createCurrentSessionInfoTool(loadSessionRow(session, app), { readOnlyWorktree: true }),
     {

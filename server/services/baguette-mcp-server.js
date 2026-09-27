@@ -1205,8 +1205,8 @@ export async function buildCursorCustomTools(session, app) {
   return toolListToCursorCustomTools(toolList);
 }
 
-export function buildReviewerMcpServer(session, app) {
-  const toolList = buildReviewerIssueMcpTools(session, app);
+export function buildReviewerMcpServer(session, app, turnAgent = {}) {
+  const toolList = buildReviewerIssueMcpTools(session, app, turnAgent);
   return createSdkMcpServer({
     name: 'baguette',
     tools: toolList.map(({ name, description, schema, handler }) =>
@@ -1215,6 +1215,6 @@ export function buildReviewerMcpServer(session, app) {
   });
 }
 
-export function buildReviewerCursorCustomTools(session, app) {
-  return toolListToCursorCustomTools(buildReviewerIssueMcpTools(session, app));
+export function buildReviewerCursorCustomTools(session, app, turnAgent = {}) {
+  return toolListToCursorCustomTools(buildReviewerIssueMcpTools(session, app, turnAgent));
 }

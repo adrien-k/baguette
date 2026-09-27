@@ -438,6 +438,7 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
               <SessionIssueCard
                 key={issue.id}
                 issue={issue}
+                models={models}
                 readonly={readonly}
                 saving={savingIssueId === issue.id}
                 onStatusChange={handleIssueStatus}

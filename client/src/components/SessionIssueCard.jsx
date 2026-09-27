@@ -4,6 +4,7 @@ import { ISSUE_SEVERITIES } from '@baguette/shared/session-issues.js';
 import { SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
 import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
+import { issueAgentSubtitle } from '../utils/messageModelLabel.js';
 
 const SEVERITY_CLASS = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/35',
@@ -33,6 +34,7 @@ function IssueDescription({ description }) {
 
 export default function SessionIssueCard({
   issue,
+  models = [],
   readonly,
   saving,
   onStatusChange,
@@ -68,6 +70,12 @@ export default function SessionIssueCard({
   };
 
   const active = issue.status === 'opened' || issue.status === 'submitted';
+  const agentSubtitle = issueAgentSubtitle({
+    agent_sdk: issue.agent_sdk,
+    model: issue.model,
+    model_params: issue.model_params,
+    models,
+  });
 
   return (
     <div
@@ -132,9 +140,12 @@ export default function SessionIssueCard({
       ) : (
         <>
           <div className="flex items-start gap-2">
-            <h3 className="flex-1 min-w-0 text-base font-semibold text-zinc-50 leading-snug">
-              {issue.title}
-            </h3>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-semibold text-zinc-50 leading-snug">{issue.title}</h3>
+              {agentSubtitle ? (
+                <p className="mt-0.5 text-xs text-zinc-500 font-normal">{agentSubtitle}</p>
+              ) : null}
+            </div>
             {!readonly && (
               <div className="flex shrink-0 items-center gap-0.5 -mt-0.5">
                 <button

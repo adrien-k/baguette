@@ -81,6 +81,7 @@ describe('reviewer issue MCP tools', () => {
     );
     expect(created.ok).toBe(true);
     expect(created.issue.status).toBe('opened');
+    expect(created.issue.agent_sdk).toBe(null);
     const id = created.issue.id;
 
     const listed = parseOk(await list.handler({}));
@@ -104,6 +105,21 @@ describe('reviewer issue MCP tools', () => {
     expect(deleted.ok).toBe(true);
     const after = parseOk(await list.handler({}));
     expect(after.count).toBe(0);
+  });
+
+  it('snapshots turn agent metadata injected into MCP tools on create', async () => {
+    const tools = buildReviewerIssueMcpTools(session, app, {
+      agent_sdk: 'cursor',
+      model: 'composer',
+      model_params: JSON.stringify([{ id: 'fast', value: 'true' }]),
+    });
+    const create = tools.find((t) => t.name === 'CreateIssue');
+    const created = parseOk(
+      await create.handler({ severity: 'low', title: 'Style', description: 'nit' })
+    );
+    expect(created.issue.agent_sdk).toBe('cursor');
+    expect(created.issue.model).toBe('composer');
+    expect(created.issue.model_params).toBe(JSON.stringify([{ id: 'fast', value: 'true' }]));
   });
 });
 

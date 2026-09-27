@@ -65,6 +65,14 @@ function reviewTurnModel(session, data = {}) {
   return { model, modelParams };
 }
 
+function reviewTurnAgentMetadata(agentSdk, { model, modelParams }) {
+  return {
+    agent_sdk: agentSdk,
+    model: model ?? null,
+    model_params: agentSdk === 'cursor' ? (modelParams ?? null) : null,
+  };
+}
+
 function buildReviewStartMessage(data) {
   const raw = data?.user_message ?? data?.initial_prompt;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
@@ -230,7 +238,11 @@ export class SessionReviewService {
               userMessageText: message,
               continuation: true,
             })
-          : this._runClaudeReview(session, { model, userMessageText: message, continuation: true });
+          : this._runClaudeReview(session, {
+              model,
+              userMessageText: message,
+              continuation: true,
+            });
 
       run.catch(async (err) => {
         logger.error(
@@ -401,9 +413,10 @@ export class SessionReviewService {
     const resumeId = continuation ? sessionRow?.review_claude_session_id : null;
     const { persistMessage, persistStatus } = this._reviewPersist(session);
 
+    const turnAgent = reviewTurnAgentMetadata('claude', { model });
     const queryOptions = await this.app.service('claude-agent').buildQueryOptions(session, {
       systemPrompt,
-      mcpServer: buildReviewerMcpServer(session, this.app),
+      mcpServer: buildReviewerMcpServer(session, this.app, turnAgent),
       allowedTools: REVIEWER_ALLOWED_TOOLS,
       settingSources: [],
       resume: resumeId,
@@ -454,8 +467,9 @@ export class SessionReviewService {
       body: systemPrompt,
     });
 
+    const turnAgent = reviewTurnAgentMetadata('cursor', { model, modelParams });
     const agentOptions = await cursorAgent.buildAgentOptions(session, {
-      customTools: buildReviewerCursorCustomTools(session, this.app),
+      customTools: buildReviewerCursorCustomTools(session, this.app, turnAgent),
       settingSources: [],
       dirs: [rulesRoot],
       model,
