@@ -119,3 +119,13 @@ html[data-theme='light'] .text-zinc-950 {
 html[data-theme='light'] :is(.placeholder-zinc-500, .placeholder-zinc-600)::placeholder {
   color: #52525b;
 }
+
+/*
+ * ANSI log wells stay dark in both themes. ansi-to-html emits inline colors
+ * (including #d4d4d8 default / bright yellow/white) that are unreadable on
+ * the remapped light zinc-950 surface.
+ */
+.ansi-log {
+  background-color: #09090b;
+  color: #a1a1aa;
+}

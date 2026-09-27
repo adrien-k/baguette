@@ -588,11 +588,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
               </div>
               {bashResultHtml != null ? (
                 <pre
-                  className={`whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 ${
-                    resolvedBlock.isError && !isContinuePlanning
-                      ? 'text-red-300 bg-red-950/30'
-                      : 'text-zinc-300 bg-zinc-950/50'
-                  }`}
+                  className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
                   dangerouslySetInnerHTML={{ __html: bashResultHtml }}
                 />
               ) : (

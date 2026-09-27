@@ -100,7 +100,7 @@ export function CommandBlock({ baguetteOp, block }) {
             <div>
               <div className="text-zinc-500 font-medium mb-1">stdout</div>
               <pre
-                className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-zinc-300 bg-zinc-950/50"
+                className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
                 dangerouslySetInnerHTML={{ __html: stdoutHtml }}
               />
             </div>
@@ -109,7 +109,7 @@ export function CommandBlock({ baguetteOp, block }) {
             <div>
               <div className="text-zinc-500 font-medium mb-1">stderr</div>
               <pre
-                className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-red-300 bg-red-950/30"
+                className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
                 dangerouslySetInnerHTML={{ __html: stderrHtml }}
               />
             </div>
@@ -423,7 +423,7 @@ function ReadTaskOutputBlock({ block }) {
       </div>
       {expanded && logsHtml && (
         <pre
-          className="mt-1 pl-3 whitespace-pre-wrap overflow-auto max-h-48"
+          className="ansi-log mt-1 pl-3 py-2 pr-2 rounded-md whitespace-pre-wrap overflow-auto max-h-48"
           dangerouslySetInnerHTML={{ __html: logsHtml }}
         />
       )}

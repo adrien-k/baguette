@@ -129,7 +129,7 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
         {/* Logs */}
         <div
           ref={logRef}
-          className="flex-1 overflow-auto p-3 sm:p-4 font-mono text-xs text-zinc-400 leading-relaxed bg-zinc-950"
+          className="ansi-log flex-1 overflow-auto p-3 sm:p-4 font-mono text-xs leading-relaxed"
         >
           {logsHtml ? (
             <pre
@@ -137,7 +137,7 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
               dangerouslySetInnerHTML={{ __html: logsHtml }}
             />
           ) : (
-            <span className="text-zinc-600">
+            <span className="text-[#52525b]">
               {isRunning ? 'Waiting for output...' : 'No output recorded.'}
             </span>
           )}

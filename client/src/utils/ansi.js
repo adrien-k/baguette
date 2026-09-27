@@ -1,7 +1,7 @@
 import AnsiToHtml from 'ansi-to-html';
 
 const ansiConverter = new AnsiToHtml({
-  fg: '#d4d4d8', // zinc-300
+  fg: 'currentColor',
   bg: 'transparent',
   escapeXML: true,
   stream: false,
