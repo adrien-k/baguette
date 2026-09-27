@@ -96,8 +96,8 @@ function PreviewSettingsToggles({ session, compact = false }) {
           <div className="min-w-0">
             <h3 className="text-sm font-medium text-zinc-300">IP-public preview</h3>
             <p className="text-xs text-zinc-500">
-              Sign in to start the dev server; once running, the same IP can use the preview without
-              signing in.
+              For previews opened outside a browser (for example Expo Go). The IP that starts the
+              server can then use the preview without signing in.
             </p>
           </div>
         </div>

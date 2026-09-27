@@ -13,6 +13,7 @@ import {
   PanelLeft,
   PanelRight,
   ClipboardCheck,
+  MonitorPlay,
 } from 'lucide-react';
 import BuilderForm from '../components/BuilderForm.jsx';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
@@ -280,11 +281,15 @@ const BASE_VIEWS = [
   { id: 'review', label: 'Issues', Icon: ClipboardCheck },
   { id: 'diff', label: 'Diff', Icon: FolderOpen },
 ];
-const CHAT_PANEL_TABS = new Set(['tasks', 'logs', 'preview']);
+const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
+const CHAT_PANEL_TABS = new Set(['tasks', 'logs']);
+const CHAT_SIDE_PANEL_OPTIONS = [
+  { value: 'tasks', label: 'Tasks' },
+  { value: 'logs', label: 'Logs' },
+];
 
-function chatSidePanelTabFromParam(panelParam, hasPreview) {
+function chatSidePanelTabFromParam(panelParam) {
   if (panelParam === 'logs') return 'logs';
-  if (panelParam === 'preview' && hasPreview) return 'preview';
   return 'tasks';
 }
 
@@ -314,7 +319,7 @@ export default function Session() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
-  const activeView = viewParam === 'logs' || viewParam === 'preview' ? 'chat' : viewParam || 'chat';
+  const activeView = viewParam === 'logs' ? 'chat' : viewParam || 'chat';
   const { sessions, hasMore: hasMoreSessions, loadMore: loadMoreSessions } = useSessionsContext();
   const { selectedRepo, setSelectedRepo, repos } = useRepoContext();
   const { showArchived } = useFilters();
@@ -364,15 +369,7 @@ export default function Session() {
   const [error, setError] = useState(null);
   const panelParam = searchParams.get('panel');
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
-  const chatSidePanelTab = chatSidePanelTabFromParam(panelParam, hasPreview);
-  const chatSidePanelOptions = useMemo(() => {
-    const options = [
-      { value: 'tasks', label: 'Tasks' },
-      { value: 'logs', label: 'Logs' },
-    ];
-    if (hasPreview) options.push({ value: 'preview', label: 'Preview' });
-    return options;
-  }, [hasPreview]);
+  const chatSidePanelTab = chatSidePanelTabFromParam(panelParam);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -467,8 +464,10 @@ export default function Session() {
     if (isGlobalSession(session)) {
       return BASE_VIEWS.filter((v) => v.id === 'chat');
     }
-    return [...BASE_VIEWS];
-  }, [isNewSessionRoute, session]);
+    const list = [...BASE_VIEWS];
+    if (hasPreview) list.push(PREVIEW_VIEW);
+    return list;
+  }, [isNewSessionRoute, session, hasPreview]);
 
   const [commitsToPush, setCommitsToPush] = useState(0);
 
@@ -645,7 +644,6 @@ export default function Session() {
   const setChatSidePanel = useCallback(
     (tab, { openMobile = true } = {}) => {
       if (isNewSessionRoute || activeView !== 'chat') return;
-      if (tab === 'preview' && !hasPreview) return;
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -657,7 +655,7 @@ export default function Session() {
       );
       if (openMobile) setShowTasks(true);
     },
-    [activeView, hasPreview, isNewSessionRoute, setSearchParams, setShowTasks]
+    [activeView, isNewSessionRoute, setSearchParams, setShowTasks]
   );
 
   const hideSidePanel = useCallback(() => {
@@ -679,7 +677,7 @@ export default function Session() {
           next.set('view', view);
         } else {
           const panel = prev.get('panel');
-          if (CHAT_PANEL_TABS.has(panel) && (panel !== 'preview' || hasPreview)) {
+          if (CHAT_PANEL_TABS.has(panel)) {
             next.set('panel', panel);
           }
         }
@@ -765,12 +763,12 @@ export default function Session() {
   };
 
   useEffect(() => {
-    if (viewParam !== 'logs' && viewParam !== 'preview') return;
+    if (viewParam !== 'logs') return;
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.delete('view');
-        next.set('panel', viewParam === 'preview' ? 'preview' : 'logs');
+        next.set('panel', 'logs');
         return next;
       },
       { replace: true }
@@ -779,11 +777,24 @@ export default function Session() {
   }, [short_id, viewParam, setSearchParams, setShowTasks]);
 
   useEffect(() => {
-    if (panelParam === 'preview' && !hasPreview) {
+    if (panelParam === 'preview') {
+      if (!isNewSessionRoute && sessionLoading && !(session ?? sessionFromHook)) return;
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete('panel');
+          if (hasPreview) next.set('view', 'preview');
+          return next;
+        },
+        { replace: true }
+      );
+      return;
+    }
+    if (viewParam === 'preview' && (session ?? sessionFromHook) && !hasPreview) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('view');
           return next;
         },
         { replace: true }
@@ -793,7 +804,18 @@ export default function Session() {
     if (activeView === 'chat' && panelParam) {
       setShowTasks(true);
     }
-  }, [short_id, activeView, panelParam, hasPreview, setSearchParams]);
+  }, [
+    short_id,
+    activeView,
+    panelParam,
+    viewParam,
+    hasPreview,
+    isNewSessionRoute,
+    session,
+    sessionFromHook,
+    sessionLoading,
+    setSearchParams,
+  ]);
 
   const sidebarSessions = useMemo(() => {
     if (isNewSessionRoute || !session) return sessions;
@@ -1183,6 +1205,13 @@ export default function Session() {
                 onCursorModelPrefChange={setCursorModelPref}
               />
             )}
+            {!isNewSessionRoute && !awaitingSession && session && activeView === 'preview' && (
+              <PreviewView
+                session={session}
+                readonly={isReadonly}
+                onViewLogs={handleViewTaskLogs}
+              />
+            )}
           </div>
         </div>
 
@@ -1214,7 +1243,7 @@ export default function Session() {
                   value={chatSidePanelTab}
                   onChange={(tab) => setChatSidePanel(tab)}
                   layout="list"
-                  options={chatSidePanelOptions}
+                  options={CHAT_SIDE_PANEL_OPTIONS}
                   ariaLabel="Side panel"
                   triggerClassName="font-medium"
                 />
@@ -1286,13 +1315,6 @@ export default function Session() {
                   resetKey={sessionId}
                 />
               </div>
-            ) : activeView === 'chat' && chatSidePanelTab === 'preview' ? (
-              <PreviewView
-                session={session}
-                readonly={isReadonly}
-                onViewLogs={handleViewTaskLogs}
-                compact
-              />
             ) : (
               <TaskPanel
                 tasks={tasks}

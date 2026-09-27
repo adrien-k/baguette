@@ -97,9 +97,9 @@ export default function SessionCardLayout({
           {description ? <div className="mt-2 w-full min-w-0">{description}</div> : null}
 
           {controls || repo ? (
-            <div className="mt-4 flex items-center gap-3 w-full min-w-0 overflow-hidden">
+            <div className="mt-4 flex flex-wrap items-center gap-3 w-full min-w-0">
               {controls ? (
-                <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">{controls}</div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">{controls}</div>
               ) : null}
               {repo ? <div className="min-w-0 flex-1 overflow-hidden">{repo}</div> : null}
             </div>

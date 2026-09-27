@@ -1,3 +1,5 @@
+import { forwardRef } from 'react';
+
 const BASE_CLASS =
   'session-tool-btn inline-flex items-center justify-center shrink-0 rounded-md border font-medium transition-colors border-zinc-700/80 bg-zinc-800/50 text-zinc-300 hover:border-sky-500/35 hover:bg-sky-500/10 hover:text-sky-200 disabled:opacity-50';
 
@@ -13,17 +15,20 @@ export const SESSION_TOOLS_CONTAINER_CLASS = {
 /**
  * Compact tool control; height/layout for groups use {@link SESSION_TOOLS_CONTAINER_CLASS} on {@link SessionTools}.
  */
-export default function ToolbarButton({
-  href,
-  icon: Icon,
-  label,
-  hideLabelBelowSm = false,
-  className = '',
-  iconClassName = '',
-  type = 'button',
-  children,
-  ...props
-}) {
+const ToolbarButton = forwardRef(function ToolbarButton(
+  {
+    href,
+    icon: Icon,
+    label,
+    hideLabelBelowSm = false,
+    className = '',
+    iconClassName = '',
+    type = 'button',
+    children,
+    ...props
+  },
+  ref
+) {
   const classNames = `${BASE_CLASS} ${DEFAULT_SIZE} ${className}`;
   const content = (
     <>
@@ -39,15 +44,24 @@ export default function ToolbarButton({
 
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={classNames} {...props}>
+      <a
+        ref={ref}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={classNames}
+        {...props}
+      >
         {content}
       </a>
     );
   }
 
   return (
-    <button type={type} className={classNames} {...props}>
+    <button ref={ref} type={type} className={classNames} {...props}>
       {content}
     </button>
   );
-}
+});
+
+export default ToolbarButton;
