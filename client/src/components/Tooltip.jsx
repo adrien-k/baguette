@@ -28,7 +28,7 @@ export default function Tooltip({ children, content, placement = 'top', wrap = f
 
   return (
     <>
-      <span ref={setReference} {...getReferenceProps()} className="inline-flex">
+      <span ref={setReference} {...getReferenceProps()} className="inline-flex items-stretch">
         {children}
       </span>
       <FloatingPortal>

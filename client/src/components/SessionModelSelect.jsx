@@ -12,6 +12,8 @@ function parseSessionModelParams(session) {
   }
 }
 
+const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
+
 function currentVariantIndex(variants, sessionParams, cursorFast, cursorEffort) {
   if (!variants.length) return 0;
   if (sessionParams) {
@@ -33,6 +35,8 @@ export default function SessionModelSelect({
   cursorFast,
   cursorEffort,
   onModelChange,
+  availableSdks,
+  onSdkChange,
   disabled = false,
   className = '',
 }) {
@@ -61,7 +65,17 @@ export default function SessionModelSelect({
     return opts;
   }, [models, selectedModelId]);
 
-  if (!session?.agent_sdk) return null;
+  const sdkOptions = useMemo(
+    () =>
+      (availableSdks ?? []).map((sdk) => ({
+        value: sdk,
+        label: SDK_LABELS[sdk] ?? sdk,
+      })),
+    [availableSdks]
+  );
+
+  const showSdkPicker = availableSdks && availableSdks.length > 1 && onSdkChange;
+  if (!session?.agent_sdk && !showSdkPicker) return null;
 
   const pickModel = (newId) => {
     if (disabled) return;
@@ -86,31 +100,56 @@ export default function SessionModelSelect({
   };
 
   return (
-    <div className={`flex items-center gap-0.5 min-w-0 max-w-full ${className}`}>
-      <LightChipDropdown
-        layout="list"
-        value={selectedModelId ?? ''}
-        onChange={pickModel}
-        options={modelOptions}
-        selectedDisplay={{ label: modelTriggerLabel }}
-        ariaLabel="Choose model"
-        placement="top-start"
-        triggerTitle="Model for the next message"
-        disabled={disabled}
-        shrinkableTrigger
-        triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
-      />
+    <div
+      className={`flex w-full min-w-0 max-w-full items-center ${showSdkPicker ? 'gap-2' : 'gap-0.5'} ${className}`}
+    >
+      {showSdkPicker && (
+        <div className="min-w-[56px] max-w-[40%] shrink-0 overflow-hidden">
+          <LightChipDropdown
+            layout="list"
+            value={session?.agent_sdk ?? ''}
+            onChange={onSdkChange}
+            options={sdkOptions}
+            selectedDisplay={{
+              label: SDK_LABELS[session?.agent_sdk] ?? session?.agent_sdk ?? 'Agent',
+            }}
+            ariaLabel="Choose agent SDK"
+            placement="top-start"
+            triggerTitle="Agent for this session"
+            disabled={disabled}
+            shrinkableTrigger
+            triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none max-w-full"
+          />
+        </div>
+      )}
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <LightChipDropdown
+          layout="list"
+          value={selectedModelId ?? ''}
+          onChange={pickModel}
+          options={modelOptions}
+          selectedDisplay={{ label: modelTriggerLabel }}
+          ariaLabel="Choose model"
+          placement="top-start"
+          triggerTitle={modelTriggerLabel}
+          disabled={disabled}
+          shrinkableTrigger
+          triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
+        />
+      </div>
 
       {isCursor && variants.length > 0 && (
-        <CursorVariantDropdown
-          variants={variants}
-          modelDisplayName={selectedModelObj?.display_name}
-          variantIdx={currentVariantIdx}
-          onVariantIdxChange={pickVariant}
-          placement="top-start"
-          trigger="icon"
-          disabled={disabled}
-        />
+        <div className="shrink-0">
+          <CursorVariantDropdown
+            variants={variants}
+            modelDisplayName={selectedModelObj?.display_name}
+            variantIdx={currentVariantIdx}
+            onVariantIdxChange={pickVariant}
+            placement="top-start"
+            trigger="icon"
+            disabled={disabled}
+          />
+        </div>
       )}
     </div>
   );

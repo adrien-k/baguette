@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
+import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
 import UsageGraph from '../../components/UsageGraph.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from '../../components/RepoDropdown.jsx';
 import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
@@ -76,7 +77,6 @@ export default function AgentSettingsTab({ settings, onSave }) {
       setAnthropicApiKeyDirty(false);
       return;
     }
-    const r = repoById(claudeRepoId);
     setAnthropicApiKey(null);
     setAnthropicApiKeyDirty(false);
   }, [claudeRepoId, repoById]);
@@ -317,6 +317,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
               override your account default for that repository only.
             </p>
           </div>
+          <AgentSdkModelsSection sdk="claude" />
           <UsageGraph agentSdkFilter="claude" />
           <SaveRow
             saving={claudeSaving}
@@ -343,6 +344,11 @@ export default function AgentSettingsTab({ settings, onSave }) {
             />
             <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
           </div>
+          <AgentSdkModelsSection
+            key={`cursor-models-${cursorRepoId || 'all'}-${cursorMasked ? '1' : '0'}`}
+            sdk="cursor"
+            credentialConfigured={Boolean(cursorMasked)}
+          />
           <UsageGraph agentSdkFilter="cursor" />
           <SaveRow
             saving={cursorSaving}

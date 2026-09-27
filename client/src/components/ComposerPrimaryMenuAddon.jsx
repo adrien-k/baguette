@@ -1,0 +1,96 @@
+import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import AnchoredMenu from './AnchoredMenu.jsx';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
+import {
+  COMPOSER_ACTION_BUTTON_LAYOUT,
+  COMPOSER_SPLIT_AMBER_CLASS,
+} from './AgentMessageComposer.jsx';
+
+/** Caret segment paired with a primary composer action (Send, Start, …). */
+export const COMPOSER_PRIMARY_CHEVRON_CLASS = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent px-1.5 rounded-r-lg disabled:cursor-not-allowed`;
+
+/**
+ * @typedef {{ label: string, hint?: string, onSelect: () => void, disabled?: boolean }} ComposerMenuItem
+ */
+
+/**
+ * Split-button caret that opens a menu of alternate primary actions (schedule presets, Plan, Continue, …).
+ */
+export default function ComposerPrimaryMenuAddon({
+  disabled = false,
+  title = 'More actions',
+  panelClassName = `w-56 ${DROPDOWN_PANEL_CLASS} overflow-hidden py-1`,
+  items = [],
+  footer,
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const close = () => setOpen(false);
+
+  if (!items.length && !footer) return null;
+
+  return (
+    <AnchoredMenu
+      open={open}
+      onOpenChange={setOpen}
+      placement="top-end"
+      className={panelClassName}
+      reference={({ ref, referenceProps }) => (
+        <button
+          type="button"
+          ref={ref}
+          {...referenceProps}
+          disabled={disabled}
+          onClick={(e) => {
+            referenceProps.onClick?.(e);
+            if (!disabled) setOpen((v) => !v);
+          }}
+          title={title}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          className={COMPOSER_PRIMARY_CHEVRON_CLASS}
+        >
+          <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
+        </button>
+      )}
+    >
+      <div role="menu">
+        {items.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            role="menuitem"
+            disabled={item.disabled}
+            onClick={() => {
+              if (item.disabled) return;
+              close();
+              item.onSelect();
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="block">{item.label}</span>
+            {item.hint ? (
+              <span className="block text-xs text-zinc-500 font-normal mt-0.5 leading-snug">
+                {item.hint}
+              </span>
+            ) : null}
+          </button>
+        ))}
+        {footer ? (
+          <div
+            onClick={(e) => {
+              if (e.target.closest('[role="menuitem"]')) close();
+            }}
+          >
+            {typeof footer === 'function' ? footer(close) : footer}
+          </div>
+        ) : null}
+      </div>
+    </AnchoredMenu>
+  );
+}

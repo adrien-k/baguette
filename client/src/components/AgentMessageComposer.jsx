@@ -3,12 +3,22 @@ import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
 import Tooltip from './Tooltip.jsx';
 import { isMobile } from '../utils/isMobile.js';
-
 /** Shared height/layout with Send so toolbar actions (e.g. Stop, attach) align. */
 export const COMPOSER_ACTION_BUTTON_LAYOUT =
   'inline-flex items-center justify-center shrink-0 h-8 text-sm font-medium';
 
-const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent px-4 sm:px-5 transition-colors disabled:cursor-not-allowed`;
+/** Amber fill shared by Send/Start and its caret; use inside `COMPOSER_SPLIT_GROUP_CLASS`. */
+export const COMPOSER_SPLIT_AMBER_CLASS =
+  'bg-amber-500 group-hover/split:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:group-hover/split:bg-zinc-700 text-zinc-950 transition-colors';
+
+export const COMPOSER_SPLIT_GROUP_CLASS = 'group/split inline-flex items-stretch shrink-0';
+
+const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent transition-colors disabled:cursor-not-allowed`;
+
+const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 disabled:cursor-not-allowed`;
+
+/** Tighter horizontal padding on small viewports; roomier from md up. */
+const SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';
 
 /**
  * Chat-style message box: auto-growing textarea, model + variant row, Send.
@@ -26,6 +36,8 @@ export default function AgentMessageComposer({
   cursorFast,
   cursorEffort,
   onModelChange,
+  availableSdks,
+  onSdkChange,
   formClassName = 'relative z-[2] shrink-0 bg-zinc-950 pb-3 sm:pb-4 pt-1',
   skipColumn = false,
   textareaId,
@@ -43,7 +55,6 @@ export default function AgentMessageComposer({
 
   const hasDraft = canSendProp ?? Boolean(value.trim());
   const canSubmit = hasDraft && !disabled && !sending && !submitDisabled;
-
   const handleKeyDown = (e) => {
     if (disabled || sending || submitDisabled) return;
     if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
@@ -63,14 +74,33 @@ export default function AgentMessageComposer({
     <button
       type="submit"
       disabled={!canSubmit}
-      className={`${SEND_BUTTON_BASE} ${
+      className={
         sendAddon
-          ? 'rounded-l-lg border-r border-amber-600/40 disabled:border-r-zinc-600'
-          : 'rounded-lg'
-      }`}
+          ? `${SEND_BUTTON_SPLIT} ${SUBMIT_BUTTON_PADDING} rounded-l-lg`
+          : `${SEND_BUTTON_BASE} ${SUBMIT_BUTTON_PADDING} rounded-lg`
+      }
     >
       {sending ? '...' : submitLabel}
     </button>
+  );
+
+  const sendControl = sendAddon ? (
+    <div className={COMPOSER_SPLIT_GROUP_CLASS}>
+      {submitTooltip ? (
+        <Tooltip content={submitTooltip} wrap placement="top-end">
+          {sendButton}
+        </Tooltip>
+      ) : (
+        sendButton
+      )}
+      {sendAddon}
+    </div>
+  ) : submitTooltip ? (
+    <Tooltip content={submitTooltip} wrap placement="top-end">
+      {sendButton}
+    </Tooltip>
+  ) : (
+    sendButton
   );
 
   const box = (
@@ -98,19 +128,14 @@ export default function AgentMessageComposer({
           cursorFast={cursorFast}
           cursorEffort={cursorEffort}
           onModelChange={onModelChange}
+          availableSdks={availableSdks}
+          onSdkChange={onSdkChange}
           disabled={disabled || sending}
+          className="min-w-0 flex-1 overflow-hidden"
         />
-        <div className="flex-1 min-w-0" />
-        {toolbarExtra}
-        <div className="flex shrink-0 items-center">
-          {submitTooltip ? (
-            <Tooltip content={submitTooltip} wrap placement="top-end">
-              {sendButton}
-            </Tooltip>
-          ) : (
-            sendButton
-          )}
-          {sendAddon}
+        <div className="flex shrink-0 items-center justify-end gap-1">
+          {toolbarExtra}
+          {sendControl}
         </div>
       </div>
     </div>

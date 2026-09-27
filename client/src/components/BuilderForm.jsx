@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, HelpCircle, Repeat, RefreshCw } from 'lucide-react';
+import { ChevronRight, HelpCircle, Repeat } from 'lucide-react';
 import Alert from './Alert.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
@@ -15,12 +15,12 @@ import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
-import AutoGrowTextarea from './AutoGrowTextarea.jsx';
+import AgentMessageComposer from './AgentMessageComposer.jsx';
+import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
 import RepoPicker from './RepoPicker.jsx';
 import { isMobile } from '../utils/isMobile.js';
-import CursorVariantFields from './CursorVariantFields.jsx';
 import { applyParamOverrides } from '../utils/models.js';
 
 function parseRepoFullName(full) {
@@ -50,7 +50,7 @@ export default function BuilderForm({
   const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
   const { repos, loading: loadingRepos } = useRepoContext();
-  const { cursorFast, cursorEffort, setCursorFast, setCursorEffort } = useCursorModelPrefs();
+  const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const defaultTarget = editingLoop
     ? editingLoop.is_global
       ? GLOBAL_SCOPE
@@ -72,7 +72,6 @@ export default function BuilderForm({
     editingLoop?.prompt ?? defaultPrompt ?? ''
   );
   const [showMore, setShowMore] = globalState.useState('showMore', false);
-  const [createNewBranch, setCreateNewBranch] = persistentState.useState('createNewBranch', true);
   const [branchName, setBranchName] = persistentState.useState('branchName', '');
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
   const { user } = useAuth();
@@ -84,7 +83,6 @@ export default function BuilderForm({
   const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '');
   const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
   const [models, setModels] = useState([]);
-  const [refreshingModels, setRefreshingModels] = useState(false);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState(
     'plugins',
     editingLoop?.plugins ?? []
@@ -97,7 +95,6 @@ export default function BuilderForm({
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
-  const initialPromptRef = useRef(null);
   // Holds model_params string from the last session (or the loop being edited), used to seed
   // cursorVariantIdx on model load
   const pendingModelParamsRef = useRef(editingLoop?.model_params ?? null);
@@ -156,21 +153,12 @@ export default function BuilderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoFullName, selectedRepo?.default_branch, branches]);
 
-  const loadModels = (force = false) => {
-    const refreshUrl =
-      agentSdk === 'cursor'
-        ? '/api/settings/models/refresh?sdk=cursor'
-        : '/api/settings/models/refresh';
+  const loadModels = () => {
     const getUrl =
       agentSdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
-    const url = force ? refreshUrl : getUrl;
-    setRefreshingModels(true);
-    return apiFetch(url, force ? { method: 'POST' } : undefined)
+    return apiFetch(getUrl)
       .then((d) => setModels(d.models || []))
-      .catch((err) => {
-        if (force) toastError('Failed to refresh models', err);
-      })
-      .finally(() => setRefreshingModels(false));
+      .catch(() => setModels([]));
   };
 
   // Load models for current harness whenever agentSdk changes
@@ -305,7 +293,7 @@ export default function BuilderForm({
 
   const isLoop = mode === 'loop';
   // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions = (!isGlobal && createNewBranch && !isLoop) || availablePlugins.length > 0;
+  const hasMoreOptions = (!isGlobal && !isLoop) || availablePlugins.length > 0;
   const canSubmit =
     !loading &&
     availableSdks.length > 0 &&
@@ -322,7 +310,7 @@ export default function BuilderForm({
     setLoopName('');
   };
 
-  const buildPayload = ({ planMode }) => {
+  const buildPayload = ({ planMode, createNewBranch = true }) => {
     const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
     const selectedVariant =
       selectedModel?.variants != null && cursorVariantIdx != null
@@ -350,13 +338,22 @@ export default function BuilderForm({
 
   const handleStart = async () => {
     if (!canSubmit) return;
-    if (await onSubmit(buildPayload({ planMode: false }))) clearForm();
+    if (await onSubmit(buildPayload({ planMode: false, createNewBranch: true }))) clearForm();
   };
 
-  const handlePlan = async (e) => {
-    e.preventDefault();
+  const handleContinue = async () => {
     if (!canSubmit) return;
-    if (await onSubmit(buildPayload({ planMode: true }))) clearForm();
+    if (await onSubmit(buildPayload({ planMode: false, createNewBranch: false }))) clearForm();
+  };
+
+  const handlePlan = async () => {
+    if (!canSubmit) return;
+    if (await onSubmit(buildPayload({ planMode: true, createNewBranch: true }))) clearForm();
+  };
+
+  const handlePlanOnBranch = async () => {
+    if (!canSubmit) return;
+    if (await onSubmit(buildPayload({ planMode: true, createNewBranch: false }))) clearForm();
   };
 
   // A loop replays the same session on a schedule, so it saves the form as a template instead
@@ -407,19 +404,128 @@ export default function BuilderForm({
     clearForm();
   };
 
-  const handleSubmit = async (e) => {
+  const handleComposerSubmit = async (e) => {
     e.preventDefault();
     if (isLoop) return handleSaveLoop();
     return handleStart();
   };
 
-  const handleKeyDown = async (e) => {
-    if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (isLoop) return handleSaveLoop();
-      return handleStart();
+  const handleComposerModelChange = (modelId, modelParamsJson) => {
+    setModel(modelId);
+    if (!isCursor || !modelParamsJson) {
+      setCursorVariantIdx(null);
+      return;
     }
+    const m = models.find((x) => x.id === modelId);
+    const modelVariants = m?.variants ?? [];
+    let idx = modelVariants.findIndex((v) => {
+      try {
+        return JSON.stringify(v.params) === modelParamsJson;
+      } catch {
+        return false;
+      }
+    });
+    if (idx < 0) {
+      try {
+        const parsed = JSON.parse(modelParamsJson);
+        idx = modelVariants.findIndex((v) =>
+          v.params?.every((p) => parsed.some((sp) => sp.id === p.id && sp.value === p.value))
+        );
+      } catch {
+        idx = -1;
+      }
+    }
+    setCursorVariantIdx(idx >= 0 ? idx : null);
   };
+
+  const composerSession = useMemo(() => {
+    const m = isCursor ? models.find((item) => item.id === model) : null;
+    const modelVariants = m?.variants ?? [];
+    const variant = cursorVariantIdx != null ? modelVariants[cursorVariantIdx] : null;
+    const params =
+      isCursor && variant
+        ? applyParamOverrides(variant.params ?? [], cursorFast, cursorEffort)
+        : null;
+    return {
+      agent_sdk: availableSdks.includes(agentSdk) ? agentSdk : (availableSdks[0] ?? agentSdk),
+      model: model || null,
+      model_params: params?.length ? JSON.stringify(params) : null,
+    };
+  }, [
+    agentSdk,
+    model,
+    isCursor,
+    models,
+    cursorVariantIdx,
+    cursorFast,
+    cursorEffort,
+    availableSdks,
+  ]);
+
+  const composerToolbarExtra = editingLoop ? (
+    <button
+      type="button"
+      onClick={onCancelEdit}
+      className="inline-flex items-center justify-center shrink-0 h-8 px-3 rounded-md border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium transition-colors"
+    >
+      Cancel
+    </button>
+  ) : null;
+
+  const composerPlaceholder = isLoop
+    ? 'Describe what the agent should do on every run...'
+    : 'Describe what you want the agent to do...';
+
+  const renderComposer = (attachButton = null) => (
+    <AgentMessageComposer
+      skipColumn
+      formClassName=""
+      value={initialPrompt}
+      onChange={setInitialPrompt}
+      onSubmit={handleComposerSubmit}
+      placeholder={composerPlaceholder}
+      disabled={availableSdks.length === 0}
+      sending={loading}
+      session={composerSession}
+      models={models}
+      cursorFast={cursorFast}
+      cursorEffort={cursorEffort}
+      onModelChange={handleComposerModelChange}
+      availableSdks={availableSdks}
+      onSdkChange={setAgentSdk}
+      submitDisabled={!canSubmit}
+      submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
+      submitTooltip={
+        !isLoop
+          ? 'Branches out of the selected base branch, which could create a new PR.'
+          : undefined
+      }
+      sendAddon={
+        !isLoop ? (
+          <ComposerPrimaryMenuAddon
+            disabled={!canSubmit || loading}
+            title="Other ways to start"
+            items={[
+              { label: 'Plan', onSelect: handlePlan },
+              ...(!isGlobal
+                ? [
+                    { label: 'Plan on branch', onSelect: handlePlanOnBranch },
+                    { label: 'Continue branch', onSelect: handleContinue },
+                  ]
+                : []),
+            ]}
+          />
+        ) : undefined
+      }
+      toolbarExtra={
+        <>
+          {attachButton}
+          {composerToolbarExtra}
+        </>
+      }
+      autoFocus={!isMobile()}
+    />
+  );
 
   const handleAddFiles = (picked) => {
     setFileError(null);
@@ -432,29 +538,8 @@ export default function BuilderForm({
 
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
 
-  const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
-  const variants = selectedModel?.variants ?? [];
-
-  const promptTextarea = (
-    <AutoGrowTextarea
-      ref={initialPromptRef}
-      value={initialPrompt}
-      onChange={(e) => setInitialPrompt(e.target.value)}
-      onKeyDown={handleKeyDown}
-      rows={3}
-      maxLines={20}
-      className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 pr-9 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent resize-none"
-      placeholder={
-        isLoop
-          ? 'Describe what the agent should do on every run...'
-          : 'Describe what you want the agent to do...'
-      }
-      required
-    />
-  );
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
       {userSettings && availableSdks.length === 0 && (
         <Alert variant="alert">
           Add a Claude or Cursor API key in <Link to="/settings?tab=agent">Settings → Agent</Link>{' '}
@@ -580,9 +665,8 @@ export default function BuilderForm({
       )}
 
       <div>
-        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-          <label className="text-sm font-medium text-zinc-300">Prompt</label>
-          {!isLoop && (
+        {!isLoop && (
+          <div className="flex flex-wrap items-baseline justify-end gap-2 mb-1">
             <Link
               to="/settings?tab=agent&prompt=session#settings-agent-prompts"
               target="_blank"
@@ -591,11 +675,11 @@ export default function BuilderForm({
             >
               Configure the system prompt
             </Link>
-          )}
-        </div>
+          </div>
+        )}
         {/* Attachments are a one-off input for a single run, so a loop takes the prompt alone. */}
         {isLoop ? (
-          promptTextarea
+          renderComposer()
         ) : (
           <FileAttachmentPicker
             files={files}
@@ -603,7 +687,7 @@ export default function BuilderForm({
             onRemove={handleRemoveFile}
             error={fileError}
           >
-            {promptTextarea}
+            {({ attachButton }) => renderComposer(attachButton)}
           </FileAttachmentPicker>
         )}
       </div>
@@ -664,22 +748,47 @@ export default function BuilderForm({
           {showMore && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
               {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
-              {createNewBranch && !isLoop && !isGlobal && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-zinc-300 mb-1">
-                    Branch name{' '}
-                    <span className="text-zinc-500 font-normal">
-                      (optional, auto-generated if empty)
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    value={branchName}
-                    onChange={(e) => setBranchName(e.target.value)}
-                    placeholder="my-feature-branch"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
-                  />
-                </div>
+              {!isLoop && !isGlobal && (
+                <>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-zinc-300 mb-1">
+                      Branch name{' '}
+                      <span className="text-zinc-500 font-normal">
+                        (optional, for Start — auto-generated if empty)
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={branchName}
+                      onChange={(e) => setBranchName(e.target.value)}
+                      placeholder="my-feature-branch"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoPush}
+                      onClick={() => setAutoPush((v) => !v)}
+                      className="flex items-center gap-2 group"
+                    >
+                      <span
+                        className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${autoPush ? 'bg-amber-500' : 'bg-zinc-600'}`}
+                      >
+                        <span
+                          className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${autoPush ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+                        />
+                      </span>
+                      <span className="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">
+                        Auto-push
+                      </span>
+                    </button>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      When enabled, the agent pushes commits to the remote after each turn.
+                    </p>
+                  </div>
+                </>
               )}
 
               {availablePlugins.length > 0 && (
@@ -718,145 +827,6 @@ export default function BuilderForm({
           )}
         </div>
       )}
-
-      {/* Both are fixed on for a loop: every run needs its own branch, pushed for review. */}
-      {!isLoop && !isGlobal && (
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={createNewBranch}
-            onClick={() => setCreateNewBranch((v) => !v)}
-            className="flex items-center gap-2 group"
-          >
-            <span
-              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${createNewBranch ? 'bg-amber-500' : 'bg-zinc-600'}`}
-            >
-              <span
-                className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${createNewBranch ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-              />
-            </span>
-            <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
-              New branch
-            </span>
-          </button>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={autoPush}
-            onClick={() => setAutoPush((v) => !v)}
-            className="flex items-center gap-2 group"
-          >
-            <span
-              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${autoPush ? 'bg-amber-500' : 'bg-zinc-600'}`}
-            >
-              <span
-                className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${autoPush ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-              />
-            </span>
-            <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
-              Auto-push
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* SDK + Model + (variant) on the left; Start/Plan on the right */}
-      <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-        {/* Left: selects + variant link */}
-        <div>
-          <div className="flex items-center gap-2">
-            {userSettings && availableSdks.length === 1 && (
-              <span className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white">
-                {availableSdks[0] === 'cursor' ? 'Cursor' : 'Claude'}
-              </span>
-            )}
-            {userSettings && availableSdks.length > 1 && (
-              <select
-                value={agentSdk}
-                onChange={(e) => setAgentSdk(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              >
-                {availableSdks.includes('claude') && <option value="claude">Claude</option>}
-                {availableSdks.includes('cursor') && <option value="cursor">Cursor</option>}
-              </select>
-            )}
-
-            {availableSdks.length > 0 && (
-              <div className="flex items-center gap-1">
-                <select
-                  value={model}
-                  onChange={(e) => {
-                    setModel(e.target.value);
-                    setCursorVariantIdx(null);
-                  }}
-                  className="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                >
-                  {models.length === 0 && <option value="">Loading…</option>}
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.display_name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => loadModels(true)}
-                  disabled={refreshingModels}
-                  title="Refresh models"
-                  className="px-1.5 py-2 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingModels ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {availableSdks.length > 0 && isCursor && (
-            <CursorVariantFields
-              key={model}
-              variants={variants}
-              modelDisplayName={selectedModel?.display_name}
-              variantIdx={cursorVariantIdx}
-              onVariantIdxChange={setCursorVariantIdx}
-              cursorFast={cursorFast}
-              cursorEffort={cursorEffort}
-              onCursorFastChange={setCursorFast}
-              onCursorEffortChange={setCursorEffort}
-            />
-          )}
-        </div>
-
-        {/* Right: Create for a loop, Start / Plan for a one-off session */}
-        <div className="flex items-center gap-3 sm:ml-auto">
-          {editingLoop && (
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white px-5 py-2 rounded-md text-sm font-medium transition-colors border border-zinc-700"
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-5 py-2 rounded-md text-sm font-medium transition-colors"
-          >
-            {isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
-          </button>
-          {!isLoop && (
-            <button
-              type="button"
-              onClick={handlePlan}
-              disabled={!canSubmit}
-              className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-300 hover:text-white px-5 py-2 rounded-md text-sm font-medium transition-colors border border-zinc-700 disabled:border-zinc-700"
-            >
-              Plan
-            </button>
-          )}
-        </div>
-      </div>
-    </form>
+    </div>
   );
 }

@@ -111,7 +111,15 @@ export default function LightChipDropdown({
       : 'text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none';
 
   return (
-    <div className={fullWidth ? 'w-full' : shrinkableTrigger ? 'min-w-0 max-w-full w-fit' : ''}>
+    <div
+      className={
+        fullWidth
+          ? 'w-full min-w-0 max-w-full'
+          : shrinkableTrigger
+            ? 'min-w-0 max-w-full w-fit'
+            : ''
+      }
+    >
       {label ? (
         <span
           id={id ? `${id}-label` : undefined}
@@ -143,7 +151,7 @@ export default function LightChipDropdown({
             title={triggerTitle ?? triggerLabel}
             className={`${triggerBase} ${
               fullWidth
-                ? 'w-full max-w-none justify-between'
+                ? 'w-full min-w-0 max-w-full justify-between'
                 : shrinkableTrigger
                   ? 'min-w-0 max-w-full w-fit'
                   : 'max-w-full sm:max-w-md'
