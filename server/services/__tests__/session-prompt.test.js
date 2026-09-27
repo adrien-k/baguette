@@ -119,12 +119,12 @@ describe('buildReviewSystemPromptAppend', () => {
   it('tells the reviewer to open issues and reconcile resolved ones', async () => {
     const session = await seedSession({
       base_branch: 'main',
-      created_branch: 'feat/review',
+      local_branch: 'feat/review',
     });
     session.absolute_worktree_path = '/tmp/wt';
     const result = await buildReviewSystemPromptAppend(session, 'Watch for SQL injection.');
     expect(result).toContain('CurrentSessionInfo');
-    expect(result).toContain('session_branch');
+    expect(result).toContain('all changes in this worktree');
     expect(result).toContain('CreateIssue');
     expect(result).toContain('ListIssues');
     expect(result).toContain('DeleteIssue');

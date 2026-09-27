@@ -121,7 +121,7 @@ beforeEach(async () => {
     short_id: 'revturn',
     initial_prompt: 't',
     base_branch: 'main',
-    created_branch: 'feat/x',
+    local_branch: 'feat/x',
     status: 'stopped',
     worktree_path: '/tmp/wt',
     agent_sdk: 'claude',

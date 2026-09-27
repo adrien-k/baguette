@@ -60,11 +60,12 @@ describe('reviewer issue MCP tools', () => {
     const tools = buildReviewerIssueMcpTools(session, app);
     const infoTool = tools.find((t) => t.name === 'CurrentSessionInfo');
     await db('sessions').where({ id: session.id }).update({
-      created_branch: 'feat/new',
+      local_branch: 'feat/new',
       remote_branch: 'feat/new',
     });
     const info = parseOk(await infoTool.handler({}));
-    expect(info.session_branch).toBe('feat/new');
+    expect(info.remote_branch).toBe('feat/new');
+    expect(info.local_branch).toBe('feat/new');
   });
 
   it('creates, lists, updates, and deletes issues', async () => {

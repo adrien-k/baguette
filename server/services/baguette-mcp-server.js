@@ -286,9 +286,10 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
         }
 
         const freshSession = await getSession();
-        const sessionBranch = freshSession.remote_branch || freshSession.created_branch;
+        const sessionBranch = freshSession.remote_branch || freshSession.local_branch;
         const isPureForce = force === 'force';
-        const isNonSessionBranch = branch && branch !== sessionBranch;
+        const isNonSessionBranch =
+          branch && branch !== sessionBranch && branch !== freshSession.local_branch;
 
         if (isPureForce || isNonSessionBranch) {
           app.service('sessions').emit('push:request', {
@@ -306,12 +307,13 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
         try {
           result = await gitPush(absoluteWorktreePath, await getToken(), {
             force: force === 'lease',
+            ...(sessionBranch ? { branch: sessionBranch } : {}),
           });
         } catch (err) {
           if (err.rejected) return fail(err.message);
           throw err;
         }
-        await patchSession({ remote_branch: result.branch, created_branch: result.branch });
+        await patchSession({ remote_branch: result.branch });
         if (freshSession?.pr_status === 'merged') {
           return ok({
             ...result,
@@ -357,7 +359,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
         const result = {
           pr_url: session?.pr_url ?? null,
           pr_number: session?.pr_number ?? null,
-          branch: session?.remote_branch || session?.created_branch || null,
+          branch: session?.remote_branch || session?.local_branch || null,
           title: null,
           description: null,
         };
@@ -412,13 +414,15 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           effectivePrNumber = null;
         }
 
-        let head = null;
+        let head = freshSession.remote_branch || freshSession.local_branch || null;
         if (!effectivePrNumber) {
-          const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-            cwd: absoluteWorktreePath,
-          });
-          head = stdout.trim();
-          if (head === 'HEAD') {
+          if (!head) {
+            const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+              cwd: absoluteWorktreePath,
+            });
+            head = stdout.trim();
+          }
+          if (!head || head === 'HEAD') {
             return fail(
               'Cannot create a pull request from a detached HEAD. Check out a branch first.'
             );
@@ -652,7 +656,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
         const localErr = await requireGitHubRepo();
         if (localErr) return localErr;
         const session = await getSession();
-        const branch = session?.remote_branch || session?.created_branch;
+        const branch = session?.remote_branch || session?.local_branch;
         if (!branch) return ok({ runs: [], message: 'No branch available for this session.' });
         const runs = await getPRWorkflows(await getToken(), session.repo_full_name, branch);
         return ok({ runs });

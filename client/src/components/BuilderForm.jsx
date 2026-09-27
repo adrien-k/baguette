@@ -355,11 +355,6 @@ export default function BuilderForm({
     if (await onSubmit(buildPayload({ planMode: true, createNewBranch: true }))) clearForm();
   };
 
-  const handlePlanOnBranch = async () => {
-    if (!canSubmit) return;
-    if (await onSubmit(buildPayload({ planMode: true, createNewBranch: false }))) clearForm();
-  };
-
   // A loop replays the same session on a schedule, so it saves the form as a template instead
   // of starting anything now. Attached files are per-run inputs and are not carried over.
   const buildLoopPayload = () => {
@@ -500,12 +495,7 @@ export default function BuilderForm({
             title="Other ways to start"
             items={[
               { label: 'Plan', onSelect: handlePlan },
-              ...(!isGlobal
-                ? [
-                    { label: 'Plan on branch', onSelect: handlePlanOnBranch },
-                    { label: 'Continue branch', onSelect: handleContinue },
-                  ]
-                : []),
+              ...(!isGlobal ? [{ label: 'Continue branch', onSelect: handleContinue }] : []),
             ]}
           />
         ) : undefined

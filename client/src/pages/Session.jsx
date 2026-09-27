@@ -907,13 +907,17 @@ export default function Session() {
                       <span className="hidden sm:inline shrink-0 text-zinc-600">
                         {headerSession.base_branch}
                       </span>
-                      {headerSession.created_branch && (
+                      {(headerSession.remote_branch || headerSession.local_branch) && (
                         <span className="flex min-w-0 items-center gap-1 overflow-hidden text-zinc-500">
                           <GitBranch className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{headerSession.created_branch}</span>
+                          <span className="truncate">
+                            {headerSession.remote_branch || headerSession.local_branch}
+                          </span>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(headerSession.created_branch);
+                              navigator.clipboard.writeText(
+                                headerSession.remote_branch || headerSession.local_branch
+                              );
                               toast.success('Branch name copied');
                             }}
                             className="shrink-0 text-zinc-600 hover:text-zinc-400"
@@ -1309,7 +1313,7 @@ export default function Session() {
           sessionId={session?.id}
           repo={repos.find((r) => r.full_name === session?.repo_full_name) ?? null}
           commitsToPush={commitsToPush}
-          initialBranch={pushRequest?.branch || session?.remote_branch || session?.created_branch}
+          initialBranch={pushRequest?.branch || session?.remote_branch || session?.local_branch}
           initialForceMode={pushRequest?.forceMode || null}
           autoPush={!!session?.auto_push}
           onAutoPushChange={handleAutoPushChange}

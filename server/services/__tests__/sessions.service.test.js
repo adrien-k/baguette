@@ -1383,9 +1383,9 @@ describe('Sessions service - find, get, create', (hooks) => {
         'feature/foo',
         expect.any(String),
         null,
-        { detach: false, baseBranch: 'develop' }
+        { localBranch: `feature/foo-${session.short_id}`, baseBranch: 'develop' }
       );
-      expect(session.created_branch).toBe('feature/foo');
+      expect(session.local_branch).toBe(`feature/foo-${session.short_id}`);
       expect(session.remote_branch).toBe('feature/foo');
       expect(session.base_branch).toBe('develop');
       expect(session.pr_number).toBe(42);
@@ -1409,7 +1409,8 @@ describe('Sessions service - find, get, create', (hooks) => {
 
       expect(session.base_branch).toBe('mainline');
       expect(session.pr_number).toBeNull();
-      expect(session.created_branch).toBe('feature/bar');
+      expect(session.local_branch).toBe(`feature/bar-${session.short_id}`);
+      expect(session.remote_branch).toBe('feature/bar');
       expect(session.label).toBe('Continuing: feature/bar');
       expect(generateSessionMetadata).not.toHaveBeenCalled();
       expect(createWorktree).toHaveBeenCalledWith(
@@ -1417,7 +1418,7 @@ describe('Sessions service - find, get, create', (hooks) => {
         'feature/bar',
         expect.any(String),
         null,
-        { detach: false, baseBranch: 'mainline' }
+        { localBranch: `feature/bar-${session.short_id}`, baseBranch: 'mainline' }
       );
     });
 
@@ -1462,65 +1463,32 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(generateSessionMetadata).toHaveBeenCalled();
     });
 
-    it('create_new_branch=false rejects when another unarchived session uses that branch', async () => {
+    it('create_new_branch=false allows a second session on a branch already in use', async () => {
       await db('sessions').where({ id: sessId1 }).update({
-        created_branch: 'feature/taken',
+        local_branch: 'feature/taken-a1b2c3',
         remote_branch: 'feature/taken',
         worktree_path: '/tmp/wt-taken',
       });
 
-      await expect(
-        app.service('sessions').create(
-          sessionData({
-            repo_id: repoId,
-            base_branch: 'feature/taken',
-            create_new_branch: false,
-          }),
-          params({ id: userId1 })
-        )
-      ).rejects.toThrow(/already using branch/);
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/taken',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
 
-      expect(createWorktree).not.toHaveBeenCalled();
-    });
-
-    it('create_new_branch=false rejects when a failed session still has a worktree', async () => {
-      await db('sessions').where({ id: sessId1 }).update({
-        created_branch: 'feature/taken',
-        remote_branch: 'feature/taken',
-        status: 'failed',
-        worktree_path: '/tmp/wt-taken',
-      });
-
-      await expect(
-        app.service('sessions').create(
-          sessionData({
-            repo_id: repoId,
-            base_branch: 'feature/taken',
-            create_new_branch: false,
-          }),
-          params({ id: userId1 })
-        )
-      ).rejects.toThrow(/already using branch/);
-    });
-
-    it('create_new_branch=false rejects while another session is still provisioning that branch', async () => {
-      await db('sessions').where({ id: sessId1 }).update({
-        created_branch: 'feature/taken',
-        remote_branch: 'feature/taken',
-        status: 'provisioning',
-        worktree_path: null,
-      });
-
-      await expect(
-        app.service('sessions').create(
-          sessionData({
-            repo_id: repoId,
-            base_branch: 'feature/taken',
-            create_new_branch: false,
-          }),
-          params({ id: userId1 })
-        )
-      ).rejects.toThrow(/already using branch/);
+      expect(session.local_branch).toBe(`feature/taken-${session.short_id}`);
+      expect(session.remote_branch).toBe('feature/taken');
+      expect(session.local_branch).not.toBe('feature/taken-a1b2c3');
+      expect(createWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({ full_name: 'test/repo' }),
+        'feature/taken',
+        session.short_id,
+        null,
+        expect.objectContaining({ localBranch: session.local_branch })
+      );
     });
 
     it('create_new_branch=false allows retrying a branch after a failed setup', async () => {
@@ -1537,7 +1505,7 @@ describe('Sessions service - find, get, create', (hooks) => {
         )
       ).rejects.toThrow(/disk full/);
 
-      const failed = await db('sessions').where({ created_branch: 'feature/retry' }).first();
+      const failed = await db('sessions').where({ remote_branch: 'feature/retry' }).first();
       expect(failed.status).toBe('failed');
       expect(failed.worktree_path).toBeFalsy();
       expect(removeWorktree).toHaveBeenCalled();
@@ -1550,7 +1518,8 @@ describe('Sessions service - find, get, create', (hooks) => {
         }),
         params({ id: userId1 })
       );
-      expect(session.created_branch).toBe('feature/retry');
+      expect(session.remote_branch).toBe('feature/retry');
+      expect(session.local_branch).toBe(`feature/retry-${session.short_id}`);
       expect(session.status).not.toBe('failed');
     });
 

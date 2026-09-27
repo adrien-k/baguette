@@ -21,6 +21,7 @@ import {
   loopsService,
 } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
+import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.jsx';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
@@ -262,8 +263,8 @@ export default function ChatView({
       setShowMergeModal(false);
       toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
     } catch (err) {
-      toastError('Failed to merge PR', err);
-      setMergeError(err.message || 'Failed to merge PR');
+      toastError(mergeFailureToastLabel(err), err);
+      setMergeError(err.message || mergeFailureToastLabel(err));
     } finally {
       setMerging(false);
     }

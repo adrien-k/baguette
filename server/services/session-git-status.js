@@ -10,7 +10,8 @@ export async function computeSessionGitStatus(session) {
     return { commitsToPush: 0, commitsSinceReview: 0 };
   }
   const cwd = resolveDataDirRelativePath(session.worktree_path);
-  const commitsToPush = await gitCommitsToPush(cwd);
+  const remoteBranch = session.remote_branch || session.local_branch;
+  const commitsToPush = await gitCommitsToPush(cwd, remoteBranch);
   const sinceReview = session.last_reviewed_commit_sha;
   const commitsSinceReview = sinceReview
     ? await gitCommitCountSince(cwd, sinceReview)

@@ -1,4 +1,5 @@
 import { diffLines } from 'diff';
+import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 
 function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
   const parts = diffLines(oldString ?? '', newString ?? '');
@@ -25,9 +26,9 @@ function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
   const remaining = totalChanged - maxLines;
 
   return (
-    <pre className="px-3 sm:px-4 pb-2 text-xs font-mono bg-transparent overflow-hidden">
+    <pre className={`px-3 sm:px-4 pb-2 text-xs font-mono bg-transparent ${DIFF_LINE_WRAP_CLASS}`}>
       {lines.map((l, i) => (
-        <div key={i} className={l.cls}>
+        <div key={i} className={`${l.cls} ${DIFF_LINE_WRAP_CLASS}`}>
           {l.prefix}
           {l.line}
         </div>
@@ -61,9 +62,9 @@ function DiffStringView({ diffString, maxLines, onExpand }) {
     totalChanged -
     displayLines.filter((l) => l.cls.includes('green') || l.cls.includes('red')).length;
   return (
-    <pre className="px-3 sm:px-4 pb-2 text-xs font-mono bg-transparent overflow-hidden">
+    <pre className={`px-3 sm:px-4 pb-2 text-xs font-mono bg-transparent ${DIFF_LINE_WRAP_CLASS}`}>
       {displayLines.map((l, i) => (
-        <div key={i} className={l.cls}>
+        <div key={i} className={`${l.cls} ${DIFF_LINE_WRAP_CLASS}`}>
           {l.text}
         </div>
       ))}
@@ -113,11 +114,15 @@ export default function EditDiffView({
     <div>
       <div className="text-zinc-500 font-medium mb-1">{label}</div>
       {useCursorDiff ? (
-        <div className="text-xs font-mono overflow-auto max-h-96 rounded bg-zinc-950/50 py-1">
+        <div
+          className={`text-xs font-mono max-h-96 rounded bg-zinc-950/50 py-1 ${DIFF_SCROLL_WRAP_CLASS}`}
+        >
           <DiffStringView diffString={cursorDiff.diffString} />
         </div>
       ) : (
-        <pre className="text-xs font-mono overflow-auto max-h-96 rounded bg-zinc-950/50">
+        <pre
+          className={`text-xs font-mono max-h-96 rounded bg-zinc-950/50 ${DIFF_SCROLL_WRAP_CLASS} ${DIFF_LINE_WRAP_CLASS}`}
+        >
           {diffLines(oldString ?? '', newString ?? '').flatMap((part, i) => {
             const prefix = part.added ? '+' : part.removed ? '-' : ' ';
             const cls = part.added
@@ -128,7 +133,7 @@ export default function EditDiffView({
             const lines = part.value.split('\n');
             if (lines[lines.length - 1] === '') lines.pop();
             return lines.map((line, li) => (
-              <div key={`${i}-${li}`} className={`px-2 ${cls}`}>
+              <div key={`${i}-${li}`} className={`px-2 ${cls} ${DIFF_LINE_WRAP_CLASS}`}>
                 {prefix}
                 {line}
               </div>

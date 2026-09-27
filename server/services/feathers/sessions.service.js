@@ -20,6 +20,8 @@ import {
   upsertPR,
   createWorktree,
   configureWorktreeGitIdentity,
+  uniqueLocalBranch,
+  trySetBranchUpstream,
   getOpenPRByNumber,
   getOpenPR,
   splitPrBody,
@@ -631,7 +633,7 @@ export class SessionsService extends KnexService {
     try {
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
-      const currentBranch = session.remote_branch || session.created_branch;
+      const currentBranch = session.remote_branch || session.local_branch;
       await Promise.all([
         session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
         currentBranch && currentBranch !== session.base_branch
@@ -641,8 +643,8 @@ export class SessionsService extends KnexService {
       const [diff, hasUncommitted, commitsToPush, { localSha, remoteSha }] = await Promise.all([
         gitDiff(cwd, session.base_branch),
         gitHasUncommitted(cwd),
-        gitCommitsToPush(cwd),
-        gitLocalAndRemoteSha(cwd),
+        gitCommitsToPush(cwd, currentBranch),
+        gitLocalAndRemoteSha(cwd, currentBranch),
       ]);
       return { diff, hasUncommitted, commitsToPush, localSha, remoteSha };
     } catch (err) {
@@ -664,7 +666,7 @@ export class SessionsService extends KnexService {
     try {
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
-      const branch = data.branch || session.remote_branch || session.created_branch;
+      const branch = data.branch || session.remote_branch || session.local_branch;
       if (branch) await gitFetch(cwd, token, branch).catch(() => {});
       return await gitLocalAndRemoteSha(cwd, branch || null);
     } catch (err) {
@@ -725,7 +727,7 @@ export class SessionsService extends KnexService {
     const token = getGithubToken(user);
     if (!token) throw new BadRequest('No GitHub token configured');
     const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
-    const branch = data?.branch || null;
+    const branch = data?.branch || session.remote_branch || session.local_branch || null;
     let pushedBranch;
     try {
       const result = await gitPush(cwd, token, {
@@ -738,7 +740,7 @@ export class SessionsService extends KnexService {
         .service('sessions')
         .patch(
           session.id,
-          { remote_branch: pushedBranch, created_branch: pushedBranch },
+          { remote_branch: pushedBranch },
           { provider: undefined, user: { id: session.user_id } }
         );
     } catch (err) {
@@ -750,7 +752,7 @@ export class SessionsService extends KnexService {
       throw err;
     }
     if (session.label || session.pr_description != null) {
-      const head = pushedBranch || session.remote_branch || session.created_branch;
+      const head = pushedBranch || session.remote_branch || session.local_branch;
       let userPrefix = '';
       if (session.pr_number) {
         try {
@@ -835,16 +837,19 @@ export class SessionsService extends KnexService {
       const token = getGithubToken(user);
       if (!token) throw new BadRequest('No GitHub token configured');
 
-      const branch = session.remote_branch || session.created_branch;
+      const branch = session.remote_branch || session.local_branch;
       if (!branch) throw new BadRequest('Session has no branch to restore to');
+      const localBranch =
+        session.local_branch || uniqueLocalBranch(branch, session.short_id) || branch;
 
       const { worktreePath: absoluteWorktreePath } = await createWorktree(
         repo,
         branch,
         session.short_id,
         token,
-        { detach: false, baseBranch: session.base_branch }
+        { localBranch, baseBranch: session.base_branch }
       );
+      dbUpdate.local_branch = localBranch;
       await configureWorktreeGitIdentity(absoluteWorktreePath, user);
       dbUpdate.worktree_path = path.relative(DATA_DIR, absoluteWorktreePath);
     }
@@ -1040,20 +1045,6 @@ function sanitizeBranchName(requestedName, fallbackBranch) {
   );
 }
 
-async function assertBranchNotInUse(db, repoFullName, workingBranch) {
-  const branchInUse = await db('sessions')
-    .where({ repo_full_name: repoFullName })
-    .whereNull('archived_at')
-    .where((q) => q.whereNotNull('worktree_path').orWhere('status', PROVISIONING_STATUS))
-    .where((q) => q.where('created_branch', workingBranch).orWhere('remote_branch', workingBranch))
-    .first();
-  if (branchInUse) {
-    throw new BadRequest(
-      `Another active session is already using branch "${workingBranch}". Stop or archive it before continuing on this branch.`
-    );
-  }
-}
-
 /** Fast checks and DB fields only — worktree/git/github run in {@link provisionSessionEnvironment}. */
 async function validateSessionCreate(context) {
   const createNewBranch = context.data.create_new_branch ?? true;
@@ -1098,14 +1089,12 @@ async function validateSessionCreate(context) {
     if (!workingBranch) {
       throw new BadRequest('base_branch is required when continuing an existing branch');
     }
-    await assertBranchNotInUse(db, repoFullName, workingBranch);
-    context.data.created_branch = workingBranch;
     context.data.remote_branch = workingBranch;
+    context.data.local_branch = uniqueLocalBranch(workingBranch, shortId);
   } else if (context.params._requestedBranchName) {
     const branchName = sanitizeBranchName(context.params._requestedBranchName, fallbackBranch);
-    await assertBranchNotInUse(db, repoFullName, branchName);
-    context.data.created_branch = branchName;
     context.data.remote_branch = branchName;
+    context.data.local_branch = uniqueLocalBranch(branchName, shortId);
   }
 
   return context;
@@ -1160,17 +1149,19 @@ async function provisionSessionEnvironment(app, session, params) {
     }
     const baseBranchForWorktree = openPr?.base_ref ?? defaultForDiff;
 
+    const localBranch =
+      session.local_branch || uniqueLocalBranch(workingBranch, shortId) || workingBranch;
     const { worktreePath: absoluteWorktreePath } = await createWorktree(
       repo,
       workingBranch,
       shortId,
       token,
-      { detach: false, baseBranch: baseBranchForWorktree }
+      { localBranch, baseBranch: baseBranchForWorktree }
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
     patch = {
       worktree_path: path.relative(DATA_DIR, absoluteWorktreePath),
-      created_branch: workingBranch,
+      local_branch: localBranch,
       remote_branch: workingBranch,
     };
 
@@ -1199,34 +1190,37 @@ async function provisionSessionEnvironment(app, session, params) {
 
     const branchPrefix = user?.branch_prefix ?? '';
     const fallbackBranch = `${branchPrefix}task-${shortId}`;
-    let branchName =
-      session.created_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
+    let remoteName =
+      session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
     try {
       const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
       const result = await app
         .service(agentService)
         .generateSessionMetadata(session.initial_prompt || '', shortId, user, repo);
       if (result.label) patch.label = result.label;
-      if (!requestedBranchName && !session.created_branch) {
-        branchName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
+      if (!requestedBranchName && !session.remote_branch) {
+        remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
       }
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
     }
+    let localBranch = session.local_branch || uniqueLocalBranch(remoteName, shortId) || remoteName;
     try {
-      await execFileAsync('git', ['checkout', '-b', branchName], {
+      await execFileAsync('git', ['checkout', '-b', localBranch], {
         cwd: absoluteWorktreePath,
         stdio: 'pipe',
       });
     } catch {
-      branchName = fallbackBranch;
-      await execFileAsync('git', ['checkout', '-b', branchName], {
+      remoteName = fallbackBranch;
+      localBranch = uniqueLocalBranch(fallbackBranch, shortId) || fallbackBranch;
+      await execFileAsync('git', ['checkout', '-b', localBranch], {
         cwd: absoluteWorktreePath,
         stdio: 'pipe',
       });
     }
-    patch.created_branch = branchName;
-    patch.remote_branch = branchName;
+    await trySetBranchUpstream(absoluteWorktreePath, localBranch, remoteName);
+    patch.local_branch = localBranch;
+    patch.remote_branch = remoteName;
   }
 
   return await app.service('sessions').patch(session.id, patch, userParams);

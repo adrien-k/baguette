@@ -83,7 +83,7 @@ const DEFAULT_SESSION = {
   pr_url: null,
   pr_number: null,
   remote_branch: null,
-  created_branch: null,
+  local_branch: null,
   repo_full_name: 'owner/repo',
   base_branch: 'main',
   worktree_path: '/tmp/wt',
@@ -200,15 +200,33 @@ describe('CurrentSessionInfo', () => {
   it('returns worktree path and branches for repo sessions', async () => {
     const { tools } = await buildServer({
       base_branch: 'develop',
-      created_branch: 'feat/x',
+      local_branch: 'feat/x',
       remote_branch: 'feat/x-remote',
     });
     const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
     expect(result.ok).toBe(true);
     expect(result.worktree_path).toBe('/tmp/wt');
     expect(result.base_branch).toBe('develop');
-    expect(result.session_branch).toBe('feat/x-remote');
+    expect(result.remote_branch).toBe('feat/x-remote');
     expect(result.git_diff_against_base).toBe('git diff origin/develop...HEAD');
+    expect(result.local_branch).toBe('feat/x');
+    expect(result.session_branch).toBeUndefined();
+    expect(result.git_commits_to_push).toBe('git rev-list --count origin/feat/x-remote..HEAD');
+    expect(result.git_commits_behind_remote).toBe(
+      'git rev-list --count HEAD..origin/feat/x-remote'
+    );
+  });
+
+  it('returns remote_branch and local_branch separately when they differ', async () => {
+    const { tools } = await buildServer({
+      base_branch: 'main',
+      local_branch: 'feat/shared-abcd1234',
+      remote_branch: 'feat/shared',
+    });
+    const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
+    expect(result.remote_branch).toBe('feat/shared');
+    expect(result.local_branch).toBe('feat/shared-abcd1234');
+    expect(result.git_commits_to_push).toBe('git rev-list --count origin/feat/shared..HEAD');
   });
 
   it('does not report .baguette.yaml status (that lives in the build prompt)', async () => {
@@ -256,8 +274,8 @@ describe('PrRead', () => {
     expect(result.branch).toBe('feat/my-branch');
   });
 
-  it('falls back to created_branch when remote_branch is null', async () => {
-    const { tools } = await buildServer({ remote_branch: null, created_branch: 'created-branch' });
+  it('falls back to local_branch when remote_branch is null', async () => {
+    const { tools } = await buildServer({ remote_branch: null, local_branch: 'created-branch' });
     const result = parseResult(await callTool(tools, 'PrRead'));
     expect(result.branch).toBe('created-branch');
   });
@@ -335,15 +353,21 @@ describe('GitPush', () => {
 
   it('patches session with branch name on success', async () => {
     gitPush.mockResolvedValue({ ok: true, branch: 'feature-branch' });
-    const { tools, mockPatch } = await buildServer();
+    const { tools, mockPatch } = await buildServer({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(true);
     expect(result.branch).toBe('feature-branch');
+    expect(gitPush).toHaveBeenCalledWith('/tmp/wt', 'ghtoken', {
+      force: false,
+      branch: 'feature-branch',
+    });
     expect(mockPatch).toHaveBeenCalledWith(
       1,
       {
         remote_branch: 'feature-branch',
-        created_branch: 'feature-branch',
       },
       INTERNAL_PATCH_PARAMS
     );
@@ -952,7 +976,7 @@ describe('PrReview', () => {
 
 describe('PrWorkflows', () => {
   it('returns empty runs and message when no branch', async () => {
-    const { tools } = await buildServer({ remote_branch: null, created_branch: null });
+    const { tools } = await buildServer({ remote_branch: null, local_branch: null });
     const result = parseResult(await callTool(tools, 'PrWorkflows'));
     expect(result.ok).toBe(true);
     expect(result.runs).toEqual([]);
@@ -968,9 +992,9 @@ describe('PrWorkflows', () => {
     expect(result.runs).toHaveLength(1);
   });
 
-  it('falls back to created_branch when remote_branch is null', async () => {
+  it('falls back to local_branch when remote_branch is null', async () => {
     getPRWorkflows.mockResolvedValue([]);
-    const { tools } = await buildServer({ remote_branch: null, created_branch: 'created-branch' });
+    const { tools } = await buildServer({ remote_branch: null, local_branch: 'created-branch' });
     await callTool(tools, 'PrWorkflows');
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch');
   });

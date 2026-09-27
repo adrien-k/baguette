@@ -44,7 +44,7 @@ describe('baguette session MCP tools', () => {
       label: 'Fix auth bug',
       initial_prompt: 'Please fix login',
       base_branch: 'main',
-      created_branch: 'feat/auth',
+      local_branch: 'feat/auth',
       status: 'stopped',
     });
     await db('session_messages').insert([
@@ -88,6 +88,32 @@ describe('baguette session MCP tools', () => {
     expect(out.ok).toBe(true);
     expect(out.sessions).toHaveLength(1);
     expect(out.sessions[0].id).toBe(sessionId);
+  });
+
+  it('SearchSessions filters by remote_branch and returns each local_branch', async () => {
+    const repoId = (await db('repos').where({ full_name: 'o/r' }).first()).id;
+    const sharedRemote = 'feature/shared-head';
+    await db('sessions').insert({
+      user_id: userId,
+      repo_id: repoId,
+      repo_full_name: 'o/r',
+      short_id: 'bbbb',
+      label: 'Second on shared head',
+      initial_prompt: 'More work',
+      base_branch: 'main',
+      local_branch: 'feature/shared-head-bbbb',
+      remote_branch: sharedRemote,
+      status: 'stopped',
+    });
+    await db('sessions')
+      .where({ id: sessionId })
+      .update({ remote_branch: sharedRemote, local_branch: 'feature/shared-head-abcd' });
+
+    const search = tools.find((t) => t.name === 'SearchSessions');
+    const out = parseOk(await search.handler({ remote_branch: sharedRemote }));
+    expect(out.sessions).toHaveLength(2);
+    const locals = out.sessions.map((s) => s.local_branch).sort();
+    expect(locals).toEqual(['feature/shared-head-abcd', 'feature/shared-head-bbbb']);
   });
 
   it('GetSession returns message count and last assistant', async () => {
@@ -140,7 +166,7 @@ describe('baguette session MCP tools', () => {
       label: 'Other',
       initial_prompt: 'Other task',
       base_branch: 'main',
-      created_branch: 'feat/other',
+      local_branch: 'feat/other',
       status: 'stopped',
     });
     const create = tools.find((t) => t.name === 'CreateSessionMessage');
@@ -169,7 +195,7 @@ describe('baguette session MCP tools', () => {
       label: 'Target',
       initial_prompt: 'Work',
       base_branch: 'main',
-      created_branch: 'feat/target',
+      local_branch: 'feat/target',
       status: 'stopped',
     });
     const globalTools = buildBaguetteSessionMcpTools({ id: userId }, app, {

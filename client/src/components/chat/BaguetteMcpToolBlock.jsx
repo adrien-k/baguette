@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { sessionsService } from '../../feathers.js';
+import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
 
@@ -285,12 +286,12 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
         <span className="text-zinc-400">diff</span>
         <span className="text-white truncate">{filePath}</span>
       </div>
-      <div className="overflow-x-auto">
-        <pre className="px-3 py-2 leading-5">
+      <div className={DIFF_SCROLL_WRAP_CLASS}>
+        <pre className={`px-3 py-2 leading-5 ${DIFF_LINE_WRAP_CLASS}`}>
           {shown.map((l, i) => {
             if (l.type === 'hunk') {
               return (
-                <div key={i} className="text-cyan-500/80">
+                <div key={i} className={`text-cyan-500/80 ${DIFF_LINE_WRAP_CLASS}`}>
                   {l.text}
                 </div>
               );
@@ -303,7 +304,7 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
                   ? 'text-red-400 bg-red-950/30'
                   : 'text-zinc-400';
             return (
-              <div key={i} className={`${cls} min-w-0`}>
+              <div key={i} className={`${cls} ${DIFF_LINE_WRAP_CLASS}`}>
                 {l.text || ' '}
               </div>
             );

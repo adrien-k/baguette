@@ -14,6 +14,8 @@ import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import { toastError } from '../../utils/toastError.jsx';
+import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 
 const DIFF_HUNK_ROW = 'text-sky-400 bg-sky-500/10';
 const DIFF_HUNK_NUM = 'text-sky-500/70';
@@ -130,6 +132,7 @@ function buildSideBySideRows(lines) {
 }
 
 const NUM_CLS = 'w-10 shrink-0 text-right text-zinc-600 select-none pr-2 border-r border-zinc-800';
+const DIFF_LINE_CONTENT_CLS = 'px-2 flex-1 min-w-0 whitespace-pre-wrap break-words';
 
 function lineRefFromRow(row, filePath) {
   if (row.type === 'hunk') return null;
@@ -158,7 +161,7 @@ function DiffCodeRow({ rowClass, onLineReference, title, active, children }) {
             }
           : undefined
       }
-      className={`flex ${rowClass} ${
+      className={`flex items-start ${rowClass} ${
         clickable
           ? 'cursor-pointer hover:ring-1 hover:ring-inset hover:ring-amber-500/40 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-amber-500/50'
           : ''
@@ -189,7 +192,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
             <div key={i} className={`flex ${DIFF_HUNK_ROW}`}>
               <span className={`${NUM_CLS} ${DIFF_HUNK_NUM}`}></span>
               <span className={`${NUM_CLS} ${DIFF_HUNK_NUM}`}></span>
-              <span className="px-2 flex-1">{row.content}</span>
+              <span className={DIFF_LINE_CONTENT_CLS}>{row.content}</span>
             </div>
           );
         }
@@ -207,7 +210,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
             >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}></span>
-              <span className="px-2 flex-1 whitespace-pre">{row.content || ' '}</span>
+              <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
             </DiffCodeRow>
           );
         } else if (row.type === 'added') {
@@ -220,7 +223,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
             >
               <span className={NUM_CLS}></span>
               <span className={NUM_CLS}>{row.newNum}</span>
-              <span className="px-2 flex-1 whitespace-pre">{row.content || ' '}</span>
+              <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
             </DiffCodeRow>
           );
         } else {
@@ -233,7 +236,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
             >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}>{row.newNum}</span>
-              <span className="px-2 flex-1 whitespace-pre">{row.content || ' '}</span>
+              <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
             </DiffCodeRow>
           );
         }
@@ -259,8 +262,8 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
         if (row.type === 'hunk') {
           return (
             <div key={i} className={`flex divide-x divide-zinc-800 ${DIFF_HUNK_ROW}`}>
-              <div className="flex-1 min-w-0 px-2">{row.content}</div>
-              <div className="flex-1 min-w-0 px-2">{row.content}</div>
+              <div className={`flex-1 min-w-0 ${DIFF_LINE_CONTENT_CLS}`}>{row.content}</div>
+              <div className={`flex-1 min-w-0 ${DIFF_LINE_CONTENT_CLS}`}>{row.content}</div>
             </div>
           );
         }
@@ -279,9 +282,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
                 active={leftActive}
               >
                 <span className={NUM_CLS}>{row.left.num}</span>
-                <span className="px-2 flex-1 whitespace-pre overflow-hidden">
-                  {row.left.content || ' '}
-                </span>
+                <span className={DIFF_LINE_CONTENT_CLS}>{row.left.content || ' '}</span>
               </DiffCodeRow>
             ) : (
               <div className={DIFF_EMPTY_SIDE}>
@@ -297,9 +298,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
               active={leftActive}
             >
               <span className={NUM_CLS}>{row.left?.num}</span>
-              <span className="px-2 flex-1 whitespace-pre overflow-hidden">
-                {row.left?.content || ' '}
-              </span>
+              <span className={DIFF_LINE_CONTENT_CLS}>{row.left?.content || ' '}</span>
             </DiffCodeRow>
           );
         const rightCell =
@@ -312,9 +311,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
                 active={rightActive}
               >
                 <span className={NUM_CLS}>{row.right.num}</span>
-                <span className="px-2 flex-1 whitespace-pre overflow-hidden">
-                  {row.right.content || ' '}
-                </span>
+                <span className={DIFF_LINE_CONTENT_CLS}>{row.right.content || ' '}</span>
               </DiffCodeRow>
             ) : (
               <div className={DIFF_EMPTY_SIDE}>
@@ -330,9 +327,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
               active={rightActive}
             >
               <span className={NUM_CLS}>{row.right?.num}</span>
-              <span className="px-2 flex-1 whitespace-pre overflow-hidden">
-                {row.right?.content || ' '}
-              </span>
+              <span className={DIFF_LINE_CONTENT_CLS}>{row.right?.content || ' '}</span>
             </DiffCodeRow>
           );
         return (
@@ -368,7 +363,7 @@ function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, compo
         <span className="text-xs text-red-400 shrink-0 ml-1">-{file.removedCount}</span>
       </button>
       {!collapsed && (
-        <div className="overflow-x-auto bg-zinc-900">
+        <div className="bg-zinc-900 overflow-x-hidden">
           {viewMode === 'inline' ? (
             <InlineDiff
               lines={file.lines}
@@ -439,7 +434,8 @@ export default function DiffView({
       setShowMergeModal(false);
       toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
     } catch (err) {
-      setMergeError(err.message || 'Failed to merge PR');
+      toastError(mergeFailureToastLabel(err), err);
+      setMergeError(err.message || mergeFailureToastLabel(err));
     } finally {
       setMerging(false);
     }

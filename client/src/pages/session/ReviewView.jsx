@@ -248,7 +248,7 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
       setReviewUserMessage('');
       setShowClearReviewModal(false);
     } catch (err) {
-      toastError('Failed to clear review', err);
+      toastError('Failed to review the entire change', err);
     } finally {
       setClearingReview(false);
     }
@@ -325,7 +325,7 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
             onClick={() => setShowClearReviewModal(true)}
             className="text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
           >
-            Clear review
+            Review the entire change
           </button>
         </>
       )}

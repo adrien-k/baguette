@@ -31,16 +31,19 @@ export function buildCurrentSessionInfo(sessionRow, { readOnlyWorktree = false }
   }
 
   const baseBranch = sessionRow.base_branch || 'main';
-  const sessionBranch = sessionRow.remote_branch || sessionRow.created_branch || null;
+  const remoteBranch = sessionRow.remote_branch || null;
+  const localBranch = sessionRow.local_branch || null;
+  const pushRef = remoteBranch || localBranch;
 
-  return {
+  const info = {
     is_global: false,
     session_id: sessionRow.id,
     short_id: sessionRow.short_id ?? null,
     label: sessionRow.label ?? null,
     repo_full_name: sessionRow.repo_full_name ?? null,
     base_branch: baseBranch,
-    session_branch: sessionBranch,
+    remote_branch: remoteBranch,
+    local_branch: localBranch,
     worktree_path: worktreePath,
     working_directory_restrictions: readOnlyWorktree
       ? REVIEW_READ_ONLY_WORKTREE_RESTRICTIONS
@@ -48,13 +51,18 @@ export function buildCurrentSessionInfo(sessionRow, { readOnlyWorktree = false }
     git_diff_against_base: `git diff origin/${baseBranch}...HEAD`,
     git_merge_base_with_base: `git merge-base HEAD origin/${baseBranch}`,
   };
+  if (pushRef) {
+    info.git_commits_to_push = `git rev-list --count origin/${pushRef}..HEAD`;
+    info.git_commits_behind_remote = `git rev-list --count HEAD..origin/${pushRef}`;
+  }
+  return info;
 }
 
 export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
   return {
     name: 'CurrentSessionInfo',
     description:
-      'Get the current session label, worktree path, base/session branches, and working-directory rules. Call at the start of a turn. Use PrRead for pull request title, URL, and description.',
+      'Get the current session label, worktree path, base_branch, remote_branch, local_branch, and working-directory rules. Call at the start of a turn. Use PrRead for pull request title, URL, and description.',
     schema: {},
     handler: async () => {
       const session = await getSessionRow();

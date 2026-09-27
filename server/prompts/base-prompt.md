@@ -1,6 +1,8 @@
 # Session context
 
-Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns the worktree path, base branch, session branch, label, and working-directory rules for this session. For pull request title, URL, and description, call **`PrRead`**.
+Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns the worktree path, **`base_branch`**, **`remote_branch`**, **`local_branch`**, label, and working-directory rules for this session. For pull request title, URL, and description, call **`PrRead`**.
+
+When someone refers to a session’s branch by name (for example “the `feature/foo` session”), they often mean the shared **`remote_branch`** (PR/push head), not the unique **`local_branch`** checked out in a single worktree. Several sessions can share one `remote_branch` with different `local_branch` values. To find those sessions and read each one’s `local_branch`, call **`SearchSessions`** with `remote_branch` set to that name.
 
 **CRITICAL: Your shell's current working directory is already set to `worktree_path` from `CurrentSessionInfo` — never use `cd` to navigate into it.**
 **CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**

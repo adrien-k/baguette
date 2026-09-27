@@ -13,7 +13,7 @@ const SESSION_LIST_COLUMNS = [
   'repo_full_name',
   'is_global',
   'base_branch',
-  'created_branch',
+  'local_branch',
   'remote_branch',
   'agent_sdk',
   'model',
@@ -40,9 +40,10 @@ function applySessionSearchFilters(query, filters, userId) {
   if (filters.repo_id != null) query.where('sessions.repo_id', filters.repo_id);
   if (filters.is_global) query.where('sessions.is_global', true);
   if (filters.base_branch) query.where('sessions.base_branch', filters.base_branch);
+  if (filters.remote_branch) query.where('sessions.remote_branch', filters.remote_branch);
   if (filters.target_branch) {
     query.where((q) => {
-      q.where('sessions.created_branch', filters.target_branch).orWhere(
+      q.where('sessions.local_branch', filters.target_branch).orWhere(
         'sessions.remote_branch',
         filters.target_branch
       );
@@ -111,13 +112,17 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
     {
       name: 'SearchSessions',
       description:
-        'Search your sessions with optional filters. Matches label and initial_prompt for `q`. `target_branch` matches created_branch or remote_branch.',
+        'Search your sessions with optional filters. Matches label and initial_prompt for `q`. `remote_branch` matches the shared PR/push head. `target_branch` matches local_branch or remote_branch.',
       schema: {
         repo_id: z.number().int().optional().describe('Filter by repository id from ListRepos'),
         is_global: z.boolean().optional().describe('Filter to global sessions'),
         q: z.string().optional().describe('Search in session label and initial_prompt'),
         base_branch: z.string().optional(),
-        target_branch: z.string().optional().describe('Matches created_branch or remote_branch'),
+        remote_branch: z
+          .string()
+          .optional()
+          .describe('Filter by shared remote/PR branch (multiple sessions may match)'),
+        target_branch: z.string().optional().describe('Matches local_branch or remote_branch'),
         created_after: z
           .string()
           .optional()

@@ -283,9 +283,34 @@ export async function ensureLocalClone(localPath, strippedName) {
   return repoPath;
 }
 
-/** @param {{ baseBranch?: string, detach?: boolean }} [opts] — `detach` defaults to true (false checks out `branch` in the new worktree). */
+/**
+ * Local branch name unique to this worktree so Git will allow another session
+ * to keep `intendedBranch` checked out (or share the same remote head).
+ */
+export function uniqueLocalBranch(intendedBranch, shortId) {
+  if (!intendedBranch) return intendedBranch;
+  if (!shortId) return intendedBranch;
+  const suffix = `-${shortId}`;
+  if (intendedBranch.endsWith(suffix)) return intendedBranch;
+  return `${intendedBranch}${suffix}`;
+}
+
+export async function trySetBranchUpstream(worktreePath, localBranch, remoteBranch) {
+  if (!worktreePath || !localBranch || !remoteBranch) return;
+  try {
+    await execFileAsync(
+      'git',
+      ['branch', '--set-upstream-to', `origin/${remoteBranch}`, localBranch],
+      { cwd: worktreePath, stdio: 'pipe' }
+    );
+  } catch {
+    /* origin/<remoteBranch> may not exist yet */
+  }
+}
+
+/** @param {{ baseBranch?: string, detach?: boolean, localBranch?: string }} [opts] — `detach` defaults to true (false checks out `branch` in the new worktree). `localBranch` creates a unique local ref instead of checking out `branch`. */
 export async function createWorktree(repo, branch, worktreeId, token, opts = {}) {
-  const { baseBranch, detach = true } = opts;
+  const { baseBranch, detach = true, localBranch = null } = opts;
   const barePath = repo.bare_path;
   const worktreePath = path.join(REPOS_DIR, repo.stripped_name, 'sessions', worktreeId, 'worktree');
   await fs.promises.mkdir(path.dirname(worktreePath), { recursive: true });
@@ -355,13 +380,19 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   try {
     await fs.promises.access(worktreePath);
   } catch {
-    const addArgs = detach
-      ? ['worktree', 'add', '--detach', worktreePath, branch]
-      : ['worktree', 'add', worktreePath, branch];
+    const addArgs = localBranch
+      ? ['worktree', 'add', '-B', localBranch, worktreePath, branch]
+      : detach
+        ? ['worktree', 'add', '--detach', worktreePath, branch]
+        : ['worktree', 'add', worktreePath, branch];
     await execFileAsync('git', addArgs, {
       cwd: barePath,
       stdio: 'pipe',
     });
+  }
+
+  if (localBranch) {
+    await trySetBranchUpstream(worktreePath, localBranch, branch);
   }
 
   if (await lfsAvailable()) {
@@ -386,15 +417,34 @@ export function resolveSessionWorktreePath(session, repo) {
   return null;
 }
 
+export async function tryDeleteUniqueLocalBranch(barePath, session) {
+  const localBranch = session?.local_branch;
+  const remoteBranch = session?.remote_branch;
+  if (!barePath || !localBranch || !remoteBranch || localBranch === remoteBranch) return;
+  try {
+    await execFileAsync('git', ['branch', '-D', localBranch], {
+      cwd: barePath,
+      stdio: 'pipe',
+    });
+  } catch {
+    /* missing ref or still checked out — archive must not fail */
+  }
+}
+
 export async function removeWorktree(session, repo) {
   // Global sessions use the shared REPOS_DIR as cwd — never delete it.
   if (session?.is_global) return;
   const absoluteWorktreePath = resolveSessionWorktreePath(session, repo);
-  if (!absoluteWorktreePath) return;
+  const deleteUnique = () => tryDeleteUniqueLocalBranch(repo?.bare_path, session);
+  if (!absoluteWorktreePath) {
+    await deleteUnique();
+    return;
+  }
   if (path.resolve(absoluteWorktreePath) === path.resolve(REPOS_DIR)) return;
   try {
     await fs.promises.access(absoluteWorktreePath);
   } catch {
+    await deleteUnique();
     return;
   }
 
@@ -412,12 +462,14 @@ export async function removeWorktree(session, repo) {
       if (isNewStructure) {
         await fs.promises.rm(cleanupPath, { recursive: true, force: true });
       }
+      await deleteUnique();
       return;
     } catch {
       /* fall through to rm below */
     }
   }
   await fs.promises.rm(cleanupPath, { recursive: true, force: true });
+  await deleteUnique();
 }
 
 /**
@@ -536,16 +588,19 @@ export async function gitPush(
   token,
   { branch, force = false, forceOverwrite = false } = {}
 ) {
-  const targetBranch =
-    branch ??
-    (
-      await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath })
-    ).stdout.trim();
+  const currentBranch = (
+    await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath })
+  ).stdout.trim();
+  const targetBranch = branch ?? currentBranch;
+  const refspec =
+    !currentBranch || currentBranch === 'HEAD' || currentBranch === targetBranch
+      ? targetBranch
+      : `HEAD:${targetBranch}`;
 
   const pushArgs = ['push', '--set-upstream'];
   if (forceOverwrite) pushArgs.push('--force');
   else if (force) pushArgs.push('--force-with-lease');
-  pushArgs.push('origin', targetBranch);
+  pushArgs.push('origin', refspec);
 
   try {
     await gitWithToken(token, pushArgs, {
@@ -578,11 +633,31 @@ export async function gitPush(
 const MAX_DIFF_BUFFER_SIZE = 5 * 1024 * 1024;
 
 /**
- * Returns the number of local commits not yet pushed to any remote.
+ * Returns the number of local commits not yet on the session remote branch.
+ * When `remoteBranch` is set, counts `origin/<remoteBranch>..HEAD` so a unique
+ * local worktree branch is not treated as fully unpushed. Falls back to
+ * `HEAD --not --remotes` if that origin ref is missing (new branch never pushed).
  * @returns {Promise<number>}
  */
-export async function gitCommitsToPush(worktreePath) {
+export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
   try {
+    if (remoteBranch) {
+      try {
+        await execFileAsync(
+          'git',
+          ['-C', worktreePath, 'rev-parse', '--verify', `origin/${remoteBranch}`],
+          { maxBuffer: 256 }
+        );
+        const { stdout } = await execFileAsync(
+          'git',
+          ['-C', worktreePath, 'rev-list', '--count', `origin/${remoteBranch}..HEAD`],
+          { maxBuffer: 256 }
+        );
+        return parseInt(stdout.trim(), 10) || 0;
+      } catch {
+        /* origin/<remoteBranch> missing — count commits not on any remote */
+      }
+    }
     const { stdout } = await execFileAsync(
       'git',
       ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],

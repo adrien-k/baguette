@@ -16,11 +16,8 @@ export function useCursorModelPrefs() {
   const [loaded, setLoaded] = useState(false);
   const saveTimerRef = useRef(null);
   const userIdRef = useRef(null);
-  const latestRef = useRef(DEFAULT_CURSOR_MODEL_PREFS);
-
-  useEffect(() => {
-    latestRef.current = cursorModelPrefs;
-  }, [cursorModelPrefs]);
+  /** Keys queued for the next debounced patch (partial agent_preferences). */
+  const pendingPatchRef = useRef({});
 
   useEffect(() => {
     if (!user?.id) {
@@ -34,38 +31,37 @@ export function useCursorModelPrefs() {
       .then((d) => {
         const prefs = normalizeCursorModelPrefs(d.agent_preferences);
         setCursorModelPrefsState(prefs);
-        latestRef.current = prefs;
       })
       .catch((err) => toastError('Failed to load model preferences', err))
       .finally(() => setLoaded(true));
   }, [user?.id]);
 
-  const flushSave = useCallback((prefs) => {
+  const flushSave = useCallback(() => {
     const id = userIdRef.current;
-    if (!id) return;
+    const patch = pendingPatchRef.current;
+    const keys = Object.keys(patch);
+    if (!id || !keys.length) return;
+    pendingPatchRef.current = {};
     usersService
-      .patch(id, { agent_preferences: prefs })
+      .patch(id, { agent_preferences: patch })
       .catch((err) => toastError('Failed to save model preferences', err));
   }, []);
 
-  const scheduleSave = useCallback(
-    (next) => {
-      latestRef.current = next;
+  const scheduleSaveKey = useCallback(
+    (key, val) => {
+      pendingPatchRef.current[key] = val;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => flushSave(next), SAVE_DEBOUNCE_MS);
+      saveTimerRef.current = setTimeout(() => flushSave(), SAVE_DEBOUNCE_MS);
     },
     [flushSave]
   );
 
   const setCursorModelPref = useCallback(
     (key, val) => {
-      setCursorModelPrefsState((prev) => {
-        const next = { ...prev, [key]: val };
-        scheduleSave(next);
-        return next;
-      });
+      setCursorModelPrefsState((prev) => ({ ...prev, [key]: val }));
+      scheduleSaveKey(key, val);
     },
-    [scheduleSave]
+    [scheduleSaveKey]
   );
 
   const setCursorFast = useCallback(

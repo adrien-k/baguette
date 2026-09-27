@@ -32,7 +32,17 @@ vi.mock('../config.js', () => ({
   resolveDataDirRelativePath: (subpath) => `${TEST_REPOS_DIR}/${subpath}`,
 }));
 
-import { createWorktree } from '../github.js';
+import { createWorktree, uniqueLocalBranch, removeWorktree } from '../github.js';
+
+describe('uniqueLocalBranch', () => {
+  it('appends short_id when the intended name does not already include it', () => {
+    expect(uniqueLocalBranch('feature/foo', 'abcd1234')).toBe('feature/foo-abcd1234');
+  });
+
+  it('leaves the name unchanged when it already ends with -shortId', () => {
+    expect(uniqueLocalBranch('feature/foo-abcd1234', 'abcd1234')).toBe('feature/foo-abcd1234');
+  });
+});
 
 describe('createWorktree', () => {
   const BRANCH = 'feature-branch-a';
@@ -90,6 +100,22 @@ describe('createWorktree', () => {
     });
   });
 
+  it('creates two unique local branches tracking the same start branch', async () => {
+    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+
+    const first = await createWorktree(repo, BRANCH, 'wt-local-1', FAKE_TOKEN, {
+      localBranch: `${BRANCH}-aaaa`,
+    });
+    const { stdout: headA } = await git(first.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD');
+    expect(headA.trim()).toBe(`${BRANCH}-aaaa`);
+
+    const second = await createWorktree(repo, BRANCH, 'wt-local-2', FAKE_TOKEN, {
+      localBranch: `${BRANCH}-bbbb`,
+    });
+    const { stdout: headB } = await git(second.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD');
+    expect(headB.trim()).toBe(`${BRANCH}-bbbb`);
+  });
+
   it('worktree starts from the latest remote commit, not the stale bare-clone ref', async () => {
     const workPath = path.join(TEST_REPOS_DIR, 'work');
     const remotePath = path.join(TEST_REPOS_DIR, 'remote.git');
@@ -114,5 +140,59 @@ describe('createWorktree', () => {
     // The worktree directory should contain files from the new commit
     const files = await fs.promises.readdir(worktreePath);
     expect(files).toContain('update.txt');
+  });
+
+  it('deletes a unique local branch after removing the worktree', async () => {
+    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const localBranch = `${BRANCH}-archive`;
+    await createWorktree(repo, BRANCH, 'wt-archive-1', FAKE_TOKEN, { localBranch });
+
+    const { stdout: before } = await git(barePath, 'branch', '--list', localBranch);
+    expect(before.trim()).toContain(localBranch);
+
+    await removeWorktree(
+      {
+        short_id: 'wt-archive-1',
+        local_branch: localBranch,
+        remote_branch: BRANCH,
+      },
+      repo
+    );
+
+    const { stdout: after } = await git(barePath, 'branch', '--list', localBranch);
+    expect(after.trim()).toBe('');
+    const { stdout: shared } = await git(barePath, 'branch', '--list', BRANCH);
+    expect(shared.trim()).toContain(BRANCH);
+  });
+
+  it('does not delete local_branch when it matches remote_branch', async () => {
+    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    await createWorktree(repo, BRANCH, 'wt-legacy-1', FAKE_TOKEN, { detach: false });
+
+    await removeWorktree(
+      {
+        short_id: 'wt-legacy-1',
+        local_branch: BRANCH,
+        remote_branch: BRANCH,
+      },
+      repo
+    );
+
+    const { stdout: shared } = await git(barePath, 'branch', '--list', BRANCH);
+    expect(shared.trim()).toContain(BRANCH);
+  });
+
+  it('does not fail archive when the unique local branch is already gone', async () => {
+    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    await expect(
+      removeWorktree(
+        {
+          short_id: 'missing-wt',
+          local_branch: `${BRANCH}-already-gone`,
+          remote_branch: BRANCH,
+        },
+        repo
+      )
+    ).resolves.toBeUndefined();
   });
 });
