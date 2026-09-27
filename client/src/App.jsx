@@ -323,8 +323,8 @@ function ThemedToaster() {
 
   return (
     <Toaster
-      position="bottom-center"
-      containerStyle={{ bottom: '1.5rem' }}
+      position="bottom-left"
+      containerStyle={{ bottom: '1.5rem', left: '1.5rem' }}
       toastOptions={{
         duration: 5000,
         style: isLight

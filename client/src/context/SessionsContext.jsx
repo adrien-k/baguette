@@ -32,6 +32,7 @@ export function SessionsProvider({ children }) {
     repos,
   });
   const prevStatusRef = useRef(new Map());
+  const prevReviewStatusRef = useRef(new Map());
   const sessionsRef = useRef(sessions);
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -50,7 +51,10 @@ export function SessionsProvider({ children }) {
   useEffect(() => {
     if (loading || initializedRef.current) return;
     initializedRef.current = true;
-    sessions.forEach((s) => prevStatusRef.current.set(s.id, s.status));
+    sessions.forEach((s) => {
+      prevStatusRef.current.set(s.id, s.status);
+      prevReviewStatusRef.current.set(s.id, s.review_status);
+    });
   }, [sessions, loading]);
 
   const { sessionUrl } = useFilterRoutes();
@@ -61,9 +65,10 @@ export function SessionsProvider({ children }) {
     [sessionPath]
   );
 
+  const issuesPath = useCallback((session) => `${sessionPath(session)}?view=review`, [sessionPath]);
+
   const notifyCompleted = useCallback(
     (session) => {
-      if (isCurrentSession(session)) return;
       const label = session.label || `Session #${session.id}`;
       toast.custom(
         (t) => (
@@ -104,7 +109,48 @@ export function SessionsProvider({ children }) {
         );
       }
     },
-    [sessionPath, isCurrentSession]
+    [sessionPath]
+  );
+
+  const notifyReviewCompleted = useCallback(
+    (session) => {
+      const label = session.label || `Session #${session.id}`;
+      const issuesTo = issuesPath(session);
+      toast.custom(
+        (t) => (
+          <div
+            className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
+          >
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-medium truncate">{label}</p>
+              <p className="text-zinc-400 text-xs">Review completed</p>
+            </div>
+            <Link
+              to={issuesTo}
+              onClick={() => toast.dismiss(t.id)}
+              className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
+            >
+              Issues
+            </Link>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ),
+        { duration: 8000 }
+      );
+
+      if (isTabHidden()) {
+        showBrowserNotification('Review completed', label, `review-completed-${session.id}`, () => {
+          window.focus();
+        });
+      }
+    },
+    [issuesPath]
   );
 
   const notifyFailed = useCallback(
@@ -156,10 +202,16 @@ export function SessionsProvider({ children }) {
         if (session.status === 'failed') notifyFailed(session);
       }
       prevStatusRef.current.set(session.id, session.status);
+
+      const prevReview = prevReviewStatusRef.current.get(session.id);
+      if (prevReview !== undefined && prevReview !== session.review_status) {
+        if (session.review_status === 'completed') notifyReviewCompleted(session);
+      }
+      prevReviewStatusRef.current.set(session.id, session.review_status);
     };
     sessionsService.on('patched', onPatched);
     return () => sessionsService.off('patched', onPatched);
-  }, [notifyCompleted, notifyFailed]);
+  }, [notifyCompleted, notifyFailed, notifyReviewCompleted]);
 
   return (
     <SessionsContext.Provider
