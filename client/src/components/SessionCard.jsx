@@ -1,14 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import {
-  Loader2,
-  AlertCircle,
-  CheckCircle2,
-  Circle,
-  XCircle,
-  Square,
-  Archive,
-  Repeat,
-} from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Square, Repeat } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import SessionTools, { sessionToolsVisible } from './SessionTools.jsx';
@@ -18,25 +9,28 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import CardRepoBadge from './CardRepoBadge.jsx';
 import SessionCardLayout from './SessionCardLayout.jsx';
+import SessionStatusIndicator from './SessionStatusIndicator.jsx';
 
-export function SessionStatusIcon({ status }) {
+export function SessionStatusIcon({ status, compact = false, ...props }) {
+  const size = compact ? 'w-3 h-3' : 'w-3.5 h-3.5';
   switch (status) {
     case 'running':
-      return <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin shrink-0" />;
+      return <Loader2 className={`${size} text-emerald-400 animate-spin shrink-0`} {...props} />;
     case 'provisioning':
-      return <Loader2 className="w-3.5 h-3.5 text-zinc-400 animate-spin shrink-0" />;
+      return <Loader2 className={`${size} text-zinc-400 animate-spin shrink-0`} {...props} />;
     case 'archiving':
-      return <Loader2 className="w-3.5 h-3.5 text-amber-400/80 animate-spin shrink-0" />;
+      return <Loader2 className={`${size} text-amber-400/80 animate-spin shrink-0`} {...props} />;
     case 'approval':
-      return <AlertCircle className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />;
+      return <AlertCircle className={`${size} text-amber-400 animate-pulse shrink-0`} {...props} />;
     case 'completed':
-      return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+      return <CheckCircle2 className={`${size} text-emerald-400 shrink-0`} {...props} />;
     case 'stopped':
-      return <Circle className="w-3.5 h-3.5 text-zinc-500 shrink-0" />;
+      return <Circle className={`${size} text-zinc-500 shrink-0`} {...props} />;
     case 'failed':
-      return <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />;
+    case 'error':
+      return <XCircle className={`${size} text-red-400 shrink-0`} {...props} />;
     default:
-      return <Circle className="w-3.5 h-3.5 text-zinc-600 shrink-0" />;
+      return <Circle className={`${size} text-zinc-600 shrink-0`} {...props} />;
   }
 }
 
@@ -111,13 +105,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
           />
         ) : null
       }
-      indicator={
-        isArchived ? (
-          <Archive className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-        ) : (
-          <SessionStatusIcon status={session.status} />
-        )
-      }
+      indicator={<SessionStatusIndicator session={session} size="md" />}
       title={session.label || session.repo_full_name}
       subtitle={activeLabel || null}
       titleExtras={titleExtras}

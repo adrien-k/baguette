@@ -96,8 +96,9 @@ export default function ChatView({
   readonly,
   models,
   onModelChange,
-  cursorFast,
-  cursorEffort,
+  onAutoPushChange,
+  cursorModelPrefs,
+  onCursorModelPrefChange,
 }) {
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
@@ -252,14 +253,14 @@ export default function ChatView({
     }
   };
 
-  const handleMerge = async () => {
+  const handleMerge = async ({ archive = false } = {}) => {
     if (!session?.id) return;
     setMerging(true);
     setMergeError(null);
     try {
-      await sessionsService.merge(session.id);
+      await sessionsService.merge({ id: session.id, archive });
       setShowMergeModal(false);
-      toast.success('PR merged successfully');
+      toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
     } catch (err) {
       toastError('Failed to merge PR', err);
       setMergeError(err.message || 'Failed to merge PR');
@@ -720,9 +721,11 @@ export default function ChatView({
                   sending={sending}
                   session={session}
                   models={models}
-                  cursorFast={cursorFast}
-                  cursorEffort={cursorEffort}
+                  cursorModelPrefs={cursorModelPrefs}
+                  onCursorModelPrefChange={onCursorModelPrefChange}
                   onModelChange={handleComposerModelChange}
+                  onAutoPushChange={onAutoPushChange}
+                  showAutoPushParam
                   textareaId="chat-input"
                   canSend={canSendDraft}
                   submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}

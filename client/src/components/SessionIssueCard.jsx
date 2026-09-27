@@ -6,10 +6,10 @@ import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
 
 const SEVERITY_CLASS = {
-  critical: 'bg-red-500/20 text-red-300 border-red-500/40',
-  high: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
-  medium: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-  low: 'bg-zinc-700 text-zinc-300 border-zinc-600',
+  critical: 'bg-red-500/15 text-red-400 border-red-500/35',
+  high: 'bg-orange-500/15 text-orange-300 border-orange-500/35',
+  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/35',
+  low: 'bg-zinc-800/80 text-zinc-400 border-zinc-600/80',
 };
 
 const ISSUE_META_CHIP =

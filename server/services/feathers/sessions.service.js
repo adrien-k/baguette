@@ -703,7 +703,17 @@ export class SessionsService extends KnexService {
         { pr_status: 'merged' },
         { provider: undefined, user: { id: session.user_id } }
       );
-    return { ok: true };
+    if (data?.archive) {
+      try {
+        await this.remove(session.id, params);
+      } catch (err) {
+        const detail = err?.message || 'Unknown error';
+        throw new BadRequest(
+          `Pull request merged successfully, but archiving the session failed: ${detail}`
+        );
+      }
+    }
+    return { ok: true, merged: true, archived: !!data?.archive };
   }
 
   async push(data, params) {

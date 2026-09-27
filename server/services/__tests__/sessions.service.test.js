@@ -12,12 +12,12 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from '@feathersjs/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
-import { createWorktree, getOpenPR, getPRStatus, removeWorktree } from '../github.js';
+import { createWorktree, getOpenPR, getPRStatus, mergePR, removeWorktree } from '../github.js';
 
 // ── Module-level mocks ────────────────────────────────────────────────────────
 
@@ -58,6 +58,8 @@ vi.mock('../github.js', async (importOriginal) => {
     getOpenPRByNumber: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
     getPRStatus: vi.fn().mockResolvedValue('open'),
+    mergePR: vi.fn().mockResolvedValue(undefined),
+    markPRReady: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -220,6 +222,43 @@ describe('Sessions service - custom methods', (hooks) => {
       await expect(app.service('sessions').stop(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+  });
+
+  // ── merge ──────────────────────────────────────────────────────────────────
+
+  describe('merge', () => {
+    beforeEach(async () => {
+      await db('sessions')
+        .where({ id: sessId })
+        .update({ pr_number: 42, pr_status: 'open', repo_full_name: 'test/repo' });
+      mergePR.mockResolvedValue(undefined);
+    });
+
+    it('merges PR, updates pr_status, and archives when archive is true', async () => {
+      const result = await app
+        .service('sessions')
+        .merge({ id: sessId, archive: true }, params({ id: userId }));
+
+      expect(mergePR).toHaveBeenCalledWith('test-token', 'test/repo', 42);
+      expect(result).toEqual({ ok: true, merged: true, archived: true });
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.pr_status).toBe('merged');
+      expect(row.archived_at).not.toBeNull();
+    });
+
+    it('when archive fails after merge, returns a clear error and leaves PR merged', async () => {
+      const sessionsSvc = app.service('sessions');
+      vi.spyOn(sessionsSvc, 'remove').mockRejectedValueOnce(new BadRequest('Session is archiving'));
+
+      await expect(
+        sessionsSvc.merge({ id: sessId, archive: true }, params({ id: userId }))
+      ).rejects.toMatchObject({
+        message: /Pull request merged successfully, but archiving the session failed/,
+      });
+
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.pr_status).toBe('merged');
     });
   });
 

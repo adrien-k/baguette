@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 
 export default function MergeConfirmModal({
@@ -8,6 +9,12 @@ export default function MergeConfirmModal({
   error,
   onFixConflicts,
 }) {
+  const [archiveSession, setArchiveSession] = useState(true);
+
+  const handleConfirm = () => {
+    onConfirm({ archive: archiveSession });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-sm p-6">
@@ -38,9 +45,21 @@ export default function MergeConfirmModal({
               Merge PR <span className="text-amber-400 font-medium">#{prNumber}</span> into the base
               branch?
             </p>
-            <p className="text-zinc-500 text-xs mb-6">
+            <p className="text-zinc-500 text-xs mb-4">
               This will squash and merge the changes. This action cannot be undone.
             </p>
+            <label className="flex items-start gap-2.5 mb-6 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={archiveSession}
+                onChange={(e) => setArchiveSession(e.target.checked)}
+                disabled={loading}
+                className="mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-600 focus:ring-emerald-500/50"
+              />
+              <span className="text-sm text-zinc-300 group-hover:text-zinc-200">
+                Archive this session after merging
+              </span>
+            </label>
           </>
         )}
         <div className="flex gap-3 justify-end">
@@ -53,7 +72,7 @@ export default function MergeConfirmModal({
           </button>
           {!error && (
             <button
-              onClick={onConfirm}
+              onClick={handleConfirm}
               disabled={loading}
               className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
             >

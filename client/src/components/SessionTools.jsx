@@ -25,7 +25,13 @@ function canShowTool(tool, session, { readonly, onPush }) {
     case 'code':
       return !!session.codeserver_url;
     case 'push':
-      return !!onPush && !readonly && session.pr_status !== 'merged' && !isGlobalSession(session);
+      return (
+        !!onPush &&
+        !readonly &&
+        !session.auto_push &&
+        session.pr_status !== 'merged' &&
+        !isGlobalSession(session)
+      );
     default:
       return false;
   }

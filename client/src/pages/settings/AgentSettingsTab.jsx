@@ -291,7 +291,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
       <div className="space-y-6">
         <SettingsSection
           title="Cursor model preferences"
-          description="Used when starting Cursor sessions from the dashboard, builder, and MCP."
+          description="Used when starting Cursor sessions from the dashboard, builder, and MCP. If a model does not offer a strict match for a parameter, Baguette selects the closest available option (for example the nearest context size or the next lower effort or reasoning tier)."
         >
           <CursorModelPreferencesSection />
         </SettingsSection>

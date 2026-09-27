@@ -20,8 +20,8 @@ export default function DiffLineComposer({
   path,
   line,
   models,
-  cursorFast,
-  cursorEffort,
+  cursorModelPrefs,
+  onCursorModelPrefChange,
   onModelChange,
   onClose,
 }) {
@@ -146,8 +146,8 @@ export default function DiffLineComposer({
         sending={sending}
         session={session}
         models={models}
-        cursorFast={cursorFast}
-        cursorEffort={cursorEffort}
+        cursorModelPrefs={cursorModelPrefs}
+        onCursorModelPrefChange={onCursorModelPrefChange}
         onModelChange={handleComposerModelChange}
         textareaId="diff-line-composer"
         autoFocus

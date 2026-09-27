@@ -50,7 +50,7 @@ export default function BuilderForm({
   const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
   const { repos, loading: loadingRepos } = useRepoContext();
-  const { cursorFast, cursorEffort } = useCursorModelPrefs();
+  const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const defaultTarget = editingLoop
     ? editingLoop.is_global
       ? GLOBAL_SCOPE
@@ -203,8 +203,8 @@ export default function BuilderForm({
         if (latestOrDefaultVariant) {
           const mergedParams = applyParamOverrides(
             latestOrDefaultVariant.params || [],
-            cursorFast,
-            cursorEffort
+            cursorModelPrefs,
+            variants
           );
           const mergedStr = JSON.stringify(mergedParams);
           const withPreferenceVariantIdx = variants.findIndex((v) => {
@@ -248,8 +248,8 @@ export default function BuilderForm({
       if (latestOrDefaultVariant) {
         const mergedParams = applyParamOverrides(
           latestOrDefaultVariant.params || [],
-          cursorFast,
-          cursorEffort
+          cursorModelPrefs,
+          variants
         );
         const mergedStr = JSON.stringify(mergedParams);
         const withPreferenceVariantIdx = variants.findIndex((v) => {
@@ -317,7 +317,11 @@ export default function BuilderForm({
         ? selectedModel.variants[cursorVariantIdx]
         : null;
     const finalParams = isCursor
-      ? applyParamOverrides(selectedVariant?.params ?? [], cursorFast, cursorEffort)
+      ? applyParamOverrides(
+          selectedVariant?.params ?? [],
+          cursorModelPrefs,
+          selectedModel?.variants ?? []
+        )
       : null;
     return {
       isGlobal,
@@ -444,23 +448,14 @@ export default function BuilderForm({
     const variant = cursorVariantIdx != null ? modelVariants[cursorVariantIdx] : null;
     const params =
       isCursor && variant
-        ? applyParamOverrides(variant.params ?? [], cursorFast, cursorEffort)
+        ? applyParamOverrides(variant.params ?? [], cursorModelPrefs, modelVariants)
         : null;
     return {
       agent_sdk: availableSdks.includes(agentSdk) ? agentSdk : (availableSdks[0] ?? agentSdk),
       model: model || null,
       model_params: params?.length ? JSON.stringify(params) : null,
     };
-  }, [
-    agentSdk,
-    model,
-    isCursor,
-    models,
-    cursorVariantIdx,
-    cursorFast,
-    cursorEffort,
-    availableSdks,
-  ]);
+  }, [agentSdk, model, isCursor, models, cursorVariantIdx, cursorModelPrefs, availableSdks]);
 
   const composerToolbarExtra = editingLoop ? (
     <button
@@ -488,17 +483,15 @@ export default function BuilderForm({
       sending={loading}
       session={composerSession}
       models={models}
-      cursorFast={cursorFast}
-      cursorEffort={cursorEffort}
+      cursorModelPrefs={cursorModelPrefs}
+      onCursorModelPrefChange={setCursorModelPref}
       onModelChange={handleComposerModelChange}
       availableSdks={availableSdks}
       onSdkChange={setAgentSdk}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
       submitTooltip={
-        !isLoop
-          ? 'Branches out of the selected base branch, which could create a new PR.'
-          : undefined
+        !isLoop ? 'Branches out of the selected branch, which could create a new PR.' : undefined
       }
       sendAddon={
         !isLoop ? (
@@ -621,7 +614,7 @@ export default function BuilderForm({
       {!isGlobal && (
         <div className="space-y-2">
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">Base branch</label>
+            <label className="mb-1 block text-sm font-medium text-zinc-300">Branch</label>
             <div className="flex min-w-0 items-center gap-2">
               <div className="min-w-0 flex-1">
                 <SearchableSelect

@@ -9,7 +9,6 @@ import {
   MessageSquare,
   GitBranch,
   Copy,
-  Archive,
   Loader2,
   PanelLeft,
   PanelRight,
@@ -52,6 +51,7 @@ import { sortSessionsForList } from '@baguette/shared/session-sort.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
+import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
 
 const TASK_PANEL_WIDTH_DEFAULT = 320;
 const REVIEW_PANEL_WIDTH_DEFAULT = 480;
@@ -210,31 +210,6 @@ function parseMessageRow(row) {
   }
 }
 
-/** Matches sidebar + session header — archive icon vs status dot */
-function SessionStatusIndicator({ session }) {
-  const isArchived = !!session.archived_at;
-  const isArchiving = !isArchived && session.status === 'archiving';
-  const statusColor =
-    {
-      running: 'bg-emerald-400 animate-pulse',
-      provisioning: 'bg-zinc-400 animate-pulse',
-      archiving: 'bg-amber-400 animate-pulse',
-      approval: 'bg-amber-400 animate-pulse',
-      completed: 'bg-emerald-400',
-      stopped: 'bg-zinc-500',
-      failed: 'bg-red-400',
-      error: 'bg-red-400',
-    }[session.status] || 'bg-zinc-600';
-
-  if (isArchived) {
-    return <Archive className="w-3 h-3 text-zinc-600 shrink-0" aria-hidden />;
-  }
-  if (isArchiving) {
-    return <Loader2 className="w-3 h-3 text-amber-400/80 animate-spin shrink-0" aria-hidden />;
-  }
-  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor}`} />;
-}
-
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(query).matches
@@ -380,7 +355,7 @@ export default function Session() {
   );
   const [diffFiles, setDiffFiles] = useState([]);
   const [models, setModels] = useState([]);
-  const { cursorFast, cursorEffort } = useCursorModelPrefs();
+  const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
@@ -957,7 +932,7 @@ export default function Session() {
                   tools={['pr', 'preview', 'code', 'push']}
                   hideLabelBelowSm
                   readonly={!!headerSession.archived_at || headerSession.status === 'archiving'}
-                  onPush={handlePush}
+                  onPush={headerSession.auto_push ? undefined : handlePush}
                   pushing={pushing}
                   commitsToPush={commitsToPush}
                   prUrl={session ? prInfo?.url : headerSession.pr_url}
@@ -1177,8 +1152,9 @@ export default function Session() {
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
-                cursorFast={cursorFast}
-                cursorEffort={cursorEffort}
+                onAutoPushChange={handleAutoPushChange}
+                cursorModelPrefs={cursorModelPrefs}
+                onCursorModelPrefChange={setCursorModelPref}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'review' && (
@@ -1196,8 +1172,8 @@ export default function Session() {
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
-                cursorFast={cursorFast}
-                cursorEffort={cursorEffort}
+                cursorModelPrefs={cursorModelPrefs}
+                onCursorModelPrefChange={setCursorModelPref}
               />
             )}
           </div>

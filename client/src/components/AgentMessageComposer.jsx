@@ -3,19 +3,20 @@ import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
 import Tooltip from './Tooltip.jsx';
 import { isMobile } from '../utils/isMobile.js';
+
 /** Shared height/layout with Send so toolbar actions (e.g. Stop, attach) align. */
 export const COMPOSER_ACTION_BUTTON_LAYOUT =
   'inline-flex items-center justify-center shrink-0 h-8 text-sm font-medium';
 
 /** Amber fill shared by Send/Start and its caret; use inside `COMPOSER_SPLIT_GROUP_CLASS`. */
 export const COMPOSER_SPLIT_AMBER_CLASS =
-  'bg-amber-500 group-hover/split:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:group-hover/split:bg-zinc-700 text-zinc-950 transition-colors';
+  'bg-amber-500 hover:bg-amber-400 group-hover/split:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:group-hover/split:bg-zinc-700 text-zinc-950 transition-colors';
 
 export const COMPOSER_SPLIT_GROUP_CLASS = 'group/split inline-flex items-stretch shrink-0';
 
 const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent transition-colors disabled:cursor-not-allowed`;
 
-const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-amber-600/40 disabled:border-r-zinc-600 disabled:cursor-not-allowed`;
+const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-amber-600/40 group-hover/split:border-amber-500/50 disabled:border-r-zinc-600 disabled:cursor-not-allowed`;
 
 /** Tighter horizontal padding on small viewports; roomier from md up. */
 const SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';
@@ -33,9 +34,11 @@ export default function AgentMessageComposer({
   sending = false,
   session,
   models,
-  cursorFast,
-  cursorEffort,
+  cursorModelPrefs,
+  onCursorModelPrefChange,
   onModelChange,
+  onAutoPushChange,
+  showAutoPushParam = false,
   availableSdks,
   onSdkChange,
   formClassName = 'relative z-[2] shrink-0 bg-zinc-950 pb-3 sm:pb-4 pt-1',
@@ -125,9 +128,11 @@ export default function AgentMessageComposer({
         <SessionModelSelect
           session={session}
           models={models}
-          cursorFast={cursorFast}
-          cursorEffort={cursorEffort}
+          cursorModelPrefs={cursorModelPrefs}
+          onCursorModelPrefChange={onCursorModelPrefChange}
           onModelChange={onModelChange}
+          onAutoPushChange={onAutoPushChange}
+          showAutoPushParam={showAutoPushParam}
           availableSdks={availableSdks}
           onSdkChange={onSdkChange}
           disabled={disabled || sending}

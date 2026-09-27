@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import LightChipDropdown from './LightChipDropdown.jsx';
-import CursorVariantDropdown from './CursorVariantDropdown.jsx';
-import { pickPreferredVariantIdx } from '../utils/models.js';
+import ComposerParamPicker from './ComposerParamPicker.jsx';
+import {
+  pickPreferredVariantIdx,
+  orderedParamIdsFromVariants,
+  paramValueOptionsFromVariants,
+  formatParamDisplayValue,
+  formatParamLabel,
+  isBinaryParamOptions,
+  resolveParamsAfterParamChange,
+} from '../utils/models.js';
+import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
 
 function parseSessionModelParams(session) {
   if (!session?.model_params) return null;
@@ -14,7 +23,7 @@ function parseSessionModelParams(session) {
 
 const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
 
-function currentVariantIndex(variants, sessionParams, cursorFast, cursorEffort) {
+function currentVariantIndex(variants, sessionParams, cursorModelPrefs) {
   if (!variants.length) return 0;
   if (sessionParams) {
     const idx = variants.findIndex((v) =>
@@ -22,19 +31,27 @@ function currentVariantIndex(variants, sessionParams, cursorFast, cursorEffort) 
     );
     if (idx >= 0) return idx;
   }
-  const prefIdx = pickPreferredVariantIdx(variants, cursorFast, cursorEffort);
+  const prefIdx = pickPreferredVariantIdx(variants, cursorModelPrefs);
   return prefIdx >= 0 ? prefIdx : 0;
 }
 
+function resolvedModelParams(sessionParams, variants, variantIdx) {
+  if (sessionParams?.length) return sessionParams;
+  const v = variants[variantIdx];
+  return v?.params?.length ? v.params : [];
+}
+
 /**
- * Session model + Cursor variant pickers beside the chat Send control.
+ * Session model + per-param picker beside the chat Send control.
  */
 export default function SessionModelSelect({
   session,
   models,
-  cursorFast,
-  cursorEffort,
+  cursorModelPrefs,
+  onCursorModelPrefChange,
   onModelChange,
+  onAutoPushChange,
+  showAutoPushParam = false,
   availableSdks,
   onSdkChange,
   disabled = false,
@@ -52,7 +69,9 @@ export default function SessionModelSelect({
   const selectedModelId = pendingModelId ?? sessionModelId;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
   const variants = selectedModelObj?.variants ?? [];
-  const currentVariantIdx = currentVariantIndex(variants, sessionParams, cursorFast, cursorEffort);
+  const currentVariantIdx = currentVariantIndex(variants, sessionParams, cursorModelPrefs);
+  const orderedParamIds = orderedParamIdsFromVariants(variants);
+  const currentParams = resolvedModelParams(sessionParams, variants, currentVariantIdx);
 
   const modelTriggerLabel =
     selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
@@ -75,6 +94,73 @@ export default function SessionModelSelect({
   );
 
   const showSdkPicker = availableSdks && availableSdks.length > 1 && onSdkChange;
+
+  const paramPickerItems = useMemo(() => {
+    const items = [];
+    if (showAutoPushParam && onAutoPushChange) {
+      const on = !!session?.auto_push;
+      items.push({
+        id: 'auto-push',
+        kind: 'toggle',
+        label: formatParamLabel('auto-push'),
+        currentValue: on ? 'on' : 'off',
+        valueLabel: on ? 'on' : 'off',
+        options: [
+          { value: 'on', label: 'on' },
+          { value: 'off', label: 'off' },
+        ],
+        onSelect: (value) => onAutoPushChange(value === 'on'),
+      });
+    }
+    if (isCursor && variants.length > 0) {
+      for (const paramId of orderedParamIds) {
+        const valueOptions = paramValueOptionsFromVariants(variants, paramId, currentParams);
+        const currentValue =
+          currentParams.find((p) => p.id === paramId)?.value ?? valueOptions[0] ?? '';
+        const options = valueOptions.map((value) => ({
+          value,
+          label: formatParamDisplayValue(paramId, value),
+        }));
+        items.push({
+          id: paramId,
+          kind: isBinaryParamOptions(valueOptions) ? 'toggle' : 'menu',
+          label: formatParamLabel(paramId),
+          currentValue,
+          valueLabel: formatParamDisplayValue(paramId, currentValue),
+          options,
+          onSelect: (value) => {
+            if (!selectedModelId || disabled) return;
+            const prefKey = prefKeyForParamId(paramId);
+            if (prefKey && onCursorModelPrefChange) {
+              onCursorModelPrefChange(prefKey, prefValueFromParamValue(paramId, value));
+            }
+            const resolved = resolveParamsAfterParamChange(
+              variants,
+              currentParams,
+              paramId,
+              value,
+              orderedParamIds
+            );
+            onModelChange(selectedModelId, resolved.length ? JSON.stringify(resolved) : null);
+          },
+        });
+      }
+    }
+    return items;
+  }, [
+    showAutoPushParam,
+    onAutoPushChange,
+    session?.auto_push,
+    isCursor,
+    variants,
+    orderedParamIds,
+    currentParams,
+    selectedModelId,
+    disabled,
+    onCursorModelPrefChange,
+    onModelChange,
+  ]);
+
   if (!session?.agent_sdk && !showSdkPicker) return null;
 
   const pickModel = (newId) => {
@@ -82,7 +168,7 @@ export default function SessionModelSelect({
     const newModelObj = models.find((m) => m.id === newId);
     const newVariants = newModelObj?.variants ?? [];
     if (isCursor && newVariants.length) {
-      const prefIdx = pickPreferredVariantIdx(newVariants, cursorFast, cursorEffort);
+      const prefIdx = pickPreferredVariantIdx(newVariants, cursorModelPrefs);
       const prefVariant = prefIdx >= 0 ? newVariants[prefIdx] : null;
       setPendingModelId(newId);
       onModelChange(newId, prefVariant?.params?.length ? JSON.stringify(prefVariant.params) : null);
@@ -90,13 +176,6 @@ export default function SessionModelSelect({
       setPendingModelId(null);
       onModelChange(newId);
     }
-  };
-
-  const pickVariant = (idx) => {
-    if (disabled) return;
-    const v = variants[idx];
-    if (!v || !selectedModelId) return;
-    onModelChange(selectedModelId, v.params?.length ? JSON.stringify(v.params) : null);
   };
 
   return (
@@ -138,17 +217,9 @@ export default function SessionModelSelect({
         />
       </div>
 
-      {isCursor && variants.length > 0 && (
+      {paramPickerItems.length > 0 && (
         <div className="shrink-0">
-          <CursorVariantDropdown
-            variants={variants}
-            modelDisplayName={selectedModelObj?.display_name}
-            variantIdx={currentVariantIdx}
-            onVariantIdxChange={pickVariant}
-            placement="top-start"
-            trigger="icon"
-            disabled={disabled}
-          />
+          <ComposerParamPicker items={paramPickerItems} disabled={disabled} placement="top-start" />
         </div>
       )}
     </div>

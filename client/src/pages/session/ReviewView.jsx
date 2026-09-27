@@ -47,7 +47,7 @@ function issuesFixAllPrompt(sessionId) {
 export default function ReviewView({ session, readonly, commitsSinceReview = 0, onReviewStarted }) {
   const { user } = useAuth();
   const { repos } = useRepoContext();
-  const { cursorFast, cursorEffort } = useCursorModelPrefs();
+  const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { issues, loading: issuesLoading } = useGetSessionIssues(session?.id);
   const [userSettings, setUserSettings] = useState(null);
   const [models, setModels] = useState([]);
@@ -380,8 +380,8 @@ export default function ReviewView({ session, readonly, commitsSinceReview = 0, 
                       <SessionModelSelect
                         session={sessionForReviewComposer}
                         models={models}
-                        cursorFast={cursorFast}
-                        cursorEffort={cursorEffort}
+                        cursorModelPrefs={cursorModelPrefs}
+                        onCursorModelPrefChange={setCursorModelPref}
                         onModelChange={handleReviewModelChange}
                         disabled={readonly || isRunning}
                       />

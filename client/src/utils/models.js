@@ -3,6 +3,15 @@ export {
   pickPreferredVariantIdx,
   variantLabel,
   resolveCursorModelParams,
+  orderedParamIdsFromVariants,
+  paramValueOptionsFromVariants,
+  mergeModelParam,
+  formatParamDisplayValue,
+  resolveParamsAfterParamChange,
+  formatParamLabel,
+  isBinaryParamOptions,
+  binaryParamToggleOn,
+  binaryParamToggledValue,
 } from '@baguette/shared/model-variants.js';
 
 export function parseModelField(model) {

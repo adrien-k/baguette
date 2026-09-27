@@ -159,11 +159,22 @@ describe('Users service - patch', () => {
         { agent_preferences: { cursor_fast: 'yes', cursor_effort: 'high' } },
         params(user1)
       );
-    expect(result.agent_preferences).toEqual({ cursor_fast: 'yes', cursor_effort: 'high' });
+    expect(result.agent_preferences).toEqual({
+      cursor_fast: 'yes',
+      cursor_effort: 'high',
+      cursor_thinking: 'default',
+      cursor_reasoning: 'default',
+      cursor_context: 'default',
+      cursor_cyber: 'default',
+    });
     const row = await db('users').where({ id: user1.id }).first();
     expect(JSON.parse(row.agent_preferences)).toEqual({
       cursor_fast: 'yes',
       cursor_effort: 'high',
+      cursor_thinking: 'default',
+      cursor_reasoning: 'default',
+      cursor_context: 'default',
+      cursor_cyber: 'default',
     });
   });
 
@@ -191,7 +202,14 @@ describe('Users service - patch', () => {
     const result = await app
       .service('users')
       .patch(user1.id, { agent_preferences: { cursor_effort: 'xhigh' } }, params(user1));
-    expect(result.agent_preferences).toEqual({ cursor_fast: 'no', cursor_effort: 'xhigh' });
+    expect(result.agent_preferences).toEqual({
+      cursor_fast: 'no',
+      cursor_effort: 'xhigh',
+      cursor_thinking: 'default',
+      cursor_reasoning: 'default',
+      cursor_context: 'default',
+      cursor_cyber: 'default',
+    });
   });
 
   it('a user cannot patch another user', async () => {

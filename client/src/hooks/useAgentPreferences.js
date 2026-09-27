@@ -9,19 +9,18 @@ import {
 
 const SAVE_DEBOUNCE_MS = 400;
 
-/** User-level Cursor fast/effort toggles (shared across repos). */
+/** User-level Cursor model param preferences (shared across repos). */
 export function useCursorModelPrefs() {
   const { user } = useAuth();
-  const [cursorFast, setCursorFastState] = useState(DEFAULT_CURSOR_MODEL_PREFS.cursor_fast);
-  const [cursorEffort, setCursorEffortState] = useState(DEFAULT_CURSOR_MODEL_PREFS.cursor_effort);
+  const [cursorModelPrefs, setCursorModelPrefsState] = useState(DEFAULT_CURSOR_MODEL_PREFS);
   const [loaded, setLoaded] = useState(false);
   const saveTimerRef = useRef(null);
   const userIdRef = useRef(null);
   const latestRef = useRef(DEFAULT_CURSOR_MODEL_PREFS);
 
   useEffect(() => {
-    latestRef.current = { cursor_fast: cursorFast, cursor_effort: cursorEffort };
-  }, [cursorFast, cursorEffort]);
+    latestRef.current = cursorModelPrefs;
+  }, [cursorModelPrefs]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -34,8 +33,7 @@ export function useCursorModelPrefs() {
       .get(user.id)
       .then((d) => {
         const prefs = normalizeCursorModelPrefs(d.agent_preferences);
-        setCursorFastState(prefs.cursor_fast);
-        setCursorEffortState(prefs.cursor_effort);
+        setCursorModelPrefsState(prefs);
         latestRef.current = prefs;
       })
       .catch((err) => toastError('Failed to load model preferences', err))
@@ -59,20 +57,40 @@ export function useCursorModelPrefs() {
     [flushSave]
   );
 
-  const setCursorFast = useCallback(
-    (val) => {
-      setCursorFastState(val);
-      scheduleSave({ ...latestRef.current, cursor_fast: val });
+  const setCursorModelPref = useCallback(
+    (key, val) => {
+      setCursorModelPrefsState((prev) => {
+        const next = { ...prev, [key]: val };
+        scheduleSave(next);
+        return next;
+      });
     },
     [scheduleSave]
   );
 
+  const setCursorFast = useCallback(
+    (val) => setCursorModelPref('cursor_fast', val),
+    [setCursorModelPref]
+  );
   const setCursorEffort = useCallback(
-    (val) => {
-      setCursorEffortState(val);
-      scheduleSave({ ...latestRef.current, cursor_effort: val });
-    },
-    [scheduleSave]
+    (val) => setCursorModelPref('cursor_effort', val),
+    [setCursorModelPref]
+  );
+  const setCursorReasoning = useCallback(
+    (val) => setCursorModelPref('cursor_reasoning', val),
+    [setCursorModelPref]
+  );
+  const setCursorThinking = useCallback(
+    (val) => setCursorModelPref('cursor_thinking', val),
+    [setCursorModelPref]
+  );
+  const setCursorContext = useCallback(
+    (val) => setCursorModelPref('cursor_context', val),
+    [setCursorModelPref]
+  );
+  const setCursorCyber = useCallback(
+    (val) => setCursorModelPref('cursor_cyber', val),
+    [setCursorModelPref]
   );
 
   useEffect(() => {
@@ -81,5 +99,21 @@ export function useCursorModelPrefs() {
     };
   }, []);
 
-  return { cursorFast, cursorEffort, setCursorFast, setCursorEffort, loaded };
+  return {
+    cursorModelPrefs,
+    setCursorModelPref,
+    cursorFast: cursorModelPrefs.cursor_fast,
+    cursorEffort: cursorModelPrefs.cursor_effort,
+    cursorReasoning: cursorModelPrefs.cursor_reasoning,
+    cursorThinking: cursorModelPrefs.cursor_thinking,
+    cursorContext: cursorModelPrefs.cursor_context,
+    cursorCyber: cursorModelPrefs.cursor_cyber,
+    setCursorFast,
+    setCursorEffort,
+    setCursorReasoning,
+    setCursorThinking,
+    setCursorContext,
+    setCursorCyber,
+    loaded,
+  };
 }

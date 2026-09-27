@@ -200,8 +200,7 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
               models,
               modelId: model,
               variantIndex: variant_index,
-              cursorFast: prefs.cursor_fast,
-              cursorEffort: prefs.cursor_effort,
+              cursorModelPrefs: prefs,
             });
           } catch (err) {
             return fail(err.message);

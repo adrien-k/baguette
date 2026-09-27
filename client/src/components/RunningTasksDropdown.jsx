@@ -88,7 +88,7 @@ export default function RunningTasksDropdown() {
 
         {open && (
           <div
-            className={`absolute right-0 top-full mt-2 w-80 ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
+            className={`absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
           >
             <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5 text-zinc-500" />
@@ -108,9 +108,9 @@ export default function RunningTasksDropdown() {
                         onClick={() => openModal(task.id)}
                         className="px-3 py-2.5 border-b border-zinc-800 last:border-b-0 cursor-pointer hover:bg-zinc-800/60 transition-colors"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <code className="text-xs text-zinc-200 truncate block">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <code className="text-xs text-zinc-200 truncate block min-w-0">
                               {task.label || task.command}
                             </code>
                             {session && (

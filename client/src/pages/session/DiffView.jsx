@@ -398,8 +398,8 @@ export default function DiffView({
   readonly,
   models,
   onModelChange,
-  cursorFast,
-  cursorEffort,
+  cursorModelPrefs,
+  onCursorModelPrefChange,
 }) {
   const [diff, setDiff] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -431,13 +431,13 @@ export default function DiffView({
     fetchDiff();
   }, [fetchDiff]);
 
-  const handleMerge = async () => {
+  const handleMerge = async ({ archive = false } = {}) => {
     setMerging(true);
     setMergeError(null);
     try {
-      await sessionsService.merge(session.id);
+      await sessionsService.merge({ id: session.id, archive });
       setShowMergeModal(false);
-      toast.success('PR merged successfully');
+      toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
     } catch (err) {
       setMergeError(err.message || 'Failed to merge PR');
     } finally {
@@ -468,8 +468,8 @@ export default function DiffView({
         path={lineComposer.path}
         line={lineComposer.line}
         models={models}
-        cursorFast={cursorFast}
-        cursorEffort={cursorEffort}
+        cursorModelPrefs={cursorModelPrefs}
+        onCursorModelPrefChange={onCursorModelPrefChange}
         onModelChange={onModelChange}
         onClose={() => setLineComposer(null)}
       />
