@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import AnchoredMenu from '../AnchoredMenu.jsx';
 import { useSearchableSelectAsync } from './useSearchableSelectAsync.js';
 import { DROPDOWN_PANEL_CLASS } from '../../utils/dropdownPanel.js';
 
@@ -54,8 +55,8 @@ export default function SearchableSelect({
   isOptionDisabled,
 }) {
   const [search, setSearch] = useState(null); // null means search is closed
-  const rootRef = useRef(null);
   const inputRef = useRef(null);
+  const isOpen = search !== null;
   const { ring, border } = COLOR_CLASSES[color] ?? COLOR_CLASSES.amber;
 
   const { fetchedOptions, asyncLoading, fetchForQuery, debouncedFetch, cancelDebouncedFetch } =
@@ -87,19 +88,10 @@ export default function SearchableSelect({
 
   const selectedItem = value ? listSource.find((o) => getOptionValue(o) === value) : null;
 
-  useEffect(() => {
-    if (search === null) return;
-
-    const onMouseDown = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setSearch(null);
-        cancelDebouncedFetch();
-      }
-    };
-
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [search, cancelDebouncedFetch]);
+  const closeSearch = useCallback(() => {
+    setSearch(null);
+    cancelDebouncedFetch();
+  }, [cancelDebouncedFetch]);
 
   const inputPlaceholder =
     disabled && disabledText
@@ -136,80 +128,83 @@ export default function SearchableSelect({
   };
 
   return (
-    <div ref={rootRef}>
-      <div className="relative">
-        <input
-          ref={inputRef}
-          type="text"
-          value={search ?? ''}
-          onChange={(e) => handleInputChange(e.target.value)}
-          onFocus={() => {
-            if (search !== null) return;
-            setSearch('');
-            primeAsyncEmptyQuery();
-          }}
-          onClick={() => {
-            if (search === null) {
+    <AnchoredMenu
+      open={isOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) closeSearch();
+      }}
+      placement="bottom-start"
+      matchReferenceWidth
+      className={`max-h-48 overflow-y-auto ${DROPDOWN_PANEL_CLASS} divide-y divide-zinc-800`}
+      reference={({ ref, referenceProps }) => (
+        <div ref={ref} {...referenceProps} className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            value={search ?? ''}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onFocus={() => {
+              if (search !== null) return;
               setSearch('');
               primeAsyncEmptyQuery();
-            }
-          }}
-          placeholder={inputPlaceholder}
-          disabled={inputDisabled}
-          className={`w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-transparent focus:outline-none focus:ring-2 ${ring} disabled:opacity-50 ${
-            showClosedSelected
-              ? 'absolute inset-0 z-0 min-h-10.5 opacity-0 pointer-events-none'
-              : 'relative'
-          }`}
-        />
-        {showClosedSelected &&
-          (disabled ? (
-            <div
-              className={`relative z-10 w-full rounded-md border ${border} bg-zinc-800 px-3 py-2.5 text-sm text-white opacity-50`}
-            >
-              {renderSelectedContent()}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={openSearchAndFocus}
-              className={`relative z-10 w-full rounded-md border ${border} bg-zinc-800 px-3 py-2.5 text-sm text-white text-left cursor-pointer focus:outline-none focus:ring-2 ${ring}`}
-              aria-label="Change selection"
-            >
-              {renderSelectedContent()}
-            </button>
-          ))}
-      </div>
-      <div
-        className={`mt-1 max-h-48 overflow-y-auto ${DROPDOWN_PANEL_CLASS} divide-y divide-zinc-800 ${
-          search === null ? 'hidden' : ''
-        }`}
-      >
-        {!disabled &&
-          !loading &&
-          filteredOptions.map((o) => {
-            const optionDisabled = isOptionDisabled?.(o) ?? false;
-            return (
-              <button
-                key={getOptionValue(o)}
-                type="button"
-                disabled={optionDisabled}
-                onClick={() => {
-                  onChange(getOptionValue(o));
-                  setSearch(null);
-                  cancelDebouncedFetch();
-                }}
-                className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
-                  optionDisabled
-                    ? 'text-zinc-500 cursor-not-allowed'
-                    : 'text-white hover:bg-zinc-800/50'
-                }`}
+            }}
+            onClick={() => {
+              if (search === null) {
+                setSearch('');
+                primeAsyncEmptyQuery();
+              }
+            }}
+            placeholder={inputPlaceholder}
+            disabled={inputDisabled}
+            className={`w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-transparent focus:outline-none focus:ring-2 ${ring} disabled:opacity-50 ${
+              showClosedSelected
+                ? 'absolute inset-0 z-0 min-h-10.5 opacity-0 pointer-events-none'
+                : 'relative'
+            }`}
+          />
+          {showClosedSelected &&
+            (disabled ? (
+              <div
+                className={`relative z-10 w-full rounded-md border ${border} bg-zinc-800 px-3 py-2.5 text-sm text-white opacity-50`}
               >
-                {renderOption ? renderOption(o) : getOptionLabel(o)}
+                {renderSelectedContent()}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openSearchAndFocus}
+                className={`relative z-10 w-full rounded-md border ${border} bg-zinc-800 px-3 py-2.5 text-sm text-white text-left cursor-pointer focus:outline-none focus:ring-2 ${ring}`}
+                aria-label="Change selection"
+              >
+                {renderSelectedContent()}
               </button>
-            );
-          })}
-      </div>
-    </div>
+            ))}
+        </div>
+      )}
+    >
+      {!disabled &&
+        !loading &&
+        filteredOptions.map((o) => {
+          const optionDisabled = isOptionDisabled?.(o) ?? false;
+          return (
+            <button
+              key={getOptionValue(o)}
+              type="button"
+              disabled={optionDisabled}
+              onClick={() => {
+                onChange(getOptionValue(o));
+                closeSearch();
+              }}
+              className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
+                optionDisabled
+                  ? 'text-zinc-500 cursor-not-allowed'
+                  : 'text-white hover:bg-zinc-800/50'
+              }`}
+            >
+              {renderOption ? renderOption(o) : getOptionLabel(o)}
+            </button>
+          );
+        })}
+    </AnchoredMenu>
   );
 }

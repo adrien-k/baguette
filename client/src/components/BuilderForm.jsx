@@ -449,8 +449,18 @@ export default function BuilderForm({
       agent_sdk: availableSdks.includes(agentSdk) ? agentSdk : (availableSdks[0] ?? agentSdk),
       model: model || null,
       model_params: params?.length ? JSON.stringify(params) : null,
+      auto_push: autoPush,
     };
-  }, [agentSdk, model, isCursor, models, cursorVariantIdx, cursorModelPrefs, availableSdks]);
+  }, [
+    agentSdk,
+    model,
+    isCursor,
+    models,
+    cursorVariantIdx,
+    cursorModelPrefs,
+    availableSdks,
+    autoPush,
+  ]);
 
   const composerToolbarExtra = editingLoop ? (
     <button
@@ -481,6 +491,8 @@ export default function BuilderForm({
       cursorModelPrefs={cursorModelPrefs}
       onCursorModelPrefChange={setCursorModelPref}
       onModelChange={handleComposerModelChange}
+      onAutoPushChange={setAutoPush}
+      showAutoPushParam={!isGlobal && !isLoop}
       availableSdks={availableSdks}
       onSdkChange={setAgentSdk}
       submitDisabled={!canSubmit}
@@ -583,66 +595,74 @@ export default function BuilderForm({
         </div>
       )}
 
-      {allowRepoChoice && (
-        <div>
-          <label className="mb-1 block text-sm font-medium text-zinc-300">Repository</label>
-          <RepoPicker
-            includeAllSessions={false}
-            includeManage
-            navigateOnSelect={false}
-            syncContext={false}
-            showOrgInLabel
-            fullWidth
-            matchTriggerWidth
-            triggerClassName="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-white hover:text-white justify-between focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
-            value={targetScope}
-            onChange={setTargetScope}
-          />
-        </div>
-      )}
-
-      {!isGlobal && (
-        <div className="space-y-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-300">Branch</label>
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <SearchableSelect
-                  value={branch}
-                  onChange={setBranch}
-                  options={branches}
-                  loading={loadingBranches}
-                  disabled={!repoFullName}
-                  placeholder="Search branches..."
-                  loadingText="Loading branches..."
-                  emptyText="No branches found"
-                  disabledText="Select a repository first"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => clearCacheAndReload()}
-                disabled={!repoFullName || loadingBranches || clearingCache}
-                title="Clear cache and reload branches"
-                className="shrink-0 self-start px-1 py-2.5 text-sm leading-none text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
-              >
-                ↺
-              </button>
+      {(allowRepoChoice || !isGlobal) && (
+        <div
+          className={`grid grid-cols-1 gap-3 sm:gap-4 ${
+            allowRepoChoice && !isGlobal ? 'sm:grid-cols-3' : ''
+          }`}
+        >
+          {allowRepoChoice && (
+            <div className="min-w-0">
+              <label className="mb-1 block text-sm font-medium text-zinc-300">Repository</label>
+              <RepoPicker
+                includeAllSessions={false}
+                includeManage
+                navigateOnSelect={false}
+                syncContext={false}
+                showOrgInLabel
+                fullWidth
+                matchTriggerWidth
+                triggerClassName="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-white hover:text-white justify-between focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+                value={targetScope}
+                onChange={setTargetScope}
+              />
             </div>
-          </div>
-          {!allowRepoChoice && (
-            <p className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
-              <GithubIcon className="h-3.5 w-3.5 shrink-0 opacity-80" />
-              {repoFullName ? (
-                <span className="min-w-0 truncate">
-                  <span className="text-zinc-500">{repoOwner}</span>
-                  <span className="text-zinc-600"> / </span>
-                  <span className="text-zinc-400">{repoName}</span>
-                </span>
-              ) : (
-                <span className="text-zinc-600">No repository selected</span>
+          )}
+
+          {!isGlobal && (
+            <div className={`min-w-0 space-y-2 ${allowRepoChoice ? 'sm:col-span-2' : ''}`}>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-300">Branch</label>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <SearchableSelect
+                      value={branch}
+                      onChange={setBranch}
+                      options={branches}
+                      loading={loadingBranches}
+                      disabled={!repoFullName}
+                      placeholder="Search branches..."
+                      loadingText="Loading branches..."
+                      emptyText="No branches found"
+                      disabledText="Select a repository first"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => clearCacheAndReload()}
+                    disabled={!repoFullName || loadingBranches || clearingCache}
+                    title="Clear cache and reload branches"
+                    className="shrink-0 self-start px-1 py-2.5 text-sm leading-none text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
+                  >
+                    ↺
+                  </button>
+                </div>
+              </div>
+              {!allowRepoChoice && (
+                <p className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
+                  <GithubIcon className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                  {repoFullName ? (
+                    <span className="min-w-0 truncate">
+                      <span className="text-zinc-500">{repoOwner}</span>
+                      <span className="text-zinc-600"> / </span>
+                      <span className="text-zinc-400">{repoName}</span>
+                    </span>
+                  ) : (
+                    <span className="text-zinc-600">No repository selected</span>
+                  )}
+                </p>
               )}
-            </p>
+            </div>
           )}
         </div>
       )}
@@ -747,29 +767,6 @@ export default function BuilderForm({
                       placeholder="my-feature-branch"
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
                     />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={autoPush}
-                      onClick={() => setAutoPush((v) => !v)}
-                      className="flex items-center gap-2 group"
-                    >
-                      <span
-                        className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${autoPush ? 'bg-amber-500' : 'bg-zinc-600'}`}
-                      >
-                        <span
-                          className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${autoPush ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-                        />
-                      </span>
-                      <span className="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">
-                        Auto-push
-                      </span>
-                    </button>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      When enabled, the agent pushes commits to the remote after each turn.
-                    </p>
                   </div>
                 </>
               )}
