@@ -7,12 +7,26 @@ import { buildReviewSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveReviewPrompt } from '../effective-user-prompts.js';
 import { combinePromptExtensions } from '../../../shared/agent-prompts.js';
 import { buildReviewerMcpServer, buildReviewerCursorCustomTools } from '../baguette-mcp-server.js';
-import { DATA_DIR } from '../../config.js';
+import { DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
+import { gitCommitCountSince } from '../github.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
+import { markSessionReviewedAtHead } from '../session-branch-commits.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 
 const BAGUETTE_REVIEW_START_TITLE = 'Start review';
 const BAGUETTE_REVIEW_START_CONTENT = 'Begin the code review following your system instructions.';
+
+function newCommitsReviewText(marker, count) {
+  const noun = count === 1 ? 'commit' : 'commits';
+  return (
+    `Review the ${count} new ${noun} since ${marker}. ` +
+    `Focus on \`git diff ${marker}..HEAD\` and reconcile findings with existing issues.`
+  );
+}
+
+function newCommitsReviewTitle(count) {
+  return count === 1 ? 'Review 1 new commit' : `Review ${count} new commits`;
+}
 
 function commandsToAllowedTools(commands) {
   return commands.map((cmd) => `Bash(${cmd}*)`);
@@ -192,10 +206,20 @@ export class SessionReviewService {
         { user: { id: session.user_id } }
       );
 
-      const userMessage = {
-        type: 'user',
-        message: { role: 'user', content: message },
-      };
+      const baguetteTitle =
+        typeof data?.baguette_title === 'string' ? data.baguette_title.trim() : '';
+      const userMessage = baguetteTitle
+        ? {
+            type: 'user',
+            subtype: 'baguette',
+            source: 'baguette',
+            title: baguetteTitle,
+            message: { role: 'user', content: message },
+          }
+        : {
+            type: 'user',
+            message: { role: 'user', content: message },
+          };
       await this._persist(session, userMessage);
 
       const run =
@@ -225,6 +249,25 @@ export class SessionReviewService {
     }
   }
 
+  async reviewNewCommits(data, params) {
+    const sessionId = data?.session_id ?? data?.id;
+    if (!sessionId) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    await this._assertCanReview(session);
+    const marker = session.last_reviewed_commit_sha;
+    if (!marker) {
+      throw new BadRequest('No completed review yet — start a full review first');
+    }
+    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    const count = await gitCommitCountSince(cwd, marker);
+    if (count === 0) {
+      throw new BadRequest('No new commits since the last review');
+    }
+    const message = newCommitsReviewText(marker, count);
+    const baguette_title = newCommitsReviewTitle(count);
+    return this.send({ ...data, session_id: sessionId, message, baguette_title }, params);
+  }
+
   async stop(data, params) {
     const sessionId = data?.session_id ?? data?.id;
     if (!sessionId) throw new BadRequest('session_id is required');
@@ -251,6 +294,7 @@ export class SessionReviewService {
         review_claude_session_id: null,
         review_cursor_agent_id: null,
         review_status: 'stopped',
+        last_reviewed_commit_sha: null,
       },
       { user: { id: session.user_id } }
     );
@@ -339,6 +383,14 @@ export class SessionReviewService {
     const fresh = await this.app.get('db')('sessions').where({ id: session.id }).first();
     if (fresh?.review_status === 'running') {
       await this._patchReviewStatus(session, outcome);
+    }
+    if (outcome === 'completed') {
+      await markSessionReviewedAtHead(this.app, session.id).catch((err) =>
+        logger.warn(
+          { sessionId: session.id, err: err.message },
+          'Failed to mark session reviewed at head after review turn'
+        )
+      );
     }
   }
 
@@ -562,13 +614,14 @@ export class SessionReviewService {
 
 export function registerSessionReviewService(app, path = 'session-review') {
   app.use(path, new SessionReviewService(), {
-    methods: ['start', 'stop', 'send', 'clearContext', 'resumeInterrupted'],
+    methods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext', 'resumeInterrupted'],
   });
   app.service(path).hooks({
     before: {
       start: [requireUser],
       stop: [requireUser],
       send: [requireUser],
+      reviewNewCommits: [requireUser],
       clearContext: [requireUser],
       resumeInterrupted: [disableExternal],
     },

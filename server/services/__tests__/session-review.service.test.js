@@ -1,3 +1,8 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -7,6 +12,7 @@ import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
 import { registerSessionReviewMessagesService } from '../feathers/session-review-messages.service.js';
 import { registerSessionReviewService } from '../feathers/session-review.service.js';
+import { gitRevParseShort } from '../github.js';
 import { registerClaudeAgentService } from '../feathers/claude-agent.service.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
@@ -26,6 +32,22 @@ vi.mock('@cursor/sdk', () => ({
 
 const db = createTestDb({ beforeEach, afterEach });
 const params = (user) => ({ provider: 'rest', user });
+const execFileAsync = promisify(execFile);
+
+async function git(cwd, ...args) {
+  await execFileAsync('git', ['-C', cwd, ...args]);
+}
+
+async function initGitWorktree() {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-review-wt-'));
+  await git(dir, 'init', '-b', 'main');
+  await git(dir, 'config', 'user.email', 't@example.com');
+  await git(dir, 'config', 'user.name', 't');
+  await git(dir, 'commit', '--allow-empty', '-m', 'base');
+  await git(dir, 'checkout', '-b', 'feat');
+  await git(dir, 'commit', '--allow-empty', '-m', 'session');
+  return dir;
+}
 
 function makeQueryResult() {
   const gen = reviewStream();
@@ -347,6 +369,74 @@ describe('session-review service', () => {
     expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe('failed');
   });
 
+  it('does not set last_reviewed_commit_sha until the review turn completes', async () => {
+    let release;
+    const blocked = new Promise((resolve) => {
+      release = resolve;
+    });
+    query.mockImplementation(() => {
+      const gen = (async function* () {
+        await blocked;
+        yield {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+        };
+        yield { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 };
+      })();
+      gen.close = vi.fn();
+      return gen;
+    });
+    const wt = await initGitWorktree();
+    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'pass' }, params(user));
+    await vi.waitFor(() => {
+      expect(app.service('session-review')._active.has(sessionId)).toBe(true);
+    });
+    expect(
+      (await db('sessions').where({ id: sessionId }).first()).last_reviewed_commit_sha
+    ).toBeNull();
+    release();
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    query.mockImplementation(() => makeQueryResult());
+    await fs.promises.rm(wt, { recursive: true, force: true });
+  });
+
+  it('send updates last_reviewed_commit_sha after new commits', async () => {
+    const wt = await initGitWorktree();
+    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'first' }, params(user));
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    const firstReviewed = (await db('sessions').where({ id: sessionId }).first())
+      .last_reviewed_commit_sha;
+    await git(wt, 'commit', '--allow-empty', '-m', 'second');
+
+    await app
+      .service('session-review')
+      .send({ session_id: sessionId, message: 'check the latest commit' }, params(user));
+    await vi.waitFor(async () => {
+      const row = await db('sessions').where({ id: sessionId }).first();
+      expect(row.review_status).toBe('completed');
+      expect(row.last_reviewed_commit_sha).not.toBe(firstReviewed);
+    });
+
+    const session = await db('sessions').where({ id: sessionId }).first();
+    const head = await gitRevParseShort(wt, 'HEAD');
+    expect(session.last_reviewed_commit_sha).toBe(head);
+    await fs.promises.rm(wt, { recursive: true, force: true });
+  });
+
   it('clearContext wipes review messages and agent ids', async () => {
     await app
       .service('session-review')
@@ -366,6 +456,35 @@ describe('session-review service', () => {
     expect(session.review_claude_session_id).toBeNull();
     expect(session.review_cursor_agent_id).toBeNull();
     expect(session.review_status).toBe('stopped');
+    expect(session.last_reviewed_commit_sha).toBeNull();
+  });
+
+  it('reviewNewCommits persists a baguette-labelled user message', async () => {
+    const wt = await initGitWorktree();
+    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'first' }, params(user));
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    await git(wt, 'commit', '--allow-empty', '-m', 'second');
+
+    await app.service('session-review').reviewNewCommits({ session_id: sessionId }, params(user));
+    const rows = await db('session_review_messages')
+      .where({ session_id: sessionId, type: 'user' })
+      .orderBy('id', 'desc');
+    const latest = JSON.parse(rows[0].message_json);
+    expect(latest.source).toBe('baguette');
+    expect(latest.title).toMatch(/Review \d+ new commit/);
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    await fs.promises.rm(wt, { recursive: true, force: true });
   });
 
   it('clearContext rejects while a review turn is active', async () => {

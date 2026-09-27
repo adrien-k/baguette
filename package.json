@@ -12,6 +12,7 @@
     "start": "NODE_ENV=production node server/index.js",
     "migrate": "knex migrate:latest --knexfile knexfile.js",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
+    "repair-migrations-039": "node server/scripts/repair-knex-039-consolidation.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

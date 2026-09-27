@@ -379,7 +379,6 @@ export default function Session() {
     REVIEW_PANEL_WIDTH_DEFAULT
   );
   const [diffFiles, setDiffFiles] = useState([]);
-  const [commitsToPush, setCommitsToPush] = useState(0);
   const [models, setModels] = useState([]);
   const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -496,21 +495,35 @@ export default function Session() {
     return [...BASE_VIEWS];
   }, [isNewSessionRoute, session]);
 
+  const [commitsToPush, setCommitsToPush] = useState(0);
+  const [commitsSinceReview, setCommitsSinceReview] = useState(0);
+
   useEffect(() => {
     if (
       !sessionId ||
       session?.is_global ||
-      session?.status === 'running' ||
       session?.status === 'provisioning' ||
       session?.status === 'archiving' ||
       session?.status === 'archived'
-    )
+    ) {
+      setCommitsToPush(0);
+      setCommitsSinceReview(0);
       return;
+    }
     sessionsService
-      .gitStatus(sessionId)
-      .then((res) => setCommitsToPush(res.commitsToPush ?? 0))
+      .sessionGitStatus(sessionId)
+      .then((res) => {
+        setCommitsToPush(res.commitsToPush ?? 0);
+        setCommitsSinceReview(res.commitsSinceReview ?? 0);
+      })
       .catch(() => {});
-  }, [sessionId, session?.status, session?.is_global]);
+  }, [
+    sessionId,
+    session?.is_global,
+    session?.status,
+    session?.last_reviewed_commit_sha,
+    session?.review_status,
+  ]);
 
   useEffect(() => {
     if (!session) return;
@@ -643,7 +656,9 @@ export default function Session() {
     setPushing(true);
     try {
       await sessionsService.push({ id: session.id, forceMode, branch });
-      setCommitsToPush(0);
+      const status = await sessionsService.sessionGitStatus(session.id);
+      setCommitsToPush(status.commitsToPush ?? 0);
+      setCommitsSinceReview(status.commitsSinceReview ?? 0);
       toast.success('Pushed successfully');
     } catch (err) {
       if (err.data?.conflict) {
@@ -1170,6 +1185,7 @@ export default function Session() {
               <ReviewView
                 session={session}
                 readonly={isReadonly}
+                commitsSinceReview={commitsSinceReview}
                 onReviewStarted={() => setShowTasks(true)}
               />
             )}

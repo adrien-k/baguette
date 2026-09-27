@@ -12,11 +12,11 @@ import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { isMobile } from '../../utils/isMobile.js';
 import Alert from '../../components/Alert.jsx';
+import ClearReviewConfirmModal from '../../components/ClearReviewConfirmModal.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useGetSessionIssues } from '../../hooks/useGetSessionIssues.js';
-import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
@@ -26,9 +26,6 @@ import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
-
-const NEW_REVIEW_TOOLTIP =
-  'Starts a new review and clears the reviewer chat history (issues are kept).';
 
 function issueFixPrompt(issue, sessionId) {
   return (
@@ -47,16 +44,18 @@ function issuesFixAllPrompt(sessionId) {
   );
 }
 
-export default function ReviewView({ session, readonly, onReviewStarted }) {
+export default function ReviewView({ session, readonly, commitsSinceReview = 0, onReviewStarted }) {
   const { user } = useAuth();
   const { repos } = useRepoContext();
   const { cursorFast, cursorEffort } = useCursorModelPrefs();
   const { issues, loading: issuesLoading } = useGetSessionIssues(session?.id);
-  const { messages: reviewMessages } = useGetReviewMessages(session?.id);
   const [userSettings, setUserSettings] = useState(null);
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
+  const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [clearingReview, setClearingReview] = useState(false);
+  const [showClearReviewModal, setShowClearReviewModal] = useState(false);
   const [savingIssueId, setSavingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
     session?.id ? `session-review-chat-${session.id}` : undefined
@@ -124,11 +123,10 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
 
   const opened = issues.filter((i) => i.status === 'opened');
   const isRunning = session?.review_status === 'running';
+  const hasBeenReviewed = session?.last_reviewed_commit_sha != null;
+  const unreviewedCount = commitsSinceReview;
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
-  const hasReviewConversation = reviewMessages.some(
-    (m) => m.type === 'user' || m.type === 'assistant'
-  );
-  const showMiddleStartForm = reviewMessages.length === 0;
+  const showStartForm = !hasBeenReviewed;
 
   const sendFixMessage = async (text) => {
     await messagesService.create({
@@ -209,6 +207,19 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
     }
   };
 
+  const handleReviewNewCommits = async () => {
+    if (!session?.id || reviewingNewCommits || !canStartReview || unreviewedCount === 0) return;
+    setReviewingNewCommits(true);
+    try {
+      await sessionReviewService.reviewNewCommits({ session_id: session.id });
+      onReviewStarted?.();
+    } catch (err) {
+      toastError('Failed to review new commits', err);
+    } finally {
+      setReviewingNewCommits(false);
+    }
+  };
+
   const handleReviewPromptKeyDown = (e) => {
     if (!canStartReview) return;
     if (!isMobile() && e.key === 'Enter' && !e.shiftKey) {
@@ -229,6 +240,20 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
     }
   };
 
+  const handleClearReview = async () => {
+    if (!session?.id || clearingReview || isRunning) return;
+    setClearingReview(true);
+    try {
+      await sessionReviewService.clearContext({ session_id: session.id });
+      setReviewUserMessage('');
+      setShowClearReviewModal(false);
+    } catch (err) {
+      toastError('Failed to clear review', err);
+    } finally {
+      setClearingReview(false);
+    }
+  };
+
   const handleReviewModelChange = async (modelId, modelParamsJson) => {
     if (!session?.id || readonly) return;
     try {
@@ -241,36 +266,49 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
     }
   };
 
-  const reviewActionButtons = !readonly && (
-    <>
+  const startReviewButton = (
+    <button
+      type="button"
+      onClick={handleStart}
+      disabled={starting || !hasSdkKey || !session?.worktree_path}
+      className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
+    >
+      {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+      Start review
+    </button>
+  );
+
+  const stopReviewButton = (
+    <button
+      type="button"
+      onClick={handleStop}
+      disabled={stopping}
+      className="inline-flex items-center gap-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 px-3 py-1.5 rounded-lg text-sm font-medium border border-zinc-600"
+    >
+      {stopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
+      Stop
+    </button>
+  );
+
+  const followUpReviewControls = !readonly && hasBeenReviewed && (
+    <div className="flex flex-wrap items-center gap-2">
       {isRunning ? (
-        <button
-          type="button"
-          onClick={handleStop}
-          disabled={stopping}
-          className="inline-flex items-center gap-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 px-3 py-1.5 rounded-lg text-sm font-medium border border-zinc-600"
-        >
-          {stopping ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Square className="w-3.5 h-3.5" />
-          )}
-          Stop
-        </button>
+        stopReviewButton
       ) : (
         <button
           type="button"
-          onClick={handleStart}
-          disabled={starting || !hasSdkKey || !session?.worktree_path}
-          title={hasReviewConversation ? NEW_REVIEW_TOOLTIP : undefined}
+          onClick={handleReviewNewCommits}
+          disabled={
+            unreviewedCount === 0 || reviewingNewCommits || !hasSdkKey || !session?.worktree_path
+          }
           className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
         >
-          {starting ? (
+          {reviewingNewCommits ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <Play className="w-3.5 h-3.5" />
           )}
-          {hasReviewConversation ? 'New review' : 'Start review'}
+          Review new commits ({unreviewedCount})
         </button>
       )}
       {isRunning && (
@@ -279,12 +317,24 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
           Running
         </span>
       )}
-    </>
+      {!isRunning && (
+        <>
+          <div className="flex-1 min-w-2" />
+          <button
+            type="button"
+            onClick={() => setShowClearReviewModal(true)}
+            className="text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
+          >
+            Clear review
+          </button>
+        </>
+      )}
+    </div>
   );
 
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-      {showMiddleStartForm && (
+      {showStartForm && (
         <div className="shrink-0 overflow-auto">
           <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6`}>
             <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-5 sm:p-6 space-y-4">
@@ -337,7 +387,13 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
                       />
                     )}
                     <div className="flex-1 min-w-0" />
-                    {reviewActionButtons}
+                    {!readonly && (isRunning ? stopReviewButton : startReviewButton)}
+                    {!readonly && isRunning && (
+                      <span className="text-xs text-amber-400 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Running
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -347,11 +403,19 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
       )}
 
       <div className="flex-1 min-h-0 overflow-auto">
-        <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-3`}>
+        <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-4`}>
+          {hasBeenReviewed && (
+            <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-4 sm:p-5 space-y-4">
+              {userSettings && !hasSdkKey && (
+                <Alert variant="alert">
+                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                  <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
+                </Alert>
+              )}
+              {followUpReviewControls}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
-            {!showMiddleStartForm && (
-              <div className="flex flex-wrap items-center gap-2">{reviewActionButtons}</div>
-            )}
             <div className="flex-1 min-w-0" />
             {!readonly && opened.length > 0 && (
               <button type="button" onClick={handleFixAllOpened} className={SECONDARY_BUTTON_CLASS}>
@@ -363,9 +427,11 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
             <p className="text-xs text-zinc-500">Loading issues…</p>
           ) : issues.length === 0 ? (
             <p className="text-xs text-zinc-500">
-              {showMiddleStartForm
+              {showStartForm
                 ? 'No issues yet. Start a review to open some.'
-                : 'No open issues. Run New review for another pass, or follow up with the reviewer in the sidebar.'}
+                : unreviewedCount > 0
+                  ? 'No issues yet. Review new commits for another pass.'
+                  : 'No open issues. Push new commits, then review them when ready.'}
             </p>
           ) : (
             issues.map((issue) => (
@@ -383,6 +449,16 @@ export default function ReviewView({ session, readonly, onReviewStarted }) {
           )}
         </div>
       </div>
+
+      {showClearReviewModal && (
+        <ClearReviewConfirmModal
+          loading={clearingReview}
+          onCancel={() => {
+            if (!clearingReview) setShowClearReviewModal(false);
+          }}
+          onConfirm={handleClearReview}
+        />
+      )}
     </div>
   );
 }

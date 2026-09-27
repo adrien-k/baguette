@@ -610,6 +610,77 @@ export async function gitHasUncommitted(worktreePath) {
 }
 
 /**
+ * Resolves a ref to a short commit SHA.
+ * @returns {Promise<string|null>}
+ */
+export async function gitRevParseShort(worktreePath, ref = 'HEAD') {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'rev-parse', '--short', ref],
+      { maxBuffer: 256 }
+    );
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Number of commits on HEAD not reachable from sinceRef (exclusive).
+ * @returns {Promise<number>}
+ */
+export async function gitCommitCountSince(worktreePath, sinceRef) {
+  if (!sinceRef) return 0;
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'rev-list', '--count', `${sinceRef}..HEAD`],
+      { maxBuffer: 256 }
+    );
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function mergeBaseWithBaseBranch(worktreePath, baseBranch) {
+  if (!baseBranch) return null;
+  let ref = `origin/${baseBranch}`;
+  try {
+    await execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--verify', ref], {
+      maxBuffer: 256,
+      stdio: 'pipe',
+    });
+  } catch {
+    ref = baseBranch;
+  }
+  const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'merge-base', 'HEAD', ref], {
+    maxBuffer: 256,
+  });
+  return stdout.trim() || null;
+}
+
+/**
+ * Commits on the session branch since merge-base with base branch.
+ * @returns {Promise<number>}
+ */
+export async function gitCommitCountSinceBase(worktreePath, baseBranch) {
+  try {
+    const base = await mergeBaseWithBaseBranch(worktreePath, baseBranch);
+    if (!base) return 0;
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'rev-list', '--count', `${base}..HEAD`],
+      { maxBuffer: 256 }
+    );
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Returns the short SHA of HEAD and of a remote ref.
  * If remoteBranch is provided, resolves `origin/<remoteBranch>`; otherwise uses `@{u}`.
  * @returns {Promise<{ localSha: string|null, remoteSha: string|null }>}

@@ -59,7 +59,7 @@ export const sessionsService = createService('sessions', {
     'stop',
     'commands',
     'diff',
-    'gitStatus',
+    'sessionGitStatus',
     'shas',
     'showDiff',
     'merge',
@@ -100,5 +100,5 @@ export const slackService = createService('admin/slack', {
 export const sessionIssuesService = createService('session-issues');
 export const sessionReviewMessagesService = createService('session-review-messages');
 export const sessionReviewService = createService('session-review', {
-  customMethods: ['start', 'stop', 'send', 'clearContext'],
+  customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
 });

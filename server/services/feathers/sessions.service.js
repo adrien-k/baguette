@@ -30,6 +30,7 @@ import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
 import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
+import { computeSessionGitStatus } from '../session-git-status.js';
 import { getPreviewHost } from '../preview.js';
 import {
   getPreviewServiceDefinitions,
@@ -649,11 +650,9 @@ export class SessionsService extends KnexService {
     }
   }
 
-  async gitStatus(data, params) {
+  async sessionGitStatus(_data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) return { commitsToPush: 0 };
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
-    return { commitsToPush: await gitCommitsToPush(cwd) };
+    return computeSessionGitStatus(session);
   }
 
   async shas(data, params) {
@@ -1459,7 +1458,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'stop',
       'commands',
       'diff',
-      'gitStatus',
+      'sessionGitStatus',
       'shas',
       'showDiff',
       'merge',
@@ -1547,7 +1546,7 @@ export const sessionsHooks = {
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
-    gitStatus: [resolveSessionFromData],
+    sessionGitStatus: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     showDiff: [resolveSessionFromData],
     merge: [resolveSessionFromData],
