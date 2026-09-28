@@ -11,10 +11,7 @@ import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 import { processCursorRunStream } from '../cursor-sdk-turn.js';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
-import {
-  estimateCursorTurnCostUsd,
-  parseModelParamsJson,
-} from '../../../shared/cursor-model-pricing.js';
+import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
@@ -590,21 +587,7 @@ ${body}`,
 
   /** Per-turn USD from token counts when the model is in our pricing table; else 0. */
   _turnCostUsd(session, turnUsage, { kind, turnModel } = {}) {
-    const sessionModel = kind === 'review' ? session.review_model : session.model;
-    const sessionParamsJson =
-      kind === 'review'
-        ? (session.review_model_params ?? session.model_params)
-        : session.model_params;
-
-    const modelId = turnUsage?.model ?? turnModel?.model ?? sessionModel ?? session.model ?? null;
-
-    const paramsJson =
-      turnModel?.model != null && turnModel.model !== ''
-        ? turnModel.modelParams
-        : sessionParamsJson;
-
-    const priced = estimateCursorTurnCostUsd(turnUsage, modelId, parseModelParamsJson(paramsJson));
-    return priced ?? 0;
+    return estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
   }
 
   async _persistMessage(sessionId, userId, message) {

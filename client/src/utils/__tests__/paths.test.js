@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { stripCdWorktreePrefix, stripWorktreeFromText, stripWorktreePath } from '../paths.js';
+import {
+  stripCdWorktreePrefix,
+  stripWorktreeFromText,
+  stripWorktreePath,
+  diffFileDisplayPath,
+} from '../paths.js';
 
 const WT = '/data/sessions/abc/worktree';
 
@@ -38,5 +43,19 @@ describe('stripWorktreePath', () => {
 
   it('maps files under worktree to ./relative', () => {
     expect(stripWorktreePath(`${WT}/client/src/App.jsx`, WT)).toBe('./client/src/App.jsx');
+  });
+});
+
+describe('diffFileDisplayPath', () => {
+  it('prefers newPath over oldPath', () => {
+    expect(diffFileDisplayPath({ newPath: 'b.js', oldPath: 'a.js' })).toBe('b.js');
+  });
+
+  it('uses oldPath when newPath is /dev/null', () => {
+    expect(diffFileDisplayPath({ newPath: '/dev/null', oldPath: 'gone.js' })).toBe('gone.js');
+  });
+
+  it('reads snake_case API fields', () => {
+    expect(diffFileDisplayPath({ new_path: 'x.ts', old_path: 'x.ts' })).toBe('x.ts');
   });
 });

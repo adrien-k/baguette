@@ -10,6 +10,8 @@ import {
   removeWorktree,
   gitDiff,
   gitShowCommitDiff,
+  gitDiffNumstat,
+  gitShowCommitNumstat,
   gitHasUncommitted,
   gitCommitsToPush,
   gitLocalAndRemoteSha,
@@ -658,6 +660,31 @@ export class SessionsService extends KnexService {
       return { diff, hasUncommitted, commitsToPush, localSha, remoteSha, commit: commitSha };
     } catch (err) {
       return { diff: '', hasUncommitted: false, error: err.message };
+    }
+  }
+
+  async changedFiles(data, params) {
+    const session = params.resolvedSession;
+    if (!session?.worktree_path || isGlobalSession(session)) {
+      return { files: [], commit: null };
+    }
+    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    const commitSha =
+      data && typeof data === 'object' && data.commit && data.commit !== 'all'
+        ? String(data.commit)
+        : null;
+    try {
+      if (!commitSha && session.base_branch) {
+        const user = await this.app.service('users').get(session.user_id, {});
+        const token = getGithubToken(user);
+        await gitFetch(cwd, token, session.base_branch).catch(() => {});
+      }
+      const files = commitSha
+        ? await gitShowCommitNumstat(cwd, commitSha)
+        : await gitDiffNumstat(cwd, session.base_branch);
+      return { files, commit: commitSha };
+    } catch (err) {
+      return { files: [], commit: commitSha, error: err.message };
     }
   }
 
@@ -1539,6 +1566,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'stop',
       'commands',
       'diff',
+      'changedFiles',
       'sessionGitStatus',
       'sessionUsage',
       'branchCommits',
@@ -1629,6 +1657,7 @@ export const sessionsHooks = {
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
+    changedFiles: [resolveSessionFromData],
     sessionGitStatus: [resolveSessionFromData],
     sessionUsage: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],

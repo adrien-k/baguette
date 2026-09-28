@@ -28,9 +28,20 @@ function TerminalLogBlock({ label, text, ansi = true }) {
 
 // ─── Shared primitives (also used by ToolUseBlock for legacy baguette-op rendering) ───
 
-export function QuietToolBlock({ icon, label, detail, isError, result }) {
+function hasToolInput(input) {
+  return input != null && typeof input === 'object' && Object.keys(input).length > 0;
+}
+
+function formatToolInput(input) {
+  return JSON.stringify(input, null, 2);
+}
+
+export function QuietToolBlock({ icon, label, detail, isError, result, input }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = result == null;
+  const showInput = hasToolInput(input);
+  const showExpandedBody = expanded && (showInput || result != null);
+
   return (
     <div
       onClick={() => setExpanded((e) => !e)}
@@ -45,10 +56,29 @@ export function QuietToolBlock({ icon, label, detail, isError, result }) {
           <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
         )}
       </div>
-      {expanded && result != null && (
-        <pre className="mt-1 pl-3 text-faint whitespace-pre-wrap overflow-auto max-h-48">
-          {typeof result === 'string' && !result.trim() && isError ? 'Tool call failed' : result}
-        </pre>
+      {showExpandedBody && (
+        <div className="mt-1 pl-3 space-y-2">
+          {showInput && (
+            <div>
+              <div className="text-faint font-medium mb-0.5">Input</div>
+              <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-48">
+                {formatToolInput(input)}
+              </pre>
+            </div>
+          )}
+          {result != null && (
+            <div>
+              {showInput && <div className="text-faint font-medium mb-0.5">Result</div>}
+              <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-48">
+                {typeof result === 'string' && !result.trim() && isError
+                  ? 'Tool call failed'
+                  : typeof result === 'string'
+                    ? result
+                    : JSON.stringify(result, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -429,7 +459,13 @@ function UploadImageBlock({ block, mcpResult }) {
 
   if (!imageUrl) {
     return (
-      <QuietToolBlock icon="🖼" label="UploadImage" isError={block.isError} result={block.result} />
+      <QuietToolBlock
+        icon="🖼"
+        label="UploadImage"
+        isError={block.isError}
+        result={block.result}
+        input={block.input}
+      />
     );
   }
 
@@ -507,16 +543,30 @@ function ReadTaskOutputBlock({ block }) {
           <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
         )}
       </div>
+      {expanded && hasToolInput(block.input) && (
+        <div className="mt-1 pl-3">
+          <div className="text-faint font-medium mb-0.5">Input</div>
+          <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-48">
+            {formatToolInput(block.input)}
+          </pre>
+        </div>
+      )}
       {expanded && logsHtml && (
-        <pre
-          className="ansi-log mt-1 pl-3 py-2 pr-2 rounded-md whitespace-pre-wrap overflow-auto max-h-48"
-          dangerouslySetInnerHTML={{ __html: logsHtml }}
-        />
+        <div className="mt-1 pl-3">
+          {hasToolInput(block.input) && <div className="text-faint font-medium mb-0.5">Result</div>}
+          <pre
+            className="ansi-log py-2 pr-2 rounded-md whitespace-pre-wrap overflow-auto max-h-48"
+            dangerouslySetInnerHTML={{ __html: logsHtml }}
+          />
+        </div>
       )}
       {expanded && !logsHtml && parsed && (
-        <pre className="mt-1 pl-3 text-faint whitespace-pre-wrap overflow-auto max-h-48">
-          {typeof block.result === 'string' ? block.result : JSON.stringify(parsed, null, 2)}
-        </pre>
+        <div className="mt-1 pl-3">
+          {hasToolInput(block.input) && <div className="text-faint font-medium mb-0.5">Result</div>}
+          <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-48">
+            {typeof block.result === 'string' ? block.result : JSON.stringify(parsed, null, 2)}
+          </pre>
+        </div>
       )}
     </div>
   );
@@ -541,6 +591,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
           label="ShowDiff"
           detail={block.input?.path}
           isError={block.isError}
+          input={block.input}
         />
         <ShowDiffBlock path={block.input?.path ?? ''} sessionId={sessionId} />
       </div>
@@ -580,6 +631,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
         detail={detail}
         isError={block.isError}
         result={block.result}
+        input={block.input}
       />
     );
   }
@@ -599,6 +651,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
         detail={detail}
         isError={block.isError}
         result={block.result}
+        input={block.input}
       />
     );
   }
@@ -625,6 +678,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
       detail={detail}
       isError={block.isError}
       result={block.result}
+      input={block.input}
     />
   );
 }

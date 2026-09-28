@@ -1,10 +1,12 @@
 import {
   dropObsoleteSessionReviewColumns,
+  OBSOLETE_REVIEW_MIGRATION_NAMES,
   sessionColumnNames,
 } from './lib/session-review-schema-repair.js';
 
 /** Dev DBs that ran intermediate 039–041 before consolidation. */
 export async function up(knex) {
+  await knex('knex_migrations').whereIn('name', OBSOLETE_REVIEW_MIGRATION_NAMES).delete();
   await dropObsoleteSessionReviewColumns(knex);
 }
 

@@ -421,6 +421,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
         detail={detail}
         isError={resolvedBlock.isError}
         result={resolvedBlock.result}
+        input={resolvedBlock.input}
       />
     );
   }
@@ -435,6 +436,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
           label={baguetteOp.op}
           isError={resolvedBlock.isError}
           result={resolvedBlock.result}
+          input={resolvedBlock.input}
         />
       );
     }

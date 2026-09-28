@@ -826,6 +826,91 @@ export async function gitLocalAndRemoteSha(worktreePath, remoteBranch = null) {
 }
 
 /**
+ * Prefer origin/<baseBranch> for merge-base; fall back to the local branch ref
+ * for local repos that have no remote or where origin hasn't been fetched.
+ */
+async function gitMergeBaseWithBase(worktreePath, baseBranch) {
+  let ref = `origin/${baseBranch}`;
+  try {
+    await execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--verify', ref], {
+      maxBuffer: 256,
+      stdio: 'pipe',
+    });
+  } catch {
+    ref = baseBranch;
+  }
+  const { stdout: mergeBase } = await execFileAsync(
+    'git',
+    ['-C', worktreePath, 'merge-base', 'HEAD', ref],
+    { maxBuffer: 256 }
+  );
+  return mergeBase.trim();
+}
+
+function parseNumstatCount(value) {
+  if (value === '-' || value === '') return 0;
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Parse `git diff --numstat -z` / `git show --numstat -z --format=` output.
+ * @returns {{ old_path: string, new_path: string, added_count: number, removed_count: number }[]}
+ */
+export function parseGitNumstat(stdout) {
+  const files = [];
+  if (!stdout) return files;
+  let i = 0;
+  const s = stdout;
+  while (i < s.length) {
+    while (i < s.length && (s[i] === '\n' || s[i] === '\r' || s[i] === '\0')) i++;
+    if (i >= s.length) break;
+    const tab1 = s.indexOf('\t', i);
+    if (tab1 === -1) break;
+    const addedStr = s.slice(i, tab1);
+    const tab2 = s.indexOf('\t', tab1 + 1);
+    const nulAfterRemoved = s.indexOf('\0', tab1 + 1);
+    let removedStr;
+    let oldPath;
+    let newPath;
+    const isRename = nulAfterRemoved !== -1 && (tab2 === -1 || nulAfterRemoved < tab2);
+    if (isRename) {
+      removedStr = s.slice(tab1 + 1, nulAfterRemoved);
+      const oldStart = nulAfterRemoved + 1;
+      const oldEnd = s.indexOf('\0', oldStart);
+      if (oldEnd === -1) break;
+      oldPath = s.slice(oldStart, oldEnd);
+      const newStart = oldEnd + 1;
+      const newEnd = s.indexOf('\0', newStart);
+      if (newEnd === -1) break;
+      newPath = s.slice(newStart, newEnd);
+      i = newEnd + 1;
+    } else {
+      if (tab2 === -1) break;
+      removedStr = s.slice(tab1 + 1, tab2);
+      const pathStart = tab2 + 1;
+      const pathEnd = s.indexOf('\0', pathStart);
+      const path =
+        pathEnd === -1 ? s.slice(pathStart).replace(/[\n\r]+$/, '') : s.slice(pathStart, pathEnd);
+      if (!path) {
+        i = pathEnd === -1 ? s.length : pathEnd + 1;
+        continue;
+      }
+      oldPath = path;
+      newPath = path;
+      i = pathEnd === -1 ? s.length : pathEnd + 1;
+    }
+    files.push({
+      old_path: oldPath,
+      new_path: newPath,
+      added_count: parseNumstatCount(addedStr),
+      removed_count: parseNumstatCount(removedStr),
+    });
+  }
+  return files;
+}
+
+/**
  * Returns the unified diff between baseBranch and HEAD in the worktree.
  * @returns {Promise<string>}
  */
@@ -835,23 +920,8 @@ export async function gitDiff(
   { maxBuffer = MAX_DIFF_BUFFER_SIZE, filePath } = {}
 ) {
   try {
-    // Prefer origin/<baseBranch> for accurate merge-base; fall back to local branch ref
-    // for local repos that have no remote or where origin hasn't been fetched.
-    let ref = `origin/${baseBranch}`;
-    try {
-      await execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--verify', ref], {
-        maxBuffer: 256,
-        stdio: 'pipe',
-      });
-    } catch {
-      ref = baseBranch;
-    }
-    const { stdout: mergeBase } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'merge-base', 'HEAD', ref],
-      { maxBuffer: 256 }
-    );
-    const args = ['-C', worktreePath, 'diff', mergeBase.trim()];
+    const mergeBase = await gitMergeBaseWithBase(worktreePath, baseBranch);
+    const args = ['-C', worktreePath, 'diff', mergeBase];
     if (filePath) args.push('--', filePath);
     const { stdout } = await execFileAsync('git', args, { maxBuffer });
     return stdout;
@@ -883,6 +953,53 @@ export async function gitShowCommitDiff(
   } catch (err) {
     if (err.stdout) return err.stdout;
     return '';
+  }
+}
+
+/**
+ * Per-file added/removed counts vs merge-base (includes uncommitted changes).
+ * @returns {Promise<ReturnType<typeof parseGitNumstat>>}
+ */
+export async function gitDiffNumstat(
+  worktreePath,
+  baseBranch,
+  { maxBuffer = MAX_DIFF_BUFFER_SIZE } = {}
+) {
+  try {
+    const mergeBase = await gitMergeBaseWithBase(worktreePath, baseBranch);
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'diff', '--numstat', '-z', mergeBase],
+      { maxBuffer, encoding: 'utf8' }
+    );
+    return parseGitNumstat(stdout);
+  } catch (err) {
+    if (err.stdout) return parseGitNumstat(String(err.stdout));
+    throw err;
+  }
+}
+
+/**
+ * Per-file added/removed counts for a single commit.
+ * @returns {Promise<ReturnType<typeof parseGitNumstat>>}
+ */
+export async function gitShowCommitNumstat(
+  worktreePath,
+  commitSha,
+  { maxBuffer = MAX_DIFF_BUFFER_SIZE } = {}
+) {
+  const sha = String(commitSha).trim();
+  if (!/^[0-9a-f]{7,40}$/i.test(sha)) return [];
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'show', '--format=', '--numstat', '-z', '--no-color', sha],
+      { maxBuffer, encoding: 'utf8' }
+    );
+    return parseGitNumstat(stdout);
+  } catch (err) {
+    if (err.stdout) return parseGitNumstat(String(err.stdout));
+    return [];
   }
 }
 

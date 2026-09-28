@@ -30,6 +30,8 @@ import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useGetReviewMessages } from '../hooks/useGetReviewMessages.js';
+import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
+import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
@@ -55,6 +57,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
 import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
 import { BANNER_DANGER } from '../utils/ui.js';
+import { diffFileDisplayPath } from '../utils/paths.js';
 
 const SIDE_PANEL_WIDTH_DEFAULT = 360;
 const SIDE_PANEL_WIDTH_MIN = 240;
@@ -357,12 +360,25 @@ export default function Session() {
       /* ignore */
     }
   }, [setSidePanelWidth]);
-  const [diffFiles, setDiffFiles] = useState([]);
-  const [branchCommits, setBranchCommits] = useState(undefined);
-  const [branchCommitsLoading, setBranchCommitsLoading] = useState(false);
-  const [branchCommitsRefreshKey, setBranchCommitsRefreshKey] = useState(0);
+  const [scrollToDiffFile, setScrollToDiffFile] = useState(null);
   const diffCommitParam = searchParams.get('commit');
   const selectedDiffCommit = diffCommitParam && diffCommitParam !== 'all' ? diffCommitParam : 'all';
+  const filesCommitSha =
+    activeView === 'diff' && selectedDiffCommit !== 'all' ? selectedDiffCommit : null;
+  const panelParam = searchParams.get('panel');
+  const sidePanelTab = useMemo(() => resolveSidePanelTab(panelParam), [panelParam]);
+  const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
+  const gitSession = session ?? sessionFromHook;
+  const {
+    commits: branchCommits,
+    loading: branchCommitsLoading,
+    refresh: refreshBranchCommits,
+  } = useSessionBranchCommits(gitSession, shouldLoadBranchCommits);
+  const {
+    files: diffFiles,
+    loading: changedFilesLoading,
+    refresh: refreshChangedFiles,
+  } = useSessionChangedFiles(gitSession, filesCommitSha);
   const [models, setModels] = useState([]);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -371,9 +387,7 @@ export default function Session() {
   const [activeTaskModal, setActiveTaskModal] = useState(null);
   const [configCommands, setConfigCommands] = useState([]);
   const [error, setError] = useState(null);
-  const panelParam = searchParams.get('panel');
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
-  const sidePanelTab = useMemo(() => resolveSidePanelTab(panelParam), [panelParam]);
   const reviewMessagesSessionId = useMemo(() => {
     const s = session ?? sessionFromHook;
     if (!sessionId || isGlobalSession(s ?? {})) return null;
@@ -729,45 +743,6 @@ export default function Session() {
     clearPanelFromUrl();
   }, [setShowTasks, isXlScreen, clearPanelFromUrl]);
 
-  const shouldLoadBranchCommits = sidePanelTab === 'commits';
-
-  useEffect(() => {
-    setBranchCommits(undefined);
-    setBranchCommitsLoading(false);
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!shouldLoadBranchCommits) return;
-    if (!sessionId || isGlobalSession(session ?? {})) {
-      setBranchCommits([]);
-      setBranchCommitsLoading(false);
-      return;
-    }
-    setBranchCommitsLoading(true);
-    let cancelled = false;
-    sessionsService
-      .branchCommits(sessionId)
-      .then((res) => {
-        if (!cancelled) setBranchCommits(res.commits ?? []);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setBranchCommits([]);
-          toastError('Failed to load commits', err);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setBranchCommitsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [shouldLoadBranchCommits, sessionId, session?.is_global, branchCommitsRefreshKey]);
-
-  const refreshBranchCommits = useCallback(() => {
-    setBranchCommitsRefreshKey((k) => k + 1);
-  }, []);
-
   const handleDiffCommitChange = useCallback(
     (sha) => {
       setSearchParams(
@@ -1010,20 +985,15 @@ export default function Session() {
   const isSidePanelOpen = !isNewSessionRoute && (isXlScreen || showTasks);
 
   const handleSelectDiffFile = useCallback(
-    (index) => {
-      hideSidePanel();
+    (file) => {
+      const path = diffFileDisplayPath(file);
       if (activeView !== 'diff') setView('diff');
-      window.setTimeout(
-        () => {
-          document
-            .getElementById(`diff-file-${index}`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        },
-        activeView === 'diff' ? 0 : 80
-      );
+      setScrollToDiffFile(path);
     },
-    [activeView, hideSidePanel]
+    [activeView]
   );
+
+  const clearScrollToDiffFile = useCallback(() => setScrollToDiffFile(null), []);
 
   const handleSidePanelResizeStart = (event) => {
     event.preventDefault();
@@ -1365,7 +1335,12 @@ export default function Session() {
                 selectedCommit={selectedDiffCommit}
                 commits={branchCommits}
                 onSelectedCommitChange={handleDiffCommitChange}
-                onFilesChange={setDiffFiles}
+                onRefreshCommits={refreshBranchCommits}
+                onRefreshChangedFiles={refreshChangedFiles}
+                commitsLoading={branchCommitsLoading}
+                changedFilesLoading={changedFilesLoading}
+                scrollToFile={scrollToDiffFile}
+                onScrolledToFile={clearScrollToDiffFile}
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
@@ -1417,6 +1392,8 @@ export default function Session() {
               readonly={isReadonly}
               sidePanelOpen={isSidePanelOpen}
               diffFiles={diffFiles}
+              changedFilesLoading={changedFilesLoading}
+              onRefreshChangedFiles={refreshChangedFiles}
               onSelectDiffFile={handleSelectDiffFile}
               branchCommits={branchCommits}
               branchCommitsLoading={branchCommitsLoading}

@@ -59,6 +59,7 @@ export const sessionsService = createService('sessions', {
     'stop',
     'commands',
     'diff',
+    'changedFiles',
     'sessionGitStatus',
     'sessionUsage',
     'branchCommits',

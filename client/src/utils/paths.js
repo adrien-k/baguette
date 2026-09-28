@@ -42,3 +42,15 @@ export function splitRepoPath(filePath) {
     dirname: filePath.slice(0, lastSlash),
   };
 }
+
+/** Path to show/scroll for a changed-file record from parseDiff or `changedFiles`. */
+export function diffFileDisplayPath(file) {
+  const newPath = file?.newPath ?? file?.new_path;
+  const oldPath = file?.oldPath ?? file?.old_path;
+  return newPath && newPath !== '/dev/null' ? newPath : oldPath || '';
+}
+
+export function diffFileScrollId(fileOrPath) {
+  const path = typeof fileOrPath === 'string' ? fileOrPath : diffFileDisplayPath(fileOrPath);
+  return `diff-file-${path}`;
+}

@@ -17,6 +17,8 @@ import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
+import { diffFileDisplayPath, diffFileScrollId } from '../../utils/paths.js';
+import { DIFF_FILE_BODY_CLASS, DIFF_LINE_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 
 const DIFF_HUNK_ROW = 'text-info bg-info/10';
 const DIFF_HUNK_NUM = 'text-info/70';
@@ -133,7 +135,7 @@ function buildSideBySideRows(lines) {
 }
 
 const NUM_CLS = 'w-10 shrink-0 text-right text-faint select-none pr-2 border-r border-line';
-const DIFF_LINE_CONTENT_CLS = 'px-2 flex-1 min-w-0 whitespace-pre-wrap break-words';
+const DIFF_LINE_CONTENT_CLS = `px-2 flex-1 ${DIFF_LINE_WRAP_CLASS}`;
 
 function lineRefFromRow(row, filePath) {
   if (row.type === 'hunk') return null;
@@ -148,7 +150,7 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
   const canOpen = Boolean(onOpenComposer);
   return (
     <div
-      className={`group/diffline relative flex items-start ${rowClass} ${
+      className={`group/diffline relative flex w-full min-w-0 items-start ${rowClass} ${
         active ? 'ring-1 ring-inset ring-brand/60' : ''
       }`}
     >
@@ -187,11 +189,11 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
     if (ref) onLineReference?.(ref);
   };
   return (
-    <div className="font-mono text-xs leading-5">
+    <div className={`font-mono text-xs leading-5 ${DIFF_FILE_BODY_CLASS}`}>
       {rows.map((row, i) => {
         if (row.type === 'hunk') {
           return (
-            <div key={i} className={`flex ${DIFF_HUNK_ROW}`}>
+            <div key={i} className={`flex min-w-0 ${DIFF_HUNK_ROW}`}>
               <span className={`${NUM_CLS} ${DIFF_HUNK_NUM}`}></span>
               <span className={`${NUM_CLS} ${DIFF_HUNK_NUM}`}></span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content}</span>
@@ -244,11 +246,11 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
     if (line?.num) onLineReference?.({ path: filePath, line: line.num });
   };
   return (
-    <div className="font-mono text-xs leading-5">
+    <div className={`font-mono text-xs leading-5 ${DIFF_FILE_BODY_CLASS}`}>
       {rows.map((row, i) => {
         if (row.type === 'hunk') {
           return (
-            <div key={i} className={`flex divide-x divide-line ${DIFF_HUNK_ROW}`}>
+            <div key={i} className={`flex min-w-0 divide-x divide-line ${DIFF_HUNK_ROW}`}>
               <div className={`flex-1 min-w-0 ${DIFF_LINE_CONTENT_CLS}`}>{row.content}</div>
               <div className={`flex-1 min-w-0 ${DIFF_LINE_CONTENT_CLS}`}>{row.content}</div>
             </div>
@@ -315,7 +317,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
           );
         return (
           <div key={i}>
-            <div className="flex divide-x divide-line">
+            <div className="flex min-w-0 divide-x divide-line">
               <div className="flex-1 min-w-0">{leftCell}</div>
               <div className="flex-1 min-w-0">{rightCell}</div>
             </div>
@@ -329,9 +331,9 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
 
 function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, composer }) {
   const [collapsed, setCollapsed] = useState(false);
-  const displayPath = file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
+  const displayPath = diffFileDisplayPath(file);
   return (
-    <div id={scrollId} className="border border-line rounded-lg overflow-hidden">
+    <div id={scrollId} className="min-w-0 max-w-full border border-line rounded-lg overflow-hidden">
       <button
         onClick={() => setCollapsed((c) => !c)}
         className="w-full flex items-center gap-2 px-3 py-2 bg-control/50 hover:bg-control text-left transition-colors"
@@ -346,7 +348,7 @@ function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, compo
         <span className="text-xs text-danger shrink-0 ml-1">-{file.removedCount}</span>
       </button>
       {!collapsed && (
-        <div className="bg-nav overflow-x-hidden">
+        <div className={`bg-nav ${DIFF_FILE_BODY_CLASS}`}>
           {viewMode === 'inline' ? (
             <InlineDiff
               lines={file.lines}
@@ -375,7 +377,12 @@ export default function DiffView({
   selectedCommit = 'all',
   commits = null,
   onSelectedCommitChange,
-  onFilesChange,
+  onRefreshCommits,
+  onRefreshChangedFiles,
+  commitsLoading,
+  changedFilesLoading,
+  scrollToFile,
+  onScrolledToFile,
   readonly,
   models,
   onModelChange,
@@ -417,6 +424,16 @@ export default function DiffView({
     fetchDiff();
   }, [fetchDiff]);
 
+  const handleRefresh = useCallback(() => {
+    onRefreshCommits?.();
+    if (!isSingleCommit) {
+      onRefreshChangedFiles?.();
+      fetchDiff();
+    }
+  }, [onRefreshCommits, onRefreshChangedFiles, isSingleCommit, fetchDiff]);
+
+  const refreshBusy = commitsLoading || (!isSingleCommit && (loading || changedFilesLoading));
+
   const handleMerge = async ({ archive = false } = {}) => {
     setMerging(true);
     setMergeError(null);
@@ -437,8 +454,11 @@ export default function DiffView({
   const files = hasDiff ? parseDiff(diff) : [];
 
   useEffect(() => {
-    onFilesChange?.(files);
-  }, [diff]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!scrollToFile || loading) return;
+    const el = document.getElementById(diffFileScrollId(scrollToFile));
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    onScrolledToFile?.();
+  }, [scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
   const handleLineClick = (ref) => {
@@ -465,21 +485,35 @@ export default function DiffView({
   const commitSelector =
     onSelectedCommitChange && !session?.is_global ? (
       <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/50">
-        <label className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] uppercase tracking-wide text-faint shrink-0">Commit</span>
-          <select
-            value={selectedCommit}
-            onChange={(e) => onSelectedCommitChange(e.target.value)}
-            className="flex-1 min-w-0 max-w-md text-xs bg-control border border-strong rounded-md px-2 py-1 text-heading focus:outline-none focus:ring-1 focus:ring-brand/50"
-          >
-            <option value="all">All commits</option>
-            {(commits ?? []).map((c) => (
-              <option key={c.sha} value={c.sha}>
-                {c.short_sha} — {c.subject}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-center gap-2 min-w-0">
+          <label className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-[10px] uppercase tracking-wide text-faint shrink-0">Commit</span>
+            <select
+              value={selectedCommit}
+              onChange={(e) => onSelectedCommitChange(e.target.value)}
+              className="flex-1 min-w-0 max-w-md text-xs bg-control border border-strong rounded-md px-2 py-1 text-heading focus:outline-none focus:ring-1 focus:ring-brand/50"
+            >
+              <option value="all">All commits</option>
+              {(commits ?? []).map((c) => (
+                <option key={c.sha} value={c.sha}>
+                  {c.short_sha} — {c.subject}
+                </option>
+              ))}
+            </select>
+          </label>
+          {onRefreshCommits && (
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshBusy}
+              className="flex items-center gap-1.5 text-xs text-faint hover:text-secondary transition-colors disabled:opacity-40 p-1 shrink-0"
+              title={isSingleCommit ? 'Refresh commits' : 'Refresh commits and diff'}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshBusy ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          )}
+        </div>
       </div>
     ) : null;
 
@@ -487,7 +521,7 @@ export default function DiffView({
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {commitSelector}
       {/* Diff content */}
-      <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
         {loading && (
           <div className="flex items-center justify-center h-full">
             <div className="w-5 h-5 border-2 border-strong border-t-secondary rounded-full animate-spin" />
@@ -551,12 +585,12 @@ export default function DiffView({
               </div>
             </div>
             {/* Per-file diffs */}
-            {files.map((file, i) => (
+            {files.map((file) => (
               <FileDiff
-                key={i}
+                key={diffFileDisplayPath(file)}
                 file={file}
                 viewMode={viewMode}
-                scrollId={`diff-file-${i}`}
+                scrollId={diffFileScrollId(file)}
                 onLineReference={canComment ? handleLineClick : undefined}
                 activeLine={lineComposer}
                 composer={lineComposerEl}
@@ -566,35 +600,17 @@ export default function DiffView({
         )}
       </div>
 
-      {/* Action bar */}
-      <div className="shrink-0 border-t border-line px-4 py-3 flex items-center justify-between gap-3">
-        <button
-          onClick={fetchDiff}
-          disabled={loading}
-          className="flex items-center gap-1.5 text-xs text-faint hover:text-secondary transition-colors disabled:opacity-40"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-
-        <div className="flex items-center gap-2">
-          {hasPr && (
-            <>
-              <PrStatusBadge
-                status={prStatus}
-                prNumber={session.pr_number}
-                prUrl={session.pr_url}
-              />
-              {!isMerged && canMerge && (
-                <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
-                  <GitMerge className="w-3.5 h-3.5" />
-                  Merge PR
-                </button>
-              )}
-            </>
+      {hasPr && (
+        <div className="shrink-0 border-t border-line px-4 py-3 flex items-center justify-end gap-2">
+          <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
+          {!isMerged && canMerge && (
+            <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
+              <GitMerge className="w-3.5 h-3.5" />
+              Merge PR
+            </button>
           )}
         </div>
-      </div>
+      )}
 
       {showMergeModal && (
         <MergeConfirmModal
