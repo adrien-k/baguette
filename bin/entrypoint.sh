@@ -44,14 +44,15 @@ if [ -S /var/run/docker.sock ]; then
     fi
 fi
 
-# Persist the whole home folder on the mounted volume
+# Persist the whole home folder on the mounted volume while keeping the original home folder
+# from the docker image.
 # - Claude authentication
 # - Baguette data directory
 # - Mise binaries and shims
 # - User-installed CLIs (pip/uv/poetry use ~/.cache and ~/.local, Cargo ~/.cargo, 
 #   Rustup ~/.rustup, npm ~/.npm, Ruby Bundler ~/.bundle, Go ~/go, ...
 mv /home/baguette /home/baguette-original
-ln -sfn /data /home/baguette
+ln -sfn /data/home /home/baguette
 cp -r /home/baguette-original/. /home/baguette/
 
 # Default mise layout is ~/.local/share/mise (on /data via the .local symlink)
