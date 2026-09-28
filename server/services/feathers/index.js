@@ -88,6 +88,11 @@ export function registerFeathersServices(app, sseManager) {
       sseManager.send(data.user_id, { service: 'sessions', event: 'app:error', data });
   });
 
+  app.service('sessions').on('turn:complete', (data) => {
+    if (data?.user_id)
+      sseManager.send(data.user_id, { service: 'sessions', event: 'turn:complete', data });
+  });
+
   app.service('users').on('github:bad-credentials', (data) => {
     if (data?.user_id)
       sseManager.send(data.user_id, {

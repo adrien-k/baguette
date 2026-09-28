@@ -1,18 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sessionsService } from '../feathers.js';
-import { toastError } from '../utils/toastError.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
 
 /**
- * Branch commits vs session base. Fetches when `enabled` is true (Diff tab or Commits
- * panel). Loaded once per session while enabled; `refresh()` is the only later fetch.
+ * Branch or single-commit diff text. Only fetches while the Diff view is mounted
+ * (`enabled` is true). `refresh()` and turn completion are the only later fetches.
  */
-export function useSessionBranchCommits(session, enabled = false) {
+export function useSessionDiff(session, selectedCommit = 'all', enabled = true) {
   const sessionId = session?.id;
   const skip = !sessionId || isGlobalSession(session ?? {});
-  const [commits, setCommits] = useState(undefined);
-  const [loading, setLoading] = useState(false);
+  const isSingleCommit = selectedCommit && selectedCommit !== 'all';
+  const [diff, setDiff] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const invalidate = useCallback(() => {
@@ -21,31 +22,26 @@ export function useSessionBranchCommits(session, enabled = false) {
   useInvalidateOnSessionTurnComplete(sessionId, invalidate);
 
   useEffect(() => {
-    setCommits(undefined);
-  }, [sessionId]);
+    setDiff(null);
+    setError(null);
+  }, [sessionId, selectedCommit]);
 
   useEffect(() => {
-    if (skip) {
-      setCommits([]);
-      setLoading(false);
-      return;
-    }
-    if (!enabled) {
+    if (skip || !enabled) {
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setError(null);
+    const payload = isSingleCommit ? { id: sessionId, commit: selectedCommit } : sessionId;
     sessionsService
-      .branchCommits(sessionId)
+      .diff(payload)
       .then((res) => {
-        if (!cancelled) setCommits(res.commits ?? []);
+        if (!cancelled) setDiff(res.diff || '');
       })
       .catch((err) => {
-        if (!cancelled) {
-          setCommits([]);
-          toastError('Failed to load commits', err);
-        }
+        if (!cancelled) setError(err.message || 'Failed to load diff');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -53,11 +49,11 @@ export function useSessionBranchCommits(session, enabled = false) {
     return () => {
       cancelled = true;
     };
-  }, [skip, sessionId, refreshNonce, enabled]);
+  }, [skip, sessionId, enabled, isSingleCommit, selectedCommit, refreshNonce]);
 
   const refresh = useCallback(() => {
     setRefreshNonce((n) => n + 1);
   }, []);
 
-  return { commits, loading, refresh };
+  return { diff, loading, error, refresh };
 }

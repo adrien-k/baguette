@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { sessionsService } from '../../feathers.js';
 import toast from 'react-hot-toast';
+import { useSessionDiff } from '../../hooks/useSessionDiff.js';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
@@ -389,48 +390,31 @@ export default function DiffView({
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
-  const [diff, setDiff] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
   const [viewMode, setViewMode] = useState('inline');
   const [lineComposer, setLineComposer] = useState(null);
 
+  const { diff, loading, error, refresh: refreshDiff } = useSessionDiff(session, selectedCommit);
+
   const prStatus = session?.pr_status ?? null;
   const isMerged = prStatus === 'merged';
   const canMerge =
     !!session?.pr_number && (prStatus === 'open' || prStatus === 'draft' || prStatus === null);
 
-  const sessionId = session?.id;
   const isSingleCommit = selectedCommit && selectedCommit !== 'all';
   const selectedCommitMeta = isSingleCommit
     ? (commits ?? []).find((c) => c.sha === selectedCommit)
     : null;
-  const fetchDiff = useCallback(() => {
-    if (!sessionId) return;
-    setLoading(true);
-    setError(null);
-    const payload = isSingleCommit ? { id: sessionId, commit: selectedCommit } : sessionId;
-    sessionsService
-      .diff(payload)
-      .then((res) => setDiff(res.diff || ''))
-      .catch((err) => setError(err.message || 'Failed to load diff'))
-      .finally(() => setLoading(false));
-  }, [sessionId, isSingleCommit, selectedCommit]);
-
-  useEffect(() => {
-    fetchDiff();
-  }, [fetchDiff]);
 
   const handleRefresh = useCallback(() => {
     onRefreshCommits?.();
     if (!isSingleCommit) {
       onRefreshChangedFiles?.();
-      fetchDiff();
+      refreshDiff();
     }
-  }, [onRefreshCommits, onRefreshChangedFiles, isSingleCommit, fetchDiff]);
+  }, [onRefreshCommits, onRefreshChangedFiles, isSingleCommit, refreshDiff]);
 
   const refreshBusy = commitsLoading || (!isSingleCommit && (loading || changedFilesLoading));
 

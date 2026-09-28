@@ -1087,6 +1087,10 @@ export class SessionsService extends KnexService {
 
   async onTurnComplete(sessionId) {
     const db = this.app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (session) {
+      this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
+    }
     const queued = await db('queued_messages')
       .where({ session_id: sessionId, kind: 'turn' })
       .orderBy('created_at', 'asc')
@@ -1556,7 +1560,7 @@ export function registerSessionsService(app, path = 'sessions') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new SessionsService(options), {
-    events: ['app:error', 'push:request'],
+    events: ['app:error', 'push:request', 'turn:complete'],
     methods: [
       'find',
       'get',

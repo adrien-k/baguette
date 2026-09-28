@@ -368,6 +368,7 @@ export default function Session() {
   const panelParam = searchParams.get('panel');
   const sidePanelTab = useMemo(() => resolveSidePanelTab(panelParam), [panelParam]);
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
+  const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
   const {
     commits: branchCommits,
@@ -378,7 +379,7 @@ export default function Session() {
     files: diffFiles,
     loading: changedFilesLoading,
     refresh: refreshChangedFiles,
-  } = useSessionChangedFiles(gitSession, filesCommitSha);
+  } = useSessionChangedFiles(gitSession, filesCommitSha, shouldLoadChangedFiles);
   const [models, setModels] = useState([]);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
