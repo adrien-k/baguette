@@ -124,6 +124,13 @@ describe('baguette session MCP tools', () => {
     expect(out.last_assistant_message.message.content).toBe('hello');
   });
 
+  it('GetSession accepts short_id instead of session_id', async () => {
+    const get = tools.find((t) => t.name === 'GetSession');
+    const out = parseOk(await get.handler({ short_id: 'abcd' }));
+    expect(out.session.id).toBe(sessionId);
+    expect(out.session.short_id).toBe('abcd');
+  });
+
   it('GetSessionMessage supports byte ranges', async () => {
     const [msgId] = await db('session_messages')
       .where({ session_id: sessionId, type: 'assistant' })

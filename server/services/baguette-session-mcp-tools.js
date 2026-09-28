@@ -34,6 +34,18 @@ async function requireSession(app, sessionId, userId) {
   }
 }
 
+async function resolveOwnedSession(app, { session_id, short_id }, userId) {
+  if (session_id != null) {
+    return requireSession(app, session_id, userId);
+  }
+  const trimmed = short_id?.trim();
+  if (!trimmed) return null;
+  const db = app.get('db');
+  const row = await db('sessions').where({ user_id: userId, short_id: trimmed }).first();
+  if (!row) return null;
+  return requireSession(app, row.id, userId);
+}
+
 function applySessionSearchFilters(query, filters, userId) {
   query.where('sessions.user_id', userId);
   if (!filters.include_archived) query.whereNull('sessions.archived_at');
@@ -164,12 +176,20 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
       description:
         'Get one session with details, message count, initial_prompt, and the most recent assistant message.',
       schema: {
-        session_id: z.number().int().describe('Session id'),
+        session_id: z.number().int().optional().describe('Session numeric id'),
+        short_id: z
+          .string()
+          .optional()
+          .describe('Session short id (8 hex characters, from URLs and CurrentSessionInfo)'),
       },
-      handler: async ({ session_id }) => {
-        const session = await requireSession(app, session_id, userId);
+      handler: async (args) => {
+        if (args.session_id == null && !args.short_id?.trim()) {
+          return fail('Provide session_id or short_id');
+        }
+        const session = await resolveOwnedSession(app, args, userId);
         if (!session) return fail('Session not found');
 
+        const session_id = session.id;
         const db = app.get('db');
         const { count } = await db('session_messages')
           .where({ session_id })
@@ -200,7 +220,8 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
         'Repo session agents may only post to their own session_id; global session agents and external MCP may post to any of your sessions. ' +
         'Immediate sends while the agent is running are queued for the next turn, like the UI Send button.',
       schema: {
-        session_id: z.number().int(),
+        session_id: z.number().int().optional(),
+        short_id: z.string().optional(),
         text: z.string().describe('User message text'),
         send_at: z
           .string()
@@ -213,12 +234,17 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
             'When sending immediately: start a new turn even if the agent is already running'
           ),
       },
-      handler: async ({ session_id, text, send_at, force }) => {
+      handler: async (args) => {
+        const { text, send_at, force } = args;
+        if (args.session_id == null && !args.short_id?.trim()) {
+          return fail('Provide session_id or short_id');
+        }
+        const session = await resolveOwnedSession(app, args, userId);
+        if (!session) return fail('Session not found');
+        const session_id = session.id;
         if (!canPostToSession(callerSession, session_id)) {
           return fail(crossSessionPostError());
         }
-        const session = await requireSession(app, session_id, userId);
-        if (!session) return fail('Session not found');
 
         const message_json = buildMcpUserMessageJson(text);
         const userParams = { provider: 'rest', user: { id: userId } };
@@ -265,7 +291,8 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
       description:
         'List session messages (paginated). Response JSON is capped at 5000 bytes; oversized bodies are truncated with a hint to use GetSessionMessage. Pass afterMessage with the last id from the previous page.',
       schema: {
-        session_id: z.number().int(),
+        session_id: z.number().int().optional(),
+        short_id: z.string().optional(),
         types: z
           .array(z.enum(['user', 'assistant']))
           .optional()
@@ -276,9 +303,14 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
           .optional()
           .describe('Return messages with id greater than this message id'),
       },
-      handler: async ({ session_id, types, afterMessage }) => {
-        const session = await requireSession(app, session_id, userId);
+      handler: async (args) => {
+        const { types, afterMessage } = args;
+        if (args.session_id == null && !args.short_id?.trim()) {
+          return fail('Provide session_id or short_id');
+        }
+        const session = await resolveOwnedSession(app, args, userId);
         if (!session) return fail('Session not found');
+        const session_id = session.id;
 
         const typeFilter = types?.length ? types : ['user', 'assistant'];
         const db = app.get('db');
@@ -300,17 +332,23 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
       description:
         'Read a single message body (message_json) with optional byte range — same semantics as ReadTaskOutput / PrWorkflowLogs (default last 5000 bytes).',
       schema: {
-        session_id: z.number().int(),
+        session_id: z.number().int().optional(),
+        short_id: z.string().optional(),
         message_id: z.number().int(),
         startByte: z.number().optional(),
         endByte: z.number().optional(),
       },
-      handler: async ({ session_id, message_id, startByte, endByte }) => {
+      handler: async (args) => {
+        const { message_id, startByte, endByte } = args;
         const validationError = validateLogByteRange({ startByte, endByte });
         if (validationError) return fail(validationError);
 
-        const session = await requireSession(app, session_id, userId);
+        if (args.session_id == null && !args.short_id?.trim()) {
+          return fail('Provide session_id or short_id');
+        }
+        const session = await resolveOwnedSession(app, args, userId);
         if (!session) return fail('Session not found');
+        const session_id = session.id;
 
         const db = app.get('db');
         const row = await db('session_messages').where({ id: message_id, session_id }).first();

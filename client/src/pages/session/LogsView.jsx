@@ -13,6 +13,17 @@ import {
 import { useStickToBottomScroll } from '../../hooks/useStickToBottomScroll.js';
 import StickToBottomScrollArea from '../../components/StickToBottomScrollArea.jsx';
 
+/** Human-readable MCP / Baguette tool name for log cards (matches chat CursorMcpToolBlock). */
+function formatMcpToolDisplayName(name, input) {
+  if (name === 'mcp' && input?.toolName) return String(input.toolName);
+  if (name?.startsWith('mcp__baguette__')) return name.slice('mcp__baguette__'.length);
+  if (name?.startsWith('mcp__')) {
+    const parts = name.split('__');
+    return parts[parts.length - 1] || name;
+  }
+  return name;
+}
+
 function getMessageIcon(type, subtype) {
   if (type === 'user') return <User className="w-3.5 h-3.5 shrink-0" />;
   if (type === 'assistant') return <Bot className="w-3.5 h-3.5 shrink-0" />;
@@ -35,7 +46,10 @@ function getMessageLabel(msg) {
   if (type === 'result') return subtype === 'success' ? 'Result: success' : 'Result: error';
   if (type === 'system' && subtype === 'prompt') return 'System prompt';
   if (type === 'system') return subtype ? `System: ${subtype}` : 'System';
-  if (type === 'tool_progress') return 'Tool progress';
+  if (type === 'tool_progress') {
+    const name = msg.tool_name ? formatMcpToolDisplayName(msg.tool_name) : null;
+    return name ? `MCP: ${name}` : 'Tool progress';
+  }
   return type;
 }
 
@@ -61,7 +75,9 @@ function getMessageSummary(msg) {
     const parts = [];
     const textBlock = content.find((b) => b.type === 'text');
     if (textBlock?.text) parts.push(textBlock.text.slice(0, 80));
-    const toolCalls = content.filter((b) => b.type === 'tool_use').map((b) => b.name);
+    const toolCalls = content
+      .filter((b) => b.type === 'tool_use')
+      .map((b) => formatMcpToolDisplayName(b.name, b.input));
     if (toolCalls.length) parts.push(`[${toolCalls.join(', ')}]`);
     return parts.join(' ');
   }
@@ -80,7 +96,10 @@ function getMessageSummary(msg) {
   }
 
   if (type === 'tool_progress') {
-    return (summary || description || '').slice(0, 120);
+    const name = msg.tool_name ? formatMcpToolDisplayName(msg.tool_name) : null;
+    const elapsed =
+      msg.elapsed_time_seconds != null ? `${Math.round(msg.elapsed_time_seconds)}s` : '';
+    return [name, elapsed].filter(Boolean).join(' · ').slice(0, 120);
   }
 
   return '';
@@ -108,7 +127,7 @@ function MessageDetail({ msg }) {
               <div key={i} className="bg-zinc-800/60 rounded p-2 border border-zinc-700/50">
                 <div className="flex items-center gap-1.5 text-amber-400 text-xs font-medium mb-1">
                   <Wrench className="w-3 h-3" />
-                  {block.name}
+                  {formatMcpToolDisplayName(block.name, block.input)}
                 </div>
                 <pre className="text-zinc-400 text-xs overflow-auto max-h-40 leading-5">
                   {JSON.stringify(block.input, null, 2)}
