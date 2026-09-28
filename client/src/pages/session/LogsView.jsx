@@ -335,7 +335,7 @@ export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore, 
         scrollRef={scrollContainerRef}
         className="relative flex-1 min-h-0 min-w-0"
         scrollClassName="absolute inset-0 overflow-auto p-3 sm:p-4"
-        scrollButtonClassName="bottom-4 right-4"
+        scrollButtonClassName="bottom-4 left-1/2 -translate-x-1/2"
       >
         <div className="space-y-1 min-h-full flex flex-col justify-end">
           <div ref={topSentinelRef} className="h-px shrink-0 order-first" />

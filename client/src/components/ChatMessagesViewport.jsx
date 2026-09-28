@@ -27,6 +27,7 @@ export default function ChatMessagesViewport({
         className="absolute inset-0"
         scrollClassName="h-full w-full overflow-auto pb-2"
         showScrollToBottom={showScrollToBottom}
+        scrollButtonClassName="bottom-5 left-1/2 -translate-x-1/2"
       >
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-3`}>{children}</div>
       </StickToBottomScrollArea>
