@@ -103,14 +103,14 @@ function TodoBlock({ todos }) {
         return (
           <div
             key={i}
-            className={`flex items-center gap-1.5 text-xs ${isCompleted ? 'text-zinc-600' : isInProgress ? 'text-zinc-300' : 'text-zinc-500'}`}
+            className={`flex items-center gap-1.5 text-xs ${isCompleted ? 'text-faint' : isInProgress ? 'text-secondary' : 'text-faint'}`}
           >
             {isCompleted ? (
-              <CheckSquare2 className="w-3 h-3 shrink-0 text-emerald-700" />
+              <CheckSquare2 className="w-3 h-3 shrink-0 text-success" />
             ) : isInProgress ? (
-              <Loader2 className="w-3 h-3 shrink-0 text-amber-500 animate-spin" />
+              <Loader2 className="w-3 h-3 shrink-0 text-accent animate-spin" />
             ) : (
-              <Square className="w-3 h-3 shrink-0 text-zinc-700" />
+              <Square className="w-3 h-3 shrink-0 text-faint" />
             )}
             <span className={isCompleted ? 'line-through' : ''}>{todo.content}</span>
           </div>
@@ -134,35 +134,35 @@ function AgentTaskBlock({ block }) {
 
   if (!hasContent) {
     return (
-      <div className="flex items-center gap-2 py-0.5 pl-1 text-xs text-zinc-500">
-        <Bot className="w-3.5 h-3.5 shrink-0 text-zinc-600" />
+      <div className="flex items-center gap-2 py-0.5 pl-1 text-xs text-faint">
+        <Bot className="w-3.5 h-3.5 shrink-0 text-faint" />
         <span className="truncate">
           {description}
           {subagentType ? ` (${subagentType})` : ''}
         </span>
-        <div className="w-3 h-3 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
+        <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
       </div>
     );
   }
 
   return (
-    <div className="bg-zinc-900/50 rounded-lg border border-zinc-800 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs text-zinc-400">
-        <Bot className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+    <div className="bg-inset/50 rounded-lg border border-line overflow-hidden">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs text-fg-muted">
+        <Bot className="w-3.5 h-3.5 shrink-0 text-faint" />
         <span className="truncate flex-1">
           {description}
           {subagentType ? ` (${subagentType})` : ''}
         </span>
         {!hasResult && (
-          <div className="w-3 h-3 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
+          <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         )}
       </div>
       {activities.length > 0 && (
-        <div className="border-t border-zinc-800/60 px-3 sm:px-4 py-2 font-mono text-[11px] text-zinc-600 space-y-0.5">
+        <div className="border-t border-line/60 px-3 sm:px-4 py-2 font-mono text-[11px] text-faint space-y-0.5">
           {hidden && (
             <button
               onClick={() => setExpanded(true)}
-              className="text-zinc-700 hover:text-zinc-500 transition-colors mb-1"
+              className="text-faint hover:text-faint transition-colors mb-1"
             >
               &hellip; {activities.length - ACTIVITY_PREVIEW} earlier
             </button>
@@ -175,7 +175,7 @@ function AgentTaskBlock({ block }) {
           {expanded && (
             <button
               onClick={() => setExpanded(false)}
-              className="text-zinc-700 hover:text-zinc-500 transition-colors mt-1"
+              className="text-faint hover:text-faint transition-colors mt-1"
             >
               collapse
             </button>
@@ -183,9 +183,9 @@ function AgentTaskBlock({ block }) {
         </div>
       )}
       {hasResult && block.result && (
-        <div className="border-t border-zinc-800/60 px-3 sm:px-4 py-2 text-xs">
-          <div className="text-zinc-500 font-medium mb-1">Result</div>
-          <pre className="whitespace-pre-wrap overflow-auto max-h-48 text-zinc-400 bg-zinc-950/50 rounded p-2">
+        <div className="border-t border-line/60 px-3 sm:px-4 py-2 text-xs">
+          <div className="text-faint font-medium mb-1">Result</div>
+          <pre className="whitespace-pre-wrap overflow-auto max-h-48 text-fg-muted bg-page/50 rounded p-2">
             {block.result}
           </pre>
         </div>
@@ -240,33 +240,33 @@ function CursorPlanBlock({ block, sessionId }) {
   };
 
   return (
-    <div className="bg-zinc-900/50 rounded-lg border border-amber-500/20 overflow-hidden">
+    <div className="bg-inset/50 rounded-lg border border-brand/20 overflow-hidden">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 sm:px-4 py-2 text-left hover:bg-zinc-800/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors"
       >
-        <span className="text-amber-400 text-xs font-mono shrink-0">Plan</span>
-        <span className="text-zinc-200 text-xs font-medium truncate flex-1">{firstHeading}</span>
+        <span className="text-accent text-xs font-mono shrink-0">Plan</span>
+        <span className="text-heading text-xs font-medium truncate flex-1">{firstHeading}</span>
         <ChevronDown
-          className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
         />
       </button>
 
       {expanded && planMarkdown && (
-        <div className="px-3 sm:px-4 py-3 border-t border-amber-500/15 text-xs text-zinc-300 overflow-auto max-h-[60vh]">
+        <div className="px-3 sm:px-4 py-3 border-t border-brand/15 text-xs text-secondary overflow-auto max-h-[60vh]">
           <MarkdownContent>{planMarkdown}</MarkdownContent>
         </div>
       )}
 
       {!continuePlanning && (
-        <div className="px-3 sm:px-4 py-2.5 border-t border-amber-500/10 flex gap-2">
+        <div className="px-3 sm:px-4 py-2.5 border-t border-brand/10 flex gap-2">
           <button onClick={handleRun} disabled={loading} className={SECONDARY_BUTTON_CLASS}>
             Run the plan
           </button>
           <button
             onClick={() => setContinuePlanning(true)}
             disabled={loading}
-            className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-200 rounded text-xs font-medium transition-colors"
+            className="px-3 py-1.5 bg-control-hover hover:bg-track disabled:opacity-50 text-heading rounded text-xs font-medium transition-colors"
           >
             Continue planning
           </button>
@@ -274,7 +274,7 @@ function CursorPlanBlock({ block, sessionId }) {
       )}
 
       {continuePlanning && (
-        <div className="px-3 sm:px-4 py-3 border-t border-amber-500/10 space-y-2">
+        <div className="px-3 sm:px-4 py-3 border-t border-brand/10 space-y-2">
           <textarea
             autoFocus
             value={feedback}
@@ -287,14 +287,14 @@ function CursorPlanBlock({ block, sessionId }) {
               }
             }}
             placeholder="What should be refined? (optional — leave blank to ask for general improvements)"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 text-zinc-100 rounded text-xs resize-none focus:outline-none focus:border-zinc-400 placeholder-zinc-500"
+            className="w-full px-3 py-2 bg-control border border-strong text-fg rounded text-xs resize-none focus:outline-none focus:border-faint placeholder-faint"
             rows={3}
           />
           <div className="flex gap-2">
             <button
               onClick={handleContinue}
               disabled={loading}
-              className="px-3 py-1.5 bg-zinc-600 hover:bg-zinc-500 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+              className="px-3 py-1.5 bg-track hover:bg-faint disabled:opacity-50 text-fg rounded text-xs font-medium transition-colors"
             >
               Send feedback
             </button>
@@ -303,7 +303,7 @@ function CursorPlanBlock({ block, sessionId }) {
                 setContinuePlanning(false);
                 setFeedback('');
               }}
-              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded text-xs font-medium transition-colors"
+              className="px-3 py-1.5 bg-control hover:bg-control-hover text-fg-muted rounded text-xs font-medium transition-colors"
             >
               Cancel
             </button>
@@ -485,37 +485,37 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
 
   return (
     <div
-      className={`bg-zinc-900/50 rounded-lg border overflow-hidden ${resolvedBlock.isError && !isContinuePlanning ? 'border-red-800/60' : 'border-zinc-800'}`}
+      className={`bg-inset/50 rounded-lg border overflow-hidden ${resolvedBlock.isError && !isContinuePlanning ? 'border-danger/60' : 'border-line'}`}
     >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-zinc-800/50 transition-colors gap-2"
+        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-amber-400 text-xs font-mono shrink-0">{effectiveName}</span>
+          <span className="text-accent text-xs font-mono shrink-0">{effectiveName}</span>
           {isContinuePlanning ? (
-            <span className="shrink-0 text-sky-400 text-xs font-medium bg-sky-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-info text-xs font-medium bg-soft-info/40 px-1.5 py-0.5 rounded">
               continue
             </span>
           ) : (
             resolvedBlock.isError && (
-              <span className="shrink-0 text-red-400 text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+              <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger/40 px-1.5 py-0.5 rounded">
                 error
               </span>
             )
           )}
           {effectiveName === 'Bash' && resolvedBlock.input?.command && (
-            <code className="text-zinc-400 text-xs truncate">{resolvedBlock.input.command}</code>
+            <code className="text-fg-muted text-xs truncate">{resolvedBlock.input.command}</code>
           )}
           {(effectiveName === 'Write' || effectiveName === 'Edit') && filePath && (
-            <code className="text-zinc-400 text-xs truncate">{filePath}</code>
+            <code className="text-faint text-xs truncate">{filePath}</code>
           )}
           {effectiveName === 'Glob' && resolvedBlock.input?.pattern && (
-            <code className="text-zinc-400 text-xs truncate">{resolvedBlock.input.pattern}</code>
+            <code className="text-faint text-xs truncate">{resolvedBlock.input.pattern}</code>
           )}
           {effectiveName === 'Grep' &&
             (resolvedBlock.input?.pattern || resolvedBlock.input?.path) && (
-              <code className="text-zinc-400 text-xs truncate">
+              <code className="text-faint text-xs truncate">
                 {[
                   resolvedBlock.input.pattern,
                   resolvedBlock.input.path
@@ -528,10 +528,10 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
             )}
         </div>
         {!hasResult ? (
-          <div className="w-3.5 h-3.5 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
+          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
           <ChevronDown
-            className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-faint transition-transform ${expanded ? 'rotate-180' : ''}`}
           />
         )}
       </button>
@@ -557,7 +557,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
       )}
 
       {expanded && (
-        <div className="px-3 sm:px-4 py-3 border-t border-zinc-800 text-xs space-y-3">
+        <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
           {isEditWithDiff ? (
             <EditDiffView
               oldString={resolvedBlock.input?.old_string ?? null}
@@ -573,8 +573,8 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
             />
           ) : (
             <div>
-              <div className="text-zinc-500 font-medium mb-1">Input</div>
-              <pre className="text-zinc-400 whitespace-pre-wrap overflow-auto max-h-64 bg-zinc-950/50 rounded p-2">
+              <div className="text-faint font-medium mb-1">Input</div>
+              <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-64 bg-page/50 rounded p-2">
                 {JSON.stringify(resolvedBlock.input, null, 2)}
               </pre>
             </div>
@@ -582,7 +582,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
           {resolvedBlock.result != null && !cursorNativeDiff && (
             <div>
               <div
-                className={`font-medium mb-1 ${isContinuePlanning ? 'text-sky-400' : resolvedBlock.isError ? 'text-red-400' : 'text-zinc-500'}`}
+                className={`font-medium mb-1 ${isContinuePlanning ? 'text-info' : resolvedBlock.isError ? 'text-danger' : 'text-faint'}`}
               >
                 {isContinuePlanning ? 'Feedback' : resolvedBlock.isError ? 'Error' : 'Result'}
               </div>
@@ -595,8 +595,8 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
                 <pre
                   className={`whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 ${
                     resolvedBlock.isError && !isContinuePlanning
-                      ? 'text-red-300 bg-red-950/30'
-                      : 'text-zinc-400 bg-zinc-950/50'
+                      ? 'text-danger bg-soft-danger/30'
+                      : 'text-fg-muted bg-inset/50'
                   }`}
                 >
                   {typeof resolvedBlock.result === 'string'

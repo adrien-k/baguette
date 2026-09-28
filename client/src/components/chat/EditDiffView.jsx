@@ -7,7 +7,7 @@ function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
   for (const part of parts) {
     if (part.added || part.removed) {
       const prefix = part.added ? '+' : '-';
-      const cls = part.added ? 'text-green-400' : 'text-red-400';
+      const cls = part.added ? 'text-green-400' : 'text-danger';
       const raw = part.value.split('\n');
       if (raw[raw.length - 1] === '') raw.pop();
       for (const line of raw) {
@@ -36,7 +36,7 @@ function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
       {remaining > 0 && (
         <button
           onClick={onExpand}
-          className="text-zinc-600 hover:text-zinc-400 transition-colors text-left"
+          className="text-faint hover:text-fg-muted transition-colors text-left"
         >
           &hellip; {remaining} more line{remaining !== 1 ? 's' : ''}
         </button>
@@ -52,9 +52,9 @@ function DiffStringView({ diffString, maxLines, onExpand }) {
     if (line.startsWith('---') || line.startsWith('+++')) continue;
     const ch = line[0];
     if (ch === '+') displayLines.push({ cls: 'text-green-400', text: line });
-    else if (ch === '-') displayLines.push({ cls: 'text-red-400', text: line });
+    else if (ch === '-') displayLines.push({ cls: 'text-danger', text: line });
     else if (line.startsWith('@@')) displayLines.push({ cls: 'text-cyan-500/80', text: line });
-    else displayLines.push({ cls: 'text-zinc-600', text: line });
+    else displayLines.push({ cls: 'text-faint', text: line });
     if (maxLines && displayLines.length >= maxLines) break;
   }
   const totalChanged = lines.filter((l) => l[0] === '+' || l[0] === '-').length;
@@ -71,7 +71,7 @@ function DiffStringView({ diffString, maxLines, onExpand }) {
       {remaining > 0 && onExpand && (
         <button
           onClick={onExpand}
-          className="text-zinc-600 hover:text-zinc-400 transition-colors text-left"
+          className="text-faint hover:text-fg-muted transition-colors text-left"
         >
           &hellip; {remaining} more line{remaining !== 1 ? 's' : ''}
         </button>
@@ -112,24 +112,24 @@ export default function EditDiffView({
 
   return (
     <div>
-      <div className="text-zinc-500 font-medium mb-1">{label}</div>
+      <div className="text-faint font-medium mb-1">{label}</div>
       {useCursorDiff ? (
         <div
-          className={`text-xs font-mono max-h-96 rounded bg-zinc-950/50 py-1 ${DIFF_SCROLL_WRAP_CLASS}`}
+          className={`text-xs font-mono max-h-96 rounded bg-page/50 py-1 ${DIFF_SCROLL_WRAP_CLASS}`}
         >
           <DiffStringView diffString={cursorDiff.diffString} />
         </div>
       ) : (
         <pre
-          className={`text-xs font-mono max-h-96 rounded bg-zinc-950/50 ${DIFF_SCROLL_WRAP_CLASS} ${DIFF_LINE_WRAP_CLASS}`}
+          className={`text-xs font-mono max-h-96 rounded bg-page/50 ${DIFF_SCROLL_WRAP_CLASS} ${DIFF_LINE_WRAP_CLASS}`}
         >
           {diffLines(oldString ?? '', newString ?? '').flatMap((part, i) => {
             const prefix = part.added ? '+' : part.removed ? '-' : ' ';
             const cls = part.added
-              ? 'bg-emerald-500/12 text-emerald-400'
+              ? 'bg-success/12 text-success'
               : part.removed
-                ? 'bg-red-500/12 text-red-400'
-                : 'text-zinc-600';
+                ? 'bg-danger/12 text-danger'
+                : 'text-faint';
             const lines = part.value.split('\n');
             if (lines[lines.length - 1] === '') lines.pop();
             return lines.map((line, li) => (

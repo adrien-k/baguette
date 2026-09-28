@@ -67,7 +67,7 @@ export default function ArchiveSession({ session, onArchive }) {
         onClick={handleClick}
         disabled={blocked}
         title={title}
-        className="p-1 text-zinc-500 hover:text-amber-500 hover:bg-zinc-800 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="p-1 text-faint hover:text-accent hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {archiving || checking || session.status === 'archiving' ? (
           <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />

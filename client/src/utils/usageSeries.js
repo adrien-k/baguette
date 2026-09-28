@@ -69,7 +69,7 @@ export const SERIES_COLORS = [
   'bg-lime-600',
   'bg-cyan-600',
 ];
-const OTHER_COLOR = 'bg-zinc-600';
+const OTHER_COLOR = 'bg-track';
 export const OTHER_KEY = '__other__';
 
 const SDK_COLORS = { claude: SERIES_COLORS[0], cursor: SERIES_COLORS[1] };

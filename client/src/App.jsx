@@ -18,30 +18,31 @@ import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
-import { ColorSchemeProvider, useColorScheme } from './hooks/useColorScheme.jsx';
+import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
+import { MENU_ITEM_CLASS, NAV_CLASS, PAGE_BG } from './utils/ui.js';
 
 function LoadingScreen() {
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-      <div className="text-zinc-400">Loading...</div>
+    <div className={`min-h-screen ${PAGE_BG} flex items-center justify-center`}>
+      <div className="text-fg-muted">Loading...</div>
     </div>
   );
 }
 
 function AccountPendingScreen({ user, logout }) {
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-      <div className="bg-zinc-900 rounded-xl p-8 text-center max-w-md">
+    <div className={`min-h-screen ${PAGE_BG} flex items-center justify-center`}>
+      <div className="bg-nav rounded-xl p-8 text-center max-w-md">
         <img src={user.avatar_url} alt="" className="w-14 h-14 rounded-full mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-white mb-2">Account Pending</h2>
-        <p className="text-zinc-400 mb-6">
+        <h2 className="text-xl font-semibold text-fg mb-2">Account Pending</h2>
+        <p className="text-fg-muted mb-6">
           Your account is awaiting admin approval. Please check back later.
         </p>
         <button
           type="button"
           onClick={logout}
-          className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-sm text-fg-muted hover:text-fg transition-colors"
         >
           <LogOut className="w-4 h-4" />
           Sign out
@@ -75,15 +76,12 @@ function Nav() {
 
   if (!user) return null;
 
-  const menuItemClass =
-    'flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700/50 transition-colors';
-
   return (
-    <nav className="bg-zinc-900 border-b border-zinc-800 relative z-40 shrink-0">
+    <nav className={`${NAV_CLASS} relative z-40 shrink-0`}>
       <div className="px-4 flex items-center gap-2 sm:gap-3 h-14 min-w-0">
         <Link to={homeUrl} className="flex items-center gap-2 shrink-0">
           <BaguetteIcon className="w-6 h-6 shrink-0" />
-          <span className="text-white font-semibold text-sm font-display whitespace-nowrap">
+          <span className="text-fg font-semibold text-sm font-display whitespace-nowrap">
             Baguette
           </span>
         </Link>
@@ -97,10 +95,10 @@ function Nav() {
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-zinc-800/50 transition-colors"
+                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-control/50 transition-colors"
               >
                 <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
-                <span className="hidden sm:block text-zinc-300 text-sm">{user.username}</span>
+                <span className="hidden sm:block text-secondary text-sm">{user.username}</span>
               </button>
               {userMenuOpen && (
                 <div
@@ -109,19 +107,19 @@ function Nav() {
                   <div className="sm:hidden">
                     <ColorSchemeToggle menuItem />
                   </div>
-                  <div className="border-t border-zinc-700 mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
-                    <Link to="/usage" className={menuItemClass}>
-                      <ChartNoAxesCombined className="w-4 h-4 text-zinc-500" />
+                  <div className="border-t border-strong mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
+                    <Link to="/usage" className={MENU_ITEM_CLASS}>
+                      <ChartNoAxesCombined className="w-4 h-4 text-faint" />
                       Usage
                     </Link>
-                    <Link to="/settings" className={menuItemClass}>
-                      <SettingsIcon className="w-4 h-4 text-zinc-500" />
+                    <Link to="/settings" className={MENU_ITEM_CLASS}>
+                      <SettingsIcon className="w-4 h-4 text-faint" />
                       Settings
                     </Link>
                   </div>
-                  <div className="border-t border-zinc-700 mt-1 pt-1">
-                    <button onClick={logout} className={menuItemClass}>
-                      <LogOut className="w-4 h-4 text-zinc-500" />
+                  <div className="border-t border-strong mt-1 pt-1">
+                    <button onClick={logout} className={MENU_ITEM_CLASS}>
+                      <LogOut className="w-4 h-4 text-faint" />
                       Sign out
                     </button>
                   </div>
@@ -162,7 +160,7 @@ function AppRoutes() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className="h-screen min-h-screen bg-zinc-950 flex flex-col">
+    <div className={`h-screen min-h-screen ${PAGE_BG} flex flex-col`}>
       <Nav />
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <Routes>
@@ -333,26 +331,17 @@ function AppContent() {
 }
 
 function ThemedToaster() {
-  const { colorScheme } = useColorScheme();
-  const isLight = colorScheme === 'light';
-
   return (
     <Toaster
       position="bottom-left"
       containerStyle={{ bottom: '1.5rem', left: '1.5rem' }}
       toastOptions={{
         duration: 5000,
-        style: isLight
-          ? {
-              background: '#f4f4f5',
-              color: '#18181b',
-              border: '1px solid #d4d4d8',
-            }
-          : {
-              background: '#27272a',
-              color: '#fafafa',
-              border: '1px solid #3f3f46',
-            },
+        style: {
+          background: 'var(--palette-control)',
+          color: 'var(--palette-fg)',
+          border: '1px solid var(--palette-line-strong)',
+        },
       }}
     />
   );

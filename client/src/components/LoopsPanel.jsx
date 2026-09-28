@@ -10,7 +10,7 @@ import CardRepoBadge from './CardRepoBadge.jsx';
 import SessionCardLayout from './SessionCardLayout.jsx';
 
 const BADGE =
-  'inline-flex items-center gap-1 shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400';
+  'inline-flex items-center gap-1 shrink-0 rounded border border-strong px-1.5 py-0.5 text-[10px] font-medium text-fg-muted';
 
 const SINGLE_SESSION_TOOLTIP =
   'Every run continues in the same session: the conversation is compacted, then the prompt is sent again.';
@@ -32,7 +32,7 @@ function LoopPrompt({ prompt }) {
     <div>
       <p
         ref={ref}
-        className={`text-xs text-zinc-500 whitespace-pre-wrap break-words ${
+        className={`text-xs text-faint whitespace-pre-wrap break-words ${
           expanded ? '' : 'line-clamp-2'
         }`}
       >
@@ -42,7 +42,7 @@ function LoopPrompt({ prompt }) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="mt-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="mt-1 text-[11px] text-faint hover:text-secondary transition-colors"
         >
           {expanded ? 'Read less' : 'Read more'}
         </button>
@@ -67,9 +67,9 @@ function LoopSessionLink({ loop }) {
       <Link
         to={sessionUrl(session.short_id)}
         aria-label={tooltip}
-        className={`${BADGE} hover:text-zinc-200 hover:border-zinc-500`}
+        className={`${BADGE} hover:text-heading hover:border-faint`}
       >
-        <Recycle className={`w-3 h-3 ${strong ? 'text-amber-400' : 'text-zinc-500'}`} />
+        <Recycle className={`w-3 h-3 ${strong ? 'text-accent' : 'text-faint'}`} />
         <span className="max-w-20 truncate">{label}</span>
       </Link>
     </Tooltip>
@@ -84,7 +84,7 @@ function LoopRow({ loop, editing, onEdit, onToggle, onDelete }) {
     <>
       {loop.single_session && !loop.tied_session && (
         <Tooltip wrap content={SINGLE_SESSION_TOOLTIP}>
-          <span className="inline-flex shrink-0 text-zinc-400" aria-label="Single session">
+          <span className="inline-flex shrink-0 text-fg-muted" aria-label="Single session">
             <Recycle className="w-3.5 h-3.5" />
           </span>
         </Tooltip>
@@ -97,7 +97,7 @@ function LoopRow({ loop, editing, onEdit, onToggle, onDelete }) {
     <>
       <LoopPrompt prompt={loop.prompt} />
       {loop.last_error && (
-        <p className="mt-1 flex items-start gap-1.5 text-xs text-red-400">
+        <p className="mt-1 flex items-start gap-1.5 text-xs text-danger">
           <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
           <span className="break-all">{loop.last_error}</span>
         </p>
@@ -116,19 +116,19 @@ function LoopRow({ loop, editing, onEdit, onToggle, onDelete }) {
       >
         <span
           className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
-            loop.enabled ? 'bg-amber-500' : 'bg-zinc-600'
+            loop.enabled ? 'bg-brand' : 'bg-track'
           }`}
         >
           <span
-            className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
+            className={`inline-block h-3 w-3 rounded-full bg-knob shadow transition-transform ${
               loop.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
             }`}
           />
         </span>
       </button>
       {schedule && (
-        <span className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-xs border rounded px-1.5 py-0.5 border-zinc-700 bg-zinc-800/40 text-zinc-400">
-          <Repeat className="w-3 h-3 text-amber-400" />
+        <span className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-xs border rounded px-1.5 py-0.5 border-strong bg-control/40 text-fg-muted">
+          <Repeat className="w-3 h-3 text-accent" />
           {schedule}
         </span>
       )}
@@ -137,17 +137,15 @@ function LoopRow({ loop, editing, onEdit, onToggle, onDelete }) {
 
   return (
     <SessionCardLayout
-      className={editing ? 'border-zinc-600' : ''}
-      accentClassName={loop.enabled ? 'border-l-amber-500' : 'border-l-zinc-700'}
+      className={editing ? 'border-strong' : ''}
+      accentClassName={loop.enabled ? 'border-l-brand' : 'border-l-strong'}
       repo={
         showRepoDetails ? (
           <CardRepoBadge show isGlobal={!!loop.is_global} repoFullName={loop.repo_full_name} />
         ) : null
       }
       indicator={
-        <Repeat
-          className={`w-3.5 h-3.5 shrink-0 ${loop.enabled ? 'text-amber-400' : 'text-zinc-600'}`}
-        />
+        <Repeat className={`w-3.5 h-3.5 shrink-0 ${loop.enabled ? 'text-accent' : 'text-faint'}`} />
       }
       title={loop.name || loop.prompt.split('\n')[0]}
       subtitle={formatLoopRunSubtitle(loop)}
@@ -160,14 +158,14 @@ function LoopRow({ loop, editing, onEdit, onToggle, onDelete }) {
           onClick: () => onEdit(loop),
           title: 'Edit loop',
           className: `p-1.5 transition-colors ${
-            editing ? 'text-amber-400' : 'text-zinc-500 hover:text-zinc-200'
+            editing ? 'text-accent' : 'text-faint hover:text-heading'
           }`,
         },
         {
           icon: Trash2,
           onClick: () => onDelete(loop),
           title: 'Delete loop',
-          className: 'p-1.5 text-zinc-500 hover:text-red-400 transition-colors',
+          className: 'p-1.5 text-faint hover:text-danger transition-colors',
         },
       ]}
     />
@@ -233,7 +231,7 @@ export default function LoopsPanel({ query, repoFullName, editingLoopId, onEdit,
 
   return (
     <div className="mb-4 sm:mb-6">
-      <h2 className="text-sm font-medium text-zinc-400 mb-2">Loops</h2>
+      <h2 className="text-sm font-medium text-fg-muted mb-2">Loops</h2>
       <div className="space-y-2">
         {loops.map((loop) => (
           <LoopRow

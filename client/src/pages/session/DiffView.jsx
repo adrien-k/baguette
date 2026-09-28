@@ -18,12 +18,12 @@ import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 
-const DIFF_HUNK_ROW = 'text-sky-400 bg-sky-500/10';
-const DIFF_HUNK_NUM = 'text-sky-500/70';
-const DIFF_REMOVED_ROW = 'text-red-400 bg-red-500/10';
-const DIFF_ADDED_ROW = 'text-emerald-400 bg-emerald-500/10';
-const DIFF_CONTEXT_ROW = 'text-zinc-400 hover:bg-zinc-800/30';
-const DIFF_EMPTY_SIDE = 'flex bg-zinc-800/20';
+const DIFF_HUNK_ROW = 'text-info bg-info/10';
+const DIFF_HUNK_NUM = 'text-info/70';
+const DIFF_REMOVED_ROW = 'text-danger bg-danger/10';
+const DIFF_ADDED_ROW = 'text-success bg-success/10';
+const DIFF_CONTEXT_ROW = 'text-fg-muted hover:bg-control/30';
+const DIFF_EMPTY_SIDE = 'flex bg-control/20';
 
 // Parse unified diff string into per-file sections
 function parseDiff(diffText) {
@@ -132,7 +132,7 @@ function buildSideBySideRows(lines) {
   return rows;
 }
 
-const NUM_CLS = 'w-10 shrink-0 text-right text-zinc-600 select-none pr-2 border-r border-zinc-800';
+const NUM_CLS = 'w-10 shrink-0 text-right text-faint select-none pr-2 border-r border-line';
 const DIFF_LINE_CONTENT_CLS = 'px-2 flex-1 min-w-0 whitespace-pre-wrap break-words';
 
 function lineRefFromRow(row, filePath) {
@@ -149,7 +149,7 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
   return (
     <div
       className={`group/diffline relative flex items-start ${rowClass} ${
-        active ? 'ring-1 ring-inset ring-amber-500/60' : ''
+        active ? 'ring-1 ring-inset ring-brand/60' : ''
       }`}
     >
       {children}
@@ -163,7 +163,7 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
           title={LINE_HINT}
           aria-label={LINE_HINT}
           aria-expanded={active}
-          className={`absolute right-1 top-0.5 z-10 inline-flex items-center justify-center w-6 h-6 rounded-md border border-zinc-600 bg-zinc-800/95 text-zinc-300 shadow-sm transition-opacity hover:bg-zinc-700 hover:text-white hover:border-zinc-500 ${
+          className={`absolute right-1 top-0.5 z-10 inline-flex items-center justify-center w-6 h-6 rounded-md border border-strong bg-control/95 text-secondary shadow-sm transition-opacity hover:bg-control-hover hover:text-fg hover:border-faint ${
             active ? 'opacity-100' : 'opacity-0 group-hover/diffline:opacity-100'
           }`}
         >
@@ -248,7 +248,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
       {rows.map((row, i) => {
         if (row.type === 'hunk') {
           return (
-            <div key={i} className={`flex divide-x divide-zinc-800 ${DIFF_HUNK_ROW}`}>
+            <div key={i} className={`flex divide-x divide-line ${DIFF_HUNK_ROW}`}>
               <div className={`flex-1 min-w-0 ${DIFF_LINE_CONTENT_CLS}`}>{row.content}</div>
               <div className={`flex-1 min-w-0 ${DIFF_LINE_CONTENT_CLS}`}>{row.content}</div>
             </div>
@@ -315,7 +315,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
           );
         return (
           <div key={i}>
-            <div className="flex divide-x divide-zinc-800">
+            <div className="flex divide-x divide-line">
               <div className="flex-1 min-w-0">{leftCell}</div>
               <div className="flex-1 min-w-0">{rightCell}</div>
             </div>
@@ -331,22 +331,22 @@ function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, compo
   const [collapsed, setCollapsed] = useState(false);
   const displayPath = file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
   return (
-    <div id={scrollId} className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div id={scrollId} className="border border-line rounded-lg overflow-hidden">
       <button
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-800/50 hover:bg-zinc-800 text-left transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-control/50 hover:bg-control text-left transition-colors"
       >
         {collapsed ? (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0" />
         ) : (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-faint shrink-0" />
         )}
-        <span className="font-mono text-xs text-zinc-200 flex-1 truncate">{displayPath}</span>
-        <span className="text-xs text-emerald-400 shrink-0">+{file.addedCount}</span>
-        <span className="text-xs text-red-400 shrink-0 ml-1">-{file.removedCount}</span>
+        <span className="font-mono text-xs text-heading flex-1 truncate">{displayPath}</span>
+        <span className="text-xs text-success shrink-0">+{file.addedCount}</span>
+        <span className="text-xs text-danger shrink-0 ml-1">-{file.removedCount}</span>
       </button>
       {!collapsed && (
-        <div className="bg-zinc-900 overflow-x-hidden">
+        <div className="bg-nav overflow-x-hidden">
           {viewMode === 'inline' ? (
             <InlineDiff
               lines={file.lines}
@@ -464,13 +464,13 @@ export default function DiffView({
 
   const commitSelector =
     onSelectedCommitChange && !session?.is_global ? (
-      <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-zinc-800/60 bg-zinc-900/50">
+      <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/50">
         <label className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-600 shrink-0">Commit</span>
+          <span className="text-[10px] uppercase tracking-wide text-faint shrink-0">Commit</span>
           <select
             value={selectedCommit}
             onChange={(e) => onSelectedCommitChange(e.target.value)}
-            className="flex-1 min-w-0 max-w-md text-xs bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+            className="flex-1 min-w-0 max-w-md text-xs bg-control border border-strong rounded-md px-2 py-1 text-heading focus:outline-none focus:ring-1 focus:ring-brand/50"
           >
             <option value="all">All commits</option>
             {(commits ?? []).map((c) => (
@@ -490,24 +490,24 @@ export default function DiffView({
       <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4">
         {loading && (
           <div className="flex items-center justify-center h-full">
-            <div className="w-5 h-5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-strong border-t-secondary rounded-full animate-spin" />
           </div>
         )}
         {!loading && error && (
-          <div className="flex items-center gap-2 text-red-400 text-sm">
+          <div className="flex items-center gap-2 text-danger text-sm">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
         )}
         {!loading && !error && !hasDiff && (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-zinc-500 text-sm">
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-faint text-sm">
             <p>
               {isSingleCommit ? (
                 'No changes in this commit.'
               ) : (
                 <>
                   No changes compared to{' '}
-                  <span className="text-zinc-400">{session.base_branch}</span>
+                  <span className="text-fg-muted">{session.base_branch}</span>
                 </>
               )}
             </p>
@@ -517,10 +517,10 @@ export default function DiffView({
           <div className="space-y-3">
             {/* Header: file count + view mode toggle */}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-faint">
                 {files.length} file{files.length !== 1 ? 's' : ''} changed
                 {canComment && (
-                  <span className="text-zinc-600">
+                  <span className="text-faint">
                     {' '}
                     · hover a line and use{' '}
                     <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to message
@@ -528,22 +528,22 @@ export default function DiffView({
                   </span>
                 )}
                 {isSingleCommit && selectedCommitMeta && (
-                  <span className="text-zinc-600 hidden sm:inline">
+                  <span className="text-fg-muted hidden sm:inline">
                     · {selectedCommitMeta.subject}
                   </span>
                 )}
               </span>
-              <div className="flex items-center gap-0.5 bg-zinc-800 rounded-lg p-0.5">
+              <div className="flex items-center gap-0.5 bg-control rounded-lg p-0.5">
                 <button
                   onClick={() => setViewMode('inline')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'inline' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'inline' ? 'bg-control-hover text-fg' : 'text-fg-muted hover:text-heading'}`}
                 >
                   <AlignLeft className="w-3.5 h-3.5" />
                   Inline
                 </button>
                 <button
                   onClick={() => setViewMode('split')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'split' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'split' ? 'bg-control-hover text-fg' : 'text-fg-muted hover:text-heading'}`}
                 >
                   <Columns2 className="w-3.5 h-3.5" />
                   Split
@@ -567,11 +567,11 @@ export default function DiffView({
       </div>
 
       {/* Action bar */}
-      <div className="shrink-0 border-t border-zinc-800 px-4 py-3 flex items-center justify-between gap-3">
+      <div className="shrink-0 border-t border-line px-4 py-3 flex items-center justify-between gap-3">
         <button
           onClick={fetchDiff}
           disabled={loading}
-          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
+          className="flex items-center gap-1.5 text-xs text-faint hover:text-secondary transition-colors disabled:opacity-40"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh

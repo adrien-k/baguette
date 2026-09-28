@@ -29,9 +29,9 @@ function getMessageIcon(type, subtype) {
   if (type === 'assistant') return <Bot className="w-3.5 h-3.5 shrink-0" />;
   if (type === 'result') {
     return subtype === 'success' ? (
-      <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+      <CheckCircle className="w-3.5 h-3.5 shrink-0 text-success" />
     ) : (
-      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-danger" />
     );
   }
   if (type === 'system') return <Terminal className="w-3.5 h-3.5 shrink-0" />;
@@ -116,7 +116,7 @@ function MessageDetail({ msg }) {
             return (
               <div
                 key={i}
-                className="text-zinc-300 text-xs whitespace-pre-wrap font-mono leading-5"
+                className="text-secondary text-xs whitespace-pre-wrap font-mono leading-5"
               >
                 {block.text}
               </div>
@@ -124,17 +124,17 @@ function MessageDetail({ msg }) {
           }
           if (block.type === 'tool_use') {
             return (
-              <div key={i} className="bg-zinc-800/60 rounded p-2 border border-zinc-700/50">
-                <div className="flex items-center gap-1.5 text-amber-400 text-xs font-medium mb-1">
+              <div key={i} className="bg-control/60 rounded p-2 border border-strong/50">
+                <div className="flex items-center gap-1.5 text-accent text-xs font-medium mb-1">
                   <Wrench className="w-3 h-3" />
                   {formatMcpToolDisplayName(block.name, block.input)}
                 </div>
-                <pre className="text-zinc-400 text-xs overflow-auto max-h-40 leading-5">
+                <pre className="text-fg-muted text-xs overflow-auto max-h-40 leading-5">
                   {JSON.stringify(block.input, null, 2)}
                 </pre>
                 {block.result !== undefined && (
                   <div
-                    className={`mt-1.5 pt-1.5 border-t border-zinc-700/50 text-xs font-mono leading-5 ${block.isError ? 'text-red-400' : 'text-emerald-400/80'}`}
+                    className={`mt-1.5 pt-1.5 border-t border-strong/50 text-xs font-mono leading-5 ${block.isError ? 'text-danger' : 'text-success/80'}`}
                   >
                     {String(block.result).slice(0, 500)}
                     {String(block.result).length > 500 && '...'}
@@ -145,14 +145,14 @@ function MessageDetail({ msg }) {
           }
           if (block.type === 'thinking') {
             return (
-              <div key={i} className="text-zinc-500 text-xs italic font-mono leading-5">
+              <div key={i} className="text-faint text-xs italic font-mono leading-5">
                 &lt;thinking&gt; {block.thinking?.slice(0, 200)}
                 {block.thinking?.length > 200 ? '...' : ''} &lt;/thinking&gt;
               </div>
             );
           }
           return (
-            <pre key={i} className="text-zinc-400 text-xs overflow-auto max-h-40 leading-5">
+            <pre key={i} className="text-fg-muted text-xs overflow-auto max-h-40 leading-5">
               {JSON.stringify(block, null, 2)}
             </pre>
           );
@@ -169,7 +169,7 @@ function MessageDetail({ msg }) {
             return (
               <div
                 key={i}
-                className="text-zinc-300 text-xs whitespace-pre-wrap font-mono leading-5"
+                className="text-secondary text-xs whitespace-pre-wrap font-mono leading-5"
               >
                 {block.text}
               </div>
@@ -185,12 +185,12 @@ function MessageDetail({ msg }) {
                       .join('\n')
                   : JSON.stringify(block.content);
             return (
-              <div key={i} className="bg-zinc-800/60 rounded p-2 border border-zinc-700/50">
-                <div className="text-zinc-500 text-[10px] mb-1">
+              <div key={i} className="bg-control/60 rounded p-2 border border-strong/50">
+                <div className="text-faint text-[10px] mb-1">
                   tool_result for {block.tool_use_id}
                 </div>
                 <div
-                  className={`text-xs font-mono leading-5 ${block.is_error ? 'text-red-400' : 'text-zinc-300'}`}
+                  className={`text-xs font-mono leading-5 ${block.is_error ? 'text-danger' : 'text-secondary'}`}
                 >
                   {resultText.slice(0, 500)}
                   {resultText.length > 500 && '...'}
@@ -199,7 +199,7 @@ function MessageDetail({ msg }) {
             );
           }
           return (
-            <pre key={i} className="text-zinc-400 text-xs overflow-auto max-h-40 leading-5">
+            <pre key={i} className="text-fg-muted text-xs overflow-auto max-h-40 leading-5">
               {JSON.stringify(block, null, 2)}
             </pre>
           );
@@ -210,7 +210,7 @@ function MessageDetail({ msg }) {
 
   if (type === 'user' && typeof message?.content === 'string') {
     return (
-      <div className="text-zinc-300 text-xs whitespace-pre-wrap font-mono leading-5">
+      <div className="text-secondary text-xs whitespace-pre-wrap font-mono leading-5">
         {message.content}
       </div>
     );
@@ -218,7 +218,7 @@ function MessageDetail({ msg }) {
 
   if (type === 'system' && subtype === 'prompt') {
     return (
-      <div className="text-zinc-400 text-xs font-mono leading-5 whitespace-pre-wrap">
+      <div className="text-fg-muted text-xs font-mono leading-5 whitespace-pre-wrap">
         {msg.content}
       </div>
     );
@@ -227,7 +227,7 @@ function MessageDetail({ msg }) {
   if (type === 'result') {
     return (
       <div
-        className={`text-xs font-mono leading-5 whitespace-pre-wrap ${subtype === 'error' ? 'text-red-400' : 'text-zinc-300'}`}
+        className={`text-xs font-mono leading-5 whitespace-pre-wrap ${subtype === 'error' ? 'text-danger' : 'text-secondary'}`}
       >
         {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
       </div>
@@ -235,7 +235,7 @@ function MessageDetail({ msg }) {
   }
 
   return (
-    <pre className="text-zinc-400 text-xs overflow-auto max-h-60 leading-5">
+    <pre className="text-fg-muted text-xs overflow-auto max-h-60 leading-5">
       {JSON.stringify(msg, null, 2)}
     </pre>
   );
@@ -248,52 +248,50 @@ function LogMessage({ msg }) {
 
   const labelColor =
     type === 'system' && msg.subtype === 'prompt'
-      ? 'text-zinc-500'
+      ? 'text-faint'
       : {
-          user: 'text-sky-400',
-          assistant: 'text-amber-400',
-          result: msg.subtype === 'success' ? 'text-emerald-400' : 'text-red-400',
-          system: 'text-zinc-400',
-          tool_progress: 'text-zinc-500',
-        }[type] || 'text-zinc-400';
+          user: 'text-info',
+          assistant: 'text-accent',
+          result: msg.subtype === 'success' ? 'text-success' : 'text-danger',
+          system: 'text-fg-muted',
+          tool_progress: 'text-faint',
+        }[type] || 'text-fg-muted';
 
   const summary = getMessageSummary(msg);
 
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div className="border border-line rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/40 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-control/40 transition-colors text-left"
       >
         <span className={`${labelColor} shrink-0`}>{getMessageIcon(type, msg.subtype)}</span>
         <span className={`text-xs font-medium shrink-0 ${labelColor}`}>{getMessageLabel(msg)}</span>
         {msg.parent_tool_use_id && (
-          <span className="text-zinc-600 text-[10px] shrink-0">↳ sub-agent</span>
+          <span className="text-faint text-[10px] shrink-0">↳ sub-agent</span>
         )}
-        {summary && (
-          <span className="text-zinc-500 text-xs truncate flex-1 min-w-0">{summary}</span>
-        )}
-        <span className="text-zinc-600 text-[10px] shrink-0 ml-auto">
+        {summary && <span className="text-faint text-xs truncate flex-1 min-w-0">{summary}</span>}
+        <span className="text-faint text-[10px] shrink-0 ml-auto">
           {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
         </span>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-faint shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0" />
         )}
       </button>
       {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-zinc-800 bg-zinc-900/50">
+        <div className="px-3 pb-3 pt-1 border-t border-line bg-inset/50">
           <div className="flex justify-end mb-1.5">
             <button
               onClick={() => setShowRaw((v) => !v)}
-              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${showRaw ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-600 hover:text-zinc-400'}`}
+              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${showRaw ? 'text-accent bg-brand/10' : 'text-faint hover:text-fg-muted'}`}
             >
               Raw
             </button>
           </div>
           {showRaw ? (
-            <pre className="text-zinc-400 text-xs overflow-auto max-h-96 leading-5 whitespace-pre-wrap break-all">
+            <pre className="text-fg-muted text-xs overflow-auto max-h-96 leading-5 whitespace-pre-wrap break-all">
               {JSON.stringify(msg, null, 2)}
             </pre>
           ) : (
@@ -343,11 +341,11 @@ export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore, 
           <div ref={topSentinelRef} className="h-px shrink-0 order-first" />
           {loadingMore && (
             <div className="flex justify-center py-2 shrink-0">
-              <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-strong border-t-transparent rounded-full animate-spin" />
             </div>
           )}
           {rawMessages.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-zinc-500 text-sm shrink-0">
+            <div className="flex items-center justify-center h-32 text-faint text-sm shrink-0">
               No messages yet
             </div>
           )}

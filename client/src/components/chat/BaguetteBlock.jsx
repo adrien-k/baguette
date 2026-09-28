@@ -16,26 +16,26 @@ export default function BaguetteBlock({ message, models = [], session }) {
       : JSON.stringify(message.message?.content);
 
   return (
-    <div className="ml-4 sm:ml-8 bg-amber-950/20 rounded-lg border border-amber-900/40 overflow-hidden">
+    <div className="ml-4 sm:ml-8 bg-soft-accent/20 rounded-lg border border-brand/40 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-amber-900/10 transition-colors gap-2"
+        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-brand/10 transition-colors gap-2"
       >
         <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
-          <span className="text-amber-500 text-xs font-medium shrink-0">Baguette</span>
+          <span className="text-accent text-xs font-medium shrink-0">Baguette</span>
           {turnModelLabel ? (
-            <span className="text-zinc-500 text-xs font-normal truncate max-w-[12rem] sm:max-w-xs">
+            <span className="text-faint text-xs font-normal truncate max-w-[12rem] sm:max-w-xs">
               {turnModelLabel}
             </span>
           ) : null}
-          <span className="text-zinc-400 text-xs truncate min-w-0">{title}</span>
+          <span className="text-fg-muted text-xs truncate min-w-0">{title}</span>
         </div>
         <ChevronDown
-          className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
         />
       </button>
       {expanded && (
-        <div className="px-3 sm:px-4 py-3 border-t border-amber-900/30 text-xs text-zinc-400 whitespace-pre-wrap">
+        <div className="px-3 sm:px-4 py-3 border-t border-brand/30 text-xs text-fg-muted whitespace-pre-wrap">
           {content}
         </div>
       )}

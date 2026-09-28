@@ -17,7 +17,7 @@ function StepIndicator({ current }) {
         <div
           key={i}
           className={`h-1 flex-1 rounded-full transition-colors ${
-            i + 1 <= current ? 'bg-amber-500' : 'bg-zinc-800'
+            i + 1 <= current ? 'bg-brand' : 'bg-control-hover'
           }`}
         />
       ))}
@@ -27,7 +27,7 @@ function StepIndicator({ current }) {
 
 function StepLabel({ current }) {
   return (
-    <p className="text-xs text-zinc-600 mb-2">
+    <p className="text-xs text-faint mb-2">
       Step {current} of {TOTAL_STEPS}
     </p>
   );
@@ -100,11 +100,11 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-page flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
         <div className="flex items-center gap-3 mb-10">
           <BaguetteIcon className="w-7 h-7" />
-          <span className="text-white font-semibold font-display">Baguette</span>
+          <span className="text-fg font-semibold font-display">Baguette</span>
         </div>
 
         <StepIndicator current={step} />
@@ -112,14 +112,14 @@ export default function Onboarding() {
         {step === 1 && (
           <div>
             <StepLabel current={1} />
-            <h1 className="text-2xl font-bold text-white mb-2">Set up your API keys</h1>
-            <p className="text-zinc-400 text-sm mb-8">
+            <h1 className="text-2xl font-bold text-fg mb-2">Set up your API keys</h1>
+            <p className="text-fg-muted text-sm mb-8">
               Add your AI provider keys to get started. You can update these any time in Settings.
             </p>
 
             <div className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                <label className="block text-sm font-medium text-secondary mb-1.5">
                   Claude credential
                 </label>
                 <MaskedSecretInput
@@ -130,17 +130,17 @@ export default function Onboarding() {
                     setAnthropicApiKeyDirty(dirty);
                   }}
                 />
-                <p className="mt-1.5 text-xs text-zinc-500">
-                  Optional. Console API key (<code className="text-zinc-400">sk-ant-api…</code>) or
+                <p className="mt-1.5 text-xs text-faint">
+                  Optional. Console API key (<code className="text-fg-muted">sk-ant-api…</code>) or
                   a subscription token from{' '}
-                  <code className="text-zinc-400">claude setup-token</code> (
-                  <code className="text-zinc-400">sk-ant-oat…</code>). Leave empty to use Claude
+                  <code className="text-fg-muted">claude setup-token</code> (
+                  <code className="text-fg-muted">sk-ant-oat…</code>). Leave empty to use Claude
                   Code&apos;s default configuration.
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                <label className="block text-sm font-medium text-secondary mb-1.5">
                   Cursor API Key
                 </label>
                 <MaskedSecretInput
@@ -151,9 +151,7 @@ export default function Onboarding() {
                     setCursorApiKeyDirty(dirty);
                   }}
                 />
-                <p className="mt-1.5 text-xs text-zinc-500">
-                  Required to use the Cursor agent SDK.
-                </p>
+                <p className="mt-1.5 text-xs text-faint">Required to use the Cursor agent SDK.</p>
               </div>
             </div>
 
@@ -161,14 +159,14 @@ export default function Onboarding() {
               <button
                 onClick={() => handleSaveKeys(false)}
                 disabled={savingKeys}
-                className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                className="bg-brand hover:bg-brand-hover disabled:bg-disabled text-on-brand px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
                 {savingKeys ? 'Saving…' : 'Continue'}
               </button>
               <button
                 onClick={() => handleSaveKeys(true)}
                 disabled={savingKeys}
-                className="text-sm text-zinc-500 hover:text-zinc-300 px-2 py-2.5 transition-colors"
+                className="text-sm text-faint hover:text-secondary px-2 py-2.5 transition-colors"
               >
                 Skip for now
               </button>
@@ -179,8 +177,8 @@ export default function Onboarding() {
         {step === 2 && (
           <div>
             <StepLabel current={2} />
-            <h1 className="text-2xl font-bold text-white mb-2">Add repositories</h1>
-            <p className="text-zinc-400 text-sm mb-8">
+            <h1 className="text-2xl font-bold text-fg mb-2">Add repositories</h1>
+            <p className="text-fg-muted text-sm mb-8">
               Connect GitHub repositories to use as session targets. You can add more later in
               Settings.
             </p>
@@ -194,7 +192,7 @@ export default function Onboarding() {
                   <button
                     type="submit"
                     disabled={adding || !selectedRepo}
-                    className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+                    className="inline-flex items-center justify-center bg-brand hover:bg-brand-hover disabled:bg-disabled text-on-brand px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
                   >
                     {adding ? 'Adding…' : 'Add'}
                   </button>
@@ -203,8 +201,8 @@ export default function Onboarding() {
             </form>
 
             {addResult && !addResult.hasBaguetteConfig && (
-              <div className="mt-4 bg-amber-900/20 border border-amber-700 rounded-xl px-4 py-3">
-                <p className="text-sm text-amber-200">
+              <div className="mt-4 bg-soft-accent/20 border border-warning rounded-xl px-4 py-3">
+                <p className="text-sm text-warning">
                   <strong>{addResult.repo.full_name}</strong> doesn&apos;t have a Baguette
                   configuration yet. Start a session on this repo and the agent will offer to set it
                   up.
@@ -213,13 +211,13 @@ export default function Onboarding() {
             )}
 
             {repos.length > 0 && (
-              <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="mt-4 bg-nav border border-line rounded-xl overflow-hidden">
                 {repos.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center px-4 py-3 border-b border-zinc-800 last:border-0"
+                    className="flex items-center px-4 py-3 border-b border-line last:border-0"
                   >
-                    <code className="text-sm text-white font-medium">{r.full_name}</code>
+                    <code className="text-sm text-fg font-medium">{r.full_name}</code>
                   </div>
                 ))}
               </div>
@@ -229,7 +227,7 @@ export default function Onboarding() {
               <button
                 onClick={handleComplete}
                 disabled={completing}
-                className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                className="bg-brand hover:bg-brand-hover disabled:bg-disabled text-on-brand px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
                 {completing ? 'Setting up…' : 'Get started'}
               </button>
@@ -237,7 +235,7 @@ export default function Onboarding() {
                 <button
                   onClick={handleComplete}
                   disabled={completing}
-                  className="text-sm text-zinc-500 hover:text-zinc-300 px-2 py-2.5 transition-colors"
+                  className="text-sm text-faint hover:text-secondary px-2 py-2.5 transition-colors"
                 >
                   Skip for now
                 </button>

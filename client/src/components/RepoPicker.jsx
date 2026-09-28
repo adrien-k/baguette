@@ -101,7 +101,7 @@ export default function RepoPicker({
   const footer = includeManage ? (
     <Link
       to="/settings?tab=repos"
-      className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+      className="flex items-center gap-2 px-3 py-2 text-sm text-fg-muted hover:text-fg hover:bg-control/50 transition-colors"
     >
       <Plus className="w-3.5 h-3.5" />
       Manage repositories

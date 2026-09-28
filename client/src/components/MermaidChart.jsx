@@ -32,7 +32,7 @@ export default function MermaidChart({ chart }) {
 
   if (error) {
     return (
-      <pre className="bg-zinc-800 border border-red-700 text-red-400 text-xs p-3 rounded-lg overflow-auto my-2">
+      <pre className="bg-control border border-red-700 text-danger text-xs p-3 rounded-lg overflow-auto my-2">
         {error}
       </pre>
     );

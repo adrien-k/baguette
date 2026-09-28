@@ -22,6 +22,8 @@ import SearchableSelect from './SearchableSelect';
 import RepoPicker from './RepoPicker.jsx';
 import { isMobile } from '../utils/isMobile.js';
 import { applyParamOverrides } from '../utils/models.js';
+import Toggle from './Toggle.jsx';
+import { INPUT_CLASS } from '../utils/ui.js';
 
 function parseRepoFullName(full) {
   if (!full) return { owner: '', name: '' };
@@ -466,7 +468,7 @@ export default function BuilderForm({
     <button
       type="button"
       onClick={onCancelEdit}
-      className="inline-flex items-center justify-center shrink-0 h-8 px-3 rounded-md border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium transition-colors"
+      className="inline-flex items-center justify-center shrink-0 h-8 px-3 rounded-md border border-strong bg-control hover:bg-control-hover text-secondary hover:text-fg text-xs font-medium transition-colors"
     >
       Cancel
     </button>
@@ -550,16 +552,16 @@ export default function BuilderForm({
       )}
       {/* A loop being edited stays a loop, so the tabs give way to a title and a way out. */}
       {editingLoop ? (
-        <div className="flex min-w-0 items-center gap-2 border-b border-zinc-800 pb-2 -mt-1 text-sm font-medium text-white">
-          <Repeat className="w-4 h-4 shrink-0 text-amber-400" />
+        <div className="flex min-w-0 items-center gap-2 border-b border-line pb-2 -mt-1 text-sm font-medium text-fg">
+          <Repeat className="w-4 h-4 shrink-0 text-accent" />
           <span className="truncate">
             Editing loop
-            {editingLoop.name ? <span className="text-zinc-400"> · {editingLoop.name}</span> : ''}
+            {editingLoop.name ? <span className="text-faint"> · {editingLoop.name}</span> : ''}
           </span>
         </div>
       ) : (
         onCreateLoop && (
-          <div className="flex gap-1 border-b border-zinc-800 -mt-1">
+          <div className="flex gap-1 border-b border-line -mt-1">
             {[
               { value: 'session', label: 'Session' },
               { value: 'loop', label: 'Loop' },
@@ -570,8 +572,8 @@ export default function BuilderForm({
                 onClick={() => setMode(tab.value)}
                 className={`px-3 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
                   mode === tab.value
-                    ? 'border-amber-500 text-white'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                    ? 'border-brand text-fg'
+                    : 'border-transparent text-faint hover:text-heading'
                 }`}
               >
                 {tab.label}
@@ -583,15 +585,15 @@ export default function BuilderForm({
 
       {isLoop && (
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1">
-            Loop label <span className="text-zinc-500 font-normal">(optional)</span>
+          <label className="block text-sm font-medium text-secondary mb-1">
+            Loop label <span className="text-faint font-normal">(optional)</span>
           </label>
           <input
             type="text"
             value={loopName}
             onChange={(e) => setLoopName(e.target.value)}
             placeholder="Nightly dependency check"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+            className={`${INPUT_CLASS} focus:border-transparent`}
           />
         </div>
       )}
@@ -604,7 +606,7 @@ export default function BuilderForm({
         >
           {allowRepoChoice && (
             <div className="min-w-0">
-              <label className="mb-1 block text-sm font-medium text-zinc-300">Repository</label>
+              <label className="mb-1 block text-sm font-medium text-heading">Repository</label>
               <RepoPicker
                 includeAllSessions={false}
                 includeManage
@@ -613,7 +615,7 @@ export default function BuilderForm({
                 showOrgInLabel
                 fullWidth
                 matchTriggerWidth
-                triggerClassName="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-white hover:text-white justify-between focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+                triggerClassName="bg-control border border-strong rounded-md px-3 py-2 text-fg hover:text-fg justify-between focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-transparent"
                 value={targetScope}
                 onChange={setTargetScope}
               />
@@ -623,7 +625,7 @@ export default function BuilderForm({
           {!isGlobal && (
             <div className={`min-w-0 space-y-2 ${allowRepoChoice ? 'sm:col-span-2' : ''}`}>
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-300">Branch</label>
+                <label className="mb-1 block text-sm font-medium text-heading">Branch</label>
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="min-w-0 flex-1">
                     <SearchableSelect
@@ -643,23 +645,23 @@ export default function BuilderForm({
                     onClick={() => clearCacheAndReload()}
                     disabled={!repoFullName || loadingBranches || clearingCache}
                     title="Clear cache and reload branches"
-                    className="shrink-0 self-start px-1 py-2.5 text-sm leading-none text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
+                    className="shrink-0 self-start px-1 py-2.5 text-sm leading-none text-faint hover:text-secondary disabled:opacity-40"
                   >
                     ↺
                   </button>
                 </div>
               </div>
               {!allowRepoChoice && (
-                <p className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
+                <p className="flex min-w-0 items-center gap-1.5 text-xs text-faint">
                   <GithubIcon className="h-3.5 w-3.5 shrink-0 opacity-80" />
                   {repoFullName ? (
                     <span className="min-w-0 truncate">
-                      <span className="text-zinc-500">{repoOwner}</span>
-                      <span className="text-zinc-600"> / </span>
-                      <span className="text-zinc-400">{repoName}</span>
+                      <span className="text-faint">{repoOwner}</span>
+                      <span className="text-faint"> / </span>
+                      <span className="text-fg-muted">{repoName}</span>
                     </span>
                   ) : (
-                    <span className="text-zinc-600">No repository selected</span>
+                    <span className="text-faint">No repository selected</span>
                   )}
                 </p>
               )}
@@ -675,7 +677,7 @@ export default function BuilderForm({
               to="/settings?tab=prompts#settings-prompt-session"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-amber-400 hover:text-amber-300 underline"
+              className="text-xs text-accent hover:text-accent underline"
             >
               Configure the system prompt
             </Link>
@@ -701,24 +703,12 @@ export default function BuilderForm({
           <LoopScheduleFields schedule={schedule} onChange={setSchedule} />
 
           <div className="flex items-center gap-4">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={singleSession}
-              onClick={() => setSingleSession((v) => !v)}
-              className="flex items-center gap-2 group"
-            >
-              <span
-                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none ${singleSession ? 'bg-amber-500' : 'bg-zinc-600'}`}
-              >
-                <span
-                  className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${singleSession ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-                />
-              </span>
-              <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
-                Single session
-              </span>
-            </button>
+            <Toggle
+              checked={singleSession}
+              onChange={setSingleSession}
+              label="Single session"
+              className="gap-2"
+            />
             <Tooltip
               content={
                 <span className="block max-w-xs whitespace-normal leading-relaxed">
@@ -730,7 +720,7 @@ export default function BuilderForm({
                 </span>
               }
             >
-              <HelpCircle className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-400 transition-colors" />
+              <HelpCircle className="w-3.5 h-3.5 text-faint hover:text-fg-muted transition-colors" />
             </Tooltip>
           </div>
         </>
@@ -741,7 +731,7 @@ export default function BuilderForm({
           <button
             type="button"
             onClick={() => setShowMore((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading transition-colors"
           >
             <ChevronRight
               className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
@@ -755,9 +745,9 @@ export default function BuilderForm({
               {!isLoop && !isGlobal && (
                 <>
                   <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-zinc-300 mb-1">
+                    <label className="block text-sm font-medium text-secondary mb-1">
                       Branch name{' '}
-                      <span className="text-zinc-500 font-normal">
+                      <span className="text-faint font-normal">
                         (optional, for Start — auto-generated if empty)
                       </span>
                     </label>
@@ -766,7 +756,7 @@ export default function BuilderForm({
                       value={branchName}
                       onChange={(e) => setBranchName(e.target.value)}
                       placeholder="my-feature-branch"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
+                      className={`${INPUT_CLASS} focus:border-transparent`}
                     />
                   </div>
                 </>
@@ -774,12 +764,12 @@ export default function BuilderForm({
 
               {availablePlugins.length > 0 && (
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-zinc-300 mb-1.5">Plugins</label>
+                  <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
                   <div className="space-y-1.5">
                     {availablePlugins.map((plugin) => (
                       <label
                         key={plugin.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-zinc-700/80 bg-zinc-800/40 px-3 py-2"
+                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
                       >
                         <input
                           type="checkbox"
@@ -791,11 +781,11 @@ export default function BuilderForm({
                                 : prev.filter((id) => id !== plugin.id)
                             )
                           }
-                          className="mt-0.5 rounded border-zinc-600 text-amber-500 focus:ring-amber-500/50"
+                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
                         />
-                        <span className="text-sm text-zinc-300 leading-tight">
-                          <span className="font-medium text-zinc-200">{plugin.name}</span>
-                          <span className="block text-xs font-normal text-zinc-500 mt-0.5">
+                        <span className="text-sm text-secondary leading-tight">
+                          <span className="font-medium text-heading">{plugin.name}</span>
+                          <span className="block text-xs font-normal text-faint mt-0.5">
                             {plugin.marketplace_repo} · {plugin.plugin_path}
                           </span>
                         </span>

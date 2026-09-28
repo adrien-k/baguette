@@ -134,7 +134,7 @@ describe('buildSeries by sdk', () => {
   it('falls back to the raw name and neutral colour for an unknown agent', () => {
     const { series } = buildSeries([row('2026-09-20', 'acme/alpha', 'codex', 5)], 'sdk');
     expect(series[0].label).toBe('codex');
-    expect(series[0].color).toBe('bg-zinc-600');
+    expect(series[0].color).toBe('bg-track');
   });
 });
 

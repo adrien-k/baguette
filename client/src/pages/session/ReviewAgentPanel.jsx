@@ -61,22 +61,22 @@ function reconcileMessages(messages) {
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div className="border border-line rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/40 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-control/40 transition-colors text-left"
       >
-        <span className="text-xs font-medium text-zinc-500">Review system prompt</span>
+        <span className="text-xs font-medium text-faint">Review system prompt</span>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-600 shrink-0 ml-auto" />
+          <ChevronDown className="w-3.5 h-3.5 text-faint shrink-0 ml-auto" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-600 shrink-0 ml-auto" />
+          <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0 ml-auto" />
         )}
       </button>
       {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-zinc-800 bg-zinc-900/50">
-          <pre className="text-zinc-500 text-xs font-mono leading-5 whitespace-pre-wrap overflow-auto max-h-72">
+        <div className="px-3 pb-3 pt-1 border-t border-line bg-inset/50">
+          <pre className="text-faint text-xs font-mono leading-5 whitespace-pre-wrap overflow-auto max-h-72">
             {content}
           </pre>
         </div>
@@ -165,14 +165,12 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
   }, [panelRevealed, messagesLoading, session?.id, displayMessages.length, reviewTurnActive]);
 
-  const showStopBar = !readonly && isRunning;
-
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-      <ChatMessagesViewport showBottomFade={showStopBar} scrollRef={scrollContainerRef}>
+      <ChatMessagesViewport scrollRef={scrollContainerRef}>
         {messagesLoading ? (
           <div className="flex justify-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+            <Loader2 className="w-5 h-5 animate-spin text-faint" />
           </div>
         ) : (
           <>
@@ -181,7 +179,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                 type="button"
                 onClick={loadMore}
                 disabled={loadingMore}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
+                className="text-xs text-faint hover:text-secondary"
               >
                 {loadingMore ? 'Loading…' : 'Load older'}
               </button>
@@ -214,32 +212,28 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
               )
             )}
             {displayMessages.length === 0 && !reviewTurnActive && (
-              <p className="text-xs text-zinc-500">
-                Review progress and MCP tool calls appear here.
-              </p>
+              <p className="text-xs text-faint">Review progress and MCP tool calls appear here.</p>
             )}
             {reviewTurnActive && (
-              <div className="flex items-center justify-center gap-2 py-3 text-sm text-amber-400/90">
+              <div className="flex items-center justify-center gap-2 py-3 text-sm text-accent/90">
                 <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                 <span>Review in progress…</span>
+                {!readonly && (
+                  <button
+                    type="button"
+                    onClick={handleStop}
+                    disabled={stopping}
+                    title="Stop review"
+                    className={COMPOSER_STOP_BUTTON_CLASS}
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  </button>
+                )}
               </div>
             )}
           </>
         )}
       </ChatMessagesViewport>
-      {showStopBar && (
-        <div className="relative z-[2] shrink-0 flex justify-end bg-zinc-950 px-3 pb-3 pt-1 border-t border-zinc-800/80">
-          <button
-            type="button"
-            onClick={handleStop}
-            disabled={stopping}
-            title="Stop review"
-            className={COMPOSER_STOP_BUTTON_CLASS}
-          >
-            <Square className="w-3.5 h-3.5 fill-current" />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

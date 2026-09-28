@@ -8,9 +8,7 @@ import { SIDE_PANEL_TABS } from './sessionSidePanelTabs.js';
 
 function sidePanelTabClass(active) {
   return `shrink-0 px-2.5 py-2 text-[11px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
-    active
-      ? 'border-amber-500 text-amber-400'
-      : 'border-transparent text-zinc-500 hover:text-zinc-300'
+    active ? 'border-brand text-accent' : 'border-transparent text-faint hover:text-heading'
   }`;
 }
 
@@ -46,7 +44,7 @@ export default function SessionSidePanel({
 
   return (
     <>
-      <div className="shrink-0 border-b border-zinc-800 flex items-center gap-1 min-w-0">
+      <div className="shrink-0 border-b border-line flex items-center gap-1 min-w-0">
         <div className="flex flex-1 min-w-0 overflow-x-auto scrollbar-none">
           {SIDE_PANEL_TABS.map((tab) => (
             <button
@@ -62,7 +60,7 @@ export default function SessionSidePanel({
         <button
           type="button"
           onClick={onClose}
-          className="xl:hidden text-zinc-600 hover:text-zinc-400 transition-colors p-1 shrink-0 mr-1"
+          className="xl:hidden text-faint hover:text-fg-muted transition-colors p-1 shrink-0 mr-1"
           title="Hide side panel"
         >
           <X className="w-3.5 h-3.5" aria-hidden />

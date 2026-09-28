@@ -4,8 +4,8 @@ import { useSearchableSelectAsync } from './useSearchableSelectAsync.js';
 import { DROPDOWN_PANEL_CLASS } from '../../utils/dropdownPanel.js';
 
 const COLOR_CLASSES = {
-  amber: { ring: 'focus:ring-amber-500/50', border: 'border-amber-500/50' },
-  violet: { ring: 'focus:ring-violet-500/50', border: 'border-violet-500/50' },
+  amber: { ring: 'focus:ring-brand/50', border: 'border-brand/50' },
+  violet: { ring: 'focus:ring-merged/50', border: 'border-merged/50' },
 };
 
 /**
@@ -135,7 +135,7 @@ export default function SearchableSelect({
       }}
       placement="bottom-start"
       matchReferenceWidth
-      className={`max-h-48 overflow-y-auto ${DROPDOWN_PANEL_CLASS} divide-y divide-zinc-800`}
+      className={`max-h-48 overflow-y-auto ${DROPDOWN_PANEL_CLASS} divide-y divide-line`}
       reference={({ ref, referenceProps }) => (
         <div ref={ref} {...referenceProps} className="relative">
           <input
@@ -156,7 +156,7 @@ export default function SearchableSelect({
             }}
             placeholder={inputPlaceholder}
             disabled={inputDisabled}
-            className={`w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-transparent focus:outline-none focus:ring-2 ${ring} disabled:opacity-50 ${
+            className={`w-full rounded-md border border-strong bg-control px-3 py-2.5 text-sm text-fg placeholder-faint focus:border-transparent focus:outline-none focus:ring-2 ${ring} disabled:opacity-50 ${
               showClosedSelected
                 ? 'absolute inset-0 z-0 min-h-10.5 opacity-0 pointer-events-none'
                 : 'relative'
@@ -165,7 +165,7 @@ export default function SearchableSelect({
           {showClosedSelected &&
             (disabled ? (
               <div
-                className={`relative z-10 w-full rounded-md border ${border} bg-zinc-800 px-3 py-2.5 text-sm text-white opacity-50`}
+                className={`relative z-10 w-full rounded-md border ${border} bg-control px-3 py-2.5 text-sm text-fg opacity-50`}
               >
                 {renderSelectedContent()}
               </div>
@@ -173,7 +173,7 @@ export default function SearchableSelect({
               <button
                 type="button"
                 onClick={openSearchAndFocus}
-                className={`relative z-10 w-full rounded-md border ${border} bg-zinc-800 px-3 py-2.5 text-sm text-white text-left cursor-pointer focus:outline-none focus:ring-2 ${ring}`}
+                className={`relative z-10 w-full rounded-md border ${border} bg-control px-3 py-2.5 text-sm text-fg text-left cursor-pointer focus:outline-none focus:ring-2 ${ring}`}
                 aria-label="Change selection"
               >
                 {renderSelectedContent()}
@@ -196,9 +196,7 @@ export default function SearchableSelect({
                 closeSearch();
               }}
               className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
-                optionDisabled
-                  ? 'text-zinc-500 cursor-not-allowed'
-                  : 'text-white hover:bg-zinc-800/50'
+                optionDisabled ? 'text-faint cursor-not-allowed' : 'text-fg hover:bg-control/50'
               }`}
             >
               {renderOption ? renderOption(o) : getOptionLabel(o)}

@@ -9,9 +9,9 @@ export default function TiedLoopMessages({ loops, editHref, onDelete }) {
       {loops.map((loop) => (
         <div
           key={loop.id}
-          className="flex flex-col gap-1.5 bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-3 py-2.5"
+          className="flex flex-col gap-1.5 bg-control/60 border border-strong/60 rounded-lg px-3 py-2.5"
         >
-          <div className="flex items-center gap-1.5 text-xs text-amber-400/80 font-medium min-w-0">
+          <div className="flex items-center gap-1.5 text-xs text-accent/80 font-medium min-w-0">
             <Repeat className="w-3 h-3 shrink-0" />
             <span className="truncate">
               Sends regularly
@@ -21,14 +21,14 @@ export default function TiedLoopMessages({ loops, editHref, onDelete }) {
             </span>
           </div>
           <div className="flex items-start gap-2">
-            <p className="flex-1 text-sm text-zinc-300 line-clamp-2 break-words min-w-0 whitespace-pre-wrap">
-              {loop.prompt || <span className="text-zinc-500 italic">No prompt</span>}
+            <p className="flex-1 text-sm text-secondary line-clamp-2 break-words min-w-0 whitespace-pre-wrap">
+              {loop.prompt || <span className="text-faint italic">No prompt</span>}
             </p>
             <div className="flex gap-0.5 shrink-0 -mt-0.5">
               <Link
                 to={editHref(loop)}
                 title="Edit"
-                className="p-1.5 text-zinc-500 hover:text-zinc-300 rounded transition-colors"
+                className="p-1.5 text-faint hover:text-secondary rounded transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </Link>
@@ -36,7 +36,7 @@ export default function TiedLoopMessages({ loops, editHref, onDelete }) {
                 type="button"
                 onClick={() => onDelete(loop)}
                 title="Delete"
-                className="p-1.5 text-zinc-500 hover:text-red-400 rounded transition-colors"
+                className="p-1.5 text-faint hover:text-danger rounded transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>

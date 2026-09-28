@@ -57,6 +57,7 @@ import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
 import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
+import { BANNER_DANGER } from '../utils/ui.js';
 
 const SIDE_PANEL_WIDTH_DEFAULT = 360;
 const SIDE_PANEL_WIDTH_MIN = 240;
@@ -249,7 +250,7 @@ function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = fa
     <div
       className={`group px-3 py-2 text-xs transition-colors ${
         isArchived || isArchiving ? 'opacity-50' : ''
-      } ${isCurrent ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'}`}
+      } ${isCurrent ? 'bg-control-hover' : 'hover:bg-control/50'}`}
     >
       <div className="flex items-center gap-2">
         <SessionStatusIndicator session={s} />
@@ -259,16 +260,14 @@ function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = fa
               <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
             </span>
           )}
-          <span
-            className={`block truncate font-medium ${isCurrent ? 'text-white' : 'text-zinc-200'}`}
-          >
+          <span className={`block truncate font-medium ${isCurrent ? 'text-fg' : 'text-heading'}`}>
             {title}
           </span>
           {promptPreview && (
-            <span className="block truncate text-[11px] text-zinc-500">{promptPreview}</span>
+            <span className="block truncate text-[11px] text-faint">{promptPreview}</span>
           )}
         </Link>
-        {isArchiving && <span className="shrink-0 text-[10px] text-amber-400/90">Archiving…</span>}
+        {isArchiving && <span className="shrink-0 text-[10px] text-accent/90">Archiving…</span>}
         {!s.archived_at && !isArchiving && (
           <div className="shrink-0">
             {isSessionStoppable(s) ? (
@@ -998,23 +997,20 @@ export default function Session() {
       >
         <div className="min-h-0 overflow-hidden">
           <div
-            className={`bg-zinc-900 border-b border-zinc-800 px-3 sm:px-4 py-2 ${headerOpacityClass} ${
+            className={`bg-surface border-b border-line px-3 sm:px-4 py-2 ${headerOpacityClass} ${
               headerOpen ? 'opacity-100' : 'opacity-0'
             }`}
           >
             {headerSession ? (
               <div className="flex items-center justify-between gap-2 min-h-[2.75rem]">
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <Link
-                    to={homeUrl}
-                    className="text-zinc-500 hover:text-zinc-300 shrink-0 md:hidden"
-                  >
+                  <Link to={homeUrl} className="text-faint hover:text-secondary shrink-0 md:hidden">
                     <ChevronLeft className="w-5 h-5" />
                   </Link>
                   <div className="min-w-0">
                     <div className="flex min-h-6 flex-nowrap items-center gap-2">
                       <SessionStatusIndicator session={headerSession} />
-                      <span className="min-w-0 truncate text-sm font-medium leading-snug text-zinc-300">
+                      <span className="min-w-0 truncate text-sm font-medium leading-snug text-fg">
                         {headerSession.label ||
                           (isGlobalSession(headerSession)
                             ? 'Global session'
@@ -1022,11 +1018,11 @@ export default function Session() {
                       </span>
                     </div>
                     <div className="flex min-w-0 items-center gap-2 text-xs">
-                      <span className="hidden sm:inline shrink-0 text-zinc-600">
+                      <span className="hidden sm:inline shrink-0 text-faint">
                         {headerSession.base_branch}
                       </span>
                       {(headerSession.remote_branch || headerSession.local_branch) && (
-                        <span className="flex min-w-0 items-center gap-1 overflow-hidden text-zinc-500">
+                        <span className="flex min-w-0 items-center gap-1 overflow-hidden text-faint">
                           <GitBranch className="w-3 h-3 shrink-0" />
                           <span className="truncate">
                             {headerSession.remote_branch || headerSession.local_branch}
@@ -1038,7 +1034,7 @@ export default function Session() {
                               );
                               toast.success('Branch name copied');
                             }}
-                            className="shrink-0 text-zinc-600 hover:text-zinc-400"
+                            className="shrink-0 text-faint hover:text-fg-muted"
                             title="Copy branch name"
                           >
                             <Copy className="w-3 h-3" />
@@ -1068,25 +1064,27 @@ export default function Session() {
       </div>
 
       {session && isArchiving && (
-        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-zinc-800/80 border-b border-zinc-700 text-zinc-400 text-xs">
-          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400/80" />
+        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-control/80 border-b border-strong text-fg-muted text-xs">
+          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-accent/80" />
           <span>Archiving session — removing worktree…</span>
         </div>
       )}
       {session && isReadonly && session.archived_at && (
-        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-zinc-800/80 border-b border-zinc-700 text-zinc-400 text-xs">
+        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-control/80 border-b border-strong text-fg-muted text-xs">
           <span>This session has been deleted — read only</span>
         </div>
       )}
 
       {error && (
-        <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 bg-red-900/30 border-b border-red-700 text-red-400 text-sm">
+        <div
+          className={`shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-none border-x-0 border-t-0 ${BANNER_DANGER} text-sm`}
+        >
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span className="flex-1 min-w-0">{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="shrink-0 p-1 rounded hover:bg-red-800/50 text-red-400"
+            className="shrink-0 p-1 rounded hover:bg-danger/50 text-danger"
             aria-label="Dismiss"
           >
             <X className="w-4 h-4" />
@@ -1098,24 +1096,24 @@ export default function Session() {
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {/* Sessions sidebar — md+ only (use dashboard / nav to switch sessions on mobile) */}
         <div
-          className={`hidden md:block shrink-0 min-h-0 overflow-hidden border-r border-zinc-800 bg-zinc-900 transition-[width] duration-300 ease-in-out ${desktopSidebarWidthClass}`}
+          className={`hidden md:block shrink-0 min-h-0 overflow-hidden border-r border-line bg-nav transition-[width] duration-300 ease-in-out ${desktopSidebarWidthClass}`}
         >
           <div className="flex h-full min-h-0 w-64 flex-col overflow-hidden">
-            <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
+            <div className="px-3 py-2 border-b border-line flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => {
                   setCreateSessionError(null);
                   navigate(sessionUrl(NEW_SESSION_ROUTE_ID));
                 }}
-                className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading transition-colors"
               >
                 <Plus className="w-3 h-3" />
                 <span>New session</span>
               </button>
               <button
                 onClick={() => setShowSidebar(false)}
-                className="text-zinc-600 hover:text-zinc-400 transition-colors p-0.5"
+                className="text-faint hover:text-fg-muted transition-colors p-0.5"
                 title="Hide sidebar"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1144,7 +1142,7 @@ export default function Session() {
               {hasMoreSessions && sessions.length > 0 && (
                 <button
                   onClick={loadMoreSessions}
-                  className="w-full px-3 py-2 text-xs text-zinc-600 hover:text-zinc-400 transition-colors text-left"
+                  className="w-full px-3 py-2 text-xs text-faint hover:text-fg-muted transition-colors text-left"
                 >
                   Load more
                 </button>
@@ -1155,11 +1153,11 @@ export default function Session() {
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* View tabs — only above chat/diff/logs + tasks */}
-          <div className="flex shrink-0 items-center border-b border-zinc-800 bg-zinc-900 px-3 sm:px-4">
+          <div className="flex shrink-0 items-center border-b border-line bg-nav px-3 sm:px-4">
             <button
               type="button"
               onClick={() => setShowSidebar(!isSidebarOpen)}
-              className="hidden md:flex items-center justify-center mr-1 shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="hidden md:flex items-center justify-center mr-1 shrink-0 text-faint hover:text-secondary transition-colors"
               title={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             >
               <PanelLeft className="w-4 h-4" />
@@ -1173,15 +1171,15 @@ export default function Session() {
                   onClick={() => setView(id)}
                   className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px disabled:cursor-not-allowed disabled:opacity-40 ${
                     activeView === id && !isNewSessionRoute
-                      ? 'border-amber-500 text-amber-400'
-                      : 'border-transparent text-zinc-500 hover:text-zinc-300 disabled:hover:text-zinc-500'
+                      ? 'border-brand text-accent'
+                      : 'border-transparent text-faint hover:text-heading disabled:hover:text-faint'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   {label}
                   {id === 'review' &&
                     sessionIssues.filter((i) => i.status === 'opened').length > 0 && (
-                      <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-zinc-950 text-[10px] font-bold leading-4">
+                      <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
                         {sessionIssues.filter((i) => i.status === 'opened').length}
                       </span>
                     )}
@@ -1197,8 +1195,8 @@ export default function Session() {
                 sidePanelTab === 'reviewer' &&
                 session?.review_status === 'running' &&
                 !showTasks
-                  ? 'text-amber-400 motion-safe:animate-pulse'
-                  : 'text-zinc-500 hover:text-zinc-300'
+                  ? 'text-accent motion-safe:animate-pulse'
+                  : 'text-faint hover:text-heading'
               }`}
               title={showTasks ? 'Hide side panel' : 'Show side panel'}
             >
@@ -1208,15 +1206,13 @@ export default function Session() {
 
           <div className="relative flex min-h-0 flex-1 overflow-hidden">
             {isNewSessionRoute && (
-              <div className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-zinc-950">
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-page">
                 {creatingSession && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
+                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-page/80 backdrop-blur-sm">
                     <div className="flex flex-col items-center gap-3">
-                      <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
-                      <p className="text-sm font-medium text-zinc-100">
-                        Starting your agent session…
-                      </p>
-                      <p className="text-xs text-zinc-400">
+                      <Loader2 className="w-10 h-10 animate-spin text-accent" />
+                      <p className="text-sm font-medium text-fg">Starting your agent session…</p>
+                      <p className="text-xs text-fg-muted">
                         This usually only takes a few seconds.
                       </p>
                     </div>
@@ -1224,24 +1220,24 @@ export default function Session() {
                 )}
                 <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:py-8">
                   <div className="mb-4 flex items-center justify-between gap-2">
-                    <h2 className="text-sm font-medium text-zinc-200">New session</h2>
+                    <h2 className="text-sm font-medium text-heading">New session</h2>
                     <button
                       type="button"
                       onClick={exitNewSessionRoute}
-                      className="text-zinc-500 hover:text-zinc-300 p-1 rounded"
+                      className="text-faint hover:text-secondary p-1 rounded"
                       aria-label="Close new session form"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                   {createSessionError && (
-                    <div className="mb-4 bg-red-900/30 border border-red-700 rounded-md px-3 sm:px-4 py-3 text-sm text-red-400">
+                    <div className="mb-4 bg-soft-danger/30 border border-danger/50 rounded-md px-3 sm:px-4 py-3 text-sm text-danger">
                       <div className="flex items-start justify-between gap-2">
                         <p className="break-all">{createSessionError}</p>
                         <button
                           type="button"
                           onClick={() => setCreateSessionError(null)}
-                          className="text-red-400 hover:text-red-200 shrink-0 text-lg leading-none"
+                          className="text-danger hover:text-danger shrink-0 text-lg leading-none"
                         >
                           &times;
                         </button>
@@ -1261,9 +1257,9 @@ export default function Session() {
             )}
             {/* Active view */}
             {awaitingSession && (
-              <div className="flex flex-1 min-h-0 items-center justify-center bg-zinc-950">
+              <div className="flex flex-1 min-h-0 items-center justify-center bg-page">
                 <Loader2
-                  className="w-8 h-8 animate-spin text-amber-400"
+                  className="w-8 h-8 animate-spin text-accent"
                   aria-label="Loading session"
                 />
               </div>
@@ -1331,7 +1327,9 @@ export default function Session() {
         )}
         {isSidePanelOpen && (
           <div
-            className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-zinc-800 bg-zinc-900 fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)]"
+            className={`flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-line bg-nav fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)] ${
+              sidePanelTab === 'reviewer' ? 'max-w-xl md:max-w-[min(85vw,100%)]' : ''
+            }`}
             style={{ '--side-panel-w': `${sidePanelWidth}px` }}
           >
             <div
@@ -1339,7 +1337,7 @@ export default function Session() {
               aria-orientation="vertical"
               aria-label="Resize side panel"
               onPointerDown={handleSidePanelResizeStart}
-              className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-amber-500/50 active:bg-amber-500/70"
+              className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-brand/50 active:bg-brand/70"
             />
             <SessionSidePanel
               sidePanelTab={sidePanelTab}

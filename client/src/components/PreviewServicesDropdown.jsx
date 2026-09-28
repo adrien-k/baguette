@@ -46,7 +46,7 @@ export default function PreviewServicesDropdown({
       )}
     >
       <div role="menu">
-        <div className="border-b border-zinc-800 px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <div className="border-b border-line px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-faint">
           Preview services
         </div>
         <div className="py-1">
@@ -60,17 +60,17 @@ export default function PreviewServicesDropdown({
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => setOpen(false)}
-                className="flex items-start gap-2 px-3 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800"
+                className="flex items-start gap-2 px-3 py-2 text-left text-sm text-heading hover:bg-control"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block font-medium text-zinc-100">{svc.display_name}</span>
+                  <span className="block font-medium text-fg">{svc.display_name}</span>
                   {svc.description && (
-                    <span className="mt-0.5 block text-xs leading-snug text-zinc-500 line-clamp-2">
+                    <span className="mt-0.5 block text-xs leading-snug text-faint line-clamp-2">
                       {svc.description}
                     </span>
                   )}
                 </span>
-                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden />
+                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" aria-hidden />
               </a>
             );
           })}

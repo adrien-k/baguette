@@ -29,7 +29,7 @@ export default function ChatMessagesViewport({
       </StickToBottomScrollArea>
       {showBottomFade && (
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-zinc-950 to-transparent z-[1]"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-page to-transparent z-[1]"
           aria-hidden
         />
       )}

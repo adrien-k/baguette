@@ -1,11 +1,131 @@
 @import 'tailwindcss';
 
-@custom-variant light (&:where(html[data-theme='light'] *));
+@custom-variant dark (&:where(html[data-theme='dark'], html[data-theme='dark'] *));
 
 @theme {
   --font-sans: 'DM Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Courier New', monospace;
   --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+}
+
+/*
+ * Semantic palette — utilities: bg-page, text-fg, border-line, bg-brand, …
+ * Concrete zinc/amber remain for charts and rare one-offs.
+ * Values swap with html[data-theme]; @theme inline keeps them runtime CSS vars
+ * so opacity modifiers (bg-page/80) still work.
+ */
+:root {
+  --palette-page: var(--color-zinc-50);
+  --palette-surface: #ffffff;
+  --palette-nav: var(--color-zinc-100);
+  --palette-muted: var(--color-zinc-100);
+  --palette-control: var(--color-zinc-100);
+  --palette-control-hover: var(--color-zinc-200);
+  --palette-line: var(--color-zinc-200);
+  --palette-line-strong: var(--color-zinc-300);
+  --palette-fg: var(--color-zinc-900);
+  --palette-fg-secondary: var(--color-zinc-700);
+  --palette-fg-muted: var(--color-zinc-600);
+  --palette-fg-faint: var(--color-zinc-500);
+  --palette-fg-heading: var(--color-zinc-800);
+  --palette-accent: var(--color-amber-700);
+  --palette-success: var(--color-emerald-700);
+  --palette-danger: var(--color-red-600);
+  --palette-info: var(--color-sky-700);
+  --palette-warning: var(--color-amber-800);
+  --palette-merged: var(--color-violet-700);
+  --palette-brand: var(--color-amber-500);
+  --palette-brand-hover: var(--color-amber-400);
+  --palette-on-brand: var(--color-zinc-950);
+  --palette-ok: var(--color-emerald-600);
+  --palette-ok-hover: var(--color-emerald-500);
+  --palette-err: var(--color-red-600);
+  --palette-err-hover: var(--color-red-500);
+  --palette-on-solid: #ffffff;
+  --palette-track: var(--color-zinc-300);
+  --palette-knob: #ffffff;
+  --palette-soft-accent: var(--color-amber-50);
+  --palette-soft-success: var(--color-emerald-50);
+  --palette-soft-danger: var(--color-red-50);
+  --palette-soft-info: var(--color-sky-50);
+  --palette-disabled: var(--color-zinc-200);
+  --palette-scrim: rgb(0 0 0 / 0.6);
+}
+
+html[data-theme='dark'] {
+  --palette-page: var(--color-zinc-950);
+  --palette-surface: var(--color-zinc-900);
+  --palette-nav: var(--color-zinc-900);
+  --palette-muted: var(--color-zinc-900);
+  --palette-control: var(--color-zinc-800);
+  --palette-control-hover: var(--color-zinc-700);
+  --palette-line: var(--color-zinc-800);
+  --palette-line-strong: var(--color-zinc-700);
+  --palette-fg: #ffffff;
+  --palette-fg-secondary: var(--color-zinc-300);
+  --palette-fg-muted: var(--color-zinc-400);
+  --palette-fg-faint: var(--color-zinc-500);
+  --palette-fg-heading: var(--color-zinc-200);
+  --palette-accent: var(--color-amber-400);
+  --palette-success: var(--color-emerald-400);
+  --palette-danger: var(--color-red-400);
+  --palette-info: var(--color-sky-400);
+  --palette-warning: var(--color-amber-400);
+  --palette-merged: var(--color-violet-300);
+  --palette-brand: var(--color-amber-500);
+  --palette-brand-hover: var(--color-amber-400);
+  --palette-on-brand: var(--color-zinc-950);
+  --palette-ok: var(--color-emerald-600);
+  --palette-ok-hover: var(--color-emerald-500);
+  --palette-err: var(--color-red-600);
+  --palette-err-hover: var(--color-red-500);
+  --palette-on-solid: #ffffff;
+  --palette-track: var(--color-zinc-600);
+  --palette-knob: #ffffff;
+  --palette-soft-accent: var(--color-amber-950);
+  --palette-soft-success: var(--color-emerald-950);
+  --palette-soft-danger: var(--color-red-950);
+  --palette-soft-info: var(--color-sky-950);
+  --palette-disabled: var(--color-zinc-700);
+  --palette-scrim: rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-page: var(--palette-page);
+  --color-surface: var(--palette-surface);
+  --color-nav: var(--palette-nav);
+  --color-inset: var(--palette-muted);
+  --color-control: var(--palette-control);
+  --color-control-hover: var(--palette-control-hover);
+  --color-line: var(--palette-line);
+  --color-strong: var(--palette-line-strong);
+  --color-fg: var(--palette-fg);
+  --color-secondary: var(--palette-fg-secondary);
+  --color-fg-muted: var(--palette-fg-muted);
+  --color-faint: var(--palette-fg-faint);
+  --color-heading: var(--palette-fg-heading);
+  --color-accent: var(--palette-accent);
+  --color-success: var(--palette-success);
+  --color-danger: var(--palette-danger);
+  --color-info: var(--palette-info);
+  --color-warning: var(--palette-warning);
+  --color-merged: var(--palette-merged);
+  --color-brand: var(--palette-brand);
+  --color-brand-hover: var(--palette-brand-hover);
+  --color-on-brand: var(--palette-on-brand);
+  --color-ok: var(--palette-ok);
+  --color-ok-hover: var(--palette-ok-hover);
+  --color-err: var(--palette-err);
+  --color-err-hover: var(--palette-err-hover);
+  --color-on-solid: var(--palette-on-solid);
+  --color-track: var(--palette-track);
+  --color-knob: var(--palette-knob);
+  --color-soft-accent: var(--palette-soft-accent);
+  --color-soft-success: var(--palette-soft-success);
+  --color-soft-danger: var(--palette-soft-danger);
+  --color-soft-info: var(--palette-soft-info);
+  --color-disabled: var(--palette-disabled);
+  --color-scrim: var(--palette-scrim);
 }
 
 @utility scrollbar-none {
@@ -17,10 +137,23 @@
 
 @layer base {
   html {
+    color-scheme: light;
+  }
+
+  html[data-theme='dark'] {
     color-scheme: dark;
   }
 
   body {
+    background-color: var(--palette-page);
+    background-image: radial-gradient(
+      ellipse 80% 40% at 50% -5%,
+      rgba(217, 119, 6, 0.1) 0%,
+      transparent 100%
+    );
+  }
+
+  html[data-theme='dark'] body {
     background-image: radial-gradient(
       ellipse 80% 40% at 50% -5%,
       rgba(245, 165, 35, 0.06) 0%,
@@ -30,124 +163,21 @@
 
   select {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%233f3f46' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     padding-right: 1.75rem !important;
   }
-}
 
-/*
- * Light theme — unlayered so these beat Tailwind utilities (text-white lived in
- * @layer base before and lost, leaving white type on zinc-900 cards).
- *
- * Surfaces (700–950) stay light. Muted steps (400–600) stay dark enough for
- * AA contrast on those surfaces. Pale amber *text* tokens (200–400) are
- * darkened so labels/links read on gray cards. amber-500 stays the default
- * gold (primary button fill). emerald-400 is the bright status accent (exit
- * codes, play icons, live dots); emerald-200 stays dark for prose. Secondary
- * button fills are overridden below. text-zinc-950 is overridden separately
- * because the same token is the page background.
- */
-html[data-theme='light'] {
-  color-scheme: light;
-  --color-zinc-50: #09090b;
-  --color-zinc-100: #18181b;
-  --color-zinc-200: #27272a;
-  --color-zinc-300: #27272a;
-  --color-zinc-400: #3f3f46;
-  --color-zinc-500: #52525b;
-  --color-zinc-600: #3f3f46;
-  --color-zinc-700: #d4d4d8;
-  --color-zinc-800: #e4e4e7;
-  --color-zinc-900: #f4f4f5;
-  --color-zinc-950: #fafafa;
-  --color-amber-200: #92400e;
-  --color-amber-300: #b45309;
-  --color-amber-400: #b45309;
-  --color-red-200: #991b1b;
-  --color-red-300: #991b1b;
-  --color-red-400: #b91c1c;
-  --color-emerald-200: #065f46;
-  --color-emerald-300: #059669;
-  --color-emerald-400: #10b981;
-  --color-sky-200: #075985;
-  --color-sky-300: #0369a1;
-  --color-sky-400: #0369a1;
-  --color-indigo-200: #3730a3;
-  --color-indigo-300: #4338ca;
-  --color-indigo-400: #4338ca;
-  --color-indigo-600: #4f46e5;
-  --color-indigo-800: #c7d2fe;
-  --color-indigo-950: #eef2ff;
-  --color-violet-300: #6d28d9;
-  --color-violet-400: #7c3aed;
-  --color-violet-500: #7c3aed;
-  --color-violet-800: #ddd6fe;
-  --color-violet-950: #f5f3ff;
-  --color-emerald-600: #059669;
-  --color-emerald-800: #a7f3d0;
-  --color-red-600: #dc2626;
-  --color-red-800: #fecaca;
-  --color-orange-300: #c2410c;
-  --color-orange-500: #ea580c;
-  --color-orange-800: #fed7aa;
-  --color-amber-800: #fde68a;
-  --color-red-900: #fee2e2;
-  --color-red-950: #fef2f2;
-  --color-emerald-900: #d1fae5;
-  --color-emerald-950: #ecfdf5;
-  --color-green-300: #059669;
-  --color-green-900: #d1fae5;
-  --color-green-950: #ecfdf5;
-  --color-sky-900: #e0f2fe;
-  --color-sky-950: #f0f9ff;
-}
-
-html[data-theme='light'] body {
-  background-image: radial-gradient(
-    ellipse 80% 40% at 50% -5%,
-    rgba(217, 119, 6, 0.1) 0%,
-    transparent 100%
-  );
-}
-
-html[data-theme='light'] select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%233f3f46' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-}
-
-html[data-theme='light'] :is(.text-white, .hover\:text-white:hover),
-html[data-theme='light'] .group:hover .group-hover\:text-white,
-html[data-theme='light'] .text-zinc-950 {
-  color: #18181b;
-}
-
-/* amber-400 is a dark text token in light mode; keep primary-button hover gold. */
-html[data-theme='light'] :is(.bg-amber-400, .hover\:bg-amber-400:hover) {
-  background-color: #fbbf24;
-}
-
-html[data-theme='light'] .group\/split:hover .group-hover\/split\:bg-amber-400:not(:disabled) {
-  background-color: #fbbf24;
-}
-
-/* emerald-400 is a dark text token; keep secondary-button fills bright. */
-html[data-theme='light'] .bg-emerald-600:not(:disabled) {
-  background-color: #10b981;
-}
-
-html[data-theme='light'] .hover\:bg-emerald-500:hover:not(:disabled) {
-  background-color: #34d399;
-}
-
-html[data-theme='light'] :is(.placeholder-zinc-500, .placeholder-zinc-600)::placeholder {
-  color: #52525b;
+  html[data-theme='dark'] select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
 }
 
 /*
  * ANSI log wells stay dark in both themes. ansi-to-html emits inline colors
  * (including #d4d4d8 default / bright yellow/white) that are unreadable on
- * the remapped light zinc-950 surface.
+ * a light surface.
  */
 .ansi-log {
   background-color: #09090b;

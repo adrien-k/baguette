@@ -117,12 +117,12 @@ function ParamMenuRow({
           onSubmenuToggle();
         }}
         className={`w-full flex items-center gap-3 px-3 py-2 text-xs text-left cursor-pointer ${
-          submenuOpen ? 'bg-zinc-800/80 text-zinc-200' : 'text-zinc-300 hover:bg-zinc-800/60'
+          submenuOpen ? 'bg-control-hover/80 text-heading' : 'text-secondary hover:bg-control/60'
         }`}
       >
         <ParamRowLabel label={item.label} valueLabel={item.valueLabel} />
         <ChevronRight
-          className={`w-3 h-3 shrink-0 text-zinc-600 ${submenuPlacement.side === 'left' ? 'rotate-180' : ''}`}
+          className={`w-3 h-3 shrink-0 text-faint ${submenuPlacement.side === 'left' ? 'rotate-180' : ''}`}
         />
       </button>
       {submenuOpen && (
@@ -147,8 +147,8 @@ function ParamMenuRow({
                   onClick={() => onSelectAndClose(opt.value)}
                   className={`w-full text-left px-3 py-2 text-xs transition-colors ${
                     selected
-                      ? 'text-amber-300 bg-zinc-800'
-                      : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                      ? 'text-warning bg-control-hover'
+                      : 'text-secondary hover:bg-control hover:text-fg'
                   }`}
                 >
                   {opt.label}
@@ -242,7 +242,7 @@ export default function ComposerParamPicker({
           aria-haspopup="menu"
           aria-label={ariaLabel}
           title={ariaLabel}
-          className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 leading-none disabled:opacity-50 disabled:pointer-events-none"
+          className="p-1.5 rounded-md text-faint hover:text-secondary hover:bg-control/80 leading-none disabled:opacity-50 disabled:pointer-events-none"
         >
           <Settings className="w-3.5 h-3.5" strokeWidth={2} />
         </button>
@@ -259,7 +259,7 @@ export default function ComposerParamPicker({
               <div
                 key={item.id}
                 role="menuitem"
-                className="flex items-center gap-3 px-3 py-2 text-xs text-zinc-300"
+                className="flex items-center gap-3 px-3 py-2 text-xs text-secondary"
                 onMouseEnter={closeSubmenu}
                 onPointerDown={closeSubmenu}
               >

@@ -73,23 +73,23 @@ export function SessionsProvider({ children }) {
       toast.custom(
         (t) => (
           <div
-            className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
+            className={`bg-control border border-strong rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
           >
-            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-5 h-5 text-success shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-white text-sm font-medium truncate">{label}</p>
-              <p className="text-zinc-400 text-xs">Session completed</p>
+              <p className="text-fg text-sm font-medium truncate">{label}</p>
+              <p className="text-fg-muted text-xs">Session completed</p>
             </div>
             <Link
               to={sessionPath(session)}
               onClick={() => toast.dismiss(t.id)}
-              className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
+              className="text-accent text-xs font-medium shrink-0 hover:text-accent"
             >
               View
             </Link>
             <button
               onClick={() => toast.dismiss(t.id)}
-              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+              className="text-faint hover:text-secondary shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -119,23 +119,23 @@ export function SessionsProvider({ children }) {
       toast.custom(
         (t) => (
           <div
-            className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
+            className={`bg-control border border-strong rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
           >
-            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-5 h-5 text-success shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-white text-sm font-medium truncate">{label}</p>
-              <p className="text-zinc-400 text-xs">Review completed</p>
+              <p className="text-fg text-sm font-medium truncate">{label}</p>
+              <p className="text-fg-muted text-xs">Review completed</p>
             </div>
             <Link
               to={issuesTo}
               onClick={() => toast.dismiss(t.id)}
-              className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
+              className="text-accent text-xs font-medium shrink-0 hover:text-accent"
             >
               Issues
             </Link>
             <button
               onClick={() => toast.dismiss(t.id)}
-              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+              className="text-faint hover:text-secondary shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -160,23 +160,23 @@ export function SessionsProvider({ children }) {
       toast.custom(
         (t) => (
           <div
-            className={`bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
+            className={`bg-control border border-strong rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg w-full max-w-sm transition-all ${t.visible ? 'opacity-100' : 'opacity-0'}`}
           >
-            <XCircle className="w-5 h-5 text-red-400 shrink-0" />
+            <XCircle className="w-5 h-5 text-danger shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-white text-sm font-medium truncate">{label}</p>
-              <p className="text-zinc-400 text-xs">Session failed</p>
+              <p className="text-fg text-sm font-medium truncate">{label}</p>
+              <p className="text-fg-muted text-xs">Session failed</p>
             </div>
             <Link
               to={sessionPath(session)}
               onClick={() => toast.dismiss(t.id)}
-              className="text-amber-400 text-xs font-medium shrink-0 hover:text-amber-300"
+              className="text-accent text-xs font-medium shrink-0 hover:text-accent"
             >
               View
             </Link>
             <button
               onClick={() => toast.dismiss(t.id)}
-              className="text-zinc-500 hover:text-zinc-300 shrink-0"
+              className="text-faint hover:text-secondary shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>

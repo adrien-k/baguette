@@ -11,10 +11,10 @@ function TaskMetaLine({ task }) {
   const relative = task.created_at ? formatRelativeTime(task.created_at) : null;
   if (!relative && !duration) return null;
   return (
-    <span className="text-[10px] text-zinc-600">
+    <span className="text-[10px] text-faint">
       {relative}
       {relative && duration ? ' · ' : null}
-      {duration ? <span className="text-zinc-500 tabular-nums">{duration}</span> : null}
+      {duration ? <span className="text-faint tabular-nums">{duration}</span> : null}
     </span>
   );
 }
@@ -50,22 +50,24 @@ export default function TaskPanel({
     <button
       key={task.id}
       onClick={() => onViewLogs(task.id)}
-      className="w-full border-b border-zinc-800 flex items-start justify-between px-3 py-2 hover:bg-zinc-800/50 transition-colors text-left gap-2"
+      className="w-full border-b border-line flex items-start justify-between px-3 py-2 hover:bg-control/50 transition-colors text-left gap-2"
     >
       <div className="flex items-start gap-2 min-w-0 flex-1">
         <span
           className={`w-2 h-2 rounded-full shrink-0 mt-1 ${
-            task.status === 'running' ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'
+            task.status === 'running' ? 'bg-ok animate-pulse' : 'bg-track'
           }`}
         />
         <div className="min-w-0 flex-1">
-          <code className="text-xs text-zinc-300 truncate block">{task.label || task.command}</code>
+          <code className="text-xs text-secondary truncate block">
+            {task.label || task.command}
+          </code>
           {task.ports && Object.keys(task.ports).length > 0 && (
             <div className="flex flex-wrap gap-1 mt-0.5">
               {Object.entries(task.ports).map(([name, port]) => (
                 <span
                   key={name}
-                  className="text-[10px] font-mono text-sky-400/80 bg-sky-400/10 rounded px-1"
+                  className="text-[10px] font-mono text-info/80 bg-info/10 rounded px-1"
                 >
                   {name}={port}
                 </span>
@@ -77,7 +79,7 @@ export default function TaskPanel({
       </div>
       <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
         {task.status === 'exited' && (
-          <span className={`text-xs ${task.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+          <span className={`text-xs ${task.exitCode === 0 ? 'text-success' : 'text-danger'}`}>
             exit {task.exitCode}
           </span>
         )}
@@ -87,7 +89,7 @@ export default function TaskPanel({
               e.stopPropagation();
               onRetry(task.id);
             }}
-            className="text-zinc-500 hover:text-amber-400 transition-colors"
+            className="text-faint hover:text-accent transition-colors"
             title="Retry"
           >
             <RotateCw className="w-3.5 h-3.5" />
@@ -111,7 +113,7 @@ export default function TaskPanel({
               e.stopPropagation();
               onDelete(task.id);
             }}
-            className="text-zinc-600 hover:text-red-400 transition-colors"
+            className="text-faint hover:text-danger transition-colors"
             title="Remove"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -124,7 +126,7 @@ export default function TaskPanel({
   return (
     <div className="flex flex-col h-full min-h-0">
       {!readonly && configCommands.length > 0 && (
-        <div className="shrink-0 p-2 border-b border-zinc-800 flex flex-wrap gap-1.5">
+        <div className="shrink-0 p-2 border-b border-line flex flex-wrap gap-1.5">
           {configCommands.map((cmd, i) => (
             <StartButton key={i} onClick={() => onStartTask(cmd.label)} title={cmd.run}>
               {cmd.label}
@@ -137,12 +139,12 @@ export default function TaskPanel({
         {tasks.length === 0 && (
           <div className="flex flex-col items-center py-10 gap-2 opacity-40">
             <BaguetteIcon className="w-7 h-7" />
-            <p className="text-zinc-600 text-xs">No tasks yet</p>
+            <p className="text-faint text-xs">No tasks yet</p>
           </div>
         )}
         {runningTasks.length > 0 && (
           <>
-            <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-500 uppercase tracking-wider border-b border-zinc-800 bg-zinc-900">
+            <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
               Running
             </div>
             {runningTasks.map(renderTask)}
@@ -150,7 +152,7 @@ export default function TaskPanel({
         )}
         {finishedTasks.length > 0 && (
           <>
-            <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-500 uppercase tracking-wider border-b border-zinc-800 bg-zinc-900">
+            <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
               Finished
             </div>
             {finishedTasks.map(renderTask)}
@@ -159,14 +161,14 @@ export default function TaskPanel({
       </div>
 
       {!readonly && (
-        <form onSubmit={handleSubmit} className="shrink-0 border-t border-zinc-800 bg-zinc-950 p-3">
+        <form onSubmit={handleSubmit} className="shrink-0 border-t border-line bg-page p-3">
           <div className="flex gap-2">
             <input
               type="text"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               placeholder="Run a command..."
-              className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-600/40 font-mono"
+              className="flex-1 min-w-0 bg-control border border-strong rounded-md px-3 py-2 text-sm text-fg placeholder-faint focus:outline-none focus:ring-2 focus:ring-track/40 font-mono"
             />
             <button type="submit" className={`${NEUTRAL_BUTTON_CLASS} shrink-0`}>
               Run

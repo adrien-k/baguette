@@ -61,32 +61,32 @@ export default function McpAccessSection({
       title="External MCP access"
       description="Connect external agents (Cursor, Claude Desktop, etc.) to Baguette over HTTP MCP. Tools include listing repos, branches, models, sessions, and creating sessions."
     >
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-faint">
         Status:{' '}
-        <span className={configured ? 'text-emerald-400' : 'text-zinc-400'}>
+        <span className={configured ? 'text-success' : 'text-fg-muted'}>
           {configured ? 'Token configured' : 'No token — external MCP disabled'}
         </span>
       </p>
 
       {displayedEndpoint && configured && (
-        <p className="text-xs text-zinc-400">
-          Endpoint: <code className="text-zinc-300">{displayedEndpoint}</code>
+        <p className="text-xs text-fg-muted">
+          Endpoint: <code className="text-secondary">{displayedEndpoint}</code>
         </p>
       )}
 
       {revealedToken && (
         <div className="space-y-2">
-          <p className="text-xs text-amber-200 bg-amber-900/30 border border-amber-700/50 rounded-lg px-3 py-2">
+          <p className="text-xs text-warning bg-soft-accent/30 border border-warning/50 rounded-lg px-3 py-2">
             Copy this token now. It is shown only once; regenerating discards the previous token.
           </p>
           <div className="flex gap-2 items-start">
-            <code className="flex-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-200 break-all">
+            <code className="flex-1 text-xs bg-control border border-strong rounded-lg px-3 py-2 text-heading break-all">
               {revealedToken}
             </code>
             <button
               type="button"
               onClick={copyToken}
-              className="shrink-0 text-xs bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-2 rounded-lg"
+              className="shrink-0 text-xs bg-control-hover hover:bg-track text-fg px-3 py-2 rounded-lg"
             >
               Copy
             </button>
@@ -96,13 +96,13 @@ export default function McpAccessSection({
 
       {showMasked && (
         <div className="space-y-2">
-          <label className="text-xs text-zinc-400">Token</label>
-          <code className="block text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-400 font-mono break-all">
+          <label className="text-xs text-fg-muted">Token</label>
+          <code className="block text-xs bg-control border border-strong rounded-lg px-3 py-2 text-fg-muted font-mono break-all">
             {maskedToken}
           </code>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-faint">
             Full token is only shown when you generate or regenerate. Use header{' '}
-            <code className="text-zinc-400">Authorization: Bearer &lt;token&gt;</code>
+            <code className="text-fg-muted">Authorization: Bearer &lt;token&gt;</code>
           </p>
         </div>
       )}
@@ -112,7 +112,7 @@ export default function McpAccessSection({
           type="button"
           onClick={handleGenerate}
           disabled={generating}
-          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          className="bg-brand hover:bg-brand-hover disabled:bg-disabled text-on-brand px-4 py-2 rounded-lg text-sm font-medium transition-colors"
         >
           {generating ? 'Generating…' : configured ? 'Regenerate token' : 'Generate token'}
         </button>
@@ -121,7 +121,7 @@ export default function McpAccessSection({
             type="button"
             onClick={handleRevoke}
             disabled={revoking}
-            className="text-sm text-red-400 hover:text-red-300 px-3 py-2 disabled:opacity-50"
+            className="text-sm text-danger hover:text-danger px-3 py-2 disabled:opacity-50"
           >
             {revoking ? 'Revoking…' : 'Revoke token'}
           </button>

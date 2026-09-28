@@ -63,22 +63,22 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
   if (noInstallations) {
     return (
       <div className="flex-1">
-        <p className="text-sm text-zinc-300 mb-1">No repositories connected yet</p>
-        <p className="text-xs text-zinc-500 mb-3 max-w-md leading-relaxed">
+        <p className="text-sm text-secondary mb-1">No repositories connected yet</p>
+        <p className="text-xs text-faint mb-3 max-w-md leading-relaxed">
           Install the Baguette GitHub App and choose which repositories it can access. You can pick
           a single repository, and change the selection at any time.
         </p>
         <div className="flex items-center gap-3">
           <a
             href={installHref()}
-            className="inline-flex items-center gap-2 bg-amber-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors"
+            className="inline-flex items-center gap-2 bg-brand text-on-brand px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-brand-hover transition-colors"
           >
             Install on GitHub
           </a>
           <button
             type="button"
             onClick={handleRefresh}
-            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-xs text-faint hover:text-secondary transition-colors"
           >
             Already installed? Refresh
           </button>
@@ -90,7 +90,7 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
   return (
     <div className="flex-1">
       <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-        {loadingOrgs && <span className="text-xs text-zinc-600">Loading…</span>}
+        {loadingOrgs && <span className="text-xs text-faint">Loading…</span>}
         {!loadingOrgs &&
           orgs.map((org) => (
             <button
@@ -99,8 +99,8 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
               onClick={() => setSelectedOrg(org.login)}
               className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${
                 selectedOrg === org.login
-                  ? 'bg-amber-500 text-zinc-950'
-                  : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                  ? 'bg-brand text-on-brand'
+                  : 'bg-control text-fg-muted hover:text-fg'
               }`}
             >
               {org.name || org.login}
@@ -126,10 +126,10 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
               const alreadyAdded = addedNames.has(r.full_name);
               return (
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`font-mono truncate ${alreadyAdded ? 'text-zinc-500' : ''}`}>
+                  <span className={`font-mono truncate ${alreadyAdded ? 'text-faint' : ''}`}>
                     {r.full_name}
                   </span>
-                  <span className="text-xs text-zinc-500 shrink-0">
+                  <span className="text-xs text-faint shrink-0">
                     {alreadyAdded ? 'Already added' : r.private ? 'private' : null}
                   </span>
                 </div>
@@ -144,19 +144,19 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
             onClick={handleRefresh}
             disabled={loadingOrgs}
             title="Clear cache and reload"
-            className="inline-flex items-center justify-center text-zinc-500 hover:text-zinc-300 text-sm leading-none px-1 py-2.5 disabled:opacity-40"
+            className="inline-flex items-center justify-center text-faint hover:text-secondary text-sm leading-none px-1 py-2.5 disabled:opacity-40"
           >
             ↺
           </button>
           {trailing}
         </div>
       </div>
-      <p className="text-xs text-zinc-500 mt-2 max-w-xl leading-relaxed">
-        Lists up to <span className="text-zinc-400">20</span> repos per load. Empty field shows the
+      <p className="text-xs text-faint mt-2 max-w-xl leading-relaxed">
+        Lists up to <span className="text-fg-muted">20</span> repos per load. Empty field shows the
         20 most recently updated you can access; type a fragment of{' '}
-        <span className="font-mono text-zinc-400">owner/repo</span> to search the full list. Only
+        <span className="font-mono text-fg-muted">owner/repo</span> to search the full list. Only
         repositories you granted the Baguette GitHub App are listed.{' '}
-        <a href={installHref()} className="text-amber-500 hover:text-amber-400">
+        <a href={installHref()} className="text-accent hover:text-accent">
           Manage repository access ↗
         </a>
       </p>

@@ -6,9 +6,12 @@ import { useRepoContext } from '../../context/RepoContext.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
-import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
+import {
+  SettingsSection,
+  SettingsTabHeader,
+  SettingsSaveRow,
+} from '../../components/SettingsSection.jsx';
 import { RepoScopeAside } from './repoScopeDropdown.jsx';
-import { SettingsSaveRow } from './SettingsSaveRow.jsx';
 
 export default function AgentSettingsTab({ settings, onSave }) {
   const { user } = useAuth();
@@ -162,7 +165,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
           }
         >
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">Credential</label>
+            <label className="block text-sm font-medium text-secondary mb-1">Credential</label>
             <MaskedSecretInput
               key={`claude-${claudeRepoId || 'all'}`}
               maskedValue={claudeMasked}
@@ -172,9 +175,9 @@ export default function AgentSettingsTab({ settings, onSave }) {
                 setAnthropicApiKeyDirty(dirty);
               }}
             />
-            <p className="mt-1 text-xs text-zinc-500">
-              Console API key (<code className="text-zinc-400">sk-ant-api…</code>) or subscription
-              token from <code className="text-zinc-400">claude setup-token</code>. Per-repo keys
+            <p className="mt-1 text-xs text-faint">
+              Console API key (<code className="text-fg-muted">sk-ant-api…</code>) or subscription
+              token from <code className="text-fg-muted">claude setup-token</code>. Per-repo keys
               override your account default for that repository only.
             </p>
           </div>
@@ -199,7 +202,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
           }
         >
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">API Key</label>
+            <label className="block text-sm font-medium text-secondary mb-1">API Key</label>
             <MaskedSecretInput
               key={`cursor-${cursorRepoId || 'all'}`}
               maskedValue={cursorMasked}
@@ -209,7 +212,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
                 setCursorApiKeyDirty(dirty);
               }}
             />
-            <p className="mt-1 text-xs text-zinc-500">Required to use the Cursor agent SDK.</p>
+            <p className="mt-1 text-xs text-faint">Required to use the Cursor agent SDK.</p>
           </div>
           <AgentSdkModelsSection
             key={`cursor-models-${cursorRepoId || 'all'}-${cursorMasked ? '1' : '0'}`}

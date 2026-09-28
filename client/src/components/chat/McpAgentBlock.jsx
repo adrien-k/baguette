@@ -17,13 +17,13 @@ export default function McpAgentBlock({ message, copyButton }) {
       : '';
 
   return (
-    <div className="group bg-violet-950/25 rounded-lg p-3 sm:p-4 border border-violet-800/45 ml-4 sm:ml-8">
-      <div className="text-xs text-violet-300 mb-1 font-medium flex items-center gap-2">
-        <Bot className="w-3.5 h-3.5 shrink-0 text-violet-400" aria-hidden />
+    <div className="group bg-merged/25 rounded-lg p-3 sm:p-4 border border-merged/45 ml-4 sm:ml-8">
+      <div className="text-xs text-merged mb-1 font-medium flex items-center gap-2">
+        <Bot className="w-3.5 h-3.5 shrink-0 text-merged" aria-hidden />
         <span>Agent</span>
-        <span className="text-violet-500/80 font-normal">via MCP</span>
+        <span className="text-merged/80 font-normal">via MCP</span>
         {message.created_at && (
-          <span className="text-zinc-500 font-normal">
+          <span className="text-faint font-normal">
             {new Date(message.created_at).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
@@ -51,7 +51,7 @@ export default function McpAgentBlock({ message, copyButton }) {
                   key={i}
                   src={`data:${media_type};base64,${data}`}
                   alt={block.name || 'attached image'}
-                  className="max-w-xs rounded border border-violet-800/50"
+                  className="max-w-xs rounded border border-merged/50"
                 />
               );
             }
@@ -59,7 +59,7 @@ export default function McpAgentBlock({ message, copyButton }) {
               return (
                 <div
                   key={i}
-                  className="flex items-center gap-1.5 text-xs text-zinc-400 bg-violet-950/40 rounded px-2 py-1 w-fit"
+                  className="flex items-center gap-1.5 text-xs text-fg-muted bg-merged/40 rounded px-2 py-1 w-fit"
                 >
                   <span>📄</span>
                   <span>{block.name || 'document'}</span>

@@ -118,19 +118,19 @@ export default function DiffLineComposer({
 
   return (
     <div
-      className="border-y border-amber-500/30 bg-zinc-950 px-3 py-2.5"
+      className="border-y border-brand/30 bg-page px-3 py-2.5"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <p className="text-[11px] text-zinc-500">
-          Message about <span className="font-mono text-zinc-400">{path}</span>
-          <span className="text-zinc-600">:{line}</span>
+        <p className="text-[11px] text-faint">
+          Message about <span className="font-mono text-fg-muted">{path}</span>
+          <span className="text-faint">:{line}</span>
         </p>
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-0.5 text-zinc-500 hover:text-zinc-300"
+          className="rounded p-0.5 text-faint hover:text-secondary"
           aria-label="Close composer"
         >
           <X className="w-3.5 h-3.5" />

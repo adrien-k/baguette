@@ -7,26 +7,24 @@ import MarkdownContent from './MarkdownContent.jsx';
 import { issueAgentSubtitle } from '../utils/messageModelLabel.js';
 
 const SEVERITY_CLASS = {
-  critical:
-    'bg-red-500/15 text-red-400 border-red-500/35 light:bg-red-800 light:text-red-300 light:border-red-600',
-  high: 'bg-orange-500/15 text-orange-300 border-orange-500/35 light:bg-orange-800 light:text-orange-300 light:border-orange-500',
-  medium:
-    'bg-amber-500/15 text-amber-400 border-amber-500/35 light:bg-amber-800 light:text-amber-300 light:border-amber-500',
-  low: 'bg-zinc-800/80 text-zinc-400 border-zinc-600/80 light:bg-zinc-800 light:text-zinc-500 light:border-zinc-500',
+  critical: 'bg-danger/15 text-danger border-danger/35',
+  high: 'bg-warning/15 text-warning border-warning/35',
+  medium: 'bg-brand/15 text-warning border-brand/35',
+  low: 'bg-control/80 text-fg-muted border-strong/80',
 };
 
 const ISSUE_META_CHIP =
   'inline-flex items-center justify-center h-7 shrink-0 rounded-md border text-xs capitalize';
 
 const FIELD_CLASS =
-  'w-full rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50';
+  'w-full rounded-md border border-strong bg-control px-2.5 py-1.5 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-brand/50';
 
 function IssueDescription({ description }) {
   if (!description?.trim()) {
-    return <p className="text-xs text-zinc-600 italic">No description</p>;
+    return <p className="text-xs text-faint italic">No description</p>;
   }
   return (
-    <div className="text-zinc-400">
+    <div className="text-fg-muted">
       <MarkdownContent className="!text-xs [&_p]:!text-xs [&_p]:my-1 [&_p]:leading-relaxed">
         {description}
       </MarkdownContent>
@@ -82,13 +80,13 @@ export default function SessionIssueCard({
   return (
     <div
       className={`rounded-lg border p-4 space-y-3 ${
-        active ? 'border-zinc-700 bg-zinc-900/60' : 'border-zinc-800 opacity-70'
+        active ? 'border-strong bg-inset/60' : 'border-line opacity-70'
       }`}
     >
       {editing ? (
         <div className="space-y-3">
           <label className="block">
-            <span className="text-[11px] text-zinc-500 mb-1 block">Title</span>
+            <span className="text-[11px] text-faint mb-1 block">Title</span>
             <input
               type="text"
               value={draftTitle}
@@ -97,7 +95,7 @@ export default function SessionIssueCard({
             />
           </label>
           <label className="block">
-            <span className="text-[11px] text-zinc-500 mb-1 block">Severity</span>
+            <span className="text-[11px] text-faint mb-1 block">Severity</span>
             <select
               value={draftSeverity}
               onChange={(e) => setDraftSeverity(e.target.value)}
@@ -111,7 +109,7 @@ export default function SessionIssueCard({
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] text-zinc-500 mb-1 block">Description</span>
+            <span className="text-[11px] text-faint mb-1 block">Description</span>
             <AutoGrowTextarea
               value={draftDescription}
               onChange={(e) => setDraftDescription(e.target.value)}
@@ -125,7 +123,7 @@ export default function SessionIssueCard({
               type="button"
               onClick={handleSave}
               disabled={saving || !draftTitle.trim()}
-              className="inline-flex items-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
+              className="inline-flex items-center bg-brand hover:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand px-3 py-1.5 rounded-lg text-sm font-medium"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -143,9 +141,9 @@ export default function SessionIssueCard({
         <>
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
-              <h3 className="text-base font-semibold text-zinc-50 leading-snug">{issue.title}</h3>
+              <h3 className="text-base font-semibold text-fg leading-snug">{issue.title}</h3>
               {agentSubtitle ? (
-                <p className="mt-0.5 text-xs text-zinc-500 font-normal">{agentSubtitle}</p>
+                <p className="mt-0.5 text-xs text-faint font-normal">{agentSubtitle}</p>
               ) : null}
             </div>
             {!readonly && (
@@ -154,7 +152,7 @@ export default function SessionIssueCard({
                   type="button"
                   onClick={startEdit}
                   title="Edit issue"
-                  className="p-1.5 rounded-md text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                  className="p-1.5 rounded-md text-faint hover:text-accent hover:bg-brand/10 transition-colors"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -162,7 +160,7 @@ export default function SessionIssueCard({
                   type="button"
                   onClick={() => onDelete(issue)}
                   title="Delete issue"
-                  className="p-1.5 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="p-1.5 rounded-md text-faint hover:text-danger hover:bg-red-500/10 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -176,14 +174,14 @@ export default function SessionIssueCard({
               {issue.severity}
             </span>
             {readonly || issue.status === 'resolved' ? (
-              <span className={`${ISSUE_META_CHIP} border-zinc-700 text-zinc-500 px-2`}>
+              <span className={`${ISSUE_META_CHIP} border-strong text-faint px-2`}>
                 {issue.status}
               </span>
             ) : (
               <select
                 value={issue.status}
                 onChange={(e) => onStatusChange(issue.id, e.target.value)}
-                className={`${ISSUE_META_CHIP} bg-zinc-800 border-zinc-700 px-2 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50`}
+                className={`${ISSUE_META_CHIP} bg-control border-strong px-2 text-heading focus:outline-none focus:ring-2 focus:ring-brand/50`}
               >
                 <option value="opened">opened</option>
                 <option value="submitted">submitted</option>

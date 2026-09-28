@@ -78,11 +78,11 @@ export default function RunningTasksDropdown() {
         {runningTasks.length > 0 && (
           <button
             onClick={() => setOpen(!open)}
-            className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="flex items-center gap-2 text-fg-muted hover:text-heading transition-colors"
             title={`${runningTasks.length} running task${runningTasks.length !== 1 ? 's' : ''}`}
           >
-            <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-            <span className="text-xs font-medium text-emerald-400">{runningTasks.length}</span>
+            <Loader2 className="w-4 h-4 animate-spin text-success" />
+            <span className="text-xs font-medium text-success">{runningTasks.length}</span>
           </button>
         )}
 
@@ -90,14 +90,14 @@ export default function RunningTasksDropdown() {
           <div
             className={`absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
           >
-            <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
-              <Terminal className="w-3.5 h-3.5 text-zinc-500" />
-              <span className="text-xs font-medium text-zinc-400">Running Tasks</span>
+            <div className="px-3 py-2 border-b border-line flex items-center gap-2">
+              <Terminal className="w-3.5 h-3.5 text-faint" />
+              <span className="text-xs font-medium text-fg-muted">Running Tasks</span>
             </div>
             <div className="max-h-64 overflow-auto">
               {tasksByRepo.map(({ key, repoFullName, tasks }) => (
                 <div key={key}>
-                  <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-500 uppercase tracking-wider bg-zinc-900 border-b border-zinc-800 sticky top-0">
+                  <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider bg-nav border-b border-line sticky top-0">
                     {repoFullName ? repoDisplayName(repoFullName) : 'Unknown repo'}
                   </div>
                   {tasks.map((task) => {
@@ -106,22 +106,22 @@ export default function RunningTasksDropdown() {
                       <div
                         key={task.id}
                         onClick={() => openModal(task.id)}
-                        className="px-3 py-2.5 border-b border-zinc-800 last:border-b-0 cursor-pointer hover:bg-zinc-800/60 transition-colors"
+                        className="px-3 py-2.5 border-b border-line last:border-b-0 cursor-pointer hover:bg-control/60 transition-colors"
                       >
                         <div className="flex items-center justify-between gap-2 min-w-0">
                           <div className="min-w-0 flex-1 overflow-hidden">
-                            <code className="text-xs text-zinc-200 truncate block min-w-0">
+                            <code className="text-xs text-heading truncate block min-w-0">
                               {task.label || task.command}
                             </code>
                             {session && (
-                              <span className="text-[11px] text-zinc-500 truncate block mt-0.5">
+                              <span className="text-[11px] text-faint truncate block mt-0.5">
                                 {session.label || session.short_id}
                               </span>
                             )}
                           </div>
                           <button
                             onClick={(e) => handleKillFromDropdown(e, task.id)}
-                            className="text-red-400 hover:text-red-300 opacity-60 hover:opacity-100 transition-all shrink-0"
+                            className="text-danger hover:text-danger opacity-60 hover:opacity-100 transition-all shrink-0"
                             title="Stop"
                           >
                             <Square className="w-3.5 h-3.5 fill-current" />

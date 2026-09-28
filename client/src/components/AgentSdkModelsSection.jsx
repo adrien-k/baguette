@@ -47,7 +47,7 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
 
   if (sdk === 'cursor' && !credentialConfigured) {
     return (
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-faint">
         Save a Cursor API key above to load and refresh available models.
       </p>
     );
@@ -56,30 +56,30 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <span className="text-sm font-medium text-zinc-300">Available models</span>
+        <span className="text-sm font-medium text-secondary">Available models</span>
         <button
           type="button"
           onClick={() => loadModels(true)}
           disabled={loading || refreshing}
-          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading disabled:opacity-40 transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           Refresh from provider
         </button>
       </div>
       {loading && !models.length ? (
-        <p className="text-xs text-zinc-500">Loading models…</p>
+        <p className="text-xs text-faint">Loading models…</p>
       ) : models.length === 0 ? (
-        <p className="text-xs text-zinc-500">No models loaded yet. Try refresh.</p>
+        <p className="text-xs text-faint">No models loaded yet. Try refresh.</p>
       ) : (
-        <ul className="rounded-lg border border-zinc-800 bg-zinc-950/50 divide-y divide-zinc-800/80 max-h-48 overflow-y-auto">
+        <ul className="rounded-lg border border-line bg-page/50 divide-y divide-line/80 max-h-48 overflow-y-auto">
           {models.map((m) => (
             <li key={m.id} className="px-3 py-2 text-sm">
-              <span className="text-zinc-200">{m.display_name}</span>
+              <span className="text-heading">{m.display_name}</span>
               {m.description ? (
-                <span className="block text-xs text-zinc-500 mt-0.5">{m.description}</span>
+                <span className="block text-xs text-faint mt-0.5">{m.description}</span>
               ) : (
-                <span className="block text-xs text-zinc-600 font-mono mt-0.5">{m.id}</span>
+                <span className="block text-xs text-faint font-mono mt-0.5">{m.id}</span>
               )}
             </li>
           ))}

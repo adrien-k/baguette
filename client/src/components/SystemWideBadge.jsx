@@ -5,7 +5,7 @@ import Tooltip from './Tooltip.jsx';
 export default function SystemWideBadge() {
   return (
     <Tooltip content="Available to all users of this Baguette instance." wrap placement="left">
-      <span className="inline-flex items-center gap-1 text-[10px] font-medium tracking-wide text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-600 bg-zinc-800/80 cursor-default">
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium tracking-wide text-fg-muted px-2 py-0.5 rounded-full border border-strong bg-control/80 cursor-default">
         <Server className="w-3 h-3 shrink-0" aria-hidden />
         system-wide
       </span>

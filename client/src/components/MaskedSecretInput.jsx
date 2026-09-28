@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 
+import { INPUT_CLASS } from '../utils/ui.js';
+
 export default function MaskedSecretInput({ maskedValue, placeholder, onChange }) {
   const [value, setValue] = useState(maskedValue || '');
   const [isDirty, setIsDirty] = useState(false);
@@ -38,7 +40,7 @@ export default function MaskedSecretInput({ maskedValue, placeholder, onChange }
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       placeholder={maskedValue ? '(change to update)' : placeholder}
-      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+      className={`${INPUT_CLASS} font-mono`}
       autoComplete="off"
     />
   );

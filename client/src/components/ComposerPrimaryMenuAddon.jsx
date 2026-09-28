@@ -71,11 +71,11 @@ export default function ComposerPrimaryMenuAddon({
               close();
               item.onSelect();
             }}
-            className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="block">{item.label}</span>
             {item.hint ? (
-              <span className="block text-xs text-zinc-500 font-normal mt-0.5 leading-snug">
+              <span className="block text-xs text-faint font-normal mt-0.5 leading-snug">
                 {item.hint}
               </span>
             ) : null}

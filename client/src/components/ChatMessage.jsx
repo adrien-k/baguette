@@ -43,14 +43,10 @@ function CopyButton({ text }) {
   return (
     <button
       onClick={handleCopy}
-      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300"
+      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-control-hover text-faint hover:text-secondary"
       title="Copy"
     >
-      {copied ? (
-        <Check className="w-3.5 h-3.5 text-emerald-400" />
-      ) : (
-        <Copy className="w-3.5 h-3.5" />
-      )}
+      {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   );
 }
@@ -79,11 +75,8 @@ export default function ChatMessage({
         {message.message.content.map((block, i) => {
           if (block.type === 'text') {
             return (
-              <div
-                key={i}
-                className="group bg-zinc-900 rounded-lg p-3 sm:p-4 border border-zinc-800"
-              >
-                <div className="text-xs text-indigo-400 mb-1 font-medium flex items-center justify-between">
+              <div key={i} className="group bg-nav rounded-lg p-3 sm:p-4 border border-line">
+                <div className="text-xs text-info mb-1 font-medium flex items-center justify-between">
                   <span>{agentName}</span>
                   <CopyButton text={block.text} />
                 </div>
@@ -138,11 +131,11 @@ export default function ChatMessage({
         ? content
         : '';
     return (
-      <div className="group bg-zinc-800 rounded-lg p-3 sm:p-4 border border-zinc-700 ml-4 sm:ml-8">
-        <div className="text-xs text-emerald-400 mb-1 font-medium flex items-center gap-2">
+      <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
+        <div className="text-xs text-success mb-1 font-medium flex items-center gap-2">
           <span>You</span>
           {message.created_at && (
-            <span className="text-zinc-500 font-normal">
+            <span className="text-faint font-normal">
               {new Date(message.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -150,7 +143,7 @@ export default function ChatMessage({
             </span>
           )}
           {turnModelLabel && (
-            <span className="text-zinc-500 font-normal truncate max-w-[12rem] sm:max-w-xs">
+            <span className="text-faint font-normal truncate max-w-[12rem] sm:max-w-xs">
               {turnModelLabel}
             </span>
           )}
@@ -177,7 +170,7 @@ export default function ChatMessage({
                     key={i}
                     src={`data:${media_type};base64,${data}`}
                     alt={block.name || 'attached image'}
-                    className="max-w-xs rounded border border-zinc-700"
+                    className="max-w-xs rounded border border-strong"
                   />
                 );
               }
@@ -185,7 +178,7 @@ export default function ChatMessage({
                 return (
                   <div
                     key={i}
-                    className="flex items-center gap-1.5 text-xs text-zinc-400 bg-zinc-700/50 rounded px-2 py-1 w-fit"
+                    className="flex items-center gap-1.5 text-xs text-fg-muted bg-control-hover/50 rounded px-2 py-1 w-fit"
                   >
                     <span>📄</span>
                     <span>{block.name || 'document'}</span>
@@ -196,9 +189,9 @@ export default function ChatMessage({
                 return (
                   <div
                     key={i}
-                    className="flex items-center gap-1.5 text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1 w-fit font-mono"
+                    className="flex items-center gap-1.5 text-xs text-warning/90 bg-brand/10 border border-brand/30 rounded px-2 py-1 w-fit font-mono"
                   >
-                    <span className="text-amber-400/80">@</span>
+                    <span className="text-accent/80">@</span>
                     <span>
                       {block.path}:{block.line}
                     </span>
@@ -220,17 +213,15 @@ export default function ChatMessage({
     return (
       <>
         <div
-          className={`text-center text-xs opacity-70 ${
-            isError ? 'text-red-300' : 'text-emerald-300'
-          }`}
+          className={`text-center text-xs opacity-70 ${isError ? 'text-danger' : 'text-success'}`}
         >
           <span className="font-medium">{isError ? 'Error' : 'Completed'}</span>
           {message.total_cost_usd != null && (
-            <span className="ml-2 text-zinc-500">(${message.total_cost_usd.toFixed(4)})</span>
+            <span className="ml-2 text-faint">(${message.total_cost_usd.toFixed(4)})</span>
           )}
         </div>
         {message.result && isError && (
-          <div className="mt-1 text-zinc-400 text-xs">
+          <div className="mt-1 text-fg-muted text-xs">
             <MarkdownContent>{message.result}</MarkdownContent>
           </div>
         )}
@@ -241,9 +232,9 @@ export default function ChatMessage({
   if (message.type === 'system') {
     if (message.subtype === 'task') {
       return (
-        <div className="text-xs text-zinc-500 text-center py-1">
+        <div className="text-xs text-faint text-center py-1">
           {message.task_status ? (
-            <span className="text-zinc-600 mr-1">[{message.task_status}]</span>
+            <span className="text-faint mr-1">[{message.task_status}]</span>
           ) : null}
           {message.text}
         </div>
@@ -251,7 +242,7 @@ export default function ChatMessage({
     }
     if (message.subtype === 'request') {
       return (
-        <div className="text-xs text-amber-500/80 text-center py-1">
+        <div className="text-xs text-accent/80 text-center py-1">
           Agent is awaiting your input or approval
         </div>
       );
@@ -262,7 +253,7 @@ export default function ChatMessage({
       label = `Thinking… ~${(message.estimated_tokens || 0).toLocaleString()} tokens`;
     else if (message.subtype === 'status' && message.status) label = message.status;
     else label = message.subtype;
-    return <div className="text-xs text-zinc-600 text-center py-1">{label}</div>;
+    return <div className="text-xs text-faint text-center py-1">{label}</div>;
   }
 
   return null;

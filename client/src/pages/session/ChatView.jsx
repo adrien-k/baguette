@@ -57,26 +57,24 @@ const CHECK_COMMENTS_TOOLTIP_REVIEWER = 'Check review comments.';
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div className="border border-line rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/40 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-control/40 transition-colors text-left"
       >
-        <Terminal className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
-        <span className="text-xs font-medium text-zinc-500">System prompt</span>
-        <span className="text-zinc-600 text-xs truncate flex-1 min-w-0">
-          {content.slice(0, 80)}
-        </span>
+        <Terminal className="w-3.5 h-3.5 shrink-0 text-faint" />
+        <span className="text-xs font-medium text-faint">System prompt</span>
+        <span className="text-faint text-xs truncate flex-1 min-w-0">{content.slice(0, 80)}</span>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-faint shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0" />
         )}
       </button>
       {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-zinc-800 bg-zinc-900/50">
-          <pre className="text-zinc-500 text-xs font-mono leading-5 whitespace-pre-wrap overflow-auto max-h-96">
+        <div className="px-3 pb-3 pt-1 border-t border-line bg-inset/50">
+          <pre className="text-faint text-xs font-mono leading-5 whitespace-pre-wrap overflow-auto max-h-96">
             {content}
           </pre>
         </div>
@@ -507,14 +505,14 @@ export default function ChatView({
               role="status"
               aria-label="Loading conversation"
             >
-              <div className="w-6 h-6 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-strong border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
             <>
               <div ref={topSentinelRef} className="h-px" />
               {loadingMore && (
                 <div className="flex justify-center py-2">
-                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-strong border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
               {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
@@ -548,8 +546,8 @@ export default function ChatView({
                 )
               )}
               {isProvisioning && (
-                <div className="flex items-center gap-2 py-2 text-xs text-zinc-400">
-                  <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                <div className="flex items-center gap-2 py-2 text-xs text-fg-muted">
+                  <div className="w-3.5 h-3.5 border-2 border-faint border-t-transparent rounded-full animate-spin shrink-0" />
                   Setting up worktree…
                 </div>
               )}
@@ -558,7 +556,7 @@ export default function ChatView({
                   <button
                     type="button"
                     onClick={() => handleQuickSend('continue')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     Continue
@@ -572,7 +570,7 @@ export default function ChatView({
                       type="button"
                       onClick={handleRestore}
                       disabled={restoring}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover disabled:opacity-50 border border-strong rounded-lg text-xs text-secondary transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       {restoring ? 'Restoring…' : 'Restore'}
@@ -594,7 +592,7 @@ export default function ChatView({
                             'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                       >
                         <GitPullRequest className="w-3.5 h-3.5" />
                         Git sync
@@ -604,7 +602,7 @@ export default function ChatView({
                       <button
                         type="button"
                         onClick={() => setShowMergeModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                       >
                         <GitMerge className="w-3.5 h-3.5" />
                         Merge
@@ -618,7 +616,7 @@ export default function ChatView({
                             'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                       >
                         <CircleCheck className="w-3.5 h-3.5" />
                         Check CI
@@ -640,7 +638,7 @@ export default function ChatView({
                               : CHECK_COMMENTS_PROMPT_BUILDER
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                         Check comments
@@ -652,7 +650,7 @@ export default function ChatView({
                           <button
                             type="button"
                             onClick={() => onViewChange('review')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                           >
                             <ClipboardCheck className="w-3.5 h-3.5" />
                             Review code
@@ -662,7 +660,7 @@ export default function ChatView({
                           <button
                             type="button"
                             onClick={() => onViewChange('diff')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
                           >
                             <GitCompare className="w-3.5 h-3.5" />
                             Diff
@@ -678,7 +676,7 @@ export default function ChatView({
         </ChatMessagesViewport>
 
         {error && (
-          <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-red-400 text-xs">
+          <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-danger text-xs">
             {error}
           </div>
         )}
@@ -700,7 +698,7 @@ export default function ChatView({
         )}
 
         {!readonly && session && (
-          <div className="relative z-[2] shrink-0 bg-zinc-950 pb-3 sm:pb-4 pt-1">
+          <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
             <FileAttachmentPicker
               className={`w-full ${CHAT_COLUMN_CLASS}`}
               files={files}
@@ -756,7 +754,7 @@ export default function ChatView({
                           type="button"
                           role="menuitem"
                           onClick={openRegularlyModal}
-                          className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                          className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
                         >
                           Send regularly
                         </button>

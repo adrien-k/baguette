@@ -3,25 +3,12 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import MarkdownContent from '../../components/MarkdownContent.jsx';
+import TextInput from '../../components/TextInput.jsx';
+import { SettingsSection, SettingsSaveRow } from '../../components/SettingsSection.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 
-const fieldClass =
-  'w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-60 disabled:cursor-not-allowed';
-
 const readOnlyClass =
-  'w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-3 text-sm text-zinc-300 whitespace-pre-wrap break-words';
-
-function Section({ title, description, children }) {
-  return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5 space-y-3">
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-200">{title}</h2>
-        {description ? <p className="text-xs text-zinc-500 mt-1">{description}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
+  'w-full rounded-lg border border-line bg-page/60 px-3 py-3 text-sm text-secondary whitespace-pre-wrap break-words';
 
 export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const defaultTitle =
@@ -58,13 +45,13 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const prDescription = session?.pr_description?.trim();
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-zinc-950">
+    <div className="flex-1 min-h-0 overflow-auto bg-page">
       <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6 space-y-6`}>
-        <Section
+        <SettingsSection
           title="Session title"
           description="Shown in the header and session list. Does not change the GitHub pull request title unless you update the PR separately."
         >
-          <input
+          <TextInput
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -76,59 +63,53 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
             }}
             disabled={readonly || saving}
             placeholder={defaultTitle}
-            className={fieldClass}
           />
           {!readonly && (
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleSaveTitle}
-                disabled={saving || !titleDirty}
-                className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-              {saved && <span className="text-sm text-emerald-400">Saved</span>}
-            </div>
+            <SettingsSaveRow
+              saving={saving}
+              saved={saved}
+              onSave={handleSaveTitle}
+              disabled={!titleDirty}
+            />
           )}
-        </Section>
+        </SettingsSection>
 
-        <Section
+        <SettingsSection
           title="Initial prompt"
           description="The message used when this session was created."
         >
           {initialPrompt ? (
             <div className={readOnlyClass}>{initialPrompt}</div>
           ) : (
-            <p className="text-sm text-zinc-500">No initial prompt recorded.</p>
+            <p className="text-sm text-faint">No initial prompt recorded.</p>
           )}
-        </Section>
+        </SettingsSection>
 
-        <Section
+        <SettingsSection
           title="PR description"
           description="Draft stored on this session (updated when the agent runs PrUpsert). May differ from GitHub until the PR is pushed."
         >
           {prDescription ? (
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-3">
+            <div className="rounded-lg border border-line bg-page/60 px-3 py-3">
               <MarkdownContent>{prDescription}</MarkdownContent>
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">No PR description yet.</p>
+            <p className="text-sm text-faint">No PR description yet.</p>
           )}
           {session?.pr_url && (
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-faint">
               Pull request:{' '}
               <a
                 href={session.pr_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-amber-400 hover:text-amber-300 underline"
+                className="text-accent hover:text-accent underline"
               >
                 {session.pr_url.replace(/^https?:\/\//, '')}
               </a>
             </p>
           )}
-        </Section>
+        </SettingsSection>
       </div>
     </div>
   );

@@ -16,17 +16,17 @@ export function QuietToolBlock({ icon, label, detail, isError, result }) {
       onClick={() => setExpanded((e) => !e)}
       className="text-xs font-mono py-0.5 pl-1 cursor-pointer overflow-hidden"
     >
-      <div className="flex items-center gap-1.5 text-zinc-700">
+      <div className="flex items-center gap-1.5 text-faint">
         <span>{icon ?? '↳'}</span>
         <span className={isError ? 'text-red-700' : ''}>{label}</span>
-        {detail && <span className="truncate text-zinc-800">{detail}</span>}
+        {detail && <span className="truncate text-faint">{detail}</span>}
         {isError && <span className="text-red-700 ml-0.5">[error]</span>}
         {isRunning && !isError && (
-          <div className="w-2.5 h-2.5 border border-zinc-700 border-t-zinc-500 rounded-full animate-spin shrink-0" />
+          <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
         )}
       </div>
       {expanded && result != null && (
-        <pre className="mt-1 pl-3 text-zinc-700 whitespace-pre-wrap overflow-auto max-h-48">
+        <pre className="mt-1 pl-3 text-faint whitespace-pre-wrap overflow-auto max-h-48">
           {typeof result === 'string' && !result.trim() && isError ? 'Tool call failed' : result}
         </pre>
       )}
@@ -64,41 +64,39 @@ export function CommandBlock({ baguetteOp, block }) {
 
   return (
     <div
-      className={`bg-zinc-900/50 rounded-lg border overflow-hidden ${hasError ? 'border-red-800/60' : 'border-zinc-800'}`}
+      className={`bg-inset/50 rounded-lg border overflow-hidden ${hasError ? 'border-danger/60' : 'border-line'}`}
     >
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-zinc-800/50 transition-colors gap-2"
+        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-amber-400 text-xs font-mono shrink-0">command</span>
+          <span className="text-accent text-xs font-mono shrink-0">command</span>
           {hasError && (
-            <span className="shrink-0 text-red-400 text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
               {typeof exitCode === 'number' ? `exit ${exitCode}` : 'error'}
             </span>
           )}
-          <span className="text-xs text-zinc-300 truncate">
+          <span className="text-xs text-secondary truncate">
             {baguetteOp.arg?.label || '(no label)'}
           </span>
           {Array.isArray(baguetteOp.arg?.args) && baguetteOp.arg.args.length > 0 && (
-            <code className="text-[10px] text-zinc-500 truncate">
-              {baguetteOp.arg.args.join(' ')}
-            </code>
+            <code className="text-[10px] text-faint truncate">{baguetteOp.arg.args.join(' ')}</code>
           )}
         </div>
         {isRunning ? (
-          <div className="w-3.5 h-3.5 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
+          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
           <ChevronDown
-            className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
           />
         )}
       </button>
       {expanded && (
-        <div className="px-3 sm:px-4 py-3 border-t border-zinc-800 text-xs space-y-3">
+        <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
           {stdout && (
             <div>
-              <div className="text-zinc-500 font-medium mb-1">stdout</div>
+              <div className="text-faint font-medium mb-1">stdout</div>
               <pre
                 className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
                 dangerouslySetInnerHTML={{ __html: stdoutHtml }}
@@ -107,7 +105,7 @@ export function CommandBlock({ baguetteOp, block }) {
           )}
           {stderr && (
             <div>
-              <div className="text-zinc-500 font-medium mb-1">stderr</div>
+              <div className="text-faint font-medium mb-1">stderr</div>
               <pre
                 className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
                 dangerouslySetInnerHTML={{ __html: stderrHtml }}
@@ -116,8 +114,8 @@ export function CommandBlock({ baguetteOp, block }) {
           )}
           {!stdout && !stderr && block.result != null && (
             <div>
-              <div className="text-zinc-500 font-medium mb-1">Result</div>
-              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-zinc-400 bg-zinc-950/50">
+              <div className="text-faint font-medium mb-1">Result</div>
+              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-fg-muted bg-page/50">
                 {typeof block.result === 'string'
                   ? block.result
                   : JSON.stringify(block.result, null, 2)}
@@ -140,31 +138,31 @@ export function PrUpsertBlock({ title, body, result, isError }) {
 
   return (
     <div
-      className={`bg-zinc-900/50 rounded-lg border overflow-hidden ${isError ? 'border-red-800/60' : 'border-indigo-900/50'}`}
+      className={`bg-inset/50 rounded-lg border overflow-hidden ${isError ? 'border-danger/60' : 'border-info/50'}`}
     >
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-zinc-800/50 transition-colors gap-2"
+        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-amber-400 text-xs font-mono shrink-0">Pull Request</span>
+          <span className="text-accent text-xs font-mono shrink-0">Pull Request</span>
           {isError && (
-            <span className="shrink-0 text-red-400 text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
               error
             </span>
           )}
-          <span className="text-white text-xs font-semibold truncate">{title}</span>
+          <span className="text-fg text-xs font-semibold truncate">{title}</span>
         </div>
         {isRunning ? (
-          <div className="w-3.5 h-3.5 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin shrink-0" />
+          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
           <ChevronDown
-            className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
           />
         )}
       </button>
       {!expanded && body && (
-        <div className="px-3 sm:px-4 pb-2 text-xs text-zinc-500">
+        <div className="px-3 sm:px-4 pb-2 text-xs text-faint">
           <MarkdownContent>{previewBody}</MarkdownContent>
           {remaining > 0 && (
             <span
@@ -181,7 +179,7 @@ export function PrUpsertBlock({ title, body, result, isError }) {
                   setExpanded(true);
                 }
               }}
-              className="text-zinc-600 hover:text-zinc-400 transition-colors mt-1 font-mono cursor-pointer"
+              className="text-faint hover:text-fg-muted transition-colors mt-1 font-mono cursor-pointer"
             >
               &hellip; {remaining} more line{remaining !== 1 ? 's' : ''}
             </span>
@@ -189,14 +187,14 @@ export function PrUpsertBlock({ title, body, result, isError }) {
         </div>
       )}
       {expanded && (
-        <div className="px-3 sm:px-4 py-3 border-t border-zinc-800 text-xs space-y-3">
-          <div className="text-zinc-400">
+        <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
+          <div className="text-fg-muted">
             <MarkdownContent>{body ?? ''}</MarkdownContent>
           </div>
           {result != null && isError && (
             <div>
-              <div className="font-medium mb-1 text-red-400">Error</div>
-              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-red-300 bg-red-950/30">
+              <div className="font-medium mb-1 text-danger">Error</div>
+              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-red-950/30">
                 {result}
               </pre>
             </div>
@@ -230,17 +228,17 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
 
   if (diff === null && !error) {
     return (
-      <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-xs text-zinc-500">
-        Loading diff for <span className="text-zinc-400 font-mono">{filePath}</span>…
+      <div className="rounded-lg border border-strong bg-nav p-3 text-xs text-faint">
+        Loading diff for <span className="text-fg-muted font-mono">{filePath}</span>…
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-800/50 bg-zinc-900 p-3 text-xs">
-        <span className="text-zinc-400 font-mono">{filePath}</span>
-        <span className="ml-2 text-red-400">{error}</span>
+      <div className="rounded-lg border border-red-800/50 bg-nav p-3 text-xs">
+        <span className="text-fg-muted font-mono">{filePath}</span>
+        <span className="ml-2 text-danger">{error}</span>
       </div>
     );
   }
@@ -270,21 +268,21 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
 
   if (!diff || diff === '(no diff)') {
     return (
-      <div className="rounded-lg border border-zinc-700 bg-zinc-900 text-xs font-mono overflow-hidden">
-        <div className="px-3 py-2 flex items-center gap-2 border-b border-zinc-700 bg-zinc-800/50">
-          <span className="text-zinc-400">diff</span>
-          <span className="text-white">{filePath}</span>
+      <div className="rounded-lg border border-strong bg-nav text-xs font-mono overflow-hidden">
+        <div className="px-3 py-2 flex items-center gap-2 border-b border-strong bg-control/50">
+          <span className="text-fg-muted">diff</span>
+          <span className="text-fg">{filePath}</span>
         </div>
-        <div className="px-3 py-2 text-zinc-500 italic">No changes</div>
+        <div className="px-3 py-2 text-faint italic">No changes</div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-900 text-xs font-mono overflow-hidden">
-      <div className="px-3 py-2 flex items-center gap-2 border-b border-zinc-700 bg-zinc-800/50">
-        <span className="text-zinc-400">diff</span>
-        <span className="text-white truncate">{filePath}</span>
+    <div className="rounded-lg border border-strong bg-nav text-xs font-mono overflow-hidden">
+      <div className="px-3 py-2 flex items-center gap-2 border-b border-strong bg-control/50">
+        <span className="text-fg-muted">diff</span>
+        <span className="text-fg truncate">{filePath}</span>
       </div>
       <div className={DIFF_SCROLL_WRAP_CLASS}>
         <pre className={`px-3 py-2 leading-5 ${DIFF_LINE_WRAP_CLASS}`}>
@@ -301,8 +299,8 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
               ch === '+'
                 ? 'text-green-400 bg-green-950/30'
                 : ch === '-'
-                  ? 'text-red-400 bg-red-950/30'
-                  : 'text-zinc-400';
+                  ? 'text-danger bg-red-950/30'
+                  : 'text-fg-muted';
             return (
               <div key={i} className={`${cls} ${DIFF_LINE_WRAP_CLASS}`}>
                 {l.text || ' '}
@@ -314,7 +312,7 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
       {hasMore && (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="w-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 border-t border-zinc-700 transition-colors text-left"
+          className="w-full px-3 py-1.5 text-xs text-faint hover:text-secondary hover:bg-control/50 border-t border-strong transition-colors text-left"
         >
           {expanded ? '↑ Show less' : `↓ Show all ${allLines.length} lines`}
         </button>
@@ -351,7 +349,7 @@ function UploadImageBlock({ block, mcpResult }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="block mt-1 rounded border border-zinc-700 overflow-hidden hover:border-zinc-500 transition-colors cursor-zoom-in"
+        className="block mt-1 rounded border border-strong overflow-hidden hover:border-faint transition-colors cursor-zoom-in"
       >
         <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
       </button>
@@ -367,14 +365,14 @@ function UploadImageBlock({ block, mcpResult }) {
             >
               <button
                 onClick={close}
-                className="absolute -top-8 right-0 text-zinc-400 hover:text-white text-sm"
+                className="absolute -top-8 right-0 text-fg-muted hover:text-fg text-sm"
               >
                 ✕ close
               </button>
               <img
                 src={imageUrl}
                 alt={altText}
-                className="max-w-full max-h-[85vh] rounded border border-zinc-700 object-contain"
+                className="max-w-full max-h-[85vh] rounded border border-strong object-contain"
               />
             </div>
           </div>,
@@ -413,12 +411,12 @@ function ReadTaskOutputBlock({ block }) {
       onClick={() => setExpanded((e) => !e)}
       className="text-xs font-mono py-0.5 pl-1 cursor-pointer overflow-hidden"
     >
-      <div className="flex items-center gap-1.5 text-zinc-700">
+      <div className="flex items-center gap-1.5 text-faint">
         <span>↳</span>
         <span>ReadTaskOutput</span>
-        {taskId != null && <span className="truncate text-zinc-800">#{taskId}</span>}
+        {taskId != null && <span className="truncate text-faint">#{taskId}</span>}
         {isRunning && (
-          <div className="w-2.5 h-2.5 border border-zinc-700 border-t-zinc-500 rounded-full animate-spin shrink-0" />
+          <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
         )}
       </div>
       {expanded && logsHtml && (
@@ -428,7 +426,7 @@ function ReadTaskOutputBlock({ block }) {
         />
       )}
       {expanded && !logsHtml && parsed && (
-        <pre className="mt-1 pl-3 text-zinc-700 whitespace-pre-wrap overflow-auto max-h-48">
+        <pre className="mt-1 pl-3 text-faint whitespace-pre-wrap overflow-auto max-h-48">
           {typeof block.result === 'string' ? block.result : JSON.stringify(parsed, null, 2)}
         </pre>
       )}

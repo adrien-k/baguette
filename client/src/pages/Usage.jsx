@@ -44,10 +44,10 @@ function FilterChip({ active, onClick, children }) {
 
 function StatCard({ label, value, hint }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 min-w-0">
-      <div className="text-xs text-zinc-500">{label}</div>
-      <div className="text-lg font-semibold text-white tabular-nums mt-0.5 truncate">{value}</div>
-      {hint ? <div className="text-xs text-zinc-600 mt-0.5 truncate">{hint}</div> : null}
+    <div className="rounded-xl border border-line bg-inset/50 px-4 py-3 min-w-0">
+      <div className="text-xs text-faint">{label}</div>
+      <div className="text-lg font-semibold text-fg tabular-nums mt-0.5 truncate">{value}</div>
+      {hint ? <div className="text-xs text-faint mt-0.5 truncate">{hint}</div> : null}
     </div>
   );
 }
@@ -116,8 +116,8 @@ export default function Usage() {
     <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white">Usage</h1>
-          <p className="text-sm text-zinc-400 mt-1 max-w-2xl">
+          <h1 className="text-xl sm:text-2xl font-bold text-fg">Usage</h1>
+          <p className="text-sm text-fg-muted mt-1 max-w-2xl">
             Token activity across your sessions. Click a day on the timeline to zoom the table.
           </p>
         </div>
@@ -196,11 +196,11 @@ export default function Usage() {
         />
       </div>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-6">
+      <section className="rounded-xl border border-line bg-inset/50 p-4 sm:p-6">
         {loading ? (
-          <p className="text-sm text-zinc-500">Loading timeline…</p>
+          <p className="text-sm text-faint">Loading timeline…</p>
         ) : data.reduce((s, r) => s + metricOf(r), 0) === 0 ? (
-          <p className="text-sm text-zinc-500">No token usage in this range.</p>
+          <p className="text-sm text-faint">No token usage in this range.</p>
         ) : (
           <UsageGraph
             rows={data}
@@ -213,35 +213,31 @@ export default function Usage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-        <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-zinc-200">
+      <section className="rounded-xl border border-line bg-inset/50 overflow-hidden">
+        <div className="px-4 sm:px-6 py-3 border-b border-line flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-heading">
             By repository
-            {selectedDay ? (
-              <span className="font-normal text-zinc-500"> · {selectedDay}</span>
-            ) : null}
+            {selectedDay ? <span className="font-normal text-faint"> · {selectedDay}</span> : null}
           </h2>
           {selectedDay && (
             <button
               type="button"
               onClick={() => setSelectedDay(null)}
-              className="text-xs text-zinc-400 hover:text-zinc-200"
+              className="text-xs text-fg-muted hover:text-heading"
             >
               Show all days
             </button>
           )}
         </div>
         {loading ? (
-          <p className="px-4 sm:px-6 py-8 text-sm text-zinc-500">Loading details…</p>
+          <p className="px-4 sm:px-6 py-8 text-sm text-faint">Loading details…</p>
         ) : tableRows.length === 0 ? (
-          <p className="px-4 sm:px-6 py-8 text-sm text-zinc-500">
-            Nothing to list for these filters.
-          </p>
+          <p className="px-4 sm:px-6 py-8 text-sm text-faint">Nothing to list for these filters.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-zinc-500 border-b border-zinc-800">
+                <tr className="text-left text-xs text-faint border-b border-line">
                   <th className="font-medium px-4 sm:px-6 py-2">Repo</th>
                   <th className="font-medium px-3 py-2">Agent</th>
                   <th className="font-medium px-3 py-2">Activity</th>
@@ -257,37 +253,37 @@ export default function Usage() {
                   return (
                     <tr
                       key={`${row.repo_full_name}:${row.agent_sdk}:${row.kind}`}
-                      className="border-b border-zinc-800/80 last:border-0"
+                      className="border-b border-line/80 last:border-0"
                     >
-                      <td className="px-4 sm:px-6 py-2.5 text-zinc-200">
+                      <td className="px-4 sm:px-6 py-2.5 text-heading">
                         <span title={usageRepoTitle(row.repo_full_name)}>
                           {usageRepoLabel(row.repo_full_name)}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-zinc-400">
+                      <td className="px-3 py-2.5 text-fg-muted">
                         {SDK_LABELS[row.agent_sdk] ?? row.agent_sdk}
                       </td>
-                      <td className="px-3 py-2.5 text-zinc-400">
+                      <td className="px-3 py-2.5 text-fg-muted">
                         {KIND_LABELS[row.kind] ?? row.kind}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-3">
-                          <span className="text-zinc-200 tabular-nums w-12 shrink-0">
+                          <span className="text-heading tabular-nums w-12 shrink-0">
                             {formatTokens(row.total_tokens)}
                           </span>
-                          <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden min-w-16">
+                          <div className="flex-1 h-1.5 rounded-full bg-control overflow-hidden min-w-16">
                             <div
-                              className="h-full rounded-full bg-amber-600"
+                              className="h-full rounded-full bg-brand"
                               style={{ width: `${Math.max(share, share > 0 ? 2 : 0)}%` }}
                             />
                           </div>
-                          <span className="text-xs text-zinc-600 tabular-nums w-10 text-right shrink-0">
+                          <span className="text-xs text-faint tabular-nums w-10 text-right shrink-0">
                             {Math.round(share)}%
                           </span>
                         </div>
                       </td>
                       {showCost && (
-                        <td className="px-4 sm:px-6 py-2.5 text-right text-zinc-400 tabular-nums">
+                        <td className="px-4 sm:px-6 py-2.5 text-right text-fg-muted tabular-nums">
                           {row.cost_usd > 0 ? formatUsd(row.cost_usd) : '—'}
                         </td>
                       )}

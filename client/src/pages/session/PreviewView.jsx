@@ -4,12 +4,13 @@ import QRCode from 'react-qr-code';
 import { toastError } from '../../utils/toastError.jsx';
 import { sessionsService, tasksService } from '../../feathers.js';
 import StartButton from '../../components/StartButton.jsx';
+import Toggle from '../../components/Toggle.jsx';
 
 function ServiceQrCode({ url }) {
   if (!url) return null;
   return (
     <div
-      className="shrink-0 rounded-md border border-zinc-700 bg-white p-1.5"
+      className="shrink-0 rounded-md border border-strong bg-knob p-1.5"
       title={url}
       aria-label={`QR code: ${url}`}
     >
@@ -19,104 +20,100 @@ function ServiceQrCode({ url }) {
 }
 
 const STATUS_LABEL = {
-  stopped: { text: 'Stopped', className: 'text-zinc-500 bg-zinc-800/80 border-zinc-700' },
-  starting: { text: 'Starting…', className: 'text-amber-300 bg-amber-500/10 border-amber-500/30' },
-  ready: { text: 'Ready', className: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' },
-  crashed: { text: 'Crashed', className: 'text-red-300 bg-red-500/10 border-red-500/30' },
+  stopped: {
+    text: 'Stopped',
+    className: 'text-faint bg-control/80 border-strong',
+  },
+  starting: {
+    text: 'Starting…',
+    className: 'text-accent bg-brand/10 border-brand/30',
+  },
+  ready: {
+    text: 'Ready',
+    className: 'text-success bg-success/10 border-success/30',
+  },
+  crashed: {
+    text: 'Crashed',
+    className: 'text-danger bg-danger/10 border-danger/30',
+  },
 };
 
 const actionBtnClass =
-  'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-700/80 bg-zinc-800/40 text-xs text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800 transition-colors';
+  'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-strong/80 bg-control/40 text-xs text-secondary hover:border-strong hover:bg-control transition-colors';
 
 function PreviewSettingsToggles({ session, compact = false }) {
   if (!session?.preview_url) return null;
   return (
     <div
-      className={`rounded-lg border border-zinc-800 bg-zinc-900/50 space-y-4 ${compact ? 'p-3' : 'p-4'}`}
+      className={`rounded-lg border border-line bg-inset/50 space-y-4 ${compact ? 'p-3' : 'p-4'}`}
     >
-      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Preview access</h2>
+      <h2 className="text-xs font-medium uppercase tracking-wide text-faint">Preview access</h2>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 min-w-0">
-          <Globe className="w-4 h-4 text-zinc-400 shrink-0" />
+          <Globe className="w-4 h-4 text-fg-muted shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-medium text-zinc-300">Public preview</h3>
-            <p className="text-xs text-zinc-500">
+            <h3 className="text-sm font-medium text-secondary">Public preview</h3>
+            <p className="text-xs text-faint">
               Anyone with the link can open the preview and start the dev server.
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={!!session?.is_preview_public}
-          onClick={() => {
+        <Toggle
+          size="md"
+          checked={!!session?.is_preview_public}
+          aria-label="Public preview"
+          onChange={(next) => {
             if (!session?.id) return;
             sessionsService
-              .patch(session.id, { is_preview_public: !session.is_preview_public })
+              .patch(session.id, { is_preview_public: next })
               .catch((err) => toastError('Failed to update public preview setting', err));
           }}
-          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.is_preview_public ? 'bg-amber-500' : 'bg-zinc-600'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_public ? 'translate-x-4.5' : 'translate-x-0.5'}`}
-          />
-        </button>
+        />
       </div>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 min-w-0">
-          <Users className="w-4 h-4 text-zinc-400 shrink-0" />
+          <Users className="w-4 h-4 text-fg-muted shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-medium text-zinc-300">Baguette users</h3>
-            <p className="text-xs text-zinc-500">
+            <h3 className="text-sm font-medium text-secondary">Baguette users</h3>
+            <p className="text-xs text-faint">
               Any signed-in Baguette user can open this preview link (after signing in).
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={session?.is_preview_users_public !== false}
-          onClick={() => {
+        <Toggle
+          size="md"
+          checked={session?.is_preview_users_public !== false}
+          aria-label="Baguette users"
+          onChange={(next) => {
             if (!session?.id) return;
-            const next = session.is_preview_users_public === false;
             sessionsService
               .patch(session.id, { is_preview_users_public: next })
               .catch((err) => toastError('Failed to update Baguette users preview setting', err));
           }}
-          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.is_preview_users_public !== false ? 'bg-amber-500' : 'bg-zinc-600'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_users_public !== false ? 'translate-x-4.5' : 'translate-x-0.5'}`}
-          />
-        </button>
+        />
       </div>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 min-w-0">
-          <Wifi className="w-4 h-4 text-zinc-400 shrink-0" />
+          <Wifi className="w-4 h-4 text-fg-muted shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-medium text-zinc-300">IP-public preview</h3>
-            <p className="text-xs text-zinc-500">
+            <h3 className="text-sm font-medium text-secondary">IP-public preview</h3>
+            <p className="text-xs text-faint">
               For previews opened outside a browser (for example Expo Go). The IP that starts the
               server can then use the preview without signing in.
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={!!session?.is_preview_ip_public}
-          onClick={() => {
+        <Toggle
+          size="md"
+          checked={!!session?.is_preview_ip_public}
+          aria-label="IP-public preview"
+          onChange={(next) => {
             if (!session?.id) return;
             sessionsService
-              .patch(session.id, { is_preview_ip_public: !session.is_preview_ip_public })
+              .patch(session.id, { is_preview_ip_public: next })
               .catch((err) => toastError('Failed to update IP-public preview setting', err));
           }}
-          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${session?.is_preview_ip_public ? 'bg-amber-500' : 'bg-zinc-600'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${session?.is_preview_ip_public ? 'translate-x-4.5' : 'translate-x-0.5'}`}
-          />
-        </button>
+        />
       </div>
     </div>
   );
@@ -143,43 +140,43 @@ function ServiceRow({
   const previewUrl = svc.deep_link_url || svc.url;
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-line bg-inset/60 overflow-hidden shadow-sm">
       <div
         className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4 sm:p-5'}`}
       >
         <div className="min-w-0 flex-1">
           <div className="mb-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-zinc-100">{svc.display_name}</span>
+              <span className="text-sm font-semibold text-fg">{svc.display_name}</span>
               <span
                 className={`text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusMeta.className}`}
               >
                 {statusMeta.text}
               </span>
               {svc.status === 'starting' && (
-                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
               )}
             </div>
             {svc.description && (
-              <p className="text-xs text-zinc-500 mt-1 leading-relaxed max-w-prose whitespace-pre-wrap">
+              <p className="text-xs text-faint mt-1 leading-relaxed max-w-prose whitespace-pre-wrap">
                 {svc.description}
               </p>
             )}
           </div>
           {ipPublicEnabled && isActive && svc.allowed_ip && (
-            <p className="text-xs text-zinc-500 mt-2">
-              Allowed IP <span className="font-mono text-zinc-400">{svc.allowed_ip}</span>
+            <p className="text-xs text-faint mt-2">
+              Allowed IP <span className="font-mono text-fg-muted">{svc.allowed_ip}</span>
             </p>
           )}
           {svc.exit_code != null && svc.status === 'crashed' && (
-            <p className="text-xs text-red-400/80 mt-1">Exit code {svc.exit_code}</p>
+            <p className="text-xs text-danger/80 mt-1">Exit code {svc.exit_code}</p>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
               href={previewUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className={`${actionBtnClass} text-sky-300 hover:text-sky-200 hover:border-sky-500/30`}
+              className={`${actionBtnClass} text-info hover:text-info hover:border-info/30`}
             >
               Open preview
               <ExternalLink className="w-3 h-3" />
@@ -195,7 +192,7 @@ function ServiceRow({
               className={actionBtnClass}
               title="Stop preview service"
             >
-              <Square className="w-3.5 h-3.5 fill-current text-red-400" />
+              <Square className="w-3.5 h-3.5 fill-current text-danger" />
               Stop
             </button>
           )}
@@ -273,10 +270,10 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
       <div className={compact ? 'space-y-4' : 'max-w-2xl mx-auto space-y-6'}>
         {!compact && (
           <header className="space-y-1">
-            <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Preview</h1>
-            <p className="text-sm text-zinc-500">
+            <h1 className="text-lg font-semibold text-fg tracking-tight">Preview</h1>
+            <p className="text-sm text-faint">
               Start dev servers on demand and share preview links. Optional descriptions come from{' '}
-              <code className="text-zinc-400 text-xs">.baguette.yaml</code>.
+              <code className="text-fg-muted text-xs">.baguette.yaml</code>.
             </p>
           </header>
         )}
@@ -285,12 +282,12 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
 
         <div className="space-y-3">
           {!compact && (
-            <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Services</h2>
+            <h2 className="text-xs font-medium uppercase tracking-wide text-faint">Services</h2>
           )}
           {loading && services.length === 0 ? (
-            <p className="text-sm text-zinc-500">Loading…</p>
+            <p className="text-sm text-faint">Loading…</p>
           ) : services.length === 0 ? (
-            <p className="text-sm text-zinc-500">No preview services configured.</p>
+            <p className="text-sm text-faint">No preview services configured.</p>
           ) : (
             services.map((svc) => (
               <ServiceRow

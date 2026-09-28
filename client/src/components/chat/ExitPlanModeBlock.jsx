@@ -55,15 +55,15 @@ export default function ExitPlanModeBlock({ block, sessionId, userReplied = fals
   };
 
   return (
-    <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 overflow-hidden">
-      <div className="px-3 sm:px-4 py-2 border-b border-amber-500/10">
-        <p className="text-xs text-amber-400/70">Plan ready for review</p>
+    <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
+      <div className="px-3 sm:px-4 py-2 border-b border-brand/10">
+        <p className="text-xs text-accent/70">Plan ready for review</p>
       </div>
       <div className="px-3 sm:px-4 py-3 overflow-auto max-h-[50vh]">
         {planMarkdown ? (
           <MarkdownContent>{planMarkdown}</MarkdownContent>
         ) : (
-          <p className="text-sm text-zinc-500 italic">No plan content.</p>
+          <p className="text-sm text-faint italic">No plan content.</p>
         )}
       </div>
       {!hasResult && (
@@ -82,14 +82,14 @@ export default function ExitPlanModeBlock({ block, sessionId, userReplied = fals
                   }
                 }}
                 placeholder="What should Claude refine? (optional)"
-                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 text-zinc-100 rounded-lg text-sm resize-none focus:outline-none focus:border-zinc-400 placeholder-zinc-500"
+                className="w-full px-3 py-2 bg-control border border-strong text-fg rounded-lg text-sm resize-none focus:outline-none focus:border-faint placeholder-faint"
                 rows={3}
               />
               <div className="flex gap-2">
                 <button
                   onClick={handleContinueSubmit}
                   disabled={loading}
-                  className="px-4 py-2 bg-zinc-600 hover:bg-zinc-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-track hover:bg-faint disabled:opacity-50 text-fg rounded-lg text-sm font-medium transition-colors"
                 >
                   Send feedback
                 </button>
@@ -98,7 +98,7 @@ export default function ExitPlanModeBlock({ block, sessionId, userReplied = fals
                     setContinuePlanning(false);
                     setFeedback('');
                   }}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-control hover:bg-control-hover text-fg-muted rounded-lg text-sm font-medium transition-colors"
                 >
                   Cancel
                 </button>
@@ -112,7 +112,7 @@ export default function ExitPlanModeBlock({ block, sessionId, userReplied = fals
               <button
                 onClick={() => setContinuePlanning(true)}
                 disabled={loading}
-                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                className="px-4 py-2 bg-control-hover hover:bg-track disabled:opacity-50 text-fg rounded-lg text-sm font-medium transition-colors"
               >
                 Continue planning
               </button>

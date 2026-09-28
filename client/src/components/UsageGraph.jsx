@@ -9,7 +9,7 @@ const DIMENSIONS = [
 
 function DimensionToggle({ value, onChange, options }) {
   return (
-    <div className="flex items-center gap-0.5 text-xs bg-zinc-800/80 rounded p-0.5">
+    <div className="flex items-center gap-0.5 text-xs bg-control/80 rounded p-0.5">
       {options.map((opt) => (
         <button
           key={opt.key}
@@ -17,7 +17,7 @@ function DimensionToggle({ value, onChange, options }) {
           onClick={() => onChange(opt.key)}
           aria-pressed={value === opt.key}
           className={`px-1.5 py-0.5 rounded transition-colors ${
-            value === opt.key ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+            value === opt.key ? 'bg-control-hover text-fg' : 'text-faint hover:text-secondary'
           }`}
         >
           {opt.label}
@@ -88,7 +88,7 @@ export default function UsageGraph({
   return (
     <div className={`space-y-3 ${className}`}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-xs font-medium text-zinc-400">Tokens per day</span>
+        <span className="text-xs font-medium text-fg-muted">Tokens per day</span>
         <div className="flex items-center gap-3">
           {showToggle && (
             <DimensionToggle
@@ -97,7 +97,7 @@ export default function UsageGraph({
               options={dimensionOptions}
             />
           )}
-          <span className="text-xs text-zinc-500">{formatTokens(total)} in range</span>
+          <span className="text-xs text-faint">{formatTokens(total)} in range</span>
         </div>
       </div>
 
@@ -132,7 +132,10 @@ export default function UsageGraph({
                   );
                 })}
                 {dayTokens === 0 && (
-                  <div className="bg-zinc-700/30 rounded-sm w-full" style={{ height: '2px' }} />
+                  <div
+                    className="bg-control-hover/30 rounded-sm w-full"
+                    style={{ height: '2px' }}
+                  />
                 )}
               </button>
             );
@@ -142,7 +145,7 @@ export default function UsageGraph({
           {days.map((day) => (
             <span
               key={day}
-              className="flex-1 min-w-0 text-[10px] leading-none text-zinc-600 text-center truncate"
+              className="flex-1 min-w-0 text-[10px] leading-none text-faint text-center truncate"
             >
               {axisLabel(day, days)}
             </span>
@@ -151,24 +154,24 @@ export default function UsageGraph({
         <div className="h-5 mt-1 flex items-center gap-2 overflow-hidden">
           {inspectDay && hoveredSeries.length > 0 && (
             <>
-              <span className="text-xs text-zinc-400 shrink-0">{inspectDay}</span>
-              <span className="text-xs text-zinc-300 shrink-0">
+              <span className="text-xs text-fg-muted shrink-0">{inspectDay}</span>
+              <span className="text-xs text-secondary shrink-0">
                 {formatTokens(dayTotal(inspectDay))}
               </span>
               {hoveredSeries.slice(0, 3).map((s) => (
                 <span key={s.key} className="flex items-center gap-1 min-w-0 shrink">
                   <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} />
-                  <span className="text-xs text-zinc-500 truncate">{s.label}</span>
-                  <span className="text-xs text-zinc-600 shrink-0">{formatTokens(s.tokens)}</span>
+                  <span className="text-xs text-faint truncate">{s.label}</span>
+                  <span className="text-xs text-faint shrink-0">{formatTokens(s.tokens)}</span>
                 </span>
               ))}
               {hoveredSeries.length > 3 && (
-                <span className="text-xs text-zinc-600 shrink-0">
+                <span className="text-xs text-faint shrink-0">
                   +{hoveredSeries.length - 3} more
                 </span>
               )}
               {selectedDay && (
-                <span className="text-xs text-zinc-600 shrink-0 ml-auto">Click again to clear</span>
+                <span className="text-xs text-faint shrink-0 ml-auto">Click again to clear</span>
               )}
             </>
           )}
@@ -191,10 +194,10 @@ export default function UsageGraph({
             {series.map((s) => (
               <div key={s.key} className="flex items-center gap-1.5 min-w-0">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${s.color}`} />
-                <span className="text-xs text-zinc-400 truncate max-w-48" title={s.title}>
+                <span className="text-xs text-fg-muted truncate max-w-48" title={s.title}>
                   {s.label}
                 </span>
-                <span className="text-xs text-zinc-600">{formatTokens(s.total)}</span>
+                <span className="text-xs text-faint">{formatTokens(s.total)}</span>
               </div>
             ))}
           </div>

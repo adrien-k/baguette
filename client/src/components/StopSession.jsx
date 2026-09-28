@@ -28,7 +28,7 @@ export default function StopSession({ session }) {
       onClick={handleClick}
       disabled={stopping}
       title={stopping ? 'Stopping…' : 'Stop session'}
-      className="p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      className="p-1 text-faint hover:text-danger hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {stopping ? (
         <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />

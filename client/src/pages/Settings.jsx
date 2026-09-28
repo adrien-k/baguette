@@ -29,26 +29,16 @@ import {
 } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import PromptsSettingsTab from './settings/PromptsSettingsTab.jsx';
-import { SettingsSection, SettingsTabHeader } from '../components/SettingsSection.jsx';
+import {
+  SettingsSection,
+  SettingsTabHeader,
+  SettingsSaveRow,
+} from '../components/SettingsSection.jsx';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
-
-function SettingsSaveRow({ saving, saved, onSave, disabled }) {
-  return (
-    <div className="flex items-center gap-3 pt-1">
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={saving || disabled}
-        className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-      >
-        {saving ? 'Saving…' : 'Save'}
-      </button>
-      {saved && <span className="text-sm text-emerald-400">Saved</span>}
-    </div>
-  );
-}
-
-// ─── RepositoriesTab ──────────────────────────────────────────────────────────
+import TextInput from '../components/TextInput.jsx';
+import Modal, { ModalActions, ModalHeader } from '../components/Modal.jsx';
+import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
+import { BANNER_WARN, TEXT_MUTED, TEXT_PRIMARY, TEXT_SUCCESS } from '../utils/ui.js';
 
 function RepositoriesTab({ settings, onSave }) {
   const { user } = useAuth();
@@ -195,27 +185,23 @@ function RepositoriesTab({ settings, onSave }) {
         >
           <form onSubmit={handleBranchSave} className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">Branch prefix</label>
-              <input
+              <label className="block text-sm font-medium text-secondary mb-1">Branch prefix</label>
+              <TextInput
                 type="text"
                 value={branchPrefix}
                 onChange={(e) => setBranchPrefix(e.target.value)}
                 placeholder="baguette/"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                className="font-mono"
               />
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-faint">
                 Prefix added to all generated branch names. Leave empty for no prefix.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                type="submit"
-                disabled={branchSaving}
-                className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
+              <button type="submit" disabled={branchSaving} className={PRIMARY_BUTTON_SIZED}>
                 {branchSaving ? 'Saving…' : 'Save'}
               </button>
-              {branchSaved && <span className="text-sm text-emerald-400">Saved</span>}
+              {branchSaved ? <span className={`text-sm ${TEXT_SUCCESS}`}>Saved</span> : null}
             </div>
           </form>
         </SettingsSection>
@@ -225,7 +211,7 @@ function RepositoriesTab({ settings, onSave }) {
           description="Repositories linked to your account. Removing one cleans up its data if no other users have it linked."
         >
           <div>
-            <h4 className="text-xs font-medium text-zinc-400 mb-2">Add from GitHub</h4>
+            <h4 className="text-xs font-medium text-fg-muted mb-2">Add from GitHub</h4>
             <form onSubmit={handleAdd}>
               <RepoSearchInput
                 value={selectedRepo}
@@ -235,7 +221,7 @@ function RepositoriesTab({ settings, onSave }) {
                   <button
                     type="submit"
                     disabled={adding || !selectedRepo}
-                    className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+                    className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
                   >
                     {adding ? 'Adding…' : 'Add'}
                   </button>
@@ -245,22 +231,22 @@ function RepositoriesTab({ settings, onSave }) {
           </div>
 
           <div>
-            <h4 className="text-xs font-medium text-zinc-400 mb-2">
+            <h4 className="text-xs font-medium text-fg-muted mb-2">
               Create a local repository (no GitHub required)
             </h4>
             <form onSubmit={handleAddLocal} className="flex flex-col sm:flex-row gap-2">
-              <input
+              <TextInput
                 type="text"
                 value={localName}
                 onChange={(e) => setLocalName(e.target.value)}
                 placeholder="Repository name (e.g. my-project)"
                 required
-                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                className="flex-1"
               />
               <button
                 type="submit"
                 disabled={addingLocal || !localName.trim()}
-                className="inline-flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+                className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
               >
                 {addingLocal ? 'Creating…' : 'Create'}
               </button>
@@ -268,50 +254,50 @@ function RepositoriesTab({ settings, onSave }) {
           </div>
 
           {addResult && !addResult.hasBaguetteConfig && (
-            <div className="bg-amber-900/20 border border-amber-700 rounded-xl px-4 py-3">
-              <p className="text-sm text-amber-200">
+            <div className={`${BANNER_WARN} rounded-xl px-4 py-3`}>
+              <p className="text-sm text-warning">
                 <strong>{addResult.repo.full_name}</strong> doesn&apos;t have a baguette
                 configuration yet. Start a session on this repo — the agent will offer to configure
                 it automatically.
               </p>
               <button
                 onClick={() => setAddResult(null)}
-                className="mt-2 text-sm text-zinc-400 hover:text-zinc-300"
+                className="mt-2 text-sm text-fg-muted hover:text-secondary"
               >
                 Dismiss
               </button>
             </div>
           )}
 
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-line">
             {repos.length === 0 && (
-              <p className="text-zinc-600 text-sm text-center py-8">No repositories added</p>
+              <p className="text-faint text-sm text-center py-8">No repositories added</p>
             )}
             {repos.map((r) => (
               <div key={r.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <code className="text-sm text-white font-medium">
+                    <code className="text-sm text-fg font-medium">
                       {repoDisplayName(r.full_name)}
                     </code>
                     {isLocalRepo(r.full_name) && (
-                      <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-mono">
+                      <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
                         local
                       </span>
                     )}
                   </div>
                   {r.full_name.startsWith('/') && (
-                    <div className="text-xs text-zinc-600 mt-0.5 font-mono truncate">
+                    <div className="text-xs text-faint mt-0.5 font-mono truncate">
                       {r.full_name}
                     </div>
                   )}
-                  <div className="text-xs text-zinc-500 mt-0.5">
+                  <div className="text-xs text-faint mt-0.5">
                     {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
                   </div>
-                  <label className="mt-2 flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+                  <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted cursor-pointer">
                     <input
                       type="checkbox"
-                      className="rounded border-zinc-600 bg-zinc-800 text-amber-500 focus:ring-amber-500/50"
+                      className="rounded border-strong bg-control text-accent focus:ring-brand/50"
                       checked={r.show_in_all_sessions !== false}
                       disabled={togglingShowInAllId === r.id}
                       onChange={(e) => handleShowInAllSessionsChange(r, e.target.checked)}
@@ -322,7 +308,7 @@ function RepositoriesTab({ settings, onSave }) {
                 <button
                   onClick={() => handleUnlinkClick(r)}
                   disabled={unlinkingId !== null}
-                  className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 shrink-0 self-start"
+                  className="text-xs text-danger hover:text-danger disabled:opacity-50 shrink-0 self-start"
                 >
                   Remove
                 </button>
@@ -336,7 +322,7 @@ function RepositoriesTab({ settings, onSave }) {
           description="Optional personal access token for GitHub API calls (listing repos, branches, PRs). When set, it is used instead of the token from GitHub App sign-in."
         >
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">
+            <label className="block text-sm font-medium text-secondary mb-1">
               Personal access token
             </label>
             <MaskedSecretInput
@@ -347,7 +333,7 @@ function RepositoriesTab({ settings, onSave }) {
                 setGithubTokenDirty(dirty);
               }}
             />
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-faint">
               Fine-grained or classic PAT with access to the repositories you use in Baguette. Leave
               blank and save to clear a stored token.
             </p>
@@ -362,34 +348,34 @@ function RepositoriesTab({ settings, onSave }) {
       </div>
 
       {confirmUnlink && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl max-w-md w-full p-5">
-            <h3 className="text-lg font-semibold text-white mb-2">Remove repository?</h3>
-            <p className="text-zinc-400 text-sm mb-4">
-              <strong className="text-white">{confirmUnlink.full_name}</strong> will be removed from
-              your account.
-            </p>
-            <div className="bg-amber-900/30 border border-amber-700 rounded-lg px-3 py-2 text-sm text-amber-200 mb-4">
-              If you are the last user with this repository, all its sessions, worktrees, and the
-              local clone will also be deleted.
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={handleUnlinkCancel}
-                className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUnlinkConfirm}
-                disabled={unlinkingId !== null}
-                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg font-medium"
-              >
-                {unlinkingId !== null ? 'Removing…' : 'Remove repository'}
-              </button>
-            </div>
+        <Modal maxWidth="max-w-md" padding="p-5">
+          <ModalHeader title="Remove repository?" onClose={handleUnlinkCancel} />
+          <p className={`${TEXT_MUTED} text-sm mb-4`}>
+            <strong className={TEXT_PRIMARY}>{confirmUnlink.full_name}</strong> will be removed from
+            your account.
+          </p>
+          <div className={`${BANNER_WARN} rounded-lg px-3 py-2 text-sm text-warning mb-0`}>
+            If you are the last user with this repository, all its sessions, worktrees, and the
+            local clone will also be deleted.
           </div>
-        </div>
+          <ModalActions className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={handleUnlinkCancel}
+              className="px-4 py-2 text-sm text-secondary hover:text-fg"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleUnlinkConfirm}
+              disabled={unlinkingId !== null}
+              className={DANGER_BUTTON_CLASS}
+            >
+              {unlinkingId !== null ? 'Removing…' : 'Remove repository'}
+            </button>
+          </ModalActions>
+        </Modal>
       )}
     </div>
   );
@@ -421,11 +407,11 @@ function NotificationsSection() {
 
   const statusColor =
     {
-      granted: 'text-emerald-400',
-      denied: 'text-red-400',
-      default: 'text-zinc-400',
-      unsupported: 'text-zinc-500',
-    }[permission] ?? 'text-zinc-400';
+      granted: 'text-success',
+      denied: 'text-danger',
+      default: 'text-fg-muted',
+      unsupported: 'text-faint',
+    }[permission] ?? 'text-fg-muted';
 
   return (
     <div>
@@ -437,14 +423,14 @@ function NotificationsSection() {
         <div className="flex items-center justify-between gap-4">
           <p className={`text-xs ${statusColor}`}>{statusLabel}</p>
           {permission === 'denied' ? (
-            <p className="text-xs text-zinc-500 text-right max-w-[160px]">
+            <p className="text-xs text-faint text-right max-w-[160px]">
               Unblock in browser settings to enable.
             </p>
           ) : permission !== 'granted' && permission !== 'unsupported' ? (
             <button
               onClick={handleEnable}
               disabled={requesting}
-              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
+              className={`${PRIMARY_BUTTON_SIZED} shrink-0`}
             >
               {requesting ? 'Requesting…' : 'Enable Notifications'}
             </button>
@@ -516,7 +502,7 @@ export default function Settings() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
-      <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Settings</h1>
+      <h1 className="text-xl sm:text-2xl font-bold text-fg mb-4 sm:mb-6">Settings</h1>
 
       <div className="flex flex-col sm:flex-row sm:items-start gap-6">
         <nav className="sm:w-52 shrink-0 flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
@@ -529,13 +515,11 @@ export default function Settings() {
                 onClick={() => setTab(tab.id)}
                 className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   active
-                    ? 'bg-zinc-800 text-white'
-                    : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900'
+                    ? 'bg-control-hover text-fg'
+                    : 'text-faint hover:text-heading hover:bg-inset'
                 }`}
               >
-                <Icon
-                  className={`w-4 h-4 shrink-0 ${active ? 'text-amber-400' : 'text-zinc-500'}`}
-                />
+                <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-accent' : 'text-faint'}`} />
                 {tab.label}
               </button>
             );
@@ -544,25 +528,21 @@ export default function Settings() {
 
         <div className="flex-1 min-w-0">
           {error && (
-            <div className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-400 mb-6">
+            <div className="bg-soft-danger/30 border border-danger rounded-lg px-4 py-3 text-sm text-danger mb-6">
               {error}
             </div>
           )}
 
-          {activeTab === 'agent' && !settings && !error && (
-            <p className="text-zinc-500">Loading…</p>
-          )}
+          {activeTab === 'agent' && !settings && !error && <p className="text-faint">Loading…</p>}
           {activeTab === 'agent' && settings && (
             <AgentSettingsTab settings={settings} onSave={setSettings} />
           )}
-          {activeTab === 'prompts' && !settings && !error && (
-            <p className="text-zinc-500">Loading…</p>
-          )}
+          {activeTab === 'prompts' && !settings && !error && <p className="text-faint">Loading…</p>}
           {activeTab === 'prompts' && settings && (
             <PromptsSettingsTab settings={settings} onSave={setSettings} />
           )}
           {activeTab === 'integrations' && !settings && !error && (
-            <p className="text-zinc-500">Loading…</p>
+            <p className="text-faint">Loading…</p>
           )}
           {activeTab === 'integrations' && settings && (
             <IntegrationsTab
@@ -574,9 +554,7 @@ export default function Settings() {
               }}
             />
           )}
-          {activeTab === 'repos' && !settings && !error && (
-            <p className="text-zinc-500">Loading…</p>
-          )}
+          {activeTab === 'repos' && !settings && !error && <p className="text-faint">Loading…</p>}
           {activeTab === 'repos' && settings && (
             <RepositoriesTab settings={settings} onSave={setSettings} />
           )}

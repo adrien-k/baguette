@@ -22,7 +22,7 @@ export default function SessionCardLayout({
   subtitle,
   titleExtras,
   description,
-  accentClassName = 'border-l-zinc-700',
+  accentClassName = 'border-l-strong',
   className = '',
   dimmed = false,
   onClick,
@@ -53,7 +53,7 @@ export default function SessionCardLayout({
               disabled={action.disabled}
               className={
                 action.className ??
-                'p-1 text-zinc-500 hover:text-amber-400 hover:bg-zinc-800 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                'p-1 text-faint hover:text-accent hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
               }
             >
               <Icon className="w-3.5 h-3.5" />
@@ -66,8 +66,8 @@ export default function SessionCardLayout({
   return (
     <div
       onClick={onClick}
-      className={`w-full min-w-0 bg-zinc-900 border border-zinc-800 rounded-lg p-3 sm:p-4 border-l-2 transition-colors ${accentClassName} ${
-        interactive ? 'cursor-pointer hover:border-zinc-700 active:bg-zinc-800/50' : ''
+      className={`w-full min-w-0 bg-nav border border-line rounded-lg p-3 sm:p-4 border-l-2 transition-colors ${accentClassName} ${
+        interactive ? 'cursor-pointer hover:border-strong active:bg-control/50' : ''
       } ${dimmed ? 'opacity-50' : ''} ${className}`}
     >
       <div className="flex items-start gap-2 min-w-0">
@@ -80,7 +80,7 @@ export default function SessionCardLayout({
           <div className="flex items-start gap-2 min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 max-w-full flex-1">
               <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 max-w-full">
-                <span className="text-white font-medium text-sm leading-snug truncate min-w-0 max-w-full flex-1">
+                <span className="text-fg font-medium text-sm leading-snug truncate min-w-0 max-w-full flex-1">
                   {title}
                 </span>
                 {titleExtras ? (
@@ -89,7 +89,7 @@ export default function SessionCardLayout({
                   </span>
                 ) : null}
               </span>
-              {subtitle ? <span className="text-zinc-600 text-xs shrink-0">{subtitle}</span> : null}
+              {subtitle ? <span className="text-faint text-xs shrink-0">{subtitle}</span> : null}
             </div>
             {actionButtons}
           </div>

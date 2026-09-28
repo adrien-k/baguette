@@ -23,11 +23,11 @@ export default function ChatWorkSummary({
   if (callCount > 0) label += ` · ${callsLabel}`;
 
   return (
-    <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/40">
+    <div className="rounded-lg border border-line/80 bg-inset/40">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-400 transition-colors text-left"
+        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-faint hover:text-fg-muted transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown className="w-3.5 h-3.5 shrink-0" aria-hidden />
@@ -37,7 +37,7 @@ export default function ChatWorkSummary({
         <span>{label}</span>
       </button>
       {expanded && (
-        <div className="space-y-2 border-t border-zinc-800/80 px-2 py-2">
+        <div className="space-y-2 border-t border-line/80 px-2 py-2">
           {messages.map((msg, i) => {
             const index = indices[i];
             return (

@@ -5,9 +5,13 @@ import { apiFetch } from '../../api.js';
 import { usersService, userReposService } from '../../feathers.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
-import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
+import {
+  SettingsSection,
+  SettingsTabHeader,
+  SettingsSaveRow,
+} from '../../components/SettingsSection.jsx';
 import { RepoScopeAside } from './repoScopeDropdown.jsx';
-import { SettingsSaveRow } from './SettingsSaveRow.jsx';
+import { INPUT_CLASS } from '../../utils/ui.js';
 
 export default function PromptsSettingsTab({ settings, onSave }) {
   const { user } = useAuth();
@@ -131,25 +135,25 @@ export default function PromptsSettingsTab({ settings, onSave }) {
         <div ref={sessionCardRef} id="settings-prompt-session" className="scroll-mt-6">
           <SettingsSection title="Session agent">
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">
+              <label className="block text-sm font-medium text-heading mb-1">
                 Built-in session prompt
               </label>
               <textarea
                 value={fullSessionPrompt}
                 readOnly
                 rows={20}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-500 font-mono min-h-[28rem] cursor-default resize-y"
+                className="w-full bg-page border border-line rounded-lg px-3 py-2 text-xs text-faint font-mono min-h-[28rem] cursor-default resize-y"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">
+              <label className="block text-sm font-medium text-heading mb-1">
                 {sessionExtraLabel}
               </label>
               <textarea
                 value={agentPrompt}
                 onChange={(e) => setAgentPrompt(e.target.value)}
                 rows={8}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 min-h-32"
+                className={`${INPUT_CLASS} font-mono min-h-32`}
                 placeholder={sessionPlaceholder}
               />
             </div>
@@ -159,25 +163,25 @@ export default function PromptsSettingsTab({ settings, onSave }) {
         <div ref={reviewCardRef} id="settings-prompt-review" className="scroll-mt-6">
           <SettingsSection title="Review">
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">
+              <label className="block text-sm font-medium text-heading mb-1">
                 Built-in review prompt
               </label>
               <textarea
                 value={fullReviewPrompt}
                 readOnly
                 rows={20}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-500 font-mono min-h-[28rem] cursor-default resize-y"
+                className="w-full bg-page border border-line rounded-lg px-3 py-2 text-xs text-faint font-mono min-h-[28rem] cursor-default resize-y"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">
+              <label className="block text-sm font-medium text-heading mb-1">
                 {reviewExtraLabel}
               </label>
               <textarea
                 value={reviewPrompt}
                 onChange={(e) => setReviewPrompt(e.target.value)}
                 rows={8}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 min-h-32"
+                className={`${INPUT_CLASS} font-mono min-h-32`}
                 placeholder={reviewPlaceholder}
               />
             </div>

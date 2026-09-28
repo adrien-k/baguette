@@ -5,25 +5,25 @@ export const PR_STATUS_BADGE_CONFIG = {
   open: {
     icon: GitPullRequest,
     className:
-      'text-emerald-400 border-emerald-800/80 bg-emerald-950/40 hover:border-emerald-600/60 hover:bg-emerald-950/55',
+      'text-success border-success/40 bg-soft-success/40 hover:border-success hover:bg-soft-success/55',
     title: 'Open pull request',
   },
   draft: {
     icon: GitPullRequestDraft,
     className:
-      'text-zinc-400 border-zinc-700/80 bg-zinc-800/40 hover:border-zinc-600 hover:bg-zinc-800/60',
+      'text-fg-muted border-strong/80 bg-control/40 hover:border-strong hover:bg-control/60',
     title: 'Draft pull request',
   },
   merged: {
     icon: GitMerge,
     className:
-      'text-violet-300 border-violet-500/70 bg-violet-500/20 shadow-sm shadow-violet-500/30 ring-1 ring-violet-400/40 hover:border-violet-400 hover:bg-violet-500/30 hover:ring-violet-400/55',
+      'text-merged border-merged/70 bg-merged/20 shadow-sm shadow-merged/30 ring-1 ring-merged/40 hover:border-merged hover:bg-merged/30 hover:ring-merged/55',
     title: 'Merged pull request',
   },
   closed: {
     icon: GitPullRequestClosed,
     className:
-      'text-red-400 border-red-800/80 bg-red-950/40 hover:border-red-600/60 hover:bg-red-950/55',
+      'text-danger border-danger/40 bg-soft-danger/40 hover:border-danger hover:bg-soft-danger/55',
     title: 'Closed pull request',
   },
 };
@@ -32,13 +32,13 @@ export const PR_STATUS_BADGE_FALLBACK = PR_STATUS_BADGE_CONFIG.open;
 
 /** Compact list/header indicator — icon color only. */
 export const PR_STATUS_ICON_CLASS = {
-  open: 'text-emerald-400',
-  draft: 'text-zinc-400',
-  merged: 'text-violet-300 drop-shadow-[0_0_5px_rgba(167,139,250,0.75)]',
-  closed: 'text-red-400',
+  open: 'text-success',
+  draft: 'text-fg-muted',
+  merged: 'text-merged drop-shadow-[0_0_5px_rgba(167,139,250,0.75)]',
+  closed: 'text-danger',
 };
 
-const SESSION_FAILED_CLASS = 'text-red-400';
+const SESSION_FAILED_CLASS = 'text-danger';
 
 const PULSE_STATUSES = new Set(['running', 'provisioning', 'archiving', 'approval']);
 

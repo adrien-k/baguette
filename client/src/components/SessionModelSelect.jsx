@@ -202,7 +202,7 @@ export default function SessionModelSelect({
               triggerTitle="Agent for this session"
               disabled={disabled}
               shrinkableTrigger
-              triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none max-w-full"
+              triggerClassName="text-xs text-faint hover:text-secondary leading-none py-1 disabled:opacity-50 disabled:pointer-events-none max-w-full"
             />
           </div>
         )}
@@ -218,7 +218,7 @@ export default function SessionModelSelect({
             triggerTitle={modelTriggerLabel}
             disabled={disabled}
             shrinkableTrigger
-            triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
+            triggerClassName="text-xs text-faint hover:text-secondary leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
           />
         </div>
 
@@ -234,7 +234,7 @@ export default function SessionModelSelect({
       </div>
       {isCursor && selectedModelId && !pricingKnown && (
         <p
-          className="text-[11px] leading-tight text-amber-400/85 pt-0.5 truncate"
+          className="text-[11px] leading-tight text-accent/85 pt-0.5 truncate"
           title="This model is not in Baguette's Cursor pricing table, so token usage will not be converted to an estimated cost."
         >
           No pricing data for this model — session cost will not be estimated.

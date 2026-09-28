@@ -15,12 +15,10 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
   const hasPr = session.pr_number != null;
 
   if (isArchived) {
-    return <Archive className={`${iconSize} text-zinc-600 shrink-0`} aria-hidden />;
+    return <Archive className={`${iconSize} text-faint shrink-0`} aria-hidden />;
   }
   if (isArchiving) {
-    return (
-      <Loader2 className={`${iconSize} text-amber-400/80 animate-spin shrink-0`} aria-hidden />
-    );
+    return <Loader2 className={`${iconSize} text-accent/80 animate-spin shrink-0`} aria-hidden />;
   }
   if (hasPr) {
     const { icon: PrIcon, iconClass, title } = prListIndicatorProps(session);

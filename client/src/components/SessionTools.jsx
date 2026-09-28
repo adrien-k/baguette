@@ -120,7 +120,7 @@ export default function SessionTools({
             />
           )}
           {showPreviewPublicBadge && session.is_preview_public && (
-            <span className="hidden sm:inline text-[10px] text-amber-400 border border-amber-500/30 rounded px-1 py-0.5 leading-none">
+            <span className="hidden sm:inline text-[10px] text-accent border border-brand/30 rounded px-1 py-0.5 leading-none">
               public
             </span>
           )}
@@ -147,7 +147,7 @@ export default function SessionTools({
           className="relative"
         >
           {commitsToPush > 0 && (
-            <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+            <span className="flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-brand text-white text-[10px] font-bold leading-none">
               {commitsToPush}
             </span>
           )}

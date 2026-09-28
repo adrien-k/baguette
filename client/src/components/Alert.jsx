@@ -1,21 +1,17 @@
 import { AlertCircle, Info, X } from 'lucide-react';
 
-/**
- * Semantic alert surfaces using translucent fills (work in dark + light themes).
- * Text/icon tokens follow index.css light-theme overrides where applicable.
- */
+/** Semantic alert surfaces using translucent fills and light/dark text tokens. */
 const VARIANTS = {
   info: {
     Icon: Info,
-    container:
-      'border-sky-500/30 bg-sky-500/10 text-sky-200/95 [&_a]:text-sky-300 [&_a:hover]:text-sky-200',
-    icon: 'text-sky-400',
+    container: 'border-info/30 bg-info/10 text-info/95 [&_a]:text-info [&_a:hover]:text-info',
+    icon: 'text-info',
   },
   alert: {
     Icon: AlertCircle,
     container:
-      'border-amber-500/30 bg-amber-500/10 text-amber-200/95 [&_a]:text-amber-300 [&_a:hover]:text-amber-200',
-    icon: 'text-amber-400',
+      'border-brand/30 bg-brand/10 text-warning/95 [&_a]:text-accent [&_a:hover]:text-warning',
+    icon: 'text-accent',
   },
 };
 

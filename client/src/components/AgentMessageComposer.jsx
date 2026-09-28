@@ -10,19 +10,19 @@ export const COMPOSER_ACTION_BUTTON_LAYOUT =
 
 /** Amber fill shared by Send/Start and its caret; use inside `COMPOSER_SPLIT_GROUP_CLASS`. */
 export const COMPOSER_SPLIT_AMBER_CLASS =
-  'bg-amber-500 hover:enabled:bg-amber-400 group-hover/split:enabled:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 transition-colors';
+  'bg-brand hover:enabled:bg-brand-hover group-hover/split:enabled:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand transition-colors';
 
 export const COMPOSER_SPLIT_GROUP_CLASS = 'group/split inline-flex items-stretch shrink-0';
 
-const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:enabled:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent transition-colors disabled:cursor-not-allowed`;
+const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-brand hover:enabled:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand border border-transparent transition-colors disabled:cursor-not-allowed`;
 
-const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-amber-600/40 group-hover/split:enabled:border-amber-500/50 disabled:border-r-zinc-600 disabled:cursor-not-allowed`;
+const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-brand/40 group-hover/split:enabled:border-brand/50 disabled:border-r-track disabled:cursor-not-allowed`;
 
 /** Tighter horizontal padding on small viewports; roomier from md up. */
 const SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';
 
 const TEXTAREA_CLASS =
-  'block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed rounded-t-lg';
+  'block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-fg placeholder-faint focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed rounded-t-lg';
 
 /**
  * Chat-style message box: auto-growing textarea, model + variant row, Send.
@@ -44,7 +44,7 @@ export default function AgentMessageComposer({
   showAutoPushParam = false,
   availableSdks,
   onSdkChange,
-  formClassName = 'relative z-[2] shrink-0 bg-zinc-950 pb-3 sm:pb-4 pt-1',
+  formClassName = 'relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1',
   skipColumn = false,
   textareaId,
   canSend: canSendProp,
@@ -113,8 +113,8 @@ export default function AgentMessageComposer({
 
   const box = (
     <div
-      className={`w-full rounded-lg border border-zinc-700 bg-zinc-800 overflow-visible ${
-        disabled ? 'opacity-60' : 'focus-within:ring-2 focus-within:ring-amber-500/50'
+      className={`w-full rounded-lg border border-strong bg-control overflow-visible ${
+        disabled ? 'opacity-60' : 'focus-within:ring-2 focus-within:ring-brand/50'
       }`}
     >
       <AutoGrowTextarea

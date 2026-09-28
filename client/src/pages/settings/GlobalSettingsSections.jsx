@@ -11,18 +11,27 @@ import {
 } from '../../feathers.js';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import SystemWideBadge from '../../components/SystemWideBadge.jsx';
-import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
+import {
+  SettingsSection,
+  SettingsTabHeader,
+  SettingsSaveRow,
+} from '../../components/SettingsSection.jsx';
+import Field from '../../components/Field.jsx';
+import TextInput from '../../components/TextInput.jsx';
+import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
+import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
+import { BANNER_WARN, INPUT_CLASS, TEXT_MUTED, TEXT_PRIMARY } from '../../utils/ui.js';
 
 function SecretRow({ secret, onDelete }) {
   return (
     <div className="flex items-center justify-between py-3 gap-2">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-        <code className="text-sm text-amber-400 font-medium shrink-0">{secret.key}</code>
-        <code className="text-sm text-zinc-400 truncate hidden sm:block">{secret.safeValue}</code>
+        <code className="text-sm text-accent font-medium shrink-0">{secret.key}</code>
+        <code className="text-sm text-fg-muted truncate hidden sm:block">{secret.safeValue}</code>
       </div>
       <button
         onClick={() => onDelete(secret.id)}
-        className="text-xs text-red-500 hover:text-red-400 shrink-0"
+        className="text-xs text-danger hover:text-danger shrink-0"
       >
         Remove
       </button>
@@ -57,26 +66,26 @@ function SecretAddForm({ title, scope, onAdded }) {
 
   return (
     <form onSubmit={handleAdd}>
-      <h4 className="text-xs font-medium text-zinc-400 mb-2">{title}</h4>
+      <h4 className="text-xs font-medium text-fg-muted mb-2">{title}</h4>
       <div className="flex flex-col sm:flex-row gap-3">
-        <input
+        <TextInput
           type="text"
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
           placeholder="KEY"
-          className="sm:w-40 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+          className="sm:w-40 font-mono"
         />
-        <input
+        <TextInput
           type="text"
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
           placeholder="value"
-          className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+          className="flex-1 font-mono"
         />
         <button
           type="submit"
           disabled={saving || !newKey.trim()}
-          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
+          className={`${PRIMARY_BUTTON_SIZED} shrink-0`}
         >
           Add
         </button>
@@ -112,7 +121,7 @@ export function SecretsTab() {
   return (
     <div>
       <SettingsTabHeader title="Secrets">
-        Secrets are available in <code className="text-zinc-300">.baguette.yaml</code> config where
+        Secrets are available in <code className="text-secondary">.baguette.yaml</code> config where
         they can be assigned to environment variables. Personal secrets override system-wide secrets
         with the same key.
       </SettingsTabHeader>
@@ -122,9 +131,9 @@ export function SecretsTab() {
           title="System-wide secrets"
           description="Shared across all users and sessions on this Baguette instance."
         >
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-line">
             {globalSecrets.length === 0 && (
-              <p className="text-zinc-600 text-sm text-center py-8">
+              <p className="text-faint text-sm text-center py-8">
                 No system-wide secrets configured
               </p>
             )}
@@ -139,9 +148,9 @@ export function SecretsTab() {
           title="Personal secrets"
           description="Only for your account. Same key as a system-wide secret wins for your sessions."
         >
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-line">
             {personalSecrets.length === 0 && (
-              <p className="text-zinc-600 text-sm text-center py-8">No personal secrets yet</p>
+              <p className="text-faint text-sm text-center py-8">No personal secrets yet</p>
             )}
             {personalSecrets.map((v) => (
               <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
@@ -196,22 +205,22 @@ export function AllRepositoriesSection() {
       headerAside={<SystemWideBadge />}
       description="Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the clone for all users."
     >
-      <div className="divide-y divide-zinc-800">
+      <div className="divide-y divide-line">
         {repos.length === 0 && (
-          <p className="text-zinc-600 text-sm text-center py-8">No repositories registered</p>
+          <p className="text-faint text-sm text-center py-8">No repositories registered</p>
         )}
         {repos.map((r) => (
           <div key={r.id} className="flex items-center justify-between py-3 gap-3">
             <div className="min-w-0">
-              <code className="text-sm text-white font-medium">{r.full_name}</code>
-              <div className="text-xs text-zinc-500 mt-0.5">
+              <code className="text-sm text-fg font-medium">{r.full_name}</code>
+              <div className="text-xs text-faint mt-0.5">
                 {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
               </div>
             </div>
             <button
               onClick={() => setConfirmDelete(r)}
               disabled={deletingId !== null}
-              className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 shrink-0"
+              className="text-xs text-danger hover:text-danger disabled:opacity-50 shrink-0"
             >
               Delete
             </button>
@@ -220,34 +229,34 @@ export function AllRepositoriesSection() {
       </div>
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl max-w-md w-full p-5">
-            <h3 className="text-lg font-semibold text-white mb-2">Delete repository?</h3>
-            <p className="text-zinc-400 text-sm mb-4">
-              <strong className="text-white">{confirmDelete.full_name}</strong> and all its data
-              will be permanently removed for all users.
-            </p>
-            <div className="bg-amber-900/30 border border-amber-700 rounded-lg px-3 py-2 text-sm text-amber-200 mb-4">
-              This will delete all sessions linked to this repo, their worktrees, and the bare
-              clone. This cannot be undone.
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="px-4 py-2 text-sm text-zinc-300 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                disabled={deletingId !== null}
-                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg font-medium"
-              >
-                {deletingId !== null ? 'Deleting…' : 'Delete repository'}
-              </button>
-            </div>
+        <Modal maxWidth="max-w-md" padding="p-5">
+          <ModalHeader title="Delete repository?" onClose={() => setConfirmDelete(null)} />
+          <p className={`${TEXT_MUTED} text-sm mb-4`}>
+            <strong className={TEXT_PRIMARY}>{confirmDelete.full_name}</strong> and all its data
+            will be permanently removed for all users.
+          </p>
+          <div className={`${BANNER_WARN} rounded-lg px-3 py-2 text-sm text-warning`}>
+            This will delete all sessions linked to this repo, their worktrees, and the bare clone.
+            This cannot be undone.
           </div>
-        </div>
+          <ModalActions className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(null)}
+              className="px-4 py-2 text-sm text-secondary hover:text-fg"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteConfirm}
+              disabled={deletingId !== null}
+              className={DANGER_BUTTON_CLASS}
+            >
+              {deletingId !== null ? 'Deleting…' : 'Delete repository'}
+            </button>
+          </ModalActions>
+        </Modal>
       )}
     </SettingsSection>
   );
@@ -288,17 +297,17 @@ export function UsersTab() {
       </SettingsTabHeader>
 
       <SettingsSection title="Accounts">
-        <div className="divide-y divide-zinc-800">
+        <div className="divide-y divide-line">
           {users.length === 0 && (
-            <p className="text-zinc-600 text-sm text-center py-8">No users found</p>
+            <p className="text-faint text-sm text-center py-8">No users found</p>
           )}
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between py-3 gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-sm text-white font-medium truncate">{u.username}</div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-sm text-fg font-medium truncate">{u.username}</div>
+                  <div className="text-xs text-faint">
                     Joined {new Date(u.created_at).toLocaleDateString()}
                   </div>
                 </div>
@@ -306,28 +315,28 @@ export function UsersTab() {
               <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                 {u.approved ? (
                   <>
-                    <span className="text-xs text-emerald-400 hidden sm:inline">Approved</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 sm:hidden" />
+                    <span className="text-xs text-success hidden sm:inline">Approved</span>
+                    <span className="w-2 h-2 rounded-full bg-ok sm:hidden" />
                     <button
                       onClick={() => handleReject(u.id)}
-                      className="text-xs text-red-500 hover:text-red-400 ml-1"
+                      className="text-xs text-danger hover:text-danger ml-1"
                     >
                       Revoke
                     </button>
                   </>
                 ) : (
                   <>
-                    <span className="text-xs text-amber-400 hidden sm:inline">Pending</span>
-                    <span className="w-2 h-2 rounded-full bg-amber-400 sm:hidden" />
+                    <span className="text-xs text-accent hidden sm:inline">Pending</span>
+                    <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
                     <button
                       onClick={() => handleApprove(u.id)}
-                      className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded ml-1"
+                      className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
                     >
                       Approve
                     </button>
                     <button
                       onClick={() => handleReject(u.id)}
-                      className="text-xs text-red-500 hover:text-red-400"
+                      className="text-xs text-danger hover:text-danger"
                     >
                       Reject
                     </button>
@@ -370,22 +379,19 @@ function formatUptime(seconds) {
 function UsageMeter({ used, total }) {
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   return (
-    <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
-      <div
-        className="h-full rounded-full bg-amber-500 transition-all"
-        style={{ width: `${pct}%` }}
-      />
+    <div className="h-2 rounded-full bg-control overflow-hidden">
+      <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${pct}%` }} />
     </div>
   );
 }
 
 function SystemStat({ label, value, sub }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-4 py-2 border-b border-zinc-800 last:border-0">
-      <span className="text-sm text-zinc-400">{label}</span>
-      <div className="text-sm text-zinc-200 text-left sm:text-right">
+    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-4 py-2 border-b border-line last:border-0">
+      <span className="text-sm text-fg-muted">{label}</span>
+      <div className="text-sm text-heading text-left sm:text-right">
         <div>{value}</div>
-        {sub ? <div className="text-xs text-zinc-500 mt-0.5">{sub}</div> : null}
+        {sub ? <div className="text-xs text-faint mt-0.5">{sub}</div> : null}
       </div>
     </div>
   );
@@ -433,14 +439,14 @@ export function SystemTab() {
               type="button"
               onClick={() => load(true)}
               disabled={loading || refreshing}
-              className="text-xs text-amber-400 hover:text-amber-300 disabled:text-zinc-600"
+              className="text-xs text-accent hover:text-accent disabled:text-faint"
             >
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
 
           {loading && !info ? (
-            <p className="text-sm text-zinc-500">Loading…</p>
+            <p className="text-sm text-faint">Loading…</p>
           ) : info ? (
             <div>
               <SystemStat
@@ -468,13 +474,13 @@ export function SystemTab() {
           <SettingsSection title="Memory">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Used</span>
-                <span className="text-zinc-200">
+                <span className="text-fg-muted">Used</span>
+                <span className="text-heading">
                   {formatBytes(mem.usedBytes)} / {formatBytes(mem.totalBytes)}
                 </span>
               </div>
               <UsageMeter used={mem.usedBytes} total={mem.totalBytes} />
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-faint">
                 {formatBytes(mem.freeBytes)} free for the OS and other processes
               </p>
             </div>
@@ -484,16 +490,16 @@ export function SystemTab() {
         {info && disk ? (
           <SettingsSection title="Disk">
             <div className="space-y-2">
-              <p className="text-xs text-zinc-500 font-mono break-all">{disk.path}</p>
+              <p className="text-xs text-faint font-mono break-all">{disk.path}</p>
               <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Used</span>
-                <span className="text-zinc-200">
+                <span className="text-fg-muted">Used</span>
+                <span className="text-heading">
                   {formatBytes(disk.totalBytes - disk.availableBytes)} /{' '}
                   {formatBytes(disk.totalBytes)}
                 </span>
               </div>
               <UsageMeter used={disk.totalBytes - disk.availableBytes} total={disk.totalBytes} />
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-faint">
                 {formatBytes(disk.availableBytes)} available on this filesystem
               </p>
             </div>
@@ -571,12 +577,12 @@ function DockerComposeSection() {
   };
 
   const statusColor = (state) => {
-    if (!state) return 'bg-zinc-600';
+    if (!state) return 'bg-track';
     const s = state.toLowerCase();
-    if (s.includes('running')) return 'bg-emerald-400';
-    if (s.includes('exited') || s.includes('dead')) return 'bg-red-400';
-    if (s.includes('paused') || s.includes('restarting')) return 'bg-amber-400';
-    return 'bg-zinc-500';
+    if (s.includes('running')) return 'bg-ok';
+    if (s.includes('exited') || s.includes('dead')) return 'bg-err';
+    if (s.includes('paused') || s.includes('restarting')) return 'bg-brand';
+    return 'bg-faint';
   };
 
   const containerByService = {};
@@ -604,28 +610,19 @@ function DockerComposeSection() {
           onChange={(e) => setContent(e.target.value)}
           rows={18}
           spellCheck={false}
-          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-y leading-relaxed"
+          className="w-full bg-nav border border-strong rounded-xl px-4 py-3 text-sm text-fg font-mono placeholder-faint focus:outline-none focus:ring-2 focus:ring-brand/50 resize-y leading-relaxed"
           placeholder="# docker-compose.yml"
         />
-        <div className="flex items-center gap-3 mt-4">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          {saved && <span className="text-sm text-emerald-400">Saved</span>}
-        </div>
+        <SettingsSaveRow saving={saving} saved={saved} onSave={handleSave} />
       </SettingsSection>
 
       <SettingsSection title="Docker services" headerAside={<SystemWideBadge />}>
-        <div className="divide-y divide-zinc-800">
+        <div className="divide-y divide-line">
           {loadingServices && allServiceNames.length === 0 && (
-            <p className="text-zinc-600 text-sm text-center py-6">Loading…</p>
+            <p className="text-faint text-sm text-center py-6">Loading…</p>
           )}
           {!loadingServices && allServiceNames.length === 0 && (
-            <p className="text-zinc-600 text-sm text-center py-6">
+            <p className="text-faint text-sm text-center py-6">
               No services defined. Add services to your docker-compose.yml and save.
             </p>
           )}
@@ -638,8 +635,8 @@ function DockerComposeSection() {
                 <div className="flex items-center gap-3 min-w-0">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(state)}`} />
                   <div className="min-w-0">
-                    <code className="text-sm text-white font-medium">{name}</code>
-                    <div className="text-xs text-zinc-500 mt-0.5 truncate">
+                    <code className="text-sm text-fg font-medium">{name}</code>
+                    <div className="text-xs text-faint mt-0.5 truncate">
                       {image && <span>{image}</span>}
                       {state ? (
                         <span className="ml-2">{state}</span>
@@ -654,7 +651,7 @@ function DockerComposeSection() {
                     <button
                       onClick={() => handleContainerAction(name, 'up')}
                       disabled={actionLoading !== null}
-                      className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                      className="text-xs text-accent hover:text-accent px-2 py-1 rounded hover:bg-control transition-colors disabled:opacity-50"
                     >
                       {actionLoading === `${name}:up` ? '…' : 'Start'}
                     </button>
@@ -665,7 +662,7 @@ function DockerComposeSection() {
                         key={action}
                         onClick={() => handleContainerAction(name, action)}
                         disabled={actionLoading !== null}
-                        className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-50 capitalize"
+                        className="text-xs text-fg-muted hover:text-fg px-2 py-1 rounded hover:bg-control transition-colors disabled:opacity-50 capitalize"
                       >
                         {actionLoading === `${name}:${action}` ? '…' : action}
                       </button>
@@ -680,7 +677,7 @@ function DockerComposeSection() {
             <button
               onClick={loadServices}
               disabled={loadingServices}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-xs text-faint hover:text-secondary transition-colors"
             >
               {loadingServices ? 'Refreshing…' : 'Refresh'}
             </button>
@@ -765,7 +762,7 @@ export function PluginsTab() {
       <SettingsTabHeader title="Plugins">
         Install Claude Code plugins from GitHub. Plugins are system-wide — available to all users
         when starting new sessions. Each plugin must contain a{' '}
-        <code className="text-zinc-300">.claude-plugin/plugin.json</code> file.
+        <code className="text-secondary">.claude-plugin/plugin.json</code> file.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -773,9 +770,9 @@ export function PluginsTab() {
           title="Install plugin"
           description={
             <>
-              Enter a GitHub URL: repo root (e.g. <code className="text-zinc-400">…/tree/main</code>
+              Enter a GitHub URL: repo root (e.g. <code className="text-fg-muted">…/tree/main</code>
               ) or a subdirectory (e.g.{' '}
-              <code className="text-zinc-400">…/tree/main/plugins/foo</code>).
+              <code className="text-fg-muted">…/tree/main/plugins/foo</code>).
             </>
           }
         >
@@ -785,12 +782,12 @@ export function PluginsTab() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="https://github.com/owner/repo/tree/main"
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono min-w-0"
+              className={`${INPUT_CLASS} flex-1 font-mono min-w-0`}
             />
             <button
               type="submit"
               disabled={installing || !input.trim()}
-              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
+              className={`${PRIMARY_BUTTON_SIZED} shrink-0`}
             >
               {installing ? 'Installing…' : 'Install'}
             </button>
@@ -799,22 +796,22 @@ export function PluginsTab() {
 
         <SettingsSection title="Installed plugins">
           {plugins.length === 0 ? (
-            <p className="text-zinc-600 text-sm text-center py-8">No plugins installed</p>
+            <p className="text-faint text-sm text-center py-8">No plugins installed</p>
           ) : (
             Object.entries(grouped).map(([marketplaceRepo, repoPlugins]) => (
               <div key={marketplaceRepo}>
-                <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">
+                <h4 className="text-xs font-medium text-faint uppercase tracking-wide mb-2">
                   {marketplaceRepo}
                 </h4>
-                <div className="divide-y divide-zinc-800">
+                <div className="divide-y divide-line">
                   {repoPlugins.map((plugin) => (
                     <div key={plugin.id} className="flex items-center justify-between py-3 gap-3">
                       <div className="min-w-0">
-                        <div className="text-sm text-white font-medium">{plugin.name}</div>
-                        <div className="text-xs text-zinc-500 mt-0.5 flex items-center gap-2">
-                          <code className="text-zinc-600 truncate">{plugin.plugin_path}</code>
+                        <div className="text-sm text-fg font-medium">{plugin.name}</div>
+                        <div className="text-xs text-faint mt-0.5 flex items-center gap-2">
+                          <code className="text-faint truncate">{plugin.plugin_path}</code>
                           {plugin.git_sha && (
-                            <span className="text-zinc-700 font-mono shrink-0">
+                            <span className="text-faint font-mono shrink-0">
                               {plugin.git_sha.slice(0, 7)}
                             </span>
                           )}
@@ -824,13 +821,13 @@ export function PluginsTab() {
                         <button
                           onClick={() => handleRefresh(plugin)}
                           disabled={refreshingId !== null}
-                          className="text-xs text-zinc-400 hover:text-white disabled:opacity-50 transition-colors"
+                          className="text-xs text-fg-muted hover:text-fg disabled:opacity-50 transition-colors"
                         >
                           {refreshingId === plugin.id ? '…' : 'Refresh'}
                         </button>
                         <button
                           onClick={() => handleRemove(plugin)}
-                          className="text-xs text-red-500 hover:text-red-400"
+                          className="text-xs text-danger hover:text-danger"
                         >
                           Remove
                         </button>
@@ -851,18 +848,7 @@ export function PluginsTab() {
 
 const SLACK_SCOPES = 'chat:write, channels:read, groups:read';
 
-const inputClass =
-  'w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50';
-
-function Field({ label, hint, children }) {
-  return (
-    <div className="mb-4">
-      <label className="block text-sm font-medium text-zinc-300 mb-1">{label}</label>
-      {hint && <p className="text-xs text-zinc-500 mb-2">{hint}</p>}
-      {children}
-    </div>
-  );
-}
+const inputClass = INPUT_CLASS;
 
 function SlackAppCard({ app, onChanged }) {
   const [name, setName] = useState(app.name);
@@ -943,7 +929,7 @@ function SlackAppCard({ app, onChanged }) {
         <button
           type="submit"
           disabled={saving || !dirty || !name.trim()}
-          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          className={PRIMARY_BUTTON_SIZED}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -951,19 +937,19 @@ function SlackAppCard({ app, onChanged }) {
           type="button"
           onClick={handleTest}
           disabled={testing}
-          className="text-sm text-zinc-300 hover:text-white disabled:text-zinc-600 px-3 py-2"
+          className="text-sm text-secondary hover:text-fg disabled:text-faint px-3 py-2"
         >
           {testing ? 'Testing…' : 'Test connection'}
         </button>
         <button
           type="button"
           onClick={handleRemove}
-          className="text-sm text-red-500 hover:text-red-400 px-3 py-2"
+          className="text-sm text-danger hover:text-danger px-3 py-2"
         >
           Remove
         </button>
         {identity && (
-          <span className="text-sm text-emerald-400">
+          <span className="text-sm text-success">
             Connected to {identity.team} as @{identity.user}
           </span>
         )}
@@ -1010,7 +996,7 @@ export function SlackTab() {
     }
   };
 
-  if (!apps) return <p className="text-zinc-600 text-sm text-center py-8">Loading…</p>;
+  if (!apps) return <p className="text-faint text-sm text-center py-8">Loading…</p>;
 
   return (
     <SettingsSection
@@ -1019,14 +1005,14 @@ export function SlackTab() {
       description={
         <>
           Connect one or more Slack bots so agents can post updates to a channel. The{' '}
-          <code className="text-zinc-300">SlackPostMessage</code> tool only appears in sessions once
-          at least one app is saved. Bot token scopes:{' '}
-          <code className="text-zinc-400">{SLACK_SCOPES}</code>.
+          <code className="text-secondary">SlackPostMessage</code> tool only appears in sessions
+          once at least one app is saved. Bot token scopes:{' '}
+          <code className="text-fg-muted">{SLACK_SCOPES}</code>.
         </>
       }
     >
       {apps.length === 0 && (
-        <p className="text-zinc-600 text-sm text-center py-8">No Slack apps configured</p>
+        <p className="text-faint text-sm text-center py-8">No Slack apps configured</p>
       )}
       {apps.map((app) => (
         <SlackAppCard key={app.id} app={app} onChanged={load} />
@@ -1034,7 +1020,7 @@ export function SlackTab() {
 
       {showAddForm ? (
         <form onSubmit={handleAdd}>
-          <h4 className="text-xs font-medium text-zinc-400 mb-2">Add Slack app</h4>
+          <h4 className="text-xs font-medium text-fg-muted mb-2">Add Slack app</h4>
 
           <Field label="Name">
             <input
@@ -1051,8 +1037,8 @@ export function SlackTab() {
             hint={
               <>
                 From your Slack app under{' '}
-                <span className="text-zinc-400">OAuth &amp; Permissions</span> (starts with{' '}
-                <code className="text-zinc-400">xoxb-</code>).
+                <span className="text-fg-muted">OAuth &amp; Permissions</span> (starts with{' '}
+                <code className="text-fg-muted">xoxb-</code>).
               </>
             }
           >
@@ -1070,7 +1056,7 @@ export function SlackTab() {
             <button
               type="submit"
               disabled={saving || !newName.trim() || !newToken.trim()}
-              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              className={`${PRIMARY_BUTTON_SIZED} disabled:bg-disabled disabled:text-faint`}
             >
               {saving ? 'Adding…' : 'Add'}
             </button>
@@ -1078,31 +1064,27 @@ export function SlackTab() {
               type="button"
               onClick={closeAddForm}
               disabled={saving}
-              className="text-sm text-zinc-300 hover:text-white disabled:text-zinc-600 px-3 py-2"
+              className="text-sm text-secondary hover:text-fg disabled:text-faint px-3 py-2"
             >
               Cancel
             </button>
           </div>
         </form>
       ) : (
-        <button
-          type="button"
-          onClick={() => setShowAddForm(true)}
-          className="bg-amber-500 hover:bg-amber-400 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
+        <button type="button" onClick={() => setShowAddForm(true)} className={PRIMARY_BUTTON_SIZED}>
           Add Slack app
         </button>
       )}
 
       <div>
-        <h4 className="text-xs font-medium text-zinc-400 mb-2">Tools exposed to agents</h4>
-        <p className="text-sm text-zinc-500">
-          <code className="text-zinc-400">SlackPostMessage</code> — post a message to a channel.
-          Requires a channel id or <code className="text-zinc-400">#name</code>
+        <h4 className="text-xs font-medium text-fg-muted mb-2">Tools exposed to agents</h4>
+        <p className="text-sm text-faint">
+          <code className="text-fg-muted">SlackPostMessage</code> — post a message to a channel.
+          Requires a channel id or <code className="text-fg-muted">#name</code>
           {apps.length > 1 ? (
             <>
               {' '}
-              and an <code className="text-zinc-400">app</code> name (
+              and an <code className="text-fg-muted">app</code> name (
               {apps.map((a) => a.name).join(', ')}).
             </>
           ) : (

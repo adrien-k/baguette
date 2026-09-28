@@ -55,8 +55,8 @@ export default function CursorVariantDropdown({
       hideChevron={trigger === 'icon'}
       triggerClassName={
         trigger === 'icon'
-          ? `p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 leading-none ${triggerClassName}`
-          : `text-xs text-zinc-500 hover:text-zinc-300 max-w-[14rem] ${triggerClassName}`
+          ? `p-1.5 rounded-md text-faint hover:text-secondary hover:bg-control/80 leading-none ${triggerClassName}`
+          : `text-xs text-faint hover:text-secondary max-w-[14rem] ${triggerClassName}`
       }
     />
   );

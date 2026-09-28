@@ -78,9 +78,9 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
   };
 
   return (
-    <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 overflow-hidden">
-      <div className="px-3 sm:px-4 py-2 border-b border-amber-500/10">
-        <p className="text-xs text-amber-400/70">Claude has a question</p>
+    <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
+      <div className="px-3 sm:px-4 py-2 border-b border-brand/10">
+        <p className="text-xs text-accent/70">Claude has a question</p>
       </div>
       <div className="px-3 sm:px-4 py-3 space-y-4">
         {questions.map((q, i) => {
@@ -91,7 +91,7 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
           ];
           return (
             <div key={i}>
-              <div className="text-sm font-medium text-white mb-2">{q.question}</div>
+              <div className="text-sm font-medium text-fg mb-2">{q.question}</div>
               <div className="space-y-1.5">
                 {allOptions.map((opt) => {
                   const selected = q.multiSelect
@@ -104,13 +104,13 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
                       disabled={hasResult || loading}
                       className={`w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors disabled:cursor-default ${
                         selected
-                          ? 'bg-amber-500/20 border-amber-500 text-white'
-                          : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500 disabled:hover:border-zinc-700'
+                          ? 'bg-brand/20 border-brand text-fg'
+                          : 'bg-control border-strong text-secondary hover:border-faint disabled:hover:border-strong'
                       }`}
                     >
                       <div className="font-medium">{opt.label}</div>
                       {opt.description && (
-                        <div className="text-xs text-zinc-500 mt-0.5">{opt.description}</div>
+                        <div className="text-xs text-faint mt-0.5">{opt.description}</div>
                       )}
                     </button>
                   );
@@ -128,7 +128,7 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
                       )
                     }
                     placeholder="Your answer…"
-                    className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-400"
+                    className="mt-2 w-full bg-control border border-strong rounded-lg px-3 py-2 text-sm text-fg placeholder-faint focus:outline-none focus:border-faint"
                   />
                 )}
             </div>
@@ -142,7 +142,7 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
             <button
               onClick={() => submit()}
               disabled={!isAnswerComplete(questions, answers) || loading}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed text-on-brand rounded-lg text-sm font-medium transition-colors"
             >
               Submit
             </button>

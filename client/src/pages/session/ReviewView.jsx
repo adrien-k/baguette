@@ -309,7 +309,7 @@ export default function ReviewView({
         type="button"
         onClick={handleReviewNewCommits}
         disabled={reviewingNewCommits}
-        className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 px-3 py-1.5 rounded-lg text-sm font-medium"
+        className="inline-flex items-center gap-1.5 bg-brand hover:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand px-3 py-1.5 rounded-lg text-sm font-medium"
       >
         {reviewingNewCommits ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -322,7 +322,7 @@ export default function ReviewView({
       <button
         type="button"
         onClick={() => setShowClearReviewModal(true)}
-        className="text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
+        className="text-xs text-faint hover:text-secondary underline shrink-0"
       >
         Review the entire change
       </button>
@@ -343,16 +343,16 @@ export default function ReviewView({
         </button>
       )}
       <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-        <span className="absolute inset-0 rounded-full bg-amber-400/15 motion-safe:animate-pulse" />
-        <Bot className="relative h-4 w-4 text-amber-400 motion-safe:animate-pulse" aria-hidden />
+        <span className="absolute inset-0 rounded-full bg-brand/15 motion-safe:animate-pulse" />
+        <Bot className="relative h-4 w-4 text-accent motion-safe:animate-pulse" aria-hidden />
       </div>
-      <p className="text-sm font-medium text-zinc-200">Review in progress</p>
+      <p className="text-sm font-medium text-heading">Review in progress</p>
       <div className="flex-1 min-w-2" />
       {!reviewerDrawerOpen && onOpenReviewer && (
         <button
           type="button"
           onClick={onOpenReviewer}
-          className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 underline shrink-0"
+          className="inline-flex items-center gap-1.5 text-xs text-faint hover:text-secondary underline shrink-0"
         >
           <PanelRight className="h-3.5 w-3.5" />
           Open the reviewer
@@ -378,7 +378,7 @@ export default function ReviewView({
                   to="/settings?tab=prompts#settings-prompt-review"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-amber-400 hover:text-amber-300 underline"
+                  className="text-xs text-accent hover:text-accent underline"
                 >
                   Configure the system prompt
                 </Link>
@@ -411,7 +411,7 @@ export default function ReviewView({
       <div className="flex-1 min-h-0 overflow-auto">
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-4`}>
           {showFollowUpPanel && (
-            <div className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-4 sm:p-5 space-y-4">
+            <div className="w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
                   Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
@@ -430,10 +430,10 @@ export default function ReviewView({
             )}
           </div>
           {issuesLoading ? (
-            <p className="text-xs text-zinc-500">Loading issues…</p>
+            <p className="text-xs text-faint">Loading issues…</p>
           ) : issues.length === 0 ? (
             !isRunning && (
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-faint">
                 {showStartForm
                   ? 'No issues yet. Start a review to open some.'
                   : 'No issues yet. Review latest changes for another pass.'}

@@ -39,7 +39,7 @@ function cycleYesNoPref(current) {
 
 function PrefYesNoRow({ label, value, onChange }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2 text-xs text-zinc-300">
+    <div className="flex items-center gap-3 px-3 py-2 text-xs text-secondary">
       <ParamRowLabel
         label={label}
         valueLabel={value}
@@ -57,7 +57,7 @@ function PrefDropdownRow({ label, value, options, onChange, ariaLabel }) {
   const selected = options.find((o) => o.value === value);
   const valueLabel = selected?.label ?? value;
   return (
-    <div className="flex items-center gap-3 px-3 py-2 text-xs text-zinc-300">
+    <div className="flex items-center gap-3 px-3 py-2 text-xs text-secondary">
       <ParamRowLabel label={label} valueLabel={valueLabel} />
       <LightChipDropdown
         layout="list"
@@ -67,7 +67,7 @@ function PrefDropdownRow({ label, value, options, onChange, ariaLabel }) {
         options={options}
         ariaLabel={ariaLabel}
         placement="bottom-end"
-        triggerClassName="text-zinc-500 hover:text-zinc-300 shrink-0"
+        triggerClassName="text-faint hover:text-secondary shrink-0"
       />
     </div>
   );
@@ -92,7 +92,7 @@ export default function CursorModelPreferencesSection() {
   } = useCursorModelPrefs();
 
   if (!loaded) {
-    return <p className="text-xs text-zinc-500">Loading model preferences…</p>;
+    return <p className="text-xs text-faint">Loading model preferences…</p>;
   }
 
   return (
