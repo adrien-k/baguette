@@ -96,8 +96,8 @@ export default function createSettingsRoutes(requireAuth) {
 
   // --- Usage ---
 
-  // One row per (day, repo, sdk, kind) over the requested window, so the usage page
-  // can stack a timeline and collapse a table without a second round trip.
+  // One row per (day, repo, sdk, kind, model) over the requested window, so the usage
+  // page can stack a timeline and collapse a table without a second round trip.
   router.get(
     '/api/usage/breakdown',
     requireAuth,
@@ -113,7 +113,8 @@ export default function createSettingsRoutes(requireAuth) {
           db.raw('date(created_at) as day'),
           'repo_full_name',
           'agent_sdk',
-          db.raw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END as usage_kind")
+          db.raw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END as usage_kind"),
+          'model'
         )
         .sum('cost_usd as cost_usd')
         .sum('input_tokens as input_tokens')
@@ -122,7 +123,7 @@ export default function createSettingsRoutes(requireAuth) {
         .sum('cache_write_tokens as cache_write_tokens')
         .sum('total_tokens as total_tokens')
         .groupByRaw(
-          "date(created_at), repo_full_name, agent_sdk, CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END"
+          "date(created_at), repo_full_name, agent_sdk, CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END, model"
         )
         .orderBy('day', 'asc');
 
@@ -132,6 +133,7 @@ export default function createSettingsRoutes(requireAuth) {
           repo_full_name: r.repo_full_name,
           agent_sdk: r.agent_sdk || 'claude',
           kind: r.usage_kind === 'review' ? 'review' : 'session',
+          model: r.model || '',
           cost_usd: parseFloat(r.cost_usd),
           input_tokens: Number(r.input_tokens ?? 0),
           output_tokens: Number(r.output_tokens ?? 0),

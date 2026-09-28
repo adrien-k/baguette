@@ -1,6 +1,6 @@
 /**
  * Chart-data helpers for the Usage page: they pivot the flat
- * (day, repo, sdk, kind) rows from `/api/usage/breakdown` into stacked series
+ * (day, repo, sdk, kind, model) rows from `/api/usage/breakdown` into stacked series
  * along whichever dimension is being shown, and into a coarser table.
  *
  * The graph plots tokens rather than dollars. Cursor's usage API refuses to
@@ -54,6 +54,30 @@ export function usageRepoLabel(fullName) {
 export function usageRepoTitle(fullName) {
   if (!fullName || fullName === '__global__') return 'Global sessions';
   return fullName;
+}
+
+/** Usage rows store a model id (or nothing, on older turns). */
+export function usageModelLabel(model) {
+  return model || 'Unknown';
+}
+
+const EMPTY_USAGE_METRICS = {
+  total_tokens: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_tokens: 0,
+  cache_write_tokens: 0,
+  cost_usd: 0,
+};
+
+function addUsageMetrics(acc, row) {
+  acc.total_tokens += metricOf(row);
+  acc.input_tokens += Number(row.input_tokens ?? 0);
+  acc.output_tokens += Number(row.output_tokens ?? 0);
+  acc.cache_read_tokens += Number(row.cache_read_tokens ?? 0);
+  acc.cache_write_tokens += Number(row.cache_write_tokens ?? 0);
+  acc.cost_usd += Number(row.cost_usd ?? 0);
+  return acc;
 }
 
 // Categorical slots, assigned in fixed order and never cycled: the 9th series and
@@ -153,29 +177,25 @@ export function buildSeries(rows, dimension) {
 }
 
 /**
- * Collapse daily rows into one line per (repo, agent, kind) — coarse enough for a
- * table without listing every turn.
+ * Collapse daily rows into one line per (repo, agent, kind) — or also per model
+ * when `byModel` is on, so the table can split a repo across models.
  */
-export function aggregateUsage(rows) {
+export function aggregateUsage(rows, { byModel = false } = {}) {
   const totals = new Map();
   for (const row of rows) {
     const kind = usageKindOf(row);
-    const key = `${row.repo_full_name}\t${row.agent_sdk}\t${kind}`;
+    const model = row.model || '';
+    const key = byModel
+      ? `${row.repo_full_name}\t${row.agent_sdk}\t${kind}\t${model}`
+      : `${row.repo_full_name}\t${row.agent_sdk}\t${kind}`;
     const prev = totals.get(key) ?? {
       repo_full_name: row.repo_full_name,
       agent_sdk: row.agent_sdk,
       kind,
-      total_tokens: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_tokens: 0,
-      cost_usd: 0,
+      ...(byModel ? { model } : {}),
+      ...EMPTY_USAGE_METRICS,
     };
-    prev.total_tokens += metricOf(row);
-    prev.input_tokens += Number(row.input_tokens ?? 0);
-    prev.output_tokens += Number(row.output_tokens ?? 0);
-    prev.cache_read_tokens += Number(row.cache_read_tokens ?? 0);
-    prev.cost_usd += Number(row.cost_usd ?? 0);
+    addUsageMetrics(prev, row);
     totals.set(key, prev);
   }
   return [...totals.values()].sort(
@@ -184,15 +204,5 @@ export function aggregateUsage(rows) {
 }
 
 export function sumUsageMetrics(rows) {
-  return rows.reduce(
-    (acc, row) => {
-      acc.total_tokens += metricOf(row);
-      acc.input_tokens += Number(row.input_tokens ?? 0);
-      acc.output_tokens += Number(row.output_tokens ?? 0);
-      acc.cache_read_tokens += Number(row.cache_read_tokens ?? 0);
-      acc.cost_usd += Number(row.cost_usd ?? 0);
-      return acc;
-    },
-    { total_tokens: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cost_usd: 0 }
-  );
+  return rows.reduce((acc, row) => addUsageMetrics(acc, row), { ...EMPTY_USAGE_METRICS });
 }

@@ -98,6 +98,8 @@ async function insertUsage(rows) {
       input_tokens: r.input ?? 0,
       output_tokens: r.output ?? 0,
       total_tokens: (r.input ?? 0) + (r.output ?? 0),
+      cache_read_tokens: r.cacheRead ?? 0,
+      cache_write_tokens: r.cacheWrite ?? 0,
       model: r.model ?? null,
       kind: r.kind ?? null,
     });
@@ -140,6 +142,7 @@ describe('GET /api/usage/breakdown', () => {
         repo_full_name: 'acme/alpha',
         agent_sdk: 'claude',
         kind: 'session',
+        model: '',
         cost_usd: 1.5,
         input_tokens: 0,
         output_tokens: 0,
@@ -191,6 +194,61 @@ describe('GET /api/usage/breakdown', () => {
     expect(row.input_tokens).toBe(1500);
     expect(row.output_tokens).toBe(250);
     expect(row.total_tokens).toBe(1750);
+  });
+
+  it('sums cache read and write tokens', async () => {
+    const day = daysAgo(2);
+    await insertUsage([
+      {
+        repo: 'acme/alpha',
+        cost: 1,
+        input: 10,
+        output: 2,
+        cacheRead: 100,
+        cacheWrite: 20,
+        created_at: day,
+      },
+      {
+        repo: 'acme/alpha',
+        cost: 0,
+        input: 5,
+        output: 1,
+        cacheRead: 50,
+        cacheWrite: 8,
+        created_at: day,
+      },
+    ]);
+
+    const [row] = await getJson('/api/usage/breakdown');
+    expect(row.cache_read_tokens).toBe(150);
+    expect(row.cache_write_tokens).toBe(28);
+  });
+
+  it('splits a day by model', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      {
+        repo: 'acme/alpha',
+        cost: 1,
+        input: 100,
+        output: 0,
+        model: 'claude-opus-4',
+        created_at: day,
+      },
+      {
+        repo: 'acme/alpha',
+        cost: 2,
+        input: 40,
+        output: 0,
+        model: 'claude-haiku-4-5',
+        created_at: day,
+      },
+    ]);
+
+    const rows = await getJson('/api/usage/breakdown');
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.model === 'claude-opus-4').total_tokens).toBe(100);
+    expect(rows.find((r) => r.model === 'claude-haiku-4-5').total_tokens).toBe(40);
   });
 
   // Cursor local agents report tokens but never a cost, so a row can be all tokens.

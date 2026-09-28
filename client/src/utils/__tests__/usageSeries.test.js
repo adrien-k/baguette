@@ -6,8 +6,10 @@ import {
   formatUsd,
   recentDays,
   sumBy,
+  sumUsageMetrics,
   SERIES_COLORS,
   OTHER_KEY,
+  usageModelLabel,
   usageRepoLabel,
 } from '../usageSeries.js';
 
@@ -181,6 +183,65 @@ describe('aggregateUsage', () => {
       ['acme/alpha', 'session', 5],
       ['acme/alpha', 'review', 4],
     ]);
+  });
+
+  it('can split the same repo/agent/activity across models', () => {
+    const aggregated = aggregateUsage(
+      [
+        { ...row('2026-09-20', 'acme/alpha', 'claude', 3), model: 'opus' },
+        { ...row('2026-09-21', 'acme/alpha', 'claude', 2), model: 'opus' },
+        { ...row('2026-09-21', 'acme/alpha', 'claude', 4), model: 'haiku' },
+      ],
+      { byModel: true }
+    );
+    expect(aggregated.map((r) => [r.model, r.total_tokens])).toEqual([
+      ['opus', 5],
+      ['haiku', 4],
+    ]);
+  });
+
+  it('sums cache writes with the other token types', () => {
+    const aggregated = aggregateUsage([
+      {
+        ...row('2026-09-20', 'acme/alpha', 'claude', 10),
+        input_tokens: 6,
+        output_tokens: 4,
+        cache_read_tokens: 20,
+        cache_write_tokens: 3,
+      },
+      {
+        ...row('2026-09-21', 'acme/alpha', 'claude', 5),
+        input_tokens: 2,
+        output_tokens: 3,
+        cache_read_tokens: 8,
+        cache_write_tokens: 1,
+      },
+    ]);
+    expect(aggregated[0]).toMatchObject({
+      input_tokens: 8,
+      output_tokens: 7,
+      cache_read_tokens: 28,
+      cache_write_tokens: 4,
+      total_tokens: 15,
+    });
+  });
+});
+
+describe('sumUsageMetrics', () => {
+  it('includes cache write tokens in the page totals', () => {
+    expect(
+      sumUsageMetrics([
+        { total_tokens: 10, cache_write_tokens: 2 },
+        { total_tokens: 5, cache_write_tokens: 7 },
+      ])
+    ).toMatchObject({ total_tokens: 15, cache_write_tokens: 9 });
+  });
+});
+
+describe('usageModelLabel', () => {
+  it('falls back when a row has no model', () => {
+    expect(usageModelLabel('')).toBe('Unknown');
+    expect(usageModelLabel('claude-opus-4')).toBe('claude-opus-4');
   });
 });
 

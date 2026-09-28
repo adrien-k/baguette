@@ -16,6 +16,7 @@ import {
   metricOf,
   parseUsageDays,
   sumUsageMetrics,
+  usageModelLabel,
   usageRepoLabel,
   usageRepoTitle,
 } from '../utils/usageSeries.js';
@@ -63,6 +64,7 @@ export default function Usage() {
   const [rows, setRows] = useState(null);
   const [dimension, setDimension] = useState('repo');
   const [selectedDay, setSelectedDay] = useState(null);
+  const [byModel, setByModel] = useState(false);
 
   const setFilter = (patch) => {
     const next = new URLSearchParams(searchParams);
@@ -90,8 +92,8 @@ export default function Usage() {
   const data = useMemo(() => rows ?? [], [rows]);
   const tableRows = useMemo(() => {
     const scoped = selectedDay ? data.filter((r) => r.day === selectedDay) : data;
-    return aggregateUsage(scoped);
-  }, [data, selectedDay]);
+    return aggregateUsage(scoped, { byModel });
+  }, [data, selectedDay, byModel]);
   const totals = useMemo(() => {
     const scoped = selectedDay ? data.filter((r) => r.day === selectedDay) : data;
     return sumUsageMetrics(scoped);
@@ -214,20 +216,25 @@ export default function Usage() {
       </section>
 
       <section className="rounded-xl border border-line bg-inset/50 overflow-hidden">
-        <div className="px-4 sm:px-6 py-3 border-b border-line flex items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-3 border-b border-line flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-heading">
             By repository
             {selectedDay ? <span className="font-normal text-faint"> · {selectedDay}</span> : null}
           </h2>
-          {selectedDay && (
-            <button
-              type="button"
-              onClick={() => setSelectedDay(null)}
-              className="text-xs text-fg-muted hover:text-heading"
-            >
-              Show all days
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <FilterChip active={byModel} onClick={() => setByModel((v) => !v)}>
+              Breakdown by model
+            </FilterChip>
+            {selectedDay && (
+              <button
+                type="button"
+                onClick={() => setSelectedDay(null)}
+                className="text-xs text-fg-muted hover:text-heading"
+              >
+                Show all days
+              </button>
+            )}
+          </div>
         </div>
         {loading ? (
           <p className="px-4 sm:px-6 py-8 text-sm text-faint">Loading details…</p>
@@ -239,9 +246,16 @@ export default function Usage() {
               <thead>
                 <tr className="text-left text-xs text-faint border-b border-line">
                   <th className="font-medium px-4 sm:px-6 py-2">Repo</th>
+                  {byModel && <th className="font-medium px-3 py-2">Model</th>}
                   <th className="font-medium px-3 py-2">Agent</th>
                   <th className="font-medium px-3 py-2">Activity</th>
                   <th className="font-medium px-3 py-2 w-full min-w-32">Tokens</th>
+                  <th className="font-medium px-3 py-2 text-right whitespace-nowrap">In</th>
+                  <th className="font-medium px-3 py-2 text-right whitespace-nowrap">Out</th>
+                  <th className="font-medium px-3 py-2 text-right whitespace-nowrap">Cache read</th>
+                  <th className="font-medium px-3 py-2 text-right whitespace-nowrap">
+                    Cache write
+                  </th>
                   {showCost && <th className="font-medium px-4 sm:px-6 py-2 text-right">Cost</th>}
                 </tr>
               </thead>
@@ -252,7 +266,7 @@ export default function Usage() {
                     : 0;
                   return (
                     <tr
-                      key={`${row.repo_full_name}:${row.agent_sdk}:${row.kind}`}
+                      key={`${row.repo_full_name}:${row.agent_sdk}:${row.kind}:${byModel ? row.model : ''}`}
                       className="border-b border-line/80 last:border-0"
                     >
                       <td className="px-4 sm:px-6 py-2.5 text-heading">
@@ -260,6 +274,16 @@ export default function Usage() {
                           {usageRepoLabel(row.repo_full_name)}
                         </span>
                       </td>
+                      {byModel && (
+                        <td className="px-3 py-2.5 text-fg-muted">
+                          <span
+                            className="block truncate max-w-[14rem]"
+                            title={row.model || undefined}
+                          >
+                            {usageModelLabel(row.model)}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-3 py-2.5 text-fg-muted">
                         {SDK_LABELS[row.agent_sdk] ?? row.agent_sdk}
                       </td>
@@ -281,6 +305,18 @@ export default function Usage() {
                             {Math.round(share)}%
                           </span>
                         </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-fg-muted tabular-nums whitespace-nowrap">
+                        {formatTokens(row.input_tokens)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-fg-muted tabular-nums whitespace-nowrap">
+                        {formatTokens(row.output_tokens)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-fg-muted tabular-nums whitespace-nowrap">
+                        {formatTokens(row.cache_read_tokens)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-fg-muted tabular-nums whitespace-nowrap">
+                        {formatTokens(row.cache_write_tokens)}
                       </td>
                       {showCost && (
                         <td className="px-4 sm:px-6 py-2.5 text-right text-fg-muted tabular-nums">
