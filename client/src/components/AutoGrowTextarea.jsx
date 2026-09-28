@@ -18,19 +18,25 @@ function measureContentHeight(el, { value, placeholder, fitPlaceholderWhenEmpty 
   return el.scrollHeight;
 }
 
+/** True when observer height matches a height we just set in syncHeight (not a user drag). */
+function isProgrammaticHeight(observerHeight, syncedHeight) {
+  return syncedHeight >= 0 && Math.abs(observerHeight - syncedHeight) <= 1;
+}
+
 function syncHeight(el, limits, fitOpts = {}) {
-  if (!el) return;
+  if (!el) return 0;
   const maxPx = maxHeightPxFor(el, limits);
+  const minPx = limits.minHeightPx ?? 0;
   el.style.height = 'auto';
   el.style.overflowY = 'hidden';
 
   const contentHeight = measureContentHeight(el, fitOpts);
-  if (contentHeight > maxPx) {
-    el.style.height = `${maxPx}px`;
+  const next = Math.max(minPx, contentHeight > maxPx ? maxPx : contentHeight);
+  el.style.height = `${next}px`;
+  if (contentHeight > next) {
     el.style.overflowY = 'auto';
-  } else {
-    el.style.height = `${contentHeight}px`;
   }
+  return next;
 }
 
 /**
@@ -43,6 +49,7 @@ const AutoGrowTextarea = forwardRef(function AutoGrowTextarea(
     rows = 3,
     maxLines = 20,
     maxHeightPx,
+    keepManualResize = false,
     className = '',
     fitPlaceholderWhenEmpty = false,
     placeholder,
@@ -51,33 +58,60 @@ const AutoGrowTextarea = forwardRef(function AutoGrowTextarea(
   forwardedRef
 ) {
   const innerRef = useRef(null);
+  const userMinHeightRef = useRef(0);
+  /** Last height written by syncHeight; ResizeObserver ignores matching sizes. */
+  const lastSyncedHeightRef = useRef(-1);
   useImperativeHandle(forwardedRef, () => innerRef.current);
 
-  const limits = { maxLines, maxHeightPx };
-  const fitOpts = { value, placeholder, fitPlaceholderWhenEmpty };
+  const applySync = (el) => {
+    if (!el) return;
+    const next = syncHeight(
+      el,
+      {
+        maxLines,
+        maxHeightPx,
+        minHeightPx: keepManualResize ? userMinHeightRef.current : 0,
+      },
+      { value, placeholder, fitPlaceholderWhenEmpty }
+    );
+    lastSyncedHeightRef.current = next;
+  };
 
   useLayoutEffect(() => {
-    syncHeight(innerRef.current, limits, fitOpts);
-  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx]);
+    applySync(innerRef.current);
+  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]);
 
   useEffect(() => {
     const el = innerRef.current;
     if (!el || !String(value ?? '').trim()) return;
-    const id = requestAnimationFrame(() => syncHeight(el, limits, fitOpts));
+    const id = requestAnimationFrame(() => applySync(el));
     return () => cancelAnimationFrame(id);
-  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx]);
+  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]);
 
   useEffect(() => {
     const el = innerRef.current;
     if (!el || !fitPlaceholderWhenEmpty || !placeholder) return;
-    const ro = new ResizeObserver(() => syncHeight(el, limits, fitOpts));
+    const ro = new ResizeObserver(() => applySync(el));
     ro.observe(el);
     return () => ro.disconnect();
-  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx]);
+  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]);
+
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el || !keepManualResize) return;
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight;
+      if (isProgrammaticHeight(h, lastSyncedHeightRef.current)) return;
+      userMinHeightRef.current = h;
+      lastSyncedHeightRef.current = h;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [keepManualResize]);
 
   const handleChange = (e) => {
     onChange?.(e);
-    syncHeight(e.target, limits, fitOpts);
+    applySync(e.target);
   };
 
   return (

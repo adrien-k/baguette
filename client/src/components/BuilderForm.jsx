@@ -480,6 +480,7 @@ export default function BuilderForm({
     <AgentMessageComposer
       skipColumn
       formClassName=""
+      resizable
       value={initialPrompt}
       onChange={setInitialPrompt}
       onSubmit={handleComposerSubmit}

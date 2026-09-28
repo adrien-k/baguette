@@ -21,6 +21,9 @@ const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMB
 /** Tighter horizontal padding on small viewports; roomier from md up. */
 const SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';
 
+const TEXTAREA_CLASS =
+  'block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed rounded-t-lg';
+
 /**
  * Chat-style message box: auto-growing textarea, model + variant row, Send.
  * Optional toolbar/send slots cover session-chat extras (attach, stop, schedule).
@@ -51,6 +54,8 @@ export default function AgentMessageComposer({
   toolbarExtra,
   sendAddon,
   autoFocus = false,
+  resizable = false,
+  rows = 1,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -114,15 +119,20 @@ export default function AgentMessageComposer({
     >
       <AutoGrowTextarea
         id={textareaId}
-        rows={1}
-        maxHeightPx={160}
+        rows={rows}
+        maxHeightPx={resizable ? 320 : 160}
+        keepManualResize={resizable}
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={disabled || sending}
         autoFocus={autoFocus}
-        className="block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none rounded-t-lg"
+        className={
+          resizable
+            ? `${TEXTAREA_CLASS} max-h-[70vh] overflow-auto resize-y`
+            : `${TEXTAREA_CLASS} resize-none`
+        }
       />
       <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible min-w-0">
         <SessionModelSelect

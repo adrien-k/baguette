@@ -386,6 +386,7 @@ export default function ReviewView({
               <AgentMessageComposer
                 skipColumn
                 formClassName=""
+                resizable
                 value={reviewUserMessage}
                 onChange={setReviewUserMessage}
                 onSubmit={handleStart}
