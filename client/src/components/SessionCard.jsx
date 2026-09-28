@@ -1,10 +1,9 @@
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Square, Repeat } from 'lucide-react';
-import { sessionsService } from '../feathers.js';
-import { toastError } from '../utils/toastError.jsx';
+import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Repeat } from 'lucide-react';
 import SessionTools, { sessionToolsVisible } from './SessionTools.jsx';
 import { formatSessionActiveLabel } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
+import StopSession, { isSessionStoppable } from './StopSession.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import CardRepoBadge from './CardRepoBadge.jsx';
@@ -34,8 +33,6 @@ export function SessionStatusIcon({ status, compact = false, ...props }) {
   }
 }
 
-const STOPPABLE_STATUSES = new Set(['running']);
-
 const STATUS_ACCENT = {
   running: 'border-l-emerald-500',
   provisioning: 'border-l-zinc-500',
@@ -58,21 +55,13 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
     session.last_activity_at ?? session.updated_at ?? session.created_at
   );
 
-  const handleStop = async (e) => {
-    e.stopPropagation();
-    try {
-      await sessionsService.stop(session.id);
-    } catch (err) {
-      toastError('Failed to stop session', err);
-    }
-  };
-
   const actions = [];
-  if (!isArchived && !isArchiving && STOPPABLE_STATUSES.has(session.status)) {
-    actions.push({ icon: Square, onClick: handleStop, title: 'Stop session' });
-  }
-  if (!isArchived && !isArchiving && session.status !== 'provisioning') {
-    actions.push({ node: <ArchiveSession session={session} /> });
+  if (!isArchived && !isArchiving) {
+    if (isSessionStoppable(session)) {
+      actions.push({ node: <StopSession session={session} /> });
+    } else if (session.status !== 'provisioning') {
+      actions.push({ node: <ArchiveSession session={session} /> });
+    }
   }
 
   const titleExtras = (

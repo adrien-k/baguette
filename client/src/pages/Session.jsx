@@ -34,6 +34,7 @@ import LightChipDropdown from '../components/LightChipDropdown.jsx';
 import LogsView from './session/LogsView.jsx';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
+import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
 import PushConfirmModal from '../components/PushConfirmModal.jsx';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
@@ -266,9 +267,13 @@ function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = fa
           )}
         </Link>
         {isArchiving && <span className="shrink-0 text-[10px] text-amber-400/90">Archiving…</span>}
-        {!s.archived_at && !isArchiving && s.status !== 'provisioning' && (
+        {!s.archived_at && !isArchiving && (
           <div className="shrink-0">
-            <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
+            {isSessionStoppable(s) ? (
+              <StopSession session={s} />
+            ) : s.status !== 'provisioning' ? (
+              <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
+            ) : null}
           </div>
         )}
       </div>
