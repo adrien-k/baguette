@@ -7,12 +7,12 @@ import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import ExitPlanModeBlock from './ExitPlanModeBlock.jsx';
 import AskUserQuestionBlock from './AskUserQuestionBlock.jsx';
 import { stripWorktreePath } from '../../utils/paths.js';
-import { ansiToHtml } from '../../utils/ansi.js';
 import EditDiffView from './EditDiffView.jsx';
 import BaguetteMcpToolBlock, {
   QuietToolBlock,
   PrUpsertBlock,
   CommandBlock,
+  BashToolBlock,
 } from './BaguetteMcpToolBlock.jsx';
 import CursorMcpToolBlock from './CursorMcpToolBlock.jsx';
 
@@ -352,30 +352,11 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
     }
   }, [block.name, resolvedBlock.result]);
 
-  const bashResultHtml = useMemo(() => {
-    if (effectiveName !== 'Bash') return null;
-    const r = resolvedBlock.result;
-    if (typeof r === 'string') return ansiToHtml(r);
-    if (r && typeof r === 'object') {
-      let parsed = r;
-      if (typeof r === 'string') {
-        try {
-          parsed = JSON.parse(r);
-        } catch {
-          return null;
-        }
-      }
-      const out = [parsed.stdout, parsed.stderr ? `[stderr]\n${parsed.stderr}` : '']
-        .filter(Boolean)
-        .join('\n');
-      return out ? ansiToHtml(out) : null;
-    }
-    return null;
-  }, [effectiveName, resolvedBlock.result]);
-
   const filePath = resolvedBlock.input?.file_path
     ? stripWorktreePath(resolvedBlock.input.file_path, worktreePath)
     : null;
+
+  const bashCommand = effectiveName === 'Bash' ? (resolvedBlock.input?.command ?? '') : null;
 
   // Cursor mcp meta-tool: unwrap and delegate
   if (block.name === 'mcp') {
@@ -445,8 +426,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
   }
 
   // Legacy baguette-op commands (old sessions only)
-  const baguetteOp =
-    effectiveName === 'Bash' ? parseBaguetteOp(resolvedBlock.input?.command) : null;
+  const baguetteOp = effectiveName === 'Bash' ? parseBaguetteOp(bashCommand) : null;
   if (baguetteOp) {
     if (QUIET_BAGUETTE_OPS.has(baguetteOp.op)) {
       return (
@@ -471,6 +451,16 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
     if (baguetteOp.op === 'command') {
       return <CommandBlock baguetteOp={baguetteOp} block={resolvedBlock} />;
     }
+  }
+
+  if (effectiveName === 'Bash') {
+    return (
+      <BashToolBlock
+        command={bashCommand ?? ''}
+        worktreePath={worktreePath}
+        block={resolvedBlock}
+      />
+    );
   }
 
   const isEditWithDiff =
@@ -503,9 +493,6 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
                 error
               </span>
             )
-          )}
-          {effectiveName === 'Bash' && resolvedBlock.input?.command && (
-            <code className="text-fg-muted text-xs truncate">{resolvedBlock.input.command}</code>
           )}
           {(effectiveName === 'Write' || effectiveName === 'Edit') && filePath && (
             <code className="text-faint text-xs truncate">{filePath}</code>
@@ -586,24 +573,17 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
               >
                 {isContinuePlanning ? 'Feedback' : resolvedBlock.isError ? 'Error' : 'Result'}
               </div>
-              {bashResultHtml != null ? (
-                <pre
-                  className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
-                  dangerouslySetInnerHTML={{ __html: bashResultHtml }}
-                />
-              ) : (
-                <pre
-                  className={`whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 ${
-                    resolvedBlock.isError && !isContinuePlanning
-                      ? 'text-danger bg-soft-danger/30'
-                      : 'text-fg-muted bg-inset/50'
-                  }`}
-                >
-                  {typeof resolvedBlock.result === 'string'
-                    ? resolvedBlock.result
-                    : JSON.stringify(resolvedBlock.result, null, 2)}
-                </pre>
-              )}
+              <pre
+                className={`whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 ${
+                  resolvedBlock.isError && !isContinuePlanning
+                    ? 'text-danger bg-soft-danger/30'
+                    : 'text-fg-muted bg-inset/50'
+                }`}
+              >
+                {typeof resolvedBlock.result === 'string'
+                  ? resolvedBlock.result
+                  : JSON.stringify(resolvedBlock.result, null, 2)}
+              </pre>
             </div>
           )}
         </div>

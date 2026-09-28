@@ -4,8 +4,11 @@ import StickToBottomScrollArea from './StickToBottomScrollArea.jsx';
 /** @deprecated use SCROLL_BOTTOM_THRESHOLD_PX from utils/scrollBottom.js */
 export const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = SCROLL_BOTTOM_THRESHOLD_PX;
 
-/** Centered content width (padding), matching Dashboard `max-w-5xl mx-auto px-4`. */
-export const CHAT_COLUMN_CLASS = 'w-full max-w-5xl mx-auto px-4';
+/** Centered narrow column for session chat, details, preview, and review issues. */
+export const SESSION_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-2xl mx-auto';
+
+/** Centered content width with horizontal padding (session chat composer and messages). */
+export const CHAT_COLUMN_CLASS = `${SESSION_CONTENT_MAX_WIDTH_CLASS} px-4`;
 
 /**
  * Scrollable message list with optional bottom fade above the composer (session + review chat).

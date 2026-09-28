@@ -5,6 +5,9 @@ export const ISSUE_SEVERITIES = ISSUE_SEVERITY_ORDER;
 
 const SEVERITY_RANK = Object.fromEntries(ISSUE_SEVERITY_ORDER.map((s, i) => [s, i]));
 
+/** Non-ignored issues: opened before submitted before resolved. */
+const STATUS_RANK = { opened: 0, submitted: 1, resolved: 2, ignored: 3 };
+
 /** @param {{ severity?: string, status?: string, id?: number }} a @param {{ severity?: string, status?: string, id?: number }} b */
 export function compareIssuesBySeverity(a, b) {
   const aIgnored = a.status === 'ignored' ? 1 : 0;
@@ -14,6 +17,11 @@ export function compareIssuesBySeverity(a, b) {
   const ra = SEVERITY_RANK[a.severity] ?? 99;
   const rb = SEVERITY_RANK[b.severity] ?? 99;
   if (ra !== rb) return ra - rb;
+
+  const sa = STATUS_RANK[a.status] ?? 99;
+  const sb = STATUS_RANK[b.status] ?? 99;
+  if (sa !== sb) return sa - sb;
+
   return (a.id ?? 0) - (b.id ?? 0);
 }
 

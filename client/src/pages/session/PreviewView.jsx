@@ -5,6 +5,7 @@ import { toastError } from '../../utils/toastError.jsx';
 import { sessionsService, tasksService } from '../../feathers.js';
 import StartButton from '../../components/StartButton.jsx';
 import Toggle from '../../components/Toggle.jsx';
+import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';
 
 function ServiceQrCode({ url }) {
   if (!url) return null;
@@ -267,7 +268,7 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
 
   return (
     <div className={`flex-1 min-h-0 overflow-y-auto ${compact ? 'p-3' : 'p-4 sm:p-6'}`}>
-      <div className={compact ? 'space-y-4' : 'max-w-2xl mx-auto space-y-6'}>
+      <div className={compact ? 'space-y-4' : `${SESSION_CONTENT_MAX_WIDTH_CLASS} space-y-6`}>
         {!compact && (
           <header className="space-y-1">
             <h1 className="text-lg font-semibold text-fg tracking-tight">Preview</h1>

@@ -29,6 +29,7 @@ import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
+import { useGetReviewMessages } from '../hooks/useGetReviewMessages.js';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
@@ -39,11 +40,7 @@ import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
 import DetailsView from './session/DetailsView.jsx';
 import SessionSidePanel from './session/SessionSidePanel.jsx';
-import {
-  defaultPanelForView,
-  resolveSidePanelTab,
-  SIDE_PANEL_TAB_IDS,
-} from './session/sessionSidePanelTabs.js';
+import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
 import SessionTools from '../components/SessionTools.jsx';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
@@ -363,6 +360,7 @@ export default function Session() {
   const [diffFiles, setDiffFiles] = useState([]);
   const [branchCommits, setBranchCommits] = useState(undefined);
   const [branchCommitsLoading, setBranchCommitsLoading] = useState(false);
+  const [branchCommitsRefreshKey, setBranchCommitsRefreshKey] = useState(0);
   const diffCommitParam = searchParams.get('commit');
   const selectedDiffCommit = diffCommitParam && diffCommitParam !== 'all' ? diffCommitParam : 'all';
   const [models, setModels] = useState([]);
@@ -375,10 +373,27 @@ export default function Session() {
   const [error, setError] = useState(null);
   const panelParam = searchParams.get('panel');
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
-  const sidePanelTab = useMemo(
-    () => resolveSidePanelTab(panelParam, activeView),
-    [panelParam, activeView]
-  );
+  const sidePanelTab = useMemo(() => resolveSidePanelTab(panelParam), [panelParam]);
+  const reviewMessagesSessionId = useMemo(() => {
+    const s = session ?? sessionFromHook;
+    if (!sessionId || isGlobalSession(s ?? {})) return null;
+    return sessionId;
+  }, [sessionId, session, sessionFromHook]);
+  const { messages: reviewMessages, loading: reviewMessagesLoading } =
+    useGetReviewMessages(reviewMessagesSessionId);
+  const showReviewerSidePanelTab = useMemo(() => {
+    if (!reviewMessagesSessionId) return false;
+    const s = session ?? sessionFromHook;
+    if (s?.review_status === 'running') return true;
+    if (reviewMessagesLoading) return false;
+    return reviewMessages.length > 0;
+  }, [
+    reviewMessagesSessionId,
+    session,
+    sessionFromHook,
+    reviewMessages.length,
+    reviewMessagesLoading,
+  ]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -397,6 +412,8 @@ export default function Session() {
   const chatLoading = switchingSession || messagesLoading;
 
   // If loadMore produced only hidden/filtered messages, keep pulling until something visible appears
+  const activeViewTabRef = useRef(null);
+  const viewTabsScrollRef = useRef(null);
   const prevMessagesLengthRef = useRef(null);
   useEffect(() => {
     if (loadingMore) {
@@ -478,6 +495,26 @@ export default function Session() {
     list.push(DETAILS_VIEW);
     return list;
   }, [isNewSessionRoute, session, hasPreview]);
+
+  const viewTabStripKey = views.map((v) => v.id).join(',');
+
+  const scrollActiveViewTabIntoView = useCallback(() => {
+    const tab = activeViewTabRef.current;
+    const scroller = viewTabsScrollRef.current;
+    if (!tab || !scroller) return;
+    const pad = 12;
+    const scrollRect = scroller.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    const tabStart = tabRect.left - scrollRect.left + scroller.scrollLeft;
+    const tabEnd = tabStart + tabRect.width;
+    const viewStart = scroller.scrollLeft;
+    const viewEnd = viewStart + scroller.clientWidth;
+    if (tabStart < viewStart + pad) {
+      scroller.scrollLeft = Math.max(0, tabStart - pad);
+    } else if (tabEnd > viewEnd - pad) {
+      scroller.scrollLeft = tabEnd - scroller.clientWidth + pad;
+    }
+  }, []);
 
   const [commitsToPush, setCommitsToPush] = useState(0);
 
@@ -669,10 +706,28 @@ export default function Session() {
     [activeView, isNewSessionRoute, setSearchParams, setShowTasks]
   );
 
+  useEffect(() => {
+    if (showReviewerSidePanelTab || sidePanelTab !== 'reviewer') return;
+    setSidePanelTab('tasks', { openMobile: false });
+  }, [showReviewerSidePanelTab, sidePanelTab, setSidePanelTab]);
+
+  const clearPanelFromUrl = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        if (!prev.get('panel')) return prev;
+        const next = new URLSearchParams(prev);
+        next.delete('panel');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [setSearchParams]);
+
   const hideSidePanel = useCallback(() => {
     if (isXlScreen) return;
     setShowTasks(false);
-  }, [setShowTasks, isXlScreen]);
+    clearPanelFromUrl();
+  }, [setShowTasks, isXlScreen, clearPanelFromUrl]);
 
   const shouldLoadBranchCommits = sidePanelTab === 'commits';
 
@@ -707,7 +762,11 @@ export default function Session() {
     return () => {
       cancelled = true;
     };
-  }, [shouldLoadBranchCommits, sessionId, session?.is_global, diffFiles.length]);
+  }, [shouldLoadBranchCommits, sessionId, session?.is_global, branchCommitsRefreshKey]);
+
+  const refreshBranchCommits = useCallback(() => {
+    setBranchCommitsRefreshKey((k) => k + 1);
+  }, []);
 
   const handleDiffCommitChange = useCallback(
     (sha) => {
@@ -728,15 +787,18 @@ export default function Session() {
   const handleSelectCommitFromSidebar = useCallback(
     (sha) => {
       handleDiffCommitChange(sha);
-      hideSidePanel();
     },
-    [handleDiffCommitChange, hideSidePanel]
+    [handleDiffCommitChange]
   );
 
   const toggleSidePanel = useCallback(() => {
     if (isXlScreen) return;
-    setShowTasks((open) => !open);
-  }, [setShowTasks, isXlScreen]);
+    if (showTasks) {
+      hideSidePanel();
+    } else {
+      setSidePanelTab(sidePanelTab, { openMobile: true });
+    }
+  }, [showTasks, isXlScreen, hideSidePanel, setSidePanelTab, sidePanelTab]);
 
   const setView = (view) => {
     if (isNewSessionRoute) return;
@@ -744,13 +806,10 @@ export default function Session() {
       (prev) => {
         const next = new URLSearchParams();
         if (view !== 'chat') next.set('view', view);
-        const panel =
-          view === 'diff' || view === 'review'
-            ? defaultPanelForView(view)
-            : prev.get('panel') && SIDE_PANEL_TAB_IDS.has(prev.get('panel'))
-              ? prev.get('panel')
-              : 'tasks';
-        next.set('panel', panel);
+        const prevPanel = prev.get('panel');
+        if (prevPanel && SIDE_PANEL_TAB_IDS.has(prevPanel)) {
+          next.set('panel', prevPanel);
+        }
         if (view === 'diff') {
           const commit = prev.get('commit');
           if (commit) next.set('commit', commit);
@@ -938,18 +997,17 @@ export default function Session() {
     if (!isMdUp) setShowSidebar(false);
   }, [isMdUp]);
 
+  useLayoutEffect(() => {
+    if (isNewSessionRoute) return;
+    scrollActiveViewTabIntoView();
+    const frame = requestAnimationFrame(() => {
+      scrollActiveViewTabIntoView();
+      requestAnimationFrame(scrollActiveViewTabIntoView);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeView, isNewSessionRoute, short_id, viewTabStripKey, scrollActiveViewTabIntoView]);
+
   const isSidePanelOpen = !isNewSessionRoute && (isXlScreen || showTasks);
-  const prevActiveViewRef = useRef(activeView);
-  useEffect(() => {
-    const prev = prevActiveViewRef.current;
-    prevActiveViewRef.current = activeView;
-    if (isNewSessionRoute || !session || prev === activeView) return;
-    if (activeView === 'diff' && prev !== 'diff') {
-      setSidePanelTab('files', { openMobile: false });
-    } else if (activeView === 'review' && prev !== 'review') {
-      setSidePanelTab('reviewer', { openMobile: false });
-    }
-  }, [activeView, session, isNewSessionRoute, setSidePanelTab]);
 
   const handleSelectDiffFile = useCallback(
     (index) => {
@@ -1162,35 +1220,45 @@ export default function Session() {
             >
               <PanelLeft className="w-4 h-4" />
             </button>
-            <div className="flex overflow-x-auto gap-1 min-w-0 flex-1 scrollbar-none">
-              {views.map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  disabled={isNewSessionRoute}
-                  onClick={() => setView(id)}
-                  className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px disabled:cursor-not-allowed disabled:opacity-40 ${
-                    activeView === id && !isNewSessionRoute
-                      ? 'border-brand text-accent'
-                      : 'border-transparent text-faint hover:text-heading disabled:hover:text-faint'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {label}
-                  {id === 'review' &&
-                    sessionIssues.filter((i) => i.status === 'opened').length > 0 && (
-                      <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
-                        {sessionIssues.filter((i) => i.status === 'opened').length}
-                      </span>
-                    )}
-                </button>
-              ))}
+            <div className="relative min-w-0 flex-1">
+              <div
+                ref={viewTabsScrollRef}
+                className="flex overflow-x-auto gap-1 scrollbar-none pr-4"
+              >
+                {views.map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    ref={activeView === id && !isNewSessionRoute ? activeViewTabRef : null}
+                    type="button"
+                    disabled={isNewSessionRoute}
+                    onClick={() => setView(id)}
+                    className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px disabled:cursor-not-allowed disabled:opacity-40 ${
+                      activeView === id && !isNewSessionRoute
+                        ? 'border-brand text-accent'
+                        : 'border-transparent text-faint hover:text-heading disabled:hover:text-faint'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                    {id === 'review' &&
+                      sessionIssues.filter((i) => i.status === 'opened').length > 0 && (
+                        <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
+                          {sessionIssues.filter((i) => i.status === 'opened').length}
+                        </span>
+                      )}
+                  </button>
+                ))}
+              </div>
+              <div
+                className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-nav via-nav/80 to-transparent"
+                aria-hidden
+              />
             </div>
             <button
               type="button"
               disabled={isNewSessionRoute}
               onClick={toggleSidePanel}
-              className={`xl:hidden ml-auto flex items-center justify-center shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`xl:hidden flex items-center justify-center shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                 !isNewSessionRoute &&
                 sidePanelTab === 'reviewer' &&
                 session?.review_status === 'running' &&
@@ -1287,6 +1355,7 @@ export default function Session() {
                 session={session}
                 readonly={isReadonly}
                 reviewerDrawerOpen={isXlScreen || showTasks}
+                reviewerPanelActive={isSidePanelOpen && sidePanelTab === 'reviewer'}
                 onOpenReviewer={() => setSidePanelTab('reviewer')}
               />
             )}
@@ -1351,6 +1420,7 @@ export default function Session() {
               onSelectDiffFile={handleSelectDiffFile}
               branchCommits={branchCommits}
               branchCommitsLoading={branchCommitsLoading}
+              onRefreshBranchCommits={refreshBranchCommits}
               selectedDiffCommit={selectedDiffCommit}
               onSelectCommit={handleSelectCommitFromSidebar}
               tasks={tasks}
@@ -1366,6 +1436,7 @@ export default function Session() {
               loadingMore={loadingMore}
               hasMore={hasMore}
               sessionId={sessionId}
+              showReviewerTab={showReviewerSidePanelTab}
             />
           </div>
         )}

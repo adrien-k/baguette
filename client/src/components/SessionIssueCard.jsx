@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { ISSUE_SEVERITIES } from '@baguette/shared/session-issues.js';
 import { SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
 import AutoGrowTextarea from './AutoGrowTextarea.jsx';
@@ -43,9 +43,14 @@ export default function SessionIssueCard({
   onSave,
 }) {
   const [editing, setEditing] = useState(false);
+  const [descOpen, setDescOpen] = useState(issue.status === 'opened');
   const [draftTitle, setDraftTitle] = useState(issue.title);
   const [draftSeverity, setDraftSeverity] = useState(issue.severity);
   const [draftDescription, setDraftDescription] = useState(issue.description ?? '');
+
+  useEffect(() => {
+    setDescOpen(issue.status === 'opened');
+  }, [issue.id, issue.status]);
 
   const startEdit = () => {
     setDraftTitle(issue.title);
@@ -69,7 +74,8 @@ export default function SessionIssueCard({
     if (ok) setEditing(false);
   };
 
-  const active = issue.status === 'opened' || issue.status === 'submitted';
+  const active = issue.status === 'opened';
+  const canEdit = !readonly && issue.status === 'opened';
   const agentSubtitle = issueAgentSubtitle({
     agent_sdk: issue.agent_sdk,
     model: issue.model,
@@ -148,14 +154,16 @@ export default function SessionIssueCard({
             </div>
             {!readonly && (
               <div className="flex shrink-0 items-center gap-0.5 -mt-0.5">
-                <button
-                  type="button"
-                  onClick={startEdit}
-                  title="Edit issue"
-                  className="p-1.5 rounded-md text-faint hover:text-accent hover:bg-brand/10 transition-colors"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    title="Edit issue"
+                    className="p-1.5 rounded-md text-faint hover:text-accent hover:bg-brand/10 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => onDelete(issue)}
@@ -189,7 +197,25 @@ export default function SessionIssueCard({
               </select>
             )}
           </div>
-          <IssueDescription description={issue.description} />
+          <div>
+            <button
+              type="button"
+              onClick={() => setDescOpen((v) => !v)}
+              className="flex items-center gap-1 text-xs text-faint hover:text-secondary"
+            >
+              {descOpen ? (
+                <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+              )}
+              Description
+            </button>
+            {descOpen && (
+              <div className="mt-2">
+                <IssueDescription description={issue.description} />
+              </div>
+            )}
+          </div>
           {!readonly && issue.status === 'opened' && (
             <button type="button" onClick={() => onFix(issue)} className={SECONDARY_BUTTON_CLASS}>
               Ask agent to fix

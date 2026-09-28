@@ -381,7 +381,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'PrUpsert',
       description:
-        'Create or update the pull request with a title and description. The description must reflect the **entire** branch diff against the base branch (see `CurrentSessionInfo` and `git diff origin/<base_branch>...HEAD`), not only the latest turn. Write for reviewers: final behavior and test plan only—do not narrate abandoned approaches, reversals, or other intermediate session history.',
+        "Create or update the pull request with a title and description. Call **`PrRead`** first so you incorporate earlier scope and do not replace the description with only this turn's changes. The description must reflect the **entire** branch diff against the base branch (see `CurrentSessionInfo` and `git diff origin/<base_branch>...HEAD`), not only the latest turn. Write for reviewers: final behavior and test plan only—do not narrate abandoned approaches, reversals, or other intermediate session history.",
       schema: {
         title: z.string().describe('PR title'),
         description: z

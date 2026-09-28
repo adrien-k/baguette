@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import AnchoredMenu from './AnchoredMenu.jsx';
+import Tooltip from './Tooltip.jsx';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 /** Chip button styles shared with session model / variant pickers. */
@@ -26,7 +27,7 @@ export const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18re
 export const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
- * @typedef {{ value: string, label: string, icon?: import('react').ReactNode }} LightDropdownOption
+ * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string }} LightDropdownOption
  * @typedef {{ heading?: string, options: LightDropdownOption[] }} LightDropdownSection
  */
 
@@ -85,25 +86,43 @@ export default function LightChipDropdown({
     setOpen(false);
   };
 
-  const renderOption = (opt) => (
-    <button
-      key={optionKey(opt.value)}
-      type="button"
-      disabled={disabled}
-      onClick={() => pick(opt.value)}
-      className={
-        layout === 'list'
-          ? listOptionClassName(opt.value === value)
-          : chipOptionClassName(opt.value === value)
-      }
-    >
-      {opt.icon ? <span className="shrink-0 flex items-center">{opt.icon}</span> : null}
-      <span className={layout === 'list' ? 'truncate flex-1 min-w-0' : ''}>{opt.label}</span>
-      {layout === 'list' && opt.detail ? (
-        <span className="ml-auto text-xs text-faint shrink-0">{opt.detail}</span>
-      ) : null}
-    </button>
-  );
+  const renderOption = (opt) => {
+    const optionDisabled = disabled || opt.disabled;
+    const button = (
+      <button
+        type="button"
+        disabled={optionDisabled}
+        onClick={() => {
+          if (optionDisabled) return;
+          pick(opt.value);
+        }}
+        className={
+          layout === 'list'
+            ? listOptionClassName(opt.value === value)
+            : chipOptionClassName(opt.value === value)
+        }
+      >
+        {opt.icon ? <span className="shrink-0 flex items-center">{opt.icon}</span> : null}
+        <span className={layout === 'list' ? 'truncate flex-1 min-w-0' : ''}>{opt.label}</span>
+        {layout === 'list' && opt.detail ? (
+          <span className="ml-auto text-xs text-faint shrink-0">{opt.detail}</span>
+        ) : null}
+      </button>
+    );
+
+    const keyed = (
+      <div key={optionKey(opt.value)} className={layout === 'list' ? 'w-full' : ''}>
+        {opt.disabled && opt.title ? (
+          <Tooltip content={opt.title} wrap placement="left">
+            <span className="block w-full">{button}</span>
+          </Tooltip>
+        ) : (
+          button
+        )}
+      </div>
+    );
+    return keyed;
+  };
 
   const triggerBase =
     layout === 'list'

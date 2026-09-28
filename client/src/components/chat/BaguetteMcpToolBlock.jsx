@@ -5,6 +5,26 @@ import { sessionsService } from '../../feathers.js';
 import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
+import { parseShellToolResult } from '../../utils/shellToolResult.js';
+import { stripCdWorktreePrefix } from '../../utils/paths.js';
+
+const TERMINAL_PRE_CLASS =
+  'ansi-log font-mono text-xs whitespace-pre overflow-x-auto overflow-y-auto max-h-80 max-w-full rounded p-2';
+
+function TerminalLogBlock({ label, text, ansi = true }) {
+  if (text == null || text === '') return null;
+  const html = ansi ? ansiToHtml(text) : null;
+  return (
+    <div className="min-w-0 max-w-full">
+      {label ? <div className="text-faint font-medium mb-1">{label}</div> : null}
+      {html ? (
+        <pre className={TERMINAL_PRE_CLASS} dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <pre className={TERMINAL_PRE_CLASS}>{text}</pre>
+      )}
+    </div>
+  );
+}
 
 // ─── Shared primitives (also used by ToolUseBlock for legacy baguette-op rendering) ───
 
@@ -34,33 +54,103 @@ export function QuietToolBlock({ icon, label, detail, isError, result }) {
   );
 }
 
+export function BashToolBlock({ command, worktreePath, block }) {
+  const [expanded, setExpanded] = useState(false);
+  const isRunning = block.result == null;
+  const { exitCode, stdout, stderr } = useMemo(
+    () => parseShellToolResult(block.result),
+    [block.result]
+  );
+  const hasError = block.isError || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
+  const headerPreview =
+    stripCdWorktreePrefix(command, worktreePath)
+      ?.split('\n')
+      .find((l) => l.trim()) ?? '';
+
+  const commandAndStdout = useMemo(() => {
+    const parts = [];
+    if (command) parts.push(command);
+    if (stdout) parts.push(stdout);
+    if (parts.length === 0 && block.result != null && !stderr) {
+      parts.push(
+        typeof block.result === 'string' ? block.result : JSON.stringify(block.result, null, 2)
+      );
+    }
+    return parts.join('\n');
+  }, [command, stdout, stderr, block.result]);
+
+  return (
+    <div
+      className={`bg-inset/50 rounded-lg border overflow-hidden ${hasError ? 'border-danger/60' : 'border-line'}`}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-accent text-xs font-mono shrink-0">Bash</span>
+          {hasError && (
+            <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger/40 px-1.5 py-0.5 rounded">
+              {exitCode != null && !Number.isNaN(exitCode) ? `exit ${exitCode}` : 'error'}
+            </span>
+          )}
+          {headerPreview && <code className="text-fg-muted text-xs truncate">{headerPreview}</code>}
+        </div>
+        {isRunning ? (
+          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
+        ) : (
+          <ChevronDown
+            className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          />
+        )}
+      </button>
+      {expanded && (
+        <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
+          <TerminalLogBlock text={commandAndStdout} />
+          <TerminalLogBlock label="stderr" text={stderr} />
+          {!isRunning && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-faint font-medium">Exit code</span>
+              <span
+                className={
+                  exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0
+                    ? 'text-danger font-mono'
+                    : 'text-success font-mono'
+                }
+              >
+                {exitCode != null && !Number.isNaN(exitCode) ? exitCode : '—'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CommandBlock({ baguetteOp, block }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = block.result == null;
-  let parsed = null;
+  const { exitCode, stdout, stderr } = useMemo(
+    () => parseShellToolResult(block.result),
+    [block.result]
+  );
+  let ok = true;
   if (typeof block.result === 'string') {
     try {
-      parsed = JSON.parse(block.result);
+      ok = JSON.parse(block.result)?.ok ?? true;
     } catch {
-      parsed = null;
+      ok = true;
     }
   } else if (block.result && typeof block.result === 'object') {
-    parsed = block.result;
+    ok = block.result.ok ?? true;
   }
 
-  const exitCode = parsed?.exitCode;
-  const stdout = Array.isArray(parsed?.stdoutLines)
-    ? parsed.stdoutLines.join('\n')
-    : (parsed?.stdout ?? '');
-  const stderr = Array.isArray(parsed?.stderrLines)
-    ? parsed.stderrLines.join('\n')
-    : (parsed?.stderr ?? '');
-  const ok = parsed?.ok;
-  const stdoutHtml = useMemo(() => (stdout ? ansiToHtml(stdout) : ''), [stdout]);
-  const stderrHtml = useMemo(() => (stderr ? ansiToHtml(stderr) : ''), [stderr]);
-
   const hasError =
-    block.isError || ok === false || (typeof exitCode === 'number' && exitCode !== 0);
+    block.isError ||
+    ok === false ||
+    (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
 
   return (
     <div
@@ -94,32 +184,30 @@ export function CommandBlock({ baguetteOp, block }) {
       </button>
       {expanded && (
         <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
-          {stdout && (
-            <div>
-              <div className="text-faint font-medium mb-1">stdout</div>
-              <pre
-                className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
-                dangerouslySetInnerHTML={{ __html: stdoutHtml }}
-              />
-            </div>
-          )}
-          {stderr && (
-            <div>
-              <div className="text-faint font-medium mb-1">stderr</div>
-              <pre
-                className="ansi-log whitespace-pre-wrap overflow-auto max-h-80 rounded p-2"
-                dangerouslySetInnerHTML={{ __html: stderrHtml }}
-              />
-            </div>
-          )}
+          <TerminalLogBlock label="stdout" text={stdout} />
+          <TerminalLogBlock label="stderr" text={stderr} />
           {!stdout && !stderr && block.result != null && (
             <div>
-              <div className="text-faint font-medium mb-1">Result</div>
-              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-fg-muted bg-page/50">
+              <div className="text-faint font-medium mb-1">stdout</div>
+              <pre className={TERMINAL_PRE_CLASS}>
                 {typeof block.result === 'string'
                   ? block.result
                   : JSON.stringify(block.result, null, 2)}
               </pre>
+            </div>
+          )}
+          {!isRunning && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-faint font-medium">Exit code</span>
+              <span
+                className={
+                  exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0
+                    ? 'text-danger font-mono'
+                    : 'text-success font-mono'
+                }
+              >
+                {exitCode != null && !Number.isNaN(exitCode) ? exitCode : '—'}
+              </span>
             </div>
           )}
         </div>

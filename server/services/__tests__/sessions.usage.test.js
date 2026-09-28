@@ -224,3 +224,50 @@ describe('claude usage recording', () => {
     expect(rows[1].output_tokens).toBe(5);
   });
 });
+
+describe('sessionUsage', () => {
+  it('aggregates usage by model and session vs review kind', async () => {
+    const { sessionId } = await seed();
+    const service = makeService();
+    const session = await db('sessions').where({ id: sessionId }).first();
+
+    await db('usage').insert([
+      {
+        session_id: sessionId,
+        user_id: session.user_id,
+        repo_full_name: 'acme/app',
+        cost_usd: 0.1,
+        agent_sdk: 'claude',
+        model: 'claude-opus-5',
+        kind: null,
+        total_tokens: 100,
+        input_tokens: 80,
+        output_tokens: 20,
+      },
+      {
+        session_id: sessionId,
+        user_id: session.user_id,
+        repo_full_name: 'acme/app',
+        cost_usd: 0.02,
+        agent_sdk: 'cursor',
+        model: 'composer-1',
+        kind: 'review',
+        total_tokens: 50,
+        input_tokens: 40,
+        output_tokens: 10,
+      },
+    ]);
+
+    const result = await service.sessionUsage(null, { resolvedSession: session });
+
+    expect(result.totals.total_tokens).toBe(150);
+    expect(result.totals.cost_usd).toBeCloseTo(0.12, 6);
+    expect(result.breakdown).toHaveLength(2);
+    const sessionRow = result.breakdown.find((r) => r.kind === 'session');
+    const reviewRow = result.breakdown.find((r) => r.kind === 'review');
+    expect(sessionRow.model).toBe('claude-opus-5');
+    expect(sessionRow.total_tokens).toBe(100);
+    expect(reviewRow.model).toBe('composer-1');
+    expect(reviewRow.total_tokens).toBe(50);
+  });
+});

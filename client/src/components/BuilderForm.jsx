@@ -497,6 +497,8 @@ export default function BuilderForm({
       onAutoPushChange={setAutoPush}
       showAutoPushParam={!isGlobal && !isLoop}
       availableSdks={availableSdks}
+      userSettings={userSettings}
+      sdkRepo={selectedRepo}
       onSdkChange={setAgentSdk}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}

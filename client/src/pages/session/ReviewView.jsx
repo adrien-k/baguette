@@ -13,7 +13,11 @@ import { toastError } from '../../utils/toastError.jsx';
 import Alert from '../../components/Alert.jsx';
 import ClearReviewConfirmModal from '../../components/ClearReviewConfirmModal.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
-import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import {
+  COMPOSER_STOP_BUTTON_CLASS,
+  NEUTRAL_BUTTON_CLASS,
+  SECONDARY_BUTTON_CLASS,
+} from '../../utils/buttonStyles.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useGetSessionIssues } from '../../hooks/useGetSessionIssues.js';
 import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
@@ -26,6 +30,8 @@ import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
+
+const ISSUE_SECTION_HEADING_CLASS = 'text-xs font-medium text-faint uppercase tracking-wide';
 
 function issueFixPrompt(issue, sessionId) {
   return (
@@ -44,10 +50,31 @@ function issuesFixAllPrompt(sessionId) {
   );
 }
 
+/** Stacked until the follow-up card is wide enough for a single nowrap row. */
+const REVIEW_CONTROLS_ROW_CLASS =
+  'flex flex-col gap-2 @min-[36rem]:flex-row @min-[36rem]:flex-nowrap @min-[36rem]:items-center';
+
+const REVIEW_ACTION_BUTTON_SIZE_CLASS =
+  'inline-flex items-center justify-center gap-1.5 w-full whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium @min-[36rem]:w-auto';
+
+function ReviewerPanelLink({ onClick, label = 'Open reviewer panel', className = '' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center justify-center gap-1.5 w-full whitespace-nowrap text-xs text-faint hover:text-secondary underline @min-[36rem]:w-auto @min-[36rem]:ml-auto shrink-0 ${className}`}
+    >
+      <PanelRight className="h-3.5 w-3.5" aria-hidden />
+      {label}
+    </button>
+  );
+}
+
 export default function ReviewView({
   session,
   readonly,
   reviewerDrawerOpen = true,
+  reviewerPanelActive = false,
   onOpenReviewer,
 }) {
   const { user } = useAuth();
@@ -139,11 +166,17 @@ export default function ReviewView({
   );
 
   const opened = issues.filter((i) => i.status === 'opened');
+  const activeIssues = useMemo(() => issues.filter((i) => i.status !== 'ignored'), [issues]);
+  const ignoredIssues = useMemo(() => issues.filter((i) => i.status === 'ignored'), [issues]);
+  const showIgnoredSection = ignoredIssues.length > 0;
   const isRunning = session?.review_status === 'running';
   const hasReviewThread = reviewMessages.length > 0;
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
   const showStartForm = !hasReviewThread && !isRunning && !starting && !reviewMessagesLoading;
   const showFollowUpPanel = hasReviewThread || isRunning;
+  const hasReview = hasReviewThread || isRunning;
+  const showReviewerPanelLink =
+    hasReview && onOpenReviewer && !(reviewerDrawerOpen && reviewerPanelActive);
 
   const sendFixMessage = async (text) => {
     await messagesService.create({
@@ -204,6 +237,20 @@ export default function ReviewView({
       toastError('Failed to delete issue', err);
     }
   };
+
+  const renderIssueCard = (issue) => (
+    <SessionIssueCard
+      key={issue.id}
+      issue={issue}
+      models={models}
+      readonly={readonly}
+      saving={savingIssueId === issue.id}
+      onStatusChange={handleIssueStatus}
+      onDelete={handleDeleteIssue}
+      onFix={handleFixIssue}
+      onSave={handleIssueSave}
+    />
+  );
 
   const canStartReview =
     !readonly && !isRunning && !starting && hasSdkKey && Boolean(session?.worktree_path);
@@ -304,12 +351,12 @@ export default function ReviewView({
   }, [models, reviewModel, reviewAgentSdk, readonly, session?.id]);
 
   const followUpReviewControls = !readonly && showFollowUpPanel && !isRunning && (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className={REVIEW_CONTROLS_ROW_CLASS}>
       <button
         type="button"
         onClick={handleReviewNewCommits}
         disabled={reviewingNewCommits}
-        className="inline-flex items-center gap-1.5 bg-brand hover:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand px-3 py-1.5 rounded-lg text-sm font-medium"
+        className={`${REVIEW_ACTION_BUTTON_SIZE_CLASS} bg-brand hover:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand`}
       >
         {reviewingNewCommits ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -318,46 +365,38 @@ export default function ReviewView({
         )}
         Review latest changes
       </button>
-      <div className="flex-1 min-w-2" />
       <button
         type="button"
         onClick={() => setShowClearReviewModal(true)}
-        className="text-xs text-faint hover:text-secondary underline shrink-0"
+        className={`${NEUTRAL_BUTTON_CLASS} ${REVIEW_ACTION_BUTTON_SIZE_CLASS}`}
       >
-        Review the entire change
+        Review the entire session
       </button>
+      {showReviewerPanelLink && <ReviewerPanelLink onClick={onOpenReviewer} />}
     </div>
   );
 
   const runningReviewStatus = isRunning && (
-    <div className="relative flex flex-wrap items-center gap-2">
-      {!readonly && (
-        <button
-          type="button"
-          onClick={handleStop}
-          disabled={stopping}
-          title="Stop"
-          className={COMPOSER_STOP_BUTTON_CLASS}
-        >
-          <Square className="w-3.5 h-3.5 fill-current" />
-        </button>
-      )}
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-        <span className="absolute inset-0 rounded-full bg-brand/15 motion-safe:animate-pulse" />
-        <Bot className="relative h-4 w-4 text-accent motion-safe:animate-pulse" aria-hidden />
+    <div className={REVIEW_CONTROLS_ROW_CLASS}>
+      <div className="flex w-full items-center justify-center gap-2 min-w-0 @min-[36rem]:w-auto @min-[36rem]:flex-1 @min-[36rem]:justify-start">
+        {!readonly && (
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={stopping}
+            title="Stop"
+            className={COMPOSER_STOP_BUTTON_CLASS}
+          >
+            <Square className="w-3.5 h-3.5 fill-current" />
+          </button>
+        )}
+        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-brand/15 motion-safe:animate-pulse" />
+          <Bot className="relative h-4 w-4 text-accent motion-safe:animate-pulse" aria-hidden />
+        </div>
+        <p className="text-sm font-medium text-heading whitespace-nowrap">Review in progress</p>
       </div>
-      <p className="text-sm font-medium text-heading">Review in progress</p>
-      <div className="flex-1 min-w-2" />
-      {!reviewerDrawerOpen && onOpenReviewer && (
-        <button
-          type="button"
-          onClick={onOpenReviewer}
-          className="inline-flex items-center gap-1.5 text-xs text-faint hover:text-secondary underline shrink-0"
-        >
-          <PanelRight className="h-3.5 w-3.5" />
-          Open the reviewer
-        </button>
-      )}
+      {showReviewerPanelLink && <ReviewerPanelLink onClick={onOpenReviewer} />}
     </div>
   );
 
@@ -399,6 +438,8 @@ export default function ReviewView({
                 onCursorModelPrefChange={setCursorModelPref}
                 onModelChange={handleReviewModelChange}
                 availableSdks={availableSdks}
+                userSettings={userSettings}
+                sdkRepo={selectedRepo}
                 onSdkChange={handleReviewSdkChange}
                 canSend={canStartReview}
                 submitLabel="Start review"
@@ -411,7 +452,7 @@ export default function ReviewView({
       <div className="flex-1 min-h-0 overflow-auto">
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-4`}>
           {showFollowUpPanel && (
-            <div className="w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
+            <div className="@container w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
                   Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
@@ -421,14 +462,17 @@ export default function ReviewView({
               {isRunning ? runningReviewStatus : followUpReviewControls}
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex-1 min-w-0" />
-            {!readonly && opened.length > 0 && (
-              <button type="button" onClick={handleFixAllOpened} className={SECONDARY_BUTTON_CLASS}>
+          {!readonly && opened.length > 0 && (
+            <div className="flex justify-stretch sm:justify-end">
+              <button
+                type="button"
+                onClick={handleFixAllOpened}
+                className={`${SECONDARY_BUTTON_CLASS} w-full sm:w-auto justify-center`}
+              >
                 Fix all opened ({opened.length})
               </button>
-            )}
-          </div>
+            </div>
+          )}
           {issuesLoading ? (
             <p className="text-xs text-faint">Loading issues…</p>
           ) : issues.length === 0 ? (
@@ -439,20 +483,23 @@ export default function ReviewView({
                   : 'No issues yet. Review latest changes for another pass.'}
               </p>
             )
+          ) : showIgnoredSection ? (
+            <>
+              {activeIssues.length > 0 && (
+                <section className="space-y-4">
+                  <h2 className={ISSUE_SECTION_HEADING_CLASS}>Issues</h2>
+                  {activeIssues.map(renderIssueCard)}
+                </section>
+              )}
+              <section
+                className={`space-y-4 ${activeIssues.length > 0 ? 'border-t border-line pt-4' : ''}`}
+              >
+                <h2 className={ISSUE_SECTION_HEADING_CLASS}>Ignored</h2>
+                {ignoredIssues.map(renderIssueCard)}
+              </section>
+            </>
           ) : (
-            issues.map((issue) => (
-              <SessionIssueCard
-                key={issue.id}
-                issue={issue}
-                models={models}
-                readonly={readonly}
-                saving={savingIssueId === issue.id}
-                onStatusChange={handleIssueStatus}
-                onDelete={handleDeleteIssue}
-                onFix={handleFixIssue}
-                onSave={handleIssueSave}
-              />
-            ))
+            issues.map(renderIssueCard)
           )}
         </div>
       </div>

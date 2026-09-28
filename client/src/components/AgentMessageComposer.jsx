@@ -43,6 +43,8 @@ export default function AgentMessageComposer({
   onAutoPushChange,
   showAutoPushParam = false,
   availableSdks,
+  userSettings,
+  sdkRepo,
   onSdkChange,
   formClassName = 'relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1',
   skipColumn = false,
@@ -144,6 +146,8 @@ export default function AgentMessageComposer({
           onAutoPushChange={onAutoPushChange}
           showAutoPushParam={showAutoPushParam}
           availableSdks={availableSdks}
+          userSettings={userSettings}
+          sdkRepo={sdkRepo}
           onSdkChange={onSdkChange}
           disabled={disabled || sending}
           className="min-w-0 flex-1 overflow-hidden"

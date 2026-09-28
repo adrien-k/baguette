@@ -666,6 +666,51 @@ export class SessionsService extends KnexService {
     return computeSessionGitStatus(session);
   }
 
+  async sessionUsage(_data, params) {
+    const session = params.resolvedSession;
+    const db = this.app.get('db');
+    const rows = await db('usage')
+      .where({ session_id: session.id })
+      .select(
+        db.raw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END as usage_kind"),
+        'model',
+        'agent_sdk'
+      )
+      .sum('cost_usd as cost_usd')
+      .sum('input_tokens as input_tokens')
+      .sum('output_tokens as output_tokens')
+      .sum('cache_read_tokens as cache_read_tokens')
+      .sum('cache_write_tokens as cache_write_tokens')
+      .sum('total_tokens as total_tokens')
+      .groupByRaw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END, model, agent_sdk")
+      .orderBy('usage_kind')
+      .orderBy('model');
+
+    const breakdown = rows.map((r) => ({
+      kind: r.usage_kind === 'review' ? 'review' : 'session',
+      model: r.model || 'unknown',
+      agent_sdk: r.agent_sdk || 'claude',
+      cost_usd: parseFloat(r.cost_usd ?? 0),
+      input_tokens: Number(r.input_tokens ?? 0),
+      output_tokens: Number(r.output_tokens ?? 0),
+      cache_read_tokens: Number(r.cache_read_tokens ?? 0),
+      cache_write_tokens: Number(r.cache_write_tokens ?? 0),
+      total_tokens: Number(r.total_tokens ?? 0),
+    }));
+
+    const totals = breakdown.reduce(
+      (acc, row) => ({
+        total_tokens: acc.total_tokens + row.total_tokens,
+        cost_usd: acc.cost_usd + row.cost_usd,
+        input_tokens: acc.input_tokens + row.input_tokens,
+        output_tokens: acc.output_tokens + row.output_tokens,
+      }),
+      { total_tokens: 0, cost_usd: 0, input_tokens: 0, output_tokens: 0 }
+    );
+
+    return { totals, breakdown };
+  }
+
   async branchCommits(_data, params) {
     const session = params.resolvedSession;
     if (!session?.worktree_path || isGlobalSession(session)) {
@@ -1495,6 +1540,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'commands',
       'diff',
       'sessionGitStatus',
+      'sessionUsage',
       'branchCommits',
       'shas',
       'showDiff',
@@ -1584,6 +1630,7 @@ export const sessionsHooks = {
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
     sessionGitStatus: [resolveSessionFromData],
+    sessionUsage: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     showDiff: [resolveSessionFromData],

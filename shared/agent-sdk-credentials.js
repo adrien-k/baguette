@@ -1,3 +1,5 @@
+export const AGENT_SDK_IDS = ['claude', 'cursor'];
+
 /** Account- or repo-level credential is configured (masked/plain key fields are truthy when set). */
 export function hasAgentSdkCredential(sdk, userSettings, repo) {
   if (sdk === 'cursor') {
@@ -7,10 +9,12 @@ export function hasAgentSdkCredential(sdk, userSettings, repo) {
 }
 
 export function availableAgentSdks(userSettings, repo) {
-  const sdks = [];
-  if (hasAgentSdkCredential('claude', userSettings, repo)) sdks.push('claude');
-  if (hasAgentSdkCredential('cursor', userSettings, repo)) sdks.push('cursor');
-  return sdks;
+  return AGENT_SDK_IDS.filter((sdk) => hasAgentSdkCredential(sdk, userSettings, repo));
+}
+
+export function agentSdkCredentialTooltip(sdk) {
+  const label = sdk === 'cursor' ? 'Cursor' : 'Claude';
+  return `${label} API key not configured`;
 }
 
 /** Effective API keys for model listing (repo overrides account when set). */

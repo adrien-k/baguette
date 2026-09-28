@@ -27,13 +27,14 @@ export function ParamRowLabel({ label, valueLabel, onValueClick }) {
   );
 }
 
-export function ParamToggleSwitch({ checked, disabled, onToggle }) {
+export function ParamToggleSwitch({ checked, disabled, onToggle, ariaLabel }) {
   return (
     <Toggle
       checked={checked}
       disabled={disabled}
       onChange={() => onToggle()}
       onClick={(e) => e.stopPropagation()}
+      label={ariaLabel}
     />
   );
 }

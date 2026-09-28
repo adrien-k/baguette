@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import LightChipDropdown from './LightChipDropdown.jsx';
 import ComposerParamPicker from './ComposerParamPicker.jsx';
+import Tooltip from './Tooltip.jsx';
+import { ParamToggleSwitch } from './ComposerParamControls.jsx';
 import {
   pickPreferredVariantIdx,
   orderedParamIdsFromVariants,
@@ -12,6 +14,11 @@ import {
 } from '../utils/models.js';
 import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
 import { hasCursorModelPricing } from '@baguette/shared/cursor-model-pricing.js';
+import {
+  AGENT_SDK_IDS,
+  agentSdkCredentialTooltip,
+  hasAgentSdkCredential,
+} from '@baguette/shared/agent-sdk-credentials.js';
 
 function parseSessionModelParams(session) {
   if (!session?.model_params) return null;
@@ -23,6 +30,23 @@ function parseSessionModelParams(session) {
 }
 
 const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
+
+const AUTO_PUSH_TOOLTIP =
+  'Disable auto-push to avoid pushing every agent commit and spare CI cycles.';
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
 
 function currentVariantIndex(variants, sessionParams, cursorModelPrefs) {
   if (!variants.length) return 0;
@@ -54,6 +78,8 @@ export default function SessionModelSelect({
   onAutoPushChange,
   showAutoPushParam = false,
   availableSdks,
+  userSettings,
+  sdkRepo,
   onSdkChange,
   disabled = false,
   className = '',
@@ -88,34 +114,49 @@ export default function SessionModelSelect({
     return opts;
   }, [models, selectedModelId]);
 
-  const sdkOptions = useMemo(
-    () =>
-      (availableSdks ?? []).map((sdk) => ({
-        value: sdk,
-        label: SDK_LABELS[sdk] ?? sdk,
-      })),
-    [availableSdks]
-  );
-
-  const showSdkPicker = availableSdks && availableSdks.length > 1 && onSdkChange;
-
-  const paramPickerItems = useMemo(() => {
-    const items = [];
-    if (showAutoPushParam && onAutoPushChange) {
-      const on = !!session?.auto_push;
-      items.push({
-        id: 'auto-push',
-        kind: 'toggle',
-        label: formatParamLabel('auto-push'),
-        currentValue: on ? 'on' : 'off',
-        valueLabel: on ? 'on' : 'off',
-        options: [
-          { value: 'on', label: 'on' },
-          { value: 'off', label: 'off' },
-        ],
-        onSelect: (value) => onAutoPushChange(value === 'on'),
+  const sdkOptions = useMemo(() => {
+    if (userSettings != null) {
+      return AGENT_SDK_IDS.map((sdk) => {
+        const configured = hasAgentSdkCredential(sdk, userSettings, sdkRepo);
+        return {
+          value: sdk,
+          label: SDK_LABELS[sdk] ?? sdk,
+          disabled: !configured,
+          title: configured ? undefined : agentSdkCredentialTooltip(sdk),
+        };
       });
     }
+    return (availableSdks ?? []).map((sdk) => ({
+      value: sdk,
+      label: SDK_LABELS[sdk] ?? sdk,
+    }));
+  }, [userSettings, sdkRepo, availableSdks]);
+
+  const showSdkPicker =
+    onSdkChange &&
+    (userSettings != null ? true : Boolean(availableSdks && availableSdks.length > 0));
+  const isSmUp = useMediaQuery('(min-width: 640px)');
+  const showAutoPush = showAutoPushParam && onAutoPushChange;
+  const autoPushOn = !!session?.auto_push;
+
+  const autoPushPickerItem = useMemo(() => {
+    if (!showAutoPush) return null;
+    return {
+      id: 'auto-push',
+      kind: 'toggle',
+      label: formatParamLabel('auto-push'),
+      currentValue: autoPushOn ? 'on' : 'off',
+      valueLabel: autoPushOn ? 'on' : 'off',
+      options: [
+        { value: 'on', label: 'on' },
+        { value: 'off', label: 'off' },
+      ],
+      onSelect: (value) => onAutoPushChange(value === 'on'),
+    };
+  }, [showAutoPush, autoPushOn, onAutoPushChange]);
+
+  const cursorParamItems = useMemo(() => {
+    const items = [];
     if (isCursor && variants.length > 0) {
       for (const paramId of orderedParamIds) {
         const valueOptions = paramValueOptionsFromVariants(variants, paramId, currentParams);
@@ -152,9 +193,6 @@ export default function SessionModelSelect({
     }
     return items;
   }, [
-    showAutoPushParam,
-    onAutoPushChange,
-    session?.auto_push,
     isCursor,
     variants,
     orderedParamIds,
@@ -164,6 +202,16 @@ export default function SessionModelSelect({
     onCursorModelPrefChange,
     onModelChange,
   ]);
+
+  const dropdownItems = useMemo(() => {
+    const items = [];
+    if (autoPushPickerItem && !isSmUp) items.push(autoPushPickerItem);
+    items.push(...cursorParamItems);
+    return items;
+  }, [autoPushPickerItem, isSmUp, cursorParamItems]);
+
+  const showInlineAutoPush = showAutoPush && isSmUp;
+  const showParamPicker = dropdownItems.length > 0;
 
   if (!session?.agent_sdk && !showSdkPicker) return null;
 
@@ -222,13 +270,27 @@ export default function SessionModelSelect({
           />
         </div>
 
-        {paramPickerItems.length > 0 && (
-          <div className="shrink-0">
-            <ComposerParamPicker
-              items={paramPickerItems}
-              disabled={disabled}
-              placement="top-start"
-            />
+        {(showInlineAutoPush || showParamPicker) && (
+          <div className="shrink-0 flex items-center">
+            {showInlineAutoPush && (
+              <Tooltip content={AUTO_PUSH_TOOLTIP} wrap placement="top">
+                <span className="inline-flex items-center p-1">
+                  <ParamToggleSwitch
+                    checked={autoPushOn}
+                    disabled={disabled}
+                    ariaLabel="Auto-push"
+                    onToggle={() => onAutoPushChange(!autoPushOn)}
+                  />
+                </span>
+              </Tooltip>
+            )}
+            {showParamPicker && (
+              <ComposerParamPicker
+                items={dropdownItems}
+                disabled={disabled}
+                placement="top-start"
+              />
+            )}
           </div>
         )}
       </div>

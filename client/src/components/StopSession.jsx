@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Square, Loader2 } from 'lucide-react';
+import { Square } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
+import { COMPOSER_STOP_BUTTON_CLASS } from '../utils/buttonStyles.js';
 
 export function isSessionStoppable(session) {
   return !session?.archived_at && session?.status === 'running';
@@ -27,14 +28,10 @@ export default function StopSession({ session }) {
       type="button"
       onClick={handleClick}
       disabled={stopping}
-      title={stopping ? 'Stopping…' : 'Stop session'}
-      className="p-1 text-faint hover:text-danger hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      title="Stop"
+      className={COMPOSER_STOP_BUTTON_CLASS}
     >
-      {stopping ? (
-        <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
-      ) : (
-        <Square className="w-3.5 h-3.5 shrink-0 fill-current" />
-      )}
+      <Square className="w-3.5 h-3.5 fill-current" />
     </button>
   );
 }

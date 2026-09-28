@@ -24,6 +24,7 @@ export default function SessionSidePanel({
   onSelectDiffFile,
   branchCommits,
   branchCommitsLoading,
+  onRefreshBranchCommits,
   selectedDiffCommit,
   onSelectCommit,
   tasks,
@@ -39,14 +40,16 @@ export default function SessionSidePanel({
   loadingMore,
   hasMore,
   sessionId,
+  showReviewerTab = false,
 }) {
   const filesUnavailable = isGlobal;
+  const sidePanelTabs = SIDE_PANEL_TABS.filter((tab) => tab.id !== 'reviewer' || showReviewerTab);
 
   return (
     <>
       <div className="shrink-0 border-b border-line flex items-center gap-1 min-w-0">
         <div className="flex flex-1 min-w-0 overflow-x-auto scrollbar-none">
-          {SIDE_PANEL_TABS.map((tab) => (
+          {sidePanelTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -81,10 +84,12 @@ export default function SessionSidePanel({
             commitsLoading={branchCommitsLoading}
             unavailable={filesUnavailable}
             selectedSha={selectedDiffCommit !== 'all' ? selectedDiffCommit : null}
+            allCommitsSelected={selectedDiffCommit === 'all'}
             onSelectCommit={onSelectCommit}
+            onRefresh={onRefreshBranchCommits}
           />
         )}
-        {sidePanelTab === 'reviewer' && (
+        {showReviewerTab && sidePanelTab === 'reviewer' && (
           <ReviewAgentPanel session={session} readonly={readonly} sidePanelOpen={sidePanelOpen} />
         )}
         {sidePanelTab === 'logs' && (
