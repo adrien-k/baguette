@@ -11,6 +11,7 @@ import {
   resolveParamsAfterParamChange,
 } from '../utils/models.js';
 import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
+import { hasCursorModelPricing } from '@baguette/shared/cursor-model-pricing.js';
 
 function parseSessionModelParams(session) {
   if (!session?.model_params) return null;
@@ -75,6 +76,9 @@ export default function SessionModelSelect({
 
   const modelTriggerLabel =
     selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
+
+  const pricingKnown =
+    !isCursor || (selectedModelId && hasCursorModelPricing(selectedModelId, currentParams));
 
   const modelOptions = useMemo(() => {
     const opts = models.map((m) => ({ value: m.id, label: m.display_name }));
@@ -179,48 +183,62 @@ export default function SessionModelSelect({
   };
 
   return (
-    <div
-      className={`flex w-full min-w-0 max-w-full items-center ${showSdkPicker ? 'gap-2' : 'gap-0.5'} ${className}`}
-    >
-      {showSdkPicker && (
-        <div className="min-w-[56px] max-w-[40%] shrink-0 overflow-hidden">
+    <div className={`flex w-full min-w-0 max-w-full flex-col ${className}`}>
+      <div
+        className={`flex w-full min-w-0 max-w-full items-center ${showSdkPicker ? 'gap-2' : 'gap-0.5'}`}
+      >
+        {showSdkPicker && (
+          <div className="min-w-[56px] max-w-[40%] shrink-0 overflow-hidden">
+            <LightChipDropdown
+              layout="list"
+              value={session?.agent_sdk ?? ''}
+              onChange={onSdkChange}
+              options={sdkOptions}
+              selectedDisplay={{
+                label: SDK_LABELS[session?.agent_sdk] ?? session?.agent_sdk ?? 'Agent',
+              }}
+              ariaLabel="Choose agent SDK"
+              placement="top-start"
+              triggerTitle="Agent for this session"
+              disabled={disabled}
+              shrinkableTrigger
+              triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none max-w-full"
+            />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 overflow-hidden">
           <LightChipDropdown
             layout="list"
-            value={session?.agent_sdk ?? ''}
-            onChange={onSdkChange}
-            options={sdkOptions}
-            selectedDisplay={{
-              label: SDK_LABELS[session?.agent_sdk] ?? session?.agent_sdk ?? 'Agent',
-            }}
-            ariaLabel="Choose agent SDK"
+            value={selectedModelId ?? ''}
+            onChange={pickModel}
+            options={modelOptions}
+            selectedDisplay={{ label: modelTriggerLabel }}
+            ariaLabel="Choose model"
             placement="top-start"
-            triggerTitle="Agent for this session"
+            triggerTitle={modelTriggerLabel}
             disabled={disabled}
             shrinkableTrigger
-            triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none max-w-full"
+            triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
           />
         </div>
-      )}
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <LightChipDropdown
-          layout="list"
-          value={selectedModelId ?? ''}
-          onChange={pickModel}
-          options={modelOptions}
-          selectedDisplay={{ label: modelTriggerLabel }}
-          ariaLabel="Choose model"
-          placement="top-start"
-          triggerTitle={modelTriggerLabel}
-          disabled={disabled}
-          shrinkableTrigger
-          triggerClassName="text-xs text-zinc-500 hover:text-zinc-300 leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
-        />
-      </div>
 
-      {paramPickerItems.length > 0 && (
-        <div className="shrink-0">
-          <ComposerParamPicker items={paramPickerItems} disabled={disabled} placement="top-start" />
-        </div>
+        {paramPickerItems.length > 0 && (
+          <div className="shrink-0">
+            <ComposerParamPicker
+              items={paramPickerItems}
+              disabled={disabled}
+              placement="top-start"
+            />
+          </div>
+        )}
+      </div>
+      {isCursor && selectedModelId && !pricingKnown && (
+        <p
+          className="text-[11px] leading-tight text-amber-400/85 pt-0.5 truncate"
+          title="This model is not in Baguette's Cursor pricing table, so token usage will not be converted to an estimated cost."
+        >
+          No pricing data for this model — session cost will not be estimated.
+        </p>
       )}
     </div>
   );

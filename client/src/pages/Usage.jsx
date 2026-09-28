@@ -189,7 +189,9 @@ export default function Usage() {
           label="Reported cost"
           value={loading ? '…' : showCost ? formatUsd(totals.cost_usd) : '—'}
           hint={
-            showCost ? 'Claude only; Cursor local agents report $0' : 'No billed cost in this range'
+            showCost
+              ? 'Claude billed; Cursor estimated from pricing table'
+              : 'No billed cost in this range'
           }
         />
       </div>

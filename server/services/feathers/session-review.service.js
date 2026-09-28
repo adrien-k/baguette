@@ -521,7 +521,10 @@ export class SessionReviewService {
 
     if (outcome === 'completed' && agent) {
       await cursorAgent
-        .recordTurnUsage(session, agent, turnUsage, { kind: 'review' })
+        .recordTurnUsage(session, agent, turnUsage, {
+          kind: 'review',
+          turnModel: { model, modelParams },
+        })
         .catch((err) =>
           logger.warn(
             { sessionId: session.id, err: err.message },

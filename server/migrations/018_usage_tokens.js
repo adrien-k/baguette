@@ -1,10 +1,9 @@
 /**
  * Token counts and model per usage row.
  *
- * Cursor's usage API answers 403 `feature_unavailable` for local agents (the only
- * kind Baguette runs), so `cost_usd` is 0 for every Cursor turn. Token counts are
- * reported for both SDKs regardless, which makes them the only usable measure of
- * how much a session actually did.
+ * Cursor local agents cannot report billed USD via `agent.getUsage()` (403
+ * `feature_unavailable`). Token counts from the run stream are stored here; Cursor
+ * `cost_usd` is filled from the pricing table in application code when possible.
  *
  * Plain ADD COLUMNs: SQLite does these natively, so the table is not rebuilt and
  * the foreign keys into `usage` are untouched.

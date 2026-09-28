@@ -3,7 +3,8 @@
  *
  * Both SDKs report usage *cumulatively* rather than per turn:
  *
- *  - Cursor's `agent.getUsage()` totals the whole agent.
+ *  - Cursor turn tokens come from the run stream (`SDKUsageMessage`), not
+ *    `agent.getUsage()` (local agents cannot report billed USD there).
  *  - The Claude SDK's `total_cost_usd` and `modelUsage` are "cumulative across
  *    turns in streaming-input sessions — each result carries the running total so
  *    far, so read the latest result rather than summing across results". Baguette
