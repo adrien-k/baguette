@@ -14,6 +14,7 @@ import {
   PanelRight,
   ClipboardCheck,
   MonitorPlay,
+  FileText,
 } from 'lucide-react';
 import BuilderForm from '../components/BuilderForm.jsx';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
@@ -22,16 +23,12 @@ import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
-import { splitRepoPath } from '../utils/paths.js';
 import { apiFetch } from '../api.js';
 import { sessionsService, tasksService } from '../feathers.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
-import TaskPanel from '../components/TaskPanel.jsx';
-import LightChipDropdown from '../components/LightChipDropdown.jsx';
-import LogsView from './session/LogsView.jsx';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
@@ -40,7 +37,13 @@ import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
-import ReviewAgentPanel from './session/ReviewAgentPanel.jsx';
+import DetailsView from './session/DetailsView.jsx';
+import SessionSidePanel from './session/SessionSidePanel.jsx';
+import {
+  defaultPanelForView,
+  resolveSidePanelTab,
+  SIDE_PANEL_TAB_IDS,
+} from './session/sessionSidePanelTabs.js';
 import SessionTools from '../components/SessionTools.jsx';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
@@ -55,8 +58,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
 import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
 
-const TASK_PANEL_WIDTH_DEFAULT = 320;
-const REVIEW_PANEL_WIDTH_DEFAULT = 480;
+const SIDE_PANEL_WIDTH_DEFAULT = 360;
 const SIDE_PANEL_WIDTH_MIN = 240;
 const SIDE_PANEL_WIDTH_MAX = 800;
 
@@ -286,18 +288,8 @@ const BASE_VIEWS = [
   { id: 'review', label: 'Issues', Icon: ClipboardCheck },
   { id: 'diff', label: 'Diff', Icon: FolderOpen },
 ];
+const DETAILS_VIEW = { id: 'details', label: 'Details', Icon: FileText };
 const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
-const CHAT_PANEL_TABS = new Set(['tasks', 'logs']);
-const CHAT_SIDE_PANEL_OPTIONS = [
-  { value: 'tasks', label: 'Tasks' },
-  { value: 'logs', label: 'Logs' },
-];
-
-function chatSidePanelTabFromParam(panelParam) {
-  if (panelParam === 'logs') return 'logs';
-  return 'tasks';
-}
-
 function nextVisibleSession({ sessions, short_id, session, repoId, fromAllSessions }) {
   return sessions.find((s) => {
     if (
@@ -355,15 +347,25 @@ export default function Session() {
   const isXlScreen = useMediaQuery('(min-width: 1280px)');
   const [showSidebar, setShowSidebar] = useState(null);
   const sidePanelPersist = usePersistentState('session-side-panel');
-  const [tasksPanelWidth, setTasksPanelWidth] = sidePanelPersist.useState(
-    'tasksWidth',
-    TASK_PANEL_WIDTH_DEFAULT
+  const [sidePanelWidth, setSidePanelWidth] = sidePanelPersist.useState(
+    'width',
+    SIDE_PANEL_WIDTH_DEFAULT
   );
-  const [reviewPanelWidth, setReviewPanelWidth] = sidePanelPersist.useState(
-    'reviewWidth',
-    REVIEW_PANEL_WIDTH_DEFAULT
-  );
+  useLayoutEffect(() => {
+    try {
+      const store = JSON.parse(localStorage.getItem('session-side-panel') || '{}');
+      if (store.width != null) return;
+      const legacy = store.reviewWidth ?? store.tasksWidth;
+      if (typeof legacy === 'number') setSidePanelWidth(legacy);
+    } catch {
+      /* ignore */
+    }
+  }, [setSidePanelWidth]);
   const [diffFiles, setDiffFiles] = useState([]);
+  const [branchCommits, setBranchCommits] = useState(undefined);
+  const [branchCommitsLoading, setBranchCommitsLoading] = useState(false);
+  const diffCommitParam = searchParams.get('commit');
+  const selectedDiffCommit = diffCommitParam && diffCommitParam !== 'all' ? diffCommitParam : 'all';
   const [models, setModels] = useState([]);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -374,7 +376,10 @@ export default function Session() {
   const [error, setError] = useState(null);
   const panelParam = searchParams.get('panel');
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
-  const chatSidePanelTab = chatSidePanelTabFromParam(panelParam);
+  const sidePanelTab = useMemo(
+    () => resolveSidePanelTab(panelParam, activeView),
+    [panelParam, activeView]
+  );
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -465,12 +470,13 @@ export default function Session() {
   );
 
   const views = useMemo(() => {
-    if (isNewSessionRoute) return BASE_VIEWS;
+    if (isNewSessionRoute) return [...BASE_VIEWS, DETAILS_VIEW];
     if (isGlobalSession(session)) {
-      return BASE_VIEWS.filter((v) => v.id === 'chat');
+      return [BASE_VIEWS[0], DETAILS_VIEW];
     }
     const list = [...BASE_VIEWS];
     if (hasPreview) list.push(PREVIEW_VIEW);
+    list.push(DETAILS_VIEW);
     return list;
   }, [isNewSessionRoute, session, hasPreview]);
 
@@ -646,13 +652,14 @@ export default function Session() {
     }
   };
 
-  const setChatSidePanel = useCallback(
+  const setSidePanelTab = useCallback(
     (tab, { openMobile = true } = {}) => {
-      if (isNewSessionRoute || activeView !== 'chat') return;
+      if (isNewSessionRoute || !SIDE_PANEL_TAB_IDS.has(tab)) return;
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          next.delete('view');
+          if (activeView !== 'chat') next.set('view', activeView);
+          else next.delete('view');
           next.set('panel', tab);
           return next;
         },
@@ -668,6 +675,65 @@ export default function Session() {
     setShowTasks(false);
   }, [setShowTasks, isXlScreen]);
 
+  const shouldLoadBranchCommits = sidePanelTab === 'commits';
+
+  useEffect(() => {
+    setBranchCommits(undefined);
+    setBranchCommitsLoading(false);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!shouldLoadBranchCommits) return;
+    if (!sessionId || isGlobalSession(session ?? {})) {
+      setBranchCommits([]);
+      setBranchCommitsLoading(false);
+      return;
+    }
+    setBranchCommitsLoading(true);
+    let cancelled = false;
+    sessionsService
+      .branchCommits(sessionId)
+      .then((res) => {
+        if (!cancelled) setBranchCommits(res.commits ?? []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setBranchCommits([]);
+          toastError('Failed to load commits', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBranchCommitsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldLoadBranchCommits, sessionId, session?.is_global, diffFiles.length]);
+
+  const handleDiffCommitChange = useCallback(
+    (sha) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('view', 'diff');
+          if (sha && sha !== 'all') next.set('commit', sha);
+          else next.delete('commit');
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const handleSelectCommitFromSidebar = useCallback(
+    (sha) => {
+      handleDiffCommitChange(sha);
+      hideSidePanel();
+    },
+    [handleDiffCommitChange, hideSidePanel]
+  );
+
   const toggleSidePanel = useCallback(() => {
     if (isXlScreen) return;
     setShowTasks((open) => !open);
@@ -678,13 +744,17 @@ export default function Session() {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams();
-        if (view !== 'chat') {
-          next.set('view', view);
-        } else {
-          const panel = prev.get('panel');
-          if (CHAT_PANEL_TABS.has(panel)) {
-            next.set('panel', panel);
-          }
+        if (view !== 'chat') next.set('view', view);
+        const panel =
+          view === 'diff' || view === 'review'
+            ? defaultPanelForView(view)
+            : prev.get('panel') && SIDE_PANEL_TAB_IDS.has(prev.get('panel'))
+              ? prev.get('panel')
+              : 'tasks';
+        next.set('panel', panel);
+        if (view === 'diff') {
+          const commit = prev.get('commit');
+          if (commit) next.set('commit', commit);
         }
         return next;
       },
@@ -806,7 +876,7 @@ export default function Session() {
       );
       return;
     }
-    if (activeView === 'chat' && panelParam) {
+    if (panelParam && SIDE_PANEL_TAB_IDS.has(panelParam)) {
       setShowTasks(true);
     }
   }, [
@@ -869,10 +939,35 @@ export default function Session() {
     if (!isMdUp) setShowSidebar(false);
   }, [isMdUp]);
 
-  const isReviewPanel = activeView === 'review';
   const isSidePanelOpen = !isNewSessionRoute && (isXlScreen || showTasks);
-  const sidePanelWidth = isReviewPanel ? reviewPanelWidth : tasksPanelWidth;
-  const setSidePanelWidth = isReviewPanel ? setReviewPanelWidth : setTasksPanelWidth;
+  const prevActiveViewRef = useRef(activeView);
+  useEffect(() => {
+    const prev = prevActiveViewRef.current;
+    prevActiveViewRef.current = activeView;
+    if (isNewSessionRoute || !session || prev === activeView) return;
+    if (activeView === 'diff' && prev !== 'diff') {
+      setSidePanelTab('files', { openMobile: false });
+    } else if (activeView === 'review' && prev !== 'review') {
+      setSidePanelTab('reviewer', { openMobile: false });
+    }
+  }, [activeView, session, isNewSessionRoute, setSidePanelTab]);
+
+  const handleSelectDiffFile = useCallback(
+    (index) => {
+      hideSidePanel();
+      if (activeView !== 'diff') setView('diff');
+      window.setTimeout(
+        () => {
+          document
+            .getElementById(`diff-file-${index}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        },
+        activeView === 'diff' ? 0 : 80
+      );
+    },
+    [activeView, hideSidePanel]
+  );
+
   const handleSidePanelResizeStart = (event) => {
     event.preventDefault();
     const handle = event.currentTarget;
@@ -1099,7 +1194,7 @@ export default function Session() {
               onClick={toggleSidePanel}
               className={`xl:hidden ml-auto flex items-center justify-center shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                 !isNewSessionRoute &&
-                activeView === 'review' &&
+                sidePanelTab === 'reviewer' &&
                 session?.review_status === 'running' &&
                 !showTasks
                   ? 'text-amber-400 motion-safe:animate-pulse'
@@ -1196,12 +1291,15 @@ export default function Session() {
                 session={session}
                 readonly={isReadonly}
                 reviewerDrawerOpen={isXlScreen || showTasks}
-                onOpenReviewer={() => setShowTasks(true)}
+                onOpenReviewer={() => setSidePanelTab('reviewer')}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'diff' && (
               <DiffView
                 session={session}
+                selectedCommit={selectedDiffCommit}
+                commits={branchCommits}
+                onSelectedCommitChange={handleDiffCommitChange}
                 onFilesChange={setDiffFiles}
                 readonly={isReadonly}
                 models={models}
@@ -1217,6 +1315,9 @@ export default function Session() {
                 onViewLogs={handleViewTaskLogs}
               />
             )}
+            {!isNewSessionRoute && !awaitingSession && session && activeView === 'details' && (
+              <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />
+            )}
           </div>
         </div>
 
@@ -1230,9 +1331,7 @@ export default function Session() {
         )}
         {isSidePanelOpen && (
           <div
-            className={`flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-zinc-800 bg-zinc-900 fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)] ${
-              isReviewPanel ? 'max-w-xl md:max-w-[min(85vw,100%)]' : ''
-            }`}
+            className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-zinc-800 bg-zinc-900 fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)]"
             style={{ '--side-panel-w': `${sidePanelWidth}px` }}
           >
             <div
@@ -1242,97 +1341,34 @@ export default function Session() {
               onPointerDown={handleSidePanelResizeStart}
               className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-amber-500/50 active:bg-amber-500/70"
             />
-            <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between gap-2">
-              {activeView === 'chat' ? (
-                <LightChipDropdown
-                  value={chatSidePanelTab}
-                  onChange={(tab) => setChatSidePanel(tab)}
-                  layout="list"
-                  options={CHAT_SIDE_PANEL_OPTIONS}
-                  ariaLabel="Side panel"
-                  triggerClassName="font-medium"
-                />
-              ) : (
-                <h3 className="text-sm font-medium text-zinc-300">
-                  {activeView === 'diff' ? 'Files' : activeView === 'review' ? 'Reviewer' : 'Tasks'}
-                </h3>
-              )}
-              <button
-                type="button"
-                onClick={hideSidePanel}
-                className="xl:hidden text-zinc-600 hover:text-zinc-400 transition-colors p-0.5 shrink-0"
-                title="Hide side panel"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            {activeView === 'diff' ? (
-              <div className="flex-1 overflow-auto min-h-0">
-                {diffFiles.length === 0 ? (
-                  <p className="text-xs text-zinc-500 px-3 py-4">No files changed</p>
-                ) : (
-                  diffFiles.map((file, i) => {
-                    const displayPath = file.newPath !== '/dev/null' ? file.newPath : file.oldPath;
-                    const { basename, dirname } = splitRepoPath(displayPath);
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => {
-                          hideSidePanel();
-                          document
-                            .getElementById(`diff-file-${i}`)
-                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }}
-                        className="w-full flex items-start justify-between gap-2 px-3 py-2 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800/50"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <span className="font-mono text-xs text-zinc-300 truncate block">
-                            {basename}
-                          </span>
-                          {dirname ? (
-                            <span className="font-mono text-[10px] text-zinc-500 truncate block mt-0.5">
-                              {dirname}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1 pt-0.5">
-                          <span className="text-xs text-emerald-400">+{file.addedCount}</span>
-                          <span className="text-xs text-red-400">-{file.removedCount}</span>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            ) : activeView === 'review' ? (
-              <ReviewAgentPanel
-                session={session}
-                readonly={isReadonly}
-                sidePanelOpen={isSidePanelOpen}
-              />
-            ) : activeView === 'chat' && chatSidePanelTab === 'logs' ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <LogsView
-                  rawMessages={rawMessages}
-                  loadMore={loadMore}
-                  loadingMore={loadingMore}
-                  hasMore={hasMore}
-                  resetKey={sessionId}
-                />
-              </div>
-            ) : (
-              <TaskPanel
-                tasks={tasks}
-                configCommands={configCommands}
-                onStartTask={handleTaskStart}
-                onRunCommand={handleCommandRun}
-                onKill={handleTaskKill}
-                onDelete={handleTaskDelete}
-                onRetry={handleTaskRetry}
-                onViewLogs={handleViewTaskLogs}
-                readonly={isReadonly}
-              />
-            )}
+            <SessionSidePanel
+              sidePanelTab={sidePanelTab}
+              onSidePanelTabChange={setSidePanelTab}
+              onClose={hideSidePanel}
+              session={session}
+              isGlobal={isGlobalSession(session)}
+              readonly={isReadonly}
+              sidePanelOpen={isSidePanelOpen}
+              diffFiles={diffFiles}
+              onSelectDiffFile={handleSelectDiffFile}
+              branchCommits={branchCommits}
+              branchCommitsLoading={branchCommitsLoading}
+              selectedDiffCommit={selectedDiffCommit}
+              onSelectCommit={handleSelectCommitFromSidebar}
+              tasks={tasks}
+              configCommands={configCommands}
+              onStartTask={handleTaskStart}
+              onRunCommand={handleCommandRun}
+              onKill={handleTaskKill}
+              onDelete={handleTaskDelete}
+              onRetry={handleTaskRetry}
+              onViewLogs={handleViewTaskLogs}
+              rawMessages={rawMessages}
+              loadMore={loadMore}
+              loadingMore={loadingMore}
+              hasMore={hasMore}
+              sessionId={sessionId}
+            />
           </div>
         )}
       </div>

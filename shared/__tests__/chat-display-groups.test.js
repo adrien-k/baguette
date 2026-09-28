@@ -36,6 +36,47 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(prUpsert)).toBe(false);
   });
 
+  it('treats Cursor mcp meta-tool PrUpsert as a group boundary', () => {
+    const prUpsert = {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mcp',
+            id: 'pr',
+            input: { toolName: 'PrUpsert', args: { title: 't', description: 'd' } },
+          },
+        ],
+      },
+    };
+    expect(messageContainsPrUpsert(prUpsert)).toBe(true);
+    expect(isChatGroupBoundary(prUpsert)).toBe(true);
+    expect(isChatWorkMessage(prUpsert)).toBe(false);
+  });
+
+  it('does not collapse Cursor PrUpsert into a surrounding Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'mcp', id: 'pr', input: { toolName: 'PrUpsert' } }],
+        },
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.message.content[0].input.toolName).toBe('PrUpsert');
+  });
+
   it('does not collapse work with at most five tool calls', () => {
     const messages = [
       { type: 'user', message: { content: 'go' }, created_at: '2026-01-01T00:00:00Z' },

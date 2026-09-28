@@ -60,6 +60,7 @@ export const sessionsService = createService('sessions', {
     'commands',
     'diff',
     'sessionGitStatus',
+    'branchCommits',
     'shas',
     'showDiff',
     'merge',

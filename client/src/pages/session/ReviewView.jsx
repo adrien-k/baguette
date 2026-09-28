@@ -375,7 +375,7 @@ export default function ReviewView({
             <div>
               <div className="flex flex-wrap items-baseline justify-end gap-2 mb-1">
                 <Link
-                  to="/settings?tab=agent&prompt=review#settings-agent-prompts"
+                  to="/settings?tab=prompts#settings-prompt-review"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-amber-400 hover:text-amber-300 underline"

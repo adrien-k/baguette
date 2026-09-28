@@ -7,19 +7,28 @@ function toolUseNameIsPrUpsert(name) {
   return name.endsWith('__PrUpsert');
 }
 
+function nestedMcpToolName(block) {
+  return block.input?.toolName ?? block.input?.name ?? null;
+}
+
 function blockIsLegacyPrUpsertBash(block) {
   if (block.type !== 'tool_use' || block.name !== 'Bash') return false;
   const cmd = block.input?.command;
   return typeof cmd === 'string' && cmd.trimStart().startsWith('baguette-op pr-upsert');
 }
 
-/** Assistant message whose only visible tools include PrUpsert (MCP or legacy bash op). */
+/** MCP PrUpsert as Claude `mcp__…__PrUpsert`, Cursor `mcp` meta-tool, or legacy bash op. */
+function blockIsPrUpsert(block) {
+  if (block.type !== 'tool_use' || block._hidden) return false;
+  if (toolUseNameIsPrUpsert(block.name)) return true;
+  if (block.name === 'mcp' && toolUseNameIsPrUpsert(nestedMcpToolName(block))) return true;
+  return blockIsLegacyPrUpsertBash(block);
+}
+
+/** Assistant message whose visible tools include PrUpsert (MCP or legacy bash op). */
 export function messageContainsPrUpsert(msg) {
   if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
-  return msg.message.content.some((b) => {
-    if (b.type !== 'tool_use' || b._hidden) return false;
-    return toolUseNameIsPrUpsert(b.name) || blockIsLegacyPrUpsertBash(b);
-  });
+  return msg.message.content.some(blockIsPrUpsert);
 }
 
 /** User or assistant message with visible text — boundaries of a chat turn. */

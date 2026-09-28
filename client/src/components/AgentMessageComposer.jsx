@@ -10,13 +10,13 @@ export const COMPOSER_ACTION_BUTTON_LAYOUT =
 
 /** Amber fill shared by Send/Start and its caret; use inside `COMPOSER_SPLIT_GROUP_CLASS`. */
 export const COMPOSER_SPLIT_AMBER_CLASS =
-  'bg-amber-500 hover:bg-amber-400 group-hover/split:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:group-hover/split:bg-zinc-700 text-zinc-950 transition-colors';
+  'bg-amber-500 hover:enabled:bg-amber-400 group-hover/split:enabled:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 transition-colors';
 
 export const COMPOSER_SPLIT_GROUP_CLASS = 'group/split inline-flex items-stretch shrink-0';
 
-const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent transition-colors disabled:cursor-not-allowed`;
+const SEND_BUTTON_BASE = `${COMPOSER_ACTION_BUTTON_LAYOUT} bg-amber-500 hover:enabled:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 border border-transparent transition-colors disabled:cursor-not-allowed`;
 
-const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-amber-600/40 group-hover/split:border-amber-500/50 disabled:border-r-zinc-600 disabled:cursor-not-allowed`;
+const SEND_BUTTON_SPLIT = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent border-r border-amber-600/40 group-hover/split:enabled:border-amber-500/50 disabled:border-r-zinc-600 disabled:cursor-not-allowed`;
 
 /** Tighter horizontal padding on small viewports; roomier from md up. */
 const SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   AlignLeft,
   Columns2,
+  MessageSquarePlus,
 } from 'lucide-react';
 import { sessionsService } from '../../feathers.js';
 import toast from 'react-hot-toast';
@@ -143,31 +144,32 @@ function lineRefFromRow(row, filePath) {
   return { path: filePath, line };
 }
 
-function DiffCodeRow({ rowClass, onLineReference, title, active, children }) {
-  const clickable = Boolean(onLineReference);
+function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
+  const canOpen = Boolean(onOpenComposer);
   return (
     <div
-      role={clickable ? 'button' : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      title={title}
-      onClick={clickable ? onLineReference : undefined}
-      onKeyDown={
-        clickable
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onLineReference();
-              }
-            }
-          : undefined
-      }
-      className={`flex items-start ${rowClass} ${
-        clickable
-          ? 'cursor-pointer hover:ring-1 hover:ring-inset hover:ring-amber-500/40 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-amber-500/50'
-          : ''
-      } ${active ? 'ring-1 ring-inset ring-amber-500/60' : ''}`}
+      className={`group/diffline relative flex items-start ${rowClass} ${
+        active ? 'ring-1 ring-inset ring-amber-500/60' : ''
+      }`}
     >
       {children}
+      {canOpen && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenComposer();
+          }}
+          title={LINE_HINT}
+          aria-label={LINE_HINT}
+          aria-expanded={active}
+          className={`absolute right-1 top-0.5 z-10 inline-flex items-center justify-center w-6 h-6 rounded-md border border-zinc-600 bg-zinc-800/95 text-zinc-300 shadow-sm transition-opacity hover:bg-zinc-700 hover:text-white hover:border-zinc-500 ${
+            active ? 'opacity-100' : 'opacity-0 group-hover/diffline:opacity-100'
+          }`}
+        >
+          <MessageSquarePlus className="w-3.5 h-3.5" strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }
@@ -198,16 +200,11 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
         }
         const ref = lineRefFromRow(row, filePath);
         const active = ref ? isLineActive(activeLine, filePath, ref.line) : false;
-        const clickable = onLineReference ? () => sendRef(row) : undefined;
+        const openComposer = onLineReference ? () => sendRef(row) : undefined;
         let body;
         if (row.type === 'removed') {
           body = (
-            <DiffCodeRow
-              rowClass={DIFF_REMOVED_ROW}
-              onLineReference={clickable}
-              title={onLineReference ? LINE_HINT : undefined}
-              active={active}
-            >
+            <DiffCodeRow rowClass={DIFF_REMOVED_ROW} onOpenComposer={openComposer} active={active}>
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}></span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
@@ -215,12 +212,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
           );
         } else if (row.type === 'added') {
           body = (
-            <DiffCodeRow
-              rowClass={DIFF_ADDED_ROW}
-              onLineReference={clickable}
-              title={onLineReference ? LINE_HINT : undefined}
-              active={active}
-            >
+            <DiffCodeRow rowClass={DIFF_ADDED_ROW} onOpenComposer={openComposer} active={active}>
               <span className={NUM_CLS}></span>
               <span className={NUM_CLS}>{row.newNum}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
@@ -228,12 +220,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
           );
         } else {
           body = (
-            <DiffCodeRow
-              rowClass={DIFF_CONTEXT_ROW}
-              onLineReference={clickable}
-              title={onLineReference ? LINE_HINT : undefined}
-              active={active}
-            >
+            <DiffCodeRow rowClass={DIFF_CONTEXT_ROW} onOpenComposer={openComposer} active={active}>
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}>{row.newNum}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
@@ -277,8 +264,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
             row.left ? (
               <DiffCodeRow
                 rowClass={DIFF_REMOVED_ROW}
-                onLineReference={onLineReference ? () => sendRef(row.left) : undefined}
-                title={onLineReference ? LINE_HINT : undefined}
+                onOpenComposer={onLineReference ? () => sendRef(row.left) : undefined}
                 active={leftActive}
               >
                 <span className={NUM_CLS}>{row.left.num}</span>
@@ -293,8 +279,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
           ) : (
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
-              onLineReference={onLineReference ? () => sendRef(row.left) : undefined}
-              title={onLineReference ? LINE_HINT : undefined}
+              onOpenComposer={onLineReference ? () => sendRef(row.left) : undefined}
               active={leftActive}
             >
               <span className={NUM_CLS}>{row.left?.num}</span>
@@ -306,8 +291,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
             row.right ? (
               <DiffCodeRow
                 rowClass={DIFF_ADDED_ROW}
-                onLineReference={onLineReference ? () => sendRef(row.right) : undefined}
-                title={onLineReference ? LINE_HINT : undefined}
+                onOpenComposer={onLineReference ? () => sendRef(row.right) : undefined}
                 active={rightActive}
               >
                 <span className={NUM_CLS}>{row.right.num}</span>
@@ -322,8 +306,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
           ) : (
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
-              onLineReference={onLineReference ? () => sendRef(row.right) : undefined}
-              title={onLineReference ? LINE_HINT : undefined}
+              onOpenComposer={onLineReference ? () => sendRef(row.right) : undefined}
               active={rightActive}
             >
               <span className={NUM_CLS}>{row.right?.num}</span>
@@ -389,6 +372,9 @@ function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, compo
 
 export default function DiffView({
   session,
+  selectedCommit = 'all',
+  commits = null,
+  onSelectedCommitChange,
   onFilesChange,
   readonly,
   models,
@@ -411,16 +397,21 @@ export default function DiffView({
     !!session?.pr_number && (prStatus === 'open' || prStatus === 'draft' || prStatus === null);
 
   const sessionId = session?.id;
+  const isSingleCommit = selectedCommit && selectedCommit !== 'all';
+  const selectedCommitMeta = isSingleCommit
+    ? (commits ?? []).find((c) => c.sha === selectedCommit)
+    : null;
   const fetchDiff = useCallback(() => {
     if (!sessionId) return;
     setLoading(true);
     setError(null);
+    const payload = isSingleCommit ? { id: sessionId, commit: selectedCommit } : sessionId;
     sessionsService
-      .diff(sessionId)
+      .diff(payload)
       .then((res) => setDiff(res.diff || ''))
       .catch((err) => setError(err.message || 'Failed to load diff'))
       .finally(() => setLoading(false));
-  }, [sessionId]);
+  }, [sessionId, isSingleCommit, selectedCommit]);
 
   useEffect(() => {
     fetchDiff();
@@ -471,8 +462,30 @@ export default function DiffView({
       />
     ) : null;
 
+  const commitSelector =
+    onSelectedCommitChange && !session?.is_global ? (
+      <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-zinc-800/60 bg-zinc-900/50">
+        <label className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-600 shrink-0">Commit</span>
+          <select
+            value={selectedCommit}
+            onChange={(e) => onSelectedCommitChange(e.target.value)}
+            className="flex-1 min-w-0 max-w-md text-xs bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+          >
+            <option value="all">All commits</option>
+            {(commits ?? []).map((c) => (
+              <option key={c.sha} value={c.sha}>
+                {c.short_sha} — {c.subject}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    ) : null;
+
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      {commitSelector}
       {/* Diff content */}
       <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-4">
         {loading && (
@@ -489,18 +502,35 @@ export default function DiffView({
         {!loading && !error && !hasDiff && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-zinc-500 text-sm">
             <p>
-              No changes compared to <span className="text-zinc-400">{session.base_branch}</span>
+              {isSingleCommit ? (
+                'No changes in this commit.'
+              ) : (
+                <>
+                  No changes compared to{' '}
+                  <span className="text-zinc-400">{session.base_branch}</span>
+                </>
+              )}
             </p>
           </div>
         )}
         {!loading && !error && hasDiff && (
           <div className="space-y-3">
             {/* Header: file count + view mode toggle */}
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-zinc-500">
                 {files.length} file{files.length !== 1 ? 's' : ''} changed
                 {canComment && (
-                  <span className="text-zinc-600"> · click a line to message the agent</span>
+                  <span className="text-zinc-600">
+                    {' '}
+                    · hover a line and use{' '}
+                    <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to message
+                    the agent
+                  </span>
+                )}
+                {isSingleCommit && selectedCommitMeta && (
+                  <span className="text-zinc-600 hidden sm:inline">
+                    · {selectedCommitMeta.subject}
+                  </span>
                 )}
               </span>
               <div className="flex items-center gap-0.5 bg-zinc-800 rounded-lg p-0.5">

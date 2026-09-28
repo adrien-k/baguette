@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, Monitor } from 'lucide-react';
+import {
+  Bot,
+  GitBranch,
+  Bell,
+  KeyRound,
+  Puzzle,
+  Users,
+  Blocks,
+  Monitor,
+  ScrollText,
+} from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -18,6 +28,7 @@ import {
   SlackTab,
 } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
+import PromptsSettingsTab from './settings/PromptsSettingsTab.jsx';
 import { SettingsSection, SettingsTabHeader } from '../components/SettingsSection.jsx';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
 
@@ -174,7 +185,7 @@ function RepositoriesTab({ settings, onSave }) {
     <div>
       <SettingsTabHeader title="Repositories">
         Repositories you can start sessions on. Link GitHub repositories or create local ones.
-        Per-repo API keys and prompts are configured under Agent.
+        Per-repo API keys are under Agent; per-repo prompts are under Prompts.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -472,6 +483,7 @@ function IntegrationsTab({ settings, onRefreshSettings }) {
 const TABS = [
   { id: 'repos', label: 'Repositories', icon: GitBranch },
   { id: 'agent', label: 'Agent', icon: Bot },
+  { id: 'prompts', label: 'Prompts', icon: ScrollText },
   { id: 'integrations', label: 'Integrations', icon: Blocks },
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -542,6 +554,12 @@ export default function Settings() {
           )}
           {activeTab === 'agent' && settings && (
             <AgentSettingsTab settings={settings} onSave={setSettings} />
+          )}
+          {activeTab === 'prompts' && !settings && !error && (
+            <p className="text-zinc-500">Loading…</p>
+          )}
+          {activeTab === 'prompts' && settings && (
+            <PromptsSettingsTab settings={settings} onSave={setSettings} />
           )}
           {activeTab === 'integrations' && !settings && !error && (
             <p className="text-zinc-500">Loading…</p>

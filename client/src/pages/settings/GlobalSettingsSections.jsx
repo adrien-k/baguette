@@ -10,6 +10,7 @@ import {
   slackService,
 } from '../../feathers.js';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
+import SystemWideBadge from '../../components/SystemWideBadge.jsx';
 import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
 
 function SecretRow({ secret, onDelete }) {
@@ -112,29 +113,31 @@ export function SecretsTab() {
     <div>
       <SettingsTabHeader title="Secrets">
         Secrets are available in <code className="text-zinc-300">.baguette.yaml</code> config where
-        they can be assigned to environment variables. Personal secrets override global secrets with
-        the same key.
+        they can be assigned to environment variables. Personal secrets override system-wide secrets
+        with the same key.
       </SettingsTabHeader>
 
       <div className="space-y-6">
         <SettingsSection
-          title="Global secrets"
+          title="System-wide secrets"
           description="Shared across all users and sessions on this Baguette instance."
         >
           <div className="divide-y divide-zinc-800">
             {globalSecrets.length === 0 && (
-              <p className="text-zinc-600 text-sm text-center py-8">No global secrets configured</p>
+              <p className="text-zinc-600 text-sm text-center py-8">
+                No system-wide secrets configured
+              </p>
             )}
             {globalSecrets.map((v) => (
               <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
             ))}
           </div>
-          <SecretAddForm title="Add global secret" scope="global" onAdded={load} />
+          <SecretAddForm title="Add system-wide secret" scope="global" onAdded={load} />
         </SettingsSection>
 
         <SettingsSection
           title="Personal secrets"
-          description="Only for your account. Same key as a global secret wins for your sessions."
+          description="Only for your account. Same key as a system-wide secret wins for your sessions."
         >
           <div className="divide-y divide-zinc-800">
             {personalSecrets.length === 0 && (
@@ -190,6 +193,7 @@ export function AllRepositoriesSection() {
   return (
     <SettingsSection
       title="All repositories"
+      headerAside={<SystemWideBadge />}
       description="Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the clone for all users."
     >
       <div className="divide-y divide-zinc-800">
@@ -592,7 +596,8 @@ function DockerComposeSection() {
     <div className="space-y-6">
       <SettingsSection
         title="Docker"
-        description="Global Docker Compose configuration stored in the data directory. Services defined here are available to all sessions."
+        headerAside={<SystemWideBadge />}
+        description="System-wide Docker Compose configuration stored in the data directory. Services defined here are available to all sessions."
       >
         <textarea
           value={content}
@@ -614,7 +619,7 @@ function DockerComposeSection() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Docker services">
+      <SettingsSection title="Docker services" headerAside={<SystemWideBadge />}>
         <div className="divide-y divide-zinc-800">
           {loadingServices && allServiceNames.length === 0 && (
             <p className="text-zinc-600 text-sm text-center py-6">Loading…</p>
@@ -758,8 +763,8 @@ export function PluginsTab() {
   return (
     <div>
       <SettingsTabHeader title="Plugins">
-        Install Claude Code plugins from GitHub. Plugins are global — available to all users when
-        starting new sessions. Each plugin must contain a{' '}
+        Install Claude Code plugins from GitHub. Plugins are system-wide — available to all users
+        when starting new sessions. Each plugin must contain a{' '}
         <code className="text-zinc-300">.claude-plugin/plugin.json</code> file.
       </SettingsTabHeader>
 
@@ -969,6 +974,7 @@ function SlackAppCard({ app, onChanged }) {
 
 export function SlackTab() {
   const [apps, setApps] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newToken, setNewToken] = useState('');
   const [saving, setSaving] = useState(false);
@@ -982,14 +988,19 @@ export function SlackTab() {
 
   useEffect(load, [load]);
 
+  const closeAddForm = () => {
+    setShowAddForm(false);
+    setNewName('');
+    setNewToken('');
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!newName.trim() || !newToken.trim()) return;
     setSaving(true);
     try {
       await slackService.create({ name: newName.trim(), bot_token: newToken.trim() });
-      setNewName('');
-      setNewToken('');
+      closeAddForm();
       toast.success('Slack app added');
       load();
     } catch (err) {
@@ -1004,6 +1015,7 @@ export function SlackTab() {
   return (
     <SettingsSection
       title="Slack"
+      headerAside={<SystemWideBadge />}
       description={
         <>
           Connect one or more Slack bots so agents can post updates to a channel. The{' '}
@@ -1020,47 +1032,67 @@ export function SlackTab() {
         <SlackAppCard key={app.id} app={app} onChanged={load} />
       ))}
 
-      <form onSubmit={handleAdd}>
-        <h4 className="text-xs font-medium text-zinc-400 mb-2">Add Slack app</h4>
+      {showAddForm ? (
+        <form onSubmit={handleAdd}>
+          <h4 className="text-xs font-medium text-zinc-400 mb-2">Add Slack app</h4>
 
-        <Field label="Name">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="acme"
-            className={inputClass}
-          />
-        </Field>
+          <Field label="Name">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="acme"
+              className={inputClass}
+            />
+          </Field>
 
-        <Field
-          label="Bot user OAuth token"
-          hint={
-            <>
-              From your Slack app under{' '}
-              <span className="text-zinc-400">OAuth &amp; Permissions</span> (starts with{' '}
-              <code className="text-zinc-400">xoxb-</code>).
-            </>
-          }
-        >
-          <input
-            type="password"
-            value={newToken}
-            onChange={(e) => setNewToken(e.target.value)}
-            placeholder="xoxb-…"
-            autoComplete="off"
-            className={`${inputClass} font-mono`}
-          />
-        </Field>
+          <Field
+            label="Bot user OAuth token"
+            hint={
+              <>
+                From your Slack app under{' '}
+                <span className="text-zinc-400">OAuth &amp; Permissions</span> (starts with{' '}
+                <code className="text-zinc-400">xoxb-</code>).
+              </>
+            }
+          >
+            <input
+              type="password"
+              value={newToken}
+              onChange={(e) => setNewToken(e.target.value)}
+              placeholder="xoxb-…"
+              autoComplete="off"
+              className={`${inputClass} font-mono`}
+            />
+          </Field>
 
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="submit"
+              disabled={saving || !newName.trim() || !newToken.trim()}
+              className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              {saving ? 'Adding…' : 'Add'}
+            </button>
+            <button
+              type="button"
+              onClick={closeAddForm}
+              disabled={saving}
+              className="text-sm text-zinc-300 hover:text-white disabled:text-zinc-600 px-3 py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
         <button
-          type="submit"
-          disabled={saving || !newName.trim() || !newToken.trim()}
-          className="bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          type="button"
+          onClick={() => setShowAddForm(true)}
+          className="bg-amber-500 hover:bg-amber-400 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
         >
-          {saving ? 'Adding…' : 'Add'}
+          Add Slack app
         </button>
-      </form>
+      )}
 
       <div>
         <h4 className="text-xs font-medium text-zinc-400 mb-2">Tools exposed to agents</h4>

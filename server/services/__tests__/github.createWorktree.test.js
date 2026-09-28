@@ -32,7 +32,7 @@ vi.mock('../config.js', () => ({
   resolveDataDirRelativePath: (subpath) => `${TEST_REPOS_DIR}/${subpath}`,
 }));
 
-import { createWorktree, uniqueLocalBranch, removeWorktree } from '../github.js';
+import { createWorktree, uniqueLocalBranch, removeWorktree, gitLogSinceBase } from '../github.js';
 
 describe('uniqueLocalBranch', () => {
   it('appends short_id when the intended name does not already include it', () => {
@@ -194,5 +194,24 @@ describe('createWorktree', () => {
         repo
       )
     ).resolves.toBeUndefined();
+  });
+
+  it('gitLogSinceBase lists commits since merge-base with the base branch', async () => {
+    const workPath = path.join(TEST_REPOS_DIR, 'work');
+    let baseBranch = 'main';
+    try {
+      await execAsync('git', ['-C', workPath, 'rev-parse', '--verify', 'main'], { stdio: 'pipe' });
+    } catch {
+      baseBranch = 'master';
+    }
+    await execAsync('git', ['-C', workPath, 'checkout', BRANCH], { stdio: 'pipe' });
+    const commits = await gitLogSinceBase(workPath, baseBranch);
+    expect(commits.length).toBeGreaterThanOrEqual(1);
+    expect(commits.every((c) => c.sha && c.short_sha)).toBe(true);
+    expect(commits[0]).toMatchObject({
+      sha: expect.any(String),
+      short_sha: expect.any(String),
+      subject: expect.any(String),
+    });
   });
 });

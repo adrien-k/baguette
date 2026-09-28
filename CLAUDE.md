@@ -27,6 +27,10 @@ New API endpoints should be implemented as **Feathers services** in `server/serv
 
 **DB writes belong in the Feathers service, not in helper/utility modules.** External service modules (e.g. `server/services/plugins-service.js`) should contain only pure logic and file-system/network operations. The Feathers service method is responsible for reading from and writing to the DB before/after calling those helpers. This keeps the DB boundary clear and ensures auth hooks run around every DB mutation.
 
+### API JSON field names
+
+Custom method responses and other Baguette API payloads use **snake_case** for object keys (e.g. `short_sha`, `author_email`), consistent with database columns and existing Feathers services. Helpers may use local variable names freely, but **return snake_case** from services to the client. Frontend code should read snake_case from API responses.
+
 ## SQLite migrations (Knex + `better-sqlite3`)
 
 Baguette uses SQLite only. Knex’s SQLite dialect does **not** implement most `ALTER TABLE` variants natively: it often **rebuilds** a table by creating a temp table, copying rows, then running **`DROP TABLE "<name>"`**, then renaming the temp table back. If another table has a foreign key **to** that table, `DROP TABLE` fails with `FOREIGN KEY constraint failed` (for example dropping or altering `users` while `sessions`, `usage`, or `user_repos` reference `users`).

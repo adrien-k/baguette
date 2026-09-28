@@ -755,6 +755,54 @@ export async function gitCommitCountSinceBase(worktreePath, baseBranch) {
   }
 }
 
+const GIT_LOG_FIELD_SEP = '\x1e';
+const GIT_LOG_RECORD_SEP = '\x1d';
+
+/**
+ * Parses `git log --format=…` output produced by gitLogSinceBase.
+ * @returns {Array<{ sha: string, short_sha: string, subject: string, author_name: string, author_email: string, author_date: string }>}
+ */
+export function parseGitLogSinceBaseOutput(stdout) {
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+  return trimmed
+    .split(GIT_LOG_RECORD_SEP)
+    .filter((record) => record.length > 0)
+    .map((record) => {
+      const [sha, short_sha, subject, author_name, author_email, author_date] =
+        record.split(GIT_LOG_FIELD_SEP);
+      return { sha, short_sha, subject, author_name, author_email, author_date };
+    })
+    .filter((commit) => Boolean(commit.sha));
+}
+
+/**
+ * Commits on HEAD since merge-base with base branch (same range as session diff).
+ * @returns {Promise<Array<{ sha: string, short_sha: string, subject: string, author_name: string, author_email: string, author_date: string }>>}
+ */
+export async function gitLogSinceBase(worktreePath, baseBranch, { limit = 100 } = {}) {
+  try {
+    const base = await mergeBaseWithBaseBranch(worktreePath, baseBranch);
+    if (!base) return [];
+    const { stdout } = await execFileAsync(
+      'git',
+      [
+        '-C',
+        worktreePath,
+        'log',
+        `${base}..HEAD`,
+        `-n`,
+        String(limit),
+        `--format=%H${GIT_LOG_FIELD_SEP}%h${GIT_LOG_FIELD_SEP}%s${GIT_LOG_FIELD_SEP}%an${GIT_LOG_FIELD_SEP}%ae${GIT_LOG_FIELD_SEP}%aI${GIT_LOG_RECORD_SEP}`,
+      ],
+      { maxBuffer: 1024 * 512 }
+    );
+    return parseGitLogSinceBaseOutput(stdout);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Returns the short SHA of HEAD and of a remote ref.
  * If remoteBranch is provided, resolves `origin/<remoteBranch>`; otherwise uses `@{u}`.
@@ -811,6 +859,30 @@ export async function gitDiff(
     // Non-zero exit still produces stdout in some cases (e.g. binary files)
     if (err.stdout) return err.stdout;
     throw err;
+  }
+}
+
+/**
+ * Unified diff for a single commit (`git show`).
+ * @returns {Promise<string>}
+ */
+export async function gitShowCommitDiff(
+  worktreePath,
+  commitSha,
+  { maxBuffer = MAX_DIFF_BUFFER_SIZE } = {}
+) {
+  const sha = String(commitSha).trim();
+  if (!/^[0-9a-f]{7,40}$/i.test(sha)) return '';
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'show', '--format=', '--no-color', sha],
+      { maxBuffer }
+    );
+    return stdout;
+  } catch (err) {
+    if (err.stdout) return err.stdout;
+    return '';
   }
 }
 

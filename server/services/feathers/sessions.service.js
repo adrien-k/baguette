@@ -9,9 +9,11 @@ import { loadBaguetteConfig, getAvailableCommands, getScriptBlock } from '../bag
 import {
   removeWorktree,
   gitDiff,
+  gitShowCommitDiff,
   gitHasUncommitted,
   gitCommitsToPush,
   gitLocalAndRemoteSha,
+  gitLogSinceBase,
   gitFetch,
   gitPush,
   mergePR,
@@ -640,13 +642,20 @@ export class SessionsService extends KnexService {
           ? gitFetch(cwd, token, currentBranch).catch(() => {})
           : null,
       ]);
+      const commitSha =
+        data && typeof data === 'object' && data.commit && data.commit !== 'all'
+          ? String(data.commit)
+          : null;
+      const diffFn = commitSha
+        ? () => gitShowCommitDiff(cwd, commitSha)
+        : () => gitDiff(cwd, session.base_branch);
       const [diff, hasUncommitted, commitsToPush, { localSha, remoteSha }] = await Promise.all([
-        gitDiff(cwd, session.base_branch),
+        diffFn(),
         gitHasUncommitted(cwd),
         gitCommitsToPush(cwd, currentBranch),
         gitLocalAndRemoteSha(cwd, currentBranch),
       ]);
-      return { diff, hasUncommitted, commitsToPush, localSha, remoteSha };
+      return { diff, hasUncommitted, commitsToPush, localSha, remoteSha, commit: commitSha };
     } catch (err) {
       return { diff: '', hasUncommitted: false, error: err.message };
     }
@@ -655,6 +664,29 @@ export class SessionsService extends KnexService {
   async sessionGitStatus(_data, params) {
     const session = params.resolvedSession;
     return computeSessionGitStatus(session);
+  }
+
+  async branchCommits(_data, params) {
+    const session = params.resolvedSession;
+    if (!session?.worktree_path || isGlobalSession(session)) {
+      return { commits: [] };
+    }
+    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    try {
+      const user = await this.app.service('users').get(session.user_id, {});
+      const token = getGithubToken(user);
+      const currentBranch = session.remote_branch || session.local_branch;
+      await Promise.all([
+        session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
+        currentBranch && currentBranch !== session.base_branch
+          ? gitFetch(cwd, token, currentBranch).catch(() => {})
+          : null,
+      ]);
+      const commits = await gitLogSinceBase(cwd, session.base_branch);
+      return { commits };
+    } catch (err) {
+      return { commits: [], error: err.message };
+    }
   }
 
   async shas(data, params) {
@@ -1463,6 +1495,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'commands',
       'diff',
       'sessionGitStatus',
+      'branchCommits',
       'shas',
       'showDiff',
       'merge',
@@ -1551,6 +1584,7 @@ export const sessionsHooks = {
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
     sessionGitStatus: [resolveSessionFromData],
+    branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     showDiff: [resolveSessionFromData],
     merge: [resolveSessionFromData],
