@@ -4,8 +4,13 @@ import { buildSystemPromptAppend, buildReviewSystemPromptAppend } from '../sessi
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
+const { loadBaguetteInstructions } = vi.hoisted(() => ({
+  loadBaguetteInstructions: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../baguette-config.js', () => ({
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
+  loadBaguetteInstructions,
   interpolateEnv: vi.fn(),
   getScriptBlock: vi.fn(),
 }));
@@ -80,23 +85,39 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('only commit when the user asks');
   });
 
-  it('tells agents to call ConfigRepoPrompt when .baguette.yaml is missing', async () => {
+  it('tells agents to call ConfigRepoPrompt when Baguette config is missing', async () => {
     const session = await seedSession();
     const result = await buildSystemPromptAppend(session);
-    expect(result).toContain('no `.baguette.yaml`');
+    expect(result).toContain('`./.baguette/config.yaml`');
     expect(result).toContain('ConfigRepoPrompt');
     expect(result).not.toContain('has_baguette_yaml');
     expect(result).not.toContain('baguette_config_notice');
   });
 
   it('appends user agent_prompt to the base prompt block', async () => {
-    const session = await seedSession({ base_branch: 'main' });
+    const session = await seedSession({ base_branch: 'main', worktree_path: '/tmp/wt' });
     session.absolute_worktree_path = '/tmp/wt';
     const result = await buildSystemPromptAppend(session, {
       agentPrompt: 'Always add unit tests.',
     });
     expect(result).toContain('Always add unit tests');
     expect(result).toContain('Additional instructions');
+    expect(loadBaguetteInstructions).toHaveBeenCalledWith('/tmp/wt');
+  });
+
+  it('includes .baguette/instructions.md in additional instructions', async () => {
+    loadBaguetteInstructions.mockResolvedValueOnce('Prefer pnpm.');
+    const session = await seedSession({ worktree_path: '/tmp/wt' });
+    const result = await buildSystemPromptAppend(session, { agentPrompt: 'Ship small PRs.' });
+    expect(result).toContain('Prefer pnpm.');
+    expect(result).toContain('Ship small PRs.');
+  });
+
+  it('documents .baguette scripts and instructions paths in the base prompt', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session);
+    expect(result).toContain('`./.baguette/scripts/`');
+    expect(result).toContain('`./.baguette/instructions.md`');
   });
 
   it('uses the light global prompt for is_global sessions', async () => {

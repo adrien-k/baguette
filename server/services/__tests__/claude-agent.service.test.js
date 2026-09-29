@@ -34,6 +34,7 @@ vi.mock('../agent-settings.js', () => ({
 
 vi.mock('../baguette-config.js', () => ({
   loadBaguetteConfig: vi.fn(),
+  loadBaguetteInstructions: vi.fn().mockResolvedValue(null),
   interpolateEnv: vi.fn(),
   getScriptBlock: vi.fn(),
 }));

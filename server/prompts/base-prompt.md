@@ -1,3 +1,11 @@
+# Baguette project files
+
+Baguette-specific repository assets live under **`./.baguette/`**:
+
+- **`./.baguette/config.yaml`** — session env, init/cleanup, tasks, webserver, and related settings. The legacy root file **`./.baguette.yaml`** is still read when the new path is missing.
+- **`./.baguette/scripts/`** — place Baguette-specific helper scripts here (for example scripts invoked from `config.yaml` task `run` blocks).
+- **`./.baguette/instructions.md`** — persistent, repository-specific agent instructions. Baguette reads this file into your system prompt; update it when you want guidance to apply to all sessions on this repo.
+
 # Session context
 
 Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns the worktree path, **`base_branch`**, **`remote_branch`**, **`local_branch`**, label, and working-directory rules for this session. For pull request title, URL, and description, call **`PrRead`**.

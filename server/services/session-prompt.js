@@ -1,15 +1,17 @@
 import loadPrompt from '../prompts/loadPrompt.js';
 import { isGlobalSession } from '../../shared/session-scope.js';
+import { combinePromptExtensions } from '../../shared/agent-prompts.js';
+import { loadBaguetteInstructions } from './baguette-config.js';
 
 /**
  * Builds the full system prompt append string for a builder session.
  * Returns the rendered build-prompt.md template with all variables substituted.
  */
-async function renderBasePromptForSession(agentPrompt = '') {
+async function renderBasePromptForSession(agentPrompt = '', worktreePath = null) {
   const base = await loadPrompt('base-prompt', {});
-  const extra = agentPrompt?.trim()
-    ? `\n\n## Additional instructions\n\n${agentPrompt.trim()}\n`
-    : '';
+  const repoInstructions = worktreePath ? await loadBaguetteInstructions(worktreePath) : null;
+  const combined = combinePromptExtensions(agentPrompt, repoInstructions ?? '');
+  const extra = combined ? `\n\n## Additional instructions\n\n${combined}\n` : '';
   return base + extra;
 }
 
@@ -18,8 +20,9 @@ export async function buildSystemPromptAppend(sessionRow, { agentPrompt = '' } =
     return loadPrompt('global-prompt', {});
   }
 
+  const worktreePath = sessionRow?.worktree_path ?? null;
   return loadPrompt('build-prompt', {
-    base_prompt: await renderBasePromptForSession(agentPrompt),
+    base_prompt: await renderBasePromptForSession(agentPrompt, worktreePath),
   });
 }
 

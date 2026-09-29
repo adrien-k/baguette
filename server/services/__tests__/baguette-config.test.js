@@ -1,8 +1,20 @@
 /**
- * Unit tests for the .baguette.yaml script-block helpers.
+ * Unit tests for Baguette config helpers and loading.
  */
-import { describe, it, expect } from 'vitest';
-import { getScriptBlock, appendTaskArgs, getAvailableTasks } from '../baguette-config.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import {
+  getScriptBlock,
+  appendTaskArgs,
+  getAvailableTasks,
+  loadBaguetteConfig,
+  loadBaguetteInstructions,
+  CONFIG_REL_PATH,
+  LEGACY_CONFIG_FILENAME,
+  INSTRUCTIONS_REL_PATH,
+} from '../baguette-config.js';
 
 describe('getScriptBlock', () => {
   it('keeps a multi-line block intact instead of joining lines with &&', () => {
@@ -75,5 +87,77 @@ describe('getAvailableTasks', () => {
       session: { tasks: { 'run-tests': { run: 'pnpm test', attach: false } } },
     });
     expect(tasks['run-tests'].attach).toBe(false);
+  });
+});
+
+describe('loadBaguetteConfig', () => {
+  let tmpDir;
+
+  beforeEach(async () => {
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-config-'));
+  });
+
+  afterEach(async () => {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads .baguette/config.yaml', async () => {
+    const configDir = path.join(tmpDir, '.baguette');
+    await fs.promises.mkdir(configDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(configDir, 'config.yaml'),
+      'config:\n  session:\n    tasks:\n      test:\n        run: echo hi\n'
+    );
+    const config = await loadBaguetteConfig(tmpDir);
+    expect(config.session.tasks.test.run).toBe('echo hi');
+  });
+
+  it('falls back to legacy .baguette.yaml when config.yaml is missing', async () => {
+    await fs.promises.writeFile(
+      path.join(tmpDir, LEGACY_CONFIG_FILENAME),
+      'config:\n  session:\n    init: pnpm install\n'
+    );
+    const config = await loadBaguetteConfig(tmpDir);
+    expect(config.session.init).toBe('pnpm install');
+  });
+
+  it('prefers .baguette/config.yaml over legacy .baguette.yaml', async () => {
+    await fs.promises.mkdir(path.join(tmpDir, '.baguette'), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(tmpDir, CONFIG_REL_PATH),
+      'config:\n  session:\n    init: from-new\n'
+    );
+    await fs.promises.writeFile(
+      path.join(tmpDir, LEGACY_CONFIG_FILENAME),
+      'config:\n  session:\n    init: from-legacy\n'
+    );
+    const config = await loadBaguetteConfig(tmpDir);
+    expect(config.session.init).toBe('from-new');
+  });
+
+  it('returns null when no config file exists', async () => {
+    expect(await loadBaguetteConfig(tmpDir)).toBeNull();
+  });
+});
+
+describe('loadBaguetteInstructions', () => {
+  let tmpDir;
+
+  beforeEach(async () => {
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-instr-'));
+  });
+
+  afterEach(async () => {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reads .baguette/instructions.md', async () => {
+    await fs.promises.mkdir(path.join(tmpDir, '.baguette'), { recursive: true });
+    await fs.promises.writeFile(path.join(tmpDir, INSTRUCTIONS_REL_PATH), 'Use tabs.\n');
+    expect(await loadBaguetteInstructions(tmpDir)).toBe('Use tabs.');
+  });
+
+  it('returns null when instructions file is missing', async () => {
+    expect(await loadBaguetteInstructions(tmpDir)).toBeNull();
   });
 });

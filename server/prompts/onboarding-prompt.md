@@ -1,6 +1,6 @@
-Check if `.baguette.yaml` already exists at the project root. If it does, review it and update it as needed. If it does not exist, create it from scratch.
+Check if **`.baguette/config.yaml`** already exists. If it does, review it and update it as needed. If not, check for legacy **`.baguette.yaml`** at the project root and migrate it to **`.baguette/config.yaml`** when you touch it. If neither exists, create **`.baguette/config.yaml`** from scratch.
 
-## .baguette.yaml Format
+## Baguette config format (`.baguette/config.yaml`)
 
 ```yaml
 config:
@@ -192,7 +192,7 @@ tasks:
    - For tests, ensure they also use a session-specific database (e.g. `myapp_test_${{ baguette.session.short_id }}`).
    - This does not apply to databases on disk relative to the project root (ex: sqlite databases with relative paths).
 
-6. **Write (or update) the .baguette.yaml file** at the project root with the configuration.
+6. **Write (or update) `.baguette/config.yaml`** with the configuration. Put Baguette-specific scripts under **`.baguette/scripts/`**. Put persistent repo agent guidance in **`.baguette/instructions.md`** when appropriate.
 
 7. **Validate the setup**:
    - Attempt to run the `session.init` commands you wrote to verify they succeed
@@ -200,11 +200,11 @@ tasks:
 
 ## How to proceed after reading this prompt
 
-You fetched this text with **`baguette-op config-repo-prompt`**. Use the technical sections above to create or update `.baguette.yaml` when appropriate.
+You fetched this text with **`baguette-op config-repo-prompt`**. Use the technical sections above to create or update `.baguette/config.yaml` when appropriate.
 
 **Decide** whether repository configuration is worth doing right now:
 
-- A missing `.baguette.yaml` almost always warrants creating one.
+- Missing Baguette config (no `.baguette/config.yaml` or legacy `.baguette.yaml`) almost always warrants creating one.
 - An outdated or incomplete file depends on scope — use judgment.
 
 **If configuration should happen (or the user wants it):** use the **AskUserQuestion** tool with three options:

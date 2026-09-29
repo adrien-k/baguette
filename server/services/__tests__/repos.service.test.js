@@ -662,7 +662,7 @@ describe('Repos service - configure', () => {
 
     const result = await app.service('repos').configure(repoId, params(adminUser));
 
-    expect(result.prompt).toMatch('Check if `.baguette.yaml` already exists');
+    expect(result.prompt).toMatch('Check if **`.baguette/config.yaml`** already exists');
   });
 
   it('throws NotFound for an unknown repo id', async () => {
@@ -679,7 +679,7 @@ describe('Repos service - configure', () => {
     });
 
     const result = await app.service('repos').configure(repoId, params(regularUser));
-    expect(result.prompt).toMatch('Check if `.baguette.yaml` already exists');
+    expect(result.prompt).toMatch('Check if **`.baguette/config.yaml`** already exists');
   });
 
   it('unauthenticated configure is rejected', async () => {

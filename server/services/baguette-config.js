@@ -4,7 +4,41 @@ import * as yaml from 'js-yaml';
 import logger from '../logger.js';
 import { resolveDataDirRelativePath } from '../config.js';
 
-const CONFIG_FILENAME = '.baguette.yaml';
+export const BAGUETTE_DIR = '.baguette';
+export const CONFIG_REL_PATH = path.join(BAGUETTE_DIR, 'config.yaml');
+export const LEGACY_CONFIG_FILENAME = '.baguette.yaml';
+export const INSTRUCTIONS_REL_PATH = path.join(BAGUETTE_DIR, 'instructions.md');
+export const SCRIPTS_REL_DIR = path.join(BAGUETTE_DIR, 'scripts');
+
+function parseBaguetteConfigYaml(raw, sourceLabel) {
+  const content = yaml.load(raw);
+  if (content == null) return {};
+  if (content.config != null && typeof content.config === 'object') return content.config;
+  if (typeof content === 'object' && !Array.isArray(content)) return content;
+  return { error: `Invalid ${sourceLabel}: expected a config object` };
+}
+
+async function readBaguetteConfigFile(absoluteWorktreePath) {
+  const primaryPath = path.join(absoluteWorktreePath, CONFIG_REL_PATH);
+  try {
+    const raw = await fs.promises.readFile(primaryPath, 'utf8');
+    return { config: parseBaguetteConfigYaml(raw, CONFIG_REL_PATH), sourcePath: CONFIG_REL_PATH };
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+
+  const legacyPath = path.join(absoluteWorktreePath, LEGACY_CONFIG_FILENAME);
+  try {
+    const raw = await fs.promises.readFile(legacyPath, 'utf8');
+    return {
+      config: parseBaguetteConfigYaml(raw, LEGACY_CONFIG_FILENAME),
+      sourcePath: LEGACY_CONFIG_FILENAME,
+    };
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
 
 /**
  * @param {string|null|undefined} worktreePath - Absolute path, or path relative to DATA_DIR (as stored on sessions).
@@ -12,15 +46,34 @@ const CONFIG_FILENAME = '.baguette.yaml';
 export async function loadBaguetteConfig(worktreePath) {
   const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
   if (!absoluteWorktreePath) return null;
-  const configPath = path.join(absoluteWorktreePath, CONFIG_FILENAME);
   try {
-    const raw = await fs.promises.readFile(configPath, 'utf8');
-    const content = yaml.load(raw);
-    return content.config ?? {};
+    const result = await readBaguetteConfigFile(absoluteWorktreePath);
+    if (!result) return null;
+    if (result.config?.error) return result.config;
+    return result.config;
+  } catch (err) {
+    logger.error(err, 'Failed to load Baguette config');
+    return { error: `Failed to load Baguette config: ${err.message}` };
+  }
+}
+
+/**
+ * Repository-specific agent instructions from `.baguette/instructions.md`.
+ * @param {string|null|undefined} worktreePath
+ * @returns {Promise<string|null>}
+ */
+export async function loadBaguetteInstructions(worktreePath) {
+  const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
+  if (!absoluteWorktreePath) return null;
+  const instructionsPath = path.join(absoluteWorktreePath, INSTRUCTIONS_REL_PATH);
+  try {
+    const text = await fs.promises.readFile(instructionsPath, 'utf8');
+    const trimmed = text.trim();
+    return trimmed || null;
   } catch (err) {
     if (err.code === 'ENOENT') return null;
-    logger.error(err, 'Failed to load %s', CONFIG_FILENAME);
-    return { error: `Failed to load ${CONFIG_FILENAME}: ${err.message}` };
+    logger.error(err, 'Failed to load %s', INSTRUCTIONS_REL_PATH);
+    return null;
   }
 }
 

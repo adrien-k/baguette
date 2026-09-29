@@ -1,10 +1,10 @@
 ## How to proceed after reading this prompt
 
-You fetched this text with **`baguette-op config-repo-prompt`**. Use the technical sections above to create or update `.baguette.yaml` when appropriate.
+You fetched this text with **`baguette-op config-repo-prompt`**. Use the technical sections above to create or update `.baguette/config.yaml` when appropriate.
 
 **Decide** whether repository configuration is worth doing right now:
 
-- A missing `.baguette.yaml` almost always warrants creating one.
+- Missing Baguette config almost always warrants creating `.baguette/config.yaml`.
 - An outdated or incomplete file depends on scope — use judgment.
 
 **If configuration should happen (or the user wants it):** use the **AskUserQuestion** tool with three options:

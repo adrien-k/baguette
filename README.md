@@ -27,8 +27,8 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **File attachments** -- Attach images and files to any chat message.
 - **Cost tracking** -- Track session costs on session cards, with a daily chart and usage breakdown per repo (Claude and Cursor costs tracked separately).
 - **Slack** -- Connect one or more Slack bots at the admin level and agents can post updates to a channel ([read more](docs/slack.md)).
-- **Secrets** -- Inject global secrets into all sessions and tasks via `.baguette.yaml` placeholders.
-- **Session config (`.baguette.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
+- **Secrets** -- Inject global secrets into all sessions and tasks via Baguette config placeholders.
+- **Session config (`.baguette/config.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
 - **User approval** -- First user is auto-approved; subsequent users require approval from an existing user.
 
 ## Deploy
@@ -144,7 +144,7 @@ For local sign-in without GitHub OAuth, use [`/auth/dev`](http://localhost:5173/
 
 ## Configuring your project
 
-Add a `.baguette.yaml` file to your repository root so Baguette can run tests, dev servers, and other tasks across parallel sessions without database or port conflicts. The config defines per-session environment variables, initialization commands, named tasks with automatic port allocation, and a dev server preview.
+Add a `.baguette/config.yaml` file so Baguette can run tests, dev servers, and other tasks across parallel sessions without database or port conflicts. The config defines per-session environment variables, initialization commands, named tasks with automatic port allocation, and a dev server preview.
 
 See **[docs/project-configuration.md](docs/project-configuration.md)** for the full schema, task dependencies, and framework-specific examples.
 
