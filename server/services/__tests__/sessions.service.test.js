@@ -104,10 +104,19 @@ function makeApp(db) {
     {
       deleteSessionTasks,
       create: tasksCreate,
+      find: async (params) => {
+        const sessionId = params.query?.session_id != null ? Number(params.query.session_id) : null;
+        const status = params.query?.status;
+        return [].filter((t) => {
+          if (sessionId != null && t.session_id !== sessionId) return false;
+          if (status != null && t.status !== status) return false;
+          return true;
+        });
+      },
       _findRunningTask: findRunningTask,
       getTask,
     },
-    { methods: ['deleteSessionTasks', 'create'] }
+    { methods: ['deleteSessionTasks', 'create', 'find'] }
   );
   app.use(
     'claude-agent',
@@ -909,6 +918,46 @@ describe('Sessions service - find, get, create', (hooks) => {
       const data = result.data ?? result;
       expect(data).toHaveLength(1);
       expect(data[0].id).toBe(sessId1);
+    });
+
+    it('getSessionByShortId returns session with open_issues_count and running_tasks_count', async () => {
+      await db('session_issues').insert([
+        {
+          session_id: sessId1,
+          severity: 'medium',
+          title: 'First',
+          status: 'opened',
+        },
+        {
+          session_id: sessId1,
+          severity: 'low',
+          title: 'Submitted',
+          status: 'submitted',
+        },
+      ]);
+      app.service('tasks').find = async (findParams) => {
+        if (findParams.query?.session_id === sessId1 && findParams.query?.status === 'running') {
+          return [{ id: 1, session_id: sessId1, status: 'running' }];
+        }
+        return [];
+      };
+
+      const session = await app
+        .service('sessions')
+        .getSessionByShortId({ short_id: 'a1b2c3' }, params({ id: userId1 }));
+
+      expect(session.id).toBe(sessId1);
+      expect(session.short_id).toBe('a1b2c3');
+      expect(session.open_issues_count).toBe(1);
+      expect(session.running_tasks_count).toBe(1);
+    });
+
+    it('getSessionByShortId rejects unknown short_id', async () => {
+      await expect(
+        app
+          .service('sessions')
+          .getSessionByShortId({ short_id: 'missing1' }, params({ id: userId1 }))
+      ).rejects.toThrow(NotFound);
     });
 
     it('rejects when not authenticated', async () => {

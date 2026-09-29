@@ -155,7 +155,7 @@ export default function ChatView({
     }
     const load = () => {
       loopsService
-        .find({ query: { session_id: session.id, $limit: 50 } })
+        .find({ query: { session_id: session.id, single_session: true, $limit: 50 } })
         .then((d) => setTiedLoops(d.data ?? d))
         .catch(() => {});
     };

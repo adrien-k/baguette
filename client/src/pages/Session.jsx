@@ -29,7 +29,6 @@ import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
-import { useGetReviewMessages } from '../hooks/useGetReviewMessages.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
 import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
@@ -264,7 +263,7 @@ function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = fa
             </span>
           )}
           <span className="flex min-w-0 items-center gap-1.5">
-            <SessionUnreadDot session={s} suppressUnread={isCurrent} />
+            <SessionUnreadDot session={s} />
             <span
               className={`min-w-0 truncate font-medium ${isCurrent ? 'text-fg' : 'text-heading'}`}
             >
@@ -344,7 +343,16 @@ export default function Session() {
     hasMore,
   } = useGetMessages(sessionId);
   const { tasks: tasksFromHook } = useGetTasks({ sessionId, skip: !sessionId });
-  const { issues: sessionIssues } = useGetSessionIssues(sessionId);
+  const shouldLoadSessionIssues = activeView === 'review';
+  const { issues: sessionIssues, loading: sessionIssuesLoading } = useGetSessionIssues(sessionId, {
+    enabled: shouldLoadSessionIssues,
+  });
+  const openIssuesTabCount = useMemo(() => {
+    if (shouldLoadSessionIssues) {
+      return sessionIssues.filter((i) => i.status === 'opened').length;
+    }
+    return session?.open_issues_count ?? 0;
+  }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
 
   const [session, setSession] = useState(null);
   const [prInfo, setPrInfo] = useState(null);
@@ -398,26 +406,12 @@ export default function Session() {
   const [configCommands, setConfigCommands] = useState([]);
   const [error, setError] = useState(null);
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
-  const reviewMessagesSessionId = useMemo(() => {
-    const s = session ?? sessionFromHook;
-    if (!sessionId || isGlobalSession(s ?? {})) return null;
-    return sessionId;
-  }, [sessionId, session, sessionFromHook]);
-  const { messages: reviewMessages, loading: reviewMessagesLoading } =
-    useGetReviewMessages(reviewMessagesSessionId);
   const showReviewerSidePanelTab = useMemo(() => {
-    if (!reviewMessagesSessionId) return false;
     const s = session ?? sessionFromHook;
-    if (s?.review_status === 'running') return true;
-    if (reviewMessagesLoading) return false;
-    return reviewMessages.length > 0;
-  }, [
-    reviewMessagesSessionId,
-    session,
-    sessionFromHook,
-    reviewMessages.length,
-    reviewMessagesLoading,
-  ]);
+    if (!sessionId || isGlobalSession(s ?? {})) return false;
+    const status = s?.review_status;
+    return status === 'running' || status === 'completed' || status === 'failed';
+  }, [sessionId, session, sessionFromHook]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -1210,12 +1204,11 @@ export default function Session() {
                   >
                     <Icon className="w-3.5 h-3.5" />
                     {label}
-                    {id === 'review' &&
-                      sessionIssues.filter((i) => i.status === 'opened').length > 0 && (
-                        <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
-                          {sessionIssues.filter((i) => i.status === 'opened').length}
-                        </span>
-                      )}
+                    {id === 'review' && openIssuesTabCount > 0 && (
+                      <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
+                        {openIssuesTabCount}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -1324,6 +1317,8 @@ export default function Session() {
               <ReviewView
                 session={session}
                 readonly={isReadonly}
+                issues={sessionIssues}
+                issuesLoading={sessionIssuesLoading}
                 reviewerDrawerOpen={isXlScreen || showTasks}
                 reviewerPanelActive={isSidePanelOpen && sidePanelTab === 'reviewer'}
                 onOpenReviewer={() => setSidePanelTab('reviewer')}
@@ -1414,6 +1409,7 @@ export default function Session() {
               hasMore={hasMore}
               sessionId={sessionId}
               showReviewerTab={showReviewerSidePanelTab}
+              runningTasksCount={session?.running_tasks_count ?? 0}
             />
           </div>
         )}

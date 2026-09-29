@@ -6,10 +6,9 @@ import LogsView from './LogsView.jsx';
 import TaskPanel from '../../components/TaskPanel.jsx';
 import { SIDE_PANEL_TABS } from './sessionSidePanelTabs.js';
 
-function latestRunningTask(tasks) {
-  const running = (tasks || []).filter((t) => t.status === 'running');
-  if (running.length === 0) return null;
-  return running.reduce((a, b) => (new Date(b.created_at) > new Date(a.created_at) ? b : a));
+function runningTasksLabel(count) {
+  if (count === 1) return '1 task running';
+  return `${count} tasks running`;
 }
 
 function sidePanelTabClass(active) {
@@ -49,11 +48,11 @@ export default function SessionSidePanel({
   hasMore,
   sessionId,
   showReviewerTab = false,
+  runningTasksCount = 0,
 }) {
   const filesUnavailable = isGlobal;
   const sidePanelTabs = SIDE_PANEL_TABS.filter((tab) => tab.id !== 'reviewer' || showReviewerTab);
-  const runningTask = latestRunningTask(tasks);
-  const showRunningTaskFooter = runningTask && sidePanelTab !== 'tasks';
+  const showRunningTaskFooter = runningTasksCount > 0 && sidePanelTab !== 'tasks';
   const showReviewFooter =
     showReviewerTab && session?.review_status === 'running' && sidePanelTab !== 'reviewer';
 
@@ -142,8 +141,8 @@ export default function SessionSidePanel({
               title="Show tasks"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse shrink-0" />
-              <span className="text-[11px] text-secondary truncate">
-                {runningTask.label || runningTask.command}
+              <span className="text-[11px] text-secondary whitespace-nowrap">
+                {runningTasksLabel(runningTasksCount)}
               </span>
             </button>
           )}

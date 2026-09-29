@@ -743,6 +743,28 @@ export class SessionsService extends KnexService {
     return computeSessionGitStatus(session);
   }
 
+  async getSessionByShortId(data, params) {
+    const shortId = typeof data?.short_id === 'string' ? data.short_id.trim() : '';
+    if (!shortId) throw new BadRequest('short_id is required');
+    const userId = params.user?.id;
+    const db = this.app.get('db');
+    const row = await db('sessions').where({ short_id: shortId, user_id: userId }).first();
+    if (!row) throw new NotFound('Session not found');
+    const [openIssues, runningTasksList] = await Promise.all([
+      db('session_issues').where({ session_id: row.id, status: 'opened' }).count('* as count'),
+      this.app.service('tasks').find({
+        query: { session_id: row.id, status: 'running' },
+        user: params.user,
+      }),
+    ]);
+    const running_tasks_count = Array.isArray(runningTasksList) ? runningTasksList.length : 0;
+    return {
+      ...row,
+      open_issues_count: Number(openIssues[0]?.count ?? 0),
+      running_tasks_count,
+    };
+  }
+
   async sessionUsage(_data, params) {
     const session = params.resolvedSession;
     const db = this.app.get('db');
@@ -1648,6 +1670,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'diff',
       'changedFiles',
       'sessionGitStatus',
+      'getSessionByShortId',
       'sessionUsage',
       'branchCommits',
       'shas',
@@ -1735,6 +1758,7 @@ export const sessionsHooks = {
       seedReviewModelFromSession,
     ],
     patch: [requireOwnSession, normalizeModelFields],
+    getSessionByShortId: [],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
     diff: [resolveSessionFromData],
@@ -1755,6 +1779,7 @@ export const sessionsHooks = {
   after: {
     find: [addHasWebserver],
     get: [refreshPrStatusAfterGet, addHasWebserver],
+    getSessionByShortId: [refreshPrStatusAfterGet, addHasWebserver],
     create: [scheduleSessionProvisioning, addHasWebserver],
     patch: [syncSessionSettingsAfterPatch, addHasWebserver],
   },

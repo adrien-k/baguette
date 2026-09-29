@@ -4,9 +4,9 @@ import { sessionReviewMessagesService } from '../feathers.js';
 
 const PAGE_SIZE = 50;
 
-export function useGetReviewMessages(sessionId) {
+export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
   const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(!!sessionId);
+  const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const oldestIdRef = useRef(null);
@@ -18,6 +18,10 @@ export function useGetReviewMessages(sessionId) {
       setLoading(false);
       setHasMore(false);
       oldestIdRef.current = null;
+      return;
+    }
+    if (!enabled) {
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -64,7 +68,7 @@ export function useGetReviewMessages(sessionId) {
       sessionReviewMessagesService.off('patched', onPatched);
       sessionReviewMessagesService.off('removed', onRemoved);
     };
-  }, [sessionId]);
+  }, [sessionId, enabled]);
 
   const reload = useCallback(() => {
     if (!sessionId) return;

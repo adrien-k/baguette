@@ -1,33 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { sessionIssuesService } from '../feathers.js';
 
-export function useGetSessionIssues(sessionId) {
+export function useGetSessionIssues(sessionId, { enabled = true } = {}) {
   const [issues, setIssues] = useState([]);
-  const [loading, setLoading] = useState(!!sessionId);
+  const [loading, setLoading] = useState(false);
+  const boundSessionIdRef = useRef(null);
 
   useEffect(() => {
     if (!sessionId) {
       setIssues([]);
       setLoading(false);
+      boundSessionIdRef.current = null;
       return;
     }
+
+    if (boundSessionIdRef.current !== sessionId) {
+      setIssues([]);
+      boundSessionIdRef.current = sessionId;
+    }
+
     let cancelled = false;
-    setLoading(true);
-    sessionIssuesService
-      .find({ query: { session_id: sessionId, $sort: { id: 1 }, $limit: 100 } })
-      .then((res) => {
-        if (cancelled) return;
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        setIssues(sortIssuesBySeverity(list));
-      })
-      .catch((err) => {
-        if (!cancelled) toastError('Failed to load review issues', err);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+    if (enabled) {
+      setLoading(true);
+      sessionIssuesService
+        .find({ query: { session_id: sessionId, $sort: { id: 1 }, $limit: 100 } })
+        .then((res) => {
+          if (cancelled) return;
+          const list = Array.isArray(res) ? res : (res?.data ?? []);
+          setIssues(sortIssuesBySeverity(list));
+        })
+        .catch((err) => {
+          if (!cancelled) toastError('Failed to load review issues', err);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }
 
     const matches = (item) => item?.session_id === sessionId;
     const onCreated = (item) => {
@@ -58,7 +69,7 @@ export function useGetSessionIssues(sessionId) {
       sessionIssuesService.off('patched', onPatched);
       sessionIssuesService.off('removed', onRemoved);
     };
-  }, [sessionId]);
+  }, [sessionId, enabled]);
 
   return { issues, loading };
 }

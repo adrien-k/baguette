@@ -28,9 +28,7 @@ import {
   SECONDARY_BUTTON_CLASS,
 } from '../../utils/buttonStyles.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
-import { useGetSessionIssues } from '../../hooks/useGetSessionIssues.js';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
-import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import { pickPreferredVariantIdx } from '../../utils/models.js';
@@ -92,6 +90,8 @@ function ReviewerPanelLink({ onClick, label = 'Open reviewer panel', className =
 export default function ReviewView({
   session,
   readonly,
+  issues,
+  issuesLoading,
   reviewerDrawerOpen = true,
   reviewerPanelActive = false,
   onOpenReviewer,
@@ -100,10 +100,6 @@ export default function ReviewView({
   const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
-  const { issues, loading: issuesLoading } = useGetSessionIssues(session?.id);
-  const { messages: reviewMessages, loading: reviewMessagesLoading } = useGetReviewMessages(
-    session?.id
-  );
   const [userSettings, setUserSettings] = useState(null);
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
@@ -198,9 +194,10 @@ export default function ReviewView({
   const onlyClosedIssues = issues.length === 0 && showClosedSection;
   const hasVisibleIssues = issues.length > 0 || showClosedSection;
   const isRunning = session?.review_status === 'running';
-  const hasReviewThread = reviewMessages.length > 0;
+  const reviewStatus = session?.review_status;
+  const hasReviewThread = isRunning || reviewStatus === 'completed' || reviewStatus === 'failed';
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
-  const showStartForm = !hasReviewThread && !isRunning && !starting && !reviewMessagesLoading;
+  const showStartForm = !hasReviewThread && !starting;
   const showFollowUpPanel = hasReviewThread || isRunning;
   const hasReview = hasReviewThread || isRunning;
   const showReviewerPanelLink =
