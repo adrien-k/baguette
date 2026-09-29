@@ -758,12 +758,14 @@ export default function Session() {
         const next = new URLSearchParams();
         if (view !== 'chat') next.set('view', view);
         const prevPanel = prev.get('panel');
-        if (prevPanel && SIDE_PANEL_TAB_IDS.has(prevPanel)) {
-          next.set('panel', prevPanel);
-        }
+        const panelIsValid = prevPanel && SIDE_PANEL_TAB_IDS.has(prevPanel);
         if (view === 'diff') {
+          const keepFilesOrCommits = prevPanel === 'files' || prevPanel === 'commits';
+          next.set('panel', keepFilesOrCommits && panelIsValid ? prevPanel : 'files');
           const commit = prev.get('commit');
           if (commit) next.set('commit', commit);
+        } else if (panelIsValid) {
+          next.set('panel', prevPanel);
         }
         return next;
       },
