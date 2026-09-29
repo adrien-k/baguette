@@ -320,7 +320,7 @@ export default function Session() {
   const isNewSessionRoute = isNewSessionRouteId(short_id);
   const fromAllSessions = isAllSessionsPath(pathname);
   const isGlobalSessionsRoute = pathname.startsWith('/global/');
-  const { homeUrl, sessionUrl } = useFilterRoutes();
+  const { homeUrl, sessionUrl, showRepoDetails } = useFilterRoutes();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
@@ -1029,7 +1029,7 @@ export default function Session() {
                     <ChevronLeft className="w-5 h-5" />
                   </Link>
                   <div className="min-w-0">
-                    <div className="flex min-h-6 flex-nowrap items-center gap-2">
+                    <div className="flex min-h-6 flex-nowrap items-center gap-2 min-w-0">
                       <SessionStatusIndicator session={headerSession} />
                       <span className="min-w-0 truncate text-sm font-medium leading-snug text-fg">
                         {headerSession.label ||
@@ -1037,6 +1037,13 @@ export default function Session() {
                             ? 'Global session'
                             : headerSession.repo_full_name)}
                       </span>
+                      {showRepoDetails ? (
+                        <CardRepoBadge
+                          show
+                          isGlobal={isGlobalSession(headerSession)}
+                          repoFullName={headerSession.repo_full_name}
+                        />
+                      ) : null}
                     </div>
                     <div className="flex min-w-0 items-center gap-2 text-xs">
                       <span className="hidden sm:inline shrink-0 text-faint">
