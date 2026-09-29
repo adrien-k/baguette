@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, Loader2, PanelRight, Play, Square } from 'lucide-react';
+import {
+  Bot,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  PanelRight,
+  Play,
+  Square,
+} from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   messagesService,
@@ -20,6 +29,7 @@ import {
 } from '../../utils/buttonStyles.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useGetSessionIssues } from '../../hooks/useGetSessionIssues.js';
+import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
@@ -32,6 +42,15 @@ import { useRepoContext } from '../../context/RepoContext.jsx';
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
 const ISSUE_SECTION_HEADING_CLASS = 'text-xs font-medium text-faint uppercase tracking-wide';
+
+function AllIssuesFixedMessage() {
+  return (
+    <p className="flex items-center gap-2 text-sm font-medium text-success">
+      <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
+      All issues fixed!
+    </p>
+  );
+}
 
 function issueFixPrompt(issue, sessionId) {
   return (
@@ -88,6 +107,11 @@ export default function ReviewView({
   const [userSettings, setUserSettings] = useState(null);
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
+  const [closedCount, setClosedCount] = useState(0);
+  const [closedCountLoading, setClosedCountLoading] = useState(false);
+  const [closedExpanded, setClosedExpanded] = useState(false);
+  const [closedIssues, setClosedIssues] = useState([]);
+  const [closedLoading, setClosedLoading] = useState(false);
   const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [clearingReview, setClearingReview] = useState(false);
@@ -170,6 +194,9 @@ export default function ReviewView({
   const activeIssues = useMemo(() => issues.filter((i) => i.status !== 'ignored'), [issues]);
   const ignoredIssues = useMemo(() => issues.filter((i) => i.status === 'ignored'), [issues]);
   const showIgnoredSection = ignoredIssues.length > 0;
+  const showClosedSection = closedCount > 0;
+  const onlyClosedIssues = issues.length === 0 && showClosedSection;
+  const hasVisibleIssues = issues.length > 0 || showClosedSection;
   const isRunning = session?.review_status === 'running';
   const hasReviewThread = reviewMessages.length > 0;
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
@@ -184,6 +211,65 @@ export default function ReviewView({
     const el = document.getElementById(hash.slice(1));
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [hash, issuesLoading, issues]);
+
+  const refreshClosedCount = () => {
+    if (!session?.id) {
+      setClosedCount(0);
+      setClosedCountLoading(false);
+      return;
+    }
+    setClosedCountLoading(true);
+    sessionIssuesService
+      .find({ query: { session_id: session.id, status: 'closed', $limit: 0 } })
+      .then((res) => {
+        const total = Array.isArray(res) ? res.length : (res?.total ?? 0);
+        setClosedCount(total);
+      })
+      .catch(() => {})
+      .finally(() => setClosedCountLoading(false));
+  };
+
+  useEffect(() => {
+    refreshClosedCount();
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (!session?.id) return;
+    const matches = (item) => item?.session_id === session.id;
+    const onIssueClosed = (item) => {
+      if (!matches(item) || item.status !== 'closed') return;
+      refreshClosedCount();
+      setClosedIssues((prev) =>
+        prev.some((i) => i.id === item.id) ? prev : sortIssuesBySeverity([...prev, item])
+      );
+    };
+    sessionIssuesService.on('patched', onIssueClosed);
+    return () => sessionIssuesService.off('patched', onIssueClosed);
+  }, [session?.id]);
+
+  const loadClosedIssues = async () => {
+    if (!session?.id || closedLoading) return;
+    setClosedLoading(true);
+    try {
+      const res = await sessionIssuesService.find({
+        query: { session_id: session.id, status: 'closed', $sort: { id: 1 }, $limit: 100 },
+      });
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      setClosedIssues(list);
+    } catch (err) {
+      toastError('Failed to load closed issues', err);
+    } finally {
+      setClosedLoading(false);
+    }
+  };
+
+  const toggleClosedSection = async () => {
+    const next = !closedExpanded;
+    setClosedExpanded(next);
+    if (next && closedIssues.length === 0) {
+      await loadClosedIssues();
+    }
+  };
 
   const sendFixMessage = async (text) => {
     await messagesService.create({
@@ -245,15 +331,15 @@ export default function ReviewView({
     }
   };
 
-  const renderIssueCard = (issue) => (
+  const renderIssueCard = (issue, { archived = false } = {}) => (
     <SessionIssueCard
       key={issue.id}
       issue={issue}
       models={models}
-      readonly={readonly}
+      readonly={readonly || archived}
       saving={savingIssueId === issue.id}
       onStatusChange={handleIssueStatus}
-      onDelete={handleDeleteIssue}
+      onDelete={readonly || archived ? undefined : handleDeleteIssue}
       onFix={handleFixIssue}
       onSave={handleIssueSave}
     />
@@ -482,31 +568,66 @@ export default function ReviewView({
           )}
           {issuesLoading ? (
             <p className="text-xs text-faint">Loading issues…</p>
-          ) : issues.length === 0 ? (
-            !isRunning && (
+          ) : !hasVisibleIssues ? (
+            !isRunning &&
+            (showStartForm ? (
+              <p className="text-xs text-faint">No issues yet. Start a review to open some.</p>
+            ) : closedCountLoading || issuesLoading ? (
+              <p className="text-xs text-faint">Loading issues…</p>
+            ) : (
               <p className="text-xs text-faint">
-                {showStartForm
-                  ? 'No issues yet. Start a review to open some.'
-                  : 'No issues yet. Review latest changes for another pass.'}
+                No issues yet. Review latest changes for another pass.
               </p>
-            )
-          ) : showIgnoredSection ? (
+            ))
+          ) : (
             <>
-              {activeIssues.length > 0 && (
-                <section className="space-y-4">
-                  <h2 className={ISSUE_SECTION_HEADING_CLASS}>Issues</h2>
-                  {activeIssues.map(renderIssueCard)}
+              {onlyClosedIssues && !isRunning && <AllIssuesFixedMessage />}
+              {showIgnoredSection ? (
+                <>
+                  {activeIssues.length > 0 && (
+                    <section className="space-y-4">
+                      <h2 className={ISSUE_SECTION_HEADING_CLASS}>Issues</h2>
+                      {activeIssues.map((issue) => renderIssueCard(issue))}
+                    </section>
+                  )}
+                  <section
+                    className={`space-y-4 ${activeIssues.length > 0 ? 'border-t border-line pt-4' : ''}`}
+                  >
+                    <h2 className={ISSUE_SECTION_HEADING_CLASS}>Ignored</h2>
+                    {ignoredIssues.map((issue) => renderIssueCard(issue))}
+                  </section>
+                </>
+              ) : (
+                issues.map((issue) => renderIssueCard(issue))
+              )}
+              {showClosedSection && (
+                <section
+                  className={`space-y-4 ${issues.length > 0 ? 'border-t border-line pt-4' : ''}`}
+                >
+                  <button
+                    type="button"
+                    onClick={toggleClosedSection}
+                    className={`${ISSUE_SECTION_HEADING_CLASS} flex w-full items-center gap-1.5 text-left hover:text-secondary`}
+                  >
+                    {closedExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    )}
+                    Closed ({closedCount})
+                  </button>
+                  {closedExpanded && (
+                    <div className="space-y-4">
+                      {closedLoading ? (
+                        <p className="text-xs text-faint">Loading closed issues…</p>
+                      ) : (
+                        closedIssues.map((issue) => renderIssueCard(issue, { archived: true }))
+                      )}
+                    </div>
+                  )}
                 </section>
               )}
-              <section
-                className={`space-y-4 ${activeIssues.length > 0 ? 'border-t border-line pt-4' : ''}`}
-              >
-                <h2 className={ISSUE_SECTION_HEADING_CLASS}>Ignored</h2>
-                {ignoredIssues.map(renderIssueCard)}
-              </section>
             </>
-          ) : (
-            issues.map(renderIssueCard)
           )}
         </div>
       </div>

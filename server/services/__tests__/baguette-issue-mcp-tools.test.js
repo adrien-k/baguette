@@ -68,13 +68,13 @@ describe('reviewer issue MCP tools', () => {
     expect(info.local_branch).toBe('feat/new');
   });
 
-  it('creates, lists, updates, and deletes issues', async () => {
+  it('creates, lists, updates, and closes issues', async () => {
     const tools = buildReviewerIssueMcpTools(session, app);
     const create = tools.find((t) => t.name === 'CreateIssue');
     const list = tools.find((t) => t.name === 'ListIssues');
     const read = tools.find((t) => t.name === 'ReadIssue');
     const update = tools.find((t) => t.name === 'UpdateIssue');
-    const del = tools.find((t) => t.name === 'DeleteIssue');
+    const close = tools.find((t) => t.name === 'CloseIssue');
 
     const created = parseOk(
       await create.handler({ severity: 'high', title: 'Leak', description: 'in foo.js' })
@@ -101,10 +101,13 @@ describe('reviewer issue MCP tools', () => {
     const updated = parseOk(await update.handler({ issue_id: id, status: 'resolved' }));
     expect(updated.issue.status).toBe('resolved');
 
-    const deleted = parseOk(await del.handler({ issue_id: id }));
-    expect(deleted.ok).toBe(true);
+    const closed = parseOk(await close.handler({ issue_id: id }));
+    expect(closed.ok).toBe(true);
+    expect(closed.closed.status).toBe('closed');
     const after = parseOk(await list.handler({}));
     expect(after.count).toBe(0);
+    const missing = parseOk(await read.handler({ issue_id: id }));
+    expect(missing.ok).toBe(false);
   });
 
   it('snapshots turn agent metadata injected into MCP tools on create', async () => {

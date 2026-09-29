@@ -245,7 +245,7 @@ describe('PrRead', () => {
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');
     expect(names).not.toContain('CreateIssue');
-    expect(names).not.toContain('DeleteIssue');
+    expect(names).not.toContain('CloseIssue');
   });
   it('returns pr_url: null and a message when no PR exists', async () => {
     const { tools } = await buildServer({ pr_url: null, pr_number: null, remote_branch: 'feat' });

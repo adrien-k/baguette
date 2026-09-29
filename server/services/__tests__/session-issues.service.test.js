@@ -107,14 +107,20 @@ describe('session-issues service', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('lets the owner delete via remove', async () => {
+  it('hides closed issues from the default list', async () => {
     const created = await app
       .service('session-issues')
       .create({ session_id: sessionId, severity: 'low', title: 'Gone' }, { user });
-    await app.service('session-issues').remove(created.id, params(user));
+    await app.service('session-issues').patch(created.id, { status: 'closed' }, params(user));
     const found = await app.service('session-issues').find(params(user));
     const rows = found.data ?? found;
     expect(rows).toHaveLength(0);
+    const closedOnly = await app
+      .service('session-issues')
+      .find({ ...params(user), query: { status: 'closed' } });
+    const closedRows = closedOnly.data ?? closedOnly;
+    expect(closedRows).toHaveLength(1);
+    expect(closedRows[0].id).toBe(created.id);
   });
 
   it('lets the owner edit title, description, and severity', async () => {

@@ -12,13 +12,22 @@ describe('sortIssuesBySeverity', () => {
     expect(sorted.map((i) => i.severity)).toEqual(['critical', 'high', 'medium', 'low']);
   });
 
-  it('puts ignored issues after opened and resolved', () => {
+  it('puts opened before submitted and resolved, then ignored', () => {
     const sorted = sortIssuesBySeverity([
       { id: 1, severity: 'critical', status: 'ignored' },
       { id: 2, severity: 'low', status: 'opened' },
       { id: 3, severity: 'high', status: 'resolved' },
+      { id: 4, severity: 'critical', status: 'submitted' },
     ]);
-    expect(sorted.map((i) => i.id)).toEqual([3, 2, 1]);
+    expect(sorted.map((i) => i.id)).toEqual([2, 4, 3, 1]);
+  });
+
+  it('puts opened issues above higher-severity submitted issues', () => {
+    const sorted = sortIssuesBySeverity([
+      { id: 1, severity: 'critical', status: 'submitted' },
+      { id: 2, severity: 'low', status: 'opened' },
+    ]);
+    expect(sorted.map((i) => i.id)).toEqual([2, 1]);
   });
 
   it('orders opened before submitted at the same severity', () => {

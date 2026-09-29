@@ -53,7 +53,7 @@ const REVIEWER_ALLOWED_TOOLS = [
   'mcp__baguette__ListIssues',
   'mcp__baguette__ReadIssue',
   'mcp__baguette__UpdateIssue',
-  'mcp__baguette__DeleteIssue',
+  'mcp__baguette__CloseIssue',
 ];
 
 export function reviewTurnKey(sessionId) {

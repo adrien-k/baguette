@@ -1,6 +1,12 @@
-export const ISSUE_STATUSES = ['opened', 'submitted', 'ignored', 'resolved'];
+export const ISSUE_STATUSES = ['opened', 'submitted', 'ignored', 'resolved', 'closed'];
+/** Statuses the reviewer may set via UpdateIssue (use CloseIssue to archive). */
+export const REVIEWER_UPDATE_STATUSES = ['opened', 'submitted', 'ignored', 'resolved'];
 export const ISSUE_SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const AGENT_ISSUE_STATUSES = ['ignored', 'resolved'];
+
+export function isIssueClosed(issue) {
+  return issue?.status === 'closed';
+}
 
 export function assertIssueStatus(status) {
   if (!ISSUE_STATUSES.includes(status)) {

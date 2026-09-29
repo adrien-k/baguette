@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, Forbidden } from '@feathersjs/errors';
+import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import {
@@ -61,6 +61,24 @@ function rejectExternalCreate(context) {
   return context;
 }
 
+/** Closed issues are archived; list only when status is explicitly `closed`. */
+export async function excludeClosedSessionIssues(context) {
+  if (context.method !== 'find') return context;
+  const status = context.params?.query?.status;
+  if (status != null) return context;
+
+  const base = context.params.knex ?? context.service.createQuery(context.params);
+  context.params.knex = base.whereNot(`${context.service.fullName}.status`, 'closed');
+  return context;
+}
+
+function hideClosedIssueOnGet(context) {
+  if (context.result?.status === 'closed' && context.params?.provider) {
+    throw new NotFound('Issue not found');
+  }
+  return context;
+}
+
 export function registerSessionIssuesService(app, path = 'session-issues') {
   const options = {
     Model: app.get('db'),
@@ -74,8 +92,12 @@ export function registerSessionIssuesService(app, path = 'session-issues') {
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeBySessionUser],
+      find: [excludeClosedSessionIssues],
       create: [rejectExternalCreate],
       patch: [only(['status', 'title', 'description', 'severity'])],
+    },
+    after: {
+      get: [hideClosedIssueOnGet],
     },
   });
 }

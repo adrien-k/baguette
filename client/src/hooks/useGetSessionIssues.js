@@ -38,6 +38,10 @@ export function useGetSessionIssues(sessionId) {
     };
     const onPatched = (item) => {
       if (!matches(item)) return;
+      if (item.status === 'closed') {
+        setIssues((prev) => prev.filter((i) => i.id !== item.id));
+        return;
+      }
       setIssues((prev) => sortIssuesBySeverity(prev.map((i) => (i.id === item.id ? item : i))));
     };
     const onRemoved = (item) => {

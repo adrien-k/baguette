@@ -5,19 +5,21 @@ import { sortIssuesBySeverity } from '../../shared/session-issues.js';
 import {
   ISSUE_SEVERITIES,
   ISSUE_STATUSES,
+  REVIEWER_UPDATE_STATUSES,
   AGENT_ISSUE_STATUSES,
   serializeIssue,
   assertIssueSeverity,
   assertIssueStatus,
   assertAgentIssueStatus,
   issueAgentMetadataFromTurn,
+  isIssueClosed,
 } from './session-issues.js';
 import { createCurrentSessionInfoTool } from './current-session-info.js';
 
 async function requireIssue(app, sessionId, issueId, userId) {
   try {
     const issue = await app.service('session-issues').get(issueId, { user: { id: userId } });
-    if (issue.session_id !== sessionId) return null;
+    if (issue.session_id !== sessionId || isIssueClosed(issue)) return null;
     return issue;
   } catch {
     return null;
@@ -53,7 +55,9 @@ function createHandlers(session, app, turnAgent = {}) {
       paginate: false,
       user: { id: userId },
     });
-    const rows = Array.isArray(result) ? result : (result?.data ?? []);
+    const rows = (Array.isArray(result) ? result : (result?.data ?? [])).filter(
+      (row) => !isIssueClosed(row)
+    );
     return { issues: sortIssuesBySeverity(rows.map(serializeIssue)) };
   };
 
@@ -133,13 +137,13 @@ function createHandlers(session, app, turnAgent = {}) {
       return ok({ issue: serializeIssue(updated) });
     },
 
-    async deleteIssue({ issue_id }) {
+    async closeIssue({ issue_id }) {
       const issue = await requireIssue(app, sessionId, issue_id, userId);
       if (!issue) return fail('Issue not found');
-      await app
+      const updated = await app
         .service('session-issues')
-        .remove(issue_id, { provider: undefined, user: { id: userId } });
-      return ok({ deleted: serializeIssue(issue) });
+        .patch(issue_id, { status: 'closed' }, { provider: undefined, user: { id: userId } });
+      return ok({ closed: serializeIssue(updated) });
     },
   };
 }
@@ -198,18 +202,18 @@ export function buildReviewerIssueMcpTools(session, app, turnAgent = {}) {
         severity: z.enum(ISSUE_SEVERITIES).optional(),
         title: z.string().optional(),
         description: z.string().optional(),
-        status: z.enum(ISSUE_STATUSES).optional(),
+        status: z.enum(REVIEWER_UPDATE_STATUSES).optional(),
       },
       handler: h.updateIssue,
     },
     {
-      name: 'DeleteIssue',
+      name: 'CloseIssue',
       description:
-        'Permanently delete an issue. Required after reviewing each resolved issue (whether fixed or not). If still broken, CreateIssue a new opened finding after deleting.',
+        'Close an issue after review (archived; hidden from ListIssues). Required after reviewing each resolved issue (whether fixed or not). If still broken, CreateIssue a new opened finding after closing.',
       schema: {
         issue_id: issueIdSchema,
       },
-      handler: h.deleteIssue,
+      handler: h.closeIssue,
     },
   ];
 }

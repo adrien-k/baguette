@@ -165,14 +165,16 @@ export default function SessionIssueCard({
                     <Pencil className="w-4 h-4" />
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => onDelete(issue)}
-                  title="Delete issue"
-                  className="p-1.5 rounded-md text-faint hover:text-danger hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(issue)}
+                    title="Delete issue"
+                    className="p-1.5 rounded-md text-faint hover:text-danger hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             )}
           </div>
