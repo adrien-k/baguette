@@ -31,6 +31,7 @@ import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useGetReviewMessages } from '../hooks/useGetReviewMessages.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
+import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
@@ -531,32 +532,7 @@ export default function Session() {
     }
   }, []);
 
-  const [commitsToPush, setCommitsToPush] = useState(0);
-
-  useEffect(() => {
-    if (
-      !sessionId ||
-      session?.is_global ||
-      session?.status === 'provisioning' ||
-      session?.status === 'archiving' ||
-      session?.status === 'archived'
-    ) {
-      setCommitsToPush(0);
-      return;
-    }
-    sessionsService
-      .sessionGitStatus(sessionId)
-      .then((res) => {
-        setCommitsToPush(res.commitsToPush ?? 0);
-      })
-      .catch(() => {});
-  }, [
-    sessionId,
-    session?.is_global,
-    session?.status,
-    session?.last_reviewed_commit_sha,
-    session?.review_status,
-  ]);
+  const { commitsToPush, refreshCommitsToPush } = useSessionCommitsToPush(gitSession);
 
   useEffect(() => {
     if (!session) return;
@@ -689,8 +665,7 @@ export default function Session() {
     setPushing(true);
     try {
       await sessionsService.push({ id: session.id, forceMode, branch });
-      const status = await sessionsService.sessionGitStatus(session.id);
-      setCommitsToPush(status.commitsToPush ?? 0);
+      await refreshCommitsToPush();
       toast.success('Pushed successfully');
     } catch (err) {
       if (err.data?.conflict) {
@@ -1079,7 +1054,7 @@ export default function Session() {
                   tools={['pr', 'preview', 'code', 'push']}
                   hideLabelBelowSm
                   readonly={!!headerSession.archived_at || headerSession.status === 'archiving'}
-                  onPush={headerSession.auto_push ? undefined : handlePush}
+                  onPush={handlePush}
                   pushing={pushing}
                   commitsToPush={commitsToPush}
                   prUrl={session ? prInfo?.url : headerSession.pr_url}

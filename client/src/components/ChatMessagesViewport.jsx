@@ -5,7 +5,7 @@ import StickToBottomScrollArea from './StickToBottomScrollArea.jsx';
 export const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = SCROLL_BOTTOM_THRESHOLD_PX;
 
 /** Centered narrow column for session chat, details, preview, and review issues. */
-export const SESSION_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-2xl mx-auto';
+export const SESSION_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-3xl 2xl:max-w-5xl mx-auto';
 
 /** Centered content width with horizontal padding (session chat composer and messages). */
 export const CHAT_COLUMN_CLASS = `${SESSION_CONTENT_MAX_WIDTH_CLASS} px-4`;

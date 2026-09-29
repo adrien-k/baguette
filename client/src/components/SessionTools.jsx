@@ -15,7 +15,7 @@ function wrapClick(onToolClick) {
   };
 }
 
-function canShowTool(tool, session, { readonly, onPush }) {
+function canShowTool(tool, session, { readonly, onPush, commitsToPush = 0 }) {
   if (!session) return false;
   switch (tool) {
     case 'pr':
@@ -28,9 +28,9 @@ function canShowTool(tool, session, { readonly, onPush }) {
       return (
         !!onPush &&
         !readonly &&
-        !session.auto_push &&
         session.pr_status !== 'merged' &&
-        !isGlobalSession(session)
+        !isGlobalSession(session) &&
+        (!!session.auto_push || commitsToPush > 0)
       );
     default:
       return false;
@@ -73,7 +73,7 @@ export default function SessionTools({
 }) {
   if (!session) return null;
 
-  const options = { readonly, onPush };
+  const options = { readonly, onPush, commitsToPush };
   const visibleTools = tools.filter((t) => canShowTool(t, session, options));
   if (visibleTools.length === 0 && !showPreviewPublicBadge) return null;
 
