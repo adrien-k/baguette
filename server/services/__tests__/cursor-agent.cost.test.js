@@ -62,7 +62,10 @@ describe('cursor cost recording', () => {
     expect(agent.getUsage).not.toHaveBeenCalled();
     const rows = await db('usage').where({ session_id: session.id });
     expect(rows).toHaveLength(1);
-    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.00161646, 6);
+    expect(JSON.parse(rows[0].raw_token_usage).input_tokens).toBe(8007);
+    expect(rows[0].input_tokens).toBe(8004);
+    expect(rows[0].total_tokens).toBe(8016);
+    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.00161611, 6);
     expect(rows[0].agent_sdk).toBe('cursor');
     expect(service._patch).toHaveBeenCalledWith(
       session.id,

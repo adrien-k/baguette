@@ -43,6 +43,13 @@ export function delta(prev, next) {
  * Add one Cursor `TokenUsage` payload into the accumulator. A turn can span
  * several runs — a background task schedules follow-ups, each ending with its own
  * `SDKUsageMessage` — so these accumulate rather than replace.
+ *
+ * The SDK docs describe `inputTokens` and `cacheReadTokens` as disjoint buckets
+ * (and `totalTokens` as their sum with output/cache write). In practice the stream
+ * often reports `inputTokens` on the same scale as `cacheReadTokens`, while Cursor's
+ * dashboard "Input" is much smaller. We persist these raw sums here; see
+ * `applyCursorUsageDerivation()` snapshots raw JSON and derives `input_tokens` /
+ * `total_tokens` before insert — see `shared/cursor-token-adjustment.js`.
  */
 export function addTokenUsage(acc, usage) {
   if (!usage) return acc;

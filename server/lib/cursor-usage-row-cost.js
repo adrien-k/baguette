@@ -2,10 +2,14 @@ import {
   estimateCursorTurnCostUsd,
   parseModelParamsJson,
 } from '../../shared/cursor-model-pricing.js';
+import { parseCursorRawTokenUsage } from '../../shared/cursor-token-adjustment.js';
 
 /**
  * USD estimate for a Cursor `usage` row (or live turn tokens) using session model snapshots.
- * Mirrors cursor-agent `_turnCostUsd` so backfills match new turns.
+ * Mirrors cursor-agent `_turnCostUsd` so recomputes match new turns.
+ *
+ * `input_tokens` on the row is already derived from `raw_token_usage` for Cursor; see
+ * `shared/cursor-token-adjustment.js`.
  *
  * @param {Record<string, unknown>} turnUsage token fields + optional `model`
  * @param {Record<string, unknown>} session sessions row (model / review_model / *_params)
@@ -30,13 +34,16 @@ export function estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel
 
 /** @param {Record<string, unknown>} usageRow */
 export function turnUsageFromUsageRow(usageRow) {
+  const raw = parseCursorRawTokenUsage(usageRow.raw_token_usage);
+  const tokenSource = raw ?? usageRow;
   return {
     input_tokens: Number(usageRow.input_tokens) || 0,
-    output_tokens: Number(usageRow.output_tokens) || 0,
-    cache_read_tokens: Number(usageRow.cache_read_tokens) || 0,
-    cache_write_tokens: Number(usageRow.cache_write_tokens) || 0,
-    reasoning_tokens: Number(usageRow.reasoning_tokens) || 0,
+    output_tokens: Number(tokenSource.output_tokens) || 0,
+    cache_read_tokens: Number(tokenSource.cache_read_tokens) || 0,
+    cache_write_tokens: Number(tokenSource.cache_write_tokens) || 0,
+    reasoning_tokens: Number(tokenSource.reasoning_tokens) || 0,
     total_tokens: Number(usageRow.total_tokens) || 0,
     model: usageRow.model ?? null,
+    raw_token_usage: usageRow.raw_token_usage ?? null,
   };
 }

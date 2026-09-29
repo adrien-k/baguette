@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { estimateCursorUsageCostUsd } from '../cursor-usage-row-cost.js';
 
 describe('estimateCursorUsageCostUsd', () => {
@@ -17,6 +18,26 @@ describe('estimateCursorUsageCostUsd', () => {
       model: 'composer-2.5',
     };
     expect(estimateCursorUsageCostUsd(turnUsage, session)).toBeCloseTo(0.5, 6);
+  });
+
+  it('bills uncached input only when cache read is included in input', () => {
+    const session = { model: 'gpt-5.4-nano', model_params: null };
+    const inflated = {
+      input_tokens: 1000,
+      output_tokens: 0,
+      cache_read_tokens: 970,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+      total_tokens: 1970,
+      model: 'gpt-5.4-nano',
+    };
+    const derived = { ...inflated };
+    applyCursorUsageDerivation(derived);
+    const uncached = { ...inflated, input_tokens: 30, total_tokens: 1000 };
+    expect(estimateCursorUsageCostUsd(derived, session)).toBeCloseTo(
+      estimateCursorUsageCostUsd(uncached, session),
+      10
+    );
   });
 
   it('uses review model fields when kind is review', () => {

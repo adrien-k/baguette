@@ -7,6 +7,7 @@ import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
+import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 import { processCursorRunStream } from '../cursor-sdk-turn.js';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
@@ -543,6 +544,7 @@ ${body}`,
     const sessionId = session.id;
     const userId = session.user_id;
 
+    applyCursorUsageDerivation(turnUsage);
     const deltaCostUsd = this._turnCostUsd(session, turnUsage, { kind, turnModel });
 
     // Nothing to say about this turn at all — don't write an empty row.
@@ -561,6 +563,7 @@ ${body}`,
       cache_write_tokens: turnUsage.cache_write_tokens,
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
+      raw_token_usage: turnUsage.raw_token_usage,
       model:
         turnUsage.model ??
         turnModel?.model ??
