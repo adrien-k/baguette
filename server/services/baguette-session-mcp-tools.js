@@ -23,6 +23,7 @@ const SESSION_LIST_COLUMNS = [
   'created_at',
   'updated_at',
   'last_activity_at',
+  'last_viewed_at',
   'archived_at',
 ];
 

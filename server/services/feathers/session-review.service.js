@@ -166,7 +166,6 @@ export class SessionReviewService {
         },
         { user: { id: session.user_id } }
       );
-
       await this._wipeReviewMessages(session);
       this.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(session.id));
 
@@ -230,7 +229,6 @@ export class SessionReviewService {
         },
         { user: { id: session.user_id } }
       );
-
       const baguetteTitle =
         typeof data?.baguette_title === 'string' ? data.baguette_title.trim() : '';
       const userMessage = baguetteTitle

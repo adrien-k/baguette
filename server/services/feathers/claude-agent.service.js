@@ -170,7 +170,7 @@ export class ClaudeAgentService {
     if (prompt != null) {
       state.channel.push(toSdkUserMessage(prompt));
     }
-    return this._consumeQuery(state, {
+    return await this._consumeQuery(state, {
       persistMessage,
       persistStatus,
       onInitSessionId,

@@ -274,7 +274,6 @@ ${body}`,
       abortController: abortController ?? new AbortController(),
     };
     this._activeSessions.set(key, sessionState);
-
     let outcome = 'failed';
     try {
       const agent = await this.createOrResumeAgent(session, {
@@ -336,12 +335,10 @@ ${body}`,
     const sessionState = { isProcessing: true, userId, currentRun: null };
     this._activeSessions.set(sessionId, sessionState);
     const turnUsage = emptyTurnUsage();
-
     try {
       await this.app
         .service('sessions')
         .patch(sessionId, { status: 'running' }, { user: { id: userId } });
-
       const db = this.app.get('db');
       const agentOptions = await this._sessionAgentOptions(session, {
         model: turnModel.model,

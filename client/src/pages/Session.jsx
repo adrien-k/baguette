@@ -57,6 +57,8 @@ import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
 import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
+import SessionListIndicator, { SessionUnreadDot } from '../components/SessionListIndicator.jsx';
+import ReviewInProgressBadge, { isReviewInProgress } from '../components/ReviewInProgressBadge.jsx';
 import { BANNER_DANGER } from '../utils/ui.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
 
@@ -254,15 +256,21 @@ function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = fa
       } ${isCurrent ? 'bg-control-hover' : 'hover:bg-control/50'}`}
     >
       <div className="flex items-center gap-2">
-        <SessionStatusIndicator session={s} />
+        <SessionListIndicator session={s} />
         <Link to={sessionUrl(s.short_id)} className="flex-1 min-w-0 leading-snug text-left">
           {showRepo && (
             <span className="block truncate">
               <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
             </span>
           )}
-          <span className={`block truncate font-medium ${isCurrent ? 'text-fg' : 'text-heading'}`}>
-            {title}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <SessionUnreadDot session={s} suppressUnread={isCurrent} />
+            <span
+              className={`min-w-0 truncate font-medium ${isCurrent ? 'text-fg' : 'text-heading'}`}
+            >
+              {title}
+            </span>
+            {isReviewInProgress(s) && !isArchiving && <ReviewInProgressBadge compact />}
           </span>
           {promptPreview && (
             <span className="block truncate text-[11px] text-faint">{promptPreview}</span>
@@ -579,6 +587,13 @@ export default function Session() {
     if (isNewSessionRoute || !short_id || sessionLoading) return;
     if (!sessionFromHook) navigate(homeUrl);
   }, [sessionLoading, short_id, sessionFromHook, navigate, homeUrl, isNewSessionRoute]);
+
+  useEffect(() => {
+    if (isNewSessionRoute || sessionLoading || !sessionFromHook?.id) return;
+    if (sessionFromHook.short_id !== short_id) return;
+    const viewed_at = new Date().toISOString();
+    sessionsService.patch(sessionFromHook.id, { last_viewed_at: viewed_at }).catch(() => {});
+  }, [isNewSessionRoute, sessionLoading, sessionFromHook?.id, sessionFromHook?.short_id, short_id]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;

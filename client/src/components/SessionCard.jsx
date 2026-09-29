@@ -8,7 +8,8 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import CardRepoBadge from './CardRepoBadge.jsx';
 import SessionCardLayout from './SessionCardLayout.jsx';
-import SessionStatusIndicator from './SessionStatusIndicator.jsx';
+import SessionListIndicator, { SessionUnreadDot } from './SessionListIndicator.jsx';
+import ReviewInProgressBadge, { isReviewInProgress } from './ReviewInProgressBadge.jsx';
 
 export function SessionStatusIcon({ status, compact = false, ...props }) {
   const size = compact ? 'w-3 h-3' : 'w-3.5 h-3.5';
@@ -71,6 +72,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
           Archiving…
         </span>
       )}
+      {isReviewInProgress(session) && <ReviewInProgressBadge />}
       {session.loop_id && (
         <span title="Started by a loop" className={BADGE}>
           <Repeat className="w-3 h-3 text-accent" />
@@ -94,8 +96,13 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
           />
         ) : null
       }
-      indicator={<SessionStatusIndicator session={session} size="md" />}
-      title={session.label || session.repo_full_name}
+      indicator={<SessionListIndicator session={session} size="md" />}
+      title={
+        <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+          <SessionUnreadDot session={session} />
+          <span className="truncate">{session.label || session.repo_full_name}</span>
+        </span>
+      }
       subtitle={activeLabel || null}
       titleExtras={titleExtras}
       description={

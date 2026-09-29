@@ -39,6 +39,8 @@ export function registerFeathersServices(app, sseManager) {
   registerSessionReviewMessagesService(app);
   registerSessionReviewService(app);
 
+  app.service('sessions').registerActivityMessageListeners(app);
+
   // Route service CRUD events to the right SSE connections
   for (const event of CRUD_EVENTS) {
     app.service('sessions').on(event, (data) => {

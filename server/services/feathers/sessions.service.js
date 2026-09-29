@@ -61,6 +61,7 @@ import {
   queryFlagEnabled,
   SESSION_LIST_QUERY_FLAGS,
 } from '../../../shared/session-list-query.js';
+import { DEBOUNCE_DELAY_MS } from '../session-activity.js';
 
 /**
  * Sent to an agent whose turn was cut short by a server restart. The transcript is resumed, but
@@ -86,6 +87,8 @@ export class SessionsService extends KnexService {
     // one. Held in memory only: a restart also restarts the agent's own counters,
     // so an absent entry and a reset counter line up.
     this._lastResultTotals = new Map();
+    /** @type {Record<number, true>} Debounce window — skip extra session loads while set. */
+    this._sessionActivityUpdatedRecently = Object.create(null);
   }
 
   setup(app) {
@@ -94,6 +97,51 @@ export class SessionsService extends KnexService {
     this._provisioningBySessionId = new Map();
     /** Session ids currently in `remove()` — a second archive is rejected. */
     this._archivePendingSessionIds = new Set();
+  }
+
+  /** Wire `messages` / `session-review-messages` create events → `last_activity_at` (call after all services register). */
+  registerActivityMessageListeners(app) {
+    if (this._sessionActivityListenersRegistered) return;
+    this._sessionActivityListenersRegistered = true;
+    this.app = app;
+    const onCreated = (data) => this._bumpLastActivityOnMessageCreated(data);
+    app.service('messages').on('created', onCreated);
+    app.service('session-review-messages').on('created', onCreated);
+  }
+
+  _bumpLastActivityOnMessageCreated(message) {
+    const sessionId = message?.session_id;
+    if (!sessionId) return;
+    if (this._sessionActivityUpdatedRecently[sessionId]) return;
+    this._sessionActivityUpdatedRecently[sessionId] = true;
+    setTimeout(() => {
+      delete this._sessionActivityUpdatedRecently[sessionId];
+    }, DEBOUNCE_DELAY_MS);
+    void this.onActivity(sessionId).catch((err) => {
+      logger.warn({ sessionId, err: err.message }, 'Failed to bump session last_activity_at');
+    });
+  }
+
+  /** Updates `last_activity_at` for a non-archived session (debounced via message create listeners). */
+  async onActivity(sessionOrId) {
+    const db = this.app.get('db');
+    const session =
+      typeof sessionOrId === 'object' && sessionOrId !== null
+        ? sessionOrId
+        : await db('sessions').where({ id: sessionOrId }).first();
+    if (!session?.id) return;
+    if (
+      session.archived_at ||
+      session.status === ARCHIVING_STATUS ||
+      session.status === ARCHIVED_STATUS
+    )
+      return;
+    const last_activity_at = new Date().toISOString();
+    await this.patch(
+      session.id,
+      { last_activity_at },
+      { provider: undefined, user: { id: session.user_id } }
+    );
   }
 
   _trackProvisioning(sessionId, promise) {
@@ -1038,7 +1086,7 @@ export class SessionsService extends KnexService {
     )
       return;
 
-    const patch = { last_activity_at: new Date().toISOString() };
+    const patch = {};
     if (status !== undefined && session.status !== status) patch.status = status;
 
     if (result !== null) {
@@ -1048,6 +1096,7 @@ export class SessionsService extends KnexService {
       }
     }
 
+    if (Object.keys(patch).length === 0) return;
     await this.app.service('sessions').patch(sessionId, patch, {
       provider: undefined,
       user: { id: session.user_id },

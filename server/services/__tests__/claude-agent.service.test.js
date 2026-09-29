@@ -120,6 +120,7 @@ function makeMockApp(db) {
           remove: sessionRemove,
           emit: sessionEmit,
           getClaudeEnv,
+          onActivity: async () => {},
           get: async (id) => db('sessions').where({ id }).first(),
         };
       if (name === 'messages') return { create: messageCreate, remove: genericRemove };
