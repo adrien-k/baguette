@@ -21,7 +21,8 @@ describe('splitPrBody', () => {
       '',
       BAGUETTE_FOOTER_MARKER,
       '',
-      'Harness: cursor · Model: `claude-4`',
+      '_Preview: https://example.com/_',
+      '_cursor / `gpt-5` · In: 1k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $0_',
     ].join('\n');
     const { userPrefix, baguetteContent } = splitPrBody(body);
     expect(userPrefix).toBe('Notes');
@@ -35,28 +36,48 @@ describe('splitPrBody', () => {
 });
 
 describe('buildSessionFooter', () => {
-  it('uses Harness label and baguette-footer marker', () => {
-    const footer = buildSessionFooter({ agent_sdk: 'cursor', model: 'gpt-5' });
+  it('uses one line per preview and usage entry', () => {
+    const footer = buildSessionFooter(
+      {},
+      {
+        previewUrl: 'https://session.example.com/',
+        usageLines: [
+          'cursor / `gpt-5` · In: 10k · Out: 2k · Cache read: 1k · Cache write: 0 · Cost: $0.12',
+        ],
+      }
+    );
     expect(footer).toBe(
-      `\n\n---\n\n${BAGUETTE_FOOTER_MARKER}\n\nHarness: cursor · Model: \`gpt-5\``
+      [
+        '',
+        '',
+        '---',
+        '',
+        BAGUETTE_FOOTER_MARKER,
+        '',
+        '_Preview: https://session.example.com/_',
+        '_cursor / `gpt-5` · In: 10k · Out: 2k · Cache read: 1k · Cache write: 0 · Cost: $0.12_',
+      ].join('\n')
     );
   });
 
-  it('includes preview URL when provided', () => {
-    const footer = buildSessionFooter(
-      { agent_sdk: 'cursor' },
-      { previewUrl: 'https://session-abc.example.com/' }
-    );
-    expect(footer).toContain('Preview: https://session-abc.example.com/');
-    expect(footer).toContain('Harness: cursor');
+  it('includes preview URL only when no usage lines', () => {
+    const footer = buildSessionFooter({}, { previewUrl: 'https://session-abc.example.com/' });
+    expect(footer).toContain('_Preview: https://session-abc.example.com/_');
+    expect(footer).not.toContain('Harness:');
   });
 
   it('replaces prior footer on each build (no accumulation)', () => {
-    const first = buildSessionFooter({ agent_sdk: 'claude', model: 'a' });
-    const second = buildSessionFooter({ agent_sdk: 'cursor', model: 'b' });
-    expect(first).toContain('Harness: claude');
-    expect(second).toContain('Harness: cursor');
-    expect(second).not.toContain('Harness: claude');
+    const first = buildSessionFooter(
+      {},
+      { usageLines: ['claude / `a` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0'] }
+    );
+    const second = buildSessionFooter(
+      {},
+      { usageLines: ['cursor / `b` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0'] }
+    );
+    expect(first).toContain('claude / `a`');
+    expect(second).toContain('cursor / `b`');
+    expect(second).not.toContain('claude / `a`');
   });
 });
 
@@ -65,7 +86,12 @@ describe('buildPrBody', () => {
     const body = buildPrBody(
       'User notes',
       'Agent summary',
-      buildSessionFooter({ agent_sdk: 'cursor' })
+      buildSessionFooter(
+        {},
+        {
+          usageLines: ['cursor / `x` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0'],
+        }
+      )
     );
     expect(body).toBe(
       [
@@ -80,7 +106,7 @@ describe('buildPrBody', () => {
         '',
         BAGUETTE_FOOTER_MARKER,
         '',
-        'Harness: cursor',
+        '_cursor / `x` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0_',
       ].join('\n')
     );
   });

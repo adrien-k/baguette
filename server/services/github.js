@@ -1541,24 +1541,14 @@ export function splitPrBody(body) {
   return { userPrefix, baguetteContent };
 }
 
-export function buildSessionFooter(session, { previewUrl = null } = {}) {
-  const parts = [];
-  if (previewUrl) parts.push(`Preview: ${previewUrl}`);
-  if (session?.agent_sdk) parts.push(`Harness: ${session.agent_sdk}`);
-  if (session?.model) parts.push(`Model: \`${session.model}\``);
-  if (session?.model_params) {
-    try {
-      const params = JSON.parse(session.model_params);
-      if (Array.isArray(params) && params.length) {
-        parts.push(`Params: \`${params.map((p) => `${p.id}=${p.value}`).join(', ')}\``);
-      }
-    } catch {
-      // invalid JSON — skip
-    }
-  }
-  if (!parts.length) return '';
+export function buildSessionFooter(_session, { previewUrl = null, usageLines = [] } = {}) {
+  const lines = [];
+  if (previewUrl) lines.push(`Preview: ${previewUrl}`);
+  if (usageLines?.length) lines.push(...usageLines);
+  if (!lines.length) return '';
 
-  return `\n\n---\n\n${BAGUETTE_FOOTER_MARKER}\n\n${parts.join(' · ')}`;
+  const italicLines = lines.map((line) => `_${line}_`);
+  return `\n\n---\n\n${BAGUETTE_FOOTER_MARKER}\n\n${italicLines.join('\n')}`;
 }
 
 export function buildPrBody(userPrefix, baguetteContent, footer = '') {

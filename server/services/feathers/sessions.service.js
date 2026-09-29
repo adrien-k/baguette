@@ -33,6 +33,7 @@ import {
   buildPrBody,
   buildSessionFooter,
 } from '../github.js';
+import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
 import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
@@ -899,6 +900,7 @@ export class SessionsService extends KnexService {
         ? await loadBaguetteConfig(resolveDataDirRelativePath(session.worktree_path))
         : null;
       const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
+      const usageLines = await loadSessionFooterUsageLines(this.app.get('db'), session);
       const pr = await upsertPR(token, {
         repoFullName: session.repo_full_name,
         prNumber: session.pr_number,
@@ -906,7 +908,7 @@ export class SessionsService extends KnexService {
         body: buildPrBody(
           userPrefix,
           session.pr_description ?? '',
-          buildSessionFooter(session, { previewUrl })
+          buildSessionFooter(session, { previewUrl, usageLines })
         ),
         head: session.pr_number ? undefined : head,
         baseBranch: session.base_branch,

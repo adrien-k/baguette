@@ -29,6 +29,7 @@ import {
 } from './github.js';
 import { loadBaguetteConfig, getAvailableCommands, getAvailableTasks } from './baguette-config.js';
 import { getSessionPreviewUrl } from './preview-services.js';
+import { loadSessionFooterUsageLines } from './pr-footer-usage.js';
 import { isPortListening } from './port-utils.js';
 import {
   getPermalink as slackGetPermalink,
@@ -466,11 +467,16 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           ? await loadBaguetteConfig(absoluteWorktreePath)
           : null;
         const previewUrl = getSessionPreviewUrl(prSession, baguetteConfig);
+        const usageLines = await loadSessionFooterUsageLines(db, prSession);
         const pr = await upsertPR(await getToken(), {
           repoFullName: session.repo_full_name,
           prNumber: effectivePrNumber,
           title,
-          body: buildPrBody(userPrefix, description, buildSessionFooter(prSession, { previewUrl })),
+          body: buildPrBody(
+            userPrefix,
+            description,
+            buildSessionFooter(prSession, { previewUrl, usageLines })
+          ),
           head,
           baseBranch,
           reopen,
