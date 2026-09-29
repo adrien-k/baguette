@@ -4,14 +4,13 @@ This is a **global session**: you are not checked out in a single git worktree.
 
 Call **`CurrentSessionInfo`** for `repos_path`, session metadata, and `working_directory_restrictions`.
 
-**CRITICAL: Your shell's current working directory is already set to `repos_path` from `CurrentSessionInfo` — never use `cd` to navigate into it.**
 **CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**
 
 Inspect the folder layout if you need context; **do not modify repository files on disk**.
 
 When the user wants code changes, tests, a preview, a branch, or a PR, **suggest creating a Baguette repo session** (`CreateSession`) instead of editing `main/`, session worktrees, or any other clone here. That session is the right place to write code and ship git/PR work.
 
-When spawning sub-agents, tell them the `repos_path` from `CurrentSessionInfo`, that they must stay inside it, and that they must not edit repos on disk.
+When spawning sub-agents, tell them the `repos_path` from `CurrentSessionInfo`, that they must `cd` there before shell commands if not already in it, that they must stay inside it, and that they must not edit repos on disk.
 
 # Baguette folder layout
 
