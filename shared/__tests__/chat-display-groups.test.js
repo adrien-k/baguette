@@ -5,6 +5,7 @@ import {
   isChatAnchorMessage,
   isChatGroupBoundary,
   isChatWorkMessage,
+  messageContainsCreateIssue,
   messageContainsPrUpsert,
 } from '../chat-display-groups.js';
 
@@ -53,6 +54,37 @@ describe('chat display grouping', () => {
     expect(messageContainsPrUpsert(prUpsert)).toBe(true);
     expect(isChatGroupBoundary(prUpsert)).toBe(true);
     expect(isChatWorkMessage(prUpsert)).toBe(false);
+  });
+
+  it('treats CreateIssue tool messages as group boundaries', () => {
+    const createIssue = {
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', name: 'mcp__baguette__CreateIssue', id: 'iss' }],
+      },
+    };
+    expect(messageContainsCreateIssue(createIssue)).toBe(true);
+    expect(isChatGroupBoundary(createIssue)).toBe(true);
+    expect(isChatWorkMessage(createIssue)).toBe(false);
+  });
+
+  it('treats Cursor mcp meta-tool CreateIssue as a group boundary', () => {
+    const createIssue = {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mcp',
+            id: 'iss',
+            input: { toolName: 'CreateIssue', args: { severity: 'high', title: 'Leak' } },
+          },
+        ],
+      },
+    };
+    expect(messageContainsCreateIssue(createIssue)).toBe(true);
+    expect(isChatGroupBoundary(createIssue)).toBe(true);
+    expect(isChatWorkMessage(createIssue)).toBe(false);
   });
 
   it('does not collapse Cursor PrUpsert into a surrounding Worked group', () => {

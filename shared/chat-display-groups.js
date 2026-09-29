@@ -1,14 +1,21 @@
 /** Minimum tool calls in a run before it collapses into a work summary. */
 export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
 
-function toolUseNameIsPrUpsert(name) {
+function toolUseNameIs(name, shortName) {
   if (!name) return false;
-  if (name === 'PrUpsert') return true;
-  return name.endsWith('__PrUpsert');
+  if (name === shortName) return true;
+  return name.endsWith(`__${shortName}`);
 }
 
 function nestedMcpToolName(block) {
   return block.input?.toolName ?? block.input?.name ?? null;
+}
+
+function blockIsNamedMcpTool(block, shortName) {
+  if (block.type !== 'tool_use' || block._hidden) return false;
+  if (toolUseNameIs(block.name, shortName)) return true;
+  if (block.name === 'mcp' && toolUseNameIs(nestedMcpToolName(block), shortName)) return true;
+  return false;
 }
 
 function blockIsLegacyPrUpsertBash(block) {
@@ -19,16 +26,27 @@ function blockIsLegacyPrUpsertBash(block) {
 
 /** MCP PrUpsert as Claude `mcp__…__PrUpsert`, Cursor `mcp` meta-tool, or legacy bash op. */
 function blockIsPrUpsert(block) {
-  if (block.type !== 'tool_use' || block._hidden) return false;
-  if (toolUseNameIsPrUpsert(block.name)) return true;
-  if (block.name === 'mcp' && toolUseNameIsPrUpsert(nestedMcpToolName(block))) return true;
-  return blockIsLegacyPrUpsertBash(block);
+  return blockIsNamedMcpTool(block, 'PrUpsert') || blockIsLegacyPrUpsertBash(block);
+}
+
+function blockIsCreateIssue(block) {
+  return blockIsNamedMcpTool(block, 'CreateIssue');
 }
 
 /** Assistant message whose visible tools include PrUpsert (MCP or legacy bash op). */
 export function messageContainsPrUpsert(msg) {
   if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
   return msg.message.content.some(blockIsPrUpsert);
+}
+
+/** Assistant message whose visible tools include CreateIssue. */
+export function messageContainsCreateIssue(msg) {
+  if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
+  return msg.message.content.some(blockIsCreateIssue);
+}
+
+function messageContainsHighlightedTool(msg) {
+  return messageContainsPrUpsert(msg) || messageContainsCreateIssue(msg);
 }
 
 /** User or assistant message with visible text — boundaries of a chat turn. */
@@ -41,15 +59,15 @@ export function isChatAnchorMessage(msg) {
   return false;
 }
 
-/** User/assistant text or PrUpsert — splits work runs and enables collapse after the group. */
+/** User/assistant text, PrUpsert, or CreateIssue — splits work runs and enables collapse after the group. */
 export function isChatGroupBoundary(msg) {
-  return isChatAnchorMessage(msg) || messageContainsPrUpsert(msg);
+  return isChatAnchorMessage(msg) || messageContainsHighlightedTool(msg);
 }
 
 /** Tool-only assistant turns plus system/result noise between group boundaries. */
 export function isChatWorkMessage(msg) {
   if (!msg) return false;
-  if (messageContainsPrUpsert(msg)) return false;
+  if (messageContainsHighlightedTool(msg)) return false;
   if (msg.type === 'result') return true;
   if (msg.type === 'system') return msg.subtype !== 'prompt';
   if (msg.type === 'assistant') return !isChatAnchorMessage(msg);

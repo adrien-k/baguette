@@ -85,7 +85,8 @@ export default function SessionIssueCard({
 
   return (
     <div
-      className={`rounded-lg border p-4 space-y-3 ${
+      id={`issue-${issue.id}`}
+      className={`rounded-lg border p-4 space-y-3 scroll-mt-4 ${
         active ? 'border-strong bg-inset/60' : 'border-line opacity-70'
       }`}
     >

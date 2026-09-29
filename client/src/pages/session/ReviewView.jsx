@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Loader2, PanelRight, Play, Square } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   messagesService,
   sessionIssuesService,
@@ -80,6 +80,7 @@ export default function ReviewView({
   const { user } = useAuth();
   const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
+  const { hash } = useLocation();
   const { issues, loading: issuesLoading } = useGetSessionIssues(session?.id);
   const { messages: reviewMessages, loading: reviewMessagesLoading } = useGetReviewMessages(
     session?.id
@@ -177,6 +178,12 @@ export default function ReviewView({
   const hasReview = hasReviewThread || isRunning;
   const showReviewerPanelLink =
     hasReview && onOpenReviewer && !(reviewerDrawerOpen && reviewerPanelActive);
+
+  useEffect(() => {
+    if (!hash.startsWith('#issue-') || issuesLoading) return;
+    const el = document.getElementById(hash.slice(1));
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [hash, issuesLoading, issues]);
 
   const sendFixMessage = async (text) => {
     await messagesService.create({

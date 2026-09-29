@@ -1,7 +1,9 @@
 import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { sessionsService } from '../../feathers.js';
+import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
@@ -31,6 +33,24 @@ function TerminalLogBlock({ label, text, ansi = true }) {
 function hasToolInput(input) {
   return input != null && typeof input === 'object' && Object.keys(input).length > 0;
 }
+
+function parseMcpJsonResult(result) {
+  if (result == null) return null;
+  if (typeof result === 'object') return result;
+  if (typeof result !== 'string' || !result.trim()) return null;
+  try {
+    return JSON.parse(result);
+  } catch {
+    return null;
+  }
+}
+
+const ISSUE_SEVERITY_CLASS = {
+  critical: 'bg-danger/15 text-danger border-danger/35',
+  high: 'bg-warning/15 text-warning border-warning/35',
+  medium: 'bg-brand/15 text-warning border-brand/35',
+  low: 'bg-control/80 text-fg-muted border-strong/80',
+};
 
 function formatToolInput(input) {
   return JSON.stringify(input, null, 2);
@@ -323,6 +343,68 @@ export function PrUpsertBlock({ title, body, result, isError }) {
   );
 }
 
+export function CreateIssueBlock({ block }) {
+  const { short_id } = useParams();
+  const { sessionUrl } = useFilterRoutes();
+  const [searchParams] = useSearchParams();
+  const mcpResult = parseMcpJsonResult(block.result);
+  const issue = mcpResult?.issue;
+  const severity = issue?.severity ?? block.input?.severity;
+  const title = issue?.title ?? block.input?.title ?? '(no title)';
+  const issueId = issue?.id;
+  const isRunning = block.result == null;
+  const isError = Boolean(block.isError || mcpResult?.ok === false);
+
+  const panel = searchParams.get('panel');
+  const openTo = useMemo(() => {
+    if (!short_id) return null;
+    const params = new URLSearchParams();
+    params.set('view', 'review');
+    if (panel) params.set('panel', panel);
+    const hash = issueId != null ? `#issue-${issueId}` : '';
+    return `${sessionUrl(short_id)}?${params.toString()}${hash}`;
+  }, [short_id, sessionUrl, panel, issueId]);
+
+  return (
+    <div
+      className={`bg-inset/50 rounded-lg border overflow-hidden ${isError ? 'border-danger/60' : 'border-line'}`}
+    >
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 min-w-0">
+        <span className="text-accent text-xs font-mono shrink-0">Issue</span>
+        {severity ? (
+          <span
+            className={`inline-flex items-center justify-center h-5 shrink-0 rounded-md border px-1.5 text-[10px] uppercase tracking-wide ${ISSUE_SEVERITY_CLASS[severity] || ISSUE_SEVERITY_CLASS.low}`}
+          >
+            {severity}
+          </span>
+        ) : null}
+        {isError && (
+          <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            error
+          </span>
+        )}
+        <span className="text-fg text-xs font-semibold truncate min-w-0 flex-1">{title}</span>
+        {isRunning ? (
+          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
+        ) : openTo ? (
+          <Link to={openTo} className="text-accent text-xs font-medium shrink-0 hover:underline">
+            Open
+          </Link>
+        ) : null}
+      </div>
+      {isError && block.result != null && (
+        <div className="px-3 sm:px-4 pb-2">
+          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-red-950/30 text-xs">
+            {typeof block.result === 'string'
+              ? block.result
+              : JSON.stringify(block.result, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ShowDiffBlock (private — only used by BaguetteMcpToolBlock) ──────────────
 
 function ShowDiffBlock({ path: filePath, sessionId }) {
@@ -576,11 +658,10 @@ function ReadTaskOutputBlock({ block }) {
 
 export default function BaguetteMcpToolBlock({ block, sessionId }) {
   const toolShortName = block.name.replace('mcp__baguette__', '');
-  let mcpResult = null;
-  try {
-    mcpResult = JSON.parse(block.result);
-  } catch {
-    /* ignore */
+  const mcpResult = parseMcpJsonResult(block.result);
+
+  if (toolShortName === 'CreateIssue') {
+    return <CreateIssueBlock block={block} />;
   }
 
   if (toolShortName === 'ShowDiff') {
