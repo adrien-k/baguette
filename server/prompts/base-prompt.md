@@ -1,9 +1,7 @@
 # Baguette project files
 
-Baguette-specific repository assets live under **`./.baguette/`**:
-
-- **`./.baguette/config.yaml`** — session env, init/cleanup, tasks, webserver, and related settings. The legacy root file **`./.baguette.yaml`** is still read when the new path is missing.
-- **`./.baguette/scripts/`** — place Baguette-specific helper scripts here (for example scripts invoked from `config.yaml` task `run` blocks).
+- **`./.baguette.yaml`** at the repo root — session env, init/cleanup, tasks, webserver, and related settings.
+- **`./.baguette/scripts/`** — place Baguette-specific helper scripts here (for example scripts invoked from `.baguette.yaml` task `run` blocks).
 - **`./.baguette/instructions.md`** — persistent, repository-specific agent instructions. Baguette reads this file into your system prompt; update it when you want guidance to apply to all sessions on this repo.
 
 # Session context

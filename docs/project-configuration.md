@@ -1,8 +1,8 @@
 # Project Configuration
 
-Baguette uses **`.baguette/config.yaml`** in your repository to configure per-session environments, tasks, and the dev server preview. The legacy root file **`.baguette.yaml`** is still read when the new path is missing.
+Baguette uses **`.baguette.yaml`** at the repository root to configure per-session environments, tasks, and the dev server preview.
 
-> **Tip:** The easiest way to configure your project is to ask Baguette directly. It has full context about your repo and can generate the Docker and Baguette config for you. It will update the Docker settings and create a PR with **`.baguette/config.yaml`** (and related `.baguette/` files when needed).
+> **Tip:** The easiest way to configure your project is to ask Baguette directly. It has full context about your repo and can generate the Docker and Baguette config for you. It will update the Docker settings and create a PR with **`.baguette.yaml`** (and optional **`.baguette/`** helper files when needed).
 
 ## Docker configuration
 

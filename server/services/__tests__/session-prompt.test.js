@@ -85,10 +85,10 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('only commit when the user asks');
   });
 
-  it('tells agents to call ConfigRepoPrompt when Baguette config is missing', async () => {
+  it('tells agents to call ConfigRepoPrompt when .baguette.yaml is missing', async () => {
     const session = await seedSession();
     const result = await buildSystemPromptAppend(session);
-    expect(result).toContain('`./.baguette/config.yaml`');
+    expect(result).toContain('`.baguette.yaml`');
     expect(result).toContain('ConfigRepoPrompt');
     expect(result).not.toContain('has_baguette_yaml');
     expect(result).not.toContain('baguette_config_notice');

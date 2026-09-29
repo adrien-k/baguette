@@ -11,8 +11,7 @@ import {
   getAvailableTasks,
   loadBaguetteConfig,
   loadBaguetteInstructions,
-  CONFIG_REL_PATH,
-  LEGACY_CONFIG_FILENAME,
+  CONFIG_FILENAME,
   INSTRUCTIONS_REL_PATH,
 } from '../baguette-config.js';
 
@@ -101,38 +100,22 @@ describe('loadBaguetteConfig', () => {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('loads .baguette/config.yaml', async () => {
-    const configDir = path.join(tmpDir, '.baguette');
-    await fs.promises.mkdir(configDir, { recursive: true });
+  it('loads .baguette.yaml', async () => {
     await fs.promises.writeFile(
-      path.join(configDir, 'config.yaml'),
+      path.join(tmpDir, CONFIG_FILENAME),
       'config:\n  session:\n    tasks:\n      test:\n        run: echo hi\n'
     );
     const config = await loadBaguetteConfig(tmpDir);
     expect(config.session.tasks.test.run).toBe('echo hi');
   });
 
-  it('falls back to legacy .baguette.yaml when config.yaml is missing', async () => {
+  it('accepts a top-level config object without a config: wrapper', async () => {
     await fs.promises.writeFile(
-      path.join(tmpDir, LEGACY_CONFIG_FILENAME),
-      'config:\n  session:\n    init: pnpm install\n'
+      path.join(tmpDir, CONFIG_FILENAME),
+      'session:\n  init: pnpm install\n'
     );
     const config = await loadBaguetteConfig(tmpDir);
     expect(config.session.init).toBe('pnpm install');
-  });
-
-  it('prefers .baguette/config.yaml over legacy .baguette.yaml', async () => {
-    await fs.promises.mkdir(path.join(tmpDir, '.baguette'), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(tmpDir, CONFIG_REL_PATH),
-      'config:\n  session:\n    init: from-new\n'
-    );
-    await fs.promises.writeFile(
-      path.join(tmpDir, LEGACY_CONFIG_FILENAME),
-      'config:\n  session:\n    init: from-legacy\n'
-    );
-    const config = await loadBaguetteConfig(tmpDir);
-    expect(config.session.init).toBe('from-new');
   });
 
   it('returns null when no config file exists', async () => {

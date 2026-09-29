@@ -5,8 +5,7 @@ import logger from '../logger.js';
 import { resolveDataDirRelativePath } from '../config.js';
 
 export const BAGUETTE_DIR = '.baguette';
-export const CONFIG_REL_PATH = path.join(BAGUETTE_DIR, 'config.yaml');
-export const LEGACY_CONFIG_FILENAME = '.baguette.yaml';
+export const CONFIG_FILENAME = '.baguette.yaml';
 export const INSTRUCTIONS_REL_PATH = path.join(BAGUETTE_DIR, 'instructions.md');
 export const SCRIPTS_REL_DIR = path.join(BAGUETTE_DIR, 'scripts');
 
@@ -18,42 +17,22 @@ function parseBaguetteConfigYaml(raw, sourceLabel) {
   return { error: `Invalid ${sourceLabel}: expected a config object` };
 }
 
-async function readBaguetteConfigFile(absoluteWorktreePath) {
-  const primaryPath = path.join(absoluteWorktreePath, CONFIG_REL_PATH);
-  try {
-    const raw = await fs.promises.readFile(primaryPath, 'utf8');
-    return { config: parseBaguetteConfigYaml(raw, CONFIG_REL_PATH), sourcePath: CONFIG_REL_PATH };
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-
-  const legacyPath = path.join(absoluteWorktreePath, LEGACY_CONFIG_FILENAME);
-  try {
-    const raw = await fs.promises.readFile(legacyPath, 'utf8');
-    return {
-      config: parseBaguetteConfigYaml(raw, LEGACY_CONFIG_FILENAME),
-      sourcePath: LEGACY_CONFIG_FILENAME,
-    };
-  } catch (err) {
-    if (err.code === 'ENOENT') return null;
-    throw err;
-  }
-}
-
 /**
  * @param {string|null|undefined} worktreePath - Absolute path, or path relative to DATA_DIR (as stored on sessions).
  */
 export async function loadBaguetteConfig(worktreePath) {
   const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
   if (!absoluteWorktreePath) return null;
+  const configPath = path.join(absoluteWorktreePath, CONFIG_FILENAME);
   try {
-    const result = await readBaguetteConfigFile(absoluteWorktreePath);
-    if (!result) return null;
-    if (result.config?.error) return result.config;
-    return result.config;
+    const raw = await fs.promises.readFile(configPath, 'utf8');
+    const config = parseBaguetteConfigYaml(raw, CONFIG_FILENAME);
+    if (config?.error) return config;
+    return config;
   } catch (err) {
-    logger.error(err, 'Failed to load Baguette config');
-    return { error: `Failed to load Baguette config: ${err.message}` };
+    if (err.code === 'ENOENT') return null;
+    logger.error(err, 'Failed to load %s', CONFIG_FILENAME);
+    return { error: `Failed to load ${CONFIG_FILENAME}: ${err.message}` };
   }
 }
 

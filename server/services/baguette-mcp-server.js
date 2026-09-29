@@ -810,7 +810,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'ListProjectCommands',
       description:
-        'List available project commands defined in .baguette/config.yaml (tests, linters, migrations, etc.).',
+        'List available project commands defined in .baguette.yaml (tests, linters, migrations, etc.).',
       schema: {},
       handler: async () => {
         let cfg;
@@ -824,7 +824,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           return ok({
             commands: [],
             message:
-              'No Baguette config found (.baguette/config.yaml). Run ConfigRepoPrompt and follow the instructions.',
+              'No Baguette config found (.baguette.yaml). Run ConfigRepoPrompt and follow the instructions.',
           });
         }
         const commands = getAvailableCommands(cfg).filter(
@@ -837,7 +837,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'RunProjectCommand',
       description:
-        'Run a project command by its label from .baguette/config.yaml (e.g. "Run tests"). Always use this instead of running scripts directly. Pass args to scope execution: a file path, a test name pattern, or any flag the underlying runner supports (e.g. ["src/foo.test.js"], ["--grep", "my test"], ["-k", "my_test"]). By default runs detached: returns a taskId immediately so you can check logs with ReadTaskOutput or stop the task with KillTask. Pass attach: true to wait for the command to finish and get the full output inline.',
+        'Run a project command by its label from .baguette.yaml (e.g. "Run tests"). Always use this instead of running scripts directly. Pass args to scope execution: a file path, a test name pattern, or any flag the underlying runner supports (e.g. ["src/foo.test.js"], ["--grep", "my test"], ["-k", "my_test"]). By default runs detached: returns a taskId immediately so you can check logs with ReadTaskOutput or stop the task with KillTask. Pass attach: true to wait for the command to finish and get the full output inline.',
       schema: {
         label: z.string().describe('Command label exactly as returned by ListProjectCommands'),
         args: z
@@ -1042,7 +1042,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'ConfigRepoPrompt',
       description:
-        'Get the onboarding instructions for configuring this repository (.baguette/config.yaml setup).',
+        'Get the onboarding instructions for configuring this repository (.baguette.yaml setup).',
       schema: {},
       handler: async () => {
         const prompt = await loadPrompt('onboarding-prompt', { DOCKER_COMPOSE_PATH });
@@ -1054,7 +1054,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'ConfigRepoStart',
       description:
-        'Start a new session dedicated to configuring .baguette/config.yaml for this repository.',
+        'Start a new session dedicated to configuring .baguette.yaml for this repository.',
       schema: {},
       handler: async () => {
         const session = await getSession();
