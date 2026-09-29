@@ -77,7 +77,7 @@ export default function DiffLineComposer({
       },
     });
 
-  const handleSend = async (e) => {
+  const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
     if (!canSendDraft) return;
     setSending(true);
@@ -87,6 +87,7 @@ export default function DiffLineComposer({
         type: 'user',
         message_json: buildMessageJson(),
         ...composerTurnFields(),
+        ...(force ? { force: true } : {}),
       });
       onClose();
     } catch (err) {
@@ -156,6 +157,9 @@ export default function DiffLineComposer({
         sendAddon={
           <ComposerScheduleAddon
             disabled={!canSendDraft}
+            onSendNow={
+              isRunning || isProvisioning ? () => handleSend(undefined, { force: true }) : undefined
+            }
             onPreset={(delayMs) => scheduleMessageAt(new Date(Date.now() + delayMs).toISOString())}
             onCustomSchedule={() => setShowScheduleModal(true)}
           />

@@ -13,6 +13,7 @@ import { sessionsService } from '../../feathers.js';
 import toast from 'react-hot-toast';
 import { useSessionDiff } from '../../hooks/useSessionDiff.js';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
+import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
@@ -587,7 +588,8 @@ export default function DiffView({
       {hasPr && (
         <div className="shrink-0 border-t border-line px-4 py-3 flex items-center justify-end gap-2">
           <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
-          {!isMerged && canMerge && (
+          {!readonly && <PrDraftToggleButton session={session} />}
+          {!isMerged && canMerge && !readonly && (
             <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
               <GitMerge className="w-3.5 h-3.5" />
               Merge PR

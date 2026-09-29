@@ -28,6 +28,9 @@ import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.j
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
+import PrDraftToggleButton, {
+  canTogglePrDraftStatus,
+} from '../../components/PrDraftToggleButton.jsx';
 import QueuedMessages from '../../components/QueuedMessages.jsx';
 import TiedLoopMessages from '../../components/TiedLoopMessages.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
@@ -53,6 +56,9 @@ const CHECK_COMMENTS_PROMPT_REVIEWER =
 
 const CHECK_COMMENTS_TOOLTIP_BUILDER = 'Check review comments and fix problems.';
 const CHECK_COMMENTS_TOOLTIP_REVIEWER = 'Check review comments.';
+
+const CHAT_ACTION_BUTTON_CLASS =
+  'flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
@@ -422,7 +428,7 @@ export default function ChatView({
     }
   };
 
-  const handleSend = async (e) => {
+  const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
     const text = input.trim();
@@ -446,7 +452,7 @@ export default function ChatView({
     const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
 
     try {
-      await sendMessage(messageJson, composerTurnFields());
+      await sendMessage(messageJson, { ...composerTurnFields(), force });
       persistentState.clear();
     } catch (err) {
       setInput(text);
@@ -592,7 +598,7 @@ export default function ChatView({
                             'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                        className={CHAT_ACTION_BUTTON_CLASS}
                       >
                         <GitPullRequest className="w-3.5 h-3.5" />
                         Git sync
@@ -602,7 +608,7 @@ export default function ChatView({
                       <button
                         type="button"
                         onClick={() => setShowMergeModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                        className={CHAT_ACTION_BUTTON_CLASS}
                       >
                         <GitMerge className="w-3.5 h-3.5" />
                         Merge
@@ -616,7 +622,7 @@ export default function ChatView({
                             'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                        className={CHAT_ACTION_BUTTON_CLASS}
                       >
                         <CircleCheck className="w-3.5 h-3.5" />
                         Check CI
@@ -638,7 +644,7 @@ export default function ChatView({
                               : CHECK_COMMENTS_PROMPT_BUILDER
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                        className={CHAT_ACTION_BUTTON_CLASS}
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                         Check comments
@@ -650,7 +656,7 @@ export default function ChatView({
                           <button
                             type="button"
                             onClick={() => onViewChange('review')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                            className={CHAT_ACTION_BUTTON_CLASS}
                           >
                             <ClipboardCheck className="w-3.5 h-3.5" />
                             Review code
@@ -660,13 +666,16 @@ export default function ChatView({
                           <button
                             type="button"
                             onClick={() => onViewChange('diff')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                            className={CHAT_ACTION_BUTTON_CLASS}
                           >
                             <GitCompare className="w-3.5 h-3.5" />
                             Diff
                           </button>
                         </Tooltip>
                       </>
+                    )}
+                    {canTogglePrDraftStatus(session) && (
+                      <PrDraftToggleButton session={session} className={CHAT_ACTION_BUTTON_CLASS} />
                     )}
                   </div>
                 )}
@@ -746,7 +755,12 @@ export default function ChatView({
                   }
                   sendAddon={
                     <ComposerScheduleAddon
-                      disabled={!canOpenScheduleMenu}
+                      disabled={isRunning || isProvisioning ? !canSendDraft : !canOpenScheduleMenu}
+                      onSendNow={
+                        isRunning || isProvisioning
+                          ? () => handleSend(undefined, { force: true })
+                          : undefined
+                      }
                       onPreset={handleSchedulePreset}
                       onCustomSchedule={openScheduleModal}
                       extraItems={

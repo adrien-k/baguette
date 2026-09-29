@@ -20,6 +20,7 @@ import {
   gitPush,
   mergePR,
   markPRReady,
+  markPRDraft,
   getPRStatus,
   upsertPR,
   createWorktree,
@@ -822,6 +823,30 @@ export class SessionsService extends KnexService {
     return { ok: true, merged: true, archived: !!data?.archive };
   }
 
+  async setPrDraft(data, params) {
+    const session = params.resolvedSession;
+    if (!session?.pr_number) throw new BadRequest('No pull request');
+    const draft = data?.draft;
+    if (typeof draft !== 'boolean') throw new BadRequest('draft must be a boolean');
+    const status = session.pr_status ?? 'open';
+    if (status === 'merged' || status === 'closed') {
+      throw new BadRequest('Cannot change draft status for a closed pull request');
+    }
+    const user = await this.app.service('users').get(session.user_id, {});
+    const token = getGithubToken(user);
+    if (!token) throw new BadRequest('No GitHub token configured');
+    if (draft) {
+      await markPRDraft(token, session.repo_full_name, session.pr_number);
+    } else {
+      await markPRReady(token, session.repo_full_name, session.pr_number);
+    }
+    const pr_status = draft ? 'draft' : 'open';
+    await this.app
+      .service('sessions')
+      .patch(session.id, { pr_status }, { provider: undefined, user: { id: session.user_id } });
+    return { ok: true, pr_status };
+  }
+
   async push(data, params) {
     const session = params.resolvedSession;
     if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
@@ -1577,6 +1602,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'shas',
       'showDiff',
       'merge',
+      'setPrDraft',
       'push',
       'restore',
       'getPrDetails',
@@ -1668,6 +1694,7 @@ export const sessionsHooks = {
     shas: [resolveSessionFromData],
     showDiff: [resolveSessionFromData],
     merge: [resolveSessionFromData],
+    setPrDraft: [resolveSessionFromData],
     push: [resolveSessionFromData],
     restore: [resolveSessionFromData],
     getPrDetails: [resolveSessionFromData],

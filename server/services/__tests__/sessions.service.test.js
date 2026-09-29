@@ -17,7 +17,15 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
-import { createWorktree, getOpenPR, getPRStatus, mergePR, removeWorktree } from '../github.js';
+import {
+  createWorktree,
+  getOpenPR,
+  getPRStatus,
+  mergePR,
+  markPRDraft,
+  markPRReady,
+  removeWorktree,
+} from '../github.js';
 
 // ── Module-level mocks ────────────────────────────────────────────────────────
 
@@ -60,6 +68,7 @@ vi.mock('../github.js', async (importOriginal) => {
     getPRStatus: vi.fn().mockResolvedValue('open'),
     mergePR: vi.fn().mockResolvedValue(undefined),
     markPRReady: vi.fn().mockResolvedValue(undefined),
+    markPRDraft: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -259,6 +268,44 @@ describe('Sessions service - custom methods', (hooks) => {
 
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.pr_status).toBe('merged');
+    });
+  });
+
+  // ── setPrDraft ─────────────────────────────────────────────────────────────
+
+  describe('setPrDraft', () => {
+    beforeEach(async () => {
+      await db('sessions')
+        .where({ id: sessId })
+        .update({ pr_number: 42, pr_status: 'open', repo_full_name: 'test/repo' });
+      markPRReady.mockClear();
+      markPRDraft.mockClear();
+    });
+
+    it('marks an open PR as draft', async () => {
+      const result = await app
+        .service('sessions')
+        .setPrDraft({ id: sessId, draft: true }, params({ id: userId }));
+
+      expect(markPRDraft).toHaveBeenCalledWith('test-token', 'test/repo', 42);
+      expect(markPRReady).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, pr_status: 'draft' });
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.pr_status).toBe('draft');
+    });
+
+    it('marks a draft PR ready for review', async () => {
+      await db('sessions').where({ id: sessId }).update({ pr_status: 'draft' });
+
+      const result = await app
+        .service('sessions')
+        .setPrDraft({ id: sessId, draft: false }, params({ id: userId }));
+
+      expect(markPRReady).toHaveBeenCalledWith('test-token', 'test/repo', 42);
+      expect(markPRDraft).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, pr_status: 'open' });
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.pr_status).toBe('open');
     });
   });
 

@@ -15,9 +15,11 @@ export default function ComposerScheduleAddon({
   disabled,
   onPreset,
   onCustomSchedule,
+  onSendNow,
   extraItems,
 }) {
   const items = [
+    ...(onSendNow ? [{ label: 'Send now', onSelect: onSendNow }] : []),
     ...DELAY_PRESETS.map(({ label, delayMs }) => ({
       label,
       onSelect: () => onPreset(delayMs),

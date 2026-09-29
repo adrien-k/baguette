@@ -1019,30 +1019,56 @@ export async function getPRStatus(token, repoFullName, prNumber) {
   return 'open';
 }
 
-/**
- * Converts a draft PR to ready for review via the GitHub GraphQL API.
- */
-export async function markPRReady(token, repoFullName, prNumber) {
-  // First fetch the PR node ID required by GraphQL
+async function fetchPullRequestNodeId(token, repoFullName, prNumber) {
   const prRes = await githubFetch(
     `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
     { token }
   );
   if (!prRes.ok) throw new Error('Failed to fetch PR node ID');
   const { node_id } = await prRes.json();
+  if (!node_id) throw new Error('Failed to fetch PR node ID');
+  return node_id;
+}
 
+async function runPullRequestGraphqlMutation(token, query, nodeId, errorMessage) {
   const gqlRes = await githubFetch('https://api.github.com/graphql', {
     method: 'POST',
     token,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }`,
-      variables: { id: node_id },
+      query,
+      variables: { id: nodeId },
     }),
   });
-  if (!gqlRes.ok) throw new Error('Failed to mark PR as ready for review');
+  if (!gqlRes.ok) throw new Error(errorMessage);
   const gqlData = await gqlRes.json();
   if (gqlData.errors?.length) throw new Error(gqlData.errors[0].message);
+}
+
+/**
+ * Converts a draft PR to ready for review via the GitHub GraphQL API.
+ */
+export async function markPRReady(token, repoFullName, prNumber) {
+  const node_id = await fetchPullRequestNodeId(token, repoFullName, prNumber);
+  await runPullRequestGraphqlMutation(
+    token,
+    `mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }`,
+    node_id,
+    'Failed to mark PR as ready for review'
+  );
+}
+
+/**
+ * Converts an open PR to draft via the GitHub GraphQL API.
+ */
+export async function markPRDraft(token, repoFullName, prNumber) {
+  const node_id = await fetchPullRequestNodeId(token, repoFullName, prNumber);
+  await runPullRequestGraphqlMutation(
+    token,
+    `mutation($id: ID!) { convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { isDraft } } }`,
+    node_id,
+    'Failed to mark PR as draft'
+  );
 }
 
 /**
