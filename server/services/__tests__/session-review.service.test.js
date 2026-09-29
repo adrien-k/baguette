@@ -239,6 +239,19 @@ describe('session-review service', () => {
     const parsed = JSON.parse(firstUser.message_json);
     expect(parsed.source).toBeUndefined();
     expect(parsed.message.content).toBe('Focus on auth changes');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(session.review_initial_prompt).toBe('Focus on auth changes');
+  });
+
+  it('stores null review_initial_prompt when no focus text is provided', async () => {
+    await app.service('session-review').start({ session_id: sessionId }, params(user));
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(session.review_initial_prompt).toBeNull();
   });
 
   it('rejects a second concurrent review', async () => {
@@ -481,6 +494,7 @@ describe('session-review service', () => {
     expect(session.review_cursor_agent_id).toBeNull();
     expect(session.review_status).toBe('stopped');
     expect(session.last_reviewed_commit_sha).toBeNull();
+    expect(session.review_initial_prompt).toBeNull();
   });
 
   it('reviewNewCommits persists a baguette-labelled user message', async () => {
@@ -551,7 +565,9 @@ describe('session-review service', () => {
       return gen;
     });
     const wt = await initGitWorktree();
-    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt, base_branch: 'main' });
+    await db('sessions')
+      .where({ id: sessionId })
+      .update({ worktree_path: wt, base_branch: 'main' });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'first' }, params(user));

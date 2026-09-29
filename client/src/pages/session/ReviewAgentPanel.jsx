@@ -124,6 +124,10 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
     [rawMessages]
   );
+  const initialInstructions = useMemo(() => {
+    const text = session?.review_initial_prompt?.trim();
+    return text || null;
+  }, [session?.review_initial_prompt]);
 
   const isRunning = session?.review_status === 'running';
   const reviewTurnActive = isRunning;
@@ -167,6 +171,16 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
 
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+      {initialInstructions && (
+        <div className="shrink-0 border-b border-line bg-inset/30 px-3 py-2">
+          <p className="text-[11px] font-medium text-faint uppercase tracking-wide mb-1">
+            Reviewer initial instructions
+          </p>
+          <div className="max-h-28 overflow-y-auto text-xs text-secondary whitespace-pre-wrap leading-relaxed">
+            {initialInstructions}
+          </div>
+        </div>
+      )}
       <ChatMessagesViewport scrollRef={scrollContainerRef}>
         {messagesLoading ? (
           <div className="flex justify-center py-8">

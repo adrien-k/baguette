@@ -84,9 +84,14 @@ function reviewTurnAgentMetadata(agentSdk, { model, modelParams }) {
   };
 }
 
-function buildReviewStartMessage(data) {
+function reviewInitialPromptFromStartData(data) {
   const raw = data?.user_message ?? data?.initial_prompt;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed || null;
+}
+
+function buildReviewStartMessage(data) {
+  const trimmed = reviewInitialPromptFromStartData(data);
   if (trimmed) {
     return {
       persist: { type: 'user', message: { role: 'user', content: trimmed } },
@@ -157,6 +162,7 @@ export class SessionReviewService {
           review_model_params: modelParams ?? null,
           review_claude_session_id: null,
           review_cursor_agent_id: null,
+          review_initial_prompt: reviewInitialPromptFromStartData(data),
         },
         { user: { id: session.user_id } }
       );
@@ -313,6 +319,7 @@ export class SessionReviewService {
         review_cursor_agent_id: null,
         review_status: 'stopped',
         last_reviewed_commit_sha: null,
+        review_initial_prompt: null,
       },
       { user: { id: session.user_id } }
     );
