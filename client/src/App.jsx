@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
-import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined } from 'lucide-react';
+import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined, Monitor } from 'lucide-react';
+import System from './pages/System.jsx';
+import NavbarSystemStats from './components/NavbarSystemStats.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Session from './pages/Session.jsx';
@@ -86,6 +88,7 @@ function Nav() {
           </span>
         </Link>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
+          <NavbarSystemStats />
           <div className="hidden sm:block shrink-0">
             <ColorSchemeToggle />
           </div>
@@ -111,6 +114,10 @@ function Nav() {
                     <Link to="/usage" className={MENU_ITEM_CLASS}>
                       <ChartNoAxesCombined className="w-4 h-4 text-faint" />
                       Usage
+                    </Link>
+                    <Link to="/system" className={MENU_ITEM_CLASS}>
+                      <Monitor className="w-4 h-4 text-faint" />
+                      System
                     </Link>
                     <Link to="/settings" className={MENU_ITEM_CLASS}>
                       <SettingsIcon className="w-4 h-4 text-faint" />
@@ -276,6 +283,16 @@ function AppRoutes() {
               <ProtectedRoute>
                 <div className="flex-1 min-h-0 overflow-auto">
                   <Usage />
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/system"
+            element={
+              <ProtectedRoute>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <System />
                 </div>
               </ProtectedRoute>
             }

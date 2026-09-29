@@ -1,16 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import {
-  Bot,
-  GitBranch,
-  Bell,
-  KeyRound,
-  Puzzle,
-  Users,
-  Blocks,
-  Monitor,
-  ScrollText,
-} from 'lucide-react';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, ScrollText } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -20,13 +10,7 @@ import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 import McpAccessSection from '../components/McpAccessSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
-import {
-  SecretsTab,
-  PluginsTab,
-  SystemTab,
-  UsersTab,
-  SlackTab,
-} from './settings/GlobalSettingsSections.jsx';
+import { SecretsTab, PluginsTab, UsersTab, SlackTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import PromptsSettingsTab from './settings/PromptsSettingsTab.jsx';
 import {
@@ -474,7 +458,6 @@ const TABS = [
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
-  { id: 'system', label: 'System', icon: Monitor },
   { id: 'users', label: 'Users', icon: Users },
 ];
 
@@ -484,9 +467,6 @@ export default function Settings() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') || DEFAULT_TAB;
-  const requestedTab =
-    rawTab === 'slack' ? 'integrations' : rawTab === 'docker' ? 'system' : rawTab;
-  const activeTab = TABS.some((t) => t.id === requestedTab) ? requestedTab : DEFAULT_TAB;
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
 
@@ -499,6 +479,13 @@ export default function Settings() {
       .then((d) => setSettings(d))
       .catch((err) => setError(err.message));
   }, [user?.id]);
+
+  if (rawTab === 'system' || rawTab === 'docker') {
+    return <Navigate to="/system" replace />;
+  }
+
+  const requestedTab = rawTab === 'slack' ? 'integrations' : rawTab;
+  const activeTab = TABS.some((t) => t.id === requestedTab) ? requestedTab : DEFAULT_TAB;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
@@ -561,7 +548,6 @@ export default function Settings() {
           {activeTab === 'notifications' && <NotificationsSection />}
           {activeTab === 'secrets' && <SecretsTab />}
           {activeTab === 'plugins' && <PluginsTab />}
-          {activeTab === 'system' && <SystemTab />}
           {activeTab === 'users' && <UsersTab />}
         </div>
       </div>
