@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { ISSUE_SEVERITIES } from '@baguette/shared/session-issues.js';
-import { SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
+import { NEUTRAL_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
 import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import { issueAgentSubtitle } from '../utils/messageModelLabel.js';
@@ -220,9 +220,18 @@ export default function SessionIssueCard({
             )}
           </div>
           {!readonly && issue.status === 'opened' && (
-            <button type="button" onClick={() => onFix(issue)} className={SECONDARY_BUTTON_CLASS}>
-              Ask agent to fix
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => onFix(issue)} className={SECONDARY_BUTTON_CLASS}>
+                Ask agent to fix
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange(issue.id, 'ignored')}
+                className={NEUTRAL_BUTTON_CLASS}
+              >
+                Ignore
+              </button>
+            </div>
           )}
         </>
       )}
