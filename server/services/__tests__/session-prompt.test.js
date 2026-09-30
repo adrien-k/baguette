@@ -83,6 +83,9 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('GitPush');
     expect(result).toContain('PrUpsert');
     expect(result).toContain('only commit when the user asks');
+    expect(result).toContain('GitHub pull request template');
+    expect(result).toContain('## Why');
+    expect(result).toContain('automated tests cannot cover');
   });
 
   it('tells agents to call ConfigRepoPrompt when .baguette.yaml is missing', async () => {

@@ -381,14 +381,14 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'PrUpsert',
       description:
-        "Create or update the pull request with a title and description. Call **`PrRead`** first so you incorporate earlier scope and do not replace the description with only this turn's changes. The description must reflect the **entire** branch diff against the base branch (see `CurrentSessionInfo` and `git diff origin/<base_branch>...HEAD`), not only the latest turn. Write for reviewers: final behavior and test plan only—do not narrate abandoned approaches, reversals, or other intermediate session history.",
+        "Create or update the pull request with a title and description. Call **`PrRead`** first so you incorporate earlier scope and do not replace the description with only this turn's changes. The description must reflect the **entire** branch diff against the base branch (see `CurrentSessionInfo` and `git diff origin/<base_branch>...HEAD`), not only the latest turn. **Follow the repo's GitHub pull request template** when one exists (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, or files under `.github/PULL_REQUEST_TEMPLATE/`): match its headings and section order and fill each section for the full branch. If there is no template, use ## Why and ## Summary (bullet lists for the full branch) and ## Test plan (only critical manual cases automated tests cannot cover). Write for reviewers: final behavior and test plan only—do not narrate abandoned approaches, reversals, or other intermediate session history.",
       schema: {
         title: z.string().describe('PR title'),
         description: z
           .string()
           .optional()
           .describe(
-            'PR body (markdown). ## Summary covering all changes on this branch vs base; ## Test plan. Refresh the full picture each call—never a changelog of only the last commit or last agent turn. Omit discarded ideas and "we tried X then Y" narrative.'
+            'PR body (markdown). Use the repo GitHub PR template when present; otherwise ## Why and ## Summary (bullet lists for the full branch vs base) and ## Test plan (only critical cases not covered by automated tests). Refresh the full picture each call—never a changelog of only the last commit or last agent turn. Omit discarded ideas and "we tried X then Y" narrative.'
           ),
       },
       handler: async ({ title, description = '' }) => {

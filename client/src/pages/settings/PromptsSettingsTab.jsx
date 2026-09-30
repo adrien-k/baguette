@@ -25,8 +25,10 @@ export default function PromptsSettingsTab({ settings, onSave }) {
   const [reviewPrompt, setReviewPrompt] = useState('');
   const [fullSessionPrompt, setFullSessionPrompt] = useState('');
   const [fullReviewPrompt, setFullReviewPrompt] = useState('');
-  const [promptsSaving, setPromptsSaving] = useState(false);
-  const [promptsSaved, setPromptsSaved] = useState(false);
+  const [sessionSaving, setSessionSaving] = useState(false);
+  const [sessionSaved, setSessionSaved] = useState(false);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewSaved, setReviewSaved] = useState(false);
 
   const repoById = useCallback((id) => repos.find((r) => String(r.id) === String(id)), [repos]);
 
@@ -72,31 +74,42 @@ export default function PromptsSettingsTab({ settings, onSave }) {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleSavePrompts = async () => {
+  const patchPromptScope = async (fields) => {
     if (!user?.id) return;
-    setPromptsSaving(true);
-    setPromptsSaved(false);
+    if (!promptsRepoId) {
+      const updated = await usersService.patch(user.id, fields);
+      onSave(updated);
+      return;
+    }
+    const r = repoById(promptsRepoId);
+    if (!r?.user_repo_id) throw new Error('Repository not linked');
+    await userReposService.patch(r.user_repo_id, fields);
+    await refetchRepos();
+  };
+
+  const handleSaveSessionPrompt = async () => {
+    setSessionSaving(true);
+    setSessionSaved(false);
     try {
-      if (!promptsRepoId) {
-        const updated = await usersService.patch(user.id, {
-          agent_prompt: agentPrompt,
-          review_prompt: reviewPrompt,
-        });
-        onSave(updated);
-      } else {
-        const r = repoById(promptsRepoId);
-        if (!r?.user_repo_id) throw new Error('Repository not linked');
-        await userReposService.patch(r.user_repo_id, {
-          agent_prompt: agentPrompt,
-          review_prompt: reviewPrompt,
-        });
-        await refetchRepos();
-      }
-      flashSaved(setPromptsSaved);
+      await patchPromptScope({ agent_prompt: agentPrompt });
+      flashSaved(setSessionSaved);
     } catch (err) {
-      toastError('Failed to save prompts', err);
+      toastError('Failed to save session instructions', err);
     } finally {
-      setPromptsSaving(false);
+      setSessionSaving(false);
+    }
+  };
+
+  const handleSaveReviewPrompt = async () => {
+    setReviewSaving(true);
+    setReviewSaved(false);
+    try {
+      await patchPromptScope({ review_prompt: reviewPrompt });
+      flashSaved(setReviewSaved);
+    } catch (err) {
+      toastError('Failed to save review instructions', err);
+    } finally {
+      setReviewSaving(false);
     }
   };
 
@@ -157,6 +170,11 @@ export default function PromptsSettingsTab({ settings, onSave }) {
                 placeholder={sessionPlaceholder}
               />
             </div>
+            <SettingsSaveRow
+              saving={sessionSaving}
+              saved={sessionSaved}
+              onSave={handleSaveSessionPrompt}
+            />
           </SettingsSection>
         </div>
 
@@ -185,10 +203,13 @@ export default function PromptsSettingsTab({ settings, onSave }) {
                 placeholder={reviewPlaceholder}
               />
             </div>
+            <SettingsSaveRow
+              saving={reviewSaving}
+              saved={reviewSaved}
+              onSave={handleSaveReviewPrompt}
+            />
           </SettingsSection>
         </div>
-
-        <SettingsSaveRow saving={promptsSaving} saved={promptsSaved} onSave={handleSavePrompts} />
       </div>
     </div>
   );
