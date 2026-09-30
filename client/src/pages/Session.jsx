@@ -348,14 +348,13 @@ export default function Session() {
   const { issues: sessionIssues, loading: sessionIssuesLoading } = useGetSessionIssues(sessionId, {
     enabled: shouldLoadSessionIssues,
   });
+  const [session, setSession] = useState(null);
   const openIssuesTabCount = useMemo(() => {
     if (shouldLoadSessionIssues) {
       return sessionIssues.filter((i) => i.status === 'opened').length;
     }
     return session?.open_issues_count ?? 0;
   }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
-
-  const [session, setSession] = useState(null);
   const [prInfo, setPrInfo] = useState(null);
   const [killedTaskIds, setKilledTaskIds] = useState(new Set());
   const [showTasks, setShowTasks] = useState(
