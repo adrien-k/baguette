@@ -118,6 +118,7 @@ describe('buildSystemPromptAppend', () => {
     const result = await buildSystemPromptAppend(session);
     expect(result).toContain('`./.baguette/scripts/`');
     expect(result).toContain('`./.baguette/instructions.md`');
+    expect(result).toContain('unless the user explicitly asks');
   });
 
   it('uses the light global prompt for is_global sessions', async () => {

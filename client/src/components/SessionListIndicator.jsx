@@ -3,7 +3,8 @@ import { sessionHasUnreadActivity } from '@baguette/shared/session-unread.js';
 import SessionStatusIndicator from './SessionStatusIndicator.jsx';
 
 /** Brand dot shown left of the session title when activity is newer than last view. */
-export function SessionUnreadDot({ session, className = '' }) {
+export function SessionUnreadDot({ session, className = '', suppressUnread = false }) {
+  if (suppressUnread) return null;
   const unread = sessionHasUnreadActivity(session);
   if (!unread) return null;
 

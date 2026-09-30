@@ -27,7 +27,7 @@ describe('session last_activity_at from messages', () => {
     expect(DEBOUNCE_DELAY_MS).toBe(30_000);
   });
 
-  it('debounces activity bumps per session id', async () => {
+  it('throttles activity bumps to once per 30s per session id', async () => {
     vi.useFakeTimers();
     try {
       const app = makeApp(db);
@@ -41,36 +41,11 @@ describe('session last_activity_at from messages', () => {
       sessions._bumpLastActivityOnMessageCreated(activityMsg);
       expect(onActivity).toHaveBeenCalledTimes(1);
 
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS);
-      expect(onActivity).toHaveBeenCalledTimes(2);
-
-      sessions._bumpLastActivityOnMessageCreated(activityMsg);
-      expect(onActivity).toHaveBeenCalledTimes(2);
-
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS);
-      expect(onActivity).toHaveBeenCalledTimes(3);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('clears debounce without a second bump when no activity during window', async () => {
-    vi.useFakeTimers();
-    try {
-      const app = makeApp(db);
-      await app.setup();
-      const sessions = app.service('sessions');
-      sessions.registerActivityMessageListeners(app);
-      const onActivity = vi.spyOn(sessions, 'onActivity').mockResolvedValue();
-
-      const activityMsg = { session_id: 2, type: 'result', message_json: '{}' };
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS - 1);
       sessions._bumpLastActivityOnMessageCreated(activityMsg);
       expect(onActivity).toHaveBeenCalledTimes(1);
 
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS);
-      expect(onActivity).toHaveBeenCalledTimes(1);
-      expect(sessions._sessionActivityUpdatedRecently[2]).toBeUndefined();
-
+      await vi.advanceTimersByTimeAsync(1);
       sessions._bumpLastActivityOnMessageCreated(activityMsg);
       expect(onActivity).toHaveBeenCalledTimes(2);
     } finally {

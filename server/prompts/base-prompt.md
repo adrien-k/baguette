@@ -2,7 +2,7 @@
 
 - **`./.baguette.yaml`** at the repo root — session env, init/cleanup, tasks, webserver, and related settings.
 - **`./.baguette/scripts/`** — place Baguette-specific helper scripts here (for example scripts invoked from `.baguette.yaml` task `run` blocks).
-- **`./.baguette/instructions.md`** — persistent, repository-specific agent instructions. Baguette reads this file into your system prompt; update it when you want guidance to apply to all sessions on this repo.
+- **`./.baguette/instructions.md`** — persistent, repository-specific agent instructions. Baguette reads this file into your system prompt. **Do not create or edit it unless the user explicitly asks** (for example to add repo-wide agent guidance).
 
 # Session context
 

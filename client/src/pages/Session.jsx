@@ -25,7 +25,10 @@ import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
 import { sessionsService, tasksService } from '../feathers.js';
-import { sessionActivityAt } from '@baguette/shared/session-unread.js';
+import {
+  sessionActivityAt,
+  sessionNeedsLastViewedUpdate,
+} from '@baguette/shared/session-unread.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
@@ -240,7 +243,13 @@ function sessionListPromptPreview(s, maxWords = 12) {
   return `${parts.slice(0, maxWords).join(' ')}…`;
 }
 
-function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = false }) {
+function MiniSessionEntry({
+  session: s,
+  currentId,
+  onArchive,
+  hideRepoBadge = false,
+  suppressUnreadWhenOpen = false,
+}) {
   const isArchived = !!s.archived_at;
   const isArchiving = !isArchived && s.status === 'archiving';
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
@@ -264,7 +273,7 @@ function MiniSessionEntry({ session: s, currentId, onArchive, hideRepoBadge = fa
             </span>
           )}
           <span className="flex min-w-0 items-center gap-1.5">
-            <SessionUnreadDot session={s} />
+            <SessionUnreadDot session={s} suppressUnread={suppressUnreadWhenOpen} />
             <span
               className={`min-w-0 truncate font-medium ${isCurrent ? 'text-fg' : 'text-heading'}`}
             >
@@ -585,10 +594,8 @@ export default function Session() {
   useEffect(() => {
     if (isNewSessionRoute || sessionLoading || !sessionFromHook?.id) return;
     if (sessionFromHook.short_id !== short_id) return;
+    if (!sessionNeedsLastViewedUpdate(sessionFromHook)) return;
     const activityAt = sessionActivityAt(sessionFromHook);
-    if (!activityAt) return;
-    const viewedAt = sessionFromHook.last_viewed_at;
-    if (viewedAt && new Date(viewedAt).getTime() >= new Date(activityAt).getTime()) return;
     sessionsService.patch(sessionFromHook.id, { last_viewed_at: activityAt }).catch(() => {});
   }, [
     isNewSessionRoute,
@@ -1016,6 +1023,13 @@ export default function Session() {
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
   };
+
+  const suppressOpenSessionUnread =
+    !isNewSessionRoute &&
+    !sessionLoading &&
+    sessionFromHook?.short_id === short_id &&
+    sessionNeedsLastViewedUpdate(sessionFromHook);
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div
@@ -1161,6 +1175,7 @@ export default function Session() {
                   session={s}
                   currentId={isNewSessionRoute ? null : short_id}
                   hideRepoBadge={hideSessionListRepo}
+                  suppressUnreadWhenOpen={s.short_id === short_id && suppressOpenSessionUnread}
                   onArchive={(archived) => {
                     if (archived.short_id !== short_id || showArchived) return;
                     const firstSession = nextVisibleSession({
