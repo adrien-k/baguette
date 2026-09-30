@@ -9,6 +9,7 @@ import {
   getScriptBlock,
   appendTaskArgs,
   getAvailableTasks,
+  getAvailableCommands,
   interpolateString,
   buildDockerTaskHostnames,
   interpolateEnvTaskPorts,
@@ -91,6 +92,19 @@ describe('getAvailableTasks', () => {
     expect(tasks['run-tests'].attach).toBe(false);
   });
 
+  it('preserves internal: true on tasks', () => {
+    const tasks = getAvailableTasks({
+      session: {
+        tasks: {
+          postgres: { type: 'docker', internal: true, container: { image: 'postgres:16' } },
+          seed: { run: 'pnpm seed', internal: true },
+        },
+      },
+    });
+    expect(tasks.postgres.internal).toBe(true);
+    expect(tasks.seed.internal).toBe(true);
+  });
+
   it('interpolateEnvTaskPorts substitutes task port placeholders in env values', () => {
     const env = interpolateEnvTaskPorts(
       {
@@ -134,6 +148,25 @@ describe('getAvailableTasks', () => {
       { taskHostnames: hostnames }
     );
     expect(url).toBe('postgres://u:p@baguette_a3de4_postgres:5432/app');
+  });
+});
+
+describe('getAvailableCommands', () => {
+  it('omits tasks with internal: true', () => {
+    const commands = getAvailableCommands({
+      session: {
+        tasks: {
+          'run-tests': { run: 'pnpm test' },
+          postgres: {
+            type: 'docker',
+            internal: true,
+            container: { image: 'postgres:16' },
+          },
+          seed: { run: 'pnpm seed', internal: true },
+        },
+      },
+    });
+    expect(commands.map((c) => c.label)).toEqual(['run-tests']);
   });
 });
 

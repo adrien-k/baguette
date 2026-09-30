@@ -140,15 +140,16 @@ tasks:
 
 #### Task fields
 
-| Field        | Type     | Description                                                                                     |
-| ------------ | -------- | ----------------------------------------------------------------------------------------------- |
-| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks))                            |
-| `type`       | string   | `docker` to run a container instead of `run`                                                    |
-| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching                              |
-| `depends-on` | string[] | Task keys that must be running and listening before this task starts                            |
-| `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)   |
-| `attach`     | boolean  | When `false`, `RunProjectCommand` rejects `attach: true` (use detached mode + `ReadTaskOutput`) |
-| `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                  |
+| Field        | Type     | Description                                                                                                                                 |
+| ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks))                                                                        |
+| `type`       | string   | `docker` to run a container instead of `run`                                                                                                |
+| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching                                                                          |
+| `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                                        |
+| `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)                                               |
+| `attach`     | boolean  | When `false`, `RunProjectCommand` rejects `attach: true` (use detached mode + `ReadTaskOutput`)                                             |
+| `internal`   | boolean  | When `true`, omit from session task buttons and `ListProjectCommands` (task remains runnable via `task_key`, `depends-on`, webserver, etc.) |
+| `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                                                              |
 
 #### Multi-line tasks
 

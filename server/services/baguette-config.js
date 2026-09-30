@@ -177,7 +177,7 @@ export function interpolateEnvTaskPorts(env, taskPortMap) {
 
 /**
  * Build a tasks hash from a baguette config.
- * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, attach? } }`.
+ * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, attach?, internal? } }`.
  * `attach: false` means RunProjectCommand must not use attach mode (detached only).
  *
  * Supports both the new `session.tasks` hash format and the legacy `session.commands` array.
@@ -204,6 +204,7 @@ export function getAvailableTasks(baguetteConfig) {
           ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
           ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
           ...(val.attach === false ? { attach: false } : {}),
+          ...(val.internal === true ? { internal: true } : {}),
         };
         continue;
       }
@@ -217,6 +218,7 @@ export function getAvailableTasks(baguetteConfig) {
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
         ...(val.attach === false ? { attach: false } : {}),
+        ...(val.internal === true ? { internal: true } : {}),
       };
     }
   } else if (Array.isArray(userCommands)) {
@@ -227,6 +229,7 @@ export function getAvailableTasks(baguetteConfig) {
           run: cmd.run,
           ...(cmd.ports ? { ports: cmd.ports } : {}),
           ...(cmd.attach === false ? { attach: false } : {}),
+          ...(cmd.internal === true ? { internal: true } : {}),
         };
       }
     }
@@ -284,7 +287,7 @@ export function resolveWebserverConfig(baguetteConfig) {
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
   return Object.entries(tasks)
-    .filter(([_, t]) => t && (typeof t.run === 'string' || t.type === 'docker'))
+    .filter(([_, t]) => t && !t.internal && (typeof t.run === 'string' || t.type === 'docker'))
     .map(([key, t]) => {
       if (t.type === 'docker') {
         return {
