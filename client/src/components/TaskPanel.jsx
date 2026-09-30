@@ -5,6 +5,7 @@ import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
 import { NEUTRAL_BUTTON_CLASS, TASK_STOP_CONTROL_CLASS } from '../utils/buttonStyles.js';
 import BaguetteIcon from './svg/BaguetteIcon.jsx';
 import StartButton from './StartButton.jsx';
+import { groupTasksForPanel, taskRowTitle } from '../utils/taskPanelGrouping.js';
 
 function TaskMetaLine({ task }) {
   const duration = useTaskRunDuration(task);
@@ -39,18 +40,16 @@ export default function TaskPanel({
     setCommand('');
   };
 
-  const runningTasks = [...tasks.filter((t) => t.status === 'running')].sort(
-    (a, b) => new Date(b.created_at) - new Date(a.created_at)
-  );
-  const finishedTasks = [...tasks.filter((t) => t.status !== 'running')].sort(
-    (a, b) => new Date(b.created_at) - new Date(a.created_at)
-  );
+  const runningTasks = tasks.filter((t) => t.status === 'running');
+  const finishedTasks = tasks.filter((t) => t.status !== 'running');
 
-  const renderTask = (task) => (
+  const renderTask = (task, { inNamespace = false } = {}) => (
     <button
       key={task.id}
       onClick={() => onViewLogs(task.id)}
-      className="w-full border-b border-line flex items-start justify-between px-3 py-2 hover:bg-control/50 transition-colors text-left gap-2"
+      className={`w-full border-b border-line flex items-start justify-between py-2 hover:bg-control/50 transition-colors text-left gap-2 ${
+        inNamespace ? 'pl-5 pr-3' : 'px-3'
+      }`}
     >
       <div className="flex items-start gap-2 min-w-0 flex-1">
         <span
@@ -60,7 +59,7 @@ export default function TaskPanel({
         />
         <div className="min-w-0 flex-1">
           <code className="text-xs text-secondary truncate block">
-            {task.label || task.command}
+            {taskRowTitle(task, inNamespace)}
           </code>
           {task.ports && Object.keys(task.ports).length > 0 && (
             <div className="flex flex-wrap gap-1 mt-0.5">
@@ -123,6 +122,30 @@ export default function TaskPanel({
     </button>
   );
 
+  const renderNamespaceSubgroup = (namespace) => (
+    <div
+      key={namespace}
+      className="px-3 py-1 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-page/40 pl-5"
+    >
+      {namespace}
+    </div>
+  );
+
+  const renderTaskList = (taskList) => {
+    const { ungrouped, namespaces } = groupTasksForPanel(taskList);
+    return (
+      <>
+        {ungrouped.map((task) => renderTask(task))}
+        {namespaces.map(({ namespace, tasks: nsTasks }) => (
+          <div key={namespace}>
+            {renderNamespaceSubgroup(namespace)}
+            {nsTasks.map((task) => renderTask(task, { inNamespace: true }))}
+          </div>
+        ))}
+      </>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {!readonly && configCommands.length > 0 && (
@@ -147,7 +170,7 @@ export default function TaskPanel({
             <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
               Running
             </div>
-            {runningTasks.map(renderTask)}
+            {renderTaskList(runningTasks)}
           </>
         )}
         {finishedTasks.length > 0 && (
@@ -155,7 +178,7 @@ export default function TaskPanel({
             <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
               Finished
             </div>
-            {finishedTasks.map(renderTask)}
+            {renderTaskList(finishedTasks)}
           </>
         )}
       </div>

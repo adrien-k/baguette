@@ -46,6 +46,7 @@ import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
 import DetailsView from './session/DetailsView.jsx';
 import SessionSidePanel from './session/SessionSidePanel.jsx';
+import SessionMainViewFooter from './session/SessionMainViewFooter.jsx';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
 import SessionTools from '../components/SessionTools.jsx';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
@@ -1398,6 +1399,14 @@ export default function Session() {
               <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />
             )}
           </div>
+
+          {!isNewSessionRoute && (
+            <SessionMainViewFooter
+              session={session}
+              onShowTasks={() => setSidePanelTab('tasks')}
+              onShowReviewer={() => setSidePanelTab('reviewer')}
+            />
+          )}
         </div>
 
         {/* Task / files / reviewer panel — drawer below md, inline column md+ */}
@@ -1453,7 +1462,6 @@ export default function Session() {
               hasMore={hasMore}
               sessionId={sessionId}
               showReviewerTab={showReviewerSidePanelTab}
-              runningTasksCount={session?.running_tasks_count ?? 0}
             />
           </div>
         )}
