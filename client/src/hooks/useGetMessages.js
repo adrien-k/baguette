@@ -17,12 +17,20 @@ export function useGetMessages(sessionId) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState(null);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
 
   const oldestIdRef = useRef(null);
   const loadingMoreRef = useRef(false);
 
+  const handleLoadError = useCallback((err) => {
+    setError(err);
+    setMessages([]);
+    setHasMore(false);
+    setInitialLoadFailed(true);
+  }, []);
+
   const refetch = useCallback(() => {
-    if (!sessionId) return;
+    if (!sessionId || initialLoadFailed) return;
     setLoading(true);
     setMessages([]);
     setHasMore(false);
@@ -38,14 +46,11 @@ export function useGetMessages(sessionId) {
         oldestIdRef.current = sorted[0]?.id ?? null;
         setError(null);
       })
-      .catch((err) => {
-        setError(err);
-        setMessages([]);
-      })
+      .catch(handleLoadError)
       .finally(() => setLoading(false));
-  }, [sessionId]);
+  }, [sessionId, initialLoadFailed, handleLoadError]);
 
-  useRefetchOnSseReconnect(refetch, Boolean(sessionId));
+  useRefetchOnSseReconnect(refetch, Boolean(sessionId) && !initialLoadFailed);
 
   useEffect(() => {
     if (!sessionId) {
@@ -58,6 +63,7 @@ export function useGetMessages(sessionId) {
 
     let cancelled = false;
     setLoading(true);
+    setInitialLoadFailed(false);
     // Drop the previous session's messages immediately so they are never shown
     // under the newly selected session while its history is being fetched.
     setMessages([]);
@@ -76,10 +82,7 @@ export function useGetMessages(sessionId) {
         setError(null);
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(err);
-          setMessages([]);
-        }
+        if (!cancelled) handleLoadError(err);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -103,7 +106,7 @@ export function useGetMessages(sessionId) {
       messagesService.off('created', onCreated);
       messagesService.off('patched', onPatched);
     };
-  }, [sessionId]);
+  }, [sessionId, handleLoadError]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current || !oldestIdRef.current) return;
@@ -127,6 +130,7 @@ export function useGetMessages(sessionId) {
       setMessages((prev) => [...older, ...prev]);
       setHasMore(older.length === PAGE_SIZE);
     } catch (err) {
+      setHasMore(false);
       toastError('Failed to load more messages', err);
     } finally {
       loadingMoreRef.current = false;
