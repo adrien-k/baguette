@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  compareTasksByName,
-  groupTasksForPanel,
+  configCommandButtonLabel,
+  groupConfigCommandsForPanel,
   parseTaskNamespace,
-  taskDisplayName,
-  taskRowTitle,
 } from '../taskPanelGrouping.js';
 
 describe('parseTaskNamespace', () => {
@@ -27,38 +25,33 @@ describe('parseTaskNamespace', () => {
   });
 });
 
-describe('groupTasksForPanel', () => {
-  it('sorts by name and groups namespaced tasks', () => {
-    const tasks = [
-      { id: 1, label: 'zebra' },
-      { id: 2, label: 'docker:redis' },
-      { id: 3, label: 'alpha' },
-      { id: 4, label: 'baguette:init' },
-      { id: 5, label: 'docker:postgres' },
+describe('groupConfigCommandsForPanel', () => {
+  it('sorts by label and groups namespaced commands', () => {
+    const commands = [
+      { label: 'zebra', run: 'z' },
+      { label: 'docker:redis', run: 'r' },
+      { label: 'alpha', run: 'a' },
+      { label: 'baguette:init', run: 'i' },
+      { label: 'docker:postgres', run: 'p' },
     ];
-    const { ungrouped, namespaces } = groupTasksForPanel(tasks);
-    expect(ungrouped.map((t) => t.label)).toEqual(['alpha', 'zebra']);
+    const { ungrouped, namespaces } = groupConfigCommandsForPanel(commands);
+    expect(ungrouped.map((c) => c.label)).toEqual(['alpha', 'zebra']);
     expect(namespaces).toEqual([
-      { namespace: 'baguette', tasks: [{ id: 4, label: 'baguette:init' }] },
+      { namespace: 'baguette', items: [{ label: 'baguette:init', run: 'i' }] },
       {
         namespace: 'docker',
-        tasks: [
-          { id: 5, label: 'docker:postgres' },
-          { id: 2, label: 'docker:redis' },
+        items: [
+          { label: 'docker:postgres', run: 'p' },
+          { label: 'docker:redis', run: 'r' },
         ],
       },
     ]);
   });
-
-  it('uses command when label is missing', () => {
-    expect(taskDisplayName({ command: 'docker:img' })).toBe('docker:img');
-    expect(compareTasksByName({ label: 'b' }, { label: 'a' })).toBeGreaterThan(0);
-  });
 });
 
-describe('taskRowTitle', () => {
-  it('shortens names inside a namespace subgroup', () => {
-    expect(taskRowTitle({ label: 'docker:postgres' }, true)).toBe('postgres');
-    expect(taskRowTitle({ label: 'run-tests' }, false)).toBe('run-tests');
+describe('configCommandButtonLabel', () => {
+  it('shortens labels inside a namespace subgroup', () => {
+    expect(configCommandButtonLabel({ label: 'docker:postgres' }, true)).toBe('postgres');
+    expect(configCommandButtonLabel({ label: 'run-tests' }, false)).toBe('run-tests');
   });
 });
