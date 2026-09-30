@@ -8,12 +8,10 @@ import { isPortListening } from './port-utils.js';
 import {
   normalizeDockerContainer,
   dockerContainerHostname,
-  startDockerContainer,
-  spawnDockerLogFollow,
+  buildDockerImage,
+  spawnDockerContainer,
   stopDockerContainer,
   waitForContainerHealth,
-  isContainerRunning,
-  getContainerExitCode,
 } from './docker-session.js';
 
 /** Idle lifetime for tasks that expose ports. Reset by heartbeat(). */
@@ -88,9 +86,6 @@ export class Task {
   #logBuffer = [];
   #ttlTimer = null;
   #heartbeatTimer = null;
-  #dockerMonitorTimer = null;
-  #dockerLogProcess = null;
-
   constructor({
     id,
     sessionId,
@@ -497,94 +492,59 @@ export class Task {
     if (!this._shortId || !this.task_key) {
       throw new Error('Docker tasks require session short_id and task_key');
     }
-    this._dockerContainer = normalizeDockerContainer(this._dockerContainerRaw);
-    if (this._dockerContainer.build) {
-      const tagHint = this._dockerContainer.image ?? this.task_key ?? 'image';
+    let container = normalizeDockerContainer(this._dockerContainerRaw);
+    const onDockerOutput = (stream, data) => this.addLog(stream, data);
+
+    if (container.build) {
+      const tagHint = container.image ?? this.task_key ?? 'image';
       this.addLog('stdout', baguetteStatusLine(`Building docker image (${tagHint})…`));
+      const tag = await buildDockerImage({
+        shortId: this._shortId,
+        taskKey: this.task_key,
+        build: container.build,
+        imageTag: container.image,
+        cwd: this._cwd,
+        onOutput: onDockerOutput,
+      });
+      this.addLog('stdout', baguetteStatusLine(`Finished building docker image (${tag})`));
+      container = { ...container, image: tag, build: null };
     }
-    const runLabel =
-      this._dockerContainer.image ??
-      (this._dockerContainer.build ? (this.task_key ?? 'built image') : 'container');
-    this.addLog('stdout', baguetteStatusLine(`Starting container ${runLabel}…`));
-    const { containerName } = await startDockerContainer({
+    this._dockerContainer = container;
+
+    const runLabel = container.image ?? 'container';
+    this.addLog('stdout', baguetteStatusLine(`Running docker container (${runLabel})…`));
+    const { child, containerName } = await spawnDockerContainer({
       shortId: this._shortId,
       taskKey: this.task_key,
-      container: this._dockerContainer,
+      container,
       taskEnvKeys: this._dockerEnvKeys,
       env: fullEnv,
-      cwd: this._cwd,
     });
     this._dockerContainerName = containerName;
-    this.addLog('stdout', baguetteStatusLine(`Container ${containerName} started`));
-    this.#attachDockerLogStream(containerName);
-    this.#startDockerExitMonitor();
-    this.heartbeat();
-    return this;
-  }
+    this.#process = child;
+    this.pid = child.pid;
 
-  #attachDockerLogStream(containerName) {
-    const child = spawnDockerLogFollow(containerName);
-    this.#dockerLogProcess = child;
     const handleData = (stream) => (data) => {
       this.addLog(stream, data.toString());
     };
     child.stdout.on('data', handleData('stdout'));
     child.stderr.on('data', handleData('stderr'));
-    child.on('exit', async () => {
-      if (this.#dockerLogProcess === child) this.#dockerLogProcess = null;
+
+    child.on('exit', (code, signal) => {
+      this.#process = null;
+      this._dockerContainerName = null;
       detachChildProcess(child);
-      if (this.status !== 'running') return;
-
-      const stillRunning = await isContainerRunning(containerName);
-      if (stillRunning) {
-        this.addLog('stdout', baguetteStatusLine('Log stream disconnected; reconnecting…'));
-        if (this.status === 'running' && this._dockerContainerName === containerName) {
-          this.#attachDockerLogStream(containerName);
-        }
-        return;
-      }
-
-      await this.#exitWhenDockerContainerStopped(containerName);
-    });
-  }
-
-  async #exitWhenDockerContainerStopped(containerName) {
-    if (this.status !== 'running') return;
-    const exitCode = await getContainerExitCode(containerName);
-    if (this.status === 'running') {
+      const exitCode = code ?? (signal ? 1 : 0);
       this.exit(exitCode);
-    }
-  }
+    });
 
-  #stopDockerLogStream() {
-    const child = this.#dockerLogProcess;
-    if (!child) return;
-    this.#dockerLogProcess = null;
-    child.removeAllListeners('exit');
-    try {
-      child.kill('SIGTERM');
-    } catch {
-      /* already gone */
-    }
-    detachChildProcess(child);
-  }
+    child.on('error', (err) => {
+      this.addLog('stderr', `${err.message}\n`);
+      this.exit(1);
+    });
 
-  #startDockerExitMonitor() {
-    if (!this._dockerContainerName) return;
-    const name = this._dockerContainerName;
-    this.#dockerMonitorTimer = setInterval(async () => {
-      if (this.status !== 'running') {
-        clearInterval(this.#dockerMonitorTimer);
-        this.#dockerMonitorTimer = null;
-        return;
-      }
-      const running = await isContainerRunning(name);
-      if (!running) {
-        clearInterval(this.#dockerMonitorTimer);
-        this.#dockerMonitorTimer = null;
-        await this.#exitWhenDockerContainerStopped(name);
-      }
-    }, 2000);
+    this.heartbeat();
+    return this;
   }
 
   #waitForChildExit({ timeoutMs }) {
@@ -642,19 +602,11 @@ export class Task {
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
     // forever and the Preview Start button stays disabled.
-    if (this._dockerContainerName) {
-      this.#stopDockerLogStream();
-      await stopDockerContainer(this._dockerContainerName);
-      clearInterval(this.#dockerMonitorTimer);
-      this.#dockerMonitorTimer = null;
-      this._dockerContainerName = null;
-      for (const dep of this._dependsOn) {
-        await dep.kill().catch(() => {});
-      }
-      this.exit(0);
-      return true;
-    }
     if (!this.#process) {
+      if (this._dockerContainerName) {
+        await stopDockerContainer(this._dockerContainerName);
+        this._dockerContainerName = null;
+      }
       for (const dep of this._dependsOn) {
         await dep.kill().catch(() => {});
       }
@@ -675,6 +627,10 @@ export class Task {
       await this.#waitForChildExit({ timeoutMs });
     } finally {
       clearTimeout(escalation);
+    }
+    if (this._dockerContainerName) {
+      await stopDockerContainer(this._dockerContainerName).catch(() => {});
+      this._dockerContainerName = null;
     }
     return true;
   }
@@ -710,8 +666,6 @@ export class Task {
   exit(exitCode = 1) {
     if (this.status === 'exited') return;
     clearTimeout(this.#ttlTimer);
-    clearInterval(this.#dockerMonitorTimer);
-    this.#stopDockerLogStream();
     this.#stopDepHeartbeatLoop();
     this.status = 'exited';
     this.exit_code = exitCode;

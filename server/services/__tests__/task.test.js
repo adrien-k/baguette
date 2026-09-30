@@ -615,21 +615,34 @@ describe('Task heartbeat / TTL', () => {
     );
   });
 
-  it('_startDockerProcess follows container logs after start', async () => {
-    const logChild = {
+  function mockDockerRunChild() {
+    const exitListeners = [];
+    const child = {
       pid: 1001,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
+      stdout: { on: vi.fn(), destroy: vi.fn() },
+      stderr: { on: vi.fn(), destroy: vi.fn() },
+      stdin: { destroy: vi.fn() },
+      on: vi.fn((event, cb) => {
+        if (event === 'exit') exitListeners.push(cb);
+      }),
+      once: vi.fn((event, cb) => {
+        if (event === 'exit') exitListeners.push(cb);
+      }),
+      removeAllListeners: vi.fn(),
       kill: vi.fn(),
+      emitExit(code, signal) {
+        for (const cb of exitListeners) cb(code, signal);
+      },
     };
+    return child;
+  }
 
-    vi.spyOn(dockerSession, 'startDockerContainer').mockResolvedValue({
-      containerId: 'abc',
+  it('_startDockerProcess streams attached docker run output', async () => {
+    const runChild = mockDockerRunChild();
+    vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({
+      child: runChild,
       containerName: 'baguette_abcd_pg',
     });
-    vi.spyOn(dockerSession, 'spawnDockerLogFollow').mockReturnValue(logChild);
-    vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(true);
 
     const task = new Task({
       id: 1,
@@ -641,42 +654,20 @@ describe('Task heartbeat / TTL', () => {
     });
 
     await task._startDockerProcess({}, {});
-    expect(dockerSession.spawnDockerLogFollow).toHaveBeenCalledWith('baguette_abcd_pg');
-    expect(logChild.stdout.on).toHaveBeenCalled();
-    expect(logChild.stderr.on).toHaveBeenCalled();
+    expect(task.pid).toBe(1001);
+    expect(task._dockerContainerName).toBe('baguette_abcd_pg');
 
-    const onStdout = logChild.stdout.on.mock.calls.find((c) => c[0] === 'data')?.[1];
+    const onStdout = runChild.stdout.on.mock.calls.find((c) => c[0] === 'data')?.[1];
     onStdout?.(Buffer.from('hello from db\n'));
     expect(task.getLogs()).toContain('hello from db');
   });
 
-  it('docker log follower exit does not end task while container is still running', async () => {
-    const logChild = {
-      pid: 1001,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      removeAllListeners: vi.fn(),
-      kill: vi.fn(),
-    };
-    const logChild2 = {
-      pid: 1002,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      removeAllListeners: vi.fn(),
-      kill: vi.fn(),
-    };
-
-    vi.spyOn(dockerSession, 'startDockerContainer').mockResolvedValue({
-      containerId: 'abc',
+  it('docker run child exit ends task with container exit code', async () => {
+    const runChild = mockDockerRunChild();
+    vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({
+      child: runChild,
       containerName: 'baguette_abcd_pg',
     });
-    const logFollow = vi
-      .spyOn(dockerSession, 'spawnDockerLogFollow')
-      .mockReturnValueOnce(logChild)
-      .mockReturnValueOnce(logChild2);
-    const runningCheck = vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(true);
 
     const task = new Task({
       id: 1,
@@ -688,105 +679,21 @@ describe('Task heartbeat / TTL', () => {
     });
 
     await task._startDockerProcess({}, {});
-    const callsAfterStart = logFollow.mock.calls.length;
-    const onExit = logChild.on.mock.calls.find((c) => c[0] === 'exit')?.[1];
-    expect(onExit).toBeTypeOf('function');
-
-    await onExit(1);
-    expect(task.status).toBe('running');
-    expect(logFollow.mock.calls.length).toBe(callsAfterStart + 1);
-    expect(runningCheck).toHaveBeenCalledWith('baguette_abcd_pg');
-  });
-
-  it('docker log follower exit uses container exit code when container has stopped', async () => {
-    const logChild = {
-      pid: 1001,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      removeAllListeners: vi.fn(),
-      kill: vi.fn(),
-    };
-
-    vi.spyOn(dockerSession, 'startDockerContainer').mockResolvedValue({
-      containerId: 'abc',
-      containerName: 'baguette_abcd_pg',
-    });
-    vi.spyOn(dockerSession, 'spawnDockerLogFollow').mockReturnValue(logChild);
-    vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(false);
-    vi.spyOn(dockerSession, 'getContainerExitCode').mockResolvedValue(2);
-
-    const task = new Task({
-      id: 1,
-      sessionId: 1,
-      shortId: 'abcd',
-      command: 'docker:postgres:16',
-      taskKey: 'postgres',
-      dockerContainer: { image: 'postgres:16' },
-    });
-
-    await task._startDockerProcess({}, {});
-    const onExit = logChild.on.mock.calls.find((c) => c[0] === 'exit')?.[1];
-    await onExit(0);
+    runChild.emitExit(2);
 
     expect(task.status).toBe('exited');
     expect(task.exit_code).toBe(2);
-    expect(dockerSession.getContainerExitCode).toHaveBeenCalledWith('baguette_abcd_pg');
+    expect(task._dockerContainerName).toBeNull();
   });
 
-  it('docker exit monitor uses container exit code when container stops', async () => {
-    vi.useFakeTimers();
-    const logChild = {
-      pid: 1001,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      removeAllListeners: vi.fn(),
-      kill: vi.fn(),
-    };
-
-    vi.spyOn(dockerSession, 'startDockerContainer').mockResolvedValue({
-      containerId: 'abc',
+  it('kill waits for attached docker run process to exit', async () => {
+    const runChild = mockDockerRunChild();
+    vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({
+      child: runChild,
       containerName: 'baguette_abcd_pg',
     });
-    vi.spyOn(dockerSession, 'spawnDockerLogFollow').mockReturnValue(logChild);
-    vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(false);
-    vi.spyOn(dockerSession, 'getContainerExitCode').mockResolvedValue(0);
-
-    const task = new Task({
-      id: 1,
-      sessionId: 1,
-      shortId: 'abcd',
-      command: 'docker:redis:7',
-      taskKey: 'redis',
-      dockerContainer: { image: 'redis:7' },
-    });
-
-    await task._startDockerProcess({}, {});
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(task.status).toBe('exited');
-    expect(task.exit_code).toBe(0);
-    vi.useRealTimers();
-  });
-
-  it('stopDockerLogStream does not mark task exited when log child exits', async () => {
-    const logChild = {
-      pid: 1001,
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      removeAllListeners: vi.fn(),
-      kill: vi.fn(),
-    };
-
-    vi.spyOn(dockerSession, 'startDockerContainer').mockResolvedValue({
-      containerId: 'abc',
-      containerName: 'baguette_abcd_pg',
-    });
-    vi.spyOn(dockerSession, 'spawnDockerLogFollow').mockReturnValue(logChild);
     vi.spyOn(dockerSession, 'stopDockerContainer').mockResolvedValue();
-    vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(true);
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
 
     const task = new Task({
       id: 1,
@@ -798,11 +705,12 @@ describe('Task heartbeat / TTL', () => {
     });
 
     await task._startDockerProcess({}, {});
-    await task.kill();
+    const killPromise = task.kill({ graceMs: 10, timeoutMs: 5000 });
+    runChild.emitExit(0);
+    await killPromise;
 
     expect(task.status).toBe('exited');
     expect(task.exit_code).toBe(0);
-    expect(logChild.removeAllListeners).toHaveBeenCalledWith('exit');
   });
 });
 

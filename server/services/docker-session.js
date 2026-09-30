@@ -6,7 +6,60 @@ import logger from '../logger.js';
 const execFileAsync = promisify(execFile);
 
 const DOCKER_TIMEOUT_MS = 120_000;
-const DOCKER_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+const DOCKER_BUILD_TIMEOUT_MS = 60 * 60 * 1000;
+
+/**
+ * Run `docker` with streamed stdout/stderr. Rejects on non-zero exit.
+ * @param {string[]} args docker CLI args (without `docker`)
+ * @param {{ timeout?: number, onOutput?: (stream: 'stdout' | 'stderr', data: string) => void }} [opts]
+ */
+export function runDockerCommand(args, { timeout, onOutput } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('docker', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const append = (stream, chunk) => {
+      const text = chunk.toString();
+      if (stream === 'stdout') stdout += text;
+      else stderr += text;
+      onOutput?.(stream, text);
+    };
+    child.stdout.on('data', (chunk) => append('stdout', chunk));
+    child.stderr.on('data', (chunk) => append('stderr', chunk));
+
+    let timer;
+    if (timeout != null) {
+      timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(
+          Object.assign(new Error(`docker ${args[0]} timed out after ${timeout}ms`), {
+            stdout,
+            stderr,
+          })
+        );
+      }, timeout);
+    }
+
+    child.on('error', (err) => {
+      if (timer) clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(
+          Object.assign(new Error(`docker ${args[0]} failed with exit code ${code}`), {
+            stdout,
+            stderr,
+            code,
+          })
+        );
+      }
+    });
+  });
+}
 
 /** Created in bin/entrypoint.sh; session task containers join this network. */
 export const BAGUETTE_DOCKER_NETWORK = 'baguette_default';
@@ -204,7 +257,14 @@ export function normalizeDockerContainer(container) {
  * @param {string | null} [opts.imageTag]  optional tag; defaults to session/task name
  * @param {string} [opts.cwd]  session worktree for relative build.context
  */
-export async function buildDockerImage({ shortId, taskKey, build, imageTag = null, cwd }) {
+export async function buildDockerImage({
+  shortId,
+  taskKey,
+  build,
+  imageTag = null,
+  cwd,
+  onOutput,
+}) {
   const tag = imageTag || dockerBuildImageTag(shortId, taskKey);
   const { context, dockerfile } = resolveDockerBuildPaths(build, cwd);
   const args = [
@@ -224,10 +284,7 @@ export async function buildDockerImage({ shortId, taskKey, build, imageTag = nul
     args.push('--build-arg', `${key}=${value}`);
   }
   args.push(context);
-  await execFileAsync('docker', args, {
-    timeout: DOCKER_BUILD_TIMEOUT_MS,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  await runDockerCommand(args, { timeout: DOCKER_BUILD_TIMEOUT_MS, onOutput });
   return tag;
 }
 
@@ -270,26 +327,15 @@ export async function ensureSessionVolume(shortId) {
  * @param {ReturnType<typeof normalizeDockerContainer>} opts.container
  * @param {string[]} opts.taskEnvKeys  keys from task.env to pass as container -e flags
  * @param {Record<string, string>} opts.env  merged task env (values for taskEnvKeys)
- * @param {string} [opts.cwd]  session worktree (for container.build)
  */
-export async function startDockerContainer({
+export async function spawnDockerContainer({
   shortId,
   taskKey,
   container,
   taskEnvKeys = [],
   env = {},
-  cwd,
 }) {
-  let image = container.image;
-  if (container.build) {
-    image = await buildDockerImage({
-      shortId,
-      taskKey,
-      build: container.build,
-      imageTag: image,
-      cwd,
-    });
-  }
+  const image = container.image;
   if (!image) {
     throw new Error('docker container has no image to run');
   }
@@ -302,7 +348,7 @@ export async function startDockerContainer({
 
   const args = [
     'run',
-    '-d',
+    '--rm',
     '--network',
     BAGUETTE_DOCKER_NETWORK,
     '--name',
@@ -346,9 +392,11 @@ export async function startDockerContainer({
     args.push(...container.command);
   }
 
-  const { stdout } = await execFileAsync('docker', args, { timeout: DOCKER_TIMEOUT_MS });
-  const containerId = stdout.trim();
-  return { containerId, containerName: name };
+  const child = spawn('docker', args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+  return { child, containerName: name };
 }
 
 export async function inspectContainerHealth(containerName) {
@@ -414,13 +462,6 @@ export async function waitForContainerHealth(containerName, { timeoutMs, pollMs 
     await new Promise((r) => setTimeout(r, pollMs));
   }
   throw new Error(`Container ${containerName} health check timed out after ${timeoutMs}ms`);
-}
-
-/** Follow container stdout/stderr (`docker logs -f`). Caller must kill the child on task stop. */
-export function spawnDockerLogFollow(containerName) {
-  return spawn('docker', ['logs', '-f', '--tail', '1000', containerName], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
 }
 
 export async function stopDockerContainer(containerName) {
