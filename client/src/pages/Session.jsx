@@ -25,6 +25,7 @@ import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
 import { sessionsService, tasksService } from '../feathers.js';
+import { sessionActivityAt } from '@baguette/shared/session-unread.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
@@ -585,9 +586,22 @@ export default function Session() {
   useEffect(() => {
     if (isNewSessionRoute || sessionLoading || !sessionFromHook?.id) return;
     if (sessionFromHook.short_id !== short_id) return;
-    const viewed_at = new Date().toISOString();
-    sessionsService.patch(sessionFromHook.id, { last_viewed_at: viewed_at }).catch(() => {});
-  }, [isNewSessionRoute, sessionLoading, sessionFromHook?.id, sessionFromHook?.short_id, short_id]);
+    const activityAt = sessionActivityAt(sessionFromHook);
+    if (!activityAt) return;
+    const viewedAt = sessionFromHook.last_viewed_at;
+    if (viewedAt && new Date(viewedAt).getTime() >= new Date(activityAt).getTime()) return;
+    sessionsService.patch(sessionFromHook.id, { last_viewed_at: activityAt }).catch(() => {});
+  }, [
+    isNewSessionRoute,
+    sessionLoading,
+    sessionFromHook?.id,
+    sessionFromHook?.short_id,
+    sessionFromHook?.last_activity_at,
+    sessionFromHook?.last_viewed_at,
+    sessionFromHook?.updated_at,
+    sessionFromHook?.created_at,
+    short_id,
+  ]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;

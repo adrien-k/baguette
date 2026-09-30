@@ -23,8 +23,8 @@ function makeApp(dbRef) {
 }
 
 describe('session last_activity_at from messages', () => {
-  it('DEBOUNCE_DELAY_MS is 5s', () => {
-    expect(DEBOUNCE_DELAY_MS).toBe(5000);
+  it('DEBOUNCE_DELAY_MS is 30s', () => {
+    expect(DEBOUNCE_DELAY_MS).toBe(30_000);
   });
 
   it('debounces activity bumps per session id', async () => {
@@ -36,16 +36,60 @@ describe('session last_activity_at from messages', () => {
       sessions.registerActivityMessageListeners(app);
       const onActivity = vi.spyOn(sessions, 'onActivity').mockResolvedValue();
 
-      sessions._bumpLastActivityOnMessageCreated({ session_id: 1 });
-      sessions._bumpLastActivityOnMessageCreated({ session_id: 1 });
+      const activityMsg = { session_id: 1, type: 'assistant', message_json: '{}' };
+      sessions._bumpLastActivityOnMessageCreated(activityMsg);
+      sessions._bumpLastActivityOnMessageCreated(activityMsg);
       expect(onActivity).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS);
-      sessions._bumpLastActivityOnMessageCreated({ session_id: 1 });
+      expect(onActivity).toHaveBeenCalledTimes(2);
+
+      sessions._bumpLastActivityOnMessageCreated(activityMsg);
+      expect(onActivity).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS);
+      expect(onActivity).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears debounce without a second bump when no activity during window', async () => {
+    vi.useFakeTimers();
+    try {
+      const app = makeApp(db);
+      await app.setup();
+      const sessions = app.service('sessions');
+      sessions.registerActivityMessageListeners(app);
+      const onActivity = vi.spyOn(sessions, 'onActivity').mockResolvedValue();
+
+      const activityMsg = { session_id: 2, type: 'result', message_json: '{}' };
+      sessions._bumpLastActivityOnMessageCreated(activityMsg);
+      expect(onActivity).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_DELAY_MS);
+      expect(onActivity).toHaveBeenCalledTimes(1);
+      expect(sessions._sessionActivityUpdatedRecently[2]).toBeUndefined();
+
+      sessions._bumpLastActivityOnMessageCreated(activityMsg);
       expect(onActivity).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('does not bump for non-activity message types', async () => {
+    const app = makeApp(db);
+    await app.setup();
+    const sessions = app.service('sessions');
+    const onActivity = vi.spyOn(sessions, 'onActivity').mockResolvedValue();
+
+    sessions._bumpLastActivityOnMessageCreated({
+      session_id: 3,
+      type: 'system',
+      message_json: '{}',
+    });
+    expect(onActivity).not.toHaveBeenCalled();
   });
 
   it('onActivity patches last_activity_at', async () => {

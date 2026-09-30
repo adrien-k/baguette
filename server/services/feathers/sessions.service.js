@@ -68,6 +68,7 @@ import {
   SESSION_LIST_QUERY_FLAGS,
 } from '../../../shared/session-list-query.js';
 import { DEBOUNCE_DELAY_MS } from '../session-activity.js';
+import { messageCountsAsSessionActivity } from '../../../shared/session-activity-message.js';
 
 /**
  * Sent to an agent whose turn was cut short by a server restart. The transcript is resumed, but
@@ -95,6 +96,10 @@ export class SessionsService extends KnexService {
     this._lastResultTotals = new Map();
     /** @type {Record<number, true>} Debounce window — skip extra session loads while set. */
     this._sessionActivityUpdatedRecently = Object.create(null);
+    /** @type {Record<number, true>} Activity received while debounce flag set — flush on timer. */
+    this._activityReceivedWhileDebounce = Object.create(null);
+    /** @type {Record<number, ReturnType<typeof setTimeout>>} Per-session debounce timer handles. */
+    this._sessionActivityDebounceTimers = Object.create(null);
   }
 
   setup(app) {
@@ -115,14 +120,34 @@ export class SessionsService extends KnexService {
     app.service('session-review-messages').on('created', onCreated);
   }
 
+  _scheduleSessionActivityDebounce(sessionId) {
+    const existing = this._sessionActivityDebounceTimers[sessionId];
+    if (existing) clearTimeout(existing);
+    this._sessionActivityDebounceTimers[sessionId] = setTimeout(() => {
+      delete this._sessionActivityDebounceTimers[sessionId];
+      const hadActivityWhileDebouncing = this._activityReceivedWhileDebounce[sessionId];
+      delete this._activityReceivedWhileDebounce[sessionId];
+      if (hadActivityWhileDebouncing) {
+        void this.onActivity(sessionId).catch((err) => {
+          logger.warn({ sessionId, err: err.message }, 'Failed to bump session last_activity_at');
+        });
+        this._scheduleSessionActivityDebounce(sessionId);
+      } else {
+        delete this._sessionActivityUpdatedRecently[sessionId];
+      }
+    }, DEBOUNCE_DELAY_MS);
+  }
+
   _bumpLastActivityOnMessageCreated(message) {
     const sessionId = message?.session_id;
     if (!sessionId) return;
-    if (this._sessionActivityUpdatedRecently[sessionId]) return;
+    if (!messageCountsAsSessionActivity(message)) return;
+    if (this._sessionActivityUpdatedRecently[sessionId]) {
+      this._activityReceivedWhileDebounce[sessionId] = true;
+      return;
+    }
     this._sessionActivityUpdatedRecently[sessionId] = true;
-    setTimeout(() => {
-      delete this._sessionActivityUpdatedRecently[sessionId];
-    }, DEBOUNCE_DELAY_MS);
+    this._scheduleSessionActivityDebounce(sessionId);
     void this.onActivity(sessionId).catch((err) => {
       logger.warn({ sessionId, err: err.message }, 'Failed to bump session last_activity_at');
     });
