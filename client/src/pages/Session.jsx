@@ -781,27 +781,30 @@ export default function Session() {
     }
   }, [showTasks, isXlScreen, hideSidePanel, setSidePanelTab, sidePanelTab]);
 
-  const setView = (view) => {
-    if (isNewSessionRoute) return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams();
-        if (view !== 'chat') next.set('view', view);
-        const prevPanel = prev.get('panel');
-        const panelIsValid = prevPanel && SIDE_PANEL_TAB_IDS.has(prevPanel);
-        if (view === 'diff') {
-          const keepFilesOrCommits = prevPanel === 'files' || prevPanel === 'commits';
-          next.set('panel', keepFilesOrCommits && panelIsValid ? prevPanel : 'files');
-          const commit = prev.get('commit');
-          if (commit) next.set('commit', commit);
-        } else if (panelIsValid) {
-          next.set('panel', prevPanel);
-        }
-        return next;
-      },
-      { replace: true }
-    );
-  };
+  const setView = useCallback(
+    (view) => {
+      if (isNewSessionRoute) return;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams();
+          if (view !== 'chat') next.set('view', view);
+          const prevPanel = prev.get('panel');
+          const panelIsValid = prevPanel && SIDE_PANEL_TAB_IDS.has(prevPanel);
+          if (view === 'diff') {
+            const keepFilesOrCommits = prevPanel === 'files' || prevPanel === 'commits';
+            next.set('panel', keepFilesOrCommits && panelIsValid ? prevPanel : 'files');
+            const commit = prev.get('commit');
+            if (commit) next.set('commit', commit);
+          } else if (panelIsValid) {
+            next.set('panel', prevPanel);
+          }
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [isNewSessionRoute, setSearchParams]
+  );
 
   const builderIsGlobal = isNewSessionRoute
     ? !fromAllSessions && isGlobalSessionsRoute
@@ -992,13 +995,29 @@ export default function Session() {
 
   const isSidePanelOpen = !isNewSessionRoute && (isXlScreen || showTasks);
 
+  const handleViewTabClick = useCallback(
+    (id) => {
+      if (
+        id === 'diff' &&
+        activeView === 'diff' &&
+        isSidePanelOpen &&
+        (sidePanelTab === 'files' || sidePanelTab === 'commits')
+      ) {
+        setSidePanelTab(sidePanelTab === 'files' ? 'commits' : 'files', { openMobile: true });
+        return;
+      }
+      setView(id);
+    },
+    [activeView, isSidePanelOpen, sidePanelTab, setSidePanelTab, setView]
+  );
+
   const handleSelectDiffFile = useCallback(
     (file) => {
       const path = diffFileDisplayPath(file);
       if (activeView !== 'diff') setView('diff');
       setScrollToDiffFile(path);
     },
-    [activeView]
+    [activeView, setView]
   );
 
   const clearScrollToDiffFile = useCallback(() => setScrollToDiffFile(null), []);
@@ -1240,7 +1259,7 @@ export default function Session() {
                     ref={activeView === id && !isNewSessionRoute ? activeViewTabRef : null}
                     type="button"
                     disabled={isNewSessionRoute}
-                    onClick={() => setView(id)}
+                    onClick={() => handleViewTabClick(id)}
                     className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px disabled:cursor-not-allowed disabled:opacity-40 ${
                       activeView === id && !isNewSessionRoute
                         ? 'border-brand text-accent'

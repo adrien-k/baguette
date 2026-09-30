@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { SettingsSection } from '../components/SettingsSection.jsx';
-import { useSystemInfo } from '../hooks/useSystemInfo.js';
+import { useLiveMetrics } from '../hooks/useLiveMetrics.js';
 import { formatBytes, formatUptime } from '../utils/systemInfoMetrics.js';
 
 function UsageMeter({ used, total }) {
@@ -31,7 +31,7 @@ export default function System() {
     (err) => toastError('Failed to load system information', err),
     []
   );
-  const { info, loading, reload } = useSystemInfo({ onError: onLoadError });
+  const { info, loading, reload } = useLiveMetrics({ onError: onLoadError });
 
   const handleRefresh = async () => {
     setRefreshing(true);

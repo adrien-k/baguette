@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
-import { getSystemInfo } from '../system-info.js';
+import { getHostMetrics } from '../live-metrics.js';
 
-describe('getSystemInfo', () => {
+describe('getHostMetrics', () => {
   it('returns cpu, memory, and disk stats', () => {
-    const info = getSystemInfo();
+    const info = getHostMetrics();
 
     expect(info.hostname).toBeTypeOf('string');
     expect(info.cpu.count).toBeGreaterThan(0);

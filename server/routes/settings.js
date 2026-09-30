@@ -10,7 +10,7 @@ import {
   loadFullSessionPromptTemplate,
   loadFullReviewPromptTemplate,
 } from '../services/session-prompt.js';
-import { getSystemInfo } from '../services/system-info.js';
+import { getLiveMetrics } from '../services/live-metrics.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_USAGE_DAYS = 30;
@@ -138,13 +138,13 @@ export default function createSettingsRoutes(requireAuth) {
     })
   );
 
-  router.get('/api/settings/system-info', requireAuth, async (req, res) => {
-    try {
-      res.json(getSystemInfo());
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  router.get(
+    '/api/settings/live-metrics',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      res.json(await getLiveMetrics(req.user.id));
+    })
+  );
 
   /**
    * GET /api/repos/:repoFullName/prs

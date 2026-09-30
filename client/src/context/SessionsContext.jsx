@@ -69,6 +69,7 @@ export function SessionsProvider({ children }) {
 
   const notifyCompleted = useCallback(
     (session) => {
+      if (isCurrentSession(session)) return;
       const label = session.label || `Session #${session.id}`;
       toast.custom(
         (t) => (
@@ -109,11 +110,12 @@ export function SessionsProvider({ children }) {
         );
       }
     },
-    [sessionPath]
+    [sessionPath, isCurrentSession]
   );
 
   const notifyReviewCompleted = useCallback(
     (session) => {
+      if (isCurrentSession(session)) return;
       const label = session.label || `Session #${session.id}`;
       const issuesTo = issuesPath(session);
       toast.custom(
@@ -150,7 +152,7 @@ export function SessionsProvider({ children }) {
         });
       }
     },
-    [issuesPath]
+    [issuesPath, isCurrentSession]
   );
 
   const notifyFailed = useCallback(

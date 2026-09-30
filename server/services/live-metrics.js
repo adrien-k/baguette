@@ -2,6 +2,9 @@ import fs from 'fs';
 import os from 'os';
 
 import { DATA_DIR } from '../config.js';
+import db from '../db.js';
+
+const MS_PER_24H = 24 * 60 * 60 * 1000;
 
 function diskStatsForPath(targetPath) {
   const stat = fs.statfsSync(targetPath);
@@ -15,7 +18,7 @@ function diskStatsForPath(targetPath) {
 }
 
 /** Host CPU, memory, and disk usage for the Baguette data directory. */
-export function getSystemInfo() {
+export function getHostMetrics() {
   const cpus = os.cpus();
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
@@ -37,5 +40,26 @@ export function getSystemInfo() {
       usedBytes: totalMem - freeMem,
     },
     disk: diskStatsForPath(DATA_DIR),
+  };
+}
+
+async function usageCostUsdSince(userId, sinceIso) {
+  const row = await db('usage')
+    .where({ user_id: userId })
+    .where('created_at', '>=', sinceIso)
+    .sum('cost_usd as cost_usd')
+    .first();
+  return parseFloat(row?.cost_usd ?? 0) || 0;
+}
+
+/** Host metrics plus signed-in user usage for navbar / system pages. */
+export async function getLiveMetrics(userId) {
+  const since = new Date(Date.now() - MS_PER_24H).toISOString();
+  const last24hCostUsd = await usageCostUsdSince(userId, since);
+  return {
+    ...getHostMetrics(),
+    usage: {
+      last_24h_cost_usd: last24hCostUsd,
+    },
   };
 }

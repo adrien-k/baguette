@@ -4,14 +4,14 @@ import { apiFetch } from '../api.js';
 /**
  * @param {{ intervalMs?: number | null, onError?: (err: unknown) => void }} options
  */
-export function useSystemInfo({ intervalMs = null, onError } = {}) {
+export function useLiveMetrics({ intervalMs = null, onError } = {}) {
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(
     async (isRefresh = false) => {
       try {
-        const data = await apiFetch('/api/settings/system-info');
+        const data = await apiFetch('/api/settings/live-metrics');
         setInfo(data);
       } catch (err) {
         onError?.(err);
