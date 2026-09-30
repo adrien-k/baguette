@@ -25,6 +25,11 @@ import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.jsx';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
+import {
+  collectRunningBashToolsForDock,
+  runningBashToolIds,
+} from '@baguette/shared/running-tools.js';
+import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
@@ -218,6 +223,11 @@ export default function ChatView({
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]
   );
+
+  const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
+    worktreePath: session?.absolute_worktree_path,
+  });
+  const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
 
   // Manual fallback for a session that auto-restart could not resume on its own. `can_continue` is set
   // by the server; the literal string covers sessions stopped before that flag existed.
@@ -535,6 +545,7 @@ export default function ChatView({
                     sessionId={session.id}
                     agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
                     models={models}
+                    pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 ) : (
                   <ChatMessage
@@ -548,6 +559,7 @@ export default function ChatView({
                     allMessages={displayMessages}
                     models={models}
                     session={session}
+                    pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 )
               )}
@@ -688,6 +700,14 @@ export default function ChatView({
           <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-danger text-xs">
             {error}
           </div>
+        )}
+
+        {runningBashDock.length > 0 && (
+          <ChatRunningBashDock
+            items={runningBashDock}
+            worktreePath={session?.absolute_worktree_path}
+            sessionId={session?.id}
+          />
         )}
 
         {!readonly && (queue.length > 0 || tiedLoops.length > 0) && (

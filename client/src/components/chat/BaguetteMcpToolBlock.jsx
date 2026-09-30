@@ -10,6 +10,7 @@ import { ansiToHtml } from '../../utils/ansi.js';
 import { parseShellToolResult } from '../../utils/shellToolResult.js';
 import { stripCdWorktreePrefix } from '../../utils/paths.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
+import ToolRunElapsed from './ToolRunElapsed.jsx';
 
 const TERMINAL_PRE_CLASS =
   'ansi-log font-mono text-xs whitespace-pre overflow-x-auto overflow-y-auto max-h-80 max-w-full rounded p-2';
@@ -105,7 +106,7 @@ export function QuietToolBlock({ icon, label, detail, isError, result, input }) 
   );
 }
 
-export function BashToolBlock({ command, worktreePath, block }) {
+export function BashToolBlock({ command, worktreePath, block, startedAt }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = block.result == null;
   const { exitCode, stdout, stderr } = useMemo(
@@ -148,13 +149,16 @@ export function BashToolBlock({ command, worktreePath, block }) {
           )}
           {headerPreview && <code className="text-fg-muted text-xs truncate">{headerPreview}</code>}
         </div>
-        {isRunning ? (
-          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
-        ) : (
-          <ChevronDown
-            className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          />
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {isRunning && startedAt ? <ToolRunElapsed startedAt={startedAt} /> : null}
+          {isRunning ? (
+            <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
+          ) : (
+            <ChevronDown
+              className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          )}
+        </div>
       </button>
       {expanded && (
         <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
@@ -180,7 +184,7 @@ export function BashToolBlock({ command, worktreePath, block }) {
   );
 }
 
-export function CommandBlock({ baguetteOp, block }) {
+export function CommandBlock({ baguetteOp, block, startedAt }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = block.result == null;
   const { exitCode, stdout, stderr } = useMemo(
@@ -225,13 +229,16 @@ export function CommandBlock({ baguetteOp, block }) {
             <code className="text-[10px] text-faint truncate">{baguetteOp.arg.args.join(' ')}</code>
           )}
         </div>
-        {isRunning ? (
-          <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
-        ) : (
-          <ChevronDown
-            className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          />
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {isRunning ? <ToolRunElapsed startedAt={startedAt} /> : null}
+          {isRunning ? (
+            <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
+          ) : (
+            <ChevronDown
+              className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          )}
+        </div>
       </button>
       {expanded && (
         <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
@@ -654,7 +661,7 @@ function ReadTaskOutputBlock({ block }) {
 
 // ─── BaguetteMcpToolBlock ─────────────────────────────────────────────────────
 
-export default function BaguetteMcpToolBlock({ block, sessionId }) {
+export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedAt }) {
   const toolShortName = block.name.replace('mcp__baguette__', '');
   const mcpResult = parseMcpJsonResult(block.result);
 
@@ -693,6 +700,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId }) {
       <CommandBlock
         baguetteOp={{ arg: { label: block.input?.label ?? '', args: block.input?.args ?? [] } }}
         block={block}
+        startedAt={runningStartedAt}
       />
     );
   }

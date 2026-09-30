@@ -63,6 +63,7 @@ import CardRepoBadge from '../components/CardRepoBadge.jsx';
 import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
 import SessionListIndicator, { SessionUnreadDot } from '../components/SessionListIndicator.jsx';
 import ReviewInProgressBadge, { isReviewInProgress } from '../components/ReviewInProgressBadge.jsx';
+import { SessionLoopBadge, SessionLoopIcon } from '../components/SessionLoopIndicator.jsx';
 import { BANNER_DANGER } from '../utils/ui.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
 
@@ -280,6 +281,7 @@ function MiniSessionEntry({
             >
               {title}
             </span>
+            {s.loop_id && <SessionLoopIcon />}
             {isReviewInProgress(s) && !isArchiving && <ReviewInProgressBadge compact />}
           </span>
           {promptPreview && (
@@ -330,7 +332,7 @@ export default function Session() {
   const isNewSessionRoute = isNewSessionRouteId(short_id);
   const fromAllSessions = isAllSessionsPath(pathname);
   const isGlobalSessionsRoute = pathname.startsWith('/global/');
-  const { homeUrl, sessionUrl, showRepoDetails } = useFilterRoutes();
+  const { homeUrl, sessionUrl, loopEditUrl, showRepoDetails } = useFilterRoutes();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
@@ -1090,6 +1092,9 @@ export default function Session() {
                             ? 'Global session'
                             : headerSession.repo_full_name)}
                       </span>
+                      {headerSession.loop_id ? (
+                        <SessionLoopBadge to={loopEditUrl(headerSession.loop_id)} />
+                      ) : null}
                       {showRepoDetails ? (
                         <CardRepoBadge
                           show

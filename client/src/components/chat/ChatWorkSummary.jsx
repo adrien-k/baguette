@@ -13,6 +13,7 @@ export default function ChatWorkSummary({
   sessionId,
   agentName,
   models,
+  pinnedRunningBashIds,
 }) {
   const [expanded, setExpanded] = useState(false);
   const duration = formatTaskDuration(durationMs);
@@ -51,6 +52,7 @@ export default function ChatWorkSummary({
                 messageIndex={index}
                 allMessages={displayMessages}
                 models={models}
+                pinnedRunningBashIds={pinnedRunningBashIds}
               />
             );
           })}

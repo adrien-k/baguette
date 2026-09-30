@@ -42,6 +42,7 @@ export default function Dashboard() {
   const [formKey, setFormKey] = useState(0);
   const [editingLoop, setEditingLoop] = useState(null);
   const [loopsRefresh, setLoopsRefresh] = useState(0);
+  const [listTab, setListTab] = useState('sessions');
   const builderRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -141,6 +142,7 @@ export default function Dashboard() {
   const handleCreateLoop = async (loop) => {
     const created = await loopsService.create(loop);
     setLoopsRefresh((n) => n + 1);
+    setListTab('loops');
     toast.success(`Loop created — ${created.name || 'first run'} scheduled`);
     return created;
   };
@@ -158,6 +160,10 @@ export default function Dashboard() {
   const startEditingLoop = (loop) => {
     navigate(loopEditUrl(loop.id));
   };
+
+  useEffect(() => {
+    if (loopId) setListTab('loops');
+  }, [loopId]);
 
   useEffect(() => {
     if (!loopId) {
@@ -247,62 +253,101 @@ export default function Dashboard() {
       </div>
 
       {loopsQuery && (
+        <div
+          className="flex gap-1 border-b border-line mb-4"
+          role="tablist"
+          aria-label="Dashboard lists"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={listTab === 'sessions'}
+            onClick={() => setListTab('sessions')}
+            className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
+              listTab === 'sessions'
+                ? 'border-brand text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'
+            }`}
+          >
+            Sessions
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={listTab === 'loops'}
+            onClick={() => setListTab('loops')}
+            className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
+              listTab === 'loops'
+                ? 'border-brand text-accent'
+                : 'border-transparent text-fg-muted hover:text-fg'
+            }`}
+          >
+            <Repeat className="w-4 h-4 shrink-0" aria-hidden />
+            Loops
+          </button>
+        </div>
+      )}
+
+      {listTab === 'loops' && loopsQuery ? (
         <LoopsPanel
           query={loopsQuery}
           editingLoopId={editingLoop?.id ?? null}
           onEdit={startEditingLoop}
           refreshToken={loopsRefresh}
+          hideTitle
         />
-      )}
-
-      <div className="flex flex-wrap justify-end gap-2 mb-3">
-        <FilterToggle
-          icon={Repeat}
-          label="Show loop runs"
-          checked={showLoopRuns}
-          onChange={() => setShowLoopRuns(!showLoopRuns)}
-        />
-        <FilterToggle
-          icon={Archive}
-          label="Show archived"
-          checked={showArchived}
-          onChange={() => setShowArchived(!showArchived)}
-        />
-      </div>
-
-      <div className="space-y-3">
-        {loading && sessions.length === 0 && (
-          <p className="text-faint text-center py-12">Loading sessions...</p>
-        )}
-        {!loading && sessions.length === 0 && !repoFilter && (
-          <div className="flex flex-col items-center py-16 gap-3 opacity-50">
-            <BaguetteIcon className="w-10 h-10" />
-            <p className="text-faint text-sm">No sessions yet. Create one to get started.</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap justify-end gap-2 mb-3">
+            <FilterToggle
+              icon={Repeat}
+              label="Show loop runs"
+              checked={showLoopRuns}
+              onChange={() => setShowLoopRuns(!showLoopRuns)}
+            />
+            <FilterToggle
+              icon={Archive}
+              label="Show archived"
+              checked={showArchived}
+              onChange={() => setShowArchived(!showArchived)}
+            />
           </div>
-        )}
-        {!loading && sessions.length === 0 && repoFilter && (
-          <div className="flex flex-col items-center py-12 gap-2 opacity-50">
-            <p className="text-faint text-sm">
-              No sessions for {repoFilter.split('/')[1] ?? repoFilter}.
-            </p>
-          </div>
-        )}
-        {sessions.length > 0 && (
+
           <div className="space-y-3">
-            {sessions.map((s) => (
-              <SessionCard key={s.id} session={s} />
-            ))}
+            {loading && sessions.length === 0 && (
+              <p className="text-faint text-center py-12">Loading sessions...</p>
+            )}
+            {!loading && sessions.length === 0 && !repoFilter && (
+              <div className="flex flex-col items-center py-16 gap-3 opacity-50">
+                <BaguetteIcon className="w-10 h-10" />
+                <p className="text-faint text-sm">No sessions yet. Create one to get started.</p>
+              </div>
+            )}
+            {!loading && sessions.length === 0 && repoFilter && (
+              <div className="flex flex-col items-center py-12 gap-2 opacity-50">
+                <p className="text-faint text-sm">
+                  No sessions for {repoFilter.split('/')[1] ?? repoFilter}.
+                </p>
+              </div>
+            )}
+            {sessions.length > 0 && (
+              <div className="space-y-3">
+                {sessions.map((s) => (
+                  <SessionCard key={s.id} session={s} />
+                ))}
+              </div>
+            )}
+            {hasMore && sessions.length > 0 && (
+              <button
+                onClick={loadMore}
+                className="w-full py-2 text-xs text-faint hover:text-secondary transition-colors"
+              >
+                Load more
+              </button>
+            )}
           </div>
-        )}
-        {hasMore && sessions.length > 0 && (
-          <button
-            onClick={loadMore}
-            className="w-full py-2 text-xs text-faint hover:text-secondary transition-colors"
-          >
-            Load more
-          </button>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }

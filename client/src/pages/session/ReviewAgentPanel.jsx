@@ -8,6 +8,11 @@ import ChatMessagesViewport from '../../components/ChatMessagesViewport.jsx';
 import ChatMessage from '../../components/ChatMessage.jsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.jsx';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
+import {
+  collectRunningBashToolsForDock,
+  runningBashToolIds,
+} from '@baguette/shared/running-tools.js';
+import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
 
 function parseMessageRow(row) {
   try {
@@ -120,6 +125,10 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]
   );
+  const runningBashDock = collectRunningBashToolsForDock(displayMessages, chatDisplayItems, {
+    worktreePath: session?.absolute_worktree_path,
+  });
+  const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
   const systemPrompt = useMemo(
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
     [rawMessages]
@@ -211,6 +220,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                   worktreePath={session.absolute_worktree_path}
                   sessionId={session.id}
                   agentName="Reviewer"
+                  pinnedRunningBashIds={pinnedRunningBashIds}
                 />
               ) : (
                 <ChatMessage
@@ -222,6 +232,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                   agentName="Reviewer"
                   messageIndex={item.index}
                   allMessages={displayMessages}
+                  pinnedRunningBashIds={pinnedRunningBashIds}
                 />
               )
             )}
@@ -248,6 +259,13 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
           </>
         )}
       </ChatMessagesViewport>
+      {runningBashDock.length > 0 && (
+        <ChatRunningBashDock
+          items={runningBashDock}
+          worktreePath={session?.absolute_worktree_path}
+          sessionId={session?.id}
+        />
+      )}
     </div>
   );
 }

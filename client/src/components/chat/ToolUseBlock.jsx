@@ -314,7 +314,13 @@ function CursorPlanBlock({ block, sessionId }) {
   );
 }
 
-export default function ToolUseBlock({ block, worktreePath, sessionId, userReplied }) {
+export default function ToolUseBlock({
+  block,
+  worktreePath,
+  sessionId,
+  userReplied,
+  runningStartedAt,
+}) {
   // Resolve Cursor SDK tool name aliases to their Claude equivalents
   const effectiveName = CURSOR_TOOL_ALIAS[block.name] ?? block.name;
   let resolvedBlock = effectiveName !== block.name ? { ...block, name: effectiveName } : block;
@@ -360,12 +366,25 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
 
   // Cursor mcp meta-tool: unwrap and delegate
   if (block.name === 'mcp') {
-    return <CursorMcpToolBlock block={block} worktreePath={worktreePath} sessionId={sessionId} />;
+    return (
+      <CursorMcpToolBlock
+        block={block}
+        worktreePath={worktreePath}
+        sessionId={sessionId}
+        runningStartedAt={runningStartedAt}
+      />
+    );
   }
 
   // Baguette MCP tools
   if (block.name?.startsWith('mcp__baguette__')) {
-    return <BaguetteMcpToolBlock block={block} sessionId={sessionId} />;
+    return (
+      <BaguetteMcpToolBlock
+        block={block}
+        sessionId={sessionId}
+        runningStartedAt={runningStartedAt}
+      />
+    );
   }
 
   // TodoWrite / updateTodos
@@ -451,7 +470,9 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
       );
     }
     if (baguetteOp.op === 'command') {
-      return <CommandBlock baguetteOp={baguetteOp} block={resolvedBlock} />;
+      return (
+        <CommandBlock baguetteOp={baguetteOp} block={resolvedBlock} startedAt={runningStartedAt} />
+      );
     }
   }
 
@@ -461,6 +482,7 @@ export default function ToolUseBlock({ block, worktreePath, sessionId, userRepli
         command={bashCommand ?? ''}
         worktreePath={worktreePath}
         block={resolvedBlock}
+        startedAt={runningStartedAt}
       />
     );
   }

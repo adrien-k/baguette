@@ -6,6 +6,7 @@ import ThinkingBlock from './chat/ThinkingBlock.jsx';
 import BaguetteBlock from './chat/BaguetteBlock.jsx';
 import McpAgentBlock, { isMcpAgentMessage } from './chat/McpAgentBlock.jsx';
 import ToolUseBlock from './chat/ToolUseBlock.jsx';
+import { shouldHideRunningBashInFlow } from '@baguette/shared/running-tools.js';
 import { isHumanUserMessage } from '@baguette/shared/turn-model.js';
 import { messageModelLabel } from '../utils/messageModelLabel.js';
 
@@ -62,6 +63,7 @@ export default function ChatMessage({
   allMessages,
   models = [],
   session,
+  pinnedRunningBashIds,
 }) {
   // True once the user sends a real message after this assistant turn — used to hide action
   // buttons on ExitPlanMode / AskUserQuestion blocks once the user has interacted.
@@ -87,6 +89,7 @@ export default function ChatMessage({
           }
           if (block.type === 'tool_use') {
             if (block._hidden) return null;
+            if (shouldHideRunningBashInFlow(block, pinnedRunningBashIds)) return null;
             return (
               <ToolUseBlock
                 key={i}

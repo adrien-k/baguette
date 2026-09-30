@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Repeat } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle } from 'lucide-react';
 import SessionTools, { sessionToolsVisible } from './SessionTools.jsx';
 import { formatSessionActiveLabel } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
@@ -10,6 +10,7 @@ import CardRepoBadge from './CardRepoBadge.jsx';
 import SessionCardLayout from './SessionCardLayout.jsx';
 import SessionListIndicator, { SessionUnreadDot } from './SessionListIndicator.jsx';
 import ReviewInProgressBadge, { isReviewInProgress } from './ReviewInProgressBadge.jsx';
+import { SessionLoopBadge } from './SessionLoopIndicator.jsx';
 
 export function SessionStatusIcon({ status, compact = false, ...props }) {
   const size = compact ? 'w-3 h-3' : 'w-3.5 h-3.5';
@@ -44,9 +45,6 @@ const STATUS_ACCENT = {
   error: 'border-l-danger',
 };
 
-const BADGE =
-  'inline-flex items-center gap-1 shrink-0 rounded border border-strong px-1.5 py-0.5 text-[10px] font-medium text-fg-muted';
-
 export default function SessionCard({ session, suppressRepoBadge = false }) {
   const navigate = useNavigate();
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
@@ -73,12 +71,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
         </span>
       )}
       {isReviewInProgress(session) && <ReviewInProgressBadge />}
-      {session.loop_id && (
-        <span title="Started by a loop" className={BADGE}>
-          <Repeat className="w-3 h-3 text-accent" />
-          Loop
-        </span>
-      )}
+      {session.loop_id && <SessionLoopBadge />}
     </>
   );
 

@@ -176,17 +176,29 @@ function LoopRow({ loop, editing, onEdit, onToggle, onDelete }) {
  * Loops configured for one repo: what they run, when they run next, and the controls to
  * edit, enable/disable or delete them.
  */
-export default function LoopsPanel({ query, repoFullName, editingLoopId, onEdit, refreshToken }) {
+export default function LoopsPanel({
+  query,
+  repoFullName,
+  editingLoopId,
+  onEdit,
+  refreshToken,
+  hideTitle = false,
+}) {
   const [loops, setLoops] = useState([]);
+  const [loaded, setLoaded] = useState(false);
 
   // `refreshToken` is bumped by the page after it creates or saves a loop: those mutations happen
   // outside this component, and waiting on the SSE round-trip to show them is a race.
   const load = useCallback(() => {
     const findQuery = query ?? (repoFullName ? { repo_full_name: repoFullName } : null);
     if (!findQuery) return;
+    setLoaded(false);
     loopsService
       .find({ query: { ...findQuery, $limit: 100 } })
-      .then((d) => setLoops(d.data ?? d))
+      .then((d) => {
+        setLoops(d.data ?? d);
+        setLoaded(true);
+      })
       .catch((err) => toastError('Failed to load loops', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshToken forces a reload after local mutations
   }, [query, repoFullName, refreshToken]);
@@ -227,23 +239,24 @@ export default function LoopsPanel({ query, repoFullName, editingLoopId, onEdit,
     }
   };
 
-  if (!loops.length) return null;
-
   return (
-    <div className="mb-4 sm:mb-6">
-      <h2 className="text-sm font-medium text-fg-muted mb-2">Loops</h2>
-      <div className="space-y-2">
-        {loops.map((loop) => (
-          <LoopRow
-            key={loop.id}
-            loop={loop}
-            editing={loop.id === editingLoopId}
-            onEdit={onEdit}
-            onToggle={handleToggle}
-            onDelete={handleDelete}
-          />
-        ))}
-      </div>
+    <div className={hideTitle ? 'mt-2' : 'mb-4 sm:mb-6'}>
+      {!hideTitle && <h2 className="text-sm font-medium text-fg-muted mb-2">Loops</h2>}
+      {loaded && !loops.length && <p className="text-xs text-faint py-1">No loops configured.</p>}
+      {loops.length > 0 && (
+        <div className="space-y-2">
+          {loops.map((loop) => (
+            <LoopRow
+              key={loop.id}
+              loop={loop}
+              editing={loop.id === editingLoopId}
+              onEdit={onEdit}
+              onToggle={handleToggle}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
