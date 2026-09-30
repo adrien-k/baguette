@@ -3,15 +3,20 @@
  * (day, repo, sdk, kind, model) rows from `/api/usage/breakdown` into stacked series
  * along whichever dimension is being shown, and into a coarser table.
  *
- * The graph plots tokens rather than dollars. Cursor's usage API refuses to
- * report cost for local agents — the only kind Baguette runs — so `cost_usd` is
- * 0 on every Cursor row and a spend graph silently hid half the work. Tokens are
- * reported by both SDKs.
+ * The graph defaults to tokens (reported by both SDKs). It can also plot `cost_usd`
+ * when the user toggles to spend; Cursor rows get estimated cost from the pricing table.
  */
 import { repoDisplayName } from './repoDisplayName.js';
 
 /** The plotted metric. Rows written before the token columns existed count as 0. */
-export const metricOf = (row) => row.total_tokens ?? 0;
+export function metricOf(row, metric = 'tokens') {
+  if (metric === 'cost') return Number(row.cost_usd ?? 0);
+  return row.total_tokens ?? 0;
+}
+
+export function formatMetric(value, metric = 'tokens') {
+  return metric === 'cost' ? formatUsd(value) : formatTokens(value);
+}
 
 /** Compact token counts for axis and legend labels: 910, 12.3k, 4.1M. */
 export function formatTokens(n) {
@@ -109,11 +114,11 @@ export function recentDays(count = DEFAULT_USAGE_DAYS) {
   return days;
 }
 
-export function sumBy(rows, pick) {
+export function sumBy(rows, pick, metric = 'tokens') {
   const totals = new Map();
   for (const row of rows) {
     const key = pick(row);
-    totals.set(key, (totals.get(key) ?? 0) + metricOf(row));
+    totals.set(key, (totals.get(key) ?? 0) + metricOf(row, metric));
   }
   return totals;
 }
@@ -123,16 +128,34 @@ export function sumBy(rows, pick) {
  * Colour follows the repository itself (alphabetical slot) rather than its rank, so
  * re-sorting the legend by usage never repaints the bars.
  */
-export function buildSeries(rows, dimension) {
-  const repoTotals = sumBy(rows, (r) => r.repo_full_name);
-  const ranked = [...repoTotals.entries()].sort((a, b) => b[1] - a[1]).map(([repo]) => repo);
+function rankedPaletteKeys(rows, pick, metric) {
+  const ranked = [...sumBy(rows, pick, metric).entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([key]) => key);
   const named = ranked.slice(0, SERIES_COLORS.length);
-  const repoColors = new Map([...named].sort().map((repo, i) => [repo, SERIES_COLORS[i]]));
-  const otherCount = ranked.length - named.length;
+  const colors = new Map([...named].sort().map((key, i) => [key, SERIES_COLORS[i]]));
+  return { colors, otherCount: ranked.length - named.length };
+}
+
+export function buildSeries(rows, dimension, metric = 'tokens') {
+  const { colors: repoColors, otherCount: otherRepoCount } = rankedPaletteKeys(
+    rows,
+    (r) => r.repo_full_name,
+    metric
+  );
+  const { colors: modelColors, otherCount: otherModelCount } = rankedPaletteKeys(
+    rows,
+    (r) => r.model || '',
+    metric
+  );
 
   const keyOf = (r) => {
     if (dimension === 'sdk') return r.agent_sdk;
     if (dimension === 'kind') return usageKindOf(r);
+    if (dimension === 'model') {
+      const model = r.model || '';
+      return modelColors.has(model) ? model : OTHER_KEY;
+    }
     return repoColors.has(r.repo_full_name) ? r.repo_full_name : OTHER_KEY;
   };
 
@@ -140,22 +163,33 @@ export function buildSeries(rows, dimension) {
     if (key === OTHER_KEY) return OTHER_COLOR;
     if (dimension === 'sdk') return SDK_COLORS[key] ?? OTHER_COLOR;
     if (dimension === 'kind') return KIND_COLORS[key] ?? OTHER_COLOR;
+    if (dimension === 'model') return modelColors.get(key) ?? OTHER_COLOR;
     return repoColors.get(key) ?? OTHER_COLOR;
   };
 
   const labelOf = (key) => {
-    if (key === OTHER_KEY) return `Other (${otherCount} ${otherCount === 1 ? 'repo' : 'repos'})`;
+    if (key === OTHER_KEY) {
+      if (dimension === 'model') {
+        const n = otherModelCount;
+        return `Other (${n} ${n === 1 ? 'model' : 'models'})`;
+      }
+      return `Other (${otherRepoCount} ${otherRepoCount === 1 ? 'repo' : 'repos'})`;
+    }
     if (dimension === 'sdk') return SDK_LABELS[key] ?? key;
     if (dimension === 'kind') return KIND_LABELS[key] ?? key;
+    if (dimension === 'model') return usageModelLabel(key);
     return usageRepoLabel(key);
   };
 
   // The label is shortened for display (`repoDisplayName` drops the owner), so carry the
   // full name along for the tooltip that a truncated legend entry needs.
-  const titleOf = (key) =>
-    dimension === 'repo' && key !== OTHER_KEY ? usageRepoTitle(key) : labelOf(key);
+  const titleOf = (key) => {
+    if (dimension === 'repo' && key !== OTHER_KEY) return usageRepoTitle(key);
+    if (dimension === 'model' && key !== OTHER_KEY) return key || usageModelLabel(key);
+    return labelOf(key);
+  };
 
-  const series = [...sumBy(rows, keyOf).entries()]
+  const series = [...sumBy(rows, keyOf, metric).entries()]
     // Biggest first, so the tallest block sits at the bottom of every column; "Other" last.
     .sort((a, b) => (a[0] === OTHER_KEY) - (b[0] === OTHER_KEY) || b[1] - a[1])
     .map(([key, total]) => ({
@@ -170,7 +204,7 @@ export function buildSeries(rows, dimension) {
   for (const row of rows) {
     if (!byDay.has(row.day)) byDay.set(row.day, new Map());
     const day = byDay.get(row.day);
-    day.set(keyOf(row), (day.get(keyOf(row)) ?? 0) + metricOf(row));
+    day.set(keyOf(row), (day.get(keyOf(row)) ?? 0) + metricOf(row, metric));
   }
 
   return { series, byDay };

@@ -154,6 +154,39 @@ describe('recentDays', () => {
   });
 });
 
+describe('buildSeries by model', () => {
+  it('stacks one series per model', () => {
+    const mixed = [
+      { ...row('2026-09-20', 'acme/alpha', 'claude', 5), model: 'opus' },
+      { ...row('2026-09-20', 'acme/alpha', 'claude', 3), model: 'haiku' },
+      { ...row('2026-09-21', 'acme/alpha', 'claude', 2), model: 'opus' },
+    ];
+    const { series, byDay } = buildSeries(mixed, 'model');
+    expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
+      ['opus', 'opus', 7],
+      ['haiku', 'haiku', 3],
+    ]);
+    expect([...byDay.get('2026-09-20')]).toEqual([
+      ['opus', 5],
+      ['haiku', 3],
+    ]);
+  });
+});
+
+describe('buildSeries by cost metric', () => {
+  it('sums cost_usd instead of tokens', () => {
+    const priced = [
+      { ...row('2026-09-20', 'acme/alpha', 'claude', 100), cost_usd: 0.5 },
+      { ...row('2026-09-20', 'acme/beta', 'claude', 200), cost_usd: 1.2 },
+    ];
+    const { series } = buildSeries(priced, 'repo', 'cost');
+    expect(series.map((s) => [s.key, s.total])).toEqual([
+      ['acme/beta', 1.2],
+      ['acme/alpha', 0.5],
+    ]);
+  });
+});
+
 describe('buildSeries by kind', () => {
   it('stacks session vs review', () => {
     const mixed = [

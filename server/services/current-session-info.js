@@ -3,13 +3,13 @@ import { isGlobalSession } from '../../shared/session-scope.js';
 import { ok } from './baguette-mcp-tool-result.js';
 
 export const BUILDER_WORKTREE_RESTRICTIONS =
-  'Work exclusively within your current working directory. Do not read, edit, search files or run any shell command outside of it.';
+  "Work exclusively within this session's worktree_path (the git worktree root returned above). Do not read, edit, search files, or run any shell command outside of it. If worktree_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before git or other repo-local commands.";
 
 export const REVIEW_READ_ONLY_WORKTREE_RESTRICTIONS =
-  'Work exclusively within your current working directory. You may read files and run read-only git/search commands. Do not edit files or run commands that change the working tree.';
+  "Work exclusively within this session's worktree_path (the git worktree root returned above). You may read files and run read-only git/search commands there only. Do not edit files or run commands that change the working tree. If worktree_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before repo-local commands.";
 
 const GLOBAL_WORKTREE_RESTRICTIONS =
-  'Stay inside this folder. Do not read, edit, search files, or run shell commands outside of it.';
+  "Work exclusively within repos_path (the shared repositories folder returned above). Do not read, edit, search files, or run shell commands outside of it. If repos_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before commands that touch linked repositories.";
 
 /**
  * @param {object} sessionRow
@@ -62,7 +62,7 @@ export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
   return {
     name: 'CurrentSessionInfo',
     description:
-      'Get the current session label, worktree path, base_branch, remote_branch, local_branch, and working-directory rules. Call at the start of a turn. Use PrRead for pull request title, URL, and description.',
+      'Get the current session label, worktree_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Call at the start of a turn; work only inside worktree_path and cd or set shell working_directory there when needed. Use PrRead for pull request title, URL, and description.',
     schema: {},
     handler: async () => {
       const session = await getSessionRow();

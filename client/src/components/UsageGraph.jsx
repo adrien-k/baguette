@@ -1,10 +1,16 @@
 import { useState } from 'react';
-import { buildSeries, formatTokens, metricOf, recentDays, sumBy } from '../utils/usageSeries.js';
+import { buildSeries, formatMetric, metricOf, recentDays, sumBy } from '../utils/usageSeries.js';
+
+const METRICS = [
+  { key: 'tokens', label: 'Tokens' },
+  { key: 'cost', label: '$' },
+];
 
 const DIMENSIONS = [
   { key: 'repo', label: 'By repo' },
   { key: 'sdk', label: 'By agent' },
   { key: 'kind', label: 'By activity' },
+  { key: 'model', label: 'By model' },
 ];
 
 function DimensionToggle({ value, onChange, options }) {
@@ -41,8 +47,8 @@ function axisLabel(day, days) {
 }
 
 /**
- * Stacked daily token chart. `rows` come from `/api/usage/breakdown`. Click a day
- * to pin it (parent can filter the table); click again to clear.
+ * Stacked daily chart (tokens or spend). `rows` come from `/api/usage/breakdown`.
+ * Click a day to pin it (parent can filter the table); click again to clear.
  */
 export default function UsageGraph({
   rows,
@@ -54,50 +60,70 @@ export default function UsageGraph({
   className = '',
 }) {
   const [hoveredDay, setHoveredDay] = useState(null);
+  const [metric, setMetric] = useState('tokens');
   const data = rows ?? [];
-  const total = data.reduce((sum, r) => sum + metricOf(r), 0);
+  const total = data.reduce((sum, r) => sum + metricOf(r, metric), 0);
 
   const canSplitByRepo = sumBy(data, (r) => r.repo_full_name).size > 1;
   const canSplitBySdk = sumBy(data, (r) => r.agent_sdk).size > 1;
   const canSplitByKind = sumBy(data, (r) => (r.kind === 'review' ? 'review' : 'session')).size > 1;
+  const canSplitByModel = sumBy(data, (r) => r.model || '').size > 1;
 
   const dimensionOptions = DIMENSIONS.filter((d) => {
     if (d.key === 'repo') return canSplitByRepo;
     if (d.key === 'sdk') return canSplitBySdk;
+    if (d.key === 'model') return canSplitByModel;
     return canSplitByKind;
   });
-  const showToggle = dimensionOptions.length > 1;
+  const showDimensionToggle = dimensionOptions.length > 1;
   const activeDimension = dimensionOptions.some((d) => d.key === dimension)
     ? dimension
     : (dimensionOptions[0]?.key ?? 'repo');
 
-  const { series, byDay } = buildSeries(data, activeDimension);
+  const { series, byDay } = buildSeries(data, activeDimension, metric);
   const days = recentDays(dayCount);
   const dayTotal = (day) => [...(byDay.get(day)?.values() ?? [])].reduce((a, b) => a + b, 0);
   const maxDay = Math.max(0, ...days.map(dayTotal));
 
-  if (total === 0 || maxDay === 0) return null;
+  const metricLabel = metric === 'cost' ? 'Spend per day' : 'Tokens per day';
+  const metricUnit = metric === 'cost' ? 'spend' : 'tokens';
+
+  if (total === 0 || maxDay === 0) {
+    if (metric === 'cost') {
+      return (
+        <div className={`space-y-3 ${className}`}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-xs font-medium text-fg-muted">{metricLabel}</span>
+            <DimensionToggle value={metric} onChange={setMetric} options={METRICS} />
+          </div>
+          <p className="text-sm text-faint">No reported cost in this range.</p>
+        </div>
+      );
+    }
+    return null;
+  }
 
   const inspectDay = hoveredDay ?? selectedDay ?? null;
   const hoveredSeries = inspectDay
     ? series
-        .map((s) => ({ ...s, tokens: byDay.get(inspectDay)?.get(s.key) ?? 0 }))
-        .filter((s) => s.tokens > 0)
+        .map((s) => ({ ...s, value: byDay.get(inspectDay)?.get(s.key) ?? 0 }))
+        .filter((s) => s.value > 0)
     : [];
 
   return (
     <div className={`space-y-3 ${className}`}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-xs font-medium text-fg-muted">Tokens per day</span>
+        <span className="text-xs font-medium text-fg-muted">{metricLabel}</span>
         <div className="flex items-center gap-3">
-          {showToggle && (
+          <DimensionToggle value={metric} onChange={setMetric} options={METRICS} />
+          {showDimensionToggle && (
             <DimensionToggle
               value={activeDimension}
               onChange={onDimensionChange}
               options={dimensionOptions}
             />
           )}
-          <span className="text-xs text-faint">{formatTokens(total)} in range</span>
+          <span className="text-xs text-faint">{formatMetric(total, metric)} in range</span>
         </div>
       </div>
 
@@ -105,7 +131,7 @@ export default function UsageGraph({
         <div className="flex items-stretch gap-px h-36" onMouseLeave={() => setHoveredDay(null)}>
           {days.map((day) => {
             const perSeries = byDay.get(day);
-            const dayTokens = dayTotal(day);
+            const dayValue = dayTotal(day);
             const isSelected = selectedDay === day;
             const dimmed = selectedDay && selectedDay !== day;
             return (
@@ -116,22 +142,22 @@ export default function UsageGraph({
                   dimmed ? 'opacity-35' : ''
                 } ${isSelected ? 'ring-1 ring-amber-400/70 rounded-sm' : ''}`}
                 aria-pressed={isSelected}
-                aria-label={`${day}: ${formatTokens(dayTokens)} tokens`}
+                aria-label={`${day}: ${formatMetric(dayValue, metric)} ${metricUnit}`}
                 onMouseEnter={() => setHoveredDay(day)}
                 onClick={() => onSelectedDayChange?.(isSelected ? null : day)}
               >
                 {series.map((s) => {
-                  const tokens = perSeries?.get(s.key) ?? 0;
-                  if (tokens <= 0) return null;
+                  const value = perSeries?.get(s.key) ?? 0;
+                  if (value <= 0) return null;
                   return (
                     <div
                       key={s.key}
                       className={`${s.color} rounded-sm`}
-                      style={{ height: `${Math.max((tokens / maxDay) * 100, 3)}%` }}
+                      style={{ height: `${Math.max((value / maxDay) * 100, 3)}%` }}
                     />
                   );
                 })}
-                {dayTokens === 0 && (
+                {dayValue === 0 && (
                   <div
                     className="bg-control-hover/30 rounded-sm w-full"
                     style={{ height: '2px' }}
@@ -156,13 +182,15 @@ export default function UsageGraph({
             <>
               <span className="text-xs text-fg-muted shrink-0">{inspectDay}</span>
               <span className="text-xs text-secondary shrink-0">
-                {formatTokens(dayTotal(inspectDay))}
+                {formatMetric(dayTotal(inspectDay), metric)}
               </span>
               {hoveredSeries.slice(0, 3).map((s) => (
                 <span key={s.key} className="flex items-center gap-1 min-w-0 shrink">
                   <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} />
                   <span className="text-xs text-faint truncate">{s.label}</span>
-                  <span className="text-xs text-faint shrink-0">{formatTokens(s.tokens)}</span>
+                  <span className="text-xs text-faint shrink-0">
+                    {formatMetric(s.value, metric)}
+                  </span>
                 </span>
               ))}
               {hoveredSeries.length > 3 && (
@@ -186,7 +214,7 @@ export default function UsageGraph({
                 key={s.key}
                 className={s.color}
                 style={{ width: `${(s.total / total) * 100}%` }}
-                title={`${s.title}: ${formatTokens(s.total)} tokens`}
+                title={`${s.title}: ${formatMetric(s.total, metric)}`}
               />
             ))}
           </div>
@@ -197,7 +225,7 @@ export default function UsageGraph({
                 <span className="text-xs text-fg-muted truncate max-w-48" title={s.title}>
                   {s.label}
                 </span>
-                <span className="text-xs text-faint">{formatTokens(s.total)}</span>
+                <span className="text-xs text-faint">{formatMetric(s.total, metric)}</span>
               </div>
             ))}
           </div>
