@@ -1296,7 +1296,7 @@ async function validateSessionCreate(context) {
 
   const shortId = context.data.short_id;
   const branchPrefix = context.params.user?.branch_prefix ?? '';
-  const fallbackBranch = `${branchPrefix}task-${shortId}`;
+  const fallbackBranch = taskBranchForShortId(branchPrefix, shortId);
 
   if (context.data.branch_name) {
     context.params._requestedBranchName = context.data.branch_name;
@@ -1323,6 +1323,18 @@ async function validateSessionCreate(context) {
   return context;
 }
 
+function hasInitialPrompt(prompt) {
+  return typeof prompt === 'string' && prompt.trim().length > 0;
+}
+
+function defaultSessionLabelWithoutPrompt(shortId) {
+  return `New session (${shortId})`;
+}
+
+function taskBranchForShortId(branchPrefix, shortId) {
+  return `${branchPrefix}task-${shortId}`;
+}
+
 async function provisionGlobalSession(app, session, params) {
   const userParams = { provider: undefined, user: params.user };
   const patch = {
@@ -1330,16 +1342,20 @@ async function provisionGlobalSession(app, session, params) {
     auto_push: false,
     is_global: true,
   };
-  try {
-    const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
-    const result = await app
-      .service(agentService)
-      .generateSessionMetadata(session.initial_prompt || '', session.short_id, params.user, null);
-    if (result.label) patch.label = result.label;
-  } catch (err) {
-    logger.error(err, 'Metadata generation error (non-fatal)');
+  if (hasInitialPrompt(session.initial_prompt)) {
+    try {
+      const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
+      const result = await app
+        .service(agentService)
+        .generateSessionMetadata(session.initial_prompt, session.short_id, params.user, null);
+      if (result.label) patch.label = result.label;
+    } catch (err) {
+      logger.error(err, 'Metadata generation error (non-fatal)');
+    }
+    if (!patch.label) patch.label = 'Global session';
+  } else {
+    patch.label = defaultSessionLabelWithoutPrompt(session.short_id);
   }
-  if (!patch.label) patch.label = 'Global session';
   return await app.service('sessions').patch(session.id, patch, userParams);
 }
 
@@ -1412,20 +1428,27 @@ async function provisionSessionEnvironment(app, session, params) {
     patch.worktree_path = path.relative(DATA_DIR, absoluteWorktreePath);
 
     const branchPrefix = user?.branch_prefix ?? '';
-    const fallbackBranch = `${branchPrefix}task-${shortId}`;
+    const fallbackBranch = taskBranchForShortId(branchPrefix, shortId);
     let remoteName =
       session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
-    try {
-      const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
-      const result = await app
-        .service(agentService)
-        .generateSessionMetadata(session.initial_prompt || '', shortId, user, repo);
-      if (result.label) patch.label = result.label;
-      if (!requestedBranchName && !session.remote_branch) {
-        remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
+    if (hasInitialPrompt(session.initial_prompt)) {
+      try {
+        const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
+        const result = await app
+          .service(agentService)
+          .generateSessionMetadata(session.initial_prompt, shortId, user, repo);
+        if (result.label) patch.label = result.label;
+        if (!requestedBranchName && !session.remote_branch) {
+          remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
+        }
+      } catch (err) {
+        logger.error(err, 'Metadata generation error (non-fatal)');
       }
-    } catch (err) {
-      logger.error(err, 'Metadata generation error (non-fatal)');
+    } else {
+      patch.label = defaultSessionLabelWithoutPrompt(shortId);
+      if (!requestedBranchName && !session.remote_branch) {
+        remoteName = fallbackBranch;
+      }
     }
     let localBranch = session.local_branch || uniqueLocalBranch(remoteName, shortId) || remoteName;
     try {

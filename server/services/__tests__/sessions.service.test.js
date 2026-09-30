@@ -1446,6 +1446,19 @@ describe('Sessions service - find, get, create', (hooks) => {
       const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
       expect(userMsgCall).toBeUndefined();
       expect(session.status).toBe('stopped');
+      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(session.label).toBe(`New session (${session.short_id})`);
+      expect(session.remote_branch).toBe(`task-${session.short_id}`);
+    });
+
+    it('does not generate metadata for a global session without initial_prompt', async () => {
+      const session = await app
+        .service('sessions')
+        .create({ is_global: true, initial_prompt: '' }, params({ id: userId1 }));
+
+      expect(session.is_global).toBe(true);
+      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(session.label).toBe(`New session (${session.short_id})`);
     });
 
     it('does not create a first message when skipFirstMessage is set', async () => {
