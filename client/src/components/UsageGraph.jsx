@@ -3,8 +3,14 @@ import { buildSeries, formatMetric, metricOf, recentDays, sumBy } from '../utils
 
 const METRICS = [
   { key: 'tokens', label: 'Tokens' },
-  { key: 'cost', label: '$' },
+  { key: 'cost', label: 'Dollars' },
 ];
+
+/** Tick values for the left axis (top → bottom), aligned with bar scale (0 … maxDay). */
+function yAxisTicks(max) {
+  if (max <= 0) return [0];
+  return [max, max / 2, 0];
+}
 
 const DIMENSIONS = [
   { key: 'repo', label: 'By repo' },
@@ -127,56 +133,68 @@ export default function UsageGraph({
         </div>
       </div>
 
-      <div>
-        <div className="flex items-stretch gap-px h-36" onMouseLeave={() => setHoveredDay(null)}>
-          {days.map((day) => {
-            const perSeries = byDay.get(day);
-            const dayValue = dayTotal(day);
-            const isSelected = selectedDay === day;
-            const dimmed = selectedDay && selectedDay !== day;
-            return (
-              <button
-                key={day}
-                type="button"
-                className={`flex-1 h-full min-w-0 flex flex-col-reverse gap-[2px] cursor-pointer bg-transparent p-0 border-0 ${
-                  dimmed ? 'opacity-35' : ''
-                } ${isSelected ? 'ring-1 ring-amber-400/70 rounded-sm' : ''}`}
-                aria-pressed={isSelected}
-                aria-label={`${day}: ${formatMetric(dayValue, metric)} ${metricUnit}`}
-                onMouseEnter={() => setHoveredDay(day)}
-                onClick={() => onSelectedDayChange?.(isSelected ? null : day)}
-              >
-                {series.map((s) => {
-                  const value = perSeries?.get(s.key) ?? 0;
-                  if (value <= 0) return null;
-                  return (
-                    <div
-                      key={s.key}
-                      className={`${s.color} rounded-sm`}
-                      style={{ height: `${Math.max((value / maxDay) * 100, 3)}%` }}
-                    />
-                  );
-                })}
-                {dayValue === 0 && (
-                  <div
-                    className="bg-control-hover/30 rounded-sm w-full"
-                    style={{ height: '2px' }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-1 flex items-start gap-px h-4">
-          {days.map((day) => (
-            <span
-              key={day}
-              className="flex-1 min-w-0 text-[10px] leading-none text-faint text-center truncate"
-            >
-              {axisLabel(day, days)}
-            </span>
+      <div className="flex gap-2 items-stretch">
+        <div
+          className="flex flex-col justify-between h-36 shrink-0 text-[10px] leading-none text-faint tabular-nums text-right min-w-[2.5rem]"
+          aria-hidden
+        >
+          {yAxisTicks(maxDay).map((tick, i) => (
+            <span key={`${i}-${tick}`}>{formatMetric(tick, metric)}</span>
           ))}
         </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-stretch gap-px h-36" onMouseLeave={() => setHoveredDay(null)}>
+            {days.map((day) => {
+              const perSeries = byDay.get(day);
+              const dayValue = dayTotal(day);
+              const isSelected = selectedDay === day;
+              const dimmed = selectedDay && selectedDay !== day;
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  className={`flex-1 h-full min-w-0 flex flex-col-reverse gap-[2px] cursor-pointer bg-transparent p-0 border-0 ${
+                    dimmed ? 'opacity-35' : ''
+                  } ${isSelected ? 'ring-1 ring-amber-400/70 rounded-sm' : ''}`}
+                  aria-pressed={isSelected}
+                  aria-label={`${day}: ${formatMetric(dayValue, metric)} ${metricUnit}`}
+                  onMouseEnter={() => setHoveredDay(day)}
+                  onClick={() => onSelectedDayChange?.(isSelected ? null : day)}
+                >
+                  {series.map((s) => {
+                    const value = perSeries?.get(s.key) ?? 0;
+                    if (value <= 0) return null;
+                    return (
+                      <div
+                        key={s.key}
+                        className={`${s.color} rounded-sm`}
+                        style={{ height: `${Math.max((value / maxDay) * 100, 3)}%` }}
+                      />
+                    );
+                  })}
+                  {dayValue === 0 && (
+                    <div
+                      className="bg-control-hover/30 rounded-sm w-full"
+                      style={{ height: '2px' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-1 flex items-start gap-px h-4">
+            {days.map((day) => (
+              <span
+                key={day}
+                className="flex-1 min-w-0 text-[10px] leading-none text-faint text-center truncate"
+              >
+                {axisLabel(day, days)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div>
         <div className="h-5 mt-1 flex items-center gap-2 overflow-hidden">
           {inspectDay && hoveredSeries.length > 0 && (
             <>
