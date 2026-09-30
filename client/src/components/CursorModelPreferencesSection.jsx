@@ -1,6 +1,10 @@
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import LightChipDropdown from './LightChipDropdown.jsx';
-import { ParamRowLabel, ParamToggleSwitch } from './ComposerParamControls.jsx';
+import {
+  ParamPrefClearButton,
+  ParamRowLabel,
+  ParamToggleSwitch,
+} from './ComposerParamControls.jsx';
 const TIER_OPTION = (value) => ({ value, label: value });
 
 const EFFORT_OPTIONS = [
@@ -40,15 +44,18 @@ function cycleYesNoPref(current) {
 function PrefYesNoRow({ label, value, onChange }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2 text-xs text-secondary">
-      <ParamRowLabel
-        label={label}
-        valueLabel={value}
-        onValueClick={value !== 'default' ? () => onChange('default') : undefined}
-      />
-      <ParamToggleSwitch
-        checked={value === 'yes'}
-        onToggle={() => onChange(cycleYesNoPref(value))}
-      />
+      <ParamRowLabel label={label} valueLabel={value} />
+      <div className="flex shrink-0 items-center gap-1">
+        <ParamPrefClearButton
+          visible={value !== 'default'}
+          ariaLabel={`Reset ${label} to default`}
+          onClear={() => onChange('default')}
+        />
+        <ParamToggleSwitch
+          checked={value === 'yes'}
+          onToggle={() => onChange(cycleYesNoPref(value))}
+        />
+      </div>
     </div>
   );
 }
@@ -97,7 +104,7 @@ export default function CursorModelPreferencesSection() {
 
   return (
     <div
-      className="w-full max-w-[10.5rem] py-1 overflow-visible"
+      className="w-full max-w-[15rem] py-1 overflow-visible"
       role="group"
       aria-label="Cursor model preferences"
     >
