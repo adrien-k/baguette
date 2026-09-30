@@ -20,7 +20,9 @@ export function useSessionChangedFiles(session, commitSha = null, enabled = fals
   const [commitLoading, setCommitLoading] = useState(false);
   const [commitNonce, setCommitNonce] = useState(0);
   const commitFilesRef = useRef(commitFilesBySha);
-  commitFilesRef.current = commitFilesBySha;
+  useEffect(() => {
+    commitFilesRef.current = commitFilesBySha;
+  }, [commitFilesBySha]);
 
   const invalidate = useCallback(() => {
     if (commitSha) {

@@ -260,7 +260,7 @@ class ReposService extends KnexService {
   /**
    * Admin full cleanup: kill sessions, remove FS, delete all user_repos entries, soft-delete repo.
    */
-  async remove(id, params) {
+  async remove(id, _params) {
     const db = this.app.get('db');
     const repo = await db('repos').where({ id }).first();
     if (!repo) throw new NotFound('Repository not found');

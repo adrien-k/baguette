@@ -187,7 +187,7 @@ function isPinnableRunningToolBlock(block) {
  * Running Bash/shell and RunProjectCommand blocks pinned above the composer until done.
  * @returns {{ id: string; block: object; startedAt: string | null }[]}
  */
-export function collectRunningBashToolsForDock(messages, _chatDisplayItems, opts = {}) {
+export function collectRunningBashToolsForDock(messages, _chatDisplayItems, _opts = {}) {
   const out = [];
   if (!Array.isArray(messages)) return out;
 

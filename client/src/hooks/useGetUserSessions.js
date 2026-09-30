@@ -21,9 +21,11 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
   const [error, setError] = useState(null);
   const skipRef = useRef(0);
   const listQueryRef = useRef(listQuery);
-  listQueryRef.current = listQuery;
   const reposRef = useRef(repos);
-  reposRef.current = repos;
+  useEffect(() => {
+    listQueryRef.current = listQuery;
+    reposRef.current = repos;
+  }, [listQuery, repos]);
   const listKey = queryKey(listQuery);
 
   const fetchPage = useCallback((skip, replace) => {

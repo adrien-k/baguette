@@ -5,7 +5,6 @@ import {
   buildLogRangeHeader,
   validateLogByteRange,
   DEFAULT_LOG_BYTES,
-  MAX_LOG_RANGE_BYTES,
 } from '../mcp-pagination.js';
 
 describe('validateLogByteRange', () => {

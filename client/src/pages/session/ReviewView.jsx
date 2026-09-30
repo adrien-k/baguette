@@ -119,10 +119,8 @@ export default function ReviewView({
   );
   const [reviewUserMessage, setReviewUserMessage] = reviewPersist.useState('focus', '');
 
-  const selectedRepo = useMemo(
-    () => repos.find((r) => r.id === session?.repo_id),
-    [repos, session?.repo_id]
-  );
+  const repoId = session?.repo_id;
+  const selectedRepo = useMemo(() => repos.find((r) => r.id === repoId), [repos, repoId]);
   const availableSdks = useMemo(
     () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
     [userSettings, selectedRepo]

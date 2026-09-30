@@ -7,7 +7,6 @@ import { REPOS_DIR, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
 import {
   buildLogRangeHeader,
-  DEFAULT_LOG_BYTES,
   MAX_LOG_RANGE_BYTES,
   rangeNeedsFullLogFetch,
   sliceByteRange,

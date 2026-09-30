@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { GitHubBadCredentialsError } from '../../errors/github-errors.js';
 import { githubFetch, isGitHubBadCredentialsBody } from '../github-api.js';
 

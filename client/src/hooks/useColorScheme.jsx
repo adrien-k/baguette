@@ -56,7 +56,7 @@ export function ColorSchemeProvider({ children }) {
         toastError('Failed to save theme preference', err);
       }
     },
-    [colorScheme, setUser, user?.id]
+    [colorScheme, setUser, user]
   );
 
   const toggleColorScheme = useCallback(() => {

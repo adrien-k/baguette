@@ -321,7 +321,7 @@ function RepositoriesTab({ settings, onSave }) {
                       disabled={togglingShowInAllId === r.id}
                       onChange={(e) => handleShowInAllSessionsChange(r, e.target.checked)}
                     />
-                    Include in "All sessions" view
+                    Include in &ldquo;All sessions&rdquo; view
                   </label>
                 </div>
                 <button

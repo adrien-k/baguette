@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs -- @floating-ui callback refs (setReference/setFloating) */
 import {
   FloatingPortal,
   autoUpdate,
