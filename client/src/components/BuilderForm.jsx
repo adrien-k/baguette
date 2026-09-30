@@ -75,6 +75,7 @@ export default function BuilderForm({
   isGlobal: isGlobalProp = false,
   allowRepoChoice = false,
   defaultPrompt,
+  mode: modeProp,
 }) {
   const persistKey = editingLoop
     ? null
@@ -125,7 +126,9 @@ export default function BuilderForm({
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
   // 'session' starts one run now; 'loop' saves the same form as a recurring template.
-  const [mode, setMode] = useState(editingLoop ? 'loop' : 'session');
+  const [modeState, setModeState] = useState(editingLoop ? 'loop' : 'session');
+  const mode = modeProp ?? modeState;
+  const builderModeControlled = modeProp !== undefined;
   const [sessionStartMode, setSessionStartMode] = useState('new-branch');
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
@@ -596,7 +599,8 @@ export default function BuilderForm({
           </span>
         </div>
       ) : (
-        onCreateLoop && (
+        onCreateLoop &&
+        !builderModeControlled && (
           <div className="flex gap-1 border-b border-line -mt-1">
             {[
               { value: 'session', label: 'Session' },
@@ -605,7 +609,7 @@ export default function BuilderForm({
               <button
                 key={tab.value}
                 type="button"
-                onClick={() => setMode(tab.value)}
+                onClick={() => setModeState(tab.value)}
                 className={`px-3 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
                   mode === tab.value
                     ? 'border-brand text-fg'

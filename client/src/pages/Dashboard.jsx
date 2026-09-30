@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Loader2, Archive, Repeat } from 'lucide-react';
+import { Bot, Loader2, Archive, Repeat } from 'lucide-react';
 import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -42,7 +42,7 @@ export default function Dashboard() {
   const [formKey, setFormKey] = useState(0);
   const [editingLoop, setEditingLoop] = useState(null);
   const [loopsRefresh, setLoopsRefresh] = useState(0);
-  const [listTab, setListTab] = useState('sessions');
+  const [dashboardTab, setDashboardTab] = useState('agents');
   const builderRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -142,7 +142,7 @@ export default function Dashboard() {
   const handleCreateLoop = async (loop) => {
     const created = await loopsService.create(loop);
     setLoopsRefresh((n) => n + 1);
-    setListTab('loops');
+    setDashboardTab('loops');
     toast.success(`Loop created — ${created.name || 'first run'} scheduled`);
     return created;
   };
@@ -162,7 +162,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (loopId) setListTab('loops');
+    if (loopId) setDashboardTab('loops');
   }, [loopId]);
 
   useEffect(() => {
@@ -202,12 +202,47 @@ export default function Dashboard() {
     : isGlobal || isAllSessions
       ? null
       : selectedRepo;
+  const builderMode = editingLoop || dashboardTab === 'loops' ? 'loop' : 'session';
+
+  const dashboardTabClass = (tab) =>
+    `flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
+      dashboardTab === tab
+        ? 'border-brand text-accent'
+        : 'border-transparent text-fg-muted hover:text-fg'
+    }`;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
-      {isAllSessions && (
-        <h1 className="text-base font-semibold text-fg mb-5 font-display">Sessions</h1>
-      )}
       {isGlobal && <h1 className="text-base font-semibold text-fg mb-5 font-display">Global</h1>}
+
+      {loopsQuery && (
+        <div
+          className="flex gap-1 border-b border-line mb-4 sm:mb-6"
+          role="tablist"
+          aria-label="Dashboard"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashboardTab === 'agents'}
+            onClick={() => setDashboardTab('agents')}
+            className={dashboardTabClass('agents')}
+          >
+            <Bot className="w-4 h-4 shrink-0" aria-hidden />
+            Agents
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashboardTab === 'loops'}
+            onClick={() => setDashboardTab('loops')}
+            className={dashboardTabClass('loops')}
+          >
+            <Repeat className="w-4 h-4 shrink-0" aria-hidden />
+            Loops
+          </button>
+        </div>
+      )}
 
       <div
         ref={builderRef}
@@ -249,46 +284,11 @@ export default function Dashboard() {
           isGlobal={builderIsGlobal}
           allowRepoChoice={isAllSessions}
           defaultPrompt={initPrompt || ''}
+          mode={builderMode}
         />
       </div>
 
-      {loopsQuery && (
-        <div
-          className="flex gap-1 border-b border-line mb-4"
-          role="tablist"
-          aria-label="Dashboard lists"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={listTab === 'sessions'}
-            onClick={() => setListTab('sessions')}
-            className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
-              listTab === 'sessions'
-                ? 'border-brand text-accent'
-                : 'border-transparent text-fg-muted hover:text-fg'
-            }`}
-          >
-            Sessions
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={listTab === 'loops'}
-            onClick={() => setListTab('loops')}
-            className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
-              listTab === 'loops'
-                ? 'border-brand text-accent'
-                : 'border-transparent text-fg-muted hover:text-fg'
-            }`}
-          >
-            <Repeat className="w-4 h-4 shrink-0" aria-hidden />
-            Loops
-          </button>
-        </div>
-      )}
-
-      {listTab === 'loops' && loopsQuery ? (
+      {dashboardTab === 'loops' && loopsQuery ? (
         <LoopsPanel
           query={loopsQuery}
           editingLoopId={editingLoop?.id ?? null}
@@ -315,18 +315,18 @@ export default function Dashboard() {
 
           <div className="space-y-3">
             {loading && sessions.length === 0 && (
-              <p className="text-faint text-center py-12">Loading sessions...</p>
+              <p className="text-faint text-center py-12">Loading agents...</p>
             )}
             {!loading && sessions.length === 0 && !repoFilter && (
               <div className="flex flex-col items-center py-16 gap-3 opacity-50">
                 <BaguetteIcon className="w-10 h-10" />
-                <p className="text-faint text-sm">No sessions yet. Create one to get started.</p>
+                <p className="text-faint text-sm">No agents yet. Create one to get started.</p>
               </div>
             )}
             {!loading && sessions.length === 0 && repoFilter && (
               <div className="flex flex-col items-center py-12 gap-2 opacity-50">
                 <p className="text-faint text-sm">
-                  No sessions for {repoFilter.split('/')[1] ?? repoFilter}.
+                  No agents for {repoFilter.split('/')[1] ?? repoFilter}.
                 </p>
               </div>
             )}
