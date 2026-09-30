@@ -451,6 +451,74 @@ describe('Task heartbeat / TTL', () => {
     healthWait.mockRestore();
   });
 
+  it('waitForReady does not time out while depends_on tasks are still starting', async () => {
+    vi.useFakeTimers();
+    isPortListening.mockResolvedValue(false);
+
+    const dep = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'], label: 'dep' });
+    const main = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'x',
+      ports: ['WEB_PORT'],
+      label: 'web',
+      dependsOn: [dep],
+    });
+    vi.spyOn(main, '_startProcess').mockImplementation(async () => {
+      main._depsSatisfied = true;
+      main.ports = { WEB_PORT: 3000 };
+      return main;
+    });
+    vi.spyOn(dep, 'start').mockImplementation(() => {
+      dep._started = true;
+      return dep;
+    });
+    vi.spyOn(dep, 'waitForReady').mockImplementation(
+      () => new Promise((resolve) => setTimeout(resolve, 10_000))
+    );
+
+    main.start();
+    const ready = main.waitForReady({ timeoutMs: 1_000, pollMs: 100 });
+    const raced = Promise.race([
+      ready.then(() => 'ready').catch((err) => err.message),
+      new Promise((resolve) => setTimeout(() => resolve('still-waiting'), 5_000)),
+    ]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await raced).toBe('still-waiting');
+
+    isPortListening.mockResolvedValue(true);
+    await vi.advanceTimersByTimeAsync(10_500);
+    await expect(ready).resolves.toBeUndefined();
+  });
+
+  it('waitForReady treats docker without healthcheck as ready once the container is running', async () => {
+    vi.useFakeTimers();
+    isPortListening.mockResolvedValue(true);
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'docker:redis:7',
+      taskKey: 'redis',
+      dockerContainer: { image: 'redis:7' },
+    });
+
+    const ready = task.waitForReady({ timeoutMs: 1_000, pollMs: 100 });
+    await vi.advanceTimersByTimeAsync(500);
+    let settled = false;
+    ready.then(() => {
+      settled = true;
+    });
+    expect(settled).toBe(false);
+    expect(isPortListening).not.toHaveBeenCalled();
+
+    task._dockerContainerName = 'baguette_abcd_redis';
+    await vi.advanceTimersByTimeAsync(200);
+    await expect(ready).resolves.toBeUndefined();
+    expect(isPortListening).not.toHaveBeenCalled();
+  });
+
   it('waitForReady waits for docker container name when there are no port env vars', async () => {
     vi.useFakeTimers();
     isPortListening.mockResolvedValue(true);

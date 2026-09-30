@@ -294,6 +294,7 @@ export function getAvailableCommands(baguetteConfig) {
           label: key,
           type: 'docker',
           image: t.container?.image,
+          ...(t.container?.build ? { build: t.container.build } : {}),
           ...(t.ports?.length ? { ports: t.ports } : {}),
           ...(t.attach === false ? { attach: false } : {}),
         };

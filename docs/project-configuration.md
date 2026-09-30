@@ -6,18 +6,19 @@ Baguette uses **`.baguette.yaml`** at the repository root to configure per-sessi
 
 ## Docker services (PostgreSQL, Redis, etc.)
 
-Define databases and other dependencies as **docker tasks** in `session.tasks`. Baguette provisions a per-session Docker volume `baguette_session_<short_id>`, starts the container on the `baguette_default` Docker network, waits for a health check (if configured), and removes the volume when the session is archived.
+Define databases and other dependencies as **docker tasks** in `session.tasks`. Baguette provisions a per-session Docker volume `baguette_session_<short_id>`, starts the container on the `baguette_default` Docker network, waits for a health check (if configured), and on archive removes session containers, **images built for that session** (`container.build`), and the data volume. Pulled images such as `postgres:16` are not removed.
 
 ### Docker task fields
 
-| Field                   | Description                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------ |
-| `type`                  | Must be `docker`                                                                     |
-| `env`                   | Container environment variables (passed to `docker run -e`)                          |
-| `container.image`       | Docker image to run                                                                  |
-| `container.persist`     | Paths inside the container mounted on the session volume                             |
-| `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`)              |
-| `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services) |
+| Field                   | Description                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `type`                  | Must be `docker`                                                                                                |
+| `env`                   | Container environment variables (passed to `docker run -e`)                                                     |
+| `container.image`       | Docker image to run (or tag for a built image when `container.build` is set)                                    |
+| `container.build`       | Build the image from the repo before `docker run` (path string or `context` / `dockerfile` / `args` / `target`) |
+| `container.persist`     | Paths inside the container mounted on the session volume                                                        |
+| `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`)                                         |
+| `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                            |
 
 Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s container port (e.g. `5432` for Postgres). Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 

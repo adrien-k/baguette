@@ -129,6 +129,8 @@ export class Task {
     this._exitListeners = [];
     this._dependsOn = Array.isArray(dependsOn) ? dependsOn : [];
     this._started = false;
+    /** Set when depends_on tasks have all passed waitForReady (before _startProcess). */
+    this._depsSatisfied = false;
     this._noTtl = !!noTtl;
     this._ttlMs = noTtl ? null : (ttlMs ?? DEFAULT_TTL_MS);
     this._shortId = shortId;
@@ -294,6 +296,7 @@ export class Task {
           }
         }
 
+        this._depsSatisfied = true;
         return this._startProcess();
       } catch (err) {
         this.addLog(
@@ -309,18 +312,21 @@ export class Task {
   /**
    * Wait until this task is "ready":
    * - No ports: resolves when the process exits 0; rejects on non-zero exit.
-   * - With ports: resolves when all ports are accepting connections; rejects if the process
-   *   exits before they're ready, or if the timeout elapses after ports are allocated.
-   *   Init/depends_on time is not counted against the timeout (ports are assigned only
-   *   after those complete).
+   * - With ports or docker: resolves when ready (listening ports, container health, or
+   *   container started). Rejects if the process exits first or the timeout elapses after
+   *   readiness probing begins. Init, depends_on, image pull/build, and container start
+   *   are not counted — probing starts only after depends_on are ready and this task has
+   *   finished starting its process/container.
    * Resolves immediately if already succeeded; rejects immediately if already failed.
    * `timeout` is accepted as an alias of `timeoutMs`.
    */
   async waitForReady({ timeoutMs, timeout, pollMs = 500 } = {}) {
     const readyTimeoutMs = timeoutMs ?? timeout ?? 60_000;
-    const isPortDep =
-      this._portEnvVars.length > 0 ||
-      (this.isDocker && this._dockerContainerRaw?.healthcheck != null);
+    const isPortDep = this._portEnvVars.length > 0 || this.isDocker;
+    const hasDockerHealthcheck =
+      this.isDocker &&
+      this._dockerContainerRaw?.healthcheck != null &&
+      typeof this._dockerContainerRaw.healthcheck === 'object';
 
     if (this.status === 'exited') {
       if (isPortDep || this.exit_code !== 0) {
@@ -365,8 +371,23 @@ export class Task {
     );
 
     const pollPromise = (async () => {
+      while (this._dependsOn.length > 0 && !this._depsSatisfied) {
+        if (this.status === 'exited') {
+          throw Object.assign(
+            new Error(`"${this.label ?? 'task'}" exited before depends_on tasks were ready`),
+            { exitCode: this.exit_code }
+          );
+        }
+        await new Promise((r) => setTimeout(r, pollMs));
+      }
       if (this._portEnvVars.length) {
         while (Object.keys(this.ports).length !== this._portEnvVars.length) {
+          if (this.status === 'exited') {
+            throw Object.assign(
+              new Error(`"${this.label ?? 'task'}" exited before ports were ready`),
+              { exitCode: this.exit_code }
+            );
+          }
           await new Promise((r) => setTimeout(r, pollMs));
         }
       }
@@ -381,11 +402,14 @@ export class Task {
           await new Promise((r) => setTimeout(r, pollMs));
         }
       }
-      if (this.isDocker && this._dockerContainer?.healthcheck) {
+      if (hasDockerHealthcheck) {
         await waitForContainerHealth(this._dockerContainerName, {
           timeoutMs: readyTimeoutMs,
           pollMs,
         });
+        return;
+      }
+      if (this.isDocker && this._portEnvVars.length === 0) {
         return;
       }
       const deadline = Date.now() + readyTimeoutMs;
@@ -467,13 +491,21 @@ export class Task {
       throw new Error('Docker tasks require session short_id and task_key');
     }
     this._dockerContainer = normalizeDockerContainer(this._dockerContainerRaw);
-    this.addLog('stdout', baguetteStatusLine(`Starting container ${this._dockerContainer.image}…`));
+    if (this._dockerContainer.build) {
+      const tagHint = this._dockerContainer.image ?? this.task_key ?? 'image';
+      this.addLog('stdout', baguetteStatusLine(`Building docker image (${tagHint})…`));
+    }
+    const runLabel =
+      this._dockerContainer.image ??
+      (this._dockerContainer.build ? (this.task_key ?? 'built image') : 'container');
+    this.addLog('stdout', baguetteStatusLine(`Starting container ${runLabel}…`));
     const { containerName } = await startDockerContainer({
       shortId: this._shortId,
       taskKey: this.task_key,
       container: this._dockerContainer,
       taskEnvKeys: this._dockerEnvKeys,
       env: fullEnv,
+      cwd: this._cwd,
     });
     this._dockerContainerName = containerName;
     this.addLog('stdout', baguetteStatusLine(`Container ${containerName} started`));

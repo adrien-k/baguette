@@ -202,7 +202,7 @@ tasks:
      - Django Channels: covered by `ALLOWED_HOSTS` above when using ASGI
 
 4. **Add Docker service tasks** in `session.tasks` when the project needs PostgreSQL, Redis, MySQL, or similar:
-   - Use `type: docker` with a `container` block (`image`, optional `persist`, optional `healthcheck`) and `task.env` for container variables (e.g. `POSTGRES_PASSWORD`). Docker tasks do not use `ports:` — they join the `baguette_default` network.
+   - Use `type: docker` with a `container` block (`image` or `build`, optional `persist`, optional `healthcheck`) and `task.env` for container variables (e.g. `POSTGRES_PASSWORD`). With `build`, Baguette runs `docker build` from the session worktree before starting the container. Docker tasks do not use `ports:` — they join the `baguette_default` network.
    - Data in `persist` is stored on a per-session Docker volume `baguette_session_<short_id>` (removed when the session is archived).
    - Put **`DATABASE_URL` (and similar) in task `env`** on every command task that uses the service, with **`depends-on: [postgres]`** (or the docker task key). Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the container port (e.g. `postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app`).
    - On the first task start, `session.init` runs **before** `depends-on` tasks (e.g. docker Postgres). Put migrations on a task that `depends-on` the database (with `DATABASE_URL` in that task's `env`).

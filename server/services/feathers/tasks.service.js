@@ -256,7 +256,9 @@ export class TasksService {
     const isDockerTask = taskDef?.type === 'docker';
     const resolvedCommand =
       rawCommand ??
-      (isDockerTask ? `docker:${taskDef.container?.image ?? 'container'}` : taskDef?.run);
+      (isDockerTask
+        ? `docker:${taskDef.container?.image ?? (taskDef.container?.build ? 'build' : 'container')}`
+        : taskDef?.run);
     if (!resolvedCommand) throw new BadRequest('A task_key or a command is required');
 
     const effectiveLabel = label ?? task_key ?? null;

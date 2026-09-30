@@ -1,10 +1,12 @@
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
+import { isAbsolute, resolve } from 'path';
 import logger from '../logger.js';
 
 const execFileAsync = promisify(execFile);
 
 const DOCKER_TIMEOUT_MS = 120_000;
+const DOCKER_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Created in bin/entrypoint.sh; session task containers join this network. */
 export const BAGUETTE_DOCKER_NETWORK = 'baguette_default';
@@ -61,9 +63,67 @@ export function parseDockerDuration(value, defaultMs = 5000) {
 }
 
 /**
+ * @returns {{ context: string, dockerfile: string | null, args: Record<string, string>, target: string | null } | null}
+ */
+export function normalizeDockerBuild(build) {
+  if (build == null) return null;
+  if (typeof build === 'string') {
+    const context = build.trim();
+    if (!context) throw new Error('container.build must be a non-empty path or object');
+    return { context, dockerfile: null, args: {}, target: null };
+  }
+  if (typeof build !== 'object' || Array.isArray(build)) {
+    throw new Error('container.build must be a path string or object with context');
+  }
+  const context = build.context;
+  if (!context || typeof context !== 'string' || !String(context).trim()) {
+    throw new Error('container.build.context is required');
+  }
+  const args = {};
+  if (build.args && typeof build.args === 'object' && !Array.isArray(build.args)) {
+    for (const [key, value] of Object.entries(build.args)) {
+      if (value == null) continue;
+      args[key] = String(value);
+    }
+  }
+  const dockerfile =
+    build.dockerfile != null && build.dockerfile !== '' ? String(build.dockerfile).trim() : null;
+  const target = build.target != null && build.target !== '' ? String(build.target).trim() : null;
+  return { context: String(context).trim(), dockerfile, args, target };
+}
+
+/** Resolve build context and dockerfile paths against the session worktree. */
+export function resolveDockerBuildPaths(build, cwd) {
+  const base = cwd && typeof cwd === 'string' ? cwd : process.cwd();
+  const context = isAbsolute(build.context) ? build.context : resolve(base, build.context);
+  let dockerfile = build.dockerfile;
+  if (dockerfile) {
+    dockerfile = isAbsolute(dockerfile) ? dockerfile : resolve(context, dockerfile);
+  }
+  return { context, dockerfile };
+}
+
+export function dockerBuildImageTag(shortId, taskKey) {
+  return dockerContainerName(shortId, taskKey);
+}
+
+/** Repository name prefix for default session-built image tags (`baguette_<short_id>_<task>`). */
+export function sessionBuiltImageRepositoryPrefix(shortId) {
+  return `baguette_${shortId}_`;
+}
+
+export function isSessionBuiltImageRepository(repository, shortId) {
+  return (
+    typeof repository === 'string' &&
+    repository.startsWith(sessionBuiltImageRepositoryPrefix(shortId))
+  );
+}
+
+/**
  * Normalize container block from .baguette.yaml.
  * @returns {{
- *   image: string,
+ *   image: string | null,
+ *   build: ReturnType<typeof normalizeDockerBuild>,
  *   persist: string[],
  *   healthcheck: { test: string, intervalMs: number, timeoutMs: number, retries: number } | null,
  * }}
@@ -72,8 +132,13 @@ export function normalizeDockerContainer(container) {
   if (!container || typeof container !== 'object') {
     throw new Error('docker task requires a container block');
   }
-  if (!container.image || typeof container.image !== 'string') {
-    throw new Error('container.image is required for docker tasks');
+  const build = normalizeDockerBuild(container.build);
+  const image =
+    container.image != null && typeof container.image === 'string' && container.image.trim()
+      ? container.image.trim()
+      : null;
+  if (!image && !build) {
+    throw new Error('container.image or container.build is required for docker tasks');
   }
   const persist = Array.isArray(container.persist)
     ? container.persist.filter((p) => typeof p === 'string' && p.trim())
@@ -101,10 +166,46 @@ export function normalizeDockerContainer(container) {
   }
 
   return {
-    image: container.image.trim(),
+    image,
+    build,
     persist,
     healthcheck,
   };
+}
+
+/**
+ * @param {object} opts
+ * @param {string} opts.shortId
+ * @param {string} opts.taskKey
+ * @param {NonNullable<ReturnType<typeof normalizeDockerBuild>>} opts.build
+ * @param {string | null} [opts.imageTag]  optional tag; defaults to session/task name
+ * @param {string} [opts.cwd]  session worktree for relative build.context
+ */
+export async function buildDockerImage({ shortId, taskKey, build, imageTag = null, cwd }) {
+  const tag = imageTag || dockerBuildImageTag(shortId, taskKey);
+  const { context, dockerfile } = resolveDockerBuildPaths(build, cwd);
+  const args = [
+    'build',
+    '-t',
+    tag,
+    '--label',
+    `baguette.session.short_id=${shortId}`,
+    '--label',
+    `baguette.task=${taskKey}`,
+    '--label',
+    'baguette.managed=session-image',
+  ];
+  if (dockerfile) args.push('-f', dockerfile);
+  if (build.target) args.push('--target', build.target);
+  for (const [key, value] of Object.entries(build.args)) {
+    args.push('--build-arg', `${key}=${value}`);
+  }
+  args.push(context);
+  await execFileAsync('docker', args, {
+    timeout: DOCKER_BUILD_TIMEOUT_MS,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return tag;
 }
 
 export function dockerContainerName(shortId, taskKey) {
@@ -146,6 +247,7 @@ export async function ensureSessionVolume(shortId) {
  * @param {ReturnType<typeof normalizeDockerContainer>} opts.container
  * @param {string[]} opts.taskEnvKeys  keys from task.env to pass as container -e flags
  * @param {Record<string, string>} opts.env  merged task env (values for taskEnvKeys)
+ * @param {string} [opts.cwd]  session worktree (for container.build)
  */
 export async function startDockerContainer({
   shortId,
@@ -153,7 +255,21 @@ export async function startDockerContainer({
   container,
   taskEnvKeys = [],
   env = {},
+  cwd,
 }) {
+  let image = container.image;
+  if (container.build) {
+    image = await buildDockerImage({
+      shortId,
+      taskKey,
+      build: container.build,
+      imageTag: image,
+      cwd,
+    });
+  }
+  if (!image) {
+    throw new Error('docker container has no image to run');
+  }
   await ensureBaguetteDockerNetwork();
   const volumeName = await ensureSessionVolume(shortId);
   const name = dockerContainerName(shortId, taskKey);
@@ -202,7 +318,7 @@ export async function startDockerContainer({
     );
   }
 
-  args.push(container.image);
+  args.push(image);
 
   const { stdout } = await execFileAsync('docker', args, { timeout: DOCKER_TIMEOUT_MS });
   const containerId = stdout.trim();
@@ -274,7 +390,50 @@ export async function stopDockerContainer(containerName) {
   );
 }
 
-/** Stop session containers and remove the session data volume. */
+/** Image IDs for images built or tagged for this session (label or default `baguette_<short_id>_` repo). */
+export async function listSessionDockerImageIds(shortId) {
+  if (!shortId) return [];
+  const ids = new Set();
+  try {
+    const { stdout } = await execFileAsync(
+      'docker',
+      ['images', '-q', '--filter', `label=baguette.session.short_id=${shortId}`],
+      { timeout: DOCKER_TIMEOUT_MS }
+    );
+    for (const id of stdout.trim().split('\n').filter(Boolean)) ids.add(id);
+  } catch (err) {
+    logger.warn({ err: err.message, shortId }, 'Failed to list session docker images by label');
+  }
+  const prefix = sessionBuiltImageRepositoryPrefix(shortId);
+  try {
+    const { stdout } = await execFileAsync(
+      'docker',
+      ['images', '--format', '{{.ID}}\t{{.Repository}}'],
+      { timeout: DOCKER_TIMEOUT_MS }
+    );
+    for (const line of stdout.trim().split('\n').filter(Boolean)) {
+      const [id, repository] = line.split('\t');
+      if (repository?.startsWith(prefix) && id) ids.add(id);
+    }
+  } catch (err) {
+    logger.warn({ err: err.message, shortId }, 'Failed to list session docker images by name');
+  }
+  return [...ids];
+}
+
+export async function removeSessionDockerImages(shortId) {
+  if (!shortId) return;
+  try {
+    const ids = await listSessionDockerImageIds(shortId);
+    if (ids.length) {
+      await execFileAsync('docker', ['rmi', '-f', ...ids], { timeout: DOCKER_TIMEOUT_MS });
+    }
+  } catch (err) {
+    logger.warn({ err: err.message, shortId }, 'Failed to remove session docker images');
+  }
+}
+
+/** Stop session containers, remove built images, and remove the session data volume. */
 export async function removeSessionDockerResources(shortId) {
   if (!shortId) return;
   try {
@@ -290,6 +449,8 @@ export async function removeSessionDockerResources(shortId) {
   } catch (err) {
     logger.warn({ err: err.message, shortId }, 'Failed to remove session docker containers');
   }
+
+  await removeSessionDockerImages(shortId);
 
   const volume = sessionVolumeName(shortId);
   try {
