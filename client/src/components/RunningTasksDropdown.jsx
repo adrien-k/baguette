@@ -4,6 +4,7 @@ import { tasksService } from '../feathers.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import TaskLogModal from './TaskLogModal.jsx';
+import TaskDockerIcon from './TaskDockerIcon.jsx';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
@@ -110,9 +111,12 @@ export default function RunningTasksDropdown() {
                       >
                         <div className="flex items-center justify-between gap-2 min-w-0">
                           <div className="min-w-0 flex-1 overflow-hidden">
-                            <code className="text-xs text-heading truncate block min-w-0">
-                              {task.label || task.command}
-                            </code>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <TaskDockerIcon task={task} className="w-3 h-3" />
+                              <code className="text-xs text-heading truncate block min-w-0">
+                                {task.label || task.command}
+                              </code>
+                            </div>
                             {session && (
                               <span className="text-[11px] text-faint truncate block mt-0.5">
                                 {session.label || session.short_id}

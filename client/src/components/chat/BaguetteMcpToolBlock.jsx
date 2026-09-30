@@ -9,6 +9,7 @@ import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
 import { parseShellToolResult } from '../../utils/shellToolResult.js';
 import { stripCdWorktreePrefix } from '../../utils/paths.js';
+import { splitPreviewLines } from '../../utils/chatContentPreview.js';
 
 const TERMINAL_PRE_CLASS =
   'ansi-log font-mono text-xs whitespace-pre overflow-x-auto overflow-y-auto max-h-80 max-w-full rounded p-2';
@@ -269,10 +270,7 @@ export function CommandBlock({ baguetteOp, block }) {
 export function PrUpsertBlock({ title, body, result, isError }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = result == null;
-  const PREVIEW_LINES = 10;
-  const bodyLines = (body ?? '').split('\n');
-  const previewBody = bodyLines.slice(0, PREVIEW_LINES).join('\n');
-  const remaining = bodyLines.length - PREVIEW_LINES;
+  const { preview: previewBody, remaining } = splitPreviewLines(body ?? '');
 
   return (
     <div

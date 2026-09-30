@@ -6,6 +6,7 @@ import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
 import { ansiToHtml } from '../utils/ansi.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { isAtScrollBottom } from '../utils/scrollBottom.js';
+import TaskDockerIcon from './TaskDockerIcon.jsx';
 
 function selectionIn(el) {
   if (!el) return false;
@@ -131,7 +132,12 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
               }`}
             />
             <div className="min-w-0 flex flex-col gap-0.5">
-              <code className="text-sm text-heading truncate">{task.label || task.command}</code>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <TaskDockerIcon task={task} />
+                <code className="text-sm text-heading truncate min-w-0">
+                  {task.label || task.command}
+                </code>
+              </div>
               <TaskRunDurationText task={task} isRunning={isRunning} />
             </div>
           </div>

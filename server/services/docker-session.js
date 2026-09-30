@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import logger from '../logger.js';
 
@@ -257,6 +257,13 @@ export async function waitForContainerHealth(containerName, { timeoutMs, pollMs 
     await new Promise((r) => setTimeout(r, pollMs));
   }
   throw new Error(`Container ${containerName} health check timed out after ${timeoutMs}ms`);
+}
+
+/** Follow container stdout/stderr (`docker logs -f`). Caller must kill the child on task stop. */
+export function spawnDockerLogFollow(containerName) {
+  return spawn('docker', ['logs', '-f', '--tail', '1000', containerName], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 export async function stopDockerContainer(containerName) {

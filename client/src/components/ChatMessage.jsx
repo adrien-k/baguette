@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Copy, Check } from 'lucide-react';
 import MarkdownContent from './MarkdownContent.jsx';
+import CollapsibleMarkdown from './chat/CollapsibleMarkdown.jsx';
 import ThinkingBlock from './chat/ThinkingBlock.jsx';
 import BaguetteBlock from './chat/BaguetteBlock.jsx';
 import McpAgentBlock, { isMcpAgentMessage } from './chat/McpAgentBlock.jsx';
@@ -80,7 +81,7 @@ export default function ChatMessage({
                   <span>{agentName}</span>
                   <CopyButton text={block.text} />
                 </div>
-                <MarkdownContent>{block.text}</MarkdownContent>
+                <CollapsibleMarkdown>{block.text}</CollapsibleMarkdown>
               </div>
             );
           }

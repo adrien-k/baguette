@@ -5,6 +5,7 @@ import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
 import { NEUTRAL_BUTTON_CLASS, TASK_STOP_CONTROL_CLASS } from '../utils/buttonStyles.js';
 import BaguetteIcon from './svg/BaguetteIcon.jsx';
 import StartButton from './StartButton.jsx';
+import TaskDockerIcon from './TaskDockerIcon.jsx';
 import { groupTasksForPanel, taskRowTitle } from '../utils/taskPanelGrouping.js';
 
 function TaskMetaLine({ task }) {
@@ -58,9 +59,12 @@ export default function TaskPanel({
           }`}
         />
         <div className="min-w-0 flex-1">
-          <code className="text-xs text-secondary truncate block">
-            {taskRowTitle(task, inNamespace)}
-          </code>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <TaskDockerIcon task={task} className="w-3 h-3" />
+            <code className="text-xs text-secondary truncate block min-w-0">
+              {taskRowTitle(task, inNamespace)}
+            </code>
+          </div>
           {task.ports && Object.keys(task.ports).length > 0 && (
             <div className="flex flex-wrap gap-1 mt-0.5">
               {Object.entries(task.ports).map(([name, port]) => (
