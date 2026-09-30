@@ -8,6 +8,8 @@ Baguette uses **`.baguette.yaml`** at the repository root to configure per-sessi
 
 Define databases and other dependencies as **docker tasks** in `session.tasks`. Baguette provisions a per-session Docker volume `baguette_session_<short_id>`, starts the container on the `baguette_default` Docker network, waits for a health check (if configured), and on archive removes session containers, **images built for that session** (`container.build`), and the data volume. Pulled images such as `postgres:16` are not removed.
 
+Docker tasks **do not use `ports:`**. They are not published to random host ports. Other tasks (your app, migrations, tests) reach them on the Docker network at `${{ baguette.tasks.<task-key>.container_hostname }}` using the **normal port the image listens on inside the container** (e.g. `5432` for Postgres, `6379` for Redis). Reserve dynamic `ports:` for **command** tasks that must listen on the session host (dev servers, APIs proxied to the browser).
+
 ### Docker task fields
 
 | Field                   | Description                                                                                                     |
@@ -21,7 +23,7 @@ Define databases and other dependencies as **docker tasks** in `session.tasks`. 
 | `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`)                                         |
 | `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                            |
 
-Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s container port (e.g. `5432` for Postgres). Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
+Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 
 ## Quick start
 
@@ -98,14 +100,14 @@ Environment variables injected into all session tasks (init, cleanup, commands, 
 
 Supports placeholders:
 
-| Placeholder                                           | Description                                                                                                                             |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `${{ baguette.secrets.KEY }}`                         | Secret stored in Settings > Secrets                                                                                                     |
-| `${{ baguette.session.short_id }}`                    | Unique 4-character hex identifier for this session                                                                                      |
-| `${{ baguette.session.public_uri }}`                  | Public URL of the webserver (or portal URL for multi-service)                                                                           |
-| `${{ baguette.services.<name>.public_uri }}`          | Public URL of a specific named service (multi-service only)                                                                             |
-| `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname for a `type: docker` task — use in **task `env`** on tasks with `depends-on` (resolved from session `short_id`) |
-| `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a **command** task with `ports:` — resolved when a task with `depends-on` starts (not in `session.cleanup`)              |
+| Placeholder                                           | Description                                                                                                                      |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `${{ baguette.secrets.KEY }}`                         | Secret stored in Settings > Secrets                                                                                              |
+| `${{ baguette.session.short_id }}`                    | Unique 4-character hex identifier for this session                                                                               |
+| `${{ baguette.session.public_uri }}`                  | Public URL of the webserver (or portal URL for multi-service)                                                                    |
+| `${{ baguette.services.<name>.public_uri }}`          | Public URL of a specific named service (multi-service only)                                                                      |
+| `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname for a `type: docker` task — use in **task `env`** with the service’s usual container port (e.g. `:5432`) |
+| `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a **command** task with `ports:` only (not docker tasks) — resolved when a task with `depends-on` starts          |
 
 ### `init`
 
@@ -146,7 +148,7 @@ tasks:
 | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks))                                                                        |
 | `type`       | string   | `docker` to run a container instead of `run`                                                                                                |
-| `ports`      | string[] | Env var names that Baguette assigns free ports to before launching                                                                          |
+| `ports`      | string[] | For **command** tasks only: env var names that Baguette assigns free **host** ports to before launching (omit on `type: docker`)            |
 | `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                                        |
 | `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)                                               |
 | `attach`     | boolean  | When `false`, `RunProjectCommand` rejects `attach: true` (use detached mode + `ReadTaskOutput`)                                             |
@@ -187,13 +189,18 @@ Task lifetime is determined by whether the task exposes ports — it is not conf
 
 #### Ports
 
-When a task has `ports`, Baguette allocates a free TCP port for each env var name before spawning the process. The command can reference these ports via standard env var syntax (e.g. `$PORT`, `$VITE_PORT`).
+**Command tasks** with `ports` get a free TCP port on the session host for each listed env var before the process starts. The command references them via `$PORT`, `$VITE_PORT`, etc., and dependents can use `${{ baguette.tasks.<task-key>.VITE_PORT }}`.
+
+**Docker tasks** do not use `ports`. Dependent command tasks connect over the `baguette_default` network using `container_hostname` and the port the container image already exposes (e.g. `postgres://…@${{ baguette.tasks.postgres.container_hostname }}:5432/…`).
 
 #### Dependencies (`depends-on`)
 
-When a task declares `depends-on`, Baguette ensures each dependency task is running and all its ports are listening before starting the dependent task. If a dependency isn't running, Baguette starts it automatically.
+When a task declares `depends-on`, Baguette starts each dependency if needed and waits until it is ready before starting the dependent task. If a dependency isn't running, Baguette starts it automatically.
 
-Docker dependencies expose `${{ baguette.tasks.<docker-task-key>.container_hostname }}` in **task `env`** on tasks that list `depends-on` (e.g. `DATABASE_URL` for Postgres). Command-task ports are available in the dependent task's `run` and `task.env` after dependencies are ready:
+- **Docker dependency** — ready when the container has started (and, if `container.healthcheck` is set in YAML, when Docker reports healthy). No host port polling.
+- **Command dependency with `ports`** — ready when every allocated host port is listening on `127.0.0.1`.
+
+Docker dependencies are reached via `${{ baguette.tasks.<docker-task-key>.container_hostname }}` in **task `env`** (plus the image’s container port). **Command-task** host ports are available in the dependent task's `run` and `task.env` after dependencies are ready:
 
 ```
 ${{ baguette.tasks.<task-key>.<PORT_ENV_VAR> }}

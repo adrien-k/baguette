@@ -135,10 +135,11 @@ config:
 
 Each task in `session.tasks` supports:
 
-- **run**: the shell command to execute
-- **ports**: (optional) list of env var names that baguette will assign free ports to before launching
-- **depends-on**: (optional) list of task keys that must be running before this task starts. Command tasks that use a docker database must list `depends-on: [postgres]` (or your DB task key).
-- **env**: (optional) per-task environment variables, merged on top of `session.env`. Put **`DATABASE_URL` and other docker connection URLs here** (not in `session.env`), using `${{ baguette.tasks.<docker-task>.container_hostname }}`. Also supports `${{ baguette.secrets.X }}`, `${{ baguette.session.public_uri }}`, `${{ baguette.services.<name>.public_uri }}`, and `${{ baguette.tasks.<task-key>.<PORT_NAME> }}` for command-task ports.
+- **run**: the shell command to execute (command tasks)
+- **type**: `docker` to run a container instead of `run`
+- **ports**: (optional, **command tasks only**) env var names that Baguette assigns free **host** ports to before launching — use for dev servers and other processes the preview proxy must reach. **Do not** add `ports` to docker tasks (Postgres, Redis, etc.).
+- **depends-on**: (optional) list of task keys that must be ready before this task starts. Command tasks that use a docker database must list `depends-on: [postgres]` (or your DB task key).
+- **env**: (optional) per-task environment variables, merged on top of `session.env`. Put **`DATABASE_URL` and other docker connection URLs here** (not in `session.env`), using `${{ baguette.tasks.<docker-task>.container_hostname }}` and the **container’s normal listen port** (e.g. `:5432`, `:6379`) — not dynamic `${{ baguette.tasks.<docker-task>.PG_PORT }}` placeholders. Also supports `${{ baguette.secrets.X }}`, `${{ baguette.session.public_uri }}`, `${{ baguette.services.<name>.public_uri }}`, and `${{ baguette.tasks.<command-task-key>.<PORT_NAME> }}` for **command** tasks that declare `ports`.
 - **internal**: (optional) when `true`, the task is omitted from session task buttons and `ListProjectCommands` (it remains available for `depends-on`, webserver/services references, and `RunProjectCommand` by label).
 
 ```yaml
@@ -178,7 +179,7 @@ tasks:
    - Set `session.init` for install-only steps (`init` runs before depends-on on first task start). Run migrations and seeds on a task with `depends-on: [postgres]` (or equivalent), not in `init`.
    - **Prefer `pnpm install` over `npm install` or `yarn install`** to save storage space via pnpm's global content-addressable package cache. If the project uses npm or yarn, add `pnpm = "latest"` to `.mise.toml` to make pnpm available, then use `pnpm install` in the init script.
    - Set `session.cleanup` only when needed (worktree files, shared external DBs). With **docker** `persist` volumes, skip DB drop — Baguette removes `baguette_session_<short_id>` on archive. `${{ baguette.tasks.* }}` in `session.env` is not resolved during cleanup.
-   - Add `session.tasks` for running tests and other useful tasks. Use the hash format where each key is the task name. Always add a **`reset-db`** task that drops and recreates the session database (e.g. `run: rm -f .data/app.sqlite3 && pnpm run db:migrate` for SQLite, or `run: pnpm run db:reset` for Postgres). With docker Postgres, give `reset-db` **`depends-on: [postgres]`** and **`DATABASE_URL` in task `env`**, same as other DB tasks. Add `ports` to any task that needs dynamically allocated ports.
+   - Add `session.tasks` for running tests and other useful tasks. Use the hash format where each key is the task name. Always add a **`reset-db`** task that drops and recreates the session database (e.g. `run: rm -f .data/app.sqlite3 && pnpm run db:migrate` for SQLite, or `run: pnpm run db:reset` for Postgres). With docker Postgres, give `reset-db` **`depends-on: [postgres]`** and **`DATABASE_URL` in task `env`**, same as other DB tasks. Add `ports` only to **command** tasks that must listen on the host (e.g. dev server); docker service tasks do not use `ports`.
 
 3. **Configure the webserver or services block**:
    - Identify how the dev server(s) are started (e.g., `vite`, `next dev`, `rails server`, `python manage.py runserver`, `expo start`)
@@ -202,9 +203,9 @@ tasks:
      - Django Channels: covered by `ALLOWED_HOSTS` above when using ASGI
 
 4. **Add Docker service tasks** in `session.tasks` when the project needs PostgreSQL, Redis, MySQL, or similar:
-   - Use `type: docker` with a `container` block (`image` or `build`, optional `persist`, optional `healthcheck`) and `task.env` for container variables (e.g. `POSTGRES_PASSWORD`). With `build`, Baguette runs `docker build` from the session worktree before starting the container. Docker tasks do not use `ports:` — they join the `baguette_default` network.
+   - Use `type: docker` with a `container` block (`image` or `build`, optional `persist`, optional `healthcheck`) and `task.env` for container variables (e.g. `POSTGRES_PASSWORD`). With `build`, Baguette runs `docker build` from the session worktree before starting the container. Docker tasks join the `baguette_default` network and **must not** declare `ports:` — there is no dynamic host port for the database or cache.
    - Data in `persist` is stored on a per-session Docker volume `baguette_session_<short_id>` (removed when the session is archived).
-   - Put **`DATABASE_URL` (and similar) in task `env`** on every command task that uses the service, with **`depends-on: [postgres]`** (or the docker task key). Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the container port (e.g. `postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app`).
+   - Put **`DATABASE_URL` (and similar) in task `env`** on every command task that uses the service, with **`depends-on: [postgres]`** (or the docker task key). Point URLs at `${{ baguette.tasks.<task-key>.container_hostname }}` plus the **standard in-container port** the image listens on (e.g. `postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app` — always `5432`, not a Baguette-assigned port).
    - On the first task start, `session.init` runs **before** `depends-on` tasks (e.g. docker Postgres). Put migrations on a task that `depends-on` the database (with `DATABASE_URL` in that task's `env`).
    - **Redis example**: `type: docker`, `container: { image: redis:7, persist: ['/data'] }`, then `REDIS_URL` on task `env` with `depends-on: [redis]`: `redis://${{ baguette.tasks.redis.container_hostname }}:6379/0`.
 

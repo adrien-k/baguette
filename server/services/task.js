@@ -13,6 +13,7 @@ import {
   stopDockerContainer,
   waitForContainerHealth,
   isContainerRunning,
+  getContainerExitCode,
 } from './docker-session.js';
 
 /** Idle lifetime for tasks that expose ports. Reset by heartbeat(). */
@@ -143,6 +144,16 @@ export class Task {
 
   get isDocker() {
     return this._dockerContainerRaw != null;
+  }
+
+  /** True only when .baguette.yaml defines a usable container healthcheck (not image defaults). */
+  #dockerContainerHasConfiguredHealthcheck() {
+    if (!this.isDocker || !this._dockerContainerRaw) return false;
+    try {
+      return normalizeDockerContainer(this._dockerContainerRaw).healthcheck != null;
+    } catch {
+      return false;
+    }
   }
 
   get hasPorts() {
@@ -312,8 +323,10 @@ export class Task {
   /**
    * Wait until this task is "ready":
    * - No ports: resolves when the process exits 0; rejects on non-zero exit.
-   * - With ports or docker: resolves when ready (listening ports, container health, or
-   *   container started). Rejects if the process exits first or the timeout elapses after
+   * - With ports: resolves when listening on allocated host ports.
+   * - Docker: resolves when the container has started, or when healthy if a healthcheck is
+   *   configured in .baguette.yaml (host TCP probes are not used). Rejects if the process
+   *   exits first or the timeout elapses after
    *   readiness probing begins. Init, depends_on, image pull/build, and container start
    *   are not counted — probing starts only after depends_on are ready and this task has
    *   finished starting its process/container.
@@ -322,11 +335,8 @@ export class Task {
    */
   async waitForReady({ timeoutMs, timeout, pollMs = 500 } = {}) {
     const readyTimeoutMs = timeoutMs ?? timeout ?? 60_000;
+    const hasDockerHealthcheck = this.#dockerContainerHasConfiguredHealthcheck();
     const isPortDep = this._portEnvVars.length > 0 || this.isDocker;
-    const hasDockerHealthcheck =
-      this.isDocker &&
-      this._dockerContainerRaw?.healthcheck != null &&
-      typeof this._dockerContainerRaw.healthcheck === 'object';
 
     if (this.status === 'exited') {
       if (isPortDep || this.exit_code !== 0) {
@@ -401,15 +411,12 @@ export class Task {
           }
           await new Promise((r) => setTimeout(r, pollMs));
         }
-      }
-      if (hasDockerHealthcheck) {
-        await waitForContainerHealth(this._dockerContainerName, {
-          timeoutMs: readyTimeoutMs,
-          pollMs,
-        });
-        return;
-      }
-      if (this.isDocker && this._portEnvVars.length === 0) {
+        if (hasDockerHealthcheck) {
+          await waitForContainerHealth(this._dockerContainerName, {
+            timeoutMs: readyTimeoutMs,
+            pollMs,
+          });
+        }
         return;
       }
       const deadline = Date.now() + readyTimeoutMs;
@@ -537,11 +544,16 @@ export class Task {
         return;
       }
 
-      // Container stopped — treat as failure (same as #startDockerExitMonitor).
-      if (this.status === 'running') {
-        this.exit(1);
-      }
+      await this.#exitWhenDockerContainerStopped(containerName);
     });
+  }
+
+  async #exitWhenDockerContainerStopped(containerName) {
+    if (this.status !== 'running') return;
+    const exitCode = await getContainerExitCode(containerName);
+    if (this.status === 'running') {
+      this.exit(exitCode);
+    }
   }
 
   #stopDockerLogStream() {
@@ -570,7 +582,7 @@ export class Task {
       if (!running) {
         clearInterval(this.#dockerMonitorTimer);
         this.#dockerMonitorTimer = null;
-        this.exit(1);
+        await this.#exitWhenDockerContainerStopped(name);
       }
     }, 2000);
   }

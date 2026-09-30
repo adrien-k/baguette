@@ -382,6 +382,21 @@ export async function isContainerRunning(containerName) {
   }
 }
 
+/** Exit code from the container's main process after it has stopped (1 if unknown). */
+export async function getContainerExitCode(containerName) {
+  try {
+    const { stdout } = await execFileAsync(
+      'docker',
+      ['inspect', '--format', '{{.State.ExitCode}}', containerName],
+      { timeout: 15_000 }
+    );
+    const code = Number.parseInt(stdout.trim(), 10);
+    return Number.isFinite(code) ? code : 1;
+  } catch {
+    return 1;
+  }
+}
+
 /**
  * Wait until health is healthy or retries exhausted, or until timeoutMs.
  */

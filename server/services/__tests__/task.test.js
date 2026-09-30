@@ -491,6 +491,55 @@ describe('Task heartbeat / TTL', () => {
     await expect(ready).resolves.toBeUndefined();
   });
 
+  it('waitForReady does not probe host ports for docker tasks without a yaml healthcheck', async () => {
+    vi.useFakeTimers();
+    const healthWait = vi.spyOn(dockerSession, 'waitForContainerHealth').mockResolvedValue();
+    isPortListening.mockResolvedValue(false);
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'x',
+      ports: ['PG_PORT'],
+      label: 'postgres',
+      taskKey: 'postgres',
+      dockerContainer: { image: 'postgres:16' },
+    });
+    task.ports = { PG_PORT: 54321 };
+
+    const ready = task.waitForReady({ timeoutMs: 1_000, pollMs: 100 });
+    task._dockerContainerName = 'baguette_abcd_postgres';
+    await vi.advanceTimersByTimeAsync(200);
+    await expect(ready).resolves.toBeUndefined();
+    expect(healthWait).not.toHaveBeenCalled();
+    expect(isPortListening).not.toHaveBeenCalled();
+    healthWait.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('waitForReady ignores empty docker healthcheck blocks in yaml', async () => {
+    vi.useFakeTimers();
+    const healthWait = vi.spyOn(dockerSession, 'waitForContainerHealth').mockResolvedValue();
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'docker:redis:7',
+      taskKey: 'redis',
+      dockerContainer: { image: 'redis:7', healthcheck: {} },
+    });
+
+    const ready = task.waitForReady({ timeoutMs: 1_000, pollMs: 100 });
+    task._dockerContainerName = 'baguette_abcd_redis';
+    await vi.advanceTimersByTimeAsync(200);
+    await expect(ready).resolves.toBeUndefined();
+    expect(healthWait).not.toHaveBeenCalled();
+    healthWait.mockRestore();
+    vi.useRealTimers();
+  });
+
   it('waitForReady treats docker without healthcheck as ready once the container is running', async () => {
     vi.useFakeTimers();
     isPortListening.mockResolvedValue(true);
@@ -649,7 +698,7 @@ describe('Task heartbeat / TTL', () => {
     expect(runningCheck).toHaveBeenCalledWith('baguette_abcd_pg');
   });
 
-  it('docker log follower exit ends task with code 1 when container has stopped', async () => {
+  it('docker log follower exit uses container exit code when container has stopped', async () => {
     const logChild = {
       pid: 1001,
       stdout: { on: vi.fn() },
@@ -665,6 +714,7 @@ describe('Task heartbeat / TTL', () => {
     });
     vi.spyOn(dockerSession, 'spawnDockerLogFollow').mockReturnValue(logChild);
     vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(false);
+    vi.spyOn(dockerSession, 'getContainerExitCode').mockResolvedValue(2);
 
     const task = new Task({
       id: 1,
@@ -680,7 +730,44 @@ describe('Task heartbeat / TTL', () => {
     await onExit(0);
 
     expect(task.status).toBe('exited');
-    expect(task.exit_code).toBe(1);
+    expect(task.exit_code).toBe(2);
+    expect(dockerSession.getContainerExitCode).toHaveBeenCalledWith('baguette_abcd_pg');
+  });
+
+  it('docker exit monitor uses container exit code when container stops', async () => {
+    vi.useFakeTimers();
+    const logChild = {
+      pid: 1001,
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      removeAllListeners: vi.fn(),
+      kill: vi.fn(),
+    };
+
+    vi.spyOn(dockerSession, 'startDockerContainer').mockResolvedValue({
+      containerId: 'abc',
+      containerName: 'baguette_abcd_pg',
+    });
+    vi.spyOn(dockerSession, 'spawnDockerLogFollow').mockReturnValue(logChild);
+    vi.spyOn(dockerSession, 'isContainerRunning').mockResolvedValue(false);
+    vi.spyOn(dockerSession, 'getContainerExitCode').mockResolvedValue(0);
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'docker:redis:7',
+      taskKey: 'redis',
+      dockerContainer: { image: 'redis:7' },
+    });
+
+    await task._startDockerProcess({}, {});
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(task.status).toBe('exited');
+    expect(task.exit_code).toBe(0);
+    vi.useRealTimers();
   });
 
   it('stopDockerLogStream does not mark task exited when log child exits', async () => {
