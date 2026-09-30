@@ -120,11 +120,31 @@ export function isSessionBuiltImageRepository(repository, shortId) {
 }
 
 /**
+ * @returns {string[] | null}
+ */
+export function normalizeDockerCommand(command) {
+  if (command == null) return null;
+  if (Array.isArray(command)) {
+    const parts = command
+      .filter((part) => part != null && String(part).trim() !== '')
+      .map((part) => String(part));
+    return parts.length ? parts : null;
+  }
+  if (typeof command === 'string') {
+    const trimmed = command.trim();
+    if (!trimmed) return null;
+    return ['sh', '-c', trimmed];
+  }
+  throw new Error('container.command must be a string or array of strings');
+}
+
+/**
  * Normalize container block from .baguette.yaml.
  * @returns {{
  *   image: string | null,
  *   build: ReturnType<typeof normalizeDockerBuild>,
  *   persist: string[],
+ *   command: string[] | null,
  *   healthcheck: { test: string, intervalMs: number, timeoutMs: number, retries: number } | null,
  * }}
  */
@@ -165,10 +185,13 @@ export function normalizeDockerContainer(container) {
     }
   }
 
+  const command = normalizeDockerCommand(container.command);
+
   return {
     image,
     build,
     persist,
+    command,
     healthcheck,
   };
 }
@@ -319,6 +342,9 @@ export async function startDockerContainer({
   }
 
   args.push(image);
+  if (container.command?.length) {
+    args.push(...container.command);
+  }
 
   const { stdout } = await execFileAsync('docker', args, { timeout: DOCKER_TIMEOUT_MS });
   const containerId = stdout.trim();

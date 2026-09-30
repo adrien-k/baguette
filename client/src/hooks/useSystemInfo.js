@@ -2,16 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../api.js';
 
 /**
- * @param {{ intervalMs?: number | null, onError?: (err: unknown) => void }} options
+ * @param {{ onError?: (err: unknown) => void }} options
  */
-export function useLiveMetrics({ intervalMs = null, onError } = {}) {
+export function useSystemInfo({ onError } = {}) {
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(
     async (isRefresh = false) => {
       try {
-        const data = await apiFetch('/api/settings/system-information');
+        const data = await apiFetch('/api/settings/system');
         setInfo(data);
       } catch (err) {
         onError?.(err);
@@ -24,10 +24,7 @@ export function useLiveMetrics({ intervalMs = null, onError } = {}) {
 
   useEffect(() => {
     load();
-    if (!intervalMs) return undefined;
-    const id = setInterval(() => load(true), intervalMs);
-    return () => clearInterval(id);
-  }, [load, intervalMs]);
+  }, [load]);
 
   return { info, loading, reload: () => load(true) };
 }

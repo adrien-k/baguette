@@ -17,6 +17,9 @@ RUN npm run build
 
 FROM base AS runner
 
+ARG GIT_SHA=
+ENV BAGUETTE_GIT_SHA=$GIT_SHA
+
 # Add libs generally useful for development. Add your own to avoid re-installing them every time.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \

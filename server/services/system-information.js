@@ -3,6 +3,7 @@ import os from 'os';
 
 import { DATA_DIR } from '../config.js';
 import db from '../db.js';
+import { getContainerUptimeSeconds, getRunningGitSha } from './deployment-info.js';
 
 const MS_PER_24H = 24 * 60 * 60 * 1000;
 
@@ -17,17 +18,12 @@ function diskStatsForPath(targetPath) {
   };
 }
 
-/** Host CPU, memory, and disk usage for the Baguette data directory. */
-export function getHostMetrics() {
+function hostResourceSnapshot() {
   const cpus = os.cpus();
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
 
   return {
-    hostname: os.hostname(),
-    platform: os.platform(),
-    arch: os.arch(),
-    uptimeSeconds: os.uptime(),
     cpu: {
       count: cpus.length,
       model: cpus[0]?.model ?? 'Unknown',
@@ -43,6 +39,19 @@ export function getHostMetrics() {
   };
 }
 
+/** Full host and deployment details for the System settings page. */
+export function getSystemInfo() {
+  return {
+    hostname: os.hostname(),
+    platform: os.platform(),
+    arch: os.arch(),
+    uptimeSeconds: os.uptime(),
+    ...hostResourceSnapshot(),
+    gitSha: getRunningGitSha(),
+    containerUptimeSeconds: getContainerUptimeSeconds(),
+  };
+}
+
 async function usageCostUsdSince(userId, sinceIso) {
   const row = await db('usage')
     .where({ user_id: userId })
@@ -52,12 +61,22 @@ async function usageCostUsdSince(userId, sinceIso) {
   return parseFloat(row?.cost_usd ?? 0) || 0;
 }
 
-/** Host metrics plus signed-in user usage for navbar / system pages. */
-export async function getLiveMetrics(userId) {
+/** Lightweight CPU, memory, disk, and usage snapshot for the navbar (polled often). */
+export async function getNavbarSystemInformation(userId) {
   const since = new Date(Date.now() - MS_PER_24H).toISOString();
   const last24hCostUsd = await usageCostUsdSince(userId, since);
+  const { cpu, loadAvg, memory, disk } = hostResourceSnapshot();
   return {
-    ...getHostMetrics(),
+    cpu: { count: cpu.count },
+    loadAvg,
+    memory: {
+      totalBytes: memory.totalBytes,
+      usedBytes: memory.usedBytes,
+    },
+    disk: {
+      totalBytes: disk.totalBytes,
+      availableBytes: disk.availableBytes,
+    },
     usage: {
       last_24h_cost_usd: last24hCostUsd,
     },

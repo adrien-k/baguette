@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { SettingsSection } from '../components/SettingsSection.jsx';
-import { useLiveMetrics } from '../hooks/useLiveMetrics.js';
+import { useSystemInfo } from '../hooks/useSystemInfo.js';
 import { formatBytes, formatUptime } from '../utils/systemInfoMetrics.js';
 
 function UsageMeter({ used, total }) {
@@ -31,7 +31,7 @@ export default function System() {
     (err) => toastError('Failed to load system information', err),
     []
   );
-  const { info, loading, reload } = useLiveMetrics({ onError: onLoadError });
+  const { info, loading, reload } = useSystemInfo({ onError: onLoadError });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -48,14 +48,15 @@ export default function System() {
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-fg">System</h1>
         <p className="text-sm text-fg-muted mt-1 max-w-2xl">
-          Host resources for this Baguette instance. Disk usage is for the data directory.
+          Host resources and deployment info for this Baguette instance. Disk usage is for the data
+          directory.
         </p>
       </div>
 
       <div className="space-y-6">
         <SettingsSection
-          title="Host"
-          description="Refreshed when you open this page or click Refresh."
+          title="Deployment"
+          description="Version baked into the container image at build time."
         >
           <div className="flex justify-end -mt-2 mb-2">
             <button
@@ -67,7 +68,33 @@ export default function System() {
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
+          {loading && !info ? (
+            <p className="text-sm text-faint">Loading…</p>
+          ) : info ? (
+            <div>
+              <SystemStat
+                label="Git revision"
+                value={info.gitSha ? info.gitSha.slice(0, 12) : '—'}
+                sub={info.gitSha && info.gitSha.length > 12 ? info.gitSha : null}
+              />
+              <SystemStat
+                label="Container uptime"
+                value={
+                  info.containerUptimeSeconds != null
+                    ? formatUptime(info.containerUptimeSeconds)
+                    : '—'
+                }
+                sub={
+                  info.containerUptimeSeconds == null
+                    ? 'Not running in Docker (or unavailable)'
+                    : null
+                }
+              />
+            </div>
+          ) : null}
+        </SettingsSection>
 
+        <SettingsSection title="Host" description="Kernel uptime and CPU load averages.">
           {loading && !info ? (
             <p className="text-sm text-faint">Loading…</p>
           ) : info ? (
@@ -77,7 +104,7 @@ export default function System() {
                 value={info.hostname}
                 sub={`${info.platform} · ${info.arch}`}
               />
-              <SystemStat label="Uptime" value={formatUptime(info.uptimeSeconds)} />
+              <SystemStat label="Host uptime" value={formatUptime(info.uptimeSeconds)} />
               <SystemStat
                 label="CPU"
                 value={`${info.cpu.count} core${info.cpu.count === 1 ? '' : 's'}`}

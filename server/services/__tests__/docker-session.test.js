@@ -4,6 +4,7 @@ import {
   parseDockerTaskPorts,
   parseDockerDuration,
   normalizeDockerContainer,
+  normalizeDockerCommand,
   normalizeDockerBuild,
   resolveDockerBuildPaths,
   sessionVolumeName,
@@ -32,6 +33,28 @@ describe('docker-session helpers', () => {
   it('parseDockerDuration', () => {
     expect(parseDockerDuration('5s')).toBe(5000);
     expect(parseDockerDuration('500ms')).toBe(500);
+  });
+
+  it('normalizeDockerCommand accepts argv list or shell string', () => {
+    expect(normalizeDockerCommand(['redis-server', '--save', '60'])).toEqual([
+      'redis-server',
+      '--save',
+      '60',
+    ]);
+    expect(normalizeDockerCommand('redis-server --save 60')).toEqual([
+      'sh',
+      '-c',
+      'redis-server --save 60',
+    ]);
+    expect(normalizeDockerCommand('  ')).toBeNull();
+  });
+
+  it('normalizeDockerContainer parses command', () => {
+    const c = normalizeDockerContainer({
+      image: 'redis:7',
+      command: ['redis-server', '--appendonly', 'yes'],
+    });
+    expect(c.command).toEqual(['redis-server', '--appendonly', 'yes']);
   });
 
   it('normalizeDockerContainer parses healthcheck', () => {

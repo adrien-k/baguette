@@ -49,6 +49,8 @@ builder:
   arch:
     - amd64
   remote: ssh://<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>@<%= ENV.fetch('DEPLOY_SERVER') %>
+  args:
+    GIT_SHA: <%= ENV.fetch('GITHUB_SHA', `git rev-parse HEAD`.strip) %>
 <% if ENV['GITHUB_ACTIONS'] == 'true' %>
   cache:
     type: gha

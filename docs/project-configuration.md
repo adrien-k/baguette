@@ -17,6 +17,7 @@ Define databases and other dependencies as **docker tasks** in `session.tasks`. 
 | `container.image`       | Docker image to run (or tag for a built image when `container.build` is set)                                    |
 | `container.build`       | Build the image from the repo before `docker run` (path string or `context` / `dockerfile` / `args` / `target`) |
 | `container.persist`     | Paths inside the container mounted on the session volume                                                        |
+| `container.command`     | Override the image default command (string runs via `sh -c`, or a argv list)                                    |
 | `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`)                                         |
 | `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                            |
 
