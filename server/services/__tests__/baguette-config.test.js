@@ -11,6 +11,14 @@ import {
   getAvailableTasks,
   getAvailableCommands,
   interpolateString,
+  interpolateBaguetteConfig,
+  interpolateDockerContainer,
+  interpolateConfigTaskPorts,
+  assertNoTaskPlaceholders,
+  assertTaskEnvReferencesValid,
+  resolveTaskEnv,
+  TaskEnvInterpolationError,
+  interpolateDockerContainerTaskPorts,
   buildDockerTaskHostnames,
   interpolateEnvTaskPorts,
   loadBaguetteConfig,
@@ -134,6 +142,185 @@ describe('getAvailableTasks', () => {
     expect(tasks.postgres.type).toBe('docker');
     expect(tasks.postgres.ports).toBeUndefined();
     expect(tasks.postgres.env).toEqual({ POSTGRES_USER: 'postgres' });
+  });
+
+  it('assertNoTaskPlaceholders rejects session.env with task references', () => {
+    expect(() =>
+      assertNoTaskPlaceholders(
+        { DB: 'postgres://${{ baguette.tasks.postgres.container_hostname }}:5432/app' },
+        'session.env'
+      )
+    ).toThrow(TaskEnvInterpolationError);
+  });
+
+  it('assertTaskEnvReferencesValid rejects unknown task keys', () => {
+    expect(() =>
+      assertTaskEnvReferencesValid(
+        { URL: '${{ baguette.tasks.missing.PORT }}' },
+        new Set(['postgres'])
+      )
+    ).toThrow(/unknown task "missing"/);
+  });
+
+  it('assertTaskEnvReferencesValid rejects task refs not in depends-on', () => {
+    expect(() =>
+      assertTaskEnvReferencesValid(
+        { URL: '${{ baguette.tasks.postgres.container_hostname }}' },
+        new Set(['postgres', 'app']),
+        ['postgres']
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertTaskEnvReferencesValid(
+        { URL: '${{ baguette.tasks.postgres.container_hostname }}' },
+        new Set(['postgres', 'app']),
+        []
+      )
+    ).toThrow(/depends-on/);
+    expect(() =>
+      assertTaskEnvReferencesValid(
+        { URL: '${{ baguette.tasks.postgres.container_hostname }}' },
+        new Set(['postgres', 'app']),
+        ['other']
+      )
+    ).toThrow(/depends-on/);
+  });
+
+  it('resolveTaskEnv applies ports after depends-on', () => {
+    const env = resolveTaskEnv(
+      { TEST_URL: 'http://127.0.0.1:${{ baguette.tasks.dev.SERVER_PORT }}/' },
+      {
+        configTaskKeys: ['dev'],
+        dependsOnKeys: ['dev'],
+        portMap: { dev: { SERVER_PORT: 4321 } },
+        interpolateOpts: { shortId: 'ab', secrets: {}, publicUri: '', servicesUriMap: {} },
+      }
+    );
+    expect(env.TEST_URL).toBe('http://127.0.0.1:4321/');
+  });
+
+  it('resolveTaskEnv applies container_hostname from portMap after depends-on', () => {
+    const env = resolveTaskEnv(
+      {
+        DATABASE_URL: 'postgres://u:p@${{ baguette.tasks.postgres.container_hostname }}:5432/app',
+      },
+      {
+        configTaskKeys: ['postgres'],
+        dependsOnKeys: ['postgres'],
+        portMap: { postgres: { container_hostname: 'baguette_ab_postgres' } },
+        interpolateOpts: {
+          shortId: 'ab',
+          secrets: {},
+          publicUri: '',
+          servicesUriMap: {},
+          taskHostnames: {},
+        },
+      }
+    );
+    expect(env.DATABASE_URL).toBe('postgres://u:p@baguette_ab_postgres:5432/app');
+  });
+
+  it('resolveTaskEnv fails when depends-on port is missing', () => {
+    expect(() =>
+      resolveTaskEnv(
+        { TEST_URL: '${{ baguette.tasks.dev.SERVER_PORT }}' },
+        {
+          configTaskKeys: ['dev'],
+          dependsOnKeys: ['dev'],
+          portMap: {},
+          interpolateOpts: { shortId: 'ab', secrets: {}, publicUri: '', servicesUriMap: {} },
+        }
+      )
+    ).toThrow(/not available/);
+  });
+
+  it('resolveTaskEnv fails when portMap lacks a referenced attr', () => {
+    expect(() =>
+      resolveTaskEnv(
+        {
+          TEST_URL:
+            'http://${{ baguette.tasks.postgres.container_hostname }}:${{ baguette.tasks.dev.SERVER_PORT }}/',
+        },
+        {
+          configTaskKeys: ['postgres', 'dev'],
+          dependsOnKeys: ['postgres', 'dev'],
+          portMap: { postgres: { container_hostname: 'baguette_ab_postgres' } },
+          interpolateOpts: { shortId: 'ab', secrets: {}, publicUri: '', servicesUriMap: {} },
+        }
+      )
+    ).toThrow(/not available/);
+  });
+
+  it('interpolateString leaves host-port placeholders for interpolateConfigTaskPorts', () => {
+    const cmd = 'http://127.0.0.1:${{ baguette.tasks.dev-server.VITE_PORT }}';
+    expect(interpolateString(cmd, { shortId: 'x', secrets: {}, publicUri: '' })).toBe(cmd);
+    expect(interpolateConfigTaskPorts(cmd, { 'dev-server': { VITE_PORT: 5173 } })).toBe(
+      'http://127.0.0.1:5173'
+    );
+  });
+
+  it('interpolateBaguetteConfig walks nested config strings', () => {
+    const opts = { shortId: 'ab12', secrets: { DB_PASS: 'secret' }, publicUri: 'http://ab12.test' };
+    const out = interpolateBaguetteConfig(
+      {
+        session: {
+          env: { LABEL: 'sess-${{ baguette.session.short_id }}' },
+          tasks: {
+            db: {
+              container: {
+                image: 'app:${{ baguette.session.short_id }}',
+                build: { args: { TOKEN: '${{ baguette.secrets.DB_PASS }}' } },
+              },
+            },
+          },
+        },
+      },
+      opts
+    );
+    expect(out.session.env.LABEL).toBe('sess-ab12');
+    expect(out.session.tasks.db.container.image).toBe('app:ab12');
+    expect(out.session.tasks.db.container.build.args.TOKEN).toBe('secret');
+  });
+
+  it('interpolateDockerContainer substitutes session placeholders in image and build', () => {
+    const opts = { shortId: 'a3de4', secrets: { REGISTRY_TOKEN: 'tok' }, publicUri: '' };
+    const container = interpolateDockerContainer(
+      {
+        image: 'fabricate:baguette-test-${{ baguette.session.short_id }}',
+        build: {
+          context: '.',
+          args: { SESSION: '${{ baguette.session.short_id }}' },
+        },
+        persist: ['/data/${{ baguette.session.short_id }}'],
+      },
+      opts
+    );
+    expect(container.image).toBe('fabricate:baguette-test-a3de4');
+    expect(container.build.args.SESSION).toBe('a3de4');
+    expect(container.persist).toEqual(['/data/a3de4']);
+  });
+
+  it('interpolateDockerContainer substitutes placeholders in container.command', () => {
+    const opts = { shortId: 'a3de4', secrets: {}, publicUri: '' };
+    const container = interpolateDockerContainer(
+      {
+        image: 'postgres:16',
+        command: 'postgres -c max_connections=${{ baguette.session.short_id }}',
+      },
+      opts
+    );
+    expect(container.command).toBe('postgres -c max_connections=a3de4');
+  });
+
+  it('interpolateDockerContainerTaskPorts substitutes host ports in container.command', () => {
+    const container = interpolateDockerContainerTaskPorts(
+      {
+        image: 'app:dev',
+        command: 'serve --port ${{ baguette.tasks.dev-server.VITE_PORT }}',
+      },
+      { 'dev-server': { VITE_PORT: 5173 } }
+    );
+    expect(container.command).toBe('serve --port 5173');
   });
 
   it('buildDockerTaskHostnames and interpolateString resolve container_hostname', () => {

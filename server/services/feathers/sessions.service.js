@@ -54,7 +54,13 @@ import {
 } from '../preview-services.js';
 import { isPortListening } from '../port-utils.js';
 import path from 'path';
-import { buildTaskEnv, getClaudeEnvForSession, interpolateTaskCommand } from '../session-env.js';
+import {
+  buildTaskEnv,
+  getInterpolateOptsForSession,
+  getClaudeEnvForSession,
+  interpolateTaskCommand,
+  interpolateTaskConfigValue,
+} from '../session-env.js';
 import { getGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
@@ -363,12 +369,25 @@ export class SessionsService extends KnexService {
     );
   }
 
-  async getTaskEnv(sessionId, taskKey = null) {
-    return buildTaskEnv(this.app.get('db'), sessionId, taskKey);
+  async getTaskEnv(sessionId, _taskKey = null) {
+    return buildTaskEnv(this.app.get('db'), sessionId);
+  }
+
+  async getInterpolateOpts(sessionId) {
+    return getInterpolateOptsForSession(this.app.get('db'), sessionId);
   }
 
   async getInterpolatedCommand(sessionId, command) {
     return interpolateTaskCommand(this.app.get('db'), sessionId, command);
+  }
+
+  async getInterpolatedConfigValue(sessionId, value) {
+    return interpolateTaskConfigValue(this.app.get('db'), sessionId, value);
+  }
+
+  /** @deprecated Use getInterpolatedConfigValue */
+  async getInterpolatedDockerContainer(sessionId, container) {
+    return this.getInterpolatedConfigValue(sessionId, container);
   }
 
   async getClaudeEnv(sessionId) {

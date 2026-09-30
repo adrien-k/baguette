@@ -3,7 +3,7 @@ import { mkdir, writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import net from 'net';
-import { interpolateTaskPorts, interpolateEnvTaskPorts } from './baguette-config.js';
+import { interpolateConfigTaskPorts, resolveTaskEnv } from './baguette-config.js';
 import { isPortListening } from './port-utils.js';
 import {
   normalizeDockerContainer,
@@ -102,6 +102,11 @@ export class Task {
     dockerContainer = null,
     dockerPortMappings = null,
     dockerEnvKeys = null,
+    taskEnvRaw = null,
+    configTaskKeys = null,
+    dependsOnKeys = null,
+    extraEnv = null,
+    interpolateOpts = null,
   }) {
     this.id = id;
     this.session_id = sessionId;
@@ -135,6 +140,15 @@ export class Task {
     this._dockerEnvKeys = Array.isArray(dockerEnvKeys) ? dockerEnvKeys : [];
     this._dockerContainer = null;
     this._dockerContainerName = null;
+    this._taskEnvRaw =
+      taskEnvRaw && typeof taskEnvRaw === 'object' && !Array.isArray(taskEnvRaw)
+        ? taskEnvRaw
+        : null;
+    this._configTaskKeys = Array.isArray(configTaskKeys) ? configTaskKeys : [];
+    this._dependsOnKeys = Array.isArray(dependsOnKeys) ? dependsOnKeys : [];
+    this._extraEnv =
+      extraEnv && typeof extraEnv === 'object' && !Array.isArray(extraEnv) ? extraEnv : null;
+    this._interpolateOpts = interpolateOpts;
   }
 
   get isDocker() {
@@ -295,10 +309,37 @@ export class Task {
 
         if (this.status !== 'running') return this;
 
+        if (this._taskEnvRaw) {
+          try {
+            const taskEnv = resolveTaskEnv(this._taskEnvRaw, {
+              interpolateOpts: this._interpolateOpts,
+              portMap: this._portMap,
+              configTaskKeys: this._configTaskKeys,
+              dependsOnKeys: this._dependsOnKeys,
+            });
+            this._env = { ...(this._env ?? {}), ...taskEnv };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.addLog(
+              'stderr',
+              `\x1b[31m──── Failed to resolve task environment: ${message}\x1b[0m\n`
+            );
+            this.exit(1);
+            return this;
+          }
+        }
+
+        if (this._extraEnv) {
+          this._env = { ...(this._env ?? {}), ...this._extraEnv };
+        }
+
         if (Object.keys(this._portMap).length > 0) {
-          this.command = interpolateTaskPorts(this.command, this._portMap);
-          if (this._env) {
-            this._env = interpolateEnvTaskPorts(this._env, this._portMap);
+          this.command = interpolateConfigTaskPorts(this.command, this._portMap);
+          if (this.isDocker && this._dockerContainerRaw) {
+            this._dockerContainerRaw = interpolateConfigTaskPorts(
+              this._dockerContainerRaw,
+              this._portMap
+            );
           }
         }
 

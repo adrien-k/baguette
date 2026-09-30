@@ -59,6 +59,7 @@ function buildMockApp(service) {
         return {
           get: async () => sessionRow,
           getTaskEnv: async () => ({ ...process.env }),
+          getInterpolateOpts: async () => interpolateOpts,
           getInterpolatedCommand: async (_sessionId, command) =>
             interpolateString(command, interpolateOpts),
         };

@@ -7,6 +7,8 @@ import {
   getAvailableTasks,
   appendTaskArgs,
   BaguetteConfigError,
+  TaskEnvInterpolationError,
+  assertTaskEnvReferencesValid,
 } from '../baguette-config.js';
 import logger from '../../logger.js';
 
@@ -48,6 +50,11 @@ export class TasksService {
     dockerContainer,
     dockerPortMappings,
     dockerEnvKeys,
+    taskEnvRaw,
+    configTaskKeys,
+    dependsOnKeys,
+    extraEnv,
+    interpolateOpts,
   }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
@@ -81,6 +88,11 @@ export class TasksService {
       dockerContainer,
       dockerPortMappings,
       dockerEnvKeys,
+      taskEnvRaw,
+      configTaskKeys,
+      dependsOnKeys,
+      extraEnv,
+      interpolateOpts,
     });
     task.onLog((_id, stream, data) =>
       this.emit('log', { id, session_id: sessionId, stream, data })
@@ -254,18 +266,40 @@ export class TasksService {
       throw new BadRequest(`Task "${task_key}" is not defined in .baguette.yaml`);
     }
     const isDockerTask = taskDef?.type === 'docker';
+    const dockerContainer =
+      isDockerTask && taskDef?.container
+        ? await this.app
+            .service('sessions')
+            .getInterpolatedConfigValue(session.id, taskDef.container)
+        : null;
     const resolvedCommand =
       rawCommand ??
       (isDockerTask
-        ? `docker:${taskDef.container?.image ?? (taskDef.container?.build ? 'build' : 'container')}`
+        ? `docker:${dockerContainer?.image ?? (dockerContainer?.build ? 'build' : 'container')}`
         : taskDef?.run);
     if (!resolvedCommand) throw new BadRequest('A task_key or a command is required');
 
     const effectiveLabel = label ?? task_key ?? null;
     const effectivePorts = ports ?? taskDef?.ports ?? [];
 
-    const baseEnv = await this.app.service('sessions').getTaskEnv(session.id, task_key ?? null);
-    const env = extra_env ? { ...baseEnv, ...extra_env } : baseEnv;
+    const configTaskKeys = new Set(Object.keys(taskDefs));
+    const taskEnvRaw =
+      taskDef?.env && typeof taskDef.env === 'object' && !Array.isArray(taskDef.env)
+        ? taskDef.env
+        : null;
+    let baseEnv;
+    let interpolateOpts;
+    try {
+      if (taskEnvRaw) {
+        assertTaskEnvReferencesValid(taskEnvRaw, configTaskKeys, taskDef?.depends_on ?? []);
+      }
+      baseEnv = await this.app.service('sessions').getTaskEnv(session.id);
+      interpolateOpts = await this.app.service('sessions').getInterpolateOpts(session.id);
+    } catch (err) {
+      if (err instanceof TaskEnvInterpolationError) throw new BadRequest(err.message);
+      throw err;
+    }
+    const env = baseEnv;
     const interpolatedCommand = await this.app
       .service('sessions')
       .getInterpolatedCommand(session.id, appendTaskArgs(resolvedCommand, args));
@@ -316,7 +350,7 @@ export class TasksService {
         const initCommand = await this.app
           .service('sessions')
           .getInterpolatedCommand(session.id, initDef.run);
-        const initEnv = await this.app.service('sessions').getTaskEnv(session.id, 'baguette:init');
+        const initEnv = await this.app.service('sessions').getTaskEnv(session.id);
         const initTask = this.createTask({
           sessionId: session_id,
           shortId: session.short_id,
@@ -329,6 +363,7 @@ export class TasksService {
           dependsOn: [],
           noTtl: false,
           ttlMs: effectiveTtlMs,
+          interpolateOpts,
         });
         dependsOn.push(initTask);
       }
@@ -348,12 +383,14 @@ export class TasksService {
       dependsOn,
       noTtl,
       ttlMs: effectiveTtlMs,
-      dockerContainer: isDockerTask ? taskDef.container : null,
+      dockerContainer,
       dockerPortMappings: null,
-      dockerEnvKeys:
-        isDockerTask && taskDef?.env && typeof taskDef.env === 'object'
-          ? Object.keys(taskDef.env)
-          : null,
+      dockerEnvKeys: taskEnvRaw ? Object.keys(taskEnvRaw) : null,
+      taskEnvRaw,
+      configTaskKeys: [...configTaskKeys],
+      dependsOnKeys: taskDef?.depends_on ?? [],
+      extraEnv: extra_env ?? null,
+      interpolateOpts,
     });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);

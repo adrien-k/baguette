@@ -126,6 +126,27 @@ describe('TasksService.createTask', () => {
     const task = service.createTask({ sessionId: 1, command: 'x' });
     expect(service.getTask(task.id)).toBe(task);
   });
+
+  it('applies extra_env after YAML task env so extra_env wins on conflicts', async () => {
+    const task = service.createTask({
+      sessionId: 1,
+      command: 'echo ok',
+      env: { SESSION: 'base' },
+      extraEnv: { FOO: 'from-extra' },
+      taskEnvRaw: { FOO: 'from-yaml', BAR: 'from-yaml' },
+      configTaskKeys: ['run-tests'],
+      dependsOnKeys: [],
+      interpolateOpts: { shortId: 'ab', secrets: {}, publicUri: '', servicesUriMap: {} },
+    });
+    const startProcess = vi.spyOn(task, '_startProcess').mockResolvedValue(task);
+    task.start();
+    await vi.waitFor(() => expect(startProcess).toHaveBeenCalled());
+    expect(task._env).toEqual({
+      SESSION: 'base',
+      FOO: 'from-extra',
+      BAR: 'from-yaml',
+    });
+  });
 });
 
 describe('TasksService.getTask', () => {

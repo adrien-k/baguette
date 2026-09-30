@@ -38,6 +38,9 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
           'env-client': {
             run: 'node -e "process.stdout.write(process.env.TEST_URL||\'\')"',
             'depends-on': ['http-server'],
+            env: {
+              TEST_URL: 'http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}/',
+            },
           },
         },
       },
@@ -72,13 +75,13 @@ function buildMockApp(service) {
       if (name === 'sessions') {
         return {
           get: async () => sessionRow,
-          getTaskEnv: async (_sessionId, taskKey) => ({
-            ...process.env,
-            ...(taskKey === 'env-client'
-              ? {
-                  TEST_URL: 'http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}/',
-                }
-              : {}),
+          getTaskEnv: async () => ({ ...process.env }),
+          getInterpolateOpts: async () => ({
+            shortId: 'tst',
+            secrets: {},
+            publicUri: 'http://tst.localhost',
+            servicesUriMap: {},
+            taskHostnames: {},
           }),
           getInterpolatedCommand: async (_sessionId, command) => command,
         };

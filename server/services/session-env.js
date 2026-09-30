@@ -1,7 +1,9 @@
 import {
   loadBaguetteConfig,
   interpolateEnv,
-  interpolateString,
+  interpolateBaguetteConfig,
+  configValueIncludesPlaceholder,
+  assertNoTaskPlaceholders,
   resolveServicesConfig,
   buildDockerTaskHostnames,
 } from './baguette-config.js';
@@ -64,35 +66,31 @@ async function buildInterpolateContext(db, sessionId) {
   return { baguetteConfig, interpolateOpts };
 }
 
+export async function getInterpolateOptsForSession(db, sessionId) {
+  const { interpolateOpts } = await buildInterpolateContext(db, sessionId);
+  return interpolateOpts;
+}
+
 /**
  * Build the environment for task subprocesses (init/cleanup scripts, dev servers).
- * Includes interpolated .baguette.yaml env vars and user secrets, but NOT
- * the Anthropic API key or git identity (those are for the Claude agent only).
- *
- * If taskKey is provided, per-task env (session.tasks[taskKey].env) is merged on
- * top of the session-level env, using the same substitution syntax.
+ * Includes interpolated `session.env` only (secrets, session URIs). Per-task `env` is
+ * merged when the task starts — see `resolveTaskEnv` in task.js.
  */
-export async function buildTaskEnv(db, sessionId, taskKey = null) {
+export async function buildTaskEnv(db, sessionId) {
   const { baguetteConfig, interpolateOpts } = await buildInterpolateContext(db, sessionId);
 
   let sessionEnv = {};
-  let taskEnv = {};
-  if (interpolateOpts) {
-    if (baguetteConfig.session?.env && typeof baguetteConfig.session.env === 'object') {
-      sessionEnv = interpolateEnv(baguetteConfig.session.env, interpolateOpts);
-    }
-    if (taskKey) {
-      const taskDef = baguetteConfig.session?.tasks?.[taskKey];
-      if (taskDef?.env && typeof taskDef.env === 'object') {
-        taskEnv = interpolateEnv(taskDef.env, interpolateOpts);
-      }
-    }
+  if (interpolateOpts && baguetteConfig.session?.env && typeof baguetteConfig.session.env === 'object') {
+    assertNoTaskPlaceholders(baguetteConfig.session.env, 'session.env');
+    sessionEnv = interpolateEnv(baguetteConfig.session.env, {
+      ...interpolateOpts,
+      taskHostnames: {},
+    });
   }
 
   return {
     ...stripServerEnv(process.env),
     ...sessionEnv,
-    ...taskEnv,
   };
 }
 
@@ -101,10 +99,23 @@ export async function buildTaskEnv(db, sessionId, taskKey = null) {
  * task command string, using the same substitution rules as session.env / task.env.
  */
 export async function interpolateTaskCommand(db, sessionId, commandStr) {
-  if (!commandStr?.includes('${{')) return commandStr;
+  if (!configValueIncludesPlaceholder(commandStr)) return commandStr;
   const { interpolateOpts } = await buildInterpolateContext(db, sessionId);
   if (!interpolateOpts) return commandStr;
-  return interpolateString(commandStr, interpolateOpts);
+  return interpolateBaguetteConfig(commandStr, interpolateOpts);
+}
+
+/** Interpolate baguette placeholders in any config subtree (e.g. docker `container`). */
+export async function interpolateTaskConfigValue(db, sessionId, value) {
+  if (!configValueIncludesPlaceholder(value)) return value;
+  const { interpolateOpts } = await buildInterpolateContext(db, sessionId);
+  if (!interpolateOpts) return value;
+  return interpolateBaguetteConfig(value, interpolateOpts);
+}
+
+/** @deprecated Use interpolateTaskConfigValue */
+export async function interpolateTaskDockerContainer(db, sessionId, container) {
+  return interpolateTaskConfigValue(db, sessionId, container);
 }
 
 const CLAUDE_AUTH_ENV_KEYS = [

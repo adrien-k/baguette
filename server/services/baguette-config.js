@@ -88,6 +88,99 @@ const SHORT_ID_REGEX = /\$\{\{\s*baguette\.session\.short_id\s*\}\}/g;
 const PUBLIC_URI_REGEX = /\$\{\{\s*baguette\.session\.public_uri\s*\}\}/g;
 const SERVICE_URI_REGEX = /\$\{\{\s*baguette\.services\.([A-Za-z0-9_-]+)\.public_uri\s*\}\}/g;
 const TASK_ATTR_REGEX = /\$\{\{\s*baguette\.tasks\.([A-Za-z0-9_:-]+)\.([A-Za-z0-9_]+)\s*\}\}/g;
+const TASK_PLACEHOLDER_SCAN_REGEX =
+  /\$\{\{\s*baguette\.tasks\.([A-Za-z0-9_:-]+)\.([A-Za-z0-9_]+)\s*\}\}/g;
+
+/** Thrown when session.env or task.env placeholders are invalid or cannot be resolved. */
+export class TaskEnvInterpolationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TaskEnvInterpolationError';
+  }
+}
+
+/** Collect `${{ baguette.tasks.<key>.<attr> }}` references from a config subtree. */
+export function collectTaskPlaceholderRefs(value, refs = []) {
+  if (typeof value === 'string') {
+    const re = new RegExp(TASK_PLACEHOLDER_SCAN_REGEX.source, 'g');
+    let match;
+    while ((match = re.exec(value)) !== null) {
+      refs.push({ taskKey: match[1], attr: match[2] });
+    }
+    return refs;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectTaskPlaceholderRefs(item, refs);
+    return refs;
+  }
+  if (value && typeof value === 'object') {
+    for (const entry of Object.values(value)) collectTaskPlaceholderRefs(entry, refs);
+  }
+  return refs;
+}
+
+export function assertNoTaskPlaceholders(value, contextLabel) {
+  const refs = collectTaskPlaceholderRefs(value);
+  if (refs.length === 0) return;
+  const { taskKey, attr } = refs[0];
+  throw new TaskEnvInterpolationError(
+    `${contextLabel} must not use task placeholders (found \${{ baguette.tasks.${taskKey}.${attr} }}). Put task-specific values in the task's own \`env\` block with \`depends-on\`.`
+  );
+}
+
+/**
+ * @param {Iterable<string>} configTaskKeys  keys from `session.tasks` / synthesized tasks
+ * @param {Iterable<string>} [dependsOnKeys]  when set, each referenced task key must appear here
+ */
+export function assertTaskEnvReferencesValid(taskEnv, configTaskKeys, dependsOnKeys = null) {
+  if (!taskEnv || typeof taskEnv !== 'object') return;
+  const keys = configTaskKeys instanceof Set ? configTaskKeys : new Set(configTaskKeys);
+  const deps =
+    dependsOnKeys == null
+      ? null
+      : dependsOnKeys instanceof Set
+        ? dependsOnKeys
+        : new Set(dependsOnKeys);
+  for (const { taskKey, attr } of collectTaskPlaceholderRefs(taskEnv)) {
+    if (!keys.has(taskKey)) {
+      throw new TaskEnvInterpolationError(
+        `task.env references unknown task "${taskKey}" (\${{ baguette.tasks.${taskKey}.${attr} }}). Check the task key in .baguette.yaml.`
+      );
+    }
+    if (deps && !deps.has(taskKey)) {
+      throw new TaskEnvInterpolationError(
+        `task.env references "${taskKey}" (\${{ baguette.tasks.${taskKey}.${attr} }}) but "${taskKey}" is not listed in depends-on. Add it to depends-on for this task.`
+      );
+    }
+  }
+}
+
+export function assertNoRemainingTaskPlaceholders(value, contextLabel = 'task.env') {
+  const refs = collectTaskPlaceholderRefs(value);
+  if (refs.length === 0) return;
+  const { taskKey, attr } = refs[0];
+  throw new TaskEnvInterpolationError(
+    `${contextLabel} placeholder \${{ baguette.tasks.${taskKey}.${attr} }} is not available — add "${taskKey}" to depends-on and wait for it to be ready.`
+  );
+}
+
+/**
+ * Resolve per-task `env` after depends-on: session-level placeholders, then injected task ports/hostnames.
+ */
+export function resolveTaskEnv(
+  taskEnv,
+  { interpolateOpts, portMap, configTaskKeys, dependsOnKeys }
+) {
+  if (!taskEnv || typeof taskEnv !== 'object' || Array.isArray(taskEnv)) return {};
+  assertTaskEnvReferencesValid(taskEnv, configTaskKeys, dependsOnKeys ?? null);
+  const withoutTaskHostnames = interpolateOpts ? { ...interpolateOpts, taskHostnames: {} } : null;
+  let resolved = withoutTaskHostnames
+    ? interpolateBaguetteConfig(taskEnv, withoutTaskHostnames)
+    : { ...taskEnv };
+  resolved = interpolateConfigTaskPorts(resolved, portMap ?? {});
+  assertNoRemainingTaskPlaceholders(resolved);
+  return resolved && typeof resolved === 'object' && !Array.isArray(resolved) ? resolved : {};
+}
 
 /** Hostnames for `type: docker` tasks on the session Docker network. */
 export function buildDockerTaskHostnames(baguetteConfig, shortId) {
@@ -111,20 +204,65 @@ export function interpolateString(
     .replace(SHORT_ID_REGEX, shortId ?? '')
     .replace(PUBLIC_URI_REGEX, publicUri)
     .replace(SERVICE_URI_REGEX, (_, serviceName) => servicesUriMap[serviceName] ?? '')
-    .replace(TASK_ATTR_REGEX, (_, taskKey, attr) => {
-      if (attr === 'container_hostname') return taskHostnames[taskKey] ?? '';
-      return '';
+    .replace(TASK_ATTR_REGEX, (match, taskKey, attr) => {
+      if (attr === 'container_hostname') {
+        const hostname = taskHostnames[taskKey];
+        return hostname != null && hostname !== '' ? hostname : match;
+      }
+      // Host-port placeholders use the same pattern; resolved later via interpolateTaskPorts.
+      return match;
     });
 }
 
-export function interpolateEnv(template, opts) {
-  if (!template || typeof template !== 'object') return {};
-  const result = {};
-  for (const [key, value] of Object.entries(template)) {
-    if (typeof value !== 'string') continue;
-    result[key] = interpolateString(value, opts);
+/** True if any string nested in a config value contains `needle` (default `${{`). */
+export function configValueIncludesPlaceholder(value, needle = '${{') {
+  if (typeof value === 'string') return value.includes(needle);
+  if (Array.isArray(value)) {
+    return value.some((item) => configValueIncludesPlaceholder(item, needle));
   }
-  return result;
+  if (value && typeof value === 'object') {
+    return Object.values(value).some((v) => configValueIncludesPlaceholder(v, needle));
+  }
+  return false;
+}
+
+/**
+ * Recursively apply `mapString` to every string in objects, arrays, or a lone string.
+ */
+export function deepMapStrings(value, mapString) {
+  if (typeof value === 'string') return mapString(value);
+  if (Array.isArray(value)) return value.map((item) => deepMapStrings(item, mapString));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = deepMapStrings(entry, mapString);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Session-time substitution: secrets, short_id, public URIs, docker container_hostname.
+ * Walks any config subtree (task env, container block, webserver, etc.).
+ */
+export function interpolateBaguetteConfig(value, opts) {
+  if (!opts || value == null) return value;
+  return deepMapStrings(value, (str) => {
+    if (!str.includes('${{')) return str;
+    return interpolateString(str, opts);
+  });
+}
+
+export function interpolateEnv(template, opts) {
+  if (!template || typeof template !== 'object' || Array.isArray(template)) return {};
+  const result = interpolateBaguetteConfig(template, opts);
+  return result && typeof result === 'object' && !Array.isArray(result) ? result : {};
+}
+
+/** @deprecated Use interpolateBaguetteConfig — kept as a named alias for docker container blocks. */
+export function interpolateDockerContainer(container, opts) {
+  return interpolateBaguetteConfig(container, opts);
 }
 
 /**
@@ -178,19 +316,30 @@ const TASK_PORT_REGEX = /\$\{\{\s*baguette\.tasks\.([A-Za-z0-9_:-]+)\.([A-Za-z0-
  */
 export function interpolateTaskPorts(commandStr, taskPortMap) {
   if (!commandStr || typeof commandStr !== 'string') return commandStr;
-  return commandStr.replace(TASK_PORT_REGEX, (_, taskKey, portName) => {
-    return String(taskPortMap?.[taskKey]?.[portName] ?? '');
+  return commandStr.replace(TASK_PORT_REGEX, (match, taskKey, portName) => {
+    const value = taskPortMap?.[taskKey]?.[portName];
+    if (value == null || value === '') return match;
+    return String(value);
   });
 }
 
-/** Apply `${{ baguette.tasks.* }}` substitution to every string value in an env object. */
+/** After depends-on: replace `${{ baguette.tasks.<key>.<PORT> }}` with allocated host ports. */
+export function interpolateConfigTaskPorts(value, taskPortMap) {
+  if (value == null || !taskPortMap || Object.keys(taskPortMap).length === 0) return value;
+  return deepMapStrings(value, (str) => {
+    if (!str.includes('${{')) return str;
+    return interpolateTaskPorts(str, taskPortMap);
+  });
+}
+
+/** @deprecated Use interpolateConfigTaskPorts. */
+export function interpolateDockerContainerTaskPorts(container, taskPortMap) {
+  return interpolateConfigTaskPorts(container, taskPortMap);
+}
+
+/** @deprecated Use interpolateConfigTaskPorts. */
 export function interpolateEnvTaskPorts(env, taskPortMap) {
-  if (!env || typeof env !== 'object') return env ?? {};
-  const result = {};
-  for (const [key, value] of Object.entries(env)) {
-    result[key] = typeof value === 'string' ? interpolateTaskPorts(value, taskPortMap) : value;
-  }
-  return result;
+  return interpolateConfigTaskPorts(env, taskPortMap);
 }
 
 /**
