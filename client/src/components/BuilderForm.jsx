@@ -544,7 +544,6 @@ export default function BuilderForm({
             panelClassName={`w-64 ${DROPDOWN_PANEL_CLASS} overflow-hidden py-1`}
             items={SESSION_START_MODES.filter((m) => !m.repoOnly || !isGlobal).map((m) => ({
               label: m.label,
-              subtitle: m.subtitle,
               hint: m.hint,
               selected: m.id === sessionStartMode,
               onSelect: () => setSessionStartMode(m.id),
