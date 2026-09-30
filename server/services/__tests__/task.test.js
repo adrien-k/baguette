@@ -13,7 +13,10 @@ vi.mock('child_process', () => {
     on: vi.fn(),
     kill: vi.fn(),
   };
-  return { spawn: vi.fn(() => mockChild) };
+  return {
+    spawn: vi.fn(() => mockChild),
+    execFile: vi.fn((_cmd, _args, _opts, cb) => cb?.(null, { stdout: '' }, '')),
+  };
 });
 
 vi.mock('../port-utils.js', () => ({
@@ -24,6 +27,7 @@ vi.mock('../port-utils.js', () => ({
 import { Task, DEFAULT_TTL_MS, HEARTBEAT_INTERVAL_MS } from '../task.js';
 import { TasksService } from '../feathers/tasks.service.js';
 import { isPortListening } from '../port-utils.js';
+import * as dockerSession from '../docker-session.js';
 
 let service;
 
@@ -401,6 +405,84 @@ describe('Task heartbeat / TTL', () => {
     const assertion = expect(ready).rejects.toThrow('ports not ready after 1000ms');
     await vi.advanceTimersByTimeAsync(1_100);
     await assertion;
+  });
+
+  it('waitForReady waits for docker container before healthcheck or TCP ports', async () => {
+    vi.useFakeTimers();
+    const healthWait = vi.spyOn(dockerSession, 'waitForContainerHealth').mockResolvedValue();
+    isPortListening.mockResolvedValue(true);
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'x',
+      ports: ['PG_PORT'],
+      label: 'postgres',
+      taskKey: 'postgres',
+      dockerContainer: {
+        image: 'postgres:16',
+        healthcheck: { test: ['CMD-SHELL', 'pg_isready'], interval: '1s' },
+      },
+    });
+    task.ports = { PG_PORT: 54321 };
+
+    const ready = task.waitForReady({ timeoutMs: 5_000, pollMs: 100 });
+    let resolved = false;
+    ready.then(() => {
+      resolved = true;
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(resolved).toBe(false);
+    expect(isPortListening).not.toHaveBeenCalled();
+    expect(healthWait).not.toHaveBeenCalled();
+
+    task._dockerContainer = { image: 'postgres:16', healthcheck: { test: ['CMD-SHELL'] } };
+    task._dockerContainerName = 'baguette_abcd_postgres';
+    await vi.advanceTimersByTimeAsync(100);
+    await ready;
+    expect(resolved).toBe(true);
+    expect(healthWait).toHaveBeenCalledWith('baguette_abcd_postgres', {
+      timeoutMs: 5_000,
+      pollMs: 100,
+    });
+    expect(isPortListening).not.toHaveBeenCalled();
+
+    healthWait.mockRestore();
+  });
+
+  it('waitForReady waits for docker container name when there are no port env vars', async () => {
+    vi.useFakeTimers();
+    isPortListening.mockResolvedValue(true);
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'x',
+      ports: [],
+      label: 'redis',
+      taskKey: 'redis',
+      dockerContainer: {
+        image: 'redis:7',
+        healthcheck: { test: ['CMD', 'redis-cli', 'ping'], interval: '1s' },
+      },
+    });
+
+    const ready = task.waitForReady({ timeoutMs: 5_000, pollMs: 100 });
+    await vi.advanceTimersByTimeAsync(300);
+    let settled = false;
+    ready.then(() => {
+      settled = true;
+    });
+    expect(settled).toBe(false);
+
+    task._dockerContainer = { image: 'redis:7', healthcheck: { test: ['CMD'] } };
+    task._dockerContainerName = 'baguette_abcd_redis';
+    const healthWait = vi.spyOn(dockerSession, 'waitForContainerHealth').mockResolvedValue();
+    await vi.advanceTimersByTimeAsync(200);
+    await expect(ready).resolves.toBeUndefined();
+    healthWait.mockRestore();
   });
 });
 

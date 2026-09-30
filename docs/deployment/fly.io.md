@@ -8,7 +8,7 @@ Fly.io machines are **Firecracker VMs**, not containers running on a shared host
 
 - There is no host Docker socket to mount — unlike the Kamal/VPS setup where `/var/run/docker.sock` is bind-mounted from the host.
 - Because the machine is a full VM, you **can** run the Docker daemon (`dockerd`) directly inside it. Baguette's entrypoint detects the missing socket and starts `dockerd` automatically.
-- Docker-compose services defined in `.baguette.yaml` will work normally; they run as containers inside the Fly VM.
+- Docker service tasks (`type: docker` in `.baguette.yaml`) work normally; they run as sibling containers inside the Fly VM via the local Docker daemon.
 
 ## Prerequisites
 

@@ -1,10 +1,4 @@
 import { Router } from 'express';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs';
-import path from 'path';
-import * as yaml from 'js-yaml';
-import { DOCKER_COMPOSE_PATH } from '../config.js';
 import { getGithubToken } from '../services/agent-settings.js';
 import { githubFetch } from '../services/github-api.js';
 import { listModels, refreshModels } from '../services/anthropic-models.js';
@@ -17,7 +11,6 @@ import {
   loadFullReviewPromptTemplate,
 } from '../services/session-prompt.js';
 import { getSystemInfo } from '../services/system-info.js';
-const execFileAsync = promisify(execFile);
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_USAGE_DAYS = 30;
@@ -152,109 +145,6 @@ export default function createSettingsRoutes(requireAuth) {
       res.status(500).json({ error: err.message });
     }
   });
-
-  // --- Docker Compose ---
-
-  router.get(
-    '/api/settings/docker-compose',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const content = await fs.promises.readFile(DOCKER_COMPOSE_PATH, 'utf8').catch((err) => {
-        if (err.code === 'ENOENT') return '';
-        throw err;
-      });
-      res.json({ content });
-    })
-  );
-
-  router.get(
-    '/api/settings/docker-compose/services',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      let content;
-      try {
-        content = await fs.promises.readFile(DOCKER_COMPOSE_PATH, 'utf8');
-      } catch (err) {
-        if (err.code === 'ENOENT') return res.json({ services: [] });
-        throw err;
-      }
-      try {
-        const parsed = yaml.load(content);
-        const services =
-          parsed && typeof parsed.services === 'object' && parsed.services !== null
-            ? Object.keys(parsed.services)
-            : [];
-        res.json({ services });
-      } catch (err) {
-        // Graceful failure for invalid YAML
-        res.json({ services: [], error: err.message });
-      }
-    })
-  );
-
-  router.put(
-    '/api/settings/docker-compose',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const { content } = req.body;
-      if (typeof content !== 'string') {
-        return res.status(400).json({ error: 'content must be a string' });
-      }
-      await fs.promises.mkdir(path.dirname(DOCKER_COMPOSE_PATH), { recursive: true });
-      await fs.promises.writeFile(DOCKER_COMPOSE_PATH, content, 'utf8');
-      res.json({ ok: true });
-    })
-  );
-
-  router.get(
-    '/api/settings/docker-compose/containers',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      try {
-        await fs.promises.access(DOCKER_COMPOSE_PATH);
-      } catch {
-        return res.json({ containers: [] });
-      }
-      try {
-        const { stdout } = await execFileAsync(
-          'docker',
-          ['compose', '-f', DOCKER_COMPOSE_PATH, 'ps', '--format', 'json', '-a'],
-          { timeout: 15000 }
-        );
-        const containers = stdout.trim()
-          ? stdout
-              .trim()
-              .split('\n')
-              .map((line) => JSON.parse(line))
-          : [];
-        res.json({ containers });
-      } catch (err) {
-        res.json({ containers: [], error: err.stderr || err.message });
-      }
-    })
-  );
-
-  router.post(
-    '/api/settings/docker-compose/containers/:name/:action',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const { name, action } = req.params;
-      const allowed = ['start', 'stop', 'restart', 'up', 'down'];
-      if (!allowed.includes(action)) {
-        return res.status(400).json({ error: `Invalid action: ${action}` });
-      }
-      try {
-        await fs.promises.access(DOCKER_COMPOSE_PATH);
-      } catch {
-        return res.status(400).json({ error: 'No docker-compose.yml configured' });
-      }
-      const args = ['compose', '-f', DOCKER_COMPOSE_PATH, action];
-      if (action === 'up') args.push('-d');
-      args.push(name);
-      await execFileAsync('docker', args, { timeout: 60000 });
-      res.json({ ok: true });
-    })
-  );
 
   /**
    * GET /api/repos/:repoFullName/prs

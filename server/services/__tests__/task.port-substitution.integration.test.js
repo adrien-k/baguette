@@ -35,6 +35,10 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
             run: "node -e \"require('http').get('http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{process.stdout.write('response:'+d+'\\n');process.exit(0)})}).on('error',e=>{process.stderr.write(e.message+'\\n');process.exit(1)})\"",
             'depends-on': ['http-server'],
           },
+          'env-client': {
+            run: 'node -e "process.stdout.write(process.env.TEST_URL||\'\')"',
+            'depends-on': ['http-server'],
+          },
         },
       },
     }),
@@ -68,7 +72,14 @@ function buildMockApp(service) {
       if (name === 'sessions') {
         return {
           get: async () => sessionRow,
-          getTaskEnv: async () => ({ ...process.env }),
+          getTaskEnv: async (_sessionId, taskKey) => ({
+            ...process.env,
+            ...(taskKey === 'env-client'
+              ? {
+                  TEST_URL: 'http://127.0.0.1:${{ baguette.tasks.http-server.SERVER_PORT }}/',
+                }
+              : {}),
+          }),
           getInterpolatedCommand: async (_sessionId, command) => command,
         };
       }
@@ -127,6 +138,25 @@ describe('task port substitution (integration)', () => {
     const clientTask = service.getTask(clientPub.id);
     expect(clientTask.exit_code).toBe(0);
     expect(clientTask.getLogs()).toContain('response:pong');
+  }, 20_000);
+
+  it('substitutes task port placeholders in env after depends-on tasks are ready', async () => {
+    service.app = buildMockApp(service);
+
+    const pub = await service.create(
+      { session_id: 1, task_key: 'env-client' },
+      { user: { id: 1 } }
+    );
+
+    await waitFor(() => service.getTask(pub.id)?.status === 'exited', {
+      timeoutMs: 15_000,
+      msg: () => service.getTask(pub.id)?.getLogs(),
+    });
+
+    const task = service.getTask(pub.id);
+    const serverTask = [...service._tasks.values()].find((t) => t.label === 'http-server');
+    expect(serverTask?.ports?.SERVER_PORT).toBeTruthy();
+    expect(task.getLogs()).toContain(`http://127.0.0.1:${serverTask.ports.SERVER_PORT}/`);
   }, 20_000);
 
   it('does NOT substitute ports when task_key is omitted — shell receives bad substitution', async () => {

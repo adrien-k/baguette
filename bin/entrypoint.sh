@@ -26,18 +26,10 @@ if [ -S /var/run/docker.sock ]; then
         usermod -aG docker baguette
     fi
 
-    # Ensure a compose file exists so docker-compose can create the default network.
-    if [ ! -f /data/docker-compose.yml ]; then
-        mkdir -p /data
-        printf 'services:\n\nnetworks:\n  default:\n' > /data/docker-compose.yml
-    fi
+    # Shared bridge network for Baguette and per-session docker tasks.
+    docker network inspect baguette_default >/dev/null 2>&1 || docker network create baguette_default
 
-    # Let docker-compose create the baguette_default network with proper compose labels.
-    # Because COMPOSE_PROJECT_NAME is set to "baguette".
-    docker compose -f /data/docker-compose.yml up --no-start 2>/dev/null || true
-
-    # Connect this container to baguette_default so it can reach compose services.
-    # Use container ID from mountinfo.
+    # Connect this container so it can reach task containers on baguette_default.
     CONTAINER_ID=$(grep -o '/docker/containers/[a-f0-9]*/' /proc/self/mountinfo 2>/dev/null | head -1 | cut -d'/' -f4)
     if [ -n "$CONTAINER_ID" ]; then
       docker network connect baguette_default "$CONTAINER_ID" 2>/dev/null || true

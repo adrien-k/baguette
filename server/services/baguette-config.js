@@ -3,6 +3,7 @@ import path from 'path';
 import * as yaml from 'js-yaml';
 import logger from '../logger.js';
 import { resolveDataDirRelativePath } from '../config.js';
+import { dockerContainerHostname } from './docker-session.js';
 
 export const BAGUETTE_DIR = '.baguette';
 export const CONFIG_FILENAME = '.baguette.yaml';
@@ -15,6 +16,14 @@ function parseBaguetteConfigYaml(raw, sourceLabel) {
   if (content.config != null && typeof content.config === 'object') return content.config;
   if (typeof content === 'object' && !Array.isArray(content)) return content;
   return { error: `Invalid ${sourceLabel}: expected a config object` };
+}
+
+/** Thrown when `.baguette.yaml` task definitions are invalid (callers map to HTTP 400). */
+export class BaguetteConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'BaguetteConfigError';
+  }
 }
 
 /**
@@ -60,14 +69,34 @@ const PLACEHOLDER_REGEX = /\$\{\{\s*baguette\.secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 const SHORT_ID_REGEX = /\$\{\{\s*baguette\.session\.short_id\s*\}\}/g;
 const PUBLIC_URI_REGEX = /\$\{\{\s*baguette\.session\.public_uri\s*\}\}/g;
 const SERVICE_URI_REGEX = /\$\{\{\s*baguette\.services\.([A-Za-z0-9_-]+)\.public_uri\s*\}\}/g;
+const TASK_ATTR_REGEX = /\$\{\{\s*baguette\.tasks\.([A-Za-z0-9_:-]+)\.([A-Za-z0-9_]+)\s*\}\}/g;
 
-export function interpolateString(str, { shortId, secrets, publicUri, servicesUriMap = {} }) {
+/** Hostnames for `type: docker` tasks on the session Docker network. */
+export function buildDockerTaskHostnames(baguetteConfig, shortId) {
+  const hostnames = {};
+  const userTasks = baguetteConfig?.session?.tasks;
+  if (!userTasks || typeof userTasks !== 'object' || Array.isArray(userTasks)) return hostnames;
+  if (!shortId) return hostnames;
+  for (const [key, val] of Object.entries(userTasks)) {
+    if (val?.type === 'docker') hostnames[key] = dockerContainerHostname(shortId, key);
+  }
+  return hostnames;
+}
+
+export function interpolateString(
+  str,
+  { shortId, secrets, publicUri, servicesUriMap = {}, taskHostnames = {} }
+) {
   if (!str || typeof str !== 'string') return str;
   return str
     .replace(PLACEHOLDER_REGEX, (_, secretKey) => secrets[secretKey] ?? '')
     .replace(SHORT_ID_REGEX, shortId ?? '')
     .replace(PUBLIC_URI_REGEX, publicUri)
-    .replace(SERVICE_URI_REGEX, (_, serviceName) => servicesUriMap[serviceName] ?? '');
+    .replace(SERVICE_URI_REGEX, (_, serviceName) => servicesUriMap[serviceName] ?? '')
+    .replace(TASK_ATTR_REGEX, (_, taskKey, attr) => {
+      if (attr === 'container_hostname') return taskHostnames[taskKey] ?? '';
+      return '';
+    });
 }
 
 export function interpolateEnv(template, opts) {
@@ -136,6 +165,16 @@ export function interpolateTaskPorts(commandStr, taskPortMap) {
   });
 }
 
+/** Apply `${{ baguette.tasks.* }}` substitution to every string value in an env object. */
+export function interpolateEnvTaskPorts(env, taskPortMap) {
+  if (!env || typeof env !== 'object') return env ?? {};
+  const result = {};
+  for (const [key, value] of Object.entries(env)) {
+    result[key] = typeof value === 'string' ? interpolateTaskPorts(value, taskPortMap) : value;
+  }
+  return result;
+}
+
 /**
  * Build a tasks hash from a baguette config.
  * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, attach? } }`.
@@ -149,17 +188,30 @@ export function getAvailableTasks(baguetteConfig) {
 
   // Init task
   const initScript = getScriptBlock(baguetteConfig?.session?.init);
-  if (initScript) tasks['baguette:init'] = { run: initScript };
+  if (initScript) tasks['baguette:init'] = { type: 'command', run: initScript };
 
   // User tasks: prefer `tasks` hash, fallback to `commands` array
   const userTasks = baguetteConfig?.session?.tasks;
   const userCommands = baguetteConfig?.session?.commands;
   if (userTasks && typeof userTasks === 'object' && !Array.isArray(userTasks)) {
     for (const [key, val] of Object.entries(userTasks)) {
-      if (!val || typeof val.run !== 'string') continue;
+      if (!val || typeof val !== 'object') continue;
+      if (val.type === 'docker') {
+        if (!val.container || typeof val.container !== 'object') continue;
+        tasks[key] = {
+          type: 'docker',
+          container: val.container,
+          ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
+          ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
+          ...(val.attach === false ? { attach: false } : {}),
+        };
+        continue;
+      }
+      if (typeof val.run !== 'string') continue;
       const run = getScriptBlock(val.run);
       if (!run) continue;
       tasks[key] = {
+        type: 'command',
         run,
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
@@ -171,6 +223,7 @@ export function getAvailableTasks(baguetteConfig) {
     for (const cmd of userCommands) {
       if (cmd?.label && cmd?.run) {
         tasks[cmd.label] = {
+          type: 'command',
           run: cmd.run,
           ...(cmd.ports ? { ports: cmd.ports } : {}),
           ...(cmd.attach === false ? { attach: false } : {}),
@@ -231,13 +284,24 @@ export function resolveWebserverConfig(baguetteConfig) {
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
   return Object.entries(tasks)
-    .filter(([_, t]) => t && typeof t.run === 'string')
-    .map(([key, t]) => ({
-      label: key,
-      run: t.run,
-      ...(t.ports?.length ? { ports: t.ports } : {}),
-      ...(t.attach === false ? { attach: false } : {}),
-    }));
+    .filter(([_, t]) => t && (typeof t.run === 'string' || t.type === 'docker'))
+    .map(([key, t]) => {
+      if (t.type === 'docker') {
+        return {
+          label: key,
+          type: 'docker',
+          image: t.container?.image,
+          ...(t.ports?.length ? { ports: t.ports } : {}),
+          ...(t.attach === false ? { attach: false } : {}),
+        };
+      }
+      return {
+        label: key,
+        run: t.run,
+        ...(t.ports?.length ? { ports: t.ports } : {}),
+        ...(t.attach === false ? { attach: false } : {}),
+      };
+    });
 }
 
 const SERVICE_NAME_REGEX = /^[a-z0-9][a-z0-9-]*$/;

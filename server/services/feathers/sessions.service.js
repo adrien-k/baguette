@@ -5,7 +5,12 @@ import fs from 'fs/promises';
 import { NotFound, BadRequest } from '@feathersjs/errors';
 import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
-import { loadBaguetteConfig, getAvailableCommands, getScriptBlock } from '../baguette-config.js';
+import {
+  loadBaguetteConfig,
+  getAvailableCommands,
+  getScriptBlock,
+  BaguetteConfigError,
+} from '../baguette-config.js';
 import {
   removeWorktree,
   gitDiff,
@@ -54,6 +59,7 @@ import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
+import { removeSessionDockerResources } from '../docker-session.js';
 import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import {
@@ -470,6 +476,11 @@ export class SessionsService extends KnexService {
       await removeWorktree(session, repo);
     }
     this.app.service('tasks').deleteSessionTasks(sessionId);
+    if (session?.short_id) {
+      await removeSessionDockerResources(session.short_id).catch((err) =>
+        logger.warn({ err: err.message, sessionId }, 'Failed to remove session docker volume')
+      );
+    }
     await this._deleteStrongLoopsTiedToSession(sessionId);
     const archivedAt = new Date().toISOString();
     // Only mark archived after the worktree is gone so a later create cannot
@@ -546,7 +557,13 @@ export class SessionsService extends KnexService {
     const session = params.resolvedSession;
     if (!session?.worktree_path || isGlobalSession(session)) return { commands: [] };
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
-    return { commands: getAvailableCommands(baguetteConfig) };
+    if (baguetteConfig?.error) throw new BadRequest(baguetteConfig.error);
+    try {
+      return { commands: getAvailableCommands(baguetteConfig) };
+    } catch (err) {
+      if (err instanceof BaguetteConfigError) throw new BadRequest(err.message);
+      throw err;
+    }
   }
 
   async previewStatus(_data, params) {

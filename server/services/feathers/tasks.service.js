@@ -2,7 +2,12 @@ import { NotFound, BadRequest } from '@feathersjs/errors';
 import { Task, DEFAULT_TTL_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
-import { loadBaguetteConfig, getAvailableTasks, appendTaskArgs } from '../baguette-config.js';
+import {
+  loadBaguetteConfig,
+  getAvailableTasks,
+  appendTaskArgs,
+  BaguetteConfigError,
+} from '../baguette-config.js';
 import logger from '../../logger.js';
 
 const MAX_TASKS = 20; // Only keeps 20 task (running + history)
@@ -28,7 +33,22 @@ export class TasksService {
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
    */
-  createTask({ sessionId, command, label, taskKey, ports, env, cwd, dependsOn, noTtl, ttlMs }) {
+  createTask({
+    sessionId,
+    shortId,
+    command,
+    label,
+    taskKey,
+    ports,
+    env,
+    cwd,
+    dependsOn,
+    noTtl,
+    ttlMs,
+    dockerContainer,
+    dockerPortMappings,
+    dockerEnvKeys,
+  }) {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
@@ -48,6 +68,7 @@ export class TasksService {
     const task = new Task({
       id,
       sessionId,
+      shortId,
       command,
       label,
       taskKey,
@@ -57,6 +78,9 @@ export class TasksService {
       dependsOn,
       noTtl,
       ttlMs,
+      dockerContainer,
+      dockerPortMappings,
+      dockerEnvKeys,
     });
     task.onLog((_id, stream, data) =>
       this.emit('log', { id, session_id: sessionId, stream, data })
@@ -217,13 +241,22 @@ export class TasksService {
       ? await loadBaguetteConfig(session.worktree_path)
       : null;
     if (baguetteConfig?.error) throw new BadRequest(baguetteConfig.error);
-    const taskDefs = baguetteConfig ? getAvailableTasks(baguetteConfig) : {};
+    let taskDefs;
+    try {
+      taskDefs = baguetteConfig ? getAvailableTasks(baguetteConfig) : {};
+    } catch (err) {
+      if (err instanceof BaguetteConfigError) throw new BadRequest(err.message);
+      throw err;
+    }
 
     const taskDef = task_key ? taskDefs[task_key] : null;
     if (task_key && !taskDef && !rawCommand) {
       throw new BadRequest(`Task "${task_key}" is not defined in .baguette.yaml`);
     }
-    const resolvedCommand = rawCommand ?? taskDef?.run;
+    const isDockerTask = taskDef?.type === 'docker';
+    const resolvedCommand =
+      rawCommand ??
+      (isDockerTask ? `docker:${taskDef.container?.image ?? 'container'}` : taskDef?.run);
     if (!resolvedCommand) throw new BadRequest('A task_key or a command is required');
 
     const effectiveLabel = label ?? task_key ?? null;
@@ -238,21 +271,8 @@ export class TasksService {
 
     const dependsOn = [];
 
-    // Add init as a dependency if the session has not been initialized yet
-    if (!skipInit && !session.initialized && session.worktree_path) {
-      // Mark initialized eagerly to prevent double-init on concurrent task starts.
-      await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
-      if (taskDefs['baguette:init']) {
-        const initPub = await this.create(
-          { session_id, task_key: 'baguette:init', skipInit: true, autoStart: false },
-          params
-        );
-        dependsOn.push(this.getTask(initPub.id));
-      }
-    }
-
-    // Add .baguette.yaml declared dependencies (transitive, cycle-detected via _depChain)
-    if (task_key && baguetteConfig) {
+    const attachYamlDependsOn = async () => {
+      if (!task_key || !baguetteConfig) return;
       const depChain = new Set(_depChain ?? []);
       depChain.add(task_key);
       for (const depKey of taskDef?.depends_on ?? []) {
@@ -278,10 +298,45 @@ export class TasksService {
         }
         if (depTask) dependsOn.push(depTask);
       }
+    };
+
+    // Run session.init before yaml depends-on (install-only; DB setup belongs on tasks with depends-on).
+    if (
+      !skipInit &&
+      !session.initialized &&
+      session.worktree_path &&
+      task_key !== 'baguette:init'
+    ) {
+      // Mark initialized eagerly to prevent double-init on concurrent task starts.
+      await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
+      const initDef = taskDefs['baguette:init'];
+      if (initDef) {
+        const initCommand = await this.app
+          .service('sessions')
+          .getInterpolatedCommand(session.id, initDef.run);
+        const initEnv = await this.app.service('sessions').getTaskEnv(session.id, 'baguette:init');
+        const initTask = this.createTask({
+          sessionId: session_id,
+          shortId: session.short_id,
+          command: initCommand,
+          label: 'baguette:init',
+          taskKey: 'baguette:init',
+          ports: [],
+          env: initEnv,
+          cwd,
+          dependsOn: [],
+          noTtl: false,
+          ttlMs: effectiveTtlMs,
+        });
+        dependsOn.push(initTask);
+      }
     }
+
+    await attachYamlDependsOn();
 
     const task = this.createTask({
       sessionId: session_id,
+      shortId: session.short_id,
       command: interpolatedCommand,
       label: effectiveLabel,
       taskKey: task_key ?? null,
@@ -291,6 +346,12 @@ export class TasksService {
       dependsOn,
       noTtl,
       ttlMs: effectiveTtlMs,
+      dockerContainer: isDockerTask ? taskDef.container : null,
+      dockerPortMappings: null,
+      dockerEnvKeys:
+        isDockerTask && taskDef?.env && typeof taskDef.env === 'object'
+          ? Object.keys(taskDef.env)
+          : null,
     });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);

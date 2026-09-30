@@ -10,7 +10,13 @@ import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
 import McpAccessSection from '../components/McpAccessSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
-import { SecretsTab, PluginsTab, UsersTab, SlackTab } from './settings/GlobalSettingsSections.jsx';
+import {
+  SecretsTab,
+  PluginsTab,
+  UsersTab,
+  SlackTab,
+  AllRepositoriesSection,
+} from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import PromptsSettingsTab from './settings/PromptsSettingsTab.jsx';
 import {
@@ -191,6 +197,35 @@ function RepositoriesTab({ settings, onSave }) {
         </SettingsSection>
 
         <SettingsSection
+          title="GitHub token"
+          description="Optional personal access token for GitHub API calls (listing repos, branches, PRs). When set, it is used instead of the token from GitHub App sign-in."
+        >
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1">
+              Personal access token
+            </label>
+            <MaskedSecretInput
+              maskedValue={settings?.github_token}
+              placeholder="ghp_… or github_pat_…"
+              onChange={(val, dirty) => {
+                setGithubToken(val);
+                setGithubTokenDirty(dirty);
+              }}
+            />
+            <p className="mt-1 text-xs text-faint">
+              Fine-grained or classic PAT with access to the repositories you use in Baguette. Leave
+              blank and save to clear a stored token.
+            </p>
+          </div>
+          <SettingsSaveRow
+            saving={githubTokenSaving}
+            saved={githubTokenSaved}
+            onSave={handleGithubTokenSave}
+            disabled={!githubTokenDirty}
+          />
+        </SettingsSection>
+
+        <SettingsSection
           title="My repositories"
           description="Repositories linked to your account. Removing one cleans up its data if no other users have it linked."
         >
@@ -301,34 +336,7 @@ function RepositoriesTab({ settings, onSave }) {
           </div>
         </SettingsSection>
 
-        <SettingsSection
-          title="GitHub token"
-          description="Optional personal access token for GitHub API calls (listing repos, branches, PRs). When set, it is used instead of the token from GitHub App sign-in."
-        >
-          <div>
-            <label className="block text-sm font-medium text-secondary mb-1">
-              Personal access token
-            </label>
-            <MaskedSecretInput
-              maskedValue={settings?.github_token}
-              placeholder="ghp_… or github_pat_…"
-              onChange={(val, dirty) => {
-                setGithubToken(val);
-                setGithubTokenDirty(dirty);
-              }}
-            />
-            <p className="mt-1 text-xs text-faint">
-              Fine-grained or classic PAT with access to the repositories you use in Baguette. Leave
-              blank and save to clear a stored token.
-            </p>
-          </div>
-          <SettingsSaveRow
-            saving={githubTokenSaving}
-            saved={githubTokenSaved}
-            onSave={handleGithubTokenSave}
-            disabled={!githubTokenDirty}
-          />
-        </SettingsSection>
+        <AllRepositoriesSection />
       </div>
 
       {confirmUnlink && (

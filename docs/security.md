@@ -18,5 +18,5 @@ Because of this, **treat Baguette like any other server that runs untrusted code
 
 ## Development and test dependencies
 
-- Ideally, your application's dependencies (databases, caches, queues) run as **Docker containers on the same machine**, managed via a shared `docker-compose.yml`. This keeps external credentials out of `.baguette.yaml` entirely — services are reachable on `localhost` with no authentication, or with static credentials that have no real-world impact.
+- Ideally, your application's dependencies (databases, caches, queues) run as **Docker tasks** in `.baguette.yaml` (per-session containers on `127.0.0.1`). Use static or session-scoped credentials with no real-world impact; avoid production secrets in repo config.
 - See the `session.init` / `session.cleanup` pattern in [session-management.md](session-management.md) for per-session database isolation.

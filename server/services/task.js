@@ -3,8 +3,16 @@ import { mkdir, writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import net from 'net';
-import { interpolateTaskPorts } from './baguette-config.js';
+import { interpolateTaskPorts, interpolateEnvTaskPorts } from './baguette-config.js';
 import { isPortListening } from './port-utils.js';
+import {
+  normalizeDockerContainer,
+  dockerContainerHostname,
+  startDockerContainer,
+  stopDockerContainer,
+  waitForContainerHealth,
+  isContainerRunning,
+} from './docker-session.js';
 
 /** Idle lifetime for tasks that expose ports. Reset by heartbeat(). */
 export const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -78,10 +86,12 @@ export class Task {
   #logBuffer = [];
   #ttlTimer = null;
   #heartbeatTimer = null;
+  #dockerMonitorTimer = null;
 
   constructor({
     id,
     sessionId,
+    shortId = null,
     command,
     label,
     taskKey,
@@ -91,6 +101,9 @@ export class Task {
     dependsOn,
     noTtl = false,
     ttlMs,
+    dockerContainer = null,
+    dockerPortMappings = null,
+    dockerEnvKeys = null,
   }) {
     this.id = id;
     this.session_id = sessionId;
@@ -116,6 +129,16 @@ export class Task {
     this._started = false;
     this._noTtl = !!noTtl;
     this._ttlMs = noTtl ? null : (ttlMs ?? DEFAULT_TTL_MS);
+    this._shortId = shortId;
+    this._dockerContainerRaw = dockerContainer;
+    this._dockerPortMappings = Array.isArray(dockerPortMappings) ? dockerPortMappings : [];
+    this._dockerEnvKeys = Array.isArray(dockerEnvKeys) ? dockerEnvKeys : [];
+    this._dockerContainer = null;
+    this._dockerContainerName = null;
+  }
+
+  get isDocker() {
+    return this._dockerContainerRaw != null;
   }
 
   get hasPorts() {
@@ -241,8 +264,20 @@ export class Task {
 
           if (this.status !== 'running') return this;
 
+          if (depTask._portMap && typeof depTask._portMap === 'object') {
+            for (const [depKey, depPorts] of Object.entries(depTask._portMap)) {
+              this._portMap[depKey] = depPorts;
+            }
+          }
           if (depTask.label && Object.keys(depTask.ports).length > 0) {
             this._portMap[depTask.label] = depTask.ports;
+          }
+          if (depTask.isDocker && depTask.task_key && depTask._shortId) {
+            const depKey = depTask.label ?? depTask.task_key;
+            this._portMap[depKey] = {
+              ...(this._portMap[depKey] ?? {}),
+              container_hostname: dockerContainerHostname(depTask._shortId, depTask.task_key),
+            };
           }
           const word = depTask._portEnvVars.length > 0 ? 'ready' : 'completed';
           this.addLog('stdout', `\x1b[2m──── Pre-requisite ${word}: ${depLabel}\x1b[0m\n`);
@@ -252,6 +287,9 @@ export class Task {
 
         if (Object.keys(this._portMap).length > 0) {
           this.command = interpolateTaskPorts(this.command, this._portMap);
+          if (this._env) {
+            this._env = interpolateEnvTaskPorts(this._env, this._portMap);
+          }
         }
 
         return this._startProcess();
@@ -278,7 +316,9 @@ export class Task {
    */
   async waitForReady({ timeoutMs, timeout, pollMs = 500 } = {}) {
     const readyTimeoutMs = timeoutMs ?? timeout ?? 60_000;
-    const isPortDep = this._portEnvVars.length > 0;
+    const isPortDep =
+      this._portEnvVars.length > 0 ||
+      (this.isDocker && this._dockerContainerRaw?.healthcheck != null);
 
     if (this.status === 'exited') {
       if (isPortDep || this.exit_code !== 0) {
@@ -323,8 +363,28 @@ export class Task {
     );
 
     const pollPromise = (async () => {
-      while (Object.keys(this.ports).length !== this._portEnvVars.length) {
-        await new Promise((r) => setTimeout(r, pollMs));
+      if (this._portEnvVars.length) {
+        while (Object.keys(this.ports).length !== this._portEnvVars.length) {
+          await new Promise((r) => setTimeout(r, pollMs));
+        }
+      }
+      if (this.isDocker) {
+        while (!this._dockerContainerName) {
+          if (this.status === 'exited') {
+            throw Object.assign(
+              new Error(`"${this.label ?? 'task'}" exited before container started`),
+              { exitCode: this.exit_code }
+            );
+          }
+          await new Promise((r) => setTimeout(r, pollMs));
+        }
+      }
+      if (this.isDocker && this._dockerContainer?.healthcheck) {
+        await waitForContainerHealth(this._dockerContainerName, {
+          timeoutMs: readyTimeoutMs,
+          pollMs,
+        });
+        return;
       }
       const deadline = Date.now() + readyTimeoutMs;
       while (Date.now() < deadline) {
@@ -355,6 +415,10 @@ export class Task {
     const fullEnv = { ...this._env };
     for (const [key, port] of Object.entries(portAssignments)) {
       fullEnv[key] = String(port);
+    }
+
+    if (this.isDocker) {
+      return this._startDockerProcess(fullEnv, portAssignments);
     }
 
     let scriptPath = null;
@@ -394,6 +458,44 @@ export class Task {
 
     this.heartbeat();
     return this;
+  }
+
+  async _startDockerProcess(fullEnv, portAssignments) {
+    if (!this._shortId || !this.task_key) {
+      throw new Error('Docker tasks require session short_id and task_key');
+    }
+    this._dockerContainer = normalizeDockerContainer(this._dockerContainerRaw);
+    this.addLog('stdout', baguetteStatusLine(`Starting container ${this._dockerContainer.image}…`));
+    const { containerName } = await startDockerContainer({
+      shortId: this._shortId,
+      taskKey: this.task_key,
+      container: this._dockerContainer,
+      taskEnvKeys: this._dockerEnvKeys,
+      env: fullEnv,
+    });
+    this._dockerContainerName = containerName;
+    this.addLog('stdout', baguetteStatusLine(`Container ${containerName} started`));
+    this.#startDockerExitMonitor();
+    this.heartbeat();
+    return this;
+  }
+
+  #startDockerExitMonitor() {
+    if (!this._dockerContainerName) return;
+    const name = this._dockerContainerName;
+    this.#dockerMonitorTimer = setInterval(async () => {
+      if (this.status !== 'running') {
+        clearInterval(this.#dockerMonitorTimer);
+        this.#dockerMonitorTimer = null;
+        return;
+      }
+      const running = await isContainerRunning(name);
+      if (!running) {
+        clearInterval(this.#dockerMonitorTimer);
+        this.#dockerMonitorTimer = null;
+        this.exit(1);
+      }
+    }, 2000);
   }
 
   #waitForChildExit({ timeoutMs }) {
@@ -451,6 +553,17 @@ export class Task {
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
     // forever and the Preview Start button stays disabled.
+    if (this._dockerContainerName) {
+      await stopDockerContainer(this._dockerContainerName);
+      clearInterval(this.#dockerMonitorTimer);
+      this.#dockerMonitorTimer = null;
+      this._dockerContainerName = null;
+      for (const dep of this._dependsOn) {
+        await dep.kill().catch(() => {});
+      }
+      this.exit(0);
+      return true;
+    }
     if (!this.#process) {
       for (const dep of this._dependsOn) {
         await dep.kill().catch(() => {});
@@ -507,6 +620,7 @@ export class Task {
   exit(exitCode = 1) {
     if (this.status === 'exited') return;
     clearTimeout(this.#ttlTimer);
+    clearInterval(this.#dockerMonitorTimer);
     this.#stopDepHeartbeatLoop();
     this.status = 'exited';
     this.exit_code = exitCode;

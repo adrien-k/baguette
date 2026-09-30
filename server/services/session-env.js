@@ -3,6 +3,7 @@ import {
   interpolateEnv,
   interpolateString,
   resolveServicesConfig,
+  buildDockerTaskHostnames,
 } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 import { gitAuthorEnvFromUser } from './git-identity.js';
@@ -56,6 +57,7 @@ async function buildInterpolateContext(db, sessionId) {
         secrets,
         publicUri: getPreviewHost(session.short_id),
         servicesUriMap,
+        taskHostnames: buildDockerTaskHostnames(baguetteConfig, session.short_id),
       };
     }
   }

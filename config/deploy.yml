@@ -25,7 +25,7 @@ ssh:
 retain_containers: 2
 
 # How long kamal-proxy waits for /up on app_port (default 30). Migrations + entrypoint
-# (docker socket, compose network) can exceed that on slower disks.
+# (docker socket, baguette_default setup) can exceed that on slower disks.
 deploy_timeout: 120
 
 # Enable SSL auto certification via Let's Encrypt (and allow for multiple apps on one server).

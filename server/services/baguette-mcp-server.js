@@ -27,7 +27,12 @@ import {
   buildPrBody,
   buildSessionFooter,
 } from './github.js';
-import { loadBaguetteConfig, getAvailableCommands, getAvailableTasks } from './baguette-config.js';
+import {
+  loadBaguetteConfig,
+  getAvailableCommands,
+  getAvailableTasks,
+  BaguetteConfigError,
+} from './baguette-config.js';
 import { getSessionPreviewUrl } from './preview-services.js';
 import { loadSessionFooterUsageLines } from './pr-footer-usage.js';
 import { isPortListening } from './port-utils.js';
@@ -43,13 +48,7 @@ import {
   sliceByteRange,
   validateLogByteRange,
 } from './mcp-pagination.js';
-import {
-  DOCKER_COMPOSE_PATH,
-  IMAGES_DIR,
-  PUBLIC_API_HOST,
-  PUBLIC_HOST,
-  resolveDataDirRelativePath,
-} from '../config.js';
+import { IMAGES_DIR, PUBLIC_API_HOST, PUBLIC_HOST, resolveDataDirRelativePath } from '../config.js';
 import { ok, fail } from './baguette-mcp-tool-result.js';
 import { buildBaguetteAccountToolList } from './baguette-account-mcp-tools.js';
 import {
@@ -827,9 +826,16 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
               'No Baguette config found (.baguette.yaml). Run ConfigRepoPrompt and follow the instructions.',
           });
         }
-        const commands = getAvailableCommands(cfg).filter(
-          (c) => c && typeof c.label === 'string' && typeof c.run === 'string'
-        );
+        let commands;
+        try {
+          commands = getAvailableCommands(cfg).filter(
+            (c) =>
+              c && typeof c.label === 'string' && (typeof c.run === 'string' || c.type === 'docker')
+          );
+        } catch (err) {
+          if (err instanceof BaguetteConfigError) return fail(err.message);
+          throw err;
+        }
         return ok({ commands });
       },
     },
@@ -1045,7 +1051,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
         'Get the onboarding instructions for configuring this repository (.baguette.yaml setup).',
       schema: {},
       handler: async () => {
-        const prompt = await loadPrompt('onboarding-prompt', { DOCKER_COMPOSE_PATH });
+        const prompt = await loadPrompt('onboarding-prompt', {});
         const interactivePrompt = await loadPrompt('onboarding-interactive-prompt');
         return ok({ prompt: [prompt, interactivePrompt].join('\n\n') });
       },
@@ -1059,7 +1065,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
       handler: async () => {
         const session = await getSession();
         const repo = await db('repos').where({ id: session.repo_id }).first();
-        const prompt = await loadPrompt('onboarding-prompt', { DOCKER_COMPOSE_PATH });
+        const prompt = await loadPrompt('onboarding-prompt', {});
         const newSession = await app.service('sessions').create(
           {
             repo_full_name: session.repo_full_name,

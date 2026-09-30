@@ -44,10 +44,7 @@ vi.mock('../agent-settings.js', () => ({ getGithubToken: vi.fn(() => 'ghtoken') 
 vi.mock('../logger.js', () => ({ default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../config.js', async (importOriginal) => {
   const actual = await importOriginal();
-  return {
-    ...actual,
-    DOCKER_COMPOSE_PATH: '/docker-compose.yml',
-  };
+  return { ...actual };
 });
 vi.mock('../prompts/loadPrompt.js', () => ({ default: vi.fn().mockResolvedValue('prompt text') }));
 vi.mock('../port-utils.js', () => ({ isPortListening: vi.fn().mockResolvedValue(false) }));

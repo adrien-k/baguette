@@ -9,6 +9,9 @@ import {
   getScriptBlock,
   appendTaskArgs,
   getAvailableTasks,
+  interpolateString,
+  buildDockerTaskHostnames,
+  interpolateEnvTaskPorts,
   loadBaguetteConfig,
   loadBaguetteInstructions,
   CONFIG_FILENAME,
@@ -86,6 +89,51 @@ describe('getAvailableTasks', () => {
       session: { tasks: { 'run-tests': { run: 'pnpm test', attach: false } } },
     });
     expect(tasks['run-tests'].attach).toBe(false);
+  });
+
+  it('interpolateEnvTaskPorts substitutes task port placeholders in env values', () => {
+    const env = interpolateEnvTaskPorts(
+      {
+        DATABASE_URL: 'postgres://u:p@127.0.0.1:${{ baguette.tasks.postgres.PG_PORT }}/app',
+      },
+      { postgres: { PG_PORT: 55432 } }
+    );
+    expect(env.DATABASE_URL).toBe('postgres://u:p@127.0.0.1:55432/app');
+  });
+
+  it('includes docker tasks without ports', () => {
+    const tasks = getAvailableTasks({
+      session: {
+        tasks: {
+          postgres: {
+            type: 'docker',
+            env: { POSTGRES_USER: 'postgres' },
+            container: {
+              image: 'postgres:16',
+              persist: ['/var/lib/postgresql/data'],
+            },
+          },
+        },
+      },
+    });
+    expect(tasks.postgres.type).toBe('docker');
+    expect(tasks.postgres.ports).toBeUndefined();
+    expect(tasks.postgres.env).toEqual({ POSTGRES_USER: 'postgres' });
+  });
+
+  it('buildDockerTaskHostnames and interpolateString resolve container_hostname', () => {
+    const config = {
+      session: {
+        tasks: { postgres: { type: 'docker', container: { image: 'postgres:16' } } },
+      },
+    };
+    const hostnames = buildDockerTaskHostnames(config, 'a3de4');
+    expect(hostnames.postgres).toBe('baguette_a3de4_postgres');
+    const url = interpolateString(
+      'postgres://u:p@${{ baguette.tasks.postgres.container_hostname }}:5432/app',
+      { taskHostnames: hostnames }
+    );
+    expect(url).toBe('postgres://u:p@baguette_a3de4_postgres:5432/app');
   });
 });
 

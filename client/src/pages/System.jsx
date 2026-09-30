@@ -1,9 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
-import { apiFetch } from '../api.js';
-import SystemWideBadge from '../components/SystemWideBadge.jsx';
-import { SettingsSection, SettingsSaveRow } from '../components/SettingsSection.jsx';
-import { AllRepositoriesSection } from './settings/GlobalSettingsSections.jsx';
+import { SettingsSection } from '../components/SettingsSection.jsx';
 import { useSystemInfo } from '../hooks/useSystemInfo.js';
 import { formatBytes, formatUptime } from '../utils/systemInfoMetrics.js';
 
@@ -24,181 +21,6 @@ function SystemStat({ label, value, sub }) {
         <div>{value}</div>
         {sub ? <div className="text-xs text-faint mt-0.5">{sub}</div> : null}
       </div>
-    </div>
-  );
-}
-
-function DockerComposeSection() {
-  const [content, setContent] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [services, setServices] = useState([]);
-  const [containers, setContainers] = useState([]);
-  const [loadingServices, setLoadingServices] = useState(false);
-  const [actionLoading, setActionLoading] = useState(null);
-
-  const loadContent = () => {
-    apiFetch('/api/settings/docker-compose').then((d) => setContent(d.content));
-  };
-
-  const loadServices = () => {
-    setLoadingServices(true);
-    Promise.all([
-      apiFetch('/api/settings/docker-compose/services').catch(() => ({ services: [] })),
-      apiFetch('/api/settings/docker-compose/containers').catch(() => ({ containers: [] })),
-    ])
-      .then(([svcData, ctrData]) => {
-        setServices(svcData.services || []);
-        setContainers(ctrData.containers || []);
-      })
-      .finally(() => setLoadingServices(false));
-  };
-
-  useEffect(() => {
-    loadContent();
-    loadServices();
-  }, []);
-
-  const handleSave = async () => {
-    setSaving(true);
-    setSaved(false);
-    try {
-      await apiFetch('/api/settings/docker-compose', {
-        method: 'PUT',
-        body: JSON.stringify({ content }),
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      loadServices();
-    } catch (err) {
-      toastError('Failed to save Docker config', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleContainerAction = async (name, action) => {
-    setActionLoading(`${name}:${action}`);
-    try {
-      await apiFetch(`/api/settings/docker-compose/containers/${name}/${action}`, {
-        method: 'POST',
-      });
-      loadServices();
-    } catch (err) {
-      toastError(`Failed to ${action} container`, err);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const statusColor = (state) => {
-    if (!state) return 'bg-track';
-    const s = state.toLowerCase();
-    if (s.includes('running')) return 'bg-ok';
-    if (s.includes('exited') || s.includes('dead')) return 'bg-err';
-    if (s.includes('paused') || s.includes('restarting')) return 'bg-brand';
-    return 'bg-faint';
-  };
-
-  const containerByService = {};
-  for (const c of containers) {
-    const name = c.Service || c.Name || c.service || c.name;
-    if (name) containerByService[name] = c;
-  }
-
-  const allServiceNames = [
-    ...services,
-    ...containers
-      .map((c) => c.Service || c.Name || c.service || c.name)
-      .filter((n) => n && !services.includes(n)),
-  ];
-
-  return (
-    <div className="space-y-6">
-      <SettingsSection
-        title="Docker"
-        headerAside={<SystemWideBadge />}
-        description="System-wide Docker Compose configuration stored in the data directory. Services defined here are available to all sessions."
-      >
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={18}
-          spellCheck={false}
-          className="w-full bg-nav border border-strong rounded-xl px-4 py-3 text-sm text-fg font-mono placeholder-faint focus:outline-none focus:ring-2 focus:ring-brand/50 resize-y leading-relaxed"
-          placeholder="# docker-compose.yml"
-        />
-        <SettingsSaveRow saving={saving} saved={saved} onSave={handleSave} />
-      </SettingsSection>
-
-      <SettingsSection title="Docker services" headerAside={<SystemWideBadge />}>
-        <div className="divide-y divide-line">
-          {loadingServices && allServiceNames.length === 0 && (
-            <p className="text-faint text-sm text-center py-6">Loading…</p>
-          )}
-          {!loadingServices && allServiceNames.length === 0 && (
-            <p className="text-faint text-sm text-center py-6">
-              No services defined. Add services to your docker-compose.yml and save.
-            </p>
-          )}
-          {allServiceNames.map((name) => {
-            const c = containerByService[name];
-            const state = c ? c.State || c.state || '' : '';
-            const image = c ? c.Image || c.image || '' : '';
-            return (
-              <div key={name} className="flex items-center justify-between py-3 gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(state)}`} />
-                  <div className="min-w-0">
-                    <code className="text-sm text-fg font-medium">{name}</code>
-                    <div className="text-xs text-faint mt-0.5 truncate">
-                      {image && <span>{image}</span>}
-                      {state ? (
-                        <span className="ml-2">{state}</span>
-                      ) : (
-                        <span className="ml-2 italic">not started</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!c && (
-                    <button
-                      onClick={() => handleContainerAction(name, 'up')}
-                      disabled={actionLoading !== null}
-                      className="text-xs text-accent hover:text-accent px-2 py-1 rounded hover:bg-control transition-colors disabled:opacity-50"
-                    >
-                      {actionLoading === `${name}:up` ? '…' : 'Start'}
-                    </button>
-                  )}
-                  {c &&
-                    ['start', 'stop', 'restart'].map((action) => (
-                      <button
-                        key={action}
-                        onClick={() => handleContainerAction(name, action)}
-                        disabled={actionLoading !== null}
-                        className="text-xs text-fg-muted hover:text-fg px-2 py-1 rounded hover:bg-control transition-colors disabled:opacity-50 capitalize"
-                      >
-                        {actionLoading === `${name}:${action}` ? '…' : action}
-                      </button>
-                    ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {allServiceNames.length > 0 && (
-          <div>
-            <button
-              onClick={loadServices}
-              disabled={loadingServices}
-              className="text-xs text-faint hover:text-secondary transition-colors"
-            >
-              {loadingServices ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
-        )}
-      </SettingsSection>
     </div>
   );
 }
@@ -226,8 +48,7 @@ export default function System() {
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-fg">System</h1>
         <p className="text-sm text-fg-muted mt-1 max-w-2xl">
-          Host resources, every repository registered on this server, and the shared Docker Compose
-          stack used by sessions. Disk usage is for the data directory.
+          Host resources for this Baguette instance. Disk usage is for the data directory.
         </p>
       </div>
 
@@ -307,9 +128,6 @@ export default function System() {
             </div>
           </SettingsSection>
         ) : null}
-
-        <AllRepositoriesSection />
-        <DockerComposeSection />
       </div>
     </div>
   );

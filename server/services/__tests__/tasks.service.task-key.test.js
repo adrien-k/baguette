@@ -146,4 +146,28 @@ describe('Tasks service — task_key resolution', (hooks) => {
     expect(deps[0].label).toBe('baguette:init');
     expect(deps[0].command).toBe('pnpm install\npnpm run migrate');
   });
+
+  it('runs baguette:init before yaml depends-on tasks on first start', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: {
+        init: 'pnpm run migrate',
+        tasks: {
+          postgres: {
+            type: 'docker',
+            container: { image: 'postgres:16' },
+          },
+          'dev-server': {
+            run: 'pnpm run dev',
+            ports: ['PORT'],
+            'depends-on': ['postgres'],
+          },
+        },
+      },
+    });
+    await db('sessions').where({ id: sessionId }).update({ initialized: false });
+    const task = await create({ session_id: sessionId, task_key: 'dev-server' });
+    const deps = app.service('tasks').getTask(task.id)._dependsOn;
+    expect(deps.map((d) => d.label)).toEqual(['baguette:init', 'postgres']);
+    expect(app.service('tasks').getTask(deps[0].id)._dependsOn).toEqual([]);
+  });
 });

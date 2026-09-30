@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import { createTestDb } from '../../test-utils/db.js';
 
-vi.mock('../../config.js', () => ({ DOCKER_COMPOSE_PATH: '/tmp/does-not-exist.yml' }));
+vi.mock('../../config.js', () => ({}));
 
 const dbMock = vi.hoisted(() => {
   const ref = { current: null };
