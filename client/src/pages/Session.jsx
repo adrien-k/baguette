@@ -1044,15 +1044,28 @@ export default function Session() {
             }`}
           >
             {headerSession ? (
-              <div className="flex items-center justify-between gap-2 min-h-[2.75rem]">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <Link to={homeUrl} className="text-faint hover:text-secondary shrink-0 md:hidden">
+              <div className="flex items-start justify-between gap-2 min-h-[2.75rem]">
+                <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-3">
+                  <Link
+                    to={homeUrl}
+                    className="shrink-0 text-faint hover:text-secondary md:hidden mt-0.5"
+                  >
                     <ChevronLeft className="w-5 h-5" />
                   </Link>
-                  <div className="min-w-0">
-                    <div className="flex min-h-6 flex-nowrap items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    {showRepoDetails ? (
+                      <div className="sm:hidden">
+                        <CardRepoBadge
+                          show
+                          truncate={false}
+                          isGlobal={isGlobalSession(headerSession)}
+                          repoFullName={headerSession.repo_full_name}
+                        />
+                      </div>
+                    ) : null}
+                    <div className="flex min-h-6 min-w-0 items-center gap-2">
                       <SessionStatusIndicator session={headerSession} />
-                      <span className="min-w-0 truncate text-sm font-medium leading-snug text-fg">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium leading-snug text-fg">
                         {headerSession.label ||
                           (isGlobalSession(headerSession)
                             ? 'Global session'
@@ -1061,6 +1074,9 @@ export default function Session() {
                       {showRepoDetails ? (
                         <CardRepoBadge
                           show
+                          truncate={false}
+                          nowrap
+                          className="hidden sm:inline-flex"
                           isGlobal={isGlobalSession(headerSession)}
                           repoFullName={headerSession.repo_full_name}
                         />
