@@ -37,6 +37,8 @@ export default function SessionSidePanel({
   onDelete,
   onRetry,
   onViewLogs,
+  onViewBaguetteConfig,
+  showBaguetteConfigLink,
   rawMessages,
   loadMore,
   loadingMore,
@@ -117,6 +119,8 @@ export default function SessionSidePanel({
             onDelete={onDelete}
             onRetry={onRetry}
             onViewLogs={onViewLogs}
+            onViewBaguetteConfig={onViewBaguetteConfig}
+            showBaguetteConfigLink={showBaguetteConfigLink}
             readonly={readonly}
           />
         )}

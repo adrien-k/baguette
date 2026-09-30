@@ -37,6 +37,9 @@ export const HOVER_SURFACE = 'hover:bg-control';
 export const HOVER_SURFACE_HALF = 'hover:bg-control/50';
 export const HOVER_TEXT = 'hover:text-fg';
 
+/** Small underlined text links (settings prompts, config shortcuts). */
+export const INLINE_SECONDARY_LINK_CLASS = `text-xs ${TEXT_SECONDARY} ${HOVER_TEXT} underline cursor-pointer`;
+
 export const MENU_ITEM_CLASS = `flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm ${TEXT_SECONDARY} ${HOVER_TEXT} hover:bg-control-hover/50 transition-colors`;
 
 export const FOCUS_RING_BRAND = 'focus:outline-none focus:ring-2 focus:ring-brand/50';

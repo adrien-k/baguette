@@ -23,7 +23,7 @@ import RepoPicker from './RepoPicker.jsx';
 import { isMobile } from '../utils/isMobile.js';
 import { applyParamOverrides } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
-import { INPUT_CLASS } from '../utils/ui.js';
+import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 function parseRepoFullName(full) {
@@ -713,7 +713,7 @@ export default function BuilderForm({
               to="/settings?tab=prompts#settings-prompt-session"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-accent hover:text-accent underline"
+              className={INLINE_SECONDARY_LINK_CLASS}
             >
               Configure the system prompt
             </Link>

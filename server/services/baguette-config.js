@@ -46,6 +46,24 @@ export async function loadBaguetteConfig(worktreePath) {
 }
 
 /**
+ * Raw `.baguette.yaml` text for display (not parsed).
+ * @returns {Promise<{ yaml: string } | { missing: true } | { error: string }>}
+ */
+export async function readBaguetteConfigRaw(worktreePath) {
+  const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
+  if (!absoluteWorktreePath) return { missing: true };
+  const configPath = path.join(absoluteWorktreePath, CONFIG_FILENAME);
+  try {
+    const yaml = await fs.promises.readFile(configPath, 'utf8');
+    return { yaml };
+  } catch (err) {
+    if (err.code === 'ENOENT') return { missing: true };
+    logger.error(err, 'Failed to read %s', CONFIG_FILENAME);
+    return { error: `Failed to read ${CONFIG_FILENAME}: ${err.message}` };
+  }
+}
+
+/**
  * Repository-specific agent instructions from `.baguette/instructions.md`.
  * @param {string|null|undefined} worktreePath
  * @returns {Promise<string|null>}

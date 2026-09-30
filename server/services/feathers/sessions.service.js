@@ -7,6 +7,7 @@ import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
 import {
   loadBaguetteConfig,
+  readBaguetteConfigRaw,
   getAvailableCommands,
   getScriptBlock,
   BaguetteConfigError,
@@ -564,6 +565,17 @@ export class SessionsService extends KnexService {
       if (err instanceof BaguetteConfigError) throw new BadRequest(err.message);
       throw err;
     }
+  }
+
+  async baguetteYaml(_data, params) {
+    const session = params.resolvedSession;
+    if (!session?.worktree_path || isGlobalSession(session)) {
+      return { yaml: null, missing: true };
+    }
+    const result = await readBaguetteConfigRaw(session.worktree_path);
+    if (result.missing) return { yaml: null, missing: true };
+    if (result.error) throw new BadRequest(result.error);
+    return { yaml: result.yaml, missing: false };
   }
 
   async previewStatus(_data, params) {
@@ -1707,6 +1719,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'remove',
       'stop',
       'commands',
+      'baguetteYaml',
       'diff',
       'changedFiles',
       'sessionGitStatus',
@@ -1801,6 +1814,7 @@ export const sessionsHooks = {
     getSessionByShortId: [],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
+    baguetteYaml: [resolveSessionFromData],
     diff: [resolveSessionFromData],
     changedFiles: [resolveSessionFromData],
     sessionGitStatus: [resolveSessionFromData],

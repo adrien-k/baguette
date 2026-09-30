@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { sessionsService } from '../../feathers.js';
@@ -22,7 +22,7 @@ function DetailsCard({ label, children }) {
   );
 }
 
-export default function DetailsView({ session, readonly, onSessionUpdate }) {
+export default function DetailsView({ session, readonly, onSessionUpdate, scrollToSection }) {
   const defaultTitle =
     session?.label || (isGlobalSession(session) ? 'Global session' : session?.repo_full_name) || '';
   const displayTitle = session?.label?.trim() || defaultTitle;
@@ -33,6 +33,10 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const [prTitle, setPrTitle] = useState(null);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const [baguetteYaml, setBaguetteYaml] = useState(null);
+  const [baguetteYamlMissing, setBaguetteYamlMissing] = useState(false);
+  const [baguetteYamlLoading, setBaguetteYamlLoading] = useState(false);
+  const baguetteConfigRef = useRef(null);
 
   useEffect(() => {
     setTitle(session?.label ?? '');
@@ -83,6 +87,43 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
       cancelled = true;
     };
   }, [session?.id]);
+
+  useEffect(() => {
+    if (!session?.id || isGlobalSession(session)) {
+      setBaguetteYaml(null);
+      setBaguetteYamlMissing(false);
+      return;
+    }
+    let cancelled = false;
+    setBaguetteYamlLoading(true);
+    sessionsService
+      .baguetteYaml(session.id)
+      .then((data) => {
+        if (cancelled) return;
+        setBaguetteYaml(data.yaml ?? null);
+        setBaguetteYamlMissing(!!data.missing);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setBaguetteYaml(null);
+          setBaguetteYamlMissing(false);
+          toastError('Failed to load .baguette.yaml', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBaguetteYamlLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.id, session?.repo_full_name]);
+
+  useEffect(() => {
+    if (scrollToSection !== 'baguette-config' || baguetteYamlLoading) return;
+    const el = baguetteConfigRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [scrollToSection, baguetteYamlLoading, baguetteYaml, baguetteYamlMissing]);
 
   const titleDirty = title.trim() !== (session?.label ?? '').trim();
 
@@ -278,6 +319,24 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
             </>
           )}
         </DetailsCard>
+
+        {!isGlobalSession(session) && (
+          <div ref={baguetteConfigRef} id="baguette-config" className="scroll-mt-4">
+            <DetailsCard label=".baguette.yaml">
+              {baguetteYamlLoading ? (
+                <p className="text-sm text-faint">Loading config…</p>
+              ) : baguetteYamlMissing ? (
+                <p className="text-sm text-faint">
+                  No <code className="text-secondary">.baguette.yaml</code> in this repository yet.
+                </p>
+              ) : baguetteYaml ? (
+                <pre className="text-xs font-mono text-secondary whitespace-pre-wrap overflow-x-auto leading-5 bg-page/60 border border-line rounded-md p-3 max-h-[min(32rem,60vh)] overflow-y-auto">
+                  {baguetteYaml}
+                </pre>
+              ) : null}
+            </DetailsCard>
+          </div>
+        )}
       </div>
     </div>
   );

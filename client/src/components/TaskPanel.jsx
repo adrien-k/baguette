@@ -7,6 +7,7 @@ import BaguetteIcon from './svg/BaguetteIcon.jsx';
 import StartButton from './StartButton.jsx';
 import TaskDockerIcon from './TaskDockerIcon.jsx';
 import { groupTasksForPanel, taskRowTitle } from '../utils/taskPanelGrouping.js';
+import { INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 
 function TaskMetaLine({ task }) {
   const duration = useTaskRunDuration(task);
@@ -30,6 +31,8 @@ export default function TaskPanel({
   onDelete,
   onRetry,
   onViewLogs,
+  onViewBaguetteConfig,
+  showBaguetteConfigLink = false,
   readonly,
 }) {
   const [command, setCommand] = useState('');
@@ -152,6 +155,17 @@ export default function TaskPanel({
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      {showBaguetteConfigLink && onViewBaguetteConfig && (
+        <div className="shrink-0 px-3 py-2 border-b border-line bg-page/40">
+          <button
+            type="button"
+            onClick={onViewBaguetteConfig}
+            className={`${INLINE_SECONDARY_LINK_CLASS} text-left`}
+          >
+            View <code className="text-secondary">.baguette.yaml</code>
+          </button>
+        </div>
+      )}
       {!readonly && configCommands.length > 0 && (
         <div className="shrink-0 p-2 border-b border-line flex flex-wrap gap-1.5">
           {configCommands.map((cmd, i) => (

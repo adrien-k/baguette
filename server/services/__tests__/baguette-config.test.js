@@ -14,6 +14,7 @@ import {
   buildDockerTaskHostnames,
   interpolateEnvTaskPorts,
   loadBaguetteConfig,
+  readBaguetteConfigRaw,
   loadBaguetteInstructions,
   CONFIG_FILENAME,
   INSTRUCTIONS_REL_PATH,
@@ -201,6 +202,28 @@ describe('loadBaguetteConfig', () => {
 
   it('returns null when no config file exists', async () => {
     expect(await loadBaguetteConfig(tmpDir)).toBeNull();
+  });
+});
+
+describe('readBaguetteConfigRaw', () => {
+  let tmpDir;
+
+  beforeEach(async () => {
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-raw-'));
+  });
+
+  afterEach(async () => {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns raw yaml text', async () => {
+    const text = 'session:\n  init: pnpm install\n';
+    await fs.promises.writeFile(path.join(tmpDir, CONFIG_FILENAME), text);
+    expect(await readBaguetteConfigRaw(tmpDir)).toEqual({ yaml: text });
+  });
+
+  it('returns missing when no config file exists', async () => {
+    expect(await readBaguetteConfigRaw(tmpDir)).toEqual({ missing: true });
   });
 });
 

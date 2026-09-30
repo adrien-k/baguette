@@ -34,6 +34,7 @@ const {
   onMessageCreated,
   syncSessionSettingsFromPatch,
   loadBaguetteConfig,
+  readBaguetteConfigRaw,
   generateSessionMetadata,
   buildSystemPromptAppend,
   deleteAgent,
@@ -44,6 +45,7 @@ const {
   onMessageCreated: vi.fn().mockResolvedValue(undefined),
   syncSessionSettingsFromPatch: vi.fn(),
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
+  readBaguetteConfigRaw: vi.fn().mockResolvedValue({ missing: true }),
   generateSessionMetadata: vi
     .fn()
     .mockResolvedValue({ label: 'Test task', branchName: 'test-task-abc' }),
@@ -77,6 +79,7 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
   return {
     ...actual,
     loadBaguetteConfig,
+    readBaguetteConfigRaw,
   };
 });
 
@@ -375,6 +378,42 @@ describe('Sessions service - custom methods', (hooks) => {
       await expect(
         app.service('sessions').commands(sessId, params({ id: otherUserId }))
       ).rejects.toBeInstanceOf(NotFound);
+    });
+  });
+
+  describe('baguetteYaml', () => {
+    it('returns missing when config file is absent', async () => {
+      readBaguetteConfigRaw.mockResolvedValue({ missing: true });
+
+      const result = await app.service('sessions').baguetteYaml(sessId, params({ id: userId }));
+
+      expect(readBaguetteConfigRaw).toHaveBeenCalledWith('/tmp/wt');
+      expect(result).toEqual({ yaml: null, missing: true });
+    });
+
+    it('returns raw yaml from worktree', async () => {
+      readBaguetteConfigRaw.mockResolvedValue({ yaml: 'session:\n  init: npm ci\n' });
+
+      const result = await app.service('sessions').baguetteYaml(sessId, params({ id: userId }));
+
+      expect(result).toEqual({ yaml: 'session:\n  init: npm ci\n', missing: false });
+    });
+
+    it('returns missing when session has no worktree_path', async () => {
+      const [sessId2] = await db('sessions').insert({
+        user_id: userId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'no wt',
+        short_id: 'nowt12',
+        status: 'active',
+        worktree_path: null,
+      });
+
+      const result = await app.service('sessions').baguetteYaml(sessId2, params({ id: userId }));
+
+      expect(readBaguetteConfigRaw).not.toHaveBeenCalled();
+      expect(result).toEqual({ yaml: null, missing: true });
     });
   });
 

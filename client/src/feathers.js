@@ -50,6 +50,7 @@ export const sessionsService = createService('sessions', {
   customMethods: [
     'stop',
     'commands',
+    'baguetteYaml',
     'diff',
     'changedFiles',
     'sessionGitStatus',

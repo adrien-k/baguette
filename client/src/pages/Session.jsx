@@ -414,6 +414,7 @@ export default function Session() {
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
   const [configCommands, setConfigCommands] = useState([]);
+  const [detailsScrollTo, setDetailsScrollTo] = useState(null);
   const [error, setError] = useState(null);
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
   const showReviewerSidePanelTab = useMemo(() => {
@@ -806,6 +807,17 @@ export default function Session() {
     [isNewSessionRoute, setSearchParams]
   );
 
+  const handleViewBaguetteConfig = useCallback(() => {
+    setDetailsScrollTo('baguette-config');
+    setView('details');
+  }, [setView]);
+
+  useEffect(() => {
+    if (activeView !== 'details' || !detailsScrollTo) return;
+    const timer = window.setTimeout(() => setDetailsScrollTo(null), 800);
+    return () => window.clearTimeout(timer);
+  }, [activeView, detailsScrollTo]);
+
   const builderIsGlobal = isNewSessionRoute
     ? !fromAllSessions && isGlobalSessionsRoute
     : fromAllSessions
@@ -1066,10 +1078,7 @@ export default function Session() {
             {headerSession ? (
               <div className="flex items-start justify-between gap-2 min-h-11">
                 <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-                  <Link
-                    to={homeUrl}
-                    className="shrink-0 text-faint hover:text-secondary mt-0.5"
-                  >
+                  <Link to={homeUrl} className="shrink-0 text-faint hover:text-secondary mt-0.5">
                     <ChevronLeft className="w-5 h-5" />
                   </Link>
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -1405,7 +1414,12 @@ export default function Session() {
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'details' && (
-              <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />
+              <DetailsView
+                session={session}
+                readonly={isReadonly}
+                onSessionUpdate={setSession}
+                scrollToSection={detailsScrollTo}
+              />
             )}
           </div>
 
@@ -1465,6 +1479,8 @@ export default function Session() {
               onDelete={handleTaskDelete}
               onRetry={handleTaskRetry}
               onViewLogs={handleViewTaskLogs}
+              onViewBaguetteConfig={handleViewBaguetteConfig}
+              showBaguetteConfigLink={!isGlobalSession(session)}
               rawMessages={rawMessages}
               loadMore={loadMore}
               loadingMore={loadingMore}

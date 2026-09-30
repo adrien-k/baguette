@@ -36,6 +36,7 @@ import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
+import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
@@ -507,7 +508,7 @@ export default function ReviewView({
                   to="/settings?tab=prompts#settings-prompt-review"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-accent hover:text-accent underline"
+                  className={INLINE_SECONDARY_LINK_CLASS}
                 >
                   Configure the system prompt
                 </Link>
