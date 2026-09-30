@@ -24,6 +24,7 @@ import { isMobile } from '../utils/isMobile.js';
 import { applyParamOverrides } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
 import { INPUT_CLASS } from '../utils/ui.js';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 function parseRepoFullName(full) {
   if (!full) return { owner: '', name: '' };
@@ -31,6 +32,37 @@ function parseRepoFullName(full) {
   if (i === -1) return { owner: full, name: '' };
   return { owner: full.slice(0, i), name: full.slice(i + 1) };
 }
+
+/** How a one-shot session starts (Start button); menu picks mode without submitting. */
+const SESSION_START_MODES = [
+  {
+    id: 'new-branch',
+    label: 'New branch',
+    subtitle: 'on a new branch',
+    hint: 'Branches out of the selected branch, which creates a new PR.',
+    planMode: false,
+    createNewBranch: true,
+    repoOnly: false,
+  },
+  {
+    id: 'same-branch',
+    label: 'Same branch',
+    subtitle: 'on the same branch',
+    hint: 'Work on the selected branch without creating a new one.',
+    planMode: false,
+    createNewBranch: false,
+    repoOnly: true,
+  },
+  {
+    id: 'plan',
+    label: 'Plan',
+    subtitle: 'planning',
+    hint: 'Agent explores and plans before making changes.',
+    planMode: true,
+    createNewBranch: true,
+    repoOnly: false,
+  },
+];
 
 export default function BuilderForm({
   onSubmit,
@@ -94,6 +126,7 @@ export default function BuilderForm({
   const [fileError, setFileError] = useState(null);
   // 'session' starts one run now; 'loop' saves the same form as a recurring template.
   const [mode, setMode] = useState(editingLoop ? 'loop' : 'session');
+  const [sessionStartMode, setSessionStartMode] = useState('new-branch');
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
@@ -154,6 +187,10 @@ export default function BuilderForm({
     if (defaultBranch) setBranch(defaultBranch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoFullName, selectedRepo?.default_branch, branches]);
+
+  useEffect(() => {
+    if (isGlobal && sessionStartMode === 'same-branch') setSessionStartMode('new-branch');
+  }, [isGlobal, sessionStartMode]);
 
   const loadModels = () => {
     const getUrl =
@@ -300,8 +337,7 @@ export default function BuilderForm({
     !loading &&
     availableSdks.length > 0 &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
-    initialPrompt &&
-    (!isLoop || isScheduleComplete(schedule));
+    (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
 
   const clearForm = () => {
     const keepTarget = allowRepoChoice ? targetScope : null;
@@ -342,19 +378,13 @@ export default function BuilderForm({
     };
   };
 
-  const handleStart = async () => {
-    if (!canSubmit) return;
-    if (await onSubmit(buildPayload({ planMode: false, createNewBranch: true }))) clearForm();
-  };
+  const activeSessionStartMode =
+    SESSION_START_MODES.find((m) => m.id === sessionStartMode) ?? SESSION_START_MODES[0];
 
-  const handleContinue = async () => {
+  const handleStartSession = async () => {
     if (!canSubmit) return;
-    if (await onSubmit(buildPayload({ planMode: false, createNewBranch: false }))) clearForm();
-  };
-
-  const handlePlan = async () => {
-    if (!canSubmit) return;
-    if (await onSubmit(buildPayload({ planMode: true, createNewBranch: true }))) clearForm();
+    const { planMode, createNewBranch } = activeSessionStartMode;
+    if (await onSubmit(buildPayload({ planMode, createNewBranch }))) clearForm();
   };
 
   // A loop replays the same session on a schedule, so it saves the form as a template instead
@@ -408,7 +438,7 @@ export default function BuilderForm({
   const handleComposerSubmit = async (e) => {
     e.preventDefault();
     if (isLoop) return handleSaveLoop();
-    return handleStart();
+    return handleStartSession();
   };
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {
@@ -476,7 +506,9 @@ export default function BuilderForm({
 
   const composerPlaceholder = isLoop
     ? 'Describe what the agent should do on every run...'
-    : 'Describe what you want the agent to do...';
+    : isGlobal
+      ? 'Describe what you want the agent to do. Leave empty to just open a session.'
+      : 'Describe what you want the agent to do. Leave empty to just open a session on the selected branch.';
 
   const renderComposer = (attachButton = null) => (
     <AgentMessageComposer
@@ -500,20 +532,23 @@ export default function BuilderForm({
       userSettings={userSettings}
       sdkRepo={selectedRepo}
       onSdkChange={setAgentSdk}
+      canSend={canSubmit}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
-      submitTooltip={
-        !isLoop ? 'Branches out of the selected branch, which could create a new PR.' : undefined
-      }
+      submitSubtitle={!isLoop ? activeSessionStartMode.subtitle : undefined}
       sendAddon={
         !isLoop ? (
           <ComposerPrimaryMenuAddon
-            disabled={!canSubmit || loading}
-            title="Other ways to start"
-            items={[
-              { label: 'Plan', onSelect: handlePlan },
-              ...(!isGlobal ? [{ label: 'Continue branch', onSelect: handleContinue }] : []),
-            ]}
+            disabled={loading}
+            title="Start mode"
+            panelClassName={`w-64 ${DROPDOWN_PANEL_CLASS} overflow-hidden py-1`}
+            items={SESSION_START_MODES.filter((m) => !m.repoOnly || !isGlobal).map((m) => ({
+              label: m.label,
+              subtitle: m.subtitle,
+              hint: m.hint,
+              selected: m.id === sessionStartMode,
+              onSelect: () => setSessionStartMode(m.id),
+            }))}
           />
         ) : undefined
       }

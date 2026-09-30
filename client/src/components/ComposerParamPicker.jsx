@@ -87,7 +87,7 @@ function useSubmenuPlacement(open, anchorRef, optionCount) {
  *   onHoverEnter: () => void;
  *   onHoverLeave: () => void;
  *   onSubmenuToggle: () => void;
- *   onSelectAndClose: (value: string) => void;
+ *   onSelect: (value: string) => void;
  * }} props
  */
 function ParamMenuRow({
@@ -96,7 +96,7 @@ function ParamMenuRow({
   onHoverEnter,
   onHoverLeave,
   onSubmenuToggle,
-  onSelectAndClose,
+  onSelect,
 }) {
   const rowRef = useRef(null);
   const { placement: submenuPlacement, panelRef: submenuPanelRef } = useSubmenuPlacement(
@@ -144,7 +144,10 @@ function ParamMenuRow({
                   key={opt.value}
                   type="button"
                   role="menuitem"
-                  onClick={() => onSelectAndClose(opt.value)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(opt.value);
+                  }}
                   className={`w-full text-left px-3 py-2 text-xs transition-colors ${
                     selected
                       ? 'text-warning bg-control-hover'
@@ -184,12 +187,6 @@ export default function ComposerParamPicker({
   }, [submenuPinned]);
 
   if (!items.length) return null;
-
-  const closeAll = () => {
-    setOpen(false);
-    setSubmenuId(null);
-    setSubmenuPinned(false);
-  };
 
   const closeSubmenu = () => {
     setSubmenuId(null);
@@ -281,9 +278,9 @@ export default function ComposerParamPicker({
               onHoverEnter={() => openSubmenuFromHover(item.id)}
               onHoverLeave={() => leaveSubmenuFromHover(item.id)}
               onSubmenuToggle={() => toggleSubmenuFromTap(item.id)}
-              onSelectAndClose={(value) => {
+              onSelect={(value) => {
                 item.onSelect(value);
-                closeAll();
+                closeSubmenu();
               }}
             />
           );

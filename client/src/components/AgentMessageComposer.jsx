@@ -8,6 +8,9 @@ import { isMobile } from '../utils/isMobile.js';
 export const COMPOSER_ACTION_BUTTON_LAYOUT =
   'inline-flex items-center justify-center shrink-0 h-8 text-sm font-medium';
 
+const COMPOSER_SUBMIT_SUBTITLE_CLASS =
+  'text-[9px] font-normal leading-none whitespace-nowrap opacity-70';
+
 /** Amber fill shared by Send/Start and its caret; use inside `COMPOSER_SPLIT_GROUP_CLASS`. */
 export const COMPOSER_SPLIT_AMBER_CLASS =
   'bg-brand hover:enabled:bg-brand-hover group-hover/split:enabled:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand transition-colors';
@@ -52,6 +55,7 @@ export default function AgentMessageComposer({
   canSend: canSendProp,
   submitDisabled = false,
   submitLabel = 'Send',
+  submitSubtitle,
   submitTooltip,
   toolbarExtra,
   sendAddon,
@@ -80,22 +84,41 @@ export default function AgentMessageComposer({
     onSubmit(e);
   };
 
+  const submitPadding = submitSubtitle ? 'px-2 sm:px-2.5 md:px-3' : SUBMIT_BUTTON_PADDING;
+
+  const submitHeightClass = submitSubtitle ? ' !h-9' : '';
+
   const sendButton = (
     <button
       type="submit"
       disabled={!canSubmit}
       className={
         sendAddon
-          ? `${SEND_BUTTON_SPLIT} ${SUBMIT_BUTTON_PADDING} rounded-l-lg`
-          : `${SEND_BUTTON_BASE} ${SUBMIT_BUTTON_PADDING} rounded-lg`
+          ? `${SEND_BUTTON_SPLIT} ${submitPadding}${submitHeightClass} rounded-l-lg`
+          : `${SEND_BUTTON_BASE} ${submitPadding}${submitHeightClass} rounded-lg`
       }
     >
-      {sending ? '...' : submitLabel}
+      {sending ? (
+        '...'
+      ) : submitSubtitle ? (
+        <span className="flex flex-col items-center justify-center gap-px whitespace-nowrap leading-none">
+          <span className="text-sm font-medium leading-none">{submitLabel}</span>
+          <span className={COMPOSER_SUBMIT_SUBTITLE_CLASS}>{submitSubtitle}</span>
+        </span>
+      ) : (
+        submitLabel
+      )}
     </button>
   );
 
   const sendControl = sendAddon ? (
-    <div className={COMPOSER_SPLIT_GROUP_CLASS}>
+    <div
+      className={
+        submitSubtitle
+          ? `${COMPOSER_SPLIT_GROUP_CLASS} [&>button]:!h-9`
+          : COMPOSER_SPLIT_GROUP_CLASS
+      }
+    >
       {submitTooltip ? (
         <Tooltip content={submitTooltip} wrap placement="top-end">
           {sendButton}
@@ -150,7 +173,7 @@ export default function AgentMessageComposer({
           sdkRepo={sdkRepo}
           onSdkChange={onSdkChange}
           disabled={disabled || sending}
-          className="min-w-0 flex-1 overflow-hidden"
+          className="min-w-0 flex-1"
         />
         <div className="flex shrink-0 items-center justify-end gap-1">
           {toolbarExtra}

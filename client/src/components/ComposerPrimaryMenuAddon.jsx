@@ -11,7 +11,7 @@ import {
 export const COMPOSER_PRIMARY_CHEVRON_CLASS = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent px-1.5 rounded-r-lg disabled:cursor-not-allowed`;
 
 /**
- * @typedef {{ label: string, hint?: string, onSelect: () => void, disabled?: boolean }} ComposerMenuItem
+ * @typedef {{ label: string, subtitle?: string, hint?: string, onSelect: () => void, disabled?: boolean, selected?: boolean }} ComposerMenuItem
  */
 
 /**
@@ -71,9 +71,16 @@ export default function ComposerPrimaryMenuAddon({
               close();
               item.onSelect();
             }}
-            className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:cursor-not-allowed ${
+              item.selected ? 'bg-control' : ''
+            }`}
           >
             <span className="block">{item.label}</span>
+            {item.subtitle ? (
+              <span className="block text-[10px] text-faint font-normal mt-0.5 leading-none whitespace-nowrap">
+                {item.subtitle}
+              </span>
+            ) : null}
             {item.hint ? (
               <span className="block text-xs text-faint font-normal mt-0.5 leading-snug">
                 {item.hint}

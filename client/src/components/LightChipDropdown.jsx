@@ -27,7 +27,7 @@ export const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18re
 export const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
- * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string }} LightDropdownOption
+ * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean }} LightDropdownOption
  * @typedef {{ heading?: string, options: LightDropdownOption[] }} LightDropdownSection
  */
 
@@ -40,12 +40,14 @@ function optionKey(value) {
  *
  * @param {LightDropdownOption[]} [options]
  * @param {LightDropdownSection[]} [sections]
+ * @param {import('react').ReactNode} [header] Stays in the panel; clicks here do not select a value.
  */
 export default function LightChipDropdown({
   value,
   onChange,
   options = [],
   sections,
+  header,
   footer,
   layout = 'chips',
   label,
@@ -76,9 +78,11 @@ export default function LightChipDropdown({
   const resolvedPanelClassName =
     panelClassName ??
     (layout === 'list'
-      ? matchTriggerWidth
-        ? lightListPanelMatchTriggerClassName
-        : lightListPanelClassName
+      ? header
+        ? `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] ${DROPDOWN_PANEL_CLASS} py-1 overflow-visible`
+        : matchTriggerWidth
+          ? lightListPanelMatchTriggerClassName
+          : lightListPanelClassName
       : lightChipPanelClassName);
 
   const pick = (next) => {
@@ -88,6 +92,7 @@ export default function LightChipDropdown({
 
   const renderOption = (opt) => {
     const optionDisabled = disabled || opt.disabled;
+    const selected = opt.selected ?? opt.value === value;
     const button = (
       <button
         type="button"
@@ -97,9 +102,7 @@ export default function LightChipDropdown({
           pick(opt.value);
         }}
         className={
-          layout === 'list'
-            ? listOptionClassName(opt.value === value)
-            : chipOptionClassName(opt.value === value)
+          layout === 'list' ? listOptionClassName(selected) : chipOptionClassName(selected)
         }
       >
         {opt.icon ? <span className="shrink-0 flex items-center">{opt.icon}</span> : null}
@@ -196,23 +199,32 @@ export default function LightChipDropdown({
         <div
           role="dialog"
           aria-label={ariaLabel}
-          className={layout === 'list' ? 'flex flex-col' : 'flex flex-wrap gap-1.5'}
+          className={
+            layout === 'list' ? 'flex flex-col overflow-visible' : 'flex flex-wrap gap-1.5'
+          }
         >
-          {sections
-            ? sections.map((section, i) => (
-                <div key={section.heading ?? i}>
-                  {section.heading ? (
-                    <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
-                      {section.heading}
-                    </div>
-                  ) : i > 0 ? (
-                    <div className="border-t border-strong my-1" />
-                  ) : null}
-                  {section.options.map(renderOption)}
-                </div>
-              ))
-            : options.map(renderOption)}
-          {footer ? <div className="border-t border-strong mt-1 pt-1">{footer}</div> : null}
+          {header}
+          <div
+            className={
+              header && layout === 'list' ? 'max-h-[min(22rem,60vh)] overflow-y-auto' : undefined
+            }
+          >
+            {sections
+              ? sections.map((section, i) => (
+                  <div key={section.heading ?? i}>
+                    {section.heading ? (
+                      <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
+                        {section.heading}
+                      </div>
+                    ) : i > 0 ? (
+                      <div className="border-t border-strong my-1" />
+                    ) : null}
+                    {section.options.map(renderOption)}
+                  </div>
+                ))
+              : options.map(renderOption)}
+            {footer ? <div className="border-t border-strong mt-1 pt-1">{footer}</div> : null}
+          </div>
         </div>
       </AnchoredMenu>
       {description ? <p className="mt-1 text-xs text-faint">{description}</p> : null}

@@ -31,6 +31,21 @@ describe('cursor-model-pricing', () => {
     expect(hasCursorModelPricing('composer-2', [])).toBe(false);
   });
 
+  it('matches Claude Opus 5.5 and Sonnet 5.5 list prices', () => {
+    expect(lookupCursorModelPricing('claude-opus-5-5', [])).toEqual({
+      input: 4,
+      cacheWrite: 5,
+      cacheRead: 0.2,
+      output: 20,
+    });
+    expect(lookupCursorModelPricing('claude-sonnet-5-5', [])).toEqual({
+      input: 2,
+      cacheWrite: 2.5,
+      cacheRead: 0.2,
+      output: 10,
+    });
+  });
+
   it('estimates cost from token counts', () => {
     const turnUsage = {
       input_tokens: 1_000_000,
