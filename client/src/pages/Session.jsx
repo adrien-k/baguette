@@ -780,9 +780,13 @@ export default function Session() {
     if (showTasks) {
       hideSidePanel();
     } else {
-      setSidePanelTab(sidePanelTab, { openMobile: true });
+      const tab =
+        activeView === 'diff' && sidePanelTab !== 'files' && sidePanelTab !== 'commits'
+          ? 'files'
+          : sidePanelTab;
+      setSidePanelTab(tab, { openMobile: true });
     }
-  }, [showTasks, isXlScreen, hideSidePanel, setSidePanelTab, sidePanelTab]);
+  }, [activeView, showTasks, isXlScreen, hideSidePanel, setSidePanelTab, sidePanelTab]);
 
   const setView = useCallback(
     (view) => {
@@ -793,9 +797,12 @@ export default function Session() {
           if (view !== 'chat') next.set('view', view);
           const prevPanel = prev.get('panel');
           const panelIsValid = prevPanel && SIDE_PANEL_TAB_IDS.has(prevPanel);
+          const sidePanelVisible = isXlScreen || showTasks;
           if (view === 'diff') {
-            const keepFilesOrCommits = prevPanel === 'files' || prevPanel === 'commits';
-            next.set('panel', keepFilesOrCommits && panelIsValid ? prevPanel : 'files');
+            if (sidePanelVisible) {
+              const keepFilesOrCommits = prevPanel === 'files' || prevPanel === 'commits';
+              next.set('panel', keepFilesOrCommits && panelIsValid ? prevPanel : 'files');
+            }
             const commit = prev.get('commit');
             if (commit) next.set('commit', commit);
           } else if (panelIsValid) {
@@ -806,7 +813,7 @@ export default function Session() {
         { replace: true }
       );
     },
-    [isNewSessionRoute, setSearchParams]
+    [isNewSessionRoute, isXlScreen, setSearchParams, showTasks]
   );
 
   const handleViewBaguetteConfig = useCallback(() => {

@@ -167,6 +167,11 @@ describe('createWorktree', () => {
 
   it('does not delete local_branch when it matches remote_branch', async () => {
     const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    // session-1 from an earlier test may still have BRANCH checked out in its worktree.
+    await removeWorktree(
+      { short_id: 'session-1', local_branch: BRANCH, remote_branch: BRANCH },
+      repo
+    );
     await createWorktree(repo, BRANCH, 'wt-legacy-1', FAKE_TOKEN, { detach: false });
 
     await removeWorktree(

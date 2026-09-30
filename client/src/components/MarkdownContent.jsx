@@ -1,6 +1,8 @@
+import { lazy, Suspense } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import MermaidChart from './MermaidChart.jsx';
+
+const MermaidChart = lazy(() => import('./MermaidChart.jsx'));
 
 const markdownClasses = `
   text-heading text-sm leading-relaxed
@@ -35,7 +37,18 @@ const components = {
   code({ className, children }) {
     const language = /language-(\w+)/.exec(className || '')?.[1];
     if (language === 'mermaid') {
-      return <MermaidChart chart={String(children).trim()} />;
+      const chart = String(children).trim();
+      return (
+        <Suspense
+          fallback={
+            <pre className="bg-control border border-strong text-fg-muted text-xs p-3 rounded-lg my-2">
+              Loading diagram…
+            </pre>
+          }
+        >
+          <MermaidChart chart={chart} />
+        </Suspense>
+      );
     }
     return <code className={className}>{children}</code>;
   },

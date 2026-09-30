@@ -1,16 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined, Monitor } from 'lucide-react';
-import System from './pages/System.jsx';
 import NavbarSystemStats from './components/NavbarSystemStats.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import Session from './pages/Session.jsx';
-import Settings from './pages/Settings.jsx';
-import Usage from './pages/Usage.jsx';
-import Onboarding from './pages/Onboarding.jsx';
+
+const System = lazy(() => import('./pages/System.jsx'));
+const Session = lazy(() => import('./pages/Session.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Usage = lazy(() => import('./pages/Usage.jsx'));
+const Onboarding = lazy(() => import('./pages/Onboarding.jsx'));
 import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider } from './context/RepoContext.jsx';
@@ -170,151 +171,153 @@ function AppRoutes() {
     <div className={`h-screen min-h-screen ${PAGE_BG} flex flex-col`}>
       <Nav />
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              user ? (
-                <Navigate to="/" />
-              ) : (
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Login />
-                </div>
-              )
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Dashboard />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/global"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Dashboard />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/global/sessions/:short_id"
-            element={
-              <ProtectedRoute>
-                <Session />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/global/loop/:loopId"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Dashboard />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/loop/:loopId"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Dashboard />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/sessions/:short_id"
-            element={
-              <ProtectedRoute>
-                <Session />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/repos/:repoId"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Dashboard />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/repos/:repoId/loop/:loopId"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Dashboard />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/repos/:repoId/sessions/:short_id"
-            element={
-              <ProtectedRoute>
-                <Session />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Settings />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/usage"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Usage />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/system"
-            element={
-              <ProtectedRoute>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <System />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/admin" element={<AdminRedirect />} />
-          <Route path="/admin/*" element={<AdminRedirect />} />
-          <Route path="/account" element={<Navigate to="/settings" replace />} />
-          <Route
-            path="/onboarding"
-            element={
-              !user ? (
-                <Navigate to="/login" />
-              ) : user.onboarding_completed ? (
-                <Navigate to="/" />
-              ) : (
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <Onboarding />
-                </div>
-              )
-            }
-          />
-        </Routes>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                user ? (
+                  <Navigate to="/" />
+                ) : (
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Login />
+                  </div>
+                )
+              }
+            />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/global"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/global/sessions/:short_id"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/global/loop/:loopId"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/loop/:loopId"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sessions/:short_id"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/repos/:repoId"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/repos/:repoId/loop/:loopId"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/repos/:repoId/sessions/:short_id"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Settings />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/usage"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Usage />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/system"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <System />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/admin" element={<AdminRedirect />} />
+            <Route path="/admin/*" element={<AdminRedirect />} />
+            <Route path="/account" element={<Navigate to="/settings" replace />} />
+            <Route
+              path="/onboarding"
+              element={
+                !user ? (
+                  <Navigate to="/login" />
+                ) : user.onboarding_completed ? (
+                  <Navigate to="/" />
+                ) : (
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Onboarding />
+                  </div>
+                )
+              }
+            />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

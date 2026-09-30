@@ -103,7 +103,10 @@ function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   });
 }
 
-function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = {}) {
+function makeApp(
+  sessionData,
+  { tasksCreate, tasksGetTask, tasksFilterTasks, usageRows = [] } = {}
+) {
   let sessionSnapshot = {
     ...DEFAULT_SESSION,
     ...sessionData,
@@ -117,6 +120,19 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
   const mockCreate = tasksCreate ?? vi.fn().mockResolvedValue({ id: 99 });
   const mockGetTask = tasksGetTask ?? vi.fn().mockReturnValue(null);
   const mockFilterTasks = tasksFilterTasks ?? vi.fn().mockReturnValue([]);
+  const emptyUsageQuery = () => {
+    const chain = {
+      where: () => chain,
+      select: () => chain,
+      sum: () => chain,
+      groupByRaw: () => chain,
+      orderBy: () => chain,
+      then(onFulfilled, onRejected) {
+        return Promise.resolve(usageRows).then(onFulfilled, onRejected);
+      },
+    };
+    return chain;
+  };
   const db = (table) => {
     if (table === 'sessions')
       return { where: () => ({ first: async () => ({ ...sessionSnapshot }) }) };
@@ -132,8 +148,10 @@ function makeApp(sessionData, { tasksCreate, tasksGetTask, tasksFilterTasks } = 
           }),
         }),
       };
+    if (table === 'usage') return emptyUsageQuery();
     return { where: () => ({ first: async () => null }) };
   };
+  db.raw = (sql) => sql;
   const app = {
     get: (key) => (key === 'db' ? db : null),
     service: (name) => {
@@ -464,17 +482,33 @@ describe('PrUpsert', () => {
     );
   });
 
-  it('rewrites harness footer from session on each upsert', async () => {
+  it('rewrites usage footer from session on each upsert', async () => {
     getOpenPRByNumber.mockResolvedValueOnce({
       title: 'PR',
-      body: `Notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld\n\n<!-- baguette-footer -->\n\nHarness: claude · Model: \`old\``,
+      body: `Notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld\n\n<!-- baguette-footer -->\n\n_claude / \`old\` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0_`,
     });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = await buildServer({
-      pr_number: 5,
-      agent_sdk: 'cursor',
-      model: 'new-model',
-    });
+    const { tools } = await buildServer(
+      {
+        pr_number: 5,
+        agent_sdk: 'cursor',
+        model: 'new-model',
+      },
+      {
+        usageRows: [
+          {
+            usage_kind: 'session',
+            model: 'new-model',
+            agent_sdk: 'cursor',
+            cost_usd: '1.50',
+            input_tokens: 1000,
+            output_tokens: 200,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+          },
+        ],
+      }
+    );
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'Summary' })
     );
@@ -483,13 +517,12 @@ describe('PrUpsert', () => {
       'ghtoken',
       expect.objectContaining({
         body: expect.stringContaining(
-          '<!-- baguette-footer -->\n\nHarness: cursor · Model: `new-model`'
+          '<!-- baguette-footer -->\n\n_cursor / `new-model` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_'
         ),
       })
     );
     const sentBody = upsertPR.mock.calls[0][1].body;
-    expect(sentBody).not.toContain('Harness: claude');
-    expect(sentBody).not.toContain('Model: `old`');
+    expect(sentBody).not.toContain('claude / `old`');
   });
 
   it('fails and links session when an open PR already exists for HEAD', async () => {

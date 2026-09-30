@@ -154,7 +154,7 @@ describe('buildReviewSystemPromptAppend', () => {
     expect(result).toContain('ListIssues');
     expect(result).toContain('CloseIssue');
     expect(result).toContain('builder agent');
-    expect(result).toContain('you **must** delete');
+    expect(result).toContain('you **must** close');
     expect(result).toContain('Watch for SQL injection');
     expect(result).toContain('implement fixes');
     expect(result).toContain('submitted');
