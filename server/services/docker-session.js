@@ -430,6 +430,21 @@ export async function isContainerRunning(containerName) {
   }
 }
 
+/** Docker State.Status, or `missing` when inspect fails (not created yet or already removed). */
+export async function inspectContainerState(containerName) {
+  try {
+    const { stdout } = await execFileAsync(
+      'docker',
+      ['inspect', '--format', '{{.State.Status}}', containerName],
+      { timeout: 15_000 }
+    );
+    const status = stdout.trim();
+    return status || 'unknown';
+  } catch {
+    return 'missing';
+  }
+}
+
 /** Exit code from the container's main process after it has stopped (1 if unknown). */
 export async function getContainerExitCode(containerName) {
   try {
@@ -447,16 +462,26 @@ export async function getContainerExitCode(containerName) {
 
 /**
  * Wait until health is healthy or retries exhausted, or until timeoutMs.
+ * @param {{ inspectHealth?: typeof inspectContainerHealth, inspectState?: typeof inspectContainerState }} [opts]
  */
-export async function waitForContainerHealth(containerName, { timeoutMs, pollMs = 500 } = {}) {
+export async function waitForContainerHealth(
+  containerName,
+  {
+    timeoutMs,
+    pollMs = 500,
+    inspectHealth = inspectContainerHealth,
+    inspectState = inspectContainerState,
+  } = {}
+) {
   const deadline = Date.now() + (timeoutMs ?? 120_000);
   while (Date.now() < deadline) {
-    const status = await inspectContainerHealth(containerName);
+    const status = await inspectHealth(containerName);
     if (status === 'healthy') return;
     if (status === 'unhealthy') {
       throw new Error(`Container ${containerName} reported unhealthy`);
     }
-    if (!(await isContainerRunning(containerName))) {
+    const state = await inspectState(containerName);
+    if (state === 'exited' || state === 'dead') {
       throw new Error(`Container ${containerName} exited before becoming healthy`);
     }
     await new Promise((r) => setTimeout(r, pollMs));

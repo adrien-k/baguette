@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parseDockerPortMapping,
   parseDockerTaskPorts,
@@ -12,6 +12,7 @@ import {
   dockerBuildImageTag,
   sessionBuiltImageRepositoryPrefix,
   isSessionBuiltImageRepository,
+  waitForContainerHealth,
 } from '../docker-session.js';
 
 describe('docker-session helpers', () => {
@@ -127,5 +128,46 @@ describe('docker-session helpers', () => {
 
   it('dockerContainerName sanitizes task keys', () => {
     expect(dockerContainerName('abcd', 'baguette:init')).toMatch(/^baguette_abcd_/);
+  });
+});
+
+describe('waitForContainerHealth', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('keeps polling while the container record is missing (foreground docker run race)', async () => {
+    vi.useFakeTimers();
+    const inspectHealth = vi
+      .fn()
+      .mockResolvedValueOnce('starting')
+      .mockResolvedValueOnce('starting')
+      .mockResolvedValue('healthy');
+    const inspectState = vi.fn().mockResolvedValue('missing');
+
+    const ready = waitForContainerHealth('baguette_abcd_redis', {
+      timeoutMs: 10_000,
+      pollMs: 100,
+      inspectHealth,
+      inspectState,
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(ready).resolves.toBeUndefined();
+    expect(inspectHealth).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails when the container process has exited', async () => {
+    const inspectHealth = vi.fn().mockResolvedValue('starting');
+    const inspectState = vi.fn().mockResolvedValue('exited');
+
+    await expect(
+      waitForContainerHealth('baguette_abcd_redis', {
+        timeoutMs: 5_000,
+        pollMs: 100,
+        inspectHealth,
+        inspectState,
+      })
+    ).rejects.toThrow(/exited before becoming healthy/);
   });
 });
