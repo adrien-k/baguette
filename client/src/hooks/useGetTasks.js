@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { tasksService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 /**
  * Returns tasks, optionally filtered by sessionId. Updates in realtime.
@@ -9,6 +10,30 @@ export function useGetTasks({ sessionId = null, status = null, skip = false }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const refetch = useCallback(() => {
+    if (skip) return;
+    setLoading(true);
+    const query = {};
+    if (sessionId) query.session_id = sessionId;
+    if (status != null) query.status = status;
+    query['$sort'] = { created_at: -1 };
+
+    tasksService
+      .find({ query })
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        setTasks(list);
+        setError(null);
+      })
+      .catch((err) => {
+        setError(err);
+        setTasks([]);
+      })
+      .finally(() => setLoading(false));
+  }, [sessionId, status, skip]);
+
+  useRefetchOnSseReconnect(refetch, !skip);
 
   useEffect(() => {
     let cancelled = false;

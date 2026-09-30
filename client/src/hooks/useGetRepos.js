@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { reposService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 export function useGetRepos(enabled = true) {
   const [repos, setRepos] = useState([]);
@@ -27,6 +28,8 @@ export function useGetRepos(enabled = true) {
       setClearingCache(false);
     }
   }, [refetch]);
+
+  useRefetchOnSseReconnect(refetch, enabled);
 
   useEffect(() => {
     if (!enabled) {

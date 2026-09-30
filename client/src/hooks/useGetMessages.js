@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { messagesService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const PAGE_SIZE = 100;
 
@@ -19,6 +20,32 @@ export function useGetMessages(sessionId) {
 
   const oldestIdRef = useRef(null);
   const loadingMoreRef = useRef(false);
+
+  const refetch = useCallback(() => {
+    if (!sessionId) return;
+    setLoading(true);
+    setMessages([]);
+    setHasMore(false);
+    oldestIdRef.current = null;
+
+    messagesService
+      .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        const sorted = [...list].reverse();
+        setMessages(sorted);
+        setHasMore(list.length === PAGE_SIZE);
+        oldestIdRef.current = sorted[0]?.id ?? null;
+        setError(null);
+      })
+      .catch((err) => {
+        setError(err);
+        setMessages([]);
+      })
+      .finally(() => setLoading(false));
+  }, [sessionId]);
+
+  useRefetchOnSseReconnect(refetch, Boolean(sessionId));
 
   useEffect(() => {
     if (!sessionId) {

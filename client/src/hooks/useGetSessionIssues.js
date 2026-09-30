@@ -1,12 +1,28 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { sessionIssuesService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 export function useGetSessionIssues(sessionId, { enabled = true } = {}) {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
   const boundSessionIdRef = useRef(null);
+
+  const refetch = useCallback(() => {
+    if (!sessionId || !enabled) return;
+    setLoading(true);
+    sessionIssuesService
+      .find({ query: { session_id: sessionId, $sort: { id: 1 }, $limit: 100 } })
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        setIssues(sortIssuesBySeverity(list));
+      })
+      .catch((err) => toastError('Failed to load review issues', err))
+      .finally(() => setLoading(false));
+  }, [sessionId, enabled]);
+
+  useRefetchOnSseReconnect(refetch, Boolean(sessionId) && enabled);
 
   useEffect(() => {
     if (!sessionId) {

@@ -1,12 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { reposService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 export function useGetBranches(repo) {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [clearingCache, setClearingCache] = useState(false);
+
+  const refetch = useCallback(() => {
+    setReloadNonce((n) => n + 1);
+  }, []);
+
+  useRefetchOnSseReconnect(refetch, Boolean(repo?.full_name));
 
   useEffect(() => {
     if (!repo?.full_name) {

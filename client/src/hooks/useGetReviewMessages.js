@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
 import { sessionReviewMessagesService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const PAGE_SIZE = 50;
 
@@ -88,6 +89,8 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
       .catch((err) => toastError('Failed to load review messages', err))
       .finally(() => setLoading(false));
   }, [sessionId]);
+
+  useRefetchOnSseReconnect(reload, Boolean(sessionId) && enabled);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current || !oldestIdRef.current) return;

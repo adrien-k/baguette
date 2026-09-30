@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { sessionsService } from '../feathers.js';
 import { sortSessionsForList } from '@baguette/shared/session-sort.js';
 import { sessionMatchesListQuery } from '@baguette/shared/session-list-query.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const PAGE_SIZE = 50;
 
@@ -72,6 +73,8 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
   useEffect(() => {
     refetch();
   }, [refetch, listKey]);
+
+  useRefetchOnSseReconnect(refetch);
 
   useEffect(() => {
     setSessions((prev) => {

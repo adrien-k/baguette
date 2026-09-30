@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { sessionsService, sessionIssuesService, tasksService } from '../feathers.js';
+import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 function sessionMatches(session, sessionId) {
   if (!session || sessionId == null || sessionId === '') return false;
@@ -59,6 +60,24 @@ export function useGetSession(shortId) {
   useEffect(() => {
     sessionIdRef.current = session?.id ?? null;
   }, [session?.id]);
+
+  const refetch = useCallback(() => {
+    if (!shortId) return;
+    sessionsService
+      .getSessionByShortId({ short_id: shortId })
+      .then((s) => {
+        setSession(s);
+        setError(null);
+        setLoadedFor(shortId);
+      })
+      .catch((err) => {
+        setError(err);
+        setSession(null);
+        setLoadedFor(shortId);
+      });
+  }, [shortId]);
+
+  useRefetchOnSseReconnect(refetch, Boolean(shortId));
 
   useEffect(() => {
     if (!shortId) {

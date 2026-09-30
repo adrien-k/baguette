@@ -1,11 +1,7 @@
 import { feathers } from '@feathersjs/feathers';
 import rest from '@feathersjs/rest-client';
-import {
-  dismissConnectionToast,
-  showConnectionLostToast,
-  showConnectionRestoredToast,
-} from './utils/connectionToast.jsx';
-import { watchSseConnection } from './utils/sseConnectionWatcher.js';
+import { notifySseReconnect } from './utils/sseReconnect.js';
+import { createSseManager } from './utils/sseManager.js';
 
 const app = feathers();
 app.configure(rest(`${window.location.origin}/api`).fetch(window.fetch.bind(window)));
@@ -30,27 +26,23 @@ function createService(path, { customMethods = [] } = {}) {
   return svc;
 }
 
-// SSE for real-time server→client events
-const eventSource = new EventSource('/api/events', { withCredentials: true });
-eventSource.onmessage = ({ data }) => {
-  try {
-    const { service, event, data: payload } = JSON.parse(data);
-    app.service(service).emit(event, payload);
-  } catch {
-    // ignore malformed messages
-  }
-};
-
-// Real-time updates are invisible when the stream drops, so tell the user.
-const sseConnection = watchSseConnection(eventSource, {
-  onLost: showConnectionLostToast,
-  onRestored: showConnectionRestoredToast,
+const sseManager = createSseManager({
+  url: '/api/events',
+  onMessage: ({ data }) => {
+    try {
+      const { service, event, data: payload } = JSON.parse(data);
+      app.service(service).emit(event, payload);
+    } catch {
+      // ignore malformed messages
+    }
+  },
+  onReconnect: notifySseReconnect,
 });
+sseManager.start();
 
-/** Dismiss connection toasts and stop treating the next SSE close as a user-visible outage. */
+/** Close the live event stream and stop lifecycle listeners (e.g. on logout). */
 export function clearSseConnectionOnLogout() {
-  dismissConnectionToast();
-  sseConnection.onLogout();
+  sseManager.stop();
 }
 
 export default app;
