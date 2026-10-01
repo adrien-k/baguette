@@ -93,13 +93,16 @@ describe('Task', () => {
     const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
     await task.kill();
     expect(task.getLogs()).toMatch(
-      /Stopped manually \(SIGTERM; force kill after 10s if still running\)/
+      /Stopped manually \(SIGTERM; force kill after 30s if still running\)/
     );
   });
 
-  it('kill({ reason: "ttl" }) does not log a manual stop', async () => {
+  it('kill({ reason: "ttl" }) logs TTL expiry with SIGTERM and the grace delay', async () => {
     const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
     await task.kill({ reason: 'ttl' });
+    expect(task.getLogs()).toMatch(
+      /TTL expired \(SIGTERM; force kill after 30s if still running\)/
+    );
     expect(task.getLogs()).not.toMatch(/Stopped manually/);
   });
 });
@@ -324,6 +327,7 @@ describe('Task heartbeat / TTL', () => {
 
     vi.advanceTimersByTime(1);
     expect(kill).toHaveBeenCalledTimes(1);
+    expect(kill).toHaveBeenCalledWith({ reason: 'ttl' });
   });
 
   it('heartbeat() resets the 5-minute TTL window', () => {

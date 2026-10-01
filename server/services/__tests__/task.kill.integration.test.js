@@ -57,4 +57,32 @@ describe('Task kill integration', () => {
     expect(task.status).toBe('exited');
     expect(task.exit_code).toBe(1);
   }, 15_000);
+
+  it('kill({ reason: "ttl" }) delivers SIGTERM like a manual stop', async () => {
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      command: `exec ${process.execPath} ${listenerPath}`,
+      taskService: null,
+      cwd: process.cwd(),
+      env: { ...process.env },
+    });
+
+    await task.start();
+
+    await waitFor(() => task.getLogs().includes('signal-listener started'), {
+      msg: `Logs: ${task.getLogs()}`,
+    });
+    const killPromise = task.kill({ reason: 'ttl', graceMs: 200, timeoutMs: 5000 });
+    await waitFor(() => task.getLogs().includes('received SIGTERM'), {
+      timeoutMs: 5000,
+      msg: `Logs: ${task.getLogs()}`,
+    });
+    expect(task.getLogs()).toMatch(
+      /TTL expired \(SIGTERM; force kill after 0\.2s if still running\)/
+    );
+    await killPromise;
+    await waitFor(() => task.status === 'exited', { timeoutMs: 5000 });
+    expect(task.kill_reason).toBe('ttl');
+  }, 15_000);
 });

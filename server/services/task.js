@@ -21,7 +21,7 @@ export const PREVIEW_WEBSERVICE_TTL_MS = 60 * 60 * 1000; // 1 hour
 /** How often a task heartbeats its depends_on tasks. */
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 /** After SIGTERM, wait this long before escalating to SIGKILL. */
-export const KILL_GRACE_MS = 10_000;
+export const KILL_GRACE_MS = 30_000;
 
 function baguetteStatusLine(message) {
   return `\x1b[33m[baguette] ${message}\x1b[0m\n`;
@@ -177,7 +177,6 @@ export class Task {
     if (this.status === 'exited' || !this.hasPorts || !this._ttlMs) return;
     clearTimeout(this.#ttlTimer);
     this.#ttlTimer = setTimeout(() => {
-      this.addLog('stdout', baguetteStatusLine('TTL expired, stopping task...'));
       this.kill({ reason: 'ttl' }).catch(() => {});
     }, this._ttlMs);
   }
@@ -626,19 +625,30 @@ export class Task {
    *   consumers can tell a deliberate stop from a crash (see DevProxy exit handling).
    * @returns {Promise<boolean>} true if a signal was sent, false if already exited/no process.
    */
-  async kill({ timeoutMs = 12000, graceMs = KILL_GRACE_MS, reason = 'stopped' } = {}) {
+  async kill({ timeoutMs, graceMs = KILL_GRACE_MS, reason = 'stopped' } = {}) {
+    const waitMs = timeoutMs ?? graceMs + 5_000;
     if (this.status !== 'running') {
       return false;
     }
     this.kill_reason = reason;
+    const graceSec = graceMs / 1000;
     if (reason === 'stopped') {
-      const graceSec = graceMs / 1000;
       this.addLog(
         'stdout',
         baguetteStatusLine(
           `Stopped manually (SIGTERM; force kill after ${graceSec}s if still running)`
         )
       );
+    } else if (reason === 'ttl') {
+      this.addLog(
+        'stdout',
+        baguetteStatusLine(`TTL expired (SIGTERM; force kill after ${graceSec}s if still running)`)
+      );
+    }
+    for (const dep of [...this._dependsOn].reverse()) {
+      if (dep.status === 'running') {
+        await dep.kill({ timeoutMs: waitMs, graceMs, reason }).catch(() => {});
+      }
     }
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
@@ -647,9 +657,6 @@ export class Task {
       if (this._dockerContainerName) {
         await stopDockerContainer(this._dockerContainerName);
         this._dockerContainerName = null;
-      }
-      for (const dep of this._dependsOn) {
-        await dep.kill().catch(() => {});
       }
       this.exit(0);
       return true;
@@ -665,7 +672,7 @@ export class Task {
       }
     }, graceMs);
     try {
-      await this.#waitForChildExit({ timeoutMs });
+      await this.#waitForChildExit({ timeoutMs: waitMs });
     } finally {
       clearTimeout(escalation);
     }
