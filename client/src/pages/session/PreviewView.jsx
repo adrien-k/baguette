@@ -43,7 +43,6 @@ const actionBtnClass =
   'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-strong/80 bg-control/40 text-xs text-secondary hover:border-strong hover:bg-control transition-colors';
 
 function PreviewSettingsToggles({ session, compact = false }) {
-  if (!session?.preview_url) return null;
   return (
     <div
       className={`rounded-lg border border-line bg-inset/50 space-y-4 ${compact ? 'p-3' : 'p-4'}`}

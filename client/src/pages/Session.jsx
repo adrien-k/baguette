@@ -1,4 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  Fragment,
+} from 'react';
 import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -52,6 +60,7 @@ import SessionSidePanel from './session/SessionSidePanel.jsx';
 import SessionMainViewFooter from './session/SessionMainViewFooter.jsx';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
 import SessionTools from '../components/SessionTools.jsx';
+import Tooltip from '../components/Tooltip.jsx';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
   isGlobalSession,
@@ -313,6 +322,13 @@ const BASE_VIEWS = [
 ];
 const DETAILS_VIEW = { id: 'details', label: 'Details', Icon: FileText };
 const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
+const GLOBAL_SESSION_VIEW_DISABLED_TOOLTIP = 'Not available for global sessions.';
+
+function isGlobalSessionDisabledView(viewId) {
+  return viewId === 'review' || viewId === 'diff' || viewId === 'preview';
+}
+
+const SESSION_VIEWS = [...BASE_VIEWS, PREVIEW_VIEW, DETAILS_VIEW];
 function nextVisibleSession({ sessions, short_id, session, repoId, fromAllSessions }) {
   return sessions.find((s) => {
     if (
@@ -428,7 +444,6 @@ export default function Session() {
   const configCommands = useSessionConfigCommands(gitSession);
   const [showBaguetteConfigModal, setShowBaguetteConfigModal] = useState(false);
   const [error, setError] = useState(null);
-  const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
   const showReviewerSidePanelTab = useMemo(() => {
     const s = session ?? sessionFromHook;
     if (!sessionId || isGlobalSession(s ?? {})) return false;
@@ -528,18 +543,9 @@ export default function Session() {
     [tasksFromHook, killedTaskIds]
   );
 
-  const views = useMemo(() => {
-    if (isNewSessionRoute) return [...BASE_VIEWS, DETAILS_VIEW];
-    if (isGlobalSession(session)) {
-      return [BASE_VIEWS[0], DETAILS_VIEW];
-    }
-    const list = [...BASE_VIEWS];
-    if (hasPreview) list.push(PREVIEW_VIEW);
-    list.push(DETAILS_VIEW);
-    return list;
-  }, [isNewSessionRoute, session, hasPreview]);
+  const globalSessionViewDisabled = isGlobalSession(session);
 
-  const viewTabStripKey = views.map((v) => v.id).join(',');
+  const viewTabStripKey = SESSION_VIEWS.map((v) => v.id).join(',');
 
   const scrollActiveViewTabIntoView = useCallback(() => {
     const tab = activeViewTabRef.current;
@@ -917,18 +923,24 @@ export default function Session() {
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete('panel');
-          if (hasPreview) next.set('view', 'preview');
+          next.set('view', 'preview');
           return next;
         },
         { replace: true }
       );
       return;
     }
-    if (viewParam === 'preview' && (session ?? sessionFromHook) && !hasPreview) {
+    const sessionForView = session ?? sessionFromHook;
+    if (
+      sessionForView &&
+      isGlobalSession(sessionForView) &&
+      isGlobalSessionDisabledView(viewParam)
+    ) {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete('view');
+          next.delete('commit');
           return next;
         },
         { replace: true }
@@ -943,7 +955,6 @@ export default function Session() {
     activeView,
     panelParam,
     viewParam,
-    hasPreview,
     isNewSessionRoute,
     session,
     sessionFromHook,
@@ -1258,28 +1269,45 @@ export default function Session() {
                 ref={viewTabsScrollRef}
                 className="flex overflow-x-auto gap-1 scrollbar-none pr-4"
               >
-                {views.map(({ id, label, Icon }) => (
-                  <button
-                    key={id}
-                    ref={activeView === id && !isNewSessionRoute ? activeViewTabRef : null}
-                    type="button"
-                    disabled={isNewSessionRoute}
-                    onClick={() => handleViewTabClick(id)}
-                    className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px disabled:cursor-not-allowed disabled:opacity-40 ${
-                      activeView === id && !isNewSessionRoute
-                        ? 'border-brand text-accent'
-                        : 'border-transparent text-faint hover:text-heading disabled:hover:text-faint'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {label}
-                    {id === 'review' && openIssuesTabCount > 0 && (
-                      <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
-                        {openIssuesTabCount}
-                      </span>
-                    )}
-                  </button>
-                ))}
+                {SESSION_VIEWS.map(({ id, label, Icon }) => {
+                  const tabDisabledForGlobal =
+                    globalSessionViewDisabled && isGlobalSessionDisabledView(id);
+                  const tabDisabled = isNewSessionRoute || tabDisabledForGlobal;
+                  const tabButton = (
+                    <button
+                      ref={activeView === id && !isNewSessionRoute ? activeViewTabRef : null}
+                      type="button"
+                      disabled={tabDisabled}
+                      onClick={() => handleViewTabClick(id)}
+                      className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors -mb-px disabled:cursor-not-allowed disabled:opacity-40 ${
+                        activeView === id && !isNewSessionRoute
+                          ? 'border-brand text-accent'
+                          : 'border-transparent text-faint hover:text-heading disabled:hover:text-faint'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {label}
+                      {id === 'review' && openIssuesTabCount > 0 && (
+                        <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
+                          {openIssuesTabCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                  if (!tabDisabledForGlobal) {
+                    return <Fragment key={id}>{tabButton}</Fragment>;
+                  }
+                  return (
+                    <Tooltip
+                      key={id}
+                      content={GLOBAL_SESSION_VIEW_DISABLED_TOOLTIP}
+                      wrap
+                      placement="bottom"
+                    >
+                      {tabButton}
+                    </Tooltip>
+                  );
+                })}
               </div>
               <div
                 className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-nav via-nav/80 to-transparent"
