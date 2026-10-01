@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { sessionsService } from '../../feathers.js';
 import toast from 'react-hot-toast';
-import { useSessionDiff } from '../../hooks/useSessionDiff.js';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
@@ -20,6 +19,7 @@ import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import { diffFileDisplayPath, diffFileScrollId } from '../../utils/paths.js';
+const DIFF_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-5xl mx-auto';
 import { DIFF_FILE_BODY_CLASS, DIFF_LINE_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 
 const DIFF_HUNK_ROW = 'text-info bg-info/10';
@@ -383,6 +383,10 @@ export default function DiffView({
   onRefreshChangedFiles,
   commitsLoading,
   changedFilesLoading,
+  diff,
+  diffLoading,
+  diffError,
+  onRefreshDiff,
   scrollToFile,
   onScrolledToFile,
   readonly,
@@ -397,7 +401,8 @@ export default function DiffView({
   const [viewMode, setViewMode] = useState('inline');
   const [lineComposer, setLineComposer] = useState(null);
 
-  const { diff, loading, error, refresh: refreshDiff } = useSessionDiff(session, selectedCommit);
+  const loading = diffLoading;
+  const error = diffError;
 
   const prStatus = session?.pr_status ?? null;
   const isMerged = prStatus === 'merged';
@@ -413,9 +418,9 @@ export default function DiffView({
     onRefreshCommits?.();
     if (!isSingleCommit) {
       onRefreshChangedFiles?.();
-      refreshDiff();
+      onRefreshDiff?.();
     }
-  }, [onRefreshCommits, onRefreshChangedFiles, isSingleCommit, refreshDiff]);
+  }, [onRefreshCommits, onRefreshChangedFiles, isSingleCommit, onRefreshDiff]);
 
   const refreshBusy = commitsLoading || (!isSingleCommit && (loading || changedFilesLoading));
 
@@ -470,7 +475,7 @@ export default function DiffView({
   const commitSelector =
     onSelectedCommitChange && !session?.is_global ? (
       <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/50">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} flex items-center gap-2 min-w-0`}>
           <label className="flex items-center gap-2 min-w-0 flex-1">
             <span className="text-[10px] uppercase tracking-wide text-faint shrink-0">Commit</span>
             <select
@@ -507,94 +512,98 @@ export default function DiffView({
       {commitSelector}
       {/* Diff content */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-        {loading && (
-          <div className="flex items-center justify-center h-full">
-            <div className="w-5 h-5 border-2 border-strong border-t-secondary rounded-full animate-spin" />
-          </div>
-        )}
-        {!loading && error && (
-          <div className="flex items-center gap-2 text-danger text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            {error}
-          </div>
-        )}
-        {!loading && !error && !hasDiff && (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-faint text-sm">
-            <p>
-              {isSingleCommit ? (
-                'No changes in this commit.'
-              ) : (
-                <>
-                  No changes compared to{' '}
-                  <span className="text-fg-muted">{session.base_branch}</span>
-                </>
-              )}
-            </p>
-          </div>
-        )}
-        {!loading && !error && hasDiff && (
-          <div className="space-y-3">
-            {/* Header: file count + view mode toggle */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-faint">
-                {files.length} file{files.length !== 1 ? 's' : ''} changed
-                {canComment && (
-                  <span className="text-faint">
-                    {' '}
-                    · hover a line and use{' '}
-                    <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to message
-                    the agent
-                  </span>
-                )}
-                {isSingleCommit && selectedCommitMeta && (
-                  <span className="text-fg-muted hidden sm:inline">
-                    · {selectedCommitMeta.subject}
-                  </span>
-                )}
-              </span>
-              <div className="flex items-center gap-0.5 bg-control rounded-lg p-0.5">
-                <button
-                  onClick={() => setViewMode('inline')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'inline' ? 'bg-control-hover text-fg' : 'text-fg-muted hover:text-heading'}`}
-                >
-                  <AlignLeft className="w-3.5 h-3.5" />
-                  Inline
-                </button>
-                <button
-                  onClick={() => setViewMode('split')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'split' ? 'bg-control-hover text-fg' : 'text-fg-muted hover:text-heading'}`}
-                >
-                  <Columns2 className="w-3.5 h-3.5" />
-                  Split
-                </button>
-              </div>
+        <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} min-h-full`}>
+          {loading && (
+            <div className="flex items-center justify-center h-full">
+              <div className="w-5 h-5 border-2 border-strong border-t-secondary rounded-full animate-spin" />
             </div>
-            {/* Per-file diffs */}
-            {files.map((file) => (
-              <FileDiff
-                key={diffFileDisplayPath(file)}
-                file={file}
-                viewMode={viewMode}
-                scrollId={diffFileScrollId(file)}
-                onLineReference={canComment ? handleLineClick : undefined}
-                activeLine={lineComposer}
-                composer={lineComposerEl}
-              />
-            ))}
-          </div>
-        )}
+          )}
+          {!loading && error && (
+            <div className="flex items-center gap-2 text-danger text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {error}
+            </div>
+          )}
+          {!loading && !error && !hasDiff && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-faint text-sm">
+              <p>
+                {isSingleCommit ? (
+                  'No changes in this commit.'
+                ) : (
+                  <>
+                    No changes compared to{' '}
+                    <span className="text-fg-muted">{session.base_branch}</span>
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+          {!loading && !error && hasDiff && (
+            <div className="space-y-3">
+              {/* Header: file count + view mode toggle */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-faint">
+                  {files.length} file{files.length !== 1 ? 's' : ''} changed
+                  {canComment && (
+                    <span className="text-faint">
+                      {' '}
+                      · hover a line and use{' '}
+                      <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to message
+                      the agent
+                    </span>
+                  )}
+                  {isSingleCommit && selectedCommitMeta && (
+                    <span className="text-fg-muted hidden sm:inline">
+                      · {selectedCommitMeta.subject}
+                    </span>
+                  )}
+                </span>
+                <div className="flex items-center gap-0.5 bg-control rounded-lg p-0.5">
+                  <button
+                    onClick={() => setViewMode('inline')}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'inline' ? 'bg-control-hover text-fg' : 'text-fg-muted hover:text-heading'}`}
+                  >
+                    <AlignLeft className="w-3.5 h-3.5" />
+                    Inline
+                  </button>
+                  <button
+                    onClick={() => setViewMode('split')}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${viewMode === 'split' ? 'bg-control-hover text-fg' : 'text-fg-muted hover:text-heading'}`}
+                  >
+                    <Columns2 className="w-3.5 h-3.5" />
+                    Split
+                  </button>
+                </div>
+              </div>
+              {/* Per-file diffs */}
+              {files.map((file) => (
+                <FileDiff
+                  key={diffFileDisplayPath(file)}
+                  file={file}
+                  viewMode={viewMode}
+                  scrollId={diffFileScrollId(file)}
+                  onLineReference={canComment ? handleLineClick : undefined}
+                  activeLine={lineComposer}
+                  composer={lineComposerEl}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {hasPr && (
-        <div className="shrink-0 border-t border-line px-4 py-3 flex items-center justify-end gap-2">
-          <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
-          {!readonly && <PrDraftToggleButton session={session} />}
-          {!isMerged && canMerge && !readonly && (
-            <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
-              <GitMerge className="w-3.5 h-3.5" />
-              Merge PR
-            </button>
-          )}
+        <div className="shrink-0 border-t border-line px-4 py-3">
+          <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} flex items-center justify-end gap-2`}>
+            <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
+            {!readonly && <PrDraftToggleButton session={session} />}
+            {!isMerged && canMerge && !readonly && (
+              <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
+                <GitMerge className="w-3.5 h-3.5" />
+                Merge PR
+              </button>
+            )}
+          </div>
         </div>
       )}
 

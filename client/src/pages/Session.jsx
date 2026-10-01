@@ -36,6 +36,7 @@ import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
 import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
+import { useSessionDiff } from '../hooks/useSessionDiff.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import BaguetteConfigModal from '../components/BaguetteConfigModal.jsx';
@@ -411,6 +412,13 @@ export default function Session() {
     loading: changedFilesLoading,
     refresh: refreshChangedFiles,
   } = useSessionChangedFiles(gitSession, filesCommitSha, shouldLoadChangedFiles);
+  const diffViewActive = activeView === 'diff';
+  const {
+    diff: sessionDiff,
+    loading: sessionDiffLoading,
+    error: sessionDiffError,
+    refresh: refreshSessionDiff,
+  } = useSessionDiff(gitSession, selectedDiffCommit, diffViewActive);
   const [models, setModels] = useState([]);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -1393,6 +1401,10 @@ export default function Session() {
                 onRefreshChangedFiles={refreshChangedFiles}
                 commitsLoading={branchCommitsLoading}
                 changedFilesLoading={changedFilesLoading}
+                diff={sessionDiff}
+                diffLoading={sessionDiffLoading}
+                diffError={sessionDiffError}
+                onRefreshDiff={refreshSessionDiff}
                 scrollToFile={scrollToDiffFile}
                 onScrolledToFile={clearScrollToDiffFile}
                 readonly={isReadonly}
