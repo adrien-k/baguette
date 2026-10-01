@@ -38,6 +38,7 @@ import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
 import TaskLogModal from '../components/TaskLogModal.jsx';
+import BaguetteConfigModal from '../components/BaguetteConfigModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
 import PushConfirmModal from '../components/PushConfirmModal.jsx';
@@ -417,7 +418,7 @@ export default function Session() {
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
   const configCommands = useSessionConfigCommands(gitSession);
-  const [detailsScrollTo, setDetailsScrollTo] = useState(null);
+  const [showBaguetteConfigModal, setShowBaguetteConfigModal] = useState(false);
   const [error, setError] = useState(null);
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
   const showReviewerSidePanelTab = useMemo(() => {
@@ -807,15 +808,8 @@ export default function Session() {
   );
 
   const handleViewBaguetteConfig = useCallback(() => {
-    setDetailsScrollTo('baguette-config');
-    setView('details');
-  }, [setView]);
-
-  useEffect(() => {
-    if (activeView !== 'details' || !detailsScrollTo) return;
-    const timer = window.setTimeout(() => setDetailsScrollTo(null), 800);
-    return () => window.clearTimeout(timer);
-  }, [activeView, detailsScrollTo]);
+    setShowBaguetteConfigModal(true);
+  }, [setShowBaguetteConfigModal]);
 
   const builderIsGlobal = isNewSessionRoute
     ? !fromAllSessions && isGlobalSessionsRoute
@@ -1416,12 +1410,7 @@ export default function Session() {
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'details' && (
-              <DetailsView
-                session={session}
-                readonly={isReadonly}
-                onSessionUpdate={setSession}
-                scrollToSection={detailsScrollTo}
-              />
+              <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />
             )}
           </div>
 
@@ -1523,6 +1512,12 @@ export default function Session() {
           onKill={handleTaskKill}
           onRetry={handleTaskRetry}
           onClose={() => setActiveTaskModal(null)}
+        />
+      )}
+      {showBaguetteConfigModal && session?.id && (
+        <BaguetteConfigModal
+          sessionId={session.id}
+          onClose={() => setShowBaguetteConfigModal(false)}
         />
       )}
     </div>

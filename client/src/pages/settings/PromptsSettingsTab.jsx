@@ -12,6 +12,7 @@ import {
 } from '../../components/SettingsSection.jsx';
 import { RepoScopeAside } from './repoScopeDropdown.jsx';
 import { INPUT_CLASS } from '../../utils/ui.js';
+import MarkdownContent from '../../components/MarkdownContent.jsx';
 
 export default function PromptsSettingsTab({ settings, onSave }) {
   const { user } = useAuth();
@@ -151,12 +152,13 @@ export default function PromptsSettingsTab({ settings, onSave }) {
               <label className="block text-sm font-medium text-heading mb-1">
                 Built-in session prompt
               </label>
-              <textarea
-                value={fullSessionPrompt}
-                readOnly
-                rows={20}
-                className="w-full bg-page border border-line rounded-lg px-3 py-2 text-xs text-faint font-mono min-h-[28rem] cursor-default resize-y"
-              />
+              <div className="w-full bg-page border border-line rounded-lg px-3 py-2 min-h-[28rem] max-h-[50vh] overflow-auto cursor-default">
+                {fullSessionPrompt ? (
+                  <MarkdownContent>{fullSessionPrompt}</MarkdownContent>
+                ) : (
+                  <p className="text-xs text-faint">Loading…</p>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-heading mb-1">
@@ -184,12 +186,13 @@ export default function PromptsSettingsTab({ settings, onSave }) {
               <label className="block text-sm font-medium text-heading mb-1">
                 Built-in review prompt
               </label>
-              <textarea
-                value={fullReviewPrompt}
-                readOnly
-                rows={20}
-                className="w-full bg-page border border-line rounded-lg px-3 py-2 text-xs text-faint font-mono min-h-[28rem] cursor-default resize-y"
-              />
+              <div className="w-full bg-page border border-line rounded-lg px-3 py-2 min-h-[28rem] max-h-[50vh] overflow-auto cursor-default">
+                {fullReviewPrompt ? (
+                  <MarkdownContent>{fullReviewPrompt}</MarkdownContent>
+                ) : (
+                  <p className="text-xs text-faint">Loading…</p>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-heading mb-1">

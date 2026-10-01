@@ -139,15 +139,6 @@ export default function TaskPanel({
 
   const renderStartButtons = () => (
     <>
-      {ungroupedCommands.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 p-2 border-b border-line">
-          {ungroupedCommands.map((cmd) => (
-            <StartButton key={cmd.label} onClick={() => onStartTask(cmd.label)} title={cmd.run}>
-              {cmd.label}
-            </StartButton>
-          ))}
-        </div>
-      )}
       {commandNamespaces.map(({ namespace, items }) => (
         <div key={namespace} className="border-b border-line">
           <div className="px-3 py-1 text-[10px] font-medium text-faint uppercase tracking-wider bg-page/40">
@@ -162,6 +153,15 @@ export default function TaskPanel({
           </div>
         </div>
       ))}
+      {ungroupedCommands.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 p-2 border-b border-line">
+          {ungroupedCommands.map((cmd) => (
+            <StartButton key={cmd.label} onClick={() => onStartTask(cmd.label)} title={cmd.run}>
+              {cmd.label}
+            </StartButton>
+          ))}
+        </div>
+      )}
     </>
   );
 
@@ -174,7 +174,7 @@ export default function TaskPanel({
             onClick={onViewBaguetteConfig}
             className={`${INLINE_SECONDARY_LINK_CLASS} text-left`}
           >
-            View <code className="text-secondary">.baguette.yaml</code>
+            View baguette config
           </button>
         </div>
       )}

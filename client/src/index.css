@@ -183,3 +183,45 @@ html[data-theme='dark'] {
   background-color: #09090b;
   color: #a1a1aa;
 }
+
+/* YAML config blocks (highlight.js tokens aligned with semantic palette) */
+.yaml-code {
+  color: var(--palette-fg-secondary);
+}
+
+.yaml-code .hljs {
+  background: transparent;
+  padding: 0;
+}
+
+.yaml-code .hljs-comment,
+.yaml-code .hljs-quote {
+  color: var(--palette-fg-faint);
+  font-style: italic;
+}
+
+.yaml-code .hljs-keyword,
+.yaml-code .hljs-selector-tag,
+.yaml-code .hljs-literal {
+  color: var(--palette-info);
+}
+
+.yaml-code .hljs-string {
+  color: var(--palette-success);
+}
+
+.yaml-code .hljs-number {
+  color: var(--palette-warning);
+}
+
+.yaml-code .hljs-attr,
+.yaml-code .hljs-attribute,
+.yaml-code .hljs-name,
+.yaml-code .hljs-title {
+  color: var(--palette-accent);
+}
+
+.yaml-code .hljs-punctuation,
+.yaml-code .hljs-bullet {
+  color: var(--palette-fg-muted);
+}
