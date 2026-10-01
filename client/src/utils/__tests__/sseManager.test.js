@@ -31,6 +31,7 @@ describe('createSseManager', () => {
       url: '/api/events',
       onMessage: vi.fn(),
       onReconnect: vi.fn(),
+      reconnectDelayMs: 0,
       getVisibility: () => visibility,
       getOnline: () => online,
       EventSourceImpl,
@@ -116,6 +117,52 @@ describe('createSseManager', () => {
     online = true;
     manager.sync();
     expect(instances).toHaveLength(1);
+  });
+
+  it('delays reconnect after hidden/offline so the network can settle', () => {
+    vi.useFakeTimers();
+    const onReconnect = vi.fn();
+    const manager = createSseManager({
+      url: '/api/events',
+      onMessage: vi.fn(),
+      onReconnect,
+      reconnectDelayMs: 500,
+      getVisibility: () => visibility,
+      getOnline: () => online,
+      EventSourceImpl,
+      setTimeoutImpl: setTimeout,
+      clearTimeoutImpl: clearTimeout,
+      addEventListener: (type, handler) => {
+        if (!docListeners.has(type)) docListeners.set(type, new Set());
+        docListeners.get(type).add(handler);
+      },
+      removeEventListener: (type, handler) => {
+        docListeners.get(type)?.delete(handler);
+      },
+      addWindowListener: (type, handler) => {
+        if (!winListeners.has(type)) winListeners.set(type, new Set());
+        winListeners.get(type).add(handler);
+      },
+      removeWindowListener: (type, handler) => {
+        winListeners.get(type)?.delete(handler);
+      },
+    });
+    manager.start();
+
+    visibility = 'hidden';
+    manager.sync();
+    visibility = 'visible';
+    manager.sync();
+    expect(instances).toHaveLength(0);
+
+    vi.advanceTimersByTime(499);
+    expect(instances).toHaveLength(0);
+
+    vi.advanceTimersByTime(1);
+    expect(instances).toHaveLength(1);
+    instances[0].onopen?.();
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it('stop closes the stream and detaches listeners without refetch', () => {
