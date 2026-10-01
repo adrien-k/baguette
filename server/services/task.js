@@ -292,11 +292,12 @@ export class Task {
               this._portMap[depKey] = depPorts;
             }
           }
-          if (depTask.label && Object.keys(depTask.ports).length > 0) {
-            this._portMap[depTask.label] = depTask.ports;
+          const depPortMapKey = depTask.task_key || depTask.label;
+          if (depPortMapKey && Object.keys(depTask.ports).length > 0) {
+            this._portMap[depPortMapKey] = depTask.ports;
           }
           if (depTask.isDocker && depTask.task_key && depTask._shortId) {
-            const depKey = depTask.label ?? depTask.task_key;
+            const depKey = depTask.task_key;
             this._portMap[depKey] = {
               ...(this._portMap[depKey] ?? {}),
               container_hostname: dockerContainerHostname(depTask._shortId, depTask.task_key),

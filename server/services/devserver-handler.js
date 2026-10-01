@@ -1,5 +1,9 @@
 import { extractSessionIdFromHost } from './preview.js';
-import { getPreviewServiceDefinitions, resolvePreviewServiceConfig } from './preview-services.js';
+import {
+  getPreviewServiceDefinitions,
+  inlinePreviewTaskLabel,
+  resolvePreviewServiceConfig,
+} from './preview-services.js';
 import { loadBaguetteConfig } from './baguette-config.js';
 import { PUBLIC_HOST } from '../config.js';
 
@@ -136,7 +140,6 @@ export class DevserverHandler {
     const publicTask = await this.app.service('tasks').create(
       {
         session_id: session.id,
-        label: `baguette:webserver:${effectiveServiceName}`,
         // A `webserver.task` reference resolves through the config; an inline
         // `webserver.command` has no task to name, so pass the command directly.
         ...(webserverConfig.taskKey
@@ -144,6 +147,7 @@ export class DevserverHandler {
           : {
               command: webserverConfig.command,
               ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
+              label: inlinePreviewTaskLabel(effectiveServiceName),
             }),
         autoStart: false,
       },

@@ -152,6 +152,31 @@ describe('TasksService.createTask', () => {
   });
 });
 
+describe('TasksService._findRunningTask', () => {
+  it('matches config tasks by task_key only', () => {
+    const task = service.createTask({
+      sessionId: 1,
+      command: 'pnpm run dev',
+      taskKey: 'dev-server',
+      ports: ['PORT'],
+    });
+    expect(task.label).toBe('dev-server');
+    expect(service._findRunningTask(1, 'dev-server')).toBe(task);
+    expect(service._findRunningTask(1, 'baguette:webserver:default')).toBeNull();
+  });
+
+  it('matches ad-hoc tasks by label when there is no task_key', () => {
+    const task = service.createTask({
+      sessionId: 1,
+      command: 'npm start',
+      label: 'baguette:webserver:default',
+      ports: ['PORT'],
+    });
+    expect(service._findRunningTask(1, 'baguette:webserver:default')).toBe(task);
+    expect(service._findRunningTask(1, 'dev-server')).toBeNull();
+  });
+});
+
 describe('TasksService.getTask', () => {
   it('returns the Task by id', () => {
     const task = service.createTask({ sessionId: 1, command: 'ls' });

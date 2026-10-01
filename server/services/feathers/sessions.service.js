@@ -49,6 +49,8 @@ import { getPreviewHost } from '../preview.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
+  inlinePreviewTaskLabel,
+  previewTaskLookupKey,
   resolvePreviewServiceConfig,
   sessionHasPreviewConfig,
 } from '../preview-services.js';
@@ -607,7 +609,7 @@ export class SessionsService extends KnexService {
     const tasksService = this.app.service('tasks');
     const services = [];
     for (const def of definitions) {
-      const task = tasksService.findLatestTaskByLabel(session.id, def.task_label);
+      const task = tasksService.findLatestTaskByKey(session.id, def.task_label);
       let status = 'stopped';
       let task_id = null;
       let exit_code = null;
@@ -695,18 +697,17 @@ export class SessionsService extends KnexService {
       throw new BadRequest(`No preview service "${serviceName}" configured`);
     }
 
-    const label = `baguette:webserver:${serviceName}`;
+    const lookupKey = previewTaskLookupKey(webserverConfig, serviceName);
     const tasksService = this.app.service('tasks');
     // Start clears then starts, like the preview page's Retry button: stop whatever task is
     // running for this service and boot a fresh one (attaching it below drops the old proxy
     // state and its logs).
-    const running = tasksService._findRunningTask(session.id, label);
+    const running = tasksService._findRunningTask(session.id, lookupKey);
     if (running) await running.kill();
 
     const created = await tasksService.create(
       {
         session_id: session.id,
-        label,
         // A `webserver.task` reference resolves through the config; an inline
         // `webserver.command` has no task to name, so pass the command directly.
         ...(webserverConfig.taskKey
@@ -714,6 +715,7 @@ export class SessionsService extends KnexService {
           : {
               command: webserverConfig.command,
               ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
+              label: inlinePreviewTaskLabel(serviceName),
             }),
         ttl_ms: PREVIEW_WEBSERVICE_TTL_MS,
       },

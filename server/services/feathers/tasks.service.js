@@ -77,7 +77,7 @@ export class TasksService {
       sessionId,
       shortId,
       command,
-      label,
+      label: taskKey ?? label ?? null,
       taskKey,
       ports,
       env,
@@ -157,25 +157,37 @@ export class TasksService {
     this._tasks.clear();
   }
 
-  /** Most recent task in a session with the given label (any status). */
-  findLatestTaskByLabel(sessionId, label) {
+  /**
+   * Most recent task in a session for a config task key or ad-hoc label (any status).
+   * Config-backed tasks match on `task_key`; inline tasks (no task_key) match on `label`.
+   */
+  findLatestTaskByKey(sessionId, key) {
     let latest = null;
     for (const task of this._tasks.values()) {
-      if (task.session_id === sessionId && task.label === label) {
-        if (!latest || task.id > latest.id) latest = task;
-      }
+      if (task.session_id !== sessionId) continue;
+      if (!this._taskMatchesLookupKey(task, key)) continue;
+      if (!latest || task.id > latest.id) latest = task;
     }
     return latest;
   }
 
-  /** Find a running task in this session by its label. */
-  _findRunningTask(sessionId, label) {
+  /** @deprecated Use findLatestTaskByKey */
+  findLatestTaskByLabel(sessionId, label) {
+    return this.findLatestTaskByKey(sessionId, label);
+  }
+
+  /** Find a running task by config task key, or by label when the task has no task_key. */
+  _findRunningTask(sessionId, key) {
     for (const task of this._tasks.values()) {
-      if (task.session_id === sessionId && task.label === label && task.status === 'running') {
-        return task;
-      }
+      if (task.session_id !== sessionId || task.status !== 'running') continue;
+      if (this._taskMatchesLookupKey(task, key)) return task;
     }
     return null;
+  }
+
+  _taskMatchesLookupKey(task, key) {
+    if (task.task_key) return task.task_key === key;
+    return task.label === key;
   }
 
   /** Reset all in-memory state. For use in tests only. */
@@ -279,7 +291,8 @@ export class TasksService {
         : taskDef?.run);
     if (!resolvedCommand) throw new BadRequest('A task_key or a command is required');
 
-    const effectiveLabel = label ?? task_key ?? null;
+    // Config tasks are always identified by task_key; label is only for ad-hoc / internal tasks.
+    const effectiveLabel = task_key ?? label ?? null;
     const effectivePorts = ports ?? taskDef?.ports ?? [];
 
     const configTaskKeys = new Set(Object.keys(taskDefs));
@@ -355,7 +368,6 @@ export class TasksService {
           sessionId: session_id,
           shortId: session.short_id,
           command: initCommand,
-          label: 'baguette:init',
           taskKey: 'baguette:init',
           ports: [],
           env: initEnv,
@@ -397,7 +409,7 @@ export class TasksService {
     this.emit('created', task.toPublic());
 
     if (dependsOn.length > 0) {
-      const initDep = dependsOn.find((t) => t.label === 'baguette:init');
+      const initDep = dependsOn.find((t) => t.task_key === 'baguette:init');
       if (initDep)
         task.addLog('stdout', `\x1b[2m[baguette] Init running in task #${initDep.id}...\x1b[0m\n`);
     }

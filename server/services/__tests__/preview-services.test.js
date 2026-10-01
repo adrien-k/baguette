@@ -38,6 +38,15 @@ describe('preview-services', () => {
     expect(url).toBe('exp://session-abc123-expo.preview.example.com/');
   });
 
+  it('uses baguette:webserver label for inline command preview only', () => {
+    const defs = getPreviewServiceDefinitions(
+      { webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' } },
+      'abc123'
+    );
+    expect(defs[0].task_key).toBeNull();
+    expect(defs[0].task_label).toBe('baguette:webserver:default');
+  });
+
   it('getPreviewServiceDefinitions for webserver', () => {
     const defs = getPreviewServiceDefinitions(
       {
@@ -49,7 +58,7 @@ describe('preview-services', () => {
     );
     expect(defs).toHaveLength(1);
     expect(defs[0].name).toBe('default');
-    expect(defs[0].task_label).toBe('baguette:webserver:default');
+    expect(defs[0].task_label).toBe('dev');
     expect(defs[0].deep_link_url).toContain('exp://session-abc123');
   });
 

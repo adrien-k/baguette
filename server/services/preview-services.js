@@ -21,8 +21,14 @@ export function buildDeepLinkUrl(scheme, httpsUrl) {
   }
 }
 
-function webserverTaskLabel(serviceName = 'default') {
+/** Label for preview tasks with an inline `webserver.command` (no config task key). */
+export function inlinePreviewTaskLabel(serviceName = 'default') {
   return `baguette:webserver:${serviceName}`;
+}
+
+/** Key used to find/reuse the in-memory task for a preview service. */
+export function previewTaskLookupKey(webserverConfig, serviceName = 'default') {
+  return webserverConfig?.taskKey ?? inlinePreviewTaskLabel(serviceName);
 }
 
 /**
@@ -55,7 +61,7 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
         url,
         expose: webserver.expose,
         task_key: webserver.taskKey,
-        task_label: webserverTaskLabel('default'),
+        task_label: previewTaskLookupKey(webserver, 'default'),
         deep_link_url: buildDeepLinkUrl(scheme, url),
       },
     ];
@@ -75,7 +81,7 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
       url,
       expose: svc.expose,
       task_key: svc.taskKey,
-      task_label: webserverTaskLabel(svc.name),
+      task_label: previewTaskLookupKey(svc, svc.name),
       deep_link_url: buildDeepLinkUrl(scheme, url),
     };
   });

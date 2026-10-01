@@ -143,6 +143,66 @@ describe('task port substitution (integration)', () => {
     expect(clientTask.getLogs()).toContain('response:pong');
   }, 20_000);
 
+  it('reuses a preview webserver task (same task key) for depends-on port substitution', async () => {
+    service.app = buildMockApp(service);
+
+    const serverPub = await service.create(
+      { session_id: 1, task_key: 'http-server', autoStart: true },
+      { user: { id: 1 } }
+    );
+    const serverTask = service.getTask(serverPub.id);
+    await waitFor(() => Object.keys(serverTask.ports).length === 1, {
+      timeoutMs: 15_000,
+      msg: () => `server logs: ${serverTask.getLogs()}`,
+    });
+    await serverTask.waitForReady({ timeoutMs: 15_000 });
+
+    const clientPub = await service.create(
+      { session_id: 1, task_key: 'http-client' },
+      { user: { id: 1 } }
+    );
+    await waitFor(() => service.getTask(clientPub.id)?.status === 'exited', {
+      timeoutMs: 15_000,
+      msg: () => `client logs: ${service.getTask(clientPub.id)?.getLogs()}`,
+    });
+
+    const clientTask = service.getTask(clientPub.id);
+    expect(clientTask.exit_code).toBe(0);
+    expect(clientTask.getLogs()).toContain('response:pong');
+    expect([...service._tasks.values()].filter((t) => t.task_key === 'http-server')).toHaveLength(
+      1
+    );
+  }, 30_000);
+
+  it('reuses an already-running dependency and still substitutes its ports', async () => {
+    service.app = buildMockApp(service);
+
+    const serverPub = await service.create(
+      { session_id: 1, task_key: 'http-server' },
+      { user: { id: 1 } }
+    );
+    const serverTask = service.getTask(serverPub.id);
+    await waitFor(() => Object.keys(serverTask.ports).length === 1, {
+      timeoutMs: 15_000,
+      msg: () => `server logs: ${serverTask.getLogs()}`,
+    });
+    await serverTask.waitForReady({ timeoutMs: 15_000 });
+
+    const clientPub = await service.create(
+      { session_id: 1, task_key: 'http-client' },
+      { user: { id: 1 } }
+    );
+    await waitFor(() => service.getTask(clientPub.id)?.status === 'exited', {
+      timeoutMs: 15_000,
+      msg: () => `client logs: ${service.getTask(clientPub.id)?.getLogs()}`,
+    });
+
+    const clientTask = service.getTask(clientPub.id);
+    expect(clientTask.exit_code).toBe(0);
+    expect(clientTask.getLogs()).toContain('response:pong');
+    expect([...service._tasks.values()].filter((t) => t.label === 'http-server')).toHaveLength(1);
+  }, 30_000);
+
   it('substitutes task port placeholders in env after depends-on tasks are ready', async () => {
     service.app = buildMockApp(service);
 
