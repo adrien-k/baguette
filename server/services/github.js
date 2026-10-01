@@ -1369,7 +1369,8 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
 
       const rangeHeader = buildLogRangeHeader({ startByte, endByte });
 
-      const rangeRes = await githubFetch(logUrl, { token, headers: { Range: rangeHeader } });
+      // Signed blob URL from the redirect — do not send the GitHub token (Azure rejects it).
+      const rangeRes = await githubFetch(logUrl, { headers: { Range: rangeHeader } });
       let log = await rangeRes.text();
 
       let totalBytes = Buffer.byteLength(log, 'utf8');
