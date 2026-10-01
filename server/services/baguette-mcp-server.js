@@ -822,7 +822,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'ListProjectCommands',
       description:
-        'List available project commands defined in .baguette.yaml (tests, linters, migrations, etc.).',
+        'List available project commands defined in .baguette.yaml (tests, linters, migrations, etc.). Commands with attach: false in config include that field; such tasks cannot be run with attach: true via RunProjectCommand (use detached mode and ReadTaskOutput or TaskStatus).',
       schema: {},
       handler: async () => {
         let cfg;
@@ -856,7 +856,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'RunProjectCommand',
       description:
-        'Run a project command by its label from .baguette.yaml (e.g. "Run tests"). Always use this instead of running scripts directly. Pass args to scope execution: a file path, a test name pattern, or any flag the underlying runner supports (e.g. ["src/foo.test.js"], ["--grep", "my test"], ["-k", "my_test"]). By default runs detached: returns a taskId immediately so you can check logs with ReadTaskOutput or stop the task with KillTask. Pass attach: true to wait for the command to finish and get the full output inline.',
+        'Run a project command by its label from .baguette.yaml (e.g. "Run tests"). Always use this instead of running scripts directly. Pass args to scope execution: a file path, a test name pattern, or any flag the underlying runner supports (e.g. ["src/foo.test.js"], ["--grep", "my test"], ["-k", "my_test"]). By default runs detached: returns a taskId immediately so you can check logs with ReadTaskOutput or stop the task with KillTask. Pass attach: true to wait for the command to finish and get the full output inline. If ListProjectCommands listed attach: false for that label, attach: true is rejected — run detached and poll logs with ReadTaskOutput or TaskStatus.',
       schema: {
         label: z.string().describe('Command label exactly as returned by ListProjectCommands'),
         args: z
@@ -875,7 +875,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           .boolean()
           .optional()
           .describe(
-            'If true, wait for the command to finish and return exitCode/stdoutLines/stderrLines inline. Default false (detached): returns taskId immediately.'
+            'If true, wait for the command to finish and return exitCode/stdoutLines/stderrLines inline. Default false (detached): returns taskId immediately. Cannot be true when the command has attach: false in config (see ListProjectCommands).'
           ),
       },
       handler: async ({ label, args = [], env: extraEnv, attach = false }) => {

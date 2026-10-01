@@ -449,7 +449,7 @@ export function resolveWebserverConfig(baguetteConfig) {
 /**
  * Build the full list of available commands from a baguette config.
  * Backward-compatible wrapper around getAvailableTasks().
- * Returns an array of { label, run, ports? }.
+ * Returns an array of { label, run, ports?, attach? } (`attach: false` when attach mode is disallowed).
  */
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
