@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { usersService } from '../feathers.js';
 import { useAuth } from './useAuth.jsx';
 import { toastError } from '../utils/toastError.jsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import {
   normalizeCursorModelPrefs,
   DEFAULT_CURSOR_MODEL_PREFS,
@@ -12,6 +13,12 @@ const SAVE_DEBOUNCE_MS = 400;
 /** User-level Cursor model param preferences (shared across repos). */
 export function useCursorModelPrefs() {
   const { user } = useAuth();
+  const {
+    currentUser: fullUser,
+    loading: userLoading,
+    error: userError,
+    updateCurrentUser,
+  } = useCurrentUser();
   const [cursorModelPrefs, setCursorModelPrefsState] = useState(DEFAULT_CURSOR_MODEL_PREFS);
   const [loaded, setLoaded] = useState(false);
   const saveTimerRef = useRef(null);
@@ -25,15 +32,34 @@ export function useCursorModelPrefs() {
       return;
     }
     userIdRef.current = user.id;
-    setLoaded(false);
-    usersService
-      .get(user.id)
-      .then((d) => {
-        const prefs = normalizeCursorModelPrefs(d.agent_preferences);
-        setCursorModelPrefsState(prefs);
-      })
-      .catch((err) => toastError('Failed to load model preferences', err))
-      .finally(() => setLoaded(true));
+    if (userLoading) {
+      setLoaded(false);
+      return;
+    }
+    if (userError) {
+      toastError('Failed to load model preferences', userError);
+      setLoaded(true);
+      return;
+    }
+    if (!fullUser) {
+      setLoaded(false);
+      return;
+    }
+    setCursorModelPrefsState(normalizeCursorModelPrefs(fullUser.agent_preferences));
+    setLoaded(true);
+    // Intentionally omit fullUser — refetch updates are applied via `patched` below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fullUser read when id/loading settle
+  }, [user?.id, userLoading, userError, fullUser?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const onPatched = (updated) => {
+      if (String(updated.id) !== String(user.id)) return;
+      if (Object.keys(pendingPatchRef.current).length) return;
+      setCursorModelPrefsState(normalizeCursorModelPrefs(updated.agent_preferences));
+    };
+    usersService.on('patched', onPatched);
+    return () => usersService.off('patched', onPatched);
   }, [user?.id]);
 
   const flushSave = useCallback(() => {
@@ -44,8 +70,9 @@ export function useCursorModelPrefs() {
     pendingPatchRef.current = {};
     usersService
       .patch(id, { agent_preferences: patch })
+      .then(updateCurrentUser)
       .catch((err) => toastError('Failed to save model preferences', err));
-  }, []);
+  }, [updateCurrentUser]);
 
   const scheduleSaveKey = useCallback(
     (key, val) => {

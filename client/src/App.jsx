@@ -22,6 +22,7 @@ import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListe
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
 import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
+import { CurrentUserProvider } from './context/CurrentUserContext.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 import { MENU_ITEM_CLASS, NAV_CLASS, PAGE_BG } from './utils/ui.js';
 
@@ -370,10 +371,12 @@ function ThemedToaster() {
 export default function App() {
   return (
     <AuthProvider>
-      <ColorSchemeProvider>
-        <AppContent />
-        <ThemedToaster />
-      </ColorSchemeProvider>
+      <CurrentUserProvider>
+        <ColorSchemeProvider>
+          <AppContent />
+          <ThemedToaster />
+        </ColorSchemeProvider>
+      </CurrentUserProvider>
     </AuthProvider>
   );
 }

@@ -15,7 +15,6 @@ import {
   sessionIssuesService,
   sessionReviewService,
   sessionsService,
-  usersService,
 } from '../../feathers.js';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
@@ -27,7 +26,7 @@ import {
   NEUTRAL_BUTTON_CLASS,
   SECONDARY_BUTTON_CLASS,
 } from '../../utils/buttonStyles.js';
-import { useAuth } from '../../hooks/useAuth.jsx';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
@@ -97,11 +96,10 @@ export default function ReviewView({
   reviewerPanelActive = false,
   onOpenReviewer,
 }) {
-  const { user } = useAuth();
   const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
-  const [userSettings, setUserSettings] = useState(null);
+  const { currentUser: userSettings } = useCurrentUser();
   const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
   const [closedCount, setClosedCount] = useState(0);
@@ -125,14 +123,6 @@ export default function ReviewView({
     () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
     [userSettings, selectedRepo]
   );
-
-  useEffect(() => {
-    if (!user?.id) return;
-    usersService
-      .get(user.id)
-      .then((d) => setUserSettings(d))
-      .catch(() => setUserSettings({}));
-  }, [user?.id]);
 
   const hasStoredReviewSdk = session?.review_agent_sdk != null && session.review_agent_sdk !== '';
   const reviewAgentSdk = hasStoredReviewSdk

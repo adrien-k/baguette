@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, ScrollText } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { requestNotificationPermission } from '../utils/notifications.js';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
@@ -472,21 +473,18 @@ const TABS = [
 const DEFAULT_TAB = TABS[0].id;
 
 export default function Settings() {
-  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') || DEFAULT_TAB;
-  const [settings, setSettings] = useState(null);
-  const [error, setError] = useState(null);
+  const {
+    currentUser: settings,
+    loading: settingsLoading,
+    error: settingsError,
+    refetch: refetchSettings,
+    updateCurrentUser,
+  } = useCurrentUser();
+  const error = settingsError?.message ?? null;
 
   const setTab = (tab) => setSearchParams({ tab });
-
-  useEffect(() => {
-    if (!user?.id) return;
-    usersService
-      .get(user.id)
-      .then((d) => setSettings(d))
-      .catch((err) => setError(err.message));
-  }, [user?.id]);
 
   if (rawTab === 'system' || rawTab === 'docker') {
     return <Navigate to="/system" replace />;
@@ -528,30 +526,29 @@ export default function Settings() {
             </div>
           )}
 
-          {activeTab === 'agent' && !settings && !error && <p className="text-faint">Loading…</p>}
+          {activeTab === 'agent' && settingsLoading && !error && (
+            <p className="text-faint">Loading…</p>
+          )}
           {activeTab === 'agent' && settings && (
-            <AgentSettingsTab settings={settings} onSave={setSettings} />
+            <AgentSettingsTab settings={settings} onSave={updateCurrentUser} />
           )}
-          {activeTab === 'prompts' && !settings && !error && <p className="text-faint">Loading…</p>}
+          {activeTab === 'prompts' && settingsLoading && !error && (
+            <p className="text-faint">Loading…</p>
+          )}
           {activeTab === 'prompts' && settings && (
-            <PromptsSettingsTab settings={settings} onSave={setSettings} />
+            <PromptsSettingsTab settings={settings} onSave={updateCurrentUser} />
           )}
-          {activeTab === 'integrations' && !settings && !error && (
+          {activeTab === 'integrations' && settingsLoading && !error && (
             <p className="text-faint">Loading…</p>
           )}
           {activeTab === 'integrations' && settings && (
-            <IntegrationsTab
-              settings={settings}
-              onRefreshSettings={async () => {
-                if (!user?.id) return;
-                const d = await usersService.get(user.id);
-                setSettings(d);
-              }}
-            />
+            <IntegrationsTab settings={settings} onRefreshSettings={refetchSettings} />
           )}
-          {activeTab === 'repos' && !settings && !error && <p className="text-faint">Loading…</p>}
+          {activeTab === 'repos' && settingsLoading && !error && (
+            <p className="text-faint">Loading…</p>
+          )}
           {activeTab === 'repos' && settings && (
-            <RepositoriesTab settings={settings} onSave={setSettings} />
+            <RepositoriesTab settings={settings} onSave={updateCurrentUser} />
           )}
           {activeTab === 'notifications' && <NotificationsSection />}
           {activeTab === 'secrets' && <SecretsTab />}

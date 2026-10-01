@@ -7,8 +7,8 @@ import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
 import { apiFetch } from '../api.js';
-import { sessionsService, pluginsService, usersService } from '../feathers.js';
-import { useAuth } from '../hooks/useAuth.jsx';
+import { sessionsService, pluginsService } from '../feathers.js';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
@@ -109,8 +109,7 @@ export default function BuilderForm({
   const [showMore, setShowMore] = globalState.useState('showMore', false);
   const [branchName, setBranchName] = persistentState.useState('branchName', '');
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
-  const { user } = useAuth();
-  const [userSettings, setUserSettings] = useState(null);
+  const { currentUser: userSettings } = useCurrentUser();
   const [agentSdk, setAgentSdkRaw] = persistentState.useState(
     'agentSdk',
     editingLoop?.agent_sdk ?? 'claude'
@@ -156,17 +155,6 @@ export default function BuilderForm({
     () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
     [userSettings, selectedRepo]
   );
-
-  useEffect(() => {
-    if (!user?.id) {
-      setUserSettings(null);
-      return;
-    }
-    usersService
-      .get(user.id)
-      .then((d) => setUserSettings(d))
-      .catch(() => setUserSettings({}));
-  }, [user?.id]);
 
   useEffect(() => {
     if (!availableSdks.length) return;
