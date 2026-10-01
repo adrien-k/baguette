@@ -41,23 +41,24 @@ fi
 # - Claude authentication
 # - Baguette data directory
 # - Mise binaries and shims
-# - User-installed CLIs (pip/uv/poetry use ~/.cache and ~/.local, Cargo ~/.cargo, 
+# - User-installed CLIs (pip/uv/poetry use ~/.cache and ~/.local, Cargo ~/.cargo,
 #   Rustup ~/.rustup, npm ~/.npm, Ruby Bundler ~/.bundle, Go ~/go, ...
+mkdir -p /data/home
+chown baguette:baguette /data/home
 mv /home/baguette /home/baguette-original
 ln -sfn /data/home /home/baguette
-cp -r /home/baguette-original/. /home/baguette/
 
-# Default mise layout is ~/.local/share/mise (on /data via the .local symlink)
-mkdir -p \
+# User-installed CLIs (dirs above are on /data); prepend so they win over image PATH
+BAGUETTE_PATH="/home/baguette/.local/share/mise/shims:/home/baguette/.local/bin:/home/baguette/.cargo/bin:/home/baguette/go/bin:$PATH"
+
+gosu baguette sh -c '
+  cp -r /home/baguette-original/. /home/baguette/
+  # Default mise layout is ~/.local/share/mise (on /data via the .local symlink)
+  mkdir -p \
     /home/baguette/.local/bin \
     /home/baguette/.local/share/mise/shims \
     /home/baguette/.cargo/bin \
     /home/baguette/go/bin
+'
 
-# User-installed CLIs (dirs above are on /data); prepend so they win over image PATH
-export PATH="/home/baguette/.local/share/mise/shims:/home/baguette/.local/bin:/home/baguette/.cargo/bin:/home/baguette/go/bin:$PATH"
-
-# Fix ownership of the whole data directory
-chown -R baguette:baguette /data
-
-exec gosu baguette "$@"
+exec gosu baguette env PATH="$BAGUETTE_PATH" "$@"
