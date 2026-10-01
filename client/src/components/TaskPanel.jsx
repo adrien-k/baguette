@@ -137,16 +137,23 @@ export default function TaskPanel({
   const { ungrouped: ungroupedCommands, namespaces: commandNamespaces } =
     groupConfigCommandsForPanel(configCommands);
 
+  const commandRowClass = 'flex flex-wrap gap-1 px-3 py-1 border-b border-line';
+  const namespaceHeaderClass =
+    'px-3 pt-1 pb-0 text-[10px] font-medium text-faint uppercase tracking-wider bg-page/40';
+
   const renderStartButtons = () => (
     <>
       {commandNamespaces.map(({ namespace, items }) => (
-        <div key={namespace} className="border-b border-line">
-          <div className="px-3 py-1 text-[10px] font-medium text-faint uppercase tracking-wider bg-page/40">
-            {namespace}
-          </div>
-          <div className="flex flex-wrap gap-1.5 p-2 pl-4">
+        <div key={namespace}>
+          <div className={namespaceHeaderClass}>{namespace}</div>
+          <div className={commandRowClass}>
             {items.map((cmd) => (
-              <StartButton key={cmd.label} onClick={() => onStartTask(cmd.label)} title={cmd.run}>
+              <StartButton
+                key={cmd.label}
+                compact
+                onClick={() => onStartTask(cmd.label)}
+                title={cmd.run}
+              >
                 {configCommandButtonLabel(cmd, true)}
               </StartButton>
             ))}
@@ -154,9 +161,14 @@ export default function TaskPanel({
         </div>
       ))}
       {ungroupedCommands.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 p-2 border-b border-line">
+        <div className={commandRowClass}>
           {ungroupedCommands.map((cmd) => (
-            <StartButton key={cmd.label} onClick={() => onStartTask(cmd.label)} title={cmd.run}>
+            <StartButton
+              key={cmd.label}
+              compact
+              onClick={() => onStartTask(cmd.label)}
+              title={cmd.run}
+            >
               {cmd.label}
             </StartButton>
           ))}

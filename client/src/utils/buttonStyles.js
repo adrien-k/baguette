@@ -24,6 +24,12 @@ export const PRIMARY_BUTTON_SIZED = `${PRIMARY_BUTTON_CLASS} px-4 py-2 text-sm`;
 /** Play icon on neutral task buttons — accent without a solid action fill. */
 export const NEUTRAL_BUTTON_PLAY_ICON_CLASS = 'w-3 h-3 shrink-0 text-success';
 
+/** Denser neutral button for task-panel command shortcuts. */
+export const NEUTRAL_BUTTON_COMPACT_CLASS =
+  'inline-flex items-center gap-1 px-2 py-0.5 rounded border border-strong bg-surface hover:bg-control text-secondary hover:text-fg text-[11px] leading-tight font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+
+export const NEUTRAL_BUTTON_PLAY_ICON_COMPACT_CLASS = 'w-2.5 h-2.5 shrink-0 text-success';
+
 /** Red stop icon — running tasks in TaskPanel. */
 export const TASK_STOP_CONTROL_CLASS =
   'text-danger hover:text-err-hover opacity-60 hover:opacity-100 transition-all';
