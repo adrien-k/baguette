@@ -294,6 +294,17 @@ export function uniqueLocalBranch(intendedBranch, shortId) {
   return `${intendedBranch}${suffix}`;
 }
 
+/** True when `git fetch origin <branch>` failed because the ref is not on the remote (local may still exist). */
+export function isMissingRemoteRefError(err) {
+  const msg = err?.stderr?.toString() ?? err?.message ?? '';
+  return (
+    msg.includes('No such remote') ||
+    msg.includes('does not appear to be a git repository') ||
+    msg.includes("couldn't find remote ref") ||
+    msg.includes('could not find remote ref')
+  );
+}
+
 export async function trySetBranchUpstream(worktreePath, localBranch, remoteBranch) {
   if (!worktreePath || !localBranch || !remoteBranch) return;
   try {
@@ -325,11 +336,8 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
       stdio: 'pipe',
     });
   } catch (err) {
-    const msg = err?.stderr?.toString() ?? err?.message ?? '';
-    const isNoRemote =
-      msg.includes('No such remote') || msg.includes('does not appear to be a git repository');
-    if (!isNoRemote) throw err;
-    // Local repo with no origin — use existing local branch ref as-is
+    if (!isMissingRemoteRefError(err)) throw err;
+    // No origin or branch never pushed — use existing local branch ref as-is
   }
   // Sync the local branch ref to the fetched commit so new worktrees start from the latest
   // remote commit rather than the stale commit from when the bare clone was created.

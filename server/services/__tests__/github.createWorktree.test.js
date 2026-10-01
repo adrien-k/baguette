@@ -32,7 +32,25 @@ vi.mock('../config.js', () => ({
   resolveDataDirRelativePath: (subpath) => `${TEST_REPOS_DIR}/${subpath}`,
 }));
 
-import { createWorktree, uniqueLocalBranch, removeWorktree, gitLogSinceBase } from '../github.js';
+import {
+  createWorktree,
+  uniqueLocalBranch,
+  removeWorktree,
+  gitLogSinceBase,
+  isMissingRemoteRefError,
+} from '../github.js';
+
+describe('isMissingRemoteRefError', () => {
+  it('detects missing remote branch ref errors from git fetch', () => {
+    expect(
+      isMissingRemoteRefError({
+        stderr: "fatal: couldn't find remote ref feature/unpublished\n",
+      })
+    ).toBe(true);
+    expect(isMissingRemoteRefError({ stderr: 'fatal: No such remote: origin\n' })).toBe(true);
+    expect(isMissingRemoteRefError({ stderr: 'fatal: authentication failed\n' })).toBe(false);
+  });
+});
 
 describe('uniqueLocalBranch', () => {
   it('appends short_id when the intended name does not already include it', () => {
@@ -114,6 +132,32 @@ describe('createWorktree', () => {
     });
     const { stdout: headB } = await git(second.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD');
     expect(headB.trim()).toBe(`${BRANCH}-bbbb`);
+  });
+
+  it('creates a worktree when the branch exists only locally (never pushed to origin)', async () => {
+    const UNPUBLISHED = 'feature/unpublished-local';
+    const workPath = path.join(TEST_REPOS_DIR, 'work');
+    await git(workPath, 'checkout', '-b', UNPUBLISHED);
+    await fs.promises.writeFile(path.join(workPath, 'local-only.txt'), 'local\n');
+    await git(workPath, 'add', '.');
+    await git(workPath, 'commit', '-m', 'local only');
+    const { stdout: localHead } = await git(workPath, 'rev-parse', 'HEAD');
+    await execAsync('git', ['-C', barePath, 'fetch', workPath, `+${UNPUBLISHED}:${UNPUBLISHED}`], {
+      stdio: 'pipe',
+    });
+
+    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const { worktreePath } = await createWorktree(
+      repo,
+      UNPUBLISHED,
+      'session-unpublished',
+      FAKE_TOKEN
+    );
+
+    const { stdout: bareHead } = await git(barePath, 'rev-parse', UNPUBLISHED);
+    expect(bareHead.trim()).toBe(localHead.trim());
+    const files = await fs.promises.readdir(worktreePath);
+    expect(files).toContain('local-only.txt');
   });
 
   it('worktree starts from the latest remote commit, not the stale bare-clone ref', async () => {
