@@ -1,4 +1,4 @@
-import { Archive, Loader2 } from 'lucide-react';
+import { Archive } from 'lucide-react';
 import { SessionStatusIcon } from './SessionCard.jsx';
 import { prListIndicatorProps } from '../utils/prStatusStyles.js';
 
@@ -17,8 +17,14 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
   if (isArchived) {
     return <Archive className={`${iconSize} text-faint shrink-0`} aria-hidden />;
   }
-  if (isArchiving) {
-    return <Loader2 className={`${iconSize} text-accent/80 animate-spin shrink-0`} aria-hidden />;
+  if (isArchiving || session.status === 'running' || session.status === 'provisioning') {
+    return (
+      <SessionStatusIcon
+        status={isArchiving ? 'archiving' : session.status}
+        compact={size === 'sm'}
+        aria-hidden
+      />
+    );
   }
   if (hasPr) {
     const { icon: PrIcon, iconClass, title } = prListIndicatorProps(session);

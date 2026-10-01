@@ -40,8 +40,6 @@ export const PR_STATUS_ICON_CLASS = {
 
 const SESSION_FAILED_CLASS = 'text-danger';
 
-const PULSE_STATUSES = new Set(['running', 'provisioning', 'archiving', 'approval']);
-
 export function prListIndicatorProps(session) {
   const status = session.pr_status || 'open';
   const config = PR_STATUS_BADGE_CONFIG[status] ?? PR_STATUS_BADGE_FALLBACK;
@@ -49,10 +47,9 @@ export function prListIndicatorProps(session) {
   const iconClass = failed
     ? SESSION_FAILED_CLASS
     : (PR_STATUS_ICON_CLASS[status] ?? PR_STATUS_ICON_CLASS.open);
-  const pulse = PULSE_STATUSES.has(session.status);
   return {
     icon: config.icon,
-    iconClass: `${iconClass}${pulse ? ' animate-pulse' : ''}`,
+    iconClass,
     title: config.title,
   };
 }
