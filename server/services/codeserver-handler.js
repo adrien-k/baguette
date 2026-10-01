@@ -1,5 +1,6 @@
 import { PUBLIC_API_URL } from '../config.js';
 import { buildSessionHostname } from './preview.js';
+import { DEFAULT_TTL_MS } from './task.js';
 
 const CODE_DOMAIN_PREFIX = 'code';
 
@@ -43,6 +44,7 @@ export class CodeServerHandler {
       env: {},
       cwd: undefined,
       dependsOn: [],
+      ttl: DEFAULT_TTL_MS,
     });
     return { task, exposePort: 'PORT' };
   }

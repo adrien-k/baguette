@@ -14,10 +14,8 @@ import {
   waitForContainerHealth,
 } from './docker-session.js';
 
-/** Idle lifetime for tasks that expose ports. Reset by heartbeat(). */
-export const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
-/** Idle lifetime for preview-tab webserver starts (matches proxy cookie TTL). */
-export const PREVIEW_WEBSERVICE_TTL_MS = 60 * 60 * 1000; // 1 hour
+/** Default idle TTL (ms) when `ttl` is set without an explicit value (preview auto-start, depends_on). */
+export const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 /** How often a task heartbeats its depends_on tasks. */
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 /** After SIGTERM, wait this long before escalating to SIGKILL. */
@@ -84,7 +82,7 @@ function getFreePort() {
 export class Task {
   #process = null;
   #logBuffer = [];
-  #ttlTimer = null;
+  #idleTtlTimer = null;
   #heartbeatTimer = null;
   constructor({
     id,
@@ -97,8 +95,8 @@ export class Task {
     env,
     cwd,
     dependsOn,
-    noTtl = false,
-    ttlMs,
+    /** Idle TTL in ms; omit to disable idle shutdown. */
+    ttl,
     dockerContainer = null,
     dockerPortMappings = null,
     dockerEnvKeys = null,
@@ -120,7 +118,7 @@ export class Task {
     this.pid = null;
     this.status = 'running';
     this.exit_code = null;
-    /** Set by kill(): 'stopped' (explicit stop) or 'ttl' (idle timeout). null when it exited on its own. */
+    /** Set by kill(): 'stopped' or 'ttl' (idle). null when it exited on its own. */
     this.kill_reason = null;
     this.created_at = new Date().toISOString();
     this.exited_at = null;
@@ -132,8 +130,7 @@ export class Task {
     this._started = false;
     /** Set when depends_on tasks have all passed waitForReady (before _startProcess). */
     this._depsSatisfied = false;
-    this._noTtl = !!noTtl;
-    this._ttlMs = noTtl ? null : (ttlMs ?? DEFAULT_TTL_MS);
+    this._ttl = ttl != null ? ttl : null;
     this._shortId = shortId;
     this._dockerContainerRaw = dockerContainer;
     this._dockerPortMappings = Array.isArray(dockerPortMappings) ? dockerPortMappings : [];
@@ -170,15 +167,16 @@ export class Task {
   }
 
   /**
-   * Reset this task's idle TTL. No-op for tasks without ports
-   * (they run until cancelled or they exit) and for tasks that have already exited.
+   * Reset this task's idle TTL. No-op when the task was not created with idle TTL
+   * (panel-started tasks), and for tasks that have already exited.
    */
   heartbeat() {
-    if (this.status === 'exited' || !this.hasPorts || !this._ttlMs) return;
-    clearTimeout(this.#ttlTimer);
-    this.#ttlTimer = setTimeout(() => {
+    if (this.status === 'exited' || this._ttl == null) return;
+    clearTimeout(this.#idleTtlTimer);
+    this.#idleTtlTimer = setTimeout(() => {
+      this.addLog('stdout', baguetteStatusLine('TTL expired, stopping task...'));
       this.kill({ reason: 'ttl' }).catch(() => {});
-    }, this._ttlMs);
+    }, this._ttl);
   }
 
   #heartbeatDeps() {
@@ -714,7 +712,7 @@ export class Task {
   /** Mark the task as failed without a running process. */
   exit(exitCode = 1) {
     if (this.status === 'exited') return;
-    clearTimeout(this.#ttlTimer);
+    clearTimeout(this.#idleTtlTimer);
     this.#stopDepHeartbeatLoop();
     this.status = 'exited';
     this.exit_code = exitCode;
@@ -753,8 +751,7 @@ export class Task {
       created_at: this.created_at,
       exited_at: this.exited_at,
       ports: this.ports,
-      ttl_ms: this.hasPorts && this._ttlMs ? this._ttlMs : null,
-      no_ttl: this._noTtl,
+      ttl_ms: this._ttl,
       is_docker: this.isDocker,
     };
   }

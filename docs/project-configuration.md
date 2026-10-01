@@ -191,10 +191,13 @@ run: |
 
 #### Lifetime
 
-Task lifetime is determined by whether the task exposes ports — it is not configurable in `.baguette.yaml`:
+Task lifetime is not configurable in `.baguette.yaml`. It depends on how the task was started:
 
-- **No ports** — the task runs until it exits or is cancelled. Heartbeats have no effect.
-- **Has ports** — the task is stopped after 5 minutes of inactivity. A heartbeat resets that window to 5 minutes. The preview proxy heartbeats the underlying task on every proxied request. Each running task also heartbeats its `depends-on` tasks every minute until it exits, so a long-running command keeps its server dependencies alive.
+- **Tasks panel or Preview tab (manual start)** — run until they exit or are cancelled.
+- **Preview link (dev proxy auto-start)** — the webserver task is stopped after **15 minutes** of inactivity.
+- **`depends-on` tasks** — stopped after **15 minutes** of inactivity while a parent task is running. Reused tasks keep whatever lifetime they were created with (for example, a postgres container started from the panel is not upgraded to idle TTL when preview reuses it).
+
+Docker tasks follow the same rules based on how they were started, not on whether they expose host ports.
 
 #### Ports
 

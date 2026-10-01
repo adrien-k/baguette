@@ -69,7 +69,6 @@ import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
-import { PREVIEW_WEBSERVICE_TTL_MS } from '../task.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import {
   queryFlagDisabled,
@@ -717,10 +716,8 @@ export class SessionsService extends KnexService {
               ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
               label: inlinePreviewTaskLabel(serviceName),
             }),
-        ttl_ms: PREVIEW_WEBSERVICE_TTL_MS,
       },
-      // Internal call: forwarding the REST/socket `provider` would let tasks.create
-      // strip `ttl_ms` via the `only()` hook.
+      // Internal call: omit `provider` so `only()` does not strip fields.
       { user: params.user, clientIp: params.clientIp }
     );
     const task = tasksService.getTask(created.id);

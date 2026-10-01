@@ -65,8 +65,25 @@ describe('Task', () => {
     expect(pub.ttl_ms).toBeNull();
   });
 
-  it('toPublic() reports the default TTL for tasks with ports', () => {
-    const task = new Task({ id: 1, sessionId: 10, command: 'x', ports: ['PORT'] });
+  it('toPublic() reports ttl_ms for tasks with idle TTL', () => {
+    const task = new Task({
+      id: 1,
+      sessionId: 10,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
+    expect(task.toPublic().ttl_ms).toBe(DEFAULT_TTL_MS);
+  });
+
+  it('toPublic() reports ttl_ms for docker depends_on tasks', () => {
+    const task = new Task({
+      id: 1,
+      sessionId: 10,
+      command: 'docker:postgres:16',
+      dockerContainer: { image: 'postgres:16' },
+      ttl: DEFAULT_TTL_MS,
+    });
     expect(task.toPublic().ttl_ms).toBe(DEFAULT_TTL_MS);
   });
 
@@ -329,7 +346,7 @@ describe('Task heartbeat / TTL', () => {
     isPortListening.mockResolvedValue(false);
   });
 
-  it('heartbeat() is a no-op for tasks without ports', () => {
+  it('heartbeat() is a no-op when ttl is not set', () => {
     vi.useFakeTimers();
     const task = new Task({ id: 1, sessionId: 1, command: 'x' });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
@@ -341,9 +358,15 @@ describe('Task heartbeat / TTL', () => {
     expect(task.status).toBe('running');
   });
 
-  it('heartbeat() starts a 5-minute TTL for tasks with ports', () => {
+  it('heartbeat() starts idle TTL when ttl is set', () => {
     vi.useFakeTimers();
-    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
 
     task.heartbeat();
@@ -355,9 +378,34 @@ describe('Task heartbeat / TTL', () => {
     expect(kill).toHaveBeenCalledWith({ reason: 'ttl' });
   });
 
-  it('heartbeat() resets the 5-minute TTL window', () => {
+  it('heartbeat() starts idle TTL for docker tasks without port env vars', () => {
     vi.useFakeTimers();
-    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'docker:postgres:16',
+      dockerContainer: { image: 'postgres:16' },
+      ttl: DEFAULT_TTL_MS,
+    });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
+    expect(kill).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(kill).toHaveBeenCalledWith({ reason: 'ttl' });
+  });
+
+  it('heartbeat() resets the idle TTL window', () => {
+    vi.useFakeTimers();
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
 
     task.heartbeat();
@@ -370,20 +418,15 @@ describe('Task heartbeat / TTL', () => {
     expect(kill).toHaveBeenCalledTimes(1);
   });
 
-  it('heartbeat() is a no-op when no_ttl is set', () => {
-    vi.useFakeTimers();
-    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'], noTtl: true });
-    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
-
-    task.heartbeat();
-    vi.advanceTimersByTime(DEFAULT_TTL_MS + 1);
-
-    expect(kill).not.toHaveBeenCalled();
-  });
-
   it('heartbeat() is a no-op after the task has exited', () => {
     vi.useFakeTimers();
-    const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
     task.exit(0);
 
@@ -393,9 +436,50 @@ describe('Task heartbeat / TTL', () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
+  it('start() heartbeats docker depends_on immediately and every minute until exit', () => {
+    vi.useFakeTimers();
+    const dep = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'docker:postgres:16',
+      dockerContainer: { image: 'postgres:16' },
+      ttl: DEFAULT_TTL_MS,
+    });
+    const hb = vi.spyOn(dep, 'heartbeat');
+    vi.spyOn(dep, 'start').mockImplementation(() => {
+      dep._started = true;
+      return dep;
+    });
+    vi.spyOn(dep, 'waitForReady').mockResolvedValue();
+
+    const main = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'x',
+      dependsOn: [dep],
+    });
+    vi.spyOn(main, '_startProcess').mockResolvedValue(main);
+
+    main.start();
+    expect(hb).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    expect(hb).toHaveBeenCalledTimes(2);
+
+    main.exit(0);
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS * 2);
+    expect(hb).toHaveBeenCalledTimes(2);
+  });
+
   it('start() heartbeats depends_on immediately and every minute until exit', () => {
     vi.useFakeTimers();
-    const dep = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
+    const dep = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
     const hb = vi.spyOn(dep, 'heartbeat');
     vi.spyOn(dep, 'start').mockImplementation(() => {
       dep._started = true;

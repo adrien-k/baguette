@@ -34,6 +34,8 @@ export class TasksService {
   /**
    * Create a new in-memory Task.  Does NOT start its process.
    * Evicts an exited task (or the oldest entry) if at capacity.
+   *
+   * @param {number} [ttl] - Idle shutdown window in ms; omit for manually started tasks.
    */
   createTask({
     sessionId,
@@ -45,8 +47,7 @@ export class TasksService {
     env,
     cwd,
     dependsOn,
-    noTtl,
-    ttlMs,
+    ttl,
     dockerContainer,
     dockerPortMappings,
     dockerEnvKeys,
@@ -83,8 +84,7 @@ export class TasksService {
       env,
       cwd,
       dependsOn,
-      noTtl,
-      ttlMs,
+      ttl,
       dockerContainer,
       dockerPortMappings,
       dockerEnvKeys,
@@ -253,10 +253,11 @@ export class TasksService {
       skipInit,
       _depChain,
       autoStart = true,
-      no_ttl: noTtl = false,
       ttl_ms: ttlMs,
     } = data;
-    const effectiveTtlMs = noTtl ? null : (ttlMs ?? DEFAULT_TTL_MS);
+    const isDependencyCreate = (_depChain?.length ?? 0) > 0;
+    const effectiveTtl =
+      isDependencyCreate || ttlMs != null ? (ttlMs ?? DEFAULT_TTL_MS) : undefined;
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
@@ -341,7 +342,8 @@ export class TasksService {
               _depChain: [...depChain],
               autoStart: false,
             },
-            params
+            // Internal: omit provider so `only()` does not strip `_depChain`.
+            { user: params.user }
           );
           depTask = this.getTask(depPub.id);
         }
@@ -373,8 +375,7 @@ export class TasksService {
           env: initEnv,
           cwd,
           dependsOn: [],
-          noTtl: false,
-          ttlMs: effectiveTtlMs,
+          ttl: DEFAULT_TTL_MS,
           interpolateOpts,
         });
         dependsOn.push(initTask);
@@ -393,8 +394,7 @@ export class TasksService {
       env,
       cwd,
       dependsOn,
-      noTtl,
-      ttlMs: effectiveTtlMs,
+      ttl: effectiveTtl,
       dockerContainer,
       dockerPortMappings: null,
       dockerEnvKeys: taskEnvRaw ? Object.keys(taskEnvRaw) : null,

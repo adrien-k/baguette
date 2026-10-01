@@ -6,6 +6,7 @@ import {
 } from './preview-services.js';
 import { loadBaguetteConfig } from './baguette-config.js';
 import { PUBLIC_HOST } from '../config.js';
+import { DEFAULT_TTL_MS } from './task.js';
 
 const SESSION_UNAVAILABLE_TITLE = 'Session not found';
 const SESSION_UNAVAILABLE_MESSAGE = 'This session does not exist or was archived.';
@@ -150,6 +151,7 @@ export class DevserverHandler {
               label: inlinePreviewTaskLabel(effectiveServiceName),
             }),
         autoStart: false,
+        ttl_ms: DEFAULT_TTL_MS,
       },
       { user: { id: session.user_id } }
     );

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DevserverHandler } from '../devserver-handler.js';
+import { DEFAULT_TTL_MS } from '../task.js';
 
 describe('DevserverHandler.allowUser', () => {
   const res = { status: vi.fn().mockReturnThis(), render: vi.fn() };
@@ -100,5 +101,38 @@ describe('DevserverHandler.allowUser', () => {
     vi.spyOn(h, '_hasPreviewConfig').mockResolvedValue(true);
     await expect(h.allowUser(99, res)).resolves.toBe(false);
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe('DevserverHandler.buildTask', () => {
+  it('passes ttl_ms for dev-proxy auto-start on preview link', async () => {
+    const create = vi.fn(async (data) => ({ id: 99, ...data }));
+    const session = { id: 5, user_id: 2, short_id: 'abc', worktree_path: '/wt' };
+    const app = {
+      get: () => () => ({
+        where: () => ({ first: () => Promise.resolve(session) }),
+      }),
+      service: () => ({
+        create,
+        getTask: () => ({ id: 99, status: 'running' }),
+      }),
+    };
+    const handler = new DevserverHandler(app, { headers: { host: 'session-abc.example.com' } });
+    handler.shortId = 'abc';
+    vi.spyOn(handler, '_getConfig').mockResolvedValue({
+      webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' },
+    });
+
+    await handler.buildTask();
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_id: 5,
+        label: 'baguette:webserver:default',
+        autoStart: false,
+        ttl_ms: DEFAULT_TTL_MS,
+      }),
+      { user: { id: 2 } }
+    );
   });
 });

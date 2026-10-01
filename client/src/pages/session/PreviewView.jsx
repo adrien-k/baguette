@@ -198,10 +198,7 @@ function ServiceRow({
             </button>
           )}
           {!readonly && canStart && (
-            <StartButton
-              onClick={() => onStart(svc.name)}
-              title="Start preview service (1 hour idle timeout)"
-            />
+            <StartButton onClick={() => onStart(svc.name)} title="Start preview service" />
           )}
           <button
             type="button"

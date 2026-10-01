@@ -425,6 +425,7 @@ describe('Sessions service - custom methods', (hooks) => {
         webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' },
       });
       findRunningTask.mockReturnValue(null);
+      tasksCreate.mockClear();
     });
 
     it('starts a webserver task for the default service', async () => {
@@ -442,6 +443,13 @@ describe('Sessions service - custom methods', (hooks) => {
         expect.anything()
       );
       expect(result.id).toBe(42);
+    });
+
+    it('does not set ttl_ms (preview tab is a manual start, not proxy idle shutdown)', async () => {
+      await app.service('sessions').startPreviewService({ id: sessId }, params({ id: userId }));
+
+      const [createData] = tasksCreate.mock.calls[0];
+      expect(createData).not.toHaveProperty('ttl_ms');
     });
 
     it('clears then starts: stops the task already running for the service', async () => {

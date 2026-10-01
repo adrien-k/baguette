@@ -170,4 +170,28 @@ describe('Tasks service — task_key resolution', (hooks) => {
     expect(deps.map((d) => d.label)).toEqual(['baguette:init', 'postgres']);
     expect(app.service('tasks').getTask(deps[0].id)._dependsOn).toEqual([]);
   });
+
+  it('gives depends_on tasks idle TTL but not panel roots', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: {
+        tasks: {
+          postgres: {
+            type: 'docker',
+            container: { image: 'postgres:16' },
+          },
+          'dev-server': {
+            run: 'pnpm run dev',
+            ports: ['PORT'],
+            'depends-on': ['postgres'],
+          },
+        },
+      },
+    });
+    await db('sessions').where({ id: sessionId }).update({ initialized: true });
+    const task = await create({ session_id: sessionId, task_key: 'dev-server' });
+    const root = app.service('tasks').getTask(task.id);
+    const postgres = root._dependsOn.find((d) => d.label === 'postgres');
+    expect(root.toPublic().ttl_ms).toBeNull();
+    expect(postgres.toPublic().ttl_ms).toBeTruthy();
+  });
 });
