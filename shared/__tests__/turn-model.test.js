@@ -2,22 +2,33 @@ import { describe, it, expect } from 'vitest';
 import {
   attachSessionTurnModelFields,
   findLastTurnStartIndex,
+  getTurnModelPairError,
   isHumanUserMessage,
   resolveTurnModel,
   turnModelCreateFields,
 } from '../turn-model.js';
 
+describe('getTurnModelPairError', () => {
+  it('accepts both omitted or both set', () => {
+    expect(getTurnModelPairError({})).toBeNull();
+    expect(
+      getTurnModelPairError({ model: 'grok-4.7', model_params: '[{"id":"fast","value":"true"}]' })
+    ).toBeNull();
+  });
+
+  it('rejects model without model_params', () => {
+    expect(getTurnModelPairError({ model: 'grok-4.7' })).toMatch(/both be set/);
+  });
+
+  it('rejects model_params without model', () => {
+    expect(getTurnModelPairError({ model_params: '[]' })).toMatch(/both be set/);
+  });
+});
+
 describe('resolveTurnModel', () => {
   const session = { model: 'session-opus', model_params: '[{"id":"x"}]' };
 
-  it('uses the explicit message model and does not mix session params', () => {
-    expect(resolveTurnModel({ model: 'sonnet' }, session)).toEqual({
-      model: 'sonnet',
-      modelParams: null,
-    });
-  });
-
-  it('uses explicit model_params with the message model', () => {
+  it('uses explicit pair on the message row', () => {
     expect(
       resolveTurnModel({ model: 'composer', model_params: '[{"id":"fast"}]' }, session)
     ).toEqual({
@@ -26,8 +37,15 @@ describe('resolveTurnModel', () => {
     });
   });
 
-  it('falls back to the session default when the message has no model', () => {
+  it('uses session defaults when the message has no snapshot', () => {
     expect(resolveTurnModel({ message_json: '{}' }, session)).toEqual({
+      model: 'session-opus',
+      modelParams: '[{"id":"x"}]',
+    });
+  });
+
+  it('uses session defaults when only model is present without params (invalid API; treat as no snapshot)', () => {
+    expect(resolveTurnModel({ model: 'sonnet' }, session)).toEqual({
       model: 'session-opus',
       modelParams: '[{"id":"x"}]',
     });
@@ -78,30 +96,16 @@ describe('attachSessionTurnModelFields', () => {
     expect(data.model_params).toBe('[{"id":"fast"}]');
   });
 
-  it('leaves an explicit message model unchanged', () => {
+  it('does not overwrite an explicit pair on the message', () => {
     const data = {
       type: 'user',
       model: 'sonnet',
+      model_params: '[{"id":"fast","value":"false"}]',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
     };
     attachSessionTurnModelFields(data, session);
     expect(data.model).toBe('sonnet');
-    expect(data.model_params).toBeUndefined();
-  });
-
-  it('copies session model onto baguette user messages', () => {
-    const data = {
-      type: 'user',
-      message_json: JSON.stringify({
-        type: 'user',
-        source: 'baguette',
-        title: 'Loop',
-        message: { role: 'user', content: 'run' },
-      }),
-    };
-    attachSessionTurnModelFields(data, session);
-    expect(data.model).toBe('opus');
-    expect(data.model_params).toBe('[{"id":"fast"}]');
+    expect(data.model_params).toBe('[{"id":"fast","value":"false"}]');
   });
 });
 
@@ -116,5 +120,10 @@ describe('turnModelCreateFields', () => {
       model: 'sonnet',
       model_params: '[]',
     });
+  });
+
+  it('returns nothing for a partial pair', () => {
+    expect(turnModelCreateFields({ model: 'sonnet' })).toEqual({});
+    expect(turnModelCreateFields({ model_params: '[]' })).toEqual({});
   });
 });

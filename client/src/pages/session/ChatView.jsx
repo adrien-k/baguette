@@ -748,7 +748,10 @@ export default function ChatView({
                   onSubmit={handleSend}
                   placeholder={`Message ${session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
                   sending={sending}
-                  session={session}
+                  sdk={session?.agent_sdk}
+                  model={composerModel}
+                  params={composerModelParams}
+                  autoPush={session?.auto_push}
                   models={models}
                   cursorModelPrefs={cursorModelPrefs}
                   onCursorModelPrefChange={onCursorModelPrefChange}

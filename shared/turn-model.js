@@ -1,6 +1,9 @@
 /**
  * Model for one agent turn: explicit fields on the message/queue/loop row, else the
  * session default. Creating a message with an explicit model must not patch the session.
+ *
+ * `model` and `model_params` are always a pair: both set on the row, or both omitted
+ * (session defaults applied before the turn runs).
  */
 
 /** Baguette-injected user message (collapsed Baguette block in chat). */
@@ -36,25 +39,48 @@ export function findLastTurnStartIndex(messages) {
   return 0;
 }
 
-export function resolveTurnModel(source, session) {
-  if (source?.model != null && source.model !== '') {
-    return {
-      model: source.model,
-      modelParams: source.model_params ?? null,
-    };
-  }
+/** @param {Record<string, unknown>|null|undefined} source */
+function readTurnModelPair(source) {
+  const hasModel = source?.model != null && String(source.model).trim() !== '';
+  const hasParams = source?.model_params != null;
   return {
-    model: session?.model ?? null,
-    modelParams: session?.model_params ?? null,
+    hasModel,
+    hasParams,
+    model: hasModel ? String(source.model).trim() : null,
+    modelParams: hasParams ? source.model_params : null,
   };
 }
 
-/** Fields to copy onto messages.create / queued-messages.create. */
+/** @returns {string|null} Error message when the pair is invalid; null when ok. */
+export function getTurnModelPairError(source) {
+  if (!source) return null;
+  const { hasModel, hasParams } = readTurnModelPair(source);
+  if (hasModel === hasParams) return null;
+  return 'model and model_params must both be set or both omitted (session defaults apply when omitted)';
+}
+
+/**
+ * Model + params for one turn: explicit snapshot on the row, or the session default.
+ */
+export function resolveTurnModel(source, session) {
+  const pair = readTurnModelPair(source);
+  if (pair.hasModel && pair.hasParams) {
+    return { model: pair.model, modelParams: pair.modelParams };
+  }
+  const sessionPair = readTurnModelPair(session);
+  return {
+    model: sessionPair.model ?? session?.model ?? null,
+    modelParams: sessionPair.modelParams ?? session?.model_params ?? null,
+  };
+}
+
+/** Fields to copy onto messages.create / queued-messages.create (pair only). */
 export function turnModelCreateFields(source) {
-  const fields = {};
-  if (source?.model != null && source.model !== '') fields.model = source.model;
-  if (source?.model_params != null) fields.model_params = source.model_params;
-  return fields;
+  const { hasModel, hasParams, model, modelParams } = readTurnModelPair(source);
+  if (hasModel && hasParams) {
+    return { model, model_params: modelParams };
+  }
+  return {};
 }
 
 /**
@@ -63,7 +89,9 @@ export function turnModelCreateFields(source) {
  */
 export function attachSessionTurnModelFields(data, session) {
   if (!data || data.type !== 'user') return data;
-  if (data.model != null && data.model !== '') return data;
+  const pair = readTurnModelPair(data);
+  if (pair.hasModel && pair.hasParams) return data;
+  if (pair.hasModel) return data;
   let parsed;
   try {
     parsed = JSON.parse(data.message_json || '{}');
@@ -71,8 +99,8 @@ export function attachSessionTurnModelFields(data, session) {
     return data;
   }
   if (!isHumanUserMessage(parsed) && !isBaguetteUserMessage(parsed)) return data;
-  const { model, modelParams } = resolveTurnModel(data, session);
-  if (model) data.model = model;
-  if (modelParams != null) data.model_params = modelParams;
+  const sessionPair = readTurnModelPair(session);
+  if (sessionPair.model) data.model = sessionPair.model;
+  if (sessionPair.modelParams != null) data.model_params = sessionPair.modelParams;
   return data;
 }

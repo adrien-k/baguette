@@ -12,7 +12,6 @@ import {
 } from '../services/session-prompt.js';
 import { getNavbarSystemInformation, getSystemInfo } from '../services/system-information.js';
 import {
-  parseAgentSessionDefaultsJson,
   stringifyAgentSessionDefaults,
   validateAgentSessionDefaults,
   withLastUsedFlag,

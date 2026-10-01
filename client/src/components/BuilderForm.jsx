@@ -21,7 +21,12 @@ import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
 import RepoPicker from './RepoPicker.jsx';
 import { isMobile } from '../utils/isMobile.js';
-import { applyParamOverrides } from '../utils/models.js';
+import {
+  applyParamOverrides,
+  defaultModelForSdk,
+  paramsJsonForModelChange,
+  stringifyModelParams,
+} from '../utils/models.js';
 import Toggle from './Toggle.jsx';
 import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
@@ -115,7 +120,10 @@ export default function BuilderForm({
     editingLoop?.agent_sdk ?? 'claude'
   );
   const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '');
-  const [cursorVariantIdx, setCursorVariantIdx] = useState(null);
+  const [modelParamsJson, setModelParamsJson] = persistentState.useState(
+    'modelParams',
+    editingLoop?.model_params ?? null
+  );
   const [models, setModels] = useState([]);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState(
     'plugins',
@@ -124,7 +132,6 @@ export default function BuilderForm({
   const [availablePlugins, setAvailablePlugins] = useState([]);
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
-  // 'session' starts one run now; 'loop' saves the same form as a recurring template.
   const [modeState, setModeState] = useState(editingLoop ? 'loop' : 'session');
   const mode = modeProp ?? modeState;
   const builderModeControlled = modeProp !== undefined;
@@ -132,18 +139,19 @@ export default function BuilderForm({
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
-  // Holds model_params string from the last session (or the loop being edited), used to seed
-  // cursorVariantIdx on model load
-  const pendingModelParamsRef = useRef(editingLoop?.model_params ?? null);
-  const pendingVariantIndexRef = useRef(null);
-  const sessionDefaultsAppliedRef = useRef(false);
+  const initAppliedRef = useRef(false);
   const isCursor = agentSdk === 'cursor';
 
-  // Cascade-clear harness change: reset model + variant
-  const setAgentSdk = (sdk) => {
-    setAgentSdkRaw(sdk);
+  const applySdkAndModel = (nextSdk, modelId, paramsJson) => {
+    if (nextSdk) setAgentSdkRaw(nextSdk);
+    if (modelId != null) setModel(modelId || '');
+    setModelParamsJson(paramsJson ?? null);
+  };
+
+  const setAgentSdk = (nextSdk) => {
+    setAgentSdkRaw(nextSdk);
     setModel('');
-    setCursorVariantIdx(null);
+    setModelParamsJson(null);
   };
 
   const selectedRepo = useMemo(
@@ -163,21 +171,47 @@ export default function BuilderForm({
   }, [availableSdks, agentSdk]);
 
   useEffect(() => {
-    if (editingLoop || sessionDefaultsAppliedRef.current || !userSettings?.agent_defaults) return;
+    if (editingLoop || initAppliedRef.current || userSettings == null) return;
     const defaults = userSettings.agent_defaults;
-    sessionDefaultsAppliedRef.current = true;
-    if (defaults.use_last_used || (!defaults.agent_sdk && !defaults.model)) return;
-    if (defaults.agent_sdk && availableSdks.includes(defaults.agent_sdk)) {
-      setAgentSdkRaw(defaults.agent_sdk);
+    const useLastUsed = !defaults || defaults.use_last_used || !defaults.agent_sdk;
+    if (!useLastUsed) {
+      initAppliedRef.current = true;
+      const sdk =
+        defaults.agent_sdk && availableSdks.includes(defaults.agent_sdk)
+          ? defaults.agent_sdk
+          : null;
+      applySdkAndModel(
+        sdk,
+        defaults.model || null,
+        defaults.model_params?.length && defaults.agent_sdk === 'cursor'
+          ? JSON.stringify(defaults.model_params)
+          : null
+      );
+      return;
     }
-    if (defaults.model) {
-      setModel(defaults.model);
+    if (!repoFullName || isGlobal) {
+      initAppliedRef.current = true;
+      return;
     }
-    if (defaults.model_params?.length && defaults.agent_sdk === 'cursor') {
-      pendingModelParamsRef.current = JSON.stringify(defaults.model_params);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when settings load
-  }, [editingLoop, userSettings, availableSdks]);
+    let cancelled = false;
+    sessionsService
+      .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
+      .then((result) => {
+        if (cancelled || initAppliedRef.current) return;
+        initAppliedRef.current = true;
+        const sessions = (result.data || []).filter((s) => s.agent_sdk || s.model);
+        if (!sessions.length) return;
+        const last = sessions[0];
+        applySdkAndModel(last.agent_sdk, last.model, last.model_params || null);
+      })
+      .catch(() => {
+        if (!cancelled) initAppliedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from defaults or last session
+  }, [editingLoop, userSettings, availableSdks, repoFullName, isGlobal]);
   const {
     branches,
     loading: loadingBranches,
@@ -218,130 +252,22 @@ export default function BuilderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentSdk, availableSdks]);
 
-  // Validate/default model when models load; also resolve pendingModelParams variant
+  // Validate/default model when models load after an SDK change
   useEffect(() => {
     if (!models.length) return;
-
-    // Ensure model is valid; fall back to first
-    setModel((prev) => {
-      if (prev && models.some((m) => m.id === prev)) return prev;
-      return models[0]?.id || '';
-    });
-
-    const pendingVariantIdx = pendingVariantIndexRef.current;
-    if (isCursor && pendingVariantIdx != null) {
-      pendingVariantIndexRef.current = null;
-      const selectedModel = models.find((m) => m.id === model);
-      const variants = selectedModel?.variants ?? [];
-      if (pendingVariantIdx >= 0 && pendingVariantIdx < variants.length) {
-        setCursorVariantIdx(pendingVariantIdx);
+    const current = models.find((m) => m.id === model);
+    if (current) {
+      if (isCursor && !modelParamsJson) {
+        setModelParamsJson(paramsJsonForModelChange(current, cursorModelPrefs));
       }
+      return;
     }
-
-    // Resolve pending model_params to a variant index (from last session load)
-    const pending = pendingModelParamsRef.current;
-    if (isCursor && pending) {
-      setModel((currentModel) => {
-        const selectedModel = models.find((m) => m.id === currentModel);
-        const variants = selectedModel?.variants ?? [];
-        // Step A: find variant from last session, or model's default
-        let latestOrDefaultVariantIdx = variants.findIndex((v) => {
-          try {
-            return JSON.stringify(v.params) === pending;
-          } catch {
-            return false;
-          }
-        });
-        if (latestOrDefaultVariantIdx < 0) {
-          const di = variants.findIndex((v) => v.is_default);
-          latestOrDefaultVariantIdx = di >= 0 ? di : variants.length > 0 ? 0 : -1;
-        }
-        // Apply fast/effort overrides and find matching variant
-        const latestOrDefaultVariant =
-          latestOrDefaultVariantIdx >= 0 ? variants[latestOrDefaultVariantIdx] : null;
-        if (latestOrDefaultVariant) {
-          const mergedParams = applyParamOverrides(
-            latestOrDefaultVariant.params || [],
-            cursorModelPrefs,
-            variants
-          );
-          const mergedStr = JSON.stringify(mergedParams);
-          const withPreferenceVariantIdx = variants.findIndex((v) => {
-            try {
-              return JSON.stringify(v.params) === mergedStr;
-            } catch {
-              return false;
-            }
-          });
-          setCursorVariantIdx(
-            withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx
-          );
-        } else {
-          setCursorVariantIdx(null);
-        }
-        return currentModel;
-      });
-      pendingModelParamsRef.current = null;
-    }
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    setModel(fallback.id);
+    setModelParamsJson(paramsJsonForModelChange(fallback, cursorModelPrefs));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [models]);
-
-  // Set default cursor variant when model or models change (only if not already set)
-  // Applies fast/effort overrides: finds latestOrDefault, then withPreference if a match exists
-  useEffect(() => {
-    if (!isCursor) {
-      setCursorVariantIdx(null);
-      return;
-    }
-    const m = models.find((m) => m.id === model);
-    const variants = m?.variants ?? [];
-    if (variants.length === 0) {
-      setCursorVariantIdx(null);
-      return;
-    }
-    setCursorVariantIdx((prev) => {
-      if (prev != null && prev < variants.length) return prev;
-      const defaultIdx = variants.findIndex((v) => v.is_default);
-      const latestOrDefaultVariantIdx = defaultIdx >= 0 ? defaultIdx : 0;
-      const latestOrDefaultVariant = variants[latestOrDefaultVariantIdx];
-      if (latestOrDefaultVariant) {
-        const mergedParams = applyParamOverrides(
-          latestOrDefaultVariant.params || [],
-          cursorModelPrefs,
-          variants
-        );
-        const mergedStr = JSON.stringify(mergedParams);
-        const withPreferenceVariantIdx = variants.findIndex((v) => {
-          try {
-            return JSON.stringify(v.params) === mergedStr;
-          } catch {
-            return false;
-          }
-        });
-        return withPreferenceVariantIdx >= 0 ? withPreferenceVariantIdx : latestOrDefaultVariantIdx;
-      }
-      return latestOrDefaultVariantIdx;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, models]);
-
-  // Populate form from the most recent session for this repo — but never over a loop being
-  // edited, whose own harness and model are what should show.
-  useEffect(() => {
-    if (!repoFullName || isGlobal || editingLoop) return;
-    sessionsService
-      .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
-      .then((result) => {
-        const sessions = (result.data || []).filter((s) => s.agent_sdk || s.model);
-        if (!sessions.length) return;
-        const last = sessions[0];
-        if (last.agent_sdk) setAgentSdkRaw(last.agent_sdk);
-        if (last.model) setModel(last.model);
-        pendingModelParamsRef.current = last.model_params || null;
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoFullName]);
 
   useEffect(() => {
     pluginsService
@@ -370,16 +296,17 @@ export default function BuilderForm({
 
   const buildPayload = ({ planMode, createNewBranch = true }) => {
     const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
-    const selectedVariant =
-      selectedModel?.variants != null && cursorVariantIdx != null
-        ? selectedModel.variants[cursorVariantIdx]
-        : null;
+    const parsedParams = (() => {
+      if (!isCursor || !modelParamsJson) return null;
+      try {
+        const parsed = JSON.parse(modelParamsJson);
+        return Array.isArray(parsed) && parsed.length ? parsed : null;
+      } catch {
+        return null;
+      }
+    })();
     const finalParams = isCursor
-      ? applyParamOverrides(
-          selectedVariant?.params ?? [],
-          cursorModelPrefs,
-          selectedModel?.variants ?? []
-        )
+      ? applyParamOverrides(parsedParams ?? [], cursorModelPrefs, selectedModel?.variants ?? [])
       : null;
     return {
       isGlobal,
@@ -389,7 +316,7 @@ export default function BuilderForm({
       files,
       planMode,
       model: model || undefined,
-      modelParams: isCursor && finalParams?.length ? JSON.stringify(finalParams) : undefined,
+      modelParams: isCursor ? stringifyModelParams(finalParams) : undefined,
       createNewBranch,
       branchName: branchName || undefined,
       autoPush,
@@ -461,58 +388,10 @@ export default function BuilderForm({
     return handleStartSession();
   };
 
-  const handleComposerModelChange = (modelId, modelParamsJson) => {
+  const handleComposerModelChange = (modelId, paramsJson) => {
     setModel(modelId);
-    if (!isCursor || !modelParamsJson) {
-      setCursorVariantIdx(null);
-      return;
-    }
-    const m = models.find((x) => x.id === modelId);
-    const modelVariants = m?.variants ?? [];
-    let idx = modelVariants.findIndex((v) => {
-      try {
-        return JSON.stringify(v.params) === modelParamsJson;
-      } catch {
-        return false;
-      }
-    });
-    if (idx < 0) {
-      try {
-        const parsed = JSON.parse(modelParamsJson);
-        idx = modelVariants.findIndex((v) =>
-          v.params?.every((p) => parsed.some((sp) => sp.id === p.id && sp.value === p.value))
-        );
-      } catch {
-        idx = -1;
-      }
-    }
-    setCursorVariantIdx(idx >= 0 ? idx : null);
+    setModelParamsJson(paramsJson ?? null);
   };
-
-  const composerSession = useMemo(() => {
-    const m = isCursor ? models.find((item) => item.id === model) : null;
-    const modelVariants = m?.variants ?? [];
-    const variant = cursorVariantIdx != null ? modelVariants[cursorVariantIdx] : null;
-    const params =
-      isCursor && variant
-        ? applyParamOverrides(variant.params ?? [], cursorModelPrefs, modelVariants)
-        : null;
-    return {
-      agent_sdk: availableSdks.includes(agentSdk) ? agentSdk : (availableSdks[0] ?? agentSdk),
-      model: model || null,
-      model_params: params?.length ? JSON.stringify(params) : null,
-      auto_push: autoPush,
-    };
-  }, [
-    agentSdk,
-    model,
-    isCursor,
-    models,
-    cursorVariantIdx,
-    cursorModelPrefs,
-    availableSdks,
-    autoPush,
-  ]);
 
   const composerToolbarExtra = editingLoop ? (
     <button
@@ -541,7 +420,10 @@ export default function BuilderForm({
       placeholder={composerPlaceholder}
       disabled={availableSdks.length === 0}
       sending={loading}
-      session={composerSession}
+      sdk={availableSdks.includes(agentSdk) ? agentSdk : (availableSdks[0] ?? agentSdk)}
+      model={model || null}
+      params={modelParamsJson}
+      autoPush={autoPush}
       models={models}
       cursorModelPrefs={cursorModelPrefs}
       onCursorModelPrefChange={setCursorModelPref}

@@ -94,6 +94,15 @@ function uniqueParamValuesFromVariants(variants, paramId) {
   return [...values];
 }
 
+/** Effort-tier options from both `effort` and `reasoning_effort` variant params. */
+function uniqueEffortTierOptionsFromVariants(variants) {
+  const values = new Set();
+  for (const paramId of ['effort', 'reasoning_effort']) {
+    for (const v of uniqueParamValuesFromVariants(variants, paramId)) values.add(v);
+  }
+  return [...values];
+}
+
 /**
  * Map a stored preference to a concrete param value for `paramId`.
  * @param {string} paramId
@@ -109,8 +118,14 @@ export function paramValueFromPref(paramId, prefValue, matchOptions = {}) {
   if (paramId === 'context') {
     return nearestContextOption(prefValue, contextOptions);
   }
-  if (paramId === 'effort') {
-    return effortOptionFromPref(prefValue, effortOptions);
+  if (paramId === 'effort' || paramId === 'reasoning_effort') {
+    const options =
+      effortOptions.length > 0
+        ? effortOptions
+        : reasoningOptions.length > 0
+          ? reasoningOptions
+          : [];
+    return effortOptionFromPref(prefValue, options);
   }
   if (paramId === 'reasoning') {
     return reasoningOptionFromPref(prefValue, reasoningOptions);
@@ -127,7 +142,7 @@ export function paramValueFromPref(paramId, prefValue, matchOptions = {}) {
 export function applyParamOverrides(params, prefs, variants = []) {
   const p = prefs ?? DEFAULT_CURSOR_MODEL_PREFS;
   const contextOptions = uniqueParamValuesFromVariants(variants, 'context');
-  const effortOptions = uniqueParamValuesFromVariants(variants, 'effort');
+  const effortOptions = uniqueEffortTierOptionsFromVariants(variants);
   const reasoningOptions = uniqueParamValuesFromVariants(variants, 'reasoning');
   const overrides = new Map();
   for (const row of params ?? []) {
@@ -171,16 +186,98 @@ export function orderedParamIdsFromVariants(variants) {
   return ordered;
 }
 
-/** Variant whose params exactly match the given list (order-independent). */
-export function findVariantForParams(variants, params) {
+/** Grok 4.7+ registry ids vs legacy `effort` in older snapshots and default JSON. */
+const PARAM_ID_ALIASES = {
+  effort: ['reasoning_effort'],
+  reasoning_effort: ['effort'],
+};
+
+function paramIdsEquivalent(storedId, variantId) {
+  if (storedId === variantId) return true;
+  return (PARAM_ID_ALIASES[storedId] ?? []).includes(variantId);
+}
+
+function storedParamMatchesVariantParam(stored, variantParam) {
+  return (
+    paramIdsEquivalent(stored.id, variantParam.id) &&
+    String(stored.value) === String(variantParam.value)
+  );
+}
+
+/**
+ * Match stored session params to a registry variant (alias-aware, order-independent).
+ * Returns the variant object so callers can send canonical param ids and order.
+ */
+export function findVariantForStoredParams(variants, params) {
   if (!params?.length) return null;
   return (
-    (variants ?? []).find(
-      (v) =>
-        v.params?.length === params.length &&
-        params.every((m) => v.params.some((p) => p.id === m.id && p.value === m.value))
-    ) ?? null
+    (variants ?? []).find((v) => {
+      const vp = v.params ?? [];
+      if (vp.length !== params.length) return false;
+      return params.every((stored) => vp.some((p) => storedParamMatchesVariantParam(stored, p)));
+    }) ?? null
   );
+}
+
+function scoreVariantAgainstStoredParams(variantParams, storedParams) {
+  if (!storedParams?.length) return 0;
+  let score = 0;
+  for (const stored of storedParams) {
+    if ((variantParams ?? []).some((vp) => storedParamMatchesVariantParam(stored, vp))) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+/**
+ * Pick the registry variant that agrees with the most stored param values (alias-aware).
+ * Ties break with the user's Cursor model preferences, then `is_default`.
+ */
+export function findClosestVariantForParams(variants, storedParams, cursorModelPrefs) {
+  if (!variants?.length) return null;
+  if (!storedParams?.length) {
+    const idx = pickPreferredVariantIdx(variants, cursorModelPrefs);
+    return idx >= 0 ? variants[idx] : variants[0];
+  }
+
+  let bestScore = -1;
+  /** @type {typeof variants} */
+  let tied = [];
+  for (const v of variants) {
+    const score = scoreVariantAgainstStoredParams(v.params ?? [], storedParams);
+    if (score > bestScore) {
+      bestScore = score;
+      tied = [v];
+    } else if (score === bestScore) {
+      tied.push(v);
+    }
+  }
+  if (!tied.length) return variants[0];
+  if (tied.length === 1) return tied[0];
+  const idx = pickPreferredVariantIdx(tied, cursorModelPrefs);
+  return idx >= 0 ? tied[idx] : tied[0];
+}
+
+/**
+ * Params to display or send for stored snapshot + registry variants.
+ * Alias-aware exact match → variant params unchanged.
+ * Otherwise closest variant (or preference default when nothing stored) with global Cursor prefs applied.
+ *
+ * @param {object[]} variants
+ * @param {object[]|null|undefined} storedParams
+ * @param {Record<string, string>} [cursorModelPrefs]
+ * @returns {Array<{ id: string, value: string }>|null}
+ */
+export function resolveVariantForStoredParams(variants, storedParams, cursorModelPrefs) {
+  if (!variants?.length) return null;
+  if (storedParams?.length) {
+    const exact = findVariantForStoredParams(variants, storedParams);
+    if (exact?.params?.length) return exact.params;
+  }
+  const variant = findClosestVariantForParams(variants, storedParams, cursorModelPrefs);
+  if (!variant?.params?.length) return null;
+  return applyParamOverrides(variant.params, cursorModelPrefs, variants);
 }
 
 /**
@@ -207,7 +304,7 @@ export function paramValueOptionsFromVariants(variants, paramId, currentParams =
 /** After editing one param, return params from a real variant (exact match or same param value). */
 export function resolveParamsAfterParamChange(variants, currentParams, paramId, value, orderedIds) {
   const merged = mergeModelParam(currentParams, paramId, value, orderedIds);
-  const exact = findVariantForParams(variants, merged);
+  const exact = findVariantForStoredParams(variants, merged);
   if (exact?.params?.length) return exact.params;
   const withParam = (variants ?? []).filter(
     (v) => v.params?.find((p) => p.id === paramId)?.value === value

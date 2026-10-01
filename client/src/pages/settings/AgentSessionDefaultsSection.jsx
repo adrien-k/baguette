@@ -7,7 +7,7 @@ import SearchableSelect from '../../components/SearchableSelect';
 import AgentSdkIcon from '../../components/svg/AgentSdkIcon.jsx';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
-import { applyParamOverrides, pickPreferredVariantIdx } from '../../utils/models.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 
 const SDK_OPTIONS = [
@@ -79,23 +79,19 @@ export default function AgentSessionDefaultsSection({ settings }) {
 
   useEffect(() => {
     if (!models.length) return;
-    setModel((prev) => {
-      if (prev && models.some((m) => m.id === prev)) return prev;
-      return '';
-    });
-  }, [models]);
-
-  useEffect(() => {
-    if (isLastUsedMode || agentSdk !== 'cursor' || !model || modelParamsJson || !models.length)
+    const current = models.find((m) => m.id === model);
+    if (current) {
+      if (agentSdk === 'cursor' && !modelParamsJson) {
+        setModelParamsJson(paramsJsonForModelChange(current, cursorModelPrefs));
+      }
       return;
-    const modelObj = models.find((m) => m.id === model);
-    const variants = modelObj?.variants ?? [];
-    if (!variants.length) return;
-    const prefIdx = pickPreferredVariantIdx(variants, cursorModelPrefs);
-    const prefVariant = prefIdx >= 0 ? variants[prefIdx] : variants[0];
-    const params = applyParamOverrides(prefVariant?.params ?? [], cursorModelPrefs, variants);
-    if (params.length) setModelParamsJson(JSON.stringify(params));
-  }, [isLastUsedMode, agentSdk, model, models, cursorModelPrefs, modelParamsJson]);
+    }
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    setModel(fallback.id);
+    setModelParamsJson(paramsJsonForModelChange(fallback, cursorModelPrefs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
 
   const handleSdkChange = (sdk) => {
     setAgentSdk(sdk);
@@ -103,15 +99,6 @@ export default function AgentSessionDefaultsSection({ settings }) {
     setModelParamsJson(null);
     setDirty(true);
   };
-
-  const composerSession = useMemo(
-    () => ({
-      agent_sdk: isLastUsedMode ? null : agentSdk || null,
-      model: model || null,
-      model_params: modelParamsJson,
-    }),
-    [isLastUsedMode, agentSdk, model, modelParamsJson]
-  );
 
   const handleModelChange = (modelId, paramsJson) => {
     setModel(modelId);
@@ -198,7 +185,9 @@ export default function AgentSessionDefaultsSection({ settings }) {
             <p className="text-xs text-faint">Loading models…</p>
           ) : (
             <SessionModelSelect
-              session={composerSession}
+              sdk={agentSdk}
+              model={model || null}
+              params={modelParamsJson}
               models={models}
               cursorModelPrefs={cursorModelPrefs}
               onCursorModelPrefChange={setCursorModelPref}

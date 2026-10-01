@@ -38,6 +38,165 @@
     ]
   },
   {
+    "id": "grok-4.7",
+    "display_name": "Cursor Grok 4.7",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "reasoning_effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "reasoning_effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Cursor Grok 4.7",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
     "id": "grok-4.6",
     "display_name": "Cursor Grok 4.6",
     "description": null,

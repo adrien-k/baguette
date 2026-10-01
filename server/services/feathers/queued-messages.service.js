@@ -3,7 +3,7 @@ import { BadRequest, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import logger from '../../logger.js';
-import { turnModelCreateFields } from '../../../shared/turn-model.js';
+import { getTurnModelPairError, turnModelCreateFields } from '../../../shared/turn-model.js';
 
 const SCHEDULED_DISPATCH_BATCH = 20;
 
@@ -90,6 +90,12 @@ export function registerQueuedMessagesService(app, path = 'queued-messages') {
   app.service(path).hooks(queuedMessagesHooks);
 }
 
+function rejectPartialTurnModel(context) {
+  const err = getTurnModelPairError(context.data);
+  if (err) throw new BadRequest(err);
+  return context;
+}
+
 async function validateSessionOwnership(context) {
   if (!context.data.session_id) throw new BadRequest('session_id is required');
   await context.app.service('sessions').get(context.data.session_id, { user: context.params.user });
@@ -135,13 +141,15 @@ const queuedMessagesHooks = {
     all: [requireUser],
     create: [
       disableExternal,
-      only(['session_id', 'message_json']),
+      only(['session_id', 'message_json', 'kind', 'send_at', 'model', 'model_params']),
+      rejectPartialTurnModel,
       validateSessionOwnership,
       normalizeInternalCreate,
       scopeByUser,
     ],
     schedule: [
       only(['session_id', 'message_json', 'send_at', 'model', 'model_params']),
+      rejectPartialTurnModel,
       validateSessionOwnership,
     ],
     find: [scopeByUser],

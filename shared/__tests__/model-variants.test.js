@@ -13,6 +13,7 @@ import {
   reasoningOptionFromPref,
   paramValueFromPref,
   applyParamOverrides,
+  resolveVariantForStoredParams,
 } from '../model-variants.js';
 
 describe('model-variants', () => {
@@ -243,5 +244,57 @@ describe('preference matching: yes/no params', () => {
       { id: 'thinking', value: 'true' },
       { id: 'cyber', value: 'false' },
     ]);
+  });
+
+  it('applies cursor_effort tier snapping to reasoning_effort params', () => {
+    const params = [{ id: 'reasoning_effort', value: 'medium' }];
+    const modelVariants = [
+      { params: [{ id: 'reasoning_effort', value: 'medium' }] },
+      { params: [{ id: 'reasoning_effort', value: 'high' }] },
+      { params: [{ id: 'reasoning_effort', value: 'xhigh' }] },
+    ];
+    const out = applyParamOverrides(params, { cursor_effort: 'max' }, modelVariants);
+    expect(out[0].value).toBe('xhigh');
+  });
+});
+
+describe('resolveVariantForStoredParams', () => {
+  const grokVariants = [
+    {
+      params: [
+        { id: 'context', value: '500k' },
+        { id: 'reasoning_effort', value: 'xhigh' },
+        { id: 'fast', value: 'false' },
+      ],
+    },
+    {
+      is_default: true,
+      params: [
+        { id: 'reasoning_effort', value: 'high' },
+        { id: 'fast', value: 'true' },
+      ],
+    },
+  ];
+
+  it('returns exact variant params without pref overrides', () => {
+    const stored = grokVariants[0].params;
+    expect(resolveVariantForStoredParams(grokVariants, stored)).toEqual(stored);
+  });
+
+  it('applies prefs when resolving closest non-exact snapshot', () => {
+    const stale = [
+      { id: 'effort', value: 'medium' },
+      { id: 'fast', value: 'false' },
+    ];
+    const out = resolveVariantForStoredParams(grokVariants, stale, { cursor_effort: 'max' });
+    expect(out?.find((p) => p.id === 'reasoning_effort')?.value).toBe('xhigh');
+  });
+
+  it('with no stored params uses closest user prefs', () => {
+    const out = resolveVariantForStoredParams(grokVariants, null, {
+      cursor_fast: 'yes',
+      cursor_effort: 'high',
+    });
+    expect(out).toEqual(grokVariants[1].params);
   });
 });

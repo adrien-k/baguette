@@ -145,7 +145,9 @@ export default function DiffLineComposer({
         onSubmit={handleSend}
         placeholder="Add a note for the agent…"
         sending={sending}
-        session={session}
+        sdk={session?.agent_sdk}
+        model={composerModel}
+        params={composerModelParams}
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}

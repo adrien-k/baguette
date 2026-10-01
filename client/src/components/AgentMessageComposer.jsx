@@ -38,7 +38,10 @@ export default function AgentMessageComposer({
   placeholder,
   disabled = false,
   sending = false,
-  session,
+  sdk,
+  model,
+  params,
+  autoPush = false,
   models,
   cursorModelPrefs,
   onCursorModelPrefChange,
@@ -161,7 +164,10 @@ export default function AgentMessageComposer({
       />
       <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible min-w-0">
         <SessionModelSelect
-          session={session}
+          sdk={sdk}
+          model={model}
+          params={params}
+          autoPush={autoPush}
           models={models}
           cursorModelPrefs={cursorModelPrefs}
           onCursorModelPrefChange={onCursorModelPrefChange}

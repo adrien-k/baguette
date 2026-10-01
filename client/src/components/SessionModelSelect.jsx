@@ -6,13 +6,14 @@ import Tooltip from './Tooltip.jsx';
 import { ParamToggleSwitch } from './ComposerParamControls.jsx';
 import AgentSdkIcon from './svg/AgentSdkIcon.jsx';
 import {
-  pickPreferredVariantIdx,
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,
   formatParamDisplayValue,
   formatParamLabel,
   isBinaryParamOptions,
+  paramsJsonForModelChange,
   resolveParamsAfterParamChange,
+  resolveVariantForStoredParams,
 } from '../utils/models.js';
 import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
 import { hasCursorModelPricing } from '@baguette/shared/cursor-model-pricing.js';
@@ -23,13 +24,17 @@ import {
 } from '@baguette/shared/agent-sdk-credentials.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
-function parseSessionModelParams(session) {
-  if (!session?.model_params) return null;
-  try {
-    return JSON.parse(session.model_params);
-  } catch {
-    return null;
+function parseModelParams(params) {
+  if (params == null || params === '') return null;
+  if (typeof params === 'string') {
+    try {
+      return JSON.parse(params);
+    } catch {
+      return null;
+    }
   }
+  if (Array.isArray(params)) return params;
+  return null;
 }
 
 const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
@@ -122,29 +127,14 @@ function useMediaQuery(query) {
   return matches;
 }
 
-function currentVariantIndex(variants, sessionParams, cursorModelPrefs) {
-  if (!variants.length) return 0;
-  if (sessionParams) {
-    const idx = variants.findIndex((v) =>
-      v.params?.every((p) => sessionParams.some((sp) => sp.id === p.id && sp.value === p.value))
-    );
-    if (idx >= 0) return idx;
-  }
-  const prefIdx = pickPreferredVariantIdx(variants, cursorModelPrefs);
-  return prefIdx >= 0 ? prefIdx : 0;
-}
-
-function resolvedModelParams(sessionParams, variants, variantIdx) {
-  if (sessionParams?.length) return sessionParams;
-  const v = variants[variantIdx];
-  return v?.params?.length ? v.params : [];
-}
-
 /**
- * Session model + per-param picker beside the chat Send control.
+ * Model + per-param picker beside the chat Send control.
  */
 export default function SessionModelSelect({
-  session,
+  sdk,
+  model,
+  params,
+  autoPush = false,
   models,
   cursorModelPrefs,
   onCursorModelPrefChange,
@@ -158,21 +148,15 @@ export default function SessionModelSelect({
   disabled = false,
   className = '',
 }) {
-  const [pendingModelId, setPendingModelId] = useState(null);
-
-  useEffect(() => {
-    setPendingModelId(null);
-  }, [session?.model, session?.model_params]);
-
-  const isCursor = session?.agent_sdk === 'cursor';
-  const sessionModelId = session?.model || null;
-  const sessionParams = parseSessionModelParams(session);
-  const selectedModelId = pendingModelId ?? sessionModelId;
+  const isCursor = sdk === 'cursor';
+  const selectedModelId = model || null;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
-  const variants = selectedModelObj?.variants ?? [];
-  const currentVariantIdx = currentVariantIndex(variants, sessionParams, cursorModelPrefs);
+  const variants = useMemo(() => selectedModelObj?.variants ?? [], [selectedModelObj]);
+  const currentParams = useMemo(
+    () => resolveVariantForStoredParams(variants, parseModelParams(params), cursorModelPrefs) ?? [],
+    [variants, params, cursorModelPrefs]
+  );
   const orderedParamIds = orderedParamIdsFromVariants(variants);
-  const currentParams = resolvedModelParams(sessionParams, variants, currentVariantIdx);
 
   const modelTriggerLabel =
     selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
@@ -211,7 +195,7 @@ export default function SessionModelSelect({
     (userSettings != null ? true : Boolean(availableSdks && availableSdks.length > 0));
   const isSmUp = useMediaQuery('(min-width: 640px)');
   const showAutoPush = showAutoPushParam && onAutoPushChange;
-  const autoPushOn = !!session?.auto_push;
+  const autoPushOn = !!autoPush;
 
   const autoPushPickerItem = useMemo(() => {
     if (!showAutoPush) return null;
@@ -287,21 +271,17 @@ export default function SessionModelSelect({
   const showInlineAutoPush = showAutoPush && isSmUp;
   const showParamPicker = dropdownItems.length > 0;
 
-  if (!session?.agent_sdk && !showSdkPicker) return null;
+  if (!sdk && !showSdkPicker) return null;
 
   const pickModel = (newId) => {
-    if (disabled) return;
+    if (disabled || !newId || newId === selectedModelId) return;
     const newModelObj = models.find((m) => m.id === newId);
-    const newVariants = newModelObj?.variants ?? [];
-    if (isCursor && newVariants.length) {
-      const prefIdx = pickPreferredVariantIdx(newVariants, cursorModelPrefs);
-      const prefVariant = prefIdx >= 0 ? newVariants[prefIdx] : null;
-      setPendingModelId(newId);
-      onModelChange(newId, prefVariant?.params?.length ? JSON.stringify(prefVariant.params) : null);
-    } else {
-      setPendingModelId(null);
-      onModelChange(newId);
-    }
+    onModelChange(newId, paramsJsonForModelChange(newModelObj, cursorModelPrefs));
+  };
+
+  const pickSdk = (newSdk) => {
+    if (disabled || !newSdk || newSdk === sdk || !onSdkChange) return;
+    onSdkChange(newSdk);
   };
 
   return (
@@ -318,15 +298,15 @@ export default function SessionModelSelect({
                 showSdkPicker ? (
                   <AgentSubmenu
                     options={sdkOptions}
-                    value={session?.agent_sdk ?? ''}
-                    onChange={onSdkChange}
+                    value={sdk ?? ''}
+                    onChange={pickSdk}
                     disabled={disabled}
                   />
                 ) : null
               }
               selectedDisplay={{
                 label: modelTriggerLabel,
-                icon: <AgentSdkIcon sdk={session?.agent_sdk} />,
+                icon: <AgentSdkIcon sdk={sdk} />,
               }}
               ariaLabel={showSdkPicker ? 'Choose agent and model' : 'Choose model'}
               placement="top-start"

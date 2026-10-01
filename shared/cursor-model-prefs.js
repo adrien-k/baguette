@@ -1,10 +1,19 @@
 /** Composer / settings order for Cursor model params (auto-push is separate). */
-export const CURSOR_PARAM_ORDER = ['fast', 'thinking', 'effort', 'reasoning', 'context', 'cyber'];
+export const CURSOR_PARAM_ORDER = [
+  'fast',
+  'thinking',
+  'effort',
+  'reasoning_effort',
+  'reasoning',
+  'context',
+  'cyber',
+];
 
 export const PARAM_ID_TO_PREF_KEY = {
   fast: 'cursor_fast',
   thinking: 'cursor_thinking',
   effort: 'cursor_effort',
+  reasoning_effort: 'cursor_effort',
   reasoning: 'cursor_reasoning',
   context: 'cursor_context',
   cyber: 'cursor_cyber',
@@ -31,7 +40,7 @@ const REASONING_VALUES = new Set([
   'extra-high',
   'max',
 ]);
-const CONTEXT_VALUES = new Set(['default', '200k', '272k', '300k', '1m']);
+const CONTEXT_VALUES = new Set(['default', '200k', '272k', '300k', '500k', '1m']);
 
 function coerceYesNoPref(value, fallback) {
   return FAST_VALUES.has(value) ? value : fallback;

@@ -14,6 +14,9 @@ import { expandUserContentForAgent } from '../../../shared/user-message-content.
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
+import { loadModelsForSdk } from '../baguette-models-for-user.js';
+import { parseCursorModelPrefsJson } from '../agent-preferences.js';
+import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -97,11 +100,34 @@ ${body}`,
         stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
       },
     };
-    const modelId = model !== undefined ? model : session.model;
+    const modelId = model ?? null;
     if (modelId) {
-      const params = this.parseModelParams(
-        modelParams !== undefined ? modelParams : session.model_params
-      );
+      let params = this.parseModelParams(modelParams);
+      try {
+        const user = await this.app.service('users').get(session.user_id, {});
+        let repo = null;
+        if (session.repo_id) {
+          const userRepos = await this.app.service('user-repos').find({
+            query: { repo_id: session.repo_id },
+            user: { id: session.user_id },
+            paginate: false,
+          });
+          repo = userRepos?.[0] ?? null;
+        }
+        const models = await loadModelsForSdk(user, 'cursor', repo);
+        const prefs = parseCursorModelPrefsJson(user.agent_preferences);
+        params = resolveCursorAgentModelParams({
+          models,
+          modelId,
+          modelParams: params ?? modelParams,
+          cursorModelPrefs: prefs,
+        });
+      } catch (err) {
+        logger.warn(
+          { sessionId: session.id, modelId, err: err.message },
+          'cursor-agent: could not resolve model params from registry'
+        );
+      }
       agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
     }
     return agentOptions;
@@ -141,8 +167,7 @@ ${body}`,
       return;
     if (session.repo_full_name && !session.worktree_path) return;
 
-    const turnModel =
-      message.model != null && message.model !== '' ? resolveTurnModel(message, session) : {};
+    const turnModel = resolveTurnModel(message, session);
     attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel), {
       userId: session.user_id,
       sessionId: session.id,
@@ -221,14 +246,14 @@ ${body}`,
     return agent;
   }
 
-  async _sessionAgentOptions(session, { model, modelParams } = {}) {
+  async _sessionAgentOptions(session, turnModel = {}) {
     const user = await this.app.service('users').get(session.user_id, {});
     const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
     const pluginDirs = await this._getPluginDirs(session);
     return this.buildAgentOptions(session, {
       dirs: [baguetteRulesDir, ...pluginDirs],
-      model: model !== undefined ? model : session.model || user.cursor_model || null,
-      modelParams: modelParams !== undefined ? modelParams : session.model_params,
+      model: turnModel.model ?? session.model ?? user.cursor_model ?? null,
+      modelParams: turnModel.modelParams ?? session.model_params,
     });
   }
 
@@ -340,10 +365,7 @@ ${body}`,
         .service('sessions')
         .patch(sessionId, { status: 'running' }, { user: { id: userId } });
       const db = this.app.get('db');
-      const agentOptions = await this._sessionAgentOptions(session, {
-        model: turnModel.model,
-        modelParams: turnModel.modelParams,
-      });
+      const agentOptions = await this._sessionAgentOptions(session, turnModel);
       const agent = await this.createOrResumeAgent(session, {
         agentOptions,
         resumeAgentId: session.cursor_agent_id,

@@ -30,7 +30,7 @@ import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
-import { pickPreferredVariantIdx } from '../../utils/models.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
@@ -164,16 +164,6 @@ export default function ReviewView({
       .then((d) => setModels(d.models || []))
       .catch(() => setModels([]));
   }, [reviewAgentSdk]);
-
-  const sessionForReviewComposer = useMemo(
-    () => ({
-      ...session,
-      agent_sdk: reviewAgentSdk,
-      model: reviewModel,
-      model_params: reviewModelParams,
-    }),
-    [session, reviewAgentSdk, reviewModel, reviewModelParams]
-  );
 
   const opened = issues.filter((i) => i.status === 'opened');
   const activeIssues = useMemo(() => issues.filter((i) => i.status !== 'ignored'), [issues]);
@@ -415,17 +405,9 @@ export default function ReviewView({
   useEffect(() => {
     if (!session?.id || readonly || !models.length) return;
     if (reviewModel && models.some((m) => m.id === reviewModel)) return;
-    const first = models[0];
-    if (!first) return;
-    const isCursor = reviewAgentSdk === 'cursor';
-    const variants = first.variants ?? [];
-    let paramsJson = null;
-    if (isCursor && variants.length) {
-      const prefIdx = pickPreferredVariantIdx(variants, cursorModelPrefs);
-      const prefVariant = prefIdx >= 0 ? variants[prefIdx] : variants[0];
-      paramsJson = prefVariant?.params?.length ? JSON.stringify(prefVariant.params) : null;
-    }
-    handleReviewModelChange(first.id, paramsJson);
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    handleReviewModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- default the review model once the SDK's list loads
   }, [models, reviewModel, reviewAgentSdk, readonly, session?.id]);
 
@@ -511,7 +493,9 @@ export default function ReviewView({
                 placeholder={REVIEW_FOCUS_PLACEHOLDER}
                 disabled={readonly}
                 sending={starting}
-                session={sessionForReviewComposer}
+                sdk={reviewAgentSdk}
+                model={reviewModel}
+                params={reviewModelParams}
                 models={models}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
