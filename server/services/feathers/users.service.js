@@ -9,6 +9,7 @@ import {
   parseCursorModelPrefsJson,
   stringifyCursorModelPrefs,
 } from '../../services/agent-preferences.js';
+import { withLastUsedFlag } from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 
@@ -92,6 +93,7 @@ function formatUserExternal(context) {
     user.mcp_token_configured = Boolean(user.mcp_api_token);
     user.mcp_endpoint = MCP_HTTP_ENDPOINT;
     user.agent_preferences = parseCursorModelPrefsJson(user.agent_preferences);
+    user.agent_defaults = withLastUsedFlag(user.agent_defaults);
     return user;
   };
   if (Array.isArray(context.result)) {

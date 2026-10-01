@@ -136,6 +136,8 @@ export default function BuilderForm({
   // Holds model_params string from the last session (or the loop being edited), used to seed
   // cursorVariantIdx on model load
   const pendingModelParamsRef = useRef(editingLoop?.model_params ?? null);
+  const pendingVariantIndexRef = useRef(null);
+  const sessionDefaultsAppliedRef = useRef(false);
   const isCursor = agentSdk === 'cursor';
 
   // Cascade-clear harness change: reset model + variant
@@ -171,6 +173,23 @@ export default function BuilderForm({
     if (!availableSdks.includes(agentSdk)) setAgentSdk(availableSdks[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setAgentSdk resets model state intentionally
   }, [availableSdks, agentSdk]);
+
+  useEffect(() => {
+    if (editingLoop || sessionDefaultsAppliedRef.current || !userSettings?.agent_defaults) return;
+    const defaults = userSettings.agent_defaults;
+    sessionDefaultsAppliedRef.current = true;
+    if (defaults.use_last_used || (!defaults.agent_sdk && !defaults.model)) return;
+    if (defaults.agent_sdk && availableSdks.includes(defaults.agent_sdk)) {
+      setAgentSdkRaw(defaults.agent_sdk);
+    }
+    if (defaults.model) {
+      setModel(defaults.model);
+    }
+    if (defaults.model_params?.length && defaults.agent_sdk === 'cursor') {
+      pendingModelParamsRef.current = JSON.stringify(defaults.model_params);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when settings load
+  }, [editingLoop, userSettings, availableSdks]);
   const {
     branches,
     loading: loadingBranches,
@@ -220,6 +239,16 @@ export default function BuilderForm({
       if (prev && models.some((m) => m.id === prev)) return prev;
       return models[0]?.id || '';
     });
+
+    const pendingVariantIdx = pendingVariantIndexRef.current;
+    if (isCursor && pendingVariantIdx != null) {
+      pendingVariantIndexRef.current = null;
+      const selectedModel = models.find((m) => m.id === model);
+      const variants = selectedModel?.variants ?? [];
+      if (pendingVariantIdx >= 0 && pendingVariantIdx < variants.length) {
+        setCursorVariantIdx(pendingVariantIdx);
+      }
+    }
 
     // Resolve pending model_params to a variant index (from last session load)
     const pending = pendingModelParamsRef.current;

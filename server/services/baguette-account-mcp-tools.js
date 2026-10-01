@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { availableAgentSdks } from '../../shared/agent-sdk-credentials.js';
 import { resolveCursorModelParams } from '../../shared/model-variants.js';
 import { parseCursorModelPrefsJson } from './agent-preferences.js';
+import {
+  isLastUsedAgentDefaults,
+  parseAgentSessionDefaultsJson,
+  resolveCreateSessionAgentFields,
+} from './agent-session-defaults.js';
+import { getLastUsedSessionAgent } from './last-used-session-agent.js';
 import { listModelsForUser, loadModelsForSdk } from './baguette-models-for-user.js';
 import { ok, fail } from './baguette-mcp-tool-result.js';
 import { buildBaguetteSessionMcpTools } from './baguette-session-mcp-tools.js';
@@ -116,7 +122,9 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
       name: 'CreateSession',
       description:
         'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
-        'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels for agent_sdk + model. Cursor variant is chosen from your Settings preferences with fallback to the model default. Pass is_global to start a global session from the shared repos folder (no repo_id or base_branch).',
+        'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels for agent_sdk + model. ' +
+        'Omitted agent_sdk, model, and variant_index use your Settings → Agent session defaults (explicit params override defaults). ' +
+        'Stored Cursor defaults include model_params; variant_index on this call still overrides params when set. Pass is_global to start a global session from the shared repos folder (no repo_id or base_branch).',
       schema: {
         repo_id: z
           .number()
@@ -132,13 +140,19 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
           .optional()
           .describe('Start a global session in the shared repos folder (no git/PR tools)'),
         initial_prompt: z.string().describe('Initial user prompt for the agent'),
-        agent_sdk: z.enum(['claude', 'cursor']).optional().describe('Agent SDK (default: claude)'),
-        model: z.string().optional().describe('Model id from ListModels for the chosen SDK'),
+        agent_sdk: z
+          .enum(['claude', 'cursor'])
+          .optional()
+          .describe('Agent SDK (default: Settings → Agent, else claude)'),
+        model: z
+          .string()
+          .optional()
+          .describe('Model id from ListModels (default: Settings → Agent when SDK matches)'),
         variant_index: z
           .number()
           .int()
           .optional()
-          .describe('Cursor variant index from ListModels (optional)'),
+          .describe('Cursor variant index from ListModels (default: Settings → Agent)'),
         create_new_branch: z
           .boolean()
           .optional()
@@ -153,9 +167,9 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
         base_branch,
         is_global = false,
         initial_prompt,
-        agent_sdk = 'claude',
-        model,
-        variant_index,
+        agent_sdk: agentSdkArg,
+        model: modelArg,
+        variant_index: variantIndexArg,
         create_new_branch = true,
         branch_name,
         auto_push = true,
@@ -181,6 +195,20 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
           repoWithKeys = await loadRepoWithKeys(repo_id);
         }
 
+        const storedDefaults = parseAgentSessionDefaultsJson(fullUser.agent_defaults);
+        const lastUsed = isLastUsedAgentDefaults(storedDefaults)
+          ? await getLastUsedSessionAgent(app.get('db'), userId)
+          : null;
+        const { agent_sdk, model, model_params, variant_index } = resolveCreateSessionAgentFields(
+          {
+            agent_sdk: agentSdkArg,
+            model: modelArg,
+            variant_index: variantIndexArg,
+          },
+          storedDefaults,
+          lastUsed
+        );
+
         const allowedSdks = availableAgentSdks(fullUser, repoWithKeys);
         if (!allowedSdks.includes(agent_sdk)) {
           return fail(
@@ -196,9 +224,13 @@ export function buildBaguetteAccountToolList(user, app, { callerSession = null }
             if (!models.some((m) => m.id === model)) {
               return fail(`Unknown cursor model "${model}". Call ListModels first.`);
             }
+            const defaultsParamsJson = model_params?.length
+              ? JSON.stringify(model_params)
+              : undefined;
             modelParams = resolveCursorModelParams({
               models,
               modelId: model,
+              modelParamsJson: variant_index == null ? defaultsParamsJson : undefined,
               variantIndex: variant_index,
               cursorModelPrefs: prefs,
             });

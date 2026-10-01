@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
+import AgentSessionDefaultsSection from './AgentSessionDefaultsSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
 import {
   SettingsSection,
@@ -141,11 +142,19 @@ export default function AgentSettingsTab({ settings, onSave }) {
   return (
     <div>
       <SettingsTabHeader title="Agent">
-        Cursor model defaults (account-wide), then Claude and Cursor credentials scoped to all my
-        repos or a single repository. System prompts live under Prompts.
+        Session default agent and Cursor model preferences (account-wide), then Claude and Cursor
+        credentials scoped to all my repos or a single repository. System prompts live under
+        Prompts.
       </SettingsTabHeader>
 
       <div className="space-y-6">
+        <SettingsSection
+          title="Session default agent"
+          description="Default is last used agent (most recent session). Or pin Claude/Cursor with model and params. MCP explicit parameters always override."
+        >
+          <AgentSessionDefaultsSection settings={settings} />
+        </SettingsSection>
+
         <SettingsSection
           title="Cursor model preferences"
           description="Used when starting Cursor sessions from the dashboard, builder, and MCP. If a model does not offer a strict match for a parameter, Baguette selects the closest available option (for example the nearest context size or the next lower effort or reasoning tier)."
