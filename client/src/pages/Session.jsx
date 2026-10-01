@@ -433,7 +433,9 @@ export default function Session() {
     const s = session ?? sessionFromHook;
     if (!sessionId || isGlobalSession(s ?? {})) return false;
     const status = s?.review_status;
-    return status === 'running' || status === 'completed' || status === 'failed';
+    return (
+      status === 'running' || status === 'completed' || status === 'failed' || status === 'stopped'
+    );
   }, [sessionId, session, sessionFromHook]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);

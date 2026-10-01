@@ -283,9 +283,13 @@ export class SessionReviewService {
     await this._assertCanReview(session);
     const marker = session.last_reviewed_commit_sha;
     const cwd = resolveDataDirRelativePath(session.worktree_path);
-    const message = marker
+    let message = marker
       ? newCommitsReviewText(marker, await gitCommitCountSince(cwd, marker))
       : latestChangesFromBaseText(session.base_branch);
+    const followUp = typeof data?.user_message === 'string' ? data.user_message.trim() : '';
+    if (followUp) {
+      message = `${message}\n\nAdditional instructions:\n${followUp}`;
+    }
     const baguette_title = BAGUETTE_REVIEW_LATEST_TITLE;
     return this.send({ ...data, session_id: sessionId, message, baguette_title }, params);
   }
@@ -315,7 +319,7 @@ export class SessionReviewService {
       {
         review_claude_session_id: null,
         review_cursor_agent_id: null,
-        review_status: 'stopped',
+        review_status: null,
         last_reviewed_commit_sha: null,
         review_initial_prompt: null,
       },

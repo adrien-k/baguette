@@ -492,7 +492,7 @@ describe('session-review service', () => {
     const session = await db('sessions').where({ id: sessionId }).first();
     expect(session.review_claude_session_id).toBeNull();
     expect(session.review_cursor_agent_id).toBeNull();
-    expect(session.review_status).toBe('stopped');
+    expect(session.review_status).toBeNull();
     expect(session.last_reviewed_commit_sha).toBeNull();
     expect(session.review_initial_prompt).toBeNull();
   });
@@ -522,6 +522,33 @@ describe('session-review service', () => {
         'completed'
       );
     });
+    await fs.promises.rm(wt, { recursive: true, force: true });
+  });
+
+  it('reviewNewCommits appends user_message to the review prompt', async () => {
+    const wt = await initGitWorktree();
+    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, user_message: 'first' }, params(user));
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+
+    await app
+      .service('session-review')
+      .reviewNewCommits(
+        { session_id: sessionId, user_message: 'check auth middleware' },
+        params(user)
+      );
+    const rows = await db('session_review_messages')
+      .where({ session_id: sessionId, type: 'user' })
+      .orderBy('id', 'desc');
+    const latest = JSON.parse(rows[0].message_json);
+    expect(latest.message.content).toMatch(/Additional instructions:/);
+    expect(latest.message.content).toMatch(/check auth middleware/);
     await fs.promises.rm(wt, { recursive: true, force: true });
   });
 

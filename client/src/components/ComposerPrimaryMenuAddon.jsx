@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import AnchoredMenu from './AnchoredMenu.jsx';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
-import {
-  COMPOSER_ACTION_BUTTON_LAYOUT,
-  COMPOSER_SPLIT_AMBER_CLASS,
-} from './AgentMessageComposer.jsx';
-
-/** Caret segment paired with a primary composer action (Send, Start, …). */
-export const COMPOSER_PRIMARY_CHEVRON_CLASS = `${COMPOSER_ACTION_BUTTON_LAYOUT} ${COMPOSER_SPLIT_AMBER_CLASS} border border-transparent px-1.5 rounded-r-lg disabled:cursor-not-allowed`;
+import { SPLIT_BRAND_FILL, SPLIT_CHEVRON_CLASS } from './splitButtonStyles.js';
 
 /**
  * @typedef {{ label: string, subtitle?: string, hint?: string, onSelect: () => void, disabled?: boolean, selected?: boolean }} ComposerMenuItem
@@ -23,6 +17,7 @@ export default function ComposerPrimaryMenuAddon({
   panelClassName = `w-56 ${DROPDOWN_PANEL_CLASS} overflow-hidden py-1`,
   items = [],
   footer,
+  className = SPLIT_CHEVRON_CLASS,
 }) {
   const [open, setOpen] = useState(false);
 
@@ -53,7 +48,7 @@ export default function ComposerPrimaryMenuAddon({
           title={title}
           aria-expanded={open}
           aria-haspopup="menu"
-          className={COMPOSER_PRIMARY_CHEVRON_CLASS}
+          className={`${className} ${SPLIT_BRAND_FILL} border border-transparent px-1.5 rounded-r-lg disabled:cursor-not-allowed`}
         >
           <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
         </button>

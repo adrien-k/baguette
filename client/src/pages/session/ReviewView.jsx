@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Bot,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  PanelRight,
-  Play,
-  Square,
-} from 'lucide-react';
+import { Bot, CheckCircle, ChevronDown, ChevronRight, PanelRight, Square } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   messagesService,
@@ -19,19 +10,17 @@ import {
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
 import Alert from '../../components/Alert.jsx';
-import ClearReviewConfirmModal from '../../components/ClearReviewConfirmModal.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
-import {
-  COMPOSER_STOP_BUTTON_CLASS,
-  NEUTRAL_BUTTON_CLASS,
-  SECONDARY_BUTTON_CLASS,
-} from '../../utils/buttonStyles.js';
+import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
+import ReviewFollowUpModal from '../../components/ReviewFollowUpModal.jsx';
+import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
+import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
@@ -69,10 +58,10 @@ function issuesFixAllPrompt(sessionId) {
 
 /** Stacked until the follow-up card is wide enough for a single nowrap row. */
 const REVIEW_CONTROLS_ROW_CLASS =
-  'flex flex-col gap-2 @min-[36rem]:flex-row @min-[36rem]:flex-nowrap @min-[36rem]:items-center';
+  'flex flex-col items-center gap-4 @min-[36rem]:flex-row @min-[36rem]:flex-nowrap @min-[36rem]:items-center @min-[36rem]:gap-2';
 
-const REVIEW_ACTION_BUTTON_SIZE_CLASS =
-  'inline-flex items-center justify-center gap-1.5 w-full whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium @min-[36rem]:w-auto';
+const REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS =
+  'min-w-0 w-auto max-w-full items-center [&>div]:justify-center @min-[36rem]:w-full @min-[36rem]:flex-1 @min-[36rem]:items-stretch @min-[36rem]:[&>div]:justify-start';
 
 function ReviewerPanelLink({ onClick, label = 'Open reviewer panel', className = '' }) {
   return (
@@ -108,9 +97,10 @@ export default function ReviewView({
   const [closedIssues, setClosedIssues] = useState([]);
   const [closedLoading, setClosedLoading] = useState(false);
   const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
+  const [sendingReviewFollowUp, setSendingReviewFollowUp] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [clearingReview, setClearingReview] = useState(false);
-  const [showClearReviewModal, setShowClearReviewModal] = useState(false);
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
   const [savingIssueId, setSavingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
     session?.id ? `session-review-chat-${session.id}` : undefined
@@ -174,7 +164,11 @@ export default function ReviewView({
   const hasVisibleIssues = issues.length > 0 || showClosedSection;
   const isRunning = session?.review_status === 'running';
   const reviewStatus = session?.review_status;
-  const hasReviewThread = isRunning || reviewStatus === 'completed' || reviewStatus === 'failed';
+  const hasReviewThread =
+    isRunning ||
+    reviewStatus === 'completed' ||
+    reviewStatus === 'failed' ||
+    reviewStatus === 'stopped';
   const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
   const showStartForm = !hasReviewThread && !starting;
   const showFollowUpPanel = hasReviewThread || isRunning;
@@ -351,6 +345,21 @@ export default function ReviewView({
     }
   };
 
+  const handleSendReviewFollowUp = async (message) => {
+    if (!session?.id || sendingReviewFollowUp || isRunning) return;
+    const trimmed = typeof message === 'string' ? message.trim() : '';
+    if (!trimmed) return;
+    setSendingReviewFollowUp(true);
+    try {
+      await sessionReviewService.send({ session_id: session.id, message: trimmed });
+      setShowFollowUpModal(false);
+    } catch (err) {
+      toastError('Failed to send follow-up message', err);
+    } finally {
+      setSendingReviewFollowUp(false);
+    }
+  };
+
   const handleStop = async () => {
     if (!session?.id || stopping) return;
     setStopping(true);
@@ -369,9 +378,8 @@ export default function ReviewView({
     try {
       await sessionReviewService.clearContext({ session_id: session.id });
       setReviewUserMessage('');
-      setShowClearReviewModal(false);
     } catch (err) {
-      toastError('Failed to review the entire change', err);
+      toastError('Failed to clear reviewer chat', err);
     } finally {
       setClearingReview(false);
     }
@@ -413,26 +421,26 @@ export default function ReviewView({
 
   const followUpReviewControls = !readonly && showFollowUpPanel && !isRunning && (
     <div className={REVIEW_CONTROLS_ROW_CLASS}>
-      <button
-        type="button"
-        onClick={handleReviewNewCommits}
-        disabled={reviewingNewCommits}
-        className={`${REVIEW_ACTION_BUTTON_SIZE_CLASS} bg-brand hover:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand`}
-      >
-        {reviewingNewCommits ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Play className="w-3.5 h-3.5" />
-        )}
-        Review latest changes
-      </button>
-      <button
-        type="button"
-        onClick={() => setShowClearReviewModal(true)}
-        className={`${NEUTRAL_BUTTON_CLASS} ${REVIEW_ACTION_BUTTON_SIZE_CLASS}`}
-      >
-        Review the entire session
-      </button>
+      <ReviewLatestChangesButton
+        disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
+        loading={reviewingNewCommits}
+        onReview={() => handleReviewNewCommits()}
+        onSendFollowUpMessage={() => setShowFollowUpModal(true)}
+        onClearReviewerChat={handleClearReview}
+      />
+      <SessionModelSelect
+        session={sessionForReviewComposer}
+        models={models}
+        cursorModelPrefs={cursorModelPrefs}
+        onCursorModelPrefChange={setCursorModelPref}
+        onModelChange={handleReviewModelChange}
+        availableSdks={availableSdks}
+        userSettings={userSettings}
+        sdkRepo={selectedRepo}
+        onSdkChange={handleReviewSdkChange}
+        disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
+        className={REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS}
+      />
       {showReviewerPanelLink && <ReviewerPanelLink onClick={onOpenReviewer} />}
     </div>
   );
@@ -602,13 +610,13 @@ export default function ReviewView({
         </div>
       </div>
 
-      {showClearReviewModal && (
-        <ClearReviewConfirmModal
-          loading={clearingReview}
+      {showFollowUpModal && (
+        <ReviewFollowUpModal
+          submitting={sendingReviewFollowUp}
           onCancel={() => {
-            if (!clearingReview) setShowClearReviewModal(false);
+            if (!sendingReviewFollowUp) setShowFollowUpModal(false);
           }}
-          onConfirm={handleClearReview}
+          onConfirm={handleSendReviewFollowUp}
         />
       )}
     </div>
