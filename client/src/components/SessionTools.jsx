@@ -15,7 +15,18 @@ function wrapClick(onToolClick) {
   };
 }
 
-function canShowTool(tool, session, { readonly, onPush, commitsToPush = 0 }) {
+export function canShowSessionPushTool(session, { readonly, onPush } = {}) {
+  if (!session) return false;
+  return !!onPush && !readonly && session.pr_status !== 'merged' && !isGlobalSession(session);
+}
+
+/** Push CTA above the chat composer when local commits are not on the remote yet. */
+export function canShowChatPushChangesBar(session, { readonly, onPush, commitsToPush = 0 } = {}) {
+  if (commitsToPush <= 0) return false;
+  return canShowSessionPushTool(session, { readonly, onPush });
+}
+
+function canShowTool(tool, session, { readonly, onPush } = {}) {
   if (!session) return false;
   switch (tool) {
     case 'pr':
@@ -25,20 +36,15 @@ function canShowTool(tool, session, { readonly, onPush, commitsToPush = 0 }) {
     case 'code':
       return !!session.codeserver_url;
     case 'push':
-      return (
-        !!onPush &&
-        !readonly &&
-        session.pr_status !== 'merged' &&
-        !isGlobalSession(session) &&
-        (!!session.auto_push || commitsToPush > 0)
-      );
+      return canShowSessionPushTool(session, { readonly, onPush });
     default:
       return false;
   }
 }
 
-export function sessionToolsVisible(session, tools = ALL_TOOLS, options = {}) {
-  return tools.some((t) => canShowTool(t, session, options));
+export function sessionToolsVisible(session, tools = ALL_TOOLS, { readonly, onPush } = {}) {
+  const toolOptions = { readonly, onPush };
+  return tools.some((t) => canShowTool(t, session, toolOptions));
 }
 
 /**
@@ -73,8 +79,8 @@ export default function SessionTools({
 }) {
   if (!session) return null;
 
-  const options = { readonly, onPush, commitsToPush };
-  const visibleTools = tools.filter((t) => canShowTool(t, session, options));
+  const toolOptions = { readonly, onPush };
+  const visibleTools = tools.filter((t) => canShowTool(t, session, toolOptions));
   if (visibleTools.length === 0 && !showPreviewPublicBadge) return null;
 
   const onClick = wrapClick(onToolClick);

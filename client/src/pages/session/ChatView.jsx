@@ -30,6 +30,10 @@ import {
   runningBashToolIds,
 } from '@baguette/shared/running-tools.js';
 import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
+import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.jsx';
+import ChatQuickActionButton, {
+  CHAT_ACTION_BUTTON_CLASS,
+} from '../../components/chat/ChatQuickActionButton.jsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
@@ -61,9 +65,6 @@ const CHECK_COMMENTS_PROMPT_REVIEWER =
 
 const CHECK_COMMENTS_TOOLTIP_BUILDER = 'Check review comments and fix problems.';
 const CHECK_COMMENTS_TOOLTIP_REVIEWER = 'Check review comments.';
-
-const CHAT_ACTION_BUTTON_CLASS =
-  'flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
@@ -109,6 +110,9 @@ export default function ChatView({
   onAutoPushChange,
   cursorModelPrefs,
   onCursorModelPrefChange,
+  commitsToPush = 0,
+  onPush,
+  pushing = false,
 }) {
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
@@ -603,93 +607,81 @@ export default function ChatView({
                 session?.status !== 'running' &&
                 session?.pr_status !== 'merged' && (
                   <div className="flex gap-2 flex-wrap py-2">
-                    <Tooltip content="Pull latest from the remote and base branch. Fix conflicts if any.">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-                          )
-                        }
-                        className={CHAT_ACTION_BUTTON_CLASS}
-                      >
-                        <GitPullRequest className="w-3.5 h-3.5" />
-                        Git sync
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Merge the pull request into the base branch.">
-                      <button
-                        type="button"
-                        onClick={() => setShowMergeModal(true)}
-                        className={CHAT_ACTION_BUTTON_CLASS}
-                      >
-                        <GitMerge className="w-3.5 h-3.5" />
-                        Merge
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Check all PR workflow statuses and fix problems.">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
-                          )
-                        }
-                        className={CHAT_ACTION_BUTTON_CLASS}
-                      >
-                        <CircleCheck className="w-3.5 h-3.5" />
-                        Check CI
-                      </button>
-                    </Tooltip>
-                    <Tooltip
-                      content={
+                    <ChatQuickActionButton
+                      icon={GitPullRequest}
+                      label="Git sync"
+                      tooltip="Pull latest from the remote and base branch. Fix conflicts if any."
+                      onClick={() =>
+                        handleQuickSend(
+                          'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
+                        )
+                      }
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
+                    <ChatQuickActionButton
+                      icon={GitMerge}
+                      label="Merge"
+                      tooltip="Merge the pull request into the base branch."
+                      onClick={() => setShowMergeModal(true)}
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
+                    <ChatQuickActionButton
+                      icon={CircleCheck}
+                      label="Check CI"
+                      tooltip="Check all PR workflow statuses and fix problems."
+                      onClick={() =>
+                        handleQuickSend(
+                          'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
+                        )
+                      }
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
+                    <ChatQuickActionButton
+                      icon={MessageSquare}
+                      label="Check comments"
+                      tooltip={
                         isReviewerSession
                           ? CHECK_COMMENTS_TOOLTIP_REVIEWER
                           : CHECK_COMMENTS_TOOLTIP_BUILDER
                       }
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleQuickSend(
-                            isReviewerSession
-                              ? CHECK_COMMENTS_PROMPT_REVIEWER
-                              : CHECK_COMMENTS_PROMPT_BUILDER
-                          )
-                        }
-                        className={CHAT_ACTION_BUTTON_CLASS}
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        Check comments
-                      </button>
-                    </Tooltip>
+                      onClick={() =>
+                        handleQuickSend(
+                          isReviewerSession
+                            ? CHECK_COMMENTS_PROMPT_REVIEWER
+                            : CHECK_COMMENTS_PROMPT_BUILDER
+                        )
+                      }
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
                     {onViewChange && (
                       <>
-                        <Tooltip content="Open the Issues tab to run a code review.">
-                          <button
-                            type="button"
-                            onClick={() => onViewChange('review')}
-                            className={CHAT_ACTION_BUTTON_CLASS}
-                          >
-                            <ClipboardCheck className="w-3.5 h-3.5" />
-                            Review code
-                          </button>
-                        </Tooltip>
-                        <Tooltip content="View a diff of all changes in this session.">
-                          <button
-                            type="button"
-                            onClick={() => onViewChange('diff')}
-                            className={CHAT_ACTION_BUTTON_CLASS}
-                          >
-                            <GitCompare className="w-3.5 h-3.5" />
-                            Diff
-                          </button>
-                        </Tooltip>
+                        <ChatQuickActionButton
+                          icon={ClipboardCheck}
+                          label="Review code"
+                          tooltip="Open the Issues tab to run a code review."
+                          onClick={() => onViewChange('review')}
+                          className={CHAT_ACTION_BUTTON_CLASS}
+                        />
+                        <ChatQuickActionButton
+                          icon={GitCompare}
+                          label="Diff"
+                          tooltip="View a diff of all changes in this session."
+                          onClick={() => onViewChange('diff')}
+                          className={CHAT_ACTION_BUTTON_CLASS}
+                        />
                       </>
                     )}
                     {canTogglePrDraftStatus(session) && (
                       <PrDraftToggleButton session={session} className={CHAT_ACTION_BUTTON_CLASS} />
                     )}
+                    <ChatPushChangesButton
+                      session={session}
+                      readonly={readonly}
+                      onPush={onPush}
+                      pushing={pushing}
+                      commitsToPush={commitsToPush}
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
                   </div>
                 )}
               <div ref={messagesEndRef} />

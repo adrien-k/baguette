@@ -1378,6 +1378,9 @@ export default function Session() {
                 onAutoPushChange={handleAutoPushChange}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
+                commitsToPush={commitsToPush}
+                onPush={handlePush}
+                pushing={pushing}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'review' && (

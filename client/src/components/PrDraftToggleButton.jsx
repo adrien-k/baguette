@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { NEUTRAL_BUTTON_CLASS } from '../utils/buttonStyles.js';
+import ChatQuickActionButton from './chat/ChatQuickActionButton.jsx';
 
 export function canTogglePrDraftStatus(session) {
   if (!session?.pr_number) return false;
@@ -19,6 +20,9 @@ export default function PrDraftToggleButton({ session, className = NEUTRAL_BUTTO
   const isDraft = session.pr_status === 'draft';
   const Icon = isDraft ? GitPullRequest : GitPullRequestDraft;
   const label = isDraft ? 'Mark ready' : 'Mark draft';
+  const tooltip = isDraft
+    ? 'Mark the pull request ready for review.'
+    : 'Convert the pull request to draft while work continues.';
 
   const handleClick = async () => {
     if (!session?.id || toggling) return;
@@ -39,9 +43,13 @@ export default function PrDraftToggleButton({ session, className = NEUTRAL_BUTTO
   };
 
   return (
-    <button type="button" onClick={handleClick} disabled={toggling} className={className}>
-      <Icon className="w-3.5 h-3.5" />
-      {toggling ? '…' : label}
-    </button>
+    <ChatQuickActionButton
+      icon={Icon}
+      label={toggling ? '…' : label}
+      tooltip={tooltip}
+      onClick={handleClick}
+      disabled={toggling}
+      className={className}
+    />
   );
 }
