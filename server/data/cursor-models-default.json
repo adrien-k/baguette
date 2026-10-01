@@ -1,181 +1,157 @@
 [
   {
-    "id": "auto-smart",
-    "display_name": "Auto",
-    "description": null,
-    "variants": [
-      {
-        "display_name": "Auto Intelligence",
-        "description": null,
-        "is_default": false,
-        "params": [{ "id": "optimize_for", "value": "intelligence" }]
-      },
-      {
-        "display_name": "Auto Balance",
-        "description": null,
-        "is_default": true,
-        "params": [{ "id": "optimize_for", "value": "balanced" }]
-      },
-      {
-        "display_name": "Auto Cost",
-        "description": null,
-        "is_default": false,
-        "params": [{ "id": "optimize_for", "value": "cost" }]
-      }
-    ]
-  },
-  {
     "id": "default",
     "display_name": "Auto",
     "description": null,
-    "variants": [
-      {
-        "display_name": "Auto",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
-    ]
+    "variants": [{ "display_name": "Auto", "description": null, "is_default": true, "params": [] }]
   },
   {
     "id": "grok-4.7",
-    "display_name": "Cursor Grok 4.7",
+    "display_name": "Grok 4.7",
     "description": null,
     "variants": [
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  Low",
         "description": null,
         "is_default": false,
         "params": [
+          { "id": "context", "value": "256k" },
           { "id": "reasoning_effort", "value": "low" },
           { "id": "fast", "value": "false" }
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  Low Fast​​",
         "description": null,
         "is_default": false,
         "params": [
+          { "id": "context", "value": "256k" },
           { "id": "reasoning_effort", "value": "low" },
           { "id": "fast", "value": "true" }
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  Medium",
         "description": null,
         "is_default": false,
         "params": [
+          { "id": "context", "value": "256k" },
           { "id": "reasoning_effort", "value": "medium" },
           { "id": "fast", "value": "false" }
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  Medium Fast​​",
         "description": null,
         "is_default": false,
         "params": [
+          { "id": "context", "value": "256k" },
           { "id": "reasoning_effort", "value": "medium" },
           { "id": "fast", "value": "true" }
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  High",
         "description": null,
         "is_default": false,
         "params": [
+          { "id": "context", "value": "256k" },
           { "id": "reasoning_effort", "value": "high" },
           { "id": "fast", "value": "false" }
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  High Fast​​",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "256k" },
+          { "id": "reasoning_effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  Extra High",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "256k" },
+          { "id": "reasoning_effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  Extra High Fast​​",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "256k" },
+          { "id": "reasoning_effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  Low",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  Low Fast​​",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  Medium",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  Medium Fast​​",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  High",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "500k" },
+          { "id": "reasoning_effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.7  High Fast​​",
         "description": null,
         "is_default": true,
         "params": [
-          { "id": "reasoning_effort", "value": "high" },
-          { "id": "fast", "value": "true" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "reasoning_effort", "value": "xhigh" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "reasoning_effort", "value": "xhigh" },
-          { "id": "fast", "value": "true" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "context", "value": "500k" },
-          { "id": "reasoning_effort", "value": "low" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "context", "value": "500k" },
-          { "id": "reasoning_effort", "value": "low" },
-          { "id": "fast", "value": "true" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "context", "value": "500k" },
-          { "id": "reasoning_effort", "value": "medium" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "context", "value": "500k" },
-          { "id": "reasoning_effort", "value": "medium" },
-          { "id": "fast", "value": "true" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "context", "value": "500k" },
-          { "id": "reasoning_effort", "value": "high" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.7",
-        "description": null,
-        "is_default": false,
-        "params": [
           { "id": "context", "value": "500k" },
           { "id": "reasoning_effort", "value": "high" },
           { "id": "fast", "value": "true" }
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  Extra High",
         "description": null,
         "is_default": false,
         "params": [
@@ -185,7 +161,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.7",
+        "display_name": "Grok 4.7  Extra High Fast​​",
         "description": null,
         "is_default": false,
         "params": [
@@ -198,11 +174,11 @@
   },
   {
     "id": "grok-4.6",
-    "display_name": "Cursor Grok 4.6",
+    "display_name": "Grok 4.6",
     "description": null,
     "variants": [
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -211,7 +187,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -220,7 +196,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -229,7 +205,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -238,7 +214,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -247,7 +223,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": true,
         "params": [
@@ -256,7 +232,7 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -265,72 +241,11 @@
         ]
       },
       {
-        "display_name": "Cursor Grok 4.6",
+        "display_name": "Grok 4.6",
         "description": null,
         "is_default": false,
         "params": [
           { "id": "effort", "value": "xhigh" },
-          { "id": "fast", "value": "true" }
-        ]
-      }
-    ]
-  },
-  {
-    "id": "grok-4.5",
-    "display_name": "Cursor Grok 4.5",
-    "description": null,
-    "variants": [
-      {
-        "display_name": "Cursor Grok 4.5",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "effort", "value": "low" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.5",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "effort", "value": "low" },
-          { "id": "fast", "value": "true" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.5",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "effort", "value": "medium" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.5",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "effort", "value": "medium" },
-          { "id": "fast", "value": "true" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.5",
-        "description": null,
-        "is_default": false,
-        "params": [
-          { "id": "effort", "value": "high" },
-          { "id": "fast", "value": "false" }
-        ]
-      },
-      {
-        "display_name": "Cursor Grok 4.5",
-        "description": null,
-        "is_default": true,
-        "params": [
-          { "id": "effort", "value": "high" },
           { "id": "fast", "value": "true" }
         ]
       }
@@ -356,12 +271,219 @@
     ]
   },
   {
-    "id": "claude-opus-5",
-    "display_name": "Opus 5",
+    "id": "claude-opus-5-5",
+    "display_name": "Claude Opus 5.5",
     "description": null,
     "variants": [
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Claude Opus 5.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-opus-5",
+    "display_name": "Claude Opus 5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -373,7 +495,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -385,7 +507,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -397,7 +519,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -409,7 +531,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -421,7 +543,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -433,7 +555,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -445,7 +567,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -457,7 +579,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -469,7 +591,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -481,7 +603,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -493,7 +615,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -505,7 +627,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -517,7 +639,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -529,7 +651,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -541,7 +663,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -553,7 +675,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -565,7 +687,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -577,7 +699,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -589,7 +711,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -601,7 +723,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -613,7 +735,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -625,7 +747,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -637,7 +759,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -649,7 +771,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -661,7 +783,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -673,7 +795,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": true,
         "params": [
@@ -685,7 +807,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -697,7 +819,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -709,7 +831,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -721,7 +843,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -733,7 +855,7 @@
         ]
       },
       {
-        "display_name": "Opus 5",
+        "display_name": "Claude Opus 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -748,11 +870,11 @@
   },
   {
     "id": "claude-opus-4-8",
-    "display_name": "Opus 4.8",
+    "display_name": "Claude Opus 4.8",
     "description": null,
     "variants": [
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -764,7 +886,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -776,7 +898,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -788,7 +910,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -800,7 +922,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -812,7 +934,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -824,7 +946,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -836,7 +958,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -848,7 +970,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -860,7 +982,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -872,7 +994,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -884,7 +1006,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -896,7 +1018,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -908,7 +1030,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -920,7 +1042,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -932,7 +1054,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -944,7 +1066,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -956,7 +1078,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -968,7 +1090,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -980,7 +1102,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -992,7 +1114,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1004,7 +1126,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1016,7 +1138,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1028,7 +1150,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1040,7 +1162,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1052,7 +1174,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1064,7 +1186,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1076,7 +1198,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1088,7 +1210,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1100,7 +1222,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1112,7 +1234,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1124,7 +1246,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1136,7 +1258,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1148,7 +1270,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1160,7 +1282,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": true,
         "params": [
@@ -1172,7 +1294,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1184,7 +1306,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1196,7 +1318,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1208,7 +1330,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1220,7 +1342,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.8",
+        "display_name": "Claude Opus 4.8",
         "description": null,
         "is_default": false,
         "params": [
@@ -1374,8 +1496,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "low" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
         ]
       },
       {
@@ -1394,8 +1536,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "high" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
         ]
       },
       {
@@ -1414,8 +1576,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "max" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Sol",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "true" }
         ]
       }
     ]
@@ -1578,12 +1760,12 @@
     ]
   },
   {
-    "id": "claude-fable-5",
-    "display_name": "Fable 5",
+    "id": "claude-fable-5-1",
+    "display_name": "Claude Fable 5.1",
     "description": null,
     "variants": [
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1593,7 +1775,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1603,7 +1785,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1613,7 +1795,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1623,7 +1805,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1633,7 +1815,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1643,7 +1825,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1653,7 +1835,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1663,7 +1845,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1673,7 +1855,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1683,7 +1865,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1693,7 +1875,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1703,7 +1885,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1713,7 +1895,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1723,7 +1905,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1733,7 +1915,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1743,7 +1925,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1753,7 +1935,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": true,
         "params": [
@@ -1763,7 +1945,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1773,7 +1955,7 @@
         ]
       },
       {
-        "display_name": "Fable 5",
+        "display_name": "Claude Fable 5.1",
         "description": null,
         "is_default": false,
         "params": [
@@ -1785,12 +1967,12 @@
     ]
   },
   {
-    "id": "claude-sonnet-5",
-    "display_name": "Sonnet 5",
+    "id": "claude-fable-5",
+    "display_name": "Claude Fable 5",
     "description": null,
     "variants": [
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1800,7 +1982,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1810,7 +1992,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1820,7 +2002,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1830,7 +2012,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1840,7 +2022,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1850,7 +2032,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1860,7 +2042,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1870,7 +2052,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1880,7 +2062,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1890,7 +2072,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1900,7 +2082,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1910,7 +2092,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1920,7 +2102,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1930,7 +2112,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1940,7 +2122,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1950,7 +2132,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1960,7 +2142,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": true,
         "params": [
@@ -1970,7 +2152,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
@@ -1980,11 +2162,237 @@
         ]
       },
       {
-        "display_name": "Sonnet 5",
+        "display_name": "Claude Fable 5",
         "description": null,
         "is_default": false,
         "params": [
           { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "grok-4.5",
+    "display_name": "Grok 4.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "low" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "Grok 4.5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "effort", "value": "high" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gemini-3.8-flash",
+    "display_name": "Gemini 3.8 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 3.8 Flash Low",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning_effort", "value": "low" }]
+      },
+      {
+        "display_name": "Gemini 3.8 Flash Medium",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning_effort", "value": "medium" }]
+      },
+      {
+        "display_name": "Gemini 3.8 Flash High",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning_effort", "value": "high" }]
+      }
+    ]
+  },
+  {
+    "id": "gemini-3.7-flash",
+    "display_name": "Gemini 3.7 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Gemini 3.7 Flash",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "effort", "value": "low" }]
+      },
+      {
+        "display_name": "Gemini 3.7 Flash",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "effort", "value": "medium" }]
+      },
+      {
+        "display_name": "Gemini 3.7 Flash",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "effort", "value": "high" }]
+      }
+    ]
+  },
+  {
+    "id": "muse-spark-1.3",
+    "display_name": "Muse Spark 1.3",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "minimal" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "minimal" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Muse Spark 1.3",
+        "description": null,
+        "is_default": false,
+        "params": [
           { "id": "context", "value": "1m" },
           { "id": "effort", "value": "max" }
         ]
@@ -2132,8 +2540,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "low" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
         ]
       },
       {
@@ -2152,8 +2580,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "high" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
         ]
       },
       {
@@ -2172,19 +2620,343 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "max" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Terra",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "true" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-sonnet-5-5",
+    "display_name": "Claude Sonnet 5.5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Claude Sonnet 5.5  Low",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "reasoning_effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5  Medium",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "reasoning_effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5  High",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "reasoning_effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5  Extra High",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "reasoning_effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5  Max",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "300k" },
+          { "id": "reasoning_effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5 1M Low",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning_effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5 1M Medium",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning_effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5 1M High",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning_effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5 1M Extra High",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning_effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5.5 1M Max",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning_effort", "value": "max" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "claude-sonnet-5",
+    "display_name": "Claude Sonnet 5",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "false" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "300k" },
+          { "id": "effort", "value": "max" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "low" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "medium" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": true,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "high" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "xhigh" }
+        ]
+      },
+      {
+        "display_name": "Claude Sonnet 5",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "thinking", "value": "true" },
+          { "id": "context", "value": "1m" },
+          { "id": "effort", "value": "max" }
         ]
       }
     ]
   },
   {
     "id": "claude-sonnet-4-6",
-    "display_name": "Sonnet 4.6",
+    "display_name": "Claude Sonnet 4.6",
     "description": null,
     "variants": [
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2194,7 +2966,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2204,7 +2976,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2214,7 +2986,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2224,7 +2996,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2234,7 +3006,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2244,7 +3016,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2254,7 +3026,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2264,7 +3036,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2274,7 +3046,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2284,7 +3056,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2294,7 +3066,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2304,7 +3076,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2314,7 +3086,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": true,
         "params": [
@@ -2324,7 +3096,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2334,7 +3106,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.6",
+        "display_name": "Claude Sonnet 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -2445,11 +3217,11 @@
   },
   {
     "id": "claude-opus-4-7",
-    "display_name": "Opus 4.7",
+    "display_name": "Claude Opus 4.7",
     "description": null,
     "variants": [
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2461,7 +3233,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2473,7 +3245,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2485,7 +3257,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2497,7 +3269,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2509,7 +3281,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2521,7 +3293,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2533,7 +3305,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2545,7 +3317,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2557,7 +3329,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2569,7 +3341,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2581,7 +3353,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2593,7 +3365,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2605,7 +3377,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2617,7 +3389,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2629,7 +3401,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2641,7 +3413,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2653,7 +3425,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2665,7 +3437,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2677,7 +3449,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2689,7 +3461,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2701,7 +3473,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2713,7 +3485,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2725,7 +3497,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2737,7 +3509,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2749,7 +3521,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2761,7 +3533,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2773,7 +3545,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2785,7 +3557,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2797,7 +3569,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2809,7 +3581,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2821,7 +3593,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2833,7 +3605,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2845,7 +3617,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2857,7 +3629,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2869,7 +3641,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2881,7 +3653,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": true,
         "params": [
@@ -2893,7 +3665,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2905,7 +3677,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -2917,7 +3689,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.7",
+        "display_name": "Claude Opus 4.7",
         "description": null,
         "is_default": false,
         "params": [
@@ -3089,11 +3861,11 @@
   },
   {
     "id": "claude-opus-4-6",
-    "display_name": "Opus 4.6",
+    "display_name": "Claude Opus 4.6",
     "description": null,
     "variants": [
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3103,7 +3875,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3113,7 +3885,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3123,7 +3895,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3133,7 +3905,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3143,7 +3915,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3153,7 +3925,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3163,7 +3935,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3173,7 +3945,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3183,7 +3955,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3193,7 +3965,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3203,7 +3975,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3213,7 +3985,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3223,7 +3995,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3233,7 +4005,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": true,
         "params": [
@@ -3243,7 +4015,7 @@
         ]
       },
       {
-        "display_name": "Opus 4.6",
+        "display_name": "Claude Opus 4.6",
         "description": null,
         "is_default": false,
         "params": [
@@ -3256,17 +4028,17 @@
   },
   {
     "id": "claude-opus-4-5",
-    "display_name": "Opus 4.5",
+    "display_name": "Claude Opus 4.5",
     "description": null,
     "variants": [
       {
-        "display_name": "Opus 4.5",
+        "display_name": "Claude Opus 4.5",
         "description": null,
         "is_default": false,
         "params": [{ "id": "thinking", "value": "false" }]
       },
       {
-        "display_name": "Opus 4.5",
+        "display_name": "Claude Opus 4.5",
         "description": null,
         "is_default": true,
         "params": [{ "id": "thinking", "value": "true" }]
@@ -3493,8 +4265,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "none" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "low" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "low" },
+          { "id": "fast", "value": "true" }
         ]
       },
       {
@@ -3513,8 +4305,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "medium" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "high" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "high" },
+          { "id": "fast", "value": "true" }
         ]
       },
       {
@@ -3533,8 +4345,28 @@
         "is_default": false,
         "params": [
           { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "xhigh" },
+          { "id": "fast", "value": "true" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
           { "id": "reasoning", "value": "max" },
           { "id": "fast", "value": "false" }
+        ]
+      },
+      {
+        "display_name": "GPT-5.6 Luna",
+        "description": null,
+        "is_default": false,
+        "params": [
+          { "id": "context", "value": "1m" },
+          { "id": "reasoning", "value": "max" },
+          { "id": "fast", "value": "true" }
         ]
       }
     ]
@@ -3575,12 +4407,7 @@
     "display_name": "Gemini 3.1 Pro",
     "description": null,
     "variants": [
-      {
-        "display_name": "Gemini 3.1 Pro",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
+      { "display_name": "Gemini 3.1 Pro", "description": null, "is_default": true, "params": [] }
     ]
   },
   {
@@ -3659,17 +4486,17 @@
   },
   {
     "id": "claude-haiku-4-5",
-    "display_name": "Haiku 4.5",
+    "display_name": "Claude Haiku 4.5",
     "description": null,
     "variants": [
       {
-        "display_name": "Haiku 4.5",
+        "display_name": "Claude Haiku 4.5",
         "description": null,
         "is_default": false,
         "params": [{ "id": "thinking", "value": "false" }]
       },
       {
-        "display_name": "Haiku 4.5",
+        "display_name": "Claude Haiku 4.5",
         "description": null,
         "is_default": true,
         "params": [{ "id": "thinking", "value": "true" }]
@@ -3678,11 +4505,11 @@
   },
   {
     "id": "claude-sonnet-4-5",
-    "display_name": "Sonnet 4.5",
+    "display_name": "Claude Sonnet 4.5",
     "description": null,
     "variants": [
       {
-        "display_name": "Sonnet 4.5",
+        "display_name": "Claude Sonnet 4.5",
         "description": null,
         "is_default": false,
         "params": [
@@ -3691,7 +4518,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4.5",
+        "display_name": "Claude Sonnet 4.5",
         "description": null,
         "is_default": true,
         "params": [
@@ -3731,12 +4558,7 @@
     "display_name": "Gemini 3 Flash",
     "description": null,
     "variants": [
-      {
-        "display_name": "Gemini 3 Flash",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
+      { "display_name": "Gemini 3 Flash", "description": null, "is_default": true, "params": [] }
     ]
   },
   {
@@ -3744,21 +4566,16 @@
     "display_name": "Gemini 3.5 Flash",
     "description": null,
     "variants": [
-      {
-        "display_name": "Gemini 3.5 Flash",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
+      { "display_name": "Gemini 3.5 Flash", "description": null, "is_default": true, "params": [] }
     ]
   },
   {
     "id": "claude-sonnet-4",
-    "display_name": "Sonnet 4",
+    "display_name": "Claude Sonnet 4",
     "description": null,
     "variants": [
       {
-        "display_name": "Sonnet 4",
+        "display_name": "Claude Sonnet 4",
         "description": null,
         "is_default": true,
         "params": [
@@ -3767,7 +4584,7 @@
         ]
       },
       {
-        "display_name": "Sonnet 4",
+        "display_name": "Claude Sonnet 4",
         "description": null,
         "is_default": false,
         "params": [
@@ -3782,12 +4599,7 @@
     "display_name": "GPT-5 Mini",
     "description": null,
     "variants": [
-      {
-        "display_name": "GPT-5 Mini",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
+      { "display_name": "GPT-5 Mini", "description": null, "is_default": true, "params": [] }
     ]
   },
   {
@@ -3795,12 +4607,7 @@
     "display_name": "Gemini 2.5 Flash",
     "description": null,
     "variants": [
-      {
-        "display_name": "Gemini 2.5 Flash",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
+      { "display_name": "Gemini 2.5 Flash", "description": null, "is_default": true, "params": [] }
     ]
   },
   {
@@ -3833,12 +4640,7 @@
     "display_name": "Kimi K2.7 Code",
     "description": null,
     "variants": [
-      {
-        "display_name": "Kimi K2.7 Code",
-        "description": null,
-        "is_default": true,
-        "params": []
-      }
+      { "display_name": "Kimi K2.7 Code", "description": null, "is_default": true, "params": [] }
     ]
   },
   {
@@ -3856,6 +4658,56 @@
         "display_name": "GLM 5.2",
         "description": null,
         "is_default": false,
+        "params": [{ "id": "reasoning", "value": "max" }]
+      }
+    ]
+  },
+  {
+    "id": "glm-5p3",
+    "display_name": "GLM 5.3",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GLM 5.3 Low",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "low" }]
+      },
+      {
+        "display_name": "GLM 5.3 High",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      },
+      {
+        "display_name": "GLM 5.3 Max",
+        "description": null,
+        "is_default": true,
+        "params": [{ "id": "reasoning", "value": "max" }]
+      }
+    ]
+  },
+  {
+    "id": "glm-5p3-flash",
+    "display_name": "GLM 5.3 Flash",
+    "description": null,
+    "variants": [
+      {
+        "display_name": "GLM 5.3 Flash Low",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "low" }]
+      },
+      {
+        "display_name": "GLM 5.3 Flash High",
+        "description": null,
+        "is_default": false,
+        "params": [{ "id": "reasoning", "value": "high" }]
+      },
+      {
+        "display_name": "GLM 5.3 Flash Max",
+        "description": null,
+        "is_default": true,
         "params": [{ "id": "reasoning", "value": "max" }]
       }
     ]
