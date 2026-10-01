@@ -1010,23 +1010,35 @@ describe('PrWorkflows', () => {
     const result = parseResult(await callTool(tools, 'PrWorkflows'));
     expect(result.ok).toBe(true);
     expect(result.runs).toEqual([]);
+    expect(result.checks).toEqual([]);
+    expect(result.head_sha).toBeNull();
     expect(typeof result.message).toBe('string');
   });
 
-  it('calls getPRWorkflows with remote_branch', async () => {
-    getPRWorkflows.mockResolvedValue([{ id: 1, status: 'completed' }]);
-    const { tools } = await buildServer({ remote_branch: 'feat/branch' });
+  it('calls getPRWorkflows with remote_branch and pr_number', async () => {
+    getPRWorkflows.mockResolvedValue({
+      runs: [{ id: 1, status: 'completed', jobs: [] }],
+      checks: [{ name: 'rspec', conclusion: 'success', required: true, app: 'GitHub Actions' }],
+      head_sha: 'abc',
+    });
+    const { tools } = await buildServer({ remote_branch: 'feat/branch', pr_number: 42 });
     const result = parseResult(await callTool(tools, 'PrWorkflows'));
     expect(result.ok).toBe(true);
-    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch');
+    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
+      prNumber: 42,
+    });
     expect(result.runs).toHaveLength(1);
+    expect(result.checks).toHaveLength(1);
+    expect(result.head_sha).toBe('abc');
   });
 
   it('falls back to local_branch when remote_branch is null', async () => {
-    getPRWorkflows.mockResolvedValue([]);
+    getPRWorkflows.mockResolvedValue({ runs: [], checks: [], head_sha: null });
     const { tools } = await buildServer({ remote_branch: null, local_branch: 'created-branch' });
     await callTool(tools, 'PrWorkflows');
-    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch');
+    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch', {
+      prNumber: undefined,
+    });
   });
 });
 

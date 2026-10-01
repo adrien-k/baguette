@@ -35,7 +35,7 @@ When the user asks to "fix conflicts" or "resolve conflicts", they usually mean 
 To read current PR info:
 Call `PrRead`.
 
-IMPORTANT: Use the baguette MCP tools (`GitPush`, `GitPull`, `GitFetch`, `PrUpsert`, `PrRead`) for all git push, pull, fetch, and PR operations — do not use git push/pull or gh CLI directly for these.
+IMPORTANT: Do not run `git push`, `git pull`, or `git fetch` in the shell — use **`GitPush`**, **`GitPull`**, and **`GitFetch`** instead. Use **`PrUpsert`** and **`PrRead`** for pull request create/update and reads.
 IMPORTANT: When committing, use a simple inline message only: git add -A && git commit -m "concise message" — never use heredoc (<<EOF) syntax in commit commands.
 IMPORTANT: Do not parallelize end-of-turn shipping — complete `git commit` before **`GitPush`**, and complete **`GitPush`** before **`PrUpsert`**.
 

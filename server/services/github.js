@@ -1298,23 +1298,175 @@ export async function createPRReview(
   return { id: data.id, state: data.state, body: data.body };
 }
 
-/**
- * Lists recent workflow runs for a branch.
- * @returns {Array<{ id, name, status, conclusion, html_url, created_at }>}
- */
-export async function getPRWorkflows(token, repoFullName, branch) {
-  const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=10`;
-  const res = await githubFetch(url, { token });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.workflow_runs || []).map((r) => ({
+function mapWorkflowJob(job) {
+  return {
+    id: job.id,
+    name: job.name,
+    status: job.status,
+    conclusion: job.conclusion,
+    html_url: job.html_url,
+  };
+}
+
+async function fetchWorkflowRunJobs(token, repoFullName, runId) {
+  const jobsRes = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=100`,
+    { token }
+  );
+  if (!jobsRes.ok) return [];
+  const jobsData = await jobsRes.json();
+  return (jobsData.jobs || []).map(mapWorkflowJob);
+}
+
+function mapWorkflowRun(r, jobs) {
+  return {
     id: r.id,
     name: r.name,
     status: r.status,
     conclusion: r.conclusion,
     html_url: r.html_url,
     created_at: r.created_at,
-  }));
+    updated_at: r.updated_at,
+    completed_at: r.completed_at ?? null,
+    path: r.path,
+    event: r.event,
+    head_sha: r.head_sha,
+    run_attempt: r.run_attempt,
+    jobs,
+  };
+}
+
+function normalizeGraphqlEnum(value) {
+  if (value == null) return null;
+  return String(value).toLowerCase();
+}
+
+function mapStatusContextState(state) {
+  const s = normalizeGraphqlEnum(state);
+  if (s === 'success') return 'success';
+  if (s === 'failure' || s === 'error') return 'failure';
+  if (s === 'pending' || s === 'expected') return 'pending';
+  return s;
+}
+
+/**
+ * PR head check rollup (Actions check runs + legacy commit statuses), aligned with the PR checks UI.
+ * @returns {{ checks: Array<{ name, conclusion, status, required, app, html_url }>, head_sha: string | null }}
+ */
+async function fetchPRCheckRollup(token, repoFullName, prNumber) {
+  const [owner, repo] = repoFullName.split('/');
+  if (!owner || !repo) return { checks: [], head_sha: null };
+
+  const query = `
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          commits(last: 1) {
+            nodes {
+              commit {
+                oid
+                statusCheckRollup {
+                  contexts(first: 100) {
+                    nodes {
+                      __typename
+                      ... on CheckRun {
+                        name
+                        conclusion
+                        status
+                        isRequired
+                        detailsUrl
+                        checkSuite { app { name slug } }
+                      }
+                      ... on StatusContext {
+                        context
+                        state
+                        isRequired
+                        targetUrl
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const res = await githubFetch('https://api.github.com/graphql', {
+    method: 'POST',
+    token,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query,
+      variables: { owner, repo, number: prNumber },
+    }),
+  });
+  if (!res.ok) return { checks: [], head_sha: null };
+  const data = await res.json();
+  if (data.errors?.length) return { checks: [], head_sha: null };
+
+  const commit = data?.data?.repository?.pullRequest?.commits?.nodes?.[0]?.commit;
+  if (!commit) return { checks: [], head_sha: null };
+
+  const head_sha = commit.oid;
+  const nodes = commit.statusCheckRollup?.contexts?.nodes ?? [];
+  const checks = nodes
+    .map((node) => {
+      if (node.__typename === 'CheckRun') {
+        const app = node.checkSuite?.app;
+        return {
+          name: node.name,
+          conclusion: normalizeGraphqlEnum(node.conclusion),
+          status: normalizeGraphqlEnum(node.status),
+          required: Boolean(node.isRequired),
+          app: app?.name ?? app?.slug ?? null,
+          html_url: node.detailsUrl ?? null,
+        };
+      }
+      if (node.__typename === 'StatusContext') {
+        return {
+          name: node.context,
+          conclusion: mapStatusContextState(node.state),
+          status: null,
+          required: Boolean(node.isRequired),
+          app: null,
+          html_url: node.targetUrl ?? null,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  return { checks, head_sha };
+}
+
+/**
+ * Recent workflow runs for a branch (with jobs) plus optional PR-head check rollup.
+ * @returns {{ runs: Array<object>, checks: Array<object>, head_sha: string | null }}
+ */
+export async function getPRWorkflows(token, repoFullName, branch, { prNumber } = {}) {
+  const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=10`;
+  const res = await githubFetch(url, { token });
+  const runsRaw = res.ok ? (await res.json()).workflow_runs || [] : [];
+
+  const runs = await Promise.all(
+    runsRaw.map(async (r) => {
+      const jobs = await fetchWorkflowRunJobs(token, repoFullName, r.id);
+      return mapWorkflowRun(r, jobs);
+    })
+  );
+
+  let checks = [];
+  let head_sha = null;
+  if (prNumber) {
+    const rollup = await fetchPRCheckRollup(token, repoFullName, prNumber);
+    checks = rollup.checks;
+    head_sha = rollup.head_sha;
+  }
+
+  return { runs, checks, head_sha };
 }
 
 /**

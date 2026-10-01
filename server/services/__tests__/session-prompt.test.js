@@ -122,6 +122,7 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('`./.baguette/scripts/`');
     expect(result).toContain('`./.baguette/instructions.md`');
     expect(result).toContain('unless the user explicitly asks');
+    expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
   });
 
   it('uses the light global prompt for is_global sessions', async () => {
