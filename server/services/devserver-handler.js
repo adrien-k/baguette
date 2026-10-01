@@ -1,9 +1,5 @@
 import { extractSessionIdFromHost } from './preview.js';
-import {
-  getPreviewServiceDefinitions,
-  inlinePreviewTaskLabel,
-  resolvePreviewServiceConfig,
-} from './preview-services.js';
+import { getPreviewServiceDefinitions, resolvePreviewServiceConfig } from './preview-services.js';
 import { loadBaguetteConfig } from './baguette-config.js';
 import { PUBLIC_HOST } from '../config.js';
 import { DEFAULT_TTL_MS } from './task.js';
@@ -24,7 +20,7 @@ export class DevserverHandler {
     this.host = (req.headers.host || '').split(':')[0];
     const parsed = extractSessionIdFromHost(this.host);
     this.shortId = parsed?.shortId ?? null;
-    this.serviceName = parsed?.serviceName ?? null; // null = portal / single-service root
+    this.serviceName = parsed?.serviceName ?? null; // null = portal host
     this._sessionPromise = null;
     this._configPromise = null;
   }
@@ -81,7 +77,7 @@ export class DevserverHandler {
         res,
         404,
         'No preview available',
-        'No webserver or services are configured for this session.'
+        'No preview services are configured for this session.'
       );
       return false;
     }
@@ -114,8 +110,13 @@ export class DevserverHandler {
   async render(res) {
     const config = await this._getConfig();
     const definitions = getPreviewServiceDefinitions(config, this.shortId);
-    const multiService = definitions && definitions.length > 1 && definitions[0].name !== 'default';
-    if (!multiService || this.serviceName !== null) return false;
+    if (!definitions?.length || this.serviceName !== null) return false;
+
+    if (definitions.length === 1) {
+      res.redirect(302, definitions[0].url);
+      return true;
+    }
+
     const services = definitions.map((svc) => ({
       name: svc.display_name,
       slug: svc.name,
@@ -134,28 +135,21 @@ export class DevserverHandler {
   async buildTask() {
     const session = await this.getSession();
     const config = await this._getConfig();
-    const effectiveServiceName = this.serviceName ?? 'default';
-    const webserverConfig = resolvePreviewServiceConfig(config, effectiveServiceName);
-    if (!webserverConfig)
-      throw new Error(`No webserver config for service "${effectiveServiceName}"`);
+    const serviceConfig = resolvePreviewServiceConfig(config, this.serviceName);
+    if (!serviceConfig) {
+      const label = this.serviceName ?? 'portal';
+      throw new Error(`No preview service config for "${label}"`);
+    }
     const publicTask = await this.app.service('tasks').create(
       {
         session_id: session.id,
-        // A `webserver.task` reference resolves through the config; an inline
-        // `webserver.command` has no task to name, so pass the command directly.
-        ...(webserverConfig.taskKey
-          ? { task_key: webserverConfig.taskKey }
-          : {
-              command: webserverConfig.command,
-              ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
-              label: inlinePreviewTaskLabel(effectiveServiceName),
-            }),
+        task_key: serviceConfig.taskKey,
         autoStart: false,
         ttl_ms: DEFAULT_TTL_MS,
       },
       { user: { id: session.user_id } }
     );
     const task = this.app.service('tasks').getTask(publicTask.id);
-    return { task, exposePort: webserverConfig.expose };
+    return { task, exposePort: serviceConfig.expose };
   }
 }

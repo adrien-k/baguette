@@ -8,10 +8,9 @@ config:
     env:
       # Environment variables injected into every session.
       # Use ${{ baguette.secrets.SECRET_NAME }} to reference secrets stored in Settings > Secrets.
-      # Use ${{ baguette.session.public_uri }} to get the public URL of the single webserver (or the portal for multi-service).
-      # Use ${{ baguette.services.<name>.public_uri }} to get the public URL of a specific named service (multi-service only).
-      NEXT_PUBLIC_APP_URL: '${{ baguette.session.public_uri }}'
-      PUBLIC_HOST: '${{ baguette.session.public_uri }}'
+      # Use ${{ baguette.services.<name>.public_uri }} for a preview service's public URL.
+      NEXT_PUBLIC_APP_URL: '${{ baguette.services.app.public_uri }}'
+      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
     init: |
       # Runs once on first task start, before depends-on tasks (e.g. docker Postgres).
       # Install-only — run migrations on a task that depends-on the database.
@@ -57,16 +56,10 @@ config:
             interval: 5s
             timeout: 3s
             retries: 10
-  # Single-service preview (most projects): reference one task.
-  # Use `services` instead for multi-service setups (see below).
-  # Optional: custom URL scheme for deep links (e.g. Expo exp://). Also supported per-service.
-  preview:
-    scheme: exp://
-  webserver:
-    # Reference a task from session.tasks (recommended). Mutually exclusive with command.
-    task: dev-server
-    # Which port env var is the one users access in the browser.
-    expose: VITE_PORT
+  services:
+    app:
+      task: dev-server
+      expose: VITE_PORT
 ```
 
 > **Legacy format**: You can also use an array-based `commands` format instead of `tasks`:
@@ -77,16 +70,16 @@ config:
 >     run: pnpm test
 > ```
 
-## webserver block fields
+## services block (preview)
 
-- **task**: reference a task key from `session.tasks`. The task's `run` command and `ports` are used to start the dev server.
-- **expose**: which port env var is the one users reach in the browser. Only one port can be exposed.
+Each entry maps a service name to a `session.tasks` key and the port env var users reach in the browser.
 
-## services block (multi-service preview)
+- **task**: reference a task key from `session.tasks` (that task's `run` and `ports` start the preview process).
+- **expose**: which port env var from the task's `ports` list is proxied publicly (required).
+- **description**: optional short text on the session Preview tab.
+- **scheme**: optional custom URL scheme for deep links (e.g. `exp://` on an Expo service).
 
-Use `services` instead of `webserver` when the project has **multiple services that each need their own independent public URL** — the primary case is a mobile app (e.g., Expo/React Native) whose runtime directly calls an API backend. Each service gets its own subdomain `session-<id>-<name>.<domain>`. A portal page at `session-<id>.<domain>` lists all services with status and logs.
-
-> **Do NOT use `services`** just because a project has a frontend and a backend: if the frontend proxies API calls via Vite's `proxy` config, Next.js rewrites, or similar, a single `webserver` entry is correct.
+Each service is proxied at `session-<id>-<name>.<domain>`. With multiple services, a portal at `session-<id>.<domain>` lists them all.
 
 ```yaml
 config:
@@ -116,8 +109,6 @@ config:
         run: pnpm --filter expo run start --port $EXPO_PORT --host 127.0.0.1
         ports: [EXPO_PORT]
         depends-on: [api]
-  # Use `services` (not `webserver`) for multi-service setups.
-  # services and webserver are mutually exclusive.
   services:
     api:
       task: api
@@ -140,7 +131,7 @@ Each task in `session.tasks` supports:
 - **ports**: (optional, **command tasks only**) env var names that Baguette assigns free **host** ports to before launching — use for dev servers and other processes the preview proxy must reach. **Do not** add `ports` to docker tasks (Postgres, Redis, etc.).
 - **depends-on**: (optional) list of task keys that must be ready before this task starts. Command tasks that use a docker database must list `depends-on: [postgres]` (or your DB task key).
 - **env**: (optional) per-task environment variables, merged on top of `session.env`. Put **`DATABASE_URL` and other docker connection URLs here** (not in `session.env`), using `${{ baguette.tasks.<docker-task>.container_hostname }}` and the **container’s normal listen port** (e.g. `:5432`, `:6379`) — not dynamic `${{ baguette.tasks.<docker-task>.PG_PORT }}` placeholders. Also supports `${{ baguette.secrets.X }}`, `${{ baguette.session.public_uri }}`, `${{ baguette.services.<name>.public_uri }}`, and `${{ baguette.tasks.<command-task-key>.<PORT_NAME> }}` for **command** tasks that declare `ports`.
-- **internal**: (optional) when `true`, the task is omitted from session task buttons and `ListProjectCommands` (it remains available for `depends-on`, webserver/services references, and `RunProjectCommand` by label).
+- **internal**: (optional) when `true`, the task is omitted from session task buttons and `ListProjectCommands` (it remains available for `depends-on`, `services` references, and `RunProjectCommand` by label).
 
 ```yaml
 tasks:
@@ -175,24 +166,24 @@ tasks:
 2. **Configure the session block**:
    - Set `session.env` for values shared across the session (e.g. `PUBLIC_HOST`, framework public URLs). Put **`DATABASE_URL` on task `env`** for each command task that connects to a docker database, with `depends-on` on that docker task — not in `session.env`.
    - For **shared** databases (no docker `persist` volume), use `${{ baguette.session.short_id }}` in database names to isolate sessions (e.g. `myapp_${{ baguette.session.short_id }}`). With a **docker Postgres** task and `persist`, use a fixed name (e.g. `app`) — isolation is the per-session volume.
-   - **Always set `PUBLIC_HOST: "${{ baguette.session.public_uri }}"` in `session.env`** — this is required for host-restriction config in step 3 (allowed hosts, Action Cable origins, etc.) and for any app that needs to know its own public URL. Also set framework-specific variants if needed (e.g. `NEXT_PUBLIC_APP_URL: ${{ baguette.session.public_uri }}`)
+   - **Set `PUBLIC_HOST` from `${{ baguette.services.<name>.public_uri }}` in `session.env`** — required for allowed-host config in step 3 (Action Cable origins, etc.). Also set framework-specific variants if needed (e.g. `NEXT_PUBLIC_APP_URL`).
    - Set `session.init` for install-only steps (`init` runs before depends-on on first task start). Run migrations and seeds on a task with `depends-on: [postgres]` (or equivalent), not in `init`.
    - **Prefer `pnpm install` over `npm install` or `yarn install`** to save storage space via pnpm's global content-addressable package cache. If the project uses npm or yarn, add `pnpm = "latest"` to `.mise.toml` to make pnpm available, then use `pnpm install` in the init script.
    - Set `session.cleanup` only when needed (worktree files, shared external DBs). With **docker** `persist` volumes, skip DB drop — Baguette removes `baguette_session_<short_id>` on archive. `${{ baguette.tasks.* }}` in `session.env` is not resolved during cleanup.
    - Add `session.tasks` for running tests and other useful tasks. Use the hash format where each key is the task name. Always add a **`reset-db`** task that drops and recreates the session database (e.g. `run: rm -f .data/app.sqlite3 && pnpm run db:migrate` for SQLite, or `run: pnpm run db:reset` for Postgres). With docker Postgres, give `reset-db` **`depends-on: [postgres]`** and **`DATABASE_URL` in task `env`**, same as other DB tasks. Add `ports` only to **command** tasks that must listen on the host (e.g. dev server); docker service tasks do not use `ports`.
 
-3. **Configure the webserver or services block**:
+3. **Configure the `services` block**:
    - Identify how the dev server(s) are started (e.g., `vite`, `next dev`, `rails server`, `python manage.py runserver`, `expo start`)
    - If the start command uses a hardcoded port (e.g., `vite --port 3000`), update it to read from an env var instead (e.g., `vite --port $VITE_PORT`)
    - Update any config files that hardcode the port (e.g., `vite.config.js`, `next.config.js`) to read from `process.env.VITE_PORT` or equivalent
-   - **Single service (most projects)**: define the dev server as a task in `session.tasks` with `ports`, then reference it with `webserver.task`. Example: `tasks.dev-server: { run: "vite --port $VITE_PORT", ports: [VITE_PORT] }` and `webserver: { task: dev-server, expose: VITE_PORT }`. If multiple services must all be up before the app works (e.g., a Vite frontend and a Rails API), list all their ports on the task — baguette waits until every listed port is listening.
-   - **Multi-service (e.g., Expo + API backend)**: use the `services` block instead of `webserver` — each service gets its own public subdomain. This is only needed when the services genuinely require independent public URLs (e.g., a mobile app that calls an API directly). Use `${{ baguette.services.<name>.public_uri }}` in `session.env` to wire each service's URL into the relevant processes.
+   - Define each preview process as a task in `session.tasks` with `ports`, then reference it under `services` with `task` and `expose`. Example: `tasks.dev-server: { run: "vite --port $VITE_PORT", ports: [VITE_PORT] }` and `services.app: { task: dev-server, expose: VITE_PORT }`. If multiple processes must all be up before the app works (e.g., a Vite frontend and a Rails API on one preview entry), list all their ports on that task — baguette waits until every listed port is listening.
+   - Add **multiple** `services` entries only when each process needs its own public URL (e.g., Expo + API). Use `${{ baguette.services.<name>.public_uri }}` in `session.env` to wire URLs into the relevant processes.
    - **Bind to `127.0.0.1`**: configure the dev server to listen on `127.0.0.1` explicitly, not just `localhost`. When baguette runs in Docker, `localhost` may resolve to `::1` (IPv6) but the proxy connects over IPv4. Pass the appropriate flag for the framework:
      - Vite: `vite --host 127.0.0.1 --port $PORT`
      - Next.js: `next dev -H 127.0.0.1 --port $PORT`
      - Rails: `rails server -b 127.0.0.1 -p $PORT`
      - Django: `python manage.py runserver 127.0.0.1:$PORT`
-   - **Allow the baguette public URI as an allowed host**: the dev server will receive requests with the baguette public hostname, so configure it to accept that host. **Do not allow all hosts** (avoid `allowedHosts: 'all'`, `ALLOWED_HOSTS = ['*']`, `config.hosts.clear`, etc.). Instead, add `PUBLIC_HOST: "${{ baguette.session.public_uri }}"` to `session.env` and configure the dev server to read from it specifically:
+   - **Allow the preview service URL as an allowed host**: the dev server will receive requests with the baguette public hostname, so configure it to accept that host. **Do not allow all hosts** (avoid `allowedHosts: 'all'`, `ALLOWED_HOSTS = ['*']`, `config.hosts.clear`, etc.). Instead, add `PUBLIC_HOST` from `${{ baguette.services.<name>.public_uri }}` in `session.env` and configure the dev server to read from it specifically:
      - Vite: `server: { allowedHosts: [new URL(process.env.PUBLIC_HOST).hostname] }` in `vite.config.js`
      - Next.js: `allowedDevOrigins: [process.env.PUBLIC_HOST]` in `next.config.js`
      - Rails: `config.hosts << URI.parse(ENV['PUBLIC_HOST']).host` in `config/environments/development.rb`

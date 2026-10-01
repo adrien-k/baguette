@@ -1,4 +1,4 @@
-import { resolveWebserverConfig, resolveServicesConfig } from './baguette-config.js';
+import { resolveServicesConfig } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 
 /** Normalize scheme to include `://` (e.g. `exp` → `exp://`). */
@@ -21,51 +21,30 @@ export function buildDeepLinkUrl(scheme, httpsUrl) {
   }
 }
 
-/** Label for preview tasks with an inline `webserver.command` (no config task key). */
-export function inlinePreviewTaskLabel(serviceName = 'default') {
-  return `baguette:webserver:${serviceName}`;
-}
-
 /** Key used to find/reuse the in-memory task for a preview service. */
-export function previewTaskLookupKey(webserverConfig, serviceName = 'default') {
-  return webserverConfig?.taskKey ?? inlinePreviewTaskLabel(serviceName);
+export function previewTaskLookupKey(serviceConfig) {
+  return serviceConfig.taskKey;
 }
 
 /**
- * Resolve preview service config by name (`default` for single webserver).
+ * Resolve preview service config by name. When `serviceName` is omitted, returns the sole
+ * service when exactly one is configured.
  */
 export function resolvePreviewServiceConfig(baguetteConfig, serviceName) {
-  if (serviceName === 'default') return resolveWebserverConfig(baguetteConfig);
-  const services = resolveServicesConfig(baguetteConfig);
-  return services?.find((s) => s.name === serviceName) ?? null;
+  const services = resolveServicesConfig(baguetteConfig) ?? [];
+  if (serviceName) {
+    return services.find((s) => s.name === serviceName) ?? null;
+  }
+  if (services.length === 1) return services[0];
+  return null;
 }
 
 /**
- * List preview services defined in .baguette.yaml (webserver or services block).
+ * List preview services defined in `.baguette.yaml` (`services` block).
  * @returns {Array<{ name, display_name, description, url, expose, task_key, task_label, deep_link_url }>|null}
  */
 export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
   if (!baguetteConfig || !shortId) return null;
-
-  const globalScheme = baguetteConfig.preview?.scheme ?? baguetteConfig.webserver?.scheme ?? null;
-
-  const webserver = resolveWebserverConfig(baguetteConfig);
-  if (webserver) {
-    const url = getPreviewHost(shortId);
-    const scheme = baguetteConfig.webserver?.scheme ?? globalScheme;
-    return [
-      {
-        name: 'default',
-        display_name: webserver.taskKey || 'webserver',
-        description: webserver.description ?? null,
-        url,
-        expose: webserver.expose,
-        task_key: webserver.taskKey,
-        task_label: previewTaskLookupKey(webserver, 'default'),
-        deep_link_url: buildDeepLinkUrl(scheme, url),
-      },
-    ];
-  }
 
   const services = resolveServicesConfig(baguetteConfig);
   if (!services?.length) return null;
@@ -73,7 +52,7 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
   const servicesBlock = baguetteConfig.services ?? {};
   return services.map((svc) => {
     const url = getServicePreviewHost(shortId, svc.name);
-    const scheme = servicesBlock[svc.name]?.scheme ?? globalScheme;
+    const scheme = servicesBlock[svc.name]?.scheme ?? null;
     return {
       name: svc.name,
       display_name: svc.name,
@@ -81,7 +60,7 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
       url,
       expose: svc.expose,
       task_key: svc.taskKey,
-      task_label: previewTaskLookupKey(svc, svc.name),
+      task_label: previewTaskLookupKey(svc),
       deep_link_url: buildDeepLinkUrl(scheme, url),
     };
   });
@@ -89,13 +68,15 @@ export function getPreviewServiceDefinitions(baguetteConfig, shortId) {
 
 export function sessionHasPreviewConfig(baguetteConfig) {
   if (!baguetteConfig) return false;
-  if (baguetteConfig.webserver) return true;
-  const services = resolveServicesConfig(baguetteConfig);
-  return !!services?.length;
+  const servicesBlock = baguetteConfig.services;
+  if (!servicesBlock || typeof servicesBlock !== 'object') return false;
+  return Object.keys(servicesBlock).length > 0;
 }
 
-/** Preview portal URL when the session worktree has preview config; otherwise null. */
+/** Primary preview URL for the session (service subdomain when only one service is defined). */
 export function getSessionPreviewUrl(session, baguetteConfig) {
   if (!session?.short_id || !sessionHasPreviewConfig(baguetteConfig)) return null;
+  const definitions = getPreviewServiceDefinitions(baguetteConfig, session.short_id);
+  if (definitions?.length === 1) return definitions[0].url;
   return getPreviewHost(session.short_id);
 }

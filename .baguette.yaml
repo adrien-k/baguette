@@ -4,7 +4,7 @@ config:
       # Hardcoded for local preview sessions only — not used in production
       ENCRYPTION_KEY: 'baguette-local-preview-encryption-key-not-for-prod'
       DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
-      PUBLIC_HOST: '${{ baguette.session.public_uri }}'
+      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
       SOCKET_PATH: '/_baguette/ws/${{ baguette.session.short_id }}'
     init: |
       mkdir -p ../../../dev-data-dir
@@ -28,6 +28,7 @@ config:
           DATA_DIR: '../../../dev-data-dir'
         run: pnpm run dev
         ports: [PORT, VITE_PORT]
-  webserver:
-    task: dev-server
-    expose: VITE_PORT
+  services:
+    app:
+      task: dev-server
+      expose: VITE_PORT

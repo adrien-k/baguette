@@ -11,6 +11,7 @@ import {
   getAvailableCommands,
   getScriptBlock,
   BaguetteConfigError,
+  resolveServicesConfig,
 } from '../baguette-config.js';
 import {
   removeWorktree,
@@ -45,11 +46,9 @@ import { requireUser, scopeByUser } from './hooks.js';
 import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
-import { getPreviewHost } from '../preview.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
-  inlinePreviewTaskLabel,
   previewTaskLookupKey,
   resolvePreviewServiceConfig,
   sessionHasPreviewConfig,
@@ -678,10 +677,10 @@ export class SessionsService extends KnexService {
 
   _attachPreviewServiceToDevProxy(session, serviceName, baguetteConfig, task, params) {
     const key = this._previewServiceProxyKey(session, serviceName, baguetteConfig);
-    const webserverConfig = resolvePreviewServiceConfig(baguetteConfig, serviceName);
-    if (!key || !webserverConfig?.expose) return;
+    const serviceConfig = resolvePreviewServiceConfig(baguetteConfig, serviceName);
+    if (!key || !serviceConfig?.expose) return;
     const devProxy = this.app.get('devProxy');
-    devProxy?.attachWebserverTask(key, task, webserverConfig.expose, {
+    devProxy?.attachWebserverTask(key, task, serviceConfig.expose, {
       starterIp: params.clientIp ?? null,
     });
   }
@@ -689,14 +688,25 @@ export class SessionsService extends KnexService {
   async startPreviewService(data, params) {
     const session = params.resolvedSession;
     if (!session?.worktree_path) throw new BadRequest('Session has no worktree');
-    const serviceName = data?.service ?? 'default';
     const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
-    const webserverConfig = resolvePreviewServiceConfig(baguetteConfig, serviceName);
-    if (!webserverConfig) {
+    const services = resolveServicesConfig(baguetteConfig);
+    if (!services?.length) {
+      throw new BadRequest('No preview services are configured for this session');
+    }
+    let serviceName = data?.service;
+    if (!serviceName) {
+      if (services.length === 1) serviceName = services[0].name;
+      else
+        throw new BadRequest(
+          'Preview service name is required when multiple services are configured'
+        );
+    }
+    const serviceConfig = resolvePreviewServiceConfig(baguetteConfig, serviceName);
+    if (!serviceConfig) {
       throw new BadRequest(`No preview service "${serviceName}" configured`);
     }
 
-    const lookupKey = previewTaskLookupKey(webserverConfig, serviceName);
+    const lookupKey = previewTaskLookupKey(serviceConfig);
     const tasksService = this.app.service('tasks');
     // Start clears then starts, like the preview page's Retry button: stop whatever task is
     // running for this service and boot a fresh one (attaching it below drops the old proxy
@@ -707,15 +717,7 @@ export class SessionsService extends KnexService {
     const created = await tasksService.create(
       {
         session_id: session.id,
-        // A `webserver.task` reference resolves through the config; an inline
-        // `webserver.command` has no task to name, so pass the command directly.
-        ...(webserverConfig.taskKey
-          ? { task_key: webserverConfig.taskKey }
-          : {
-              command: webserverConfig.command,
-              ports: Array.isArray(webserverConfig.ports) ? webserverConfig.ports : [],
-              label: inlinePreviewTaskLabel(serviceName),
-            }),
+        task_key: serviceConfig.taskKey,
       },
       // Internal call: omit `provider` so `only()` does not strip fields.
       { user: params.user, clientIp: params.clientIp }
@@ -1631,7 +1633,7 @@ async function withHasWebserver(session) {
   return {
     ...session,
     absolute_worktree_path: absoluteWorktreePath ?? null,
-    preview_url: hasPreview && getPreviewHost(session.short_id),
+    preview_url: hasPreview && getSessionPreviewUrl(session, config),
     preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,

@@ -31,7 +31,7 @@ Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task
 config:
   session:
     env:
-      PUBLIC_HOST: '${{ baguette.session.public_uri }}'
+      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
     init: |
       pnpm install
     tasks:
@@ -64,50 +64,27 @@ config:
         depends-on: [postgres]
         env:
           DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-  webserver:
-    task: dev-server
-    expose: VITE_PORT
-```
-
-## Full schema
-
-```yaml
-config:
-  session:
-    env: # Key-value env vars injected into every task and Claude session
-    init: # Multi-line script run once when a session starts
-    cleanup: # Multi-line script run when a session is closed
-    tasks: # Hash of named tasks (replaces legacy `commands` array)
-      <task-key>:
-        run: <shell command>
-        ports: [ENV_VAR_NAME, ...] # Optional: env vars assigned free ports
-        depends-on: [<other-task-key>] # Optional: tasks to start first
-  # Use one of webserver OR services — they are mutually exclusive.
-  webserver:
-    task: <task-key> # Reference a task from session.tasks
-    expose: ENV_VAR # Which port env var users access in the browser
-  services: # Multi-service: each gets its own subdomain
-    <service-name>:
-      task: <task-key>
-      expose: ENV_VAR
+  services:
+    app:
+      task: dev-server
+      expose: VITE_PORT
 ```
 
 ## `session` block
 
 ### `env`
 
-Environment variables injected into all session tasks (init, cleanup, commands, webserver) and Claude's shell.
+Environment variables injected into all session tasks (init, cleanup, commands, preview services) and the coding agent's shell.
 
 **`session.env` must not use `${{ baguette.tasks.* }}` placeholders** — starting a task will fail with an explicit error. Put docker URLs, host ports, and other task-specific values in each task’s own `env` block with `depends-on`.
 
 Session-level placeholders (resolved when the task is created):
 
-| Placeholder                                  | Description                                                   |
-| -------------------------------------------- | ------------------------------------------------------------- |
-| `${{ baguette.secrets.KEY }}`                | Secret stored in Settings > Secrets                           |
-| `${{ baguette.session.short_id }}`           | Unique 4-character hex identifier for this session            |
-| `${{ baguette.session.public_uri }}`         | Public URL of the webserver (or portal URL for multi-service) |
-| `${{ baguette.services.<name>.public_uri }}` | Public URL of a specific named service (multi-service only)   |
+| Placeholder                                  | Description                                        |
+| -------------------------------------------- | -------------------------------------------------- |
+| `${{ baguette.secrets.KEY }}`                | Secret stored in Settings > Secrets                |
+| `${{ baguette.session.short_id }}`           | Unique 4-character hex identifier for this session |
+| `${{ baguette.services.<name>.public_uri }}` | Public URL of a named entry in `services`          |
 
 **Task `env`** (per task under `session.tasks`) also supports the session placeholders above, plus task-specific placeholders resolved **after `depends-on` tasks are ready**:
 
@@ -116,7 +93,7 @@ Session-level placeholders (resolved when the task is created):
 | `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname — the `<task-key>` must exist and be listed in `depends-on`                                        |
 | `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a command task that declares `ports:` — same `depends-on` requirement; unknown task keys fail at task start |
 
-Other config strings (`run`, docker `container`, webserver, etc.) use the same two-phase rules: session placeholders at task start, task port/host placeholders after dependencies are ready.
+Other config strings (`run`, docker `container`, `services`, etc.) use the same two-phase rules: session placeholders at task start, task port/host placeholders after dependencies are ready.
 
 ### `init`
 
@@ -137,7 +114,7 @@ Cleanup runs as a one-off shell task: it does **not** start docker `depends-on` 
 
 ### `tasks`
 
-A hash of named tasks available in the session. Each key is the task name, used as the label in the UI and MCP tools.
+A hash of named tasks available in the session. Each key is the task name, used as the label in the UI.
 
 ```yaml
 tasks:
@@ -153,16 +130,16 @@ tasks:
 
 #### Task fields
 
-| Field        | Type     | Description                                                                                                                                 |
-| ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks))                                                                        |
-| `type`       | string   | `docker` to run a container instead of `run`                                                                                                |
-| `ports`      | string[] | For **command** tasks only: env var names that Baguette assigns free **host** ports to before launching (omit on `type: docker`)            |
-| `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                                        |
-| `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)                                               |
-| `attach`     | boolean  | When `false`, `RunProjectCommand` rejects `attach: true` (use detached mode + `ReadTaskOutput`)                                             |
-| `internal`   | boolean  | When `true`, omit from session task buttons and `ListProjectCommands` (task remains runnable via `task_key`, `depends-on`, webserver, etc.) |
-| `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                                                              |
+| Field        | Type     | Description                                                                                                                      |
+| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `run`        | string   | Shell command to execute (see [multi-line tasks](#multi-line-tasks))                                                             |
+| `type`       | string   | `docker` to run a container instead of `run`                                                                                     |
+| `ports`      | string[] | For **command** tasks only: env var names that Baguette assigns free **host** ports to before launching (omit on `type: docker`) |
+| `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                             |
+| `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)                                    |
+| `attach`     | boolean  | When `false`, detached mode is required to run the task (logs via task output APIs)                                              |
+| `internal`   | boolean  | When `true`, omit from session task buttons (task remains runnable via `task_key`, `depends-on`, `services`, etc.)               |
+| `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                                                   |
 
 #### Multi-line tasks
 
@@ -194,7 +171,7 @@ run: |
 Task lifetime is not configurable in `.baguette.yaml`. It depends on how the task was started:
 
 - **Tasks panel or Preview tab (manual start)** — run until they exit or are cancelled.
-- **Preview link (dev proxy auto-start)** — the webserver task is stopped after **15 minutes** of inactivity.
+- **Preview link (dev proxy auto-start)** — the preview service task is stopped after **15 minutes** of inactivity.
 - **`depends-on` tasks** — stopped after **15 minutes** of inactivity while a parent task is running. Reused tasks keep whatever lifetime they were created with (for example, a postgres container started from the panel is not upgraded to idle TTL when preview reuses it).
 
 Docker tasks follow the same rules based on how they were started, not on whether they expose host ports.
@@ -222,42 +199,43 @@ For example, if `dev-server` has `ports: [VITE_PORT]` and is allocated port 5432
 
 Circular dependencies are detected and rejected with an error.
 
-## `preview.scheme` (deep links)
+## `services` block (preview)
 
-Optional custom URL scheme for preview deep links (e.g. Expo `exp://`). Set globally under `preview`, or override per `webserver` / `services.<name>`:
+The **`services`** block defines which tasks Baguette proxies for live preview. Each entry maps a service name to a `session.tasks` key and the port env var users reach in the browser.
 
-```yaml
-config:
-  preview:
-    scheme: exp://
-  webserver:
-    task: dev-server
-    expose: VITE_PORT
-```
+| Field         | Description                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task`        | Key of a task in `session.tasks` (that task’s `run` and `ports` start the preview process)                                                                 |
+| `expose`      | Which port env var from the task’s `ports` list is proxied to the public URL (required)                                                                    |
+| `description` | Optional short text on the session Preview tab                                                                                                             |
+| `scheme`      | Optional custom URL scheme for deep links (e.g. `exp://` for Expo). Open preview and QR codes use this scheme with the service host instead of `https://`. |
 
-For multi-service setups:
+Service names must be lowercase alphanumeric + hyphens (e.g. `app`, `api`, `expo`). The name `vscode` is reserved.
 
-```yaml
-services:
-  expo:
-    task: expo
-    expose: EXPO_PORT
-    scheme: exp://
-```
-
-Baguette builds a deep link by replacing the `https://` prefix of the service preview URL with the configured scheme (e.g. `https://session-<id>-expo.<domain>/` → `exp://session-<id>-expo.<domain>/`). On the session **Preview** tab, **Open preview** and the QR code use that deep link when a scheme is configured.
-
-## `services` block (multi-service preview)
-
-Use `services` instead of `webserver` when the project has **multiple services that each need their own independent public URL** — the primary case is a mobile app (e.g., Expo/React Native) whose runtime directly calls an API backend. Each service gets its own subdomain `session-<id>-<name>.<domain>`. A portal page at `session-<id>.<domain>` lists all services with live status and logs.
-
-> **Do NOT use `services`** just because a project has a frontend and a backend: if the frontend proxies API calls via Vite's `proxy` config, Next.js rewrites, etc., a single `webserver` entry is correct.
-
-`services` and `webserver` are mutually exclusive.
+Each service is proxied at `session-<id>-<name>.<domain>`. Use `${{ baguette.services.<name>.public_uri }}` when a task or `session.env` value needs that URL (for example `PUBLIC_HOST` for allowed-host checks).
 
 ```yaml
 config:
   session:
+    env:
+      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
+    tasks:
+      dev-server:
+        run: pnpm dev --port $PORT --host 127.0.0.1
+        ports: [PORT]
+  services:
+    app:
+      task: dev-server
+      expose: PORT
+      description: Vite dev server
+```
+
+```yaml
+config:
+  session:
+    env:
+      EXPO_PUBLIC_API_URL: '${{ baguette.services.api.public_uri }}'
+      PUBLIC_HOST: '${{ baguette.services.api.public_uri }}'
     tasks:
       frontend:
         run: pnpm dev --port $PORT --host 127.0.0.1
@@ -276,24 +254,19 @@ config:
       description: JSON API for the mobile client
 ```
 
-### Service URL placeholders
+### Port readiness
 
-Each service gets a `${{ baguette.services.<name>.public_uri }}` placeholder you can use in `session.env`:
+Baguette polls all allocated ports until they are listening on `127.0.0.1` before marking a preview service as ready. If no port is listening within 1 minute, the preview shows a timeout error.
 
-```yaml
-session:
-  env:
-    EXPO_PUBLIC_API_URL: '${{ baguette.services.api.public_uri }}'
-    PUBLIC_HOST: '${{ baguette.services.api.public_uri }}'
-```
+### Best practices
 
-- Service names must be lowercase alphanumeric + hyphens (e.g. `api`, `expo`, `web-app`).
-- **`description`** (optional): short text shown on the multi-service portal and the session Preview tab.
-- `${{ baguette.session.public_uri }}` still works and points to the portal URL.
+- **Bind to `127.0.0.1`** — configure the dev server to listen on 127.0.0.1 explicitly, not just `localhost`.
+- **Allowed hosts** — set `PUBLIC_HOST` from `${{ baguette.services.<name>.public_uri }}` in `session.env` and configure your framework to accept it.
+- See the [session management docs](session-management.md#web-server-preview) for DNS and production setup.
 
 ### Expo + API backend example
 
-Expo needs to call an API backend. The Expo metro bundler bakes the API URL into the JS bundle at startup — so the mobile device calls a real public URL, not localhost. Each must have its own subdomain:
+Expo needs to call an API backend. The Expo metro bundler bakes the API URL into the JS bundle at startup — so the mobile device calls a real public URL, not localhost:
 
 ```yaml
 config:
@@ -334,55 +307,12 @@ config:
     expo:
       task: expo
       expose: EXPO_PORT
+      scheme: exp://
 ```
 
 - `depends-on: [api]` ensures the API is listening before Expo starts.
-- The portal at `session-<shortId>.<domain>` shows both services with status and logs.
-- Opening `session-<shortId>-expo.<domain>` shows the Expo dev tools; `session-<shortId>-api.<domain>` is the API.
 
 ---
-
-## `webserver` block
-
-Configures the dev server that Baguette proxies for live preview. Reference a task defined in `session.tasks`:
-
-```yaml
-session:
-  tasks:
-    dev-server:
-      run: pnpm run dev --port $VITE_PORT --host 127.0.0.1
-      ports: [VITE_PORT]
-webserver:
-  task: dev-server
-  expose: VITE_PORT
-  description: Local Vite dev server (UI)
-```
-
-- **`task`**: the key of a task in `session.tasks`. The task's `run` and `ports` are used to start the dev server.
-- **`expose`**: which port env var users access in the browser. Must be one of the task's port env var names.
-- **`description`** (optional): short text shown on the session Preview tab.
-
-### Port readiness
-
-Baguette polls all allocated ports until they are listening on 127.0.0.1 before marking the dev server as ready. If no port is listening within 1 minute, the preview shows a timeout error.
-
-### Best practices
-
-- **Bind to `127.0.0.1`** — configure the dev server to listen on 127.0.0.1 explicitly, not just `localhost`.
-- **Allow the baguette public URI** — add `PUBLIC_HOST` to your session env and configure your framework to accept it as an allowed host.
-- See the [session management docs](session-management.md#web-server-preview) for DNS and production setup.
-
-## MCP tools
-
-Baguette exposes these MCP tools for task management:
-
-| Tool                  | Description                                            |
-| --------------------- | ------------------------------------------------------ |
-| `ListProjectCommands` | List all available tasks from `.baguette.yaml`         |
-| `RunProjectCommand`   | Run a task by label, with optional args                |
-| `ListRunningTasks`    | List currently running tasks with ports                |
-| `KillTask`            | Kill a running task by ID                              |
-| `ReadTaskOutput`      | Read log output of a task (supports startByte/endByte) |
 
 ## Examples
 
@@ -392,7 +322,7 @@ Baguette exposes these MCP tools for task management:
 config:
   session:
     env:
-      PUBLIC_HOST: '${{ baguette.session.public_uri }}'
+      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
     init: |
       bundle install
       pnpm install
@@ -420,9 +350,10 @@ config:
         run: VITE_API_URL=http://127.0.0.1:${{ baguette.tasks.rails-server.RAILS_PORT }} pnpm run dev --port $VITE_PORT --host 127.0.0.1
         ports: [VITE_PORT]
         depends-on: [rails-server]
-  webserver:
-    task: vite-dev
-    expose: VITE_PORT
+  services:
+    app:
+      task: vite-dev
+      expose: VITE_PORT
 ```
 
 ### Django
@@ -431,7 +362,7 @@ config:
 config:
   session:
     env:
-      PUBLIC_HOST: '${{ baguette.session.public_uri }}'
+      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
     init: |
       pip install -r requirements.txt
     tasks:
@@ -454,7 +385,8 @@ config:
         depends-on: [postgres]
         env:
           DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-  webserver:
-    task: dev-server
-    expose: PORT
+  services:
+    app:
+      task: dev-server
+      expose: PORT
 ```

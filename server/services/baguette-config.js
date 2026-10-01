@@ -244,7 +244,7 @@ export function deepMapStrings(value, mapString) {
 
 /**
  * Session-time substitution: secrets, short_id, public URIs, docker container_hostname.
- * Walks any config subtree (task env, container block, webserver, etc.).
+ * Walks any config subtree (task env, container block, services, etc.).
  */
 export function interpolateBaguetteConfig(value, opts) {
   if (!opts || value == null) return value;
@@ -263,14 +263,6 @@ export function interpolateEnv(template, opts) {
 /** @deprecated Use interpolateBaguetteConfig — kept as a named alias for docker container blocks. */
 export function interpolateDockerContainer(container, opts) {
   return interpolateBaguetteConfig(container, opts);
-}
-
-/**
- * Extract the webserver config from a host config.
- * Returns null if not defined.
- */
-export function getWebserverConfig(baguetteConfig) {
-  return baguetteConfig?.webserver ?? null;
 }
 
 /**
@@ -406,47 +398,6 @@ export function getAvailableTasks(baguetteConfig) {
 }
 
 /**
- * Resolve the webserver block into an effective config.
- * Supports `webserver.task` (reference to a session task) XOR `webserver.command` (inline).
- * Returns `{ command, ports, expose, taskKey }` or null if no webserver is configured.
- */
-export function resolveWebserverConfig(baguetteConfig) {
-  const webserver = getWebserverConfig(baguetteConfig);
-  if (!webserver) return null;
-
-  if (webserver.task && webserver.command) {
-    throw new Error('webserver.task and webserver.command are mutually exclusive');
-  }
-
-  if (webserver.task) {
-    const tasks = getAvailableTasks(baguetteConfig);
-    const taskDef = tasks[webserver.task];
-    if (!taskDef) {
-      throw new Error(`webserver.task "${webserver.task}" not found in session.tasks`);
-    }
-    return {
-      command: taskDef.run,
-      ports: taskDef.ports || [],
-      expose: webserver.expose,
-      taskKey: webserver.task,
-      description: normalizeServiceDescription(webserver.description),
-    };
-  }
-
-  if (webserver.command) {
-    return {
-      command: webserver.command,
-      ports: webserver.ports || [],
-      expose: webserver.expose,
-      taskKey: null,
-      description: normalizeServiceDescription(webserver.description),
-    };
-  }
-
-  return null;
-}
-
-/**
  * Build the full list of available commands from a baguette config.
  * Backward-compatible wrapper around getAvailableTasks().
  * Returns an array of { label, run, ports?, attach? } (`attach: false` when attach mode is disallowed).
@@ -477,7 +428,7 @@ export function getAvailableCommands(baguetteConfig) {
 
 const SERVICE_NAME_REGEX = /^[a-z0-9][a-z0-9-]*$/;
 
-/** Optional human-readable blurb for preview UIs (webserver / services blocks). */
+/** Optional human-readable blurb for preview UIs (`services` block). */
 export function normalizeServiceDescription(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -487,15 +438,11 @@ export function normalizeServiceDescription(value) {
 /**
  * Resolve the services block into an array of service configs.
  * Returns `Array<{ name, command, ports, expose, taskKey }>` or null if no services block.
- * Mutually exclusive with webserver block — throws if both are defined.
  */
 export function resolveServicesConfig(baguetteConfig) {
-  const servicesBlock = baguetteConfig?.services;
+  if (!baguetteConfig) return null;
+  const servicesBlock = baguetteConfig.services;
   if (!servicesBlock || typeof servicesBlock !== 'object') return null;
-
-  if (baguetteConfig?.webserver) {
-    throw new Error('services and webserver blocks are mutually exclusive');
-  }
 
   const tasks = getAvailableTasks(baguetteConfig);
   const result = [];

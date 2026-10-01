@@ -104,6 +104,31 @@ describe('DevserverHandler.allowUser', () => {
   });
 });
 
+describe('DevserverHandler.render', () => {
+  it('redirects the portal host to the lone service subdomain', async () => {
+    process.env.PUBLIC_API_URL = 'https://app.example.com';
+    const session = { id: 1, user_id: 1, short_id: 'abc', worktree_path: '/wt' };
+    const app = {
+      get: () => () => ({
+        where: () => ({ first: () => Promise.resolve(session) }),
+      }),
+    };
+    const res = { redirect: vi.fn() };
+    const handler = new DevserverHandler(app, { headers: { host: 'session-abc.app.example.com' } });
+    handler.shortId = 'abc';
+    handler.serviceName = null;
+    vi.spyOn(handler, '_getConfig').mockResolvedValue({
+      services: { app: { task: 'dev', expose: 'PORT' } },
+      session: { tasks: { dev: { run: 'vite', ports: ['PORT'] } } },
+    });
+
+    const handled = await handler.render(res);
+
+    expect(handled).toBe(true);
+    expect(res.redirect).toHaveBeenCalledWith(302, expect.stringContaining('session-abc-app.'));
+  });
+});
+
 describe('DevserverHandler.buildTask', () => {
   it('passes ttl_ms for dev-proxy auto-start on preview link', async () => {
     const create = vi.fn(async (data) => ({ id: 99, ...data }));
@@ -120,7 +145,8 @@ describe('DevserverHandler.buildTask', () => {
     const handler = new DevserverHandler(app, { headers: { host: 'session-abc.example.com' } });
     handler.shortId = 'abc';
     vi.spyOn(handler, '_getConfig').mockResolvedValue({
-      webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' },
+      services: { app: { task: 'dev', expose: 'PORT' } },
+      session: { tasks: { dev: { run: 'npm start', ports: ['PORT'] } } },
     });
 
     await handler.buildTask();
@@ -128,7 +154,7 @@ describe('DevserverHandler.buildTask', () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         session_id: 5,
-        label: 'baguette:webserver:default',
+        task_key: 'dev',
         autoStart: false,
         ttl_ms: DEFAULT_TTL_MS,
       }),

@@ -422,13 +422,14 @@ describe('Sessions service - custom methods', (hooks) => {
   describe('startPreviewService', () => {
     beforeEach(() => {
       loadBaguetteConfig.mockResolvedValue({
-        webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' },
+        services: { app: { task: 'dev', expose: 'PORT' } },
+        session: { tasks: { dev: { run: 'npm start', ports: ['PORT'] } } },
       });
       findRunningTask.mockReturnValue(null);
       tasksCreate.mockClear();
     });
 
-    it('starts a webserver task for the default service', async () => {
+    it('starts the sole preview service when service name is omitted', async () => {
       const result = await app
         .service('sessions')
         .startPreviewService({ id: sessId }, params({ id: userId }));
@@ -436,9 +437,7 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(tasksCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           session_id: sessId,
-          command: 'npm start',
-          label: 'baguette:webserver:default',
-          ports: ['PORT'],
+          task_key: 'dev',
         }),
         expect.anything()
       );
@@ -467,7 +466,7 @@ describe('Sessions service - custom methods', (hooks) => {
 
       await expect(
         app.service('sessions').startPreviewService({ id: sessId }, params({ id: userId }))
-      ).rejects.toThrow('No preview service "default" configured');
+      ).rejects.toThrow('No preview services are configured for this session');
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
@@ -868,6 +867,7 @@ describe('Sessions service - find, get, create', (hooks) => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    loadBaguetteConfig.mockResolvedValue(null);
 
     await db('users').insert([
       { github_id: 1001, username: 'alice', approved: true },
@@ -1271,9 +1271,10 @@ describe('Sessions service - find, get, create', (hooks) => {
       await db('sessions').where({ id: sessId1 }).update({ worktree_path: '/tmp/wt-preview' });
     });
 
-    it('is set when baguette config has a webserver block', async () => {
+    it('is set when baguette config has a services block', async () => {
       loadBaguetteConfig.mockResolvedValue({
-        webserver: { command: 'node server.js', ports: [3000] },
+        services: { api: { task: 'server', expose: 'PORT' } },
+        session: { tasks: { server: { run: 'node api.js', ports: ['PORT'] } } },
       });
 
       const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
@@ -1282,19 +1283,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(session.preview_url).toContain('session-a1b2c3');
     });
 
-    it('is set when baguette config has a services block (not just webserver)', async () => {
-      loadBaguetteConfig.mockResolvedValue({
-        services: { api: { task: 'server' } },
-        session: { tasks: { server: { run: 'node api.js', ports: [4000] } } },
-      });
-
-      const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
-
-      expect(session.preview_url).toBeTruthy();
-      expect(session.preview_url).toContain('session-a1b2c3');
-    });
-
-    it('is false when baguette config has neither webserver nor services', async () => {
+    it('is false when baguette config has no services block', async () => {
       loadBaguetteConfig.mockResolvedValue({ session: { tasks: { test: { run: 'npm test' } } } });
 
       const session = await app.service('sessions').get(sessId1, params({ id: userId1 }));
@@ -1312,7 +1301,7 @@ describe('Sessions service - find, get, create', (hooks) => {
 
     it('is false when session has no worktree_path', async () => {
       await db('sessions').where({ id: sessId2 }).update({ worktree_path: null });
-      loadBaguetteConfig.mockResolvedValue({ webserver: { command: 'node server.js' } });
+      loadBaguetteConfig.mockResolvedValue({ session: { tasks: { test: { run: 'npm test' } } } });
 
       const session = await app.service('sessions').get(sessId2, params({ id: userId2 }));
 

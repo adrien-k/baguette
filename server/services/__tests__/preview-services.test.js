@@ -11,16 +11,48 @@ const {
 
 describe('preview-services', () => {
   describe('getSessionPreviewUrl', () => {
-    it('returns portal URL when webserver is configured', () => {
+    it('returns the service subdomain when a single service is configured', () => {
       const url = getSessionPreviewUrl(
         { short_id: 'abc123' },
-        { webserver: { command: 'pnpm dev', port: 3000 } }
+        {
+          services: { app: { task: 'dev', expose: 'PORT' } },
+          session: { tasks: { dev: { run: 'vite', ports: ['PORT'] } } },
+        }
       );
-      expect(url).toContain('session-abc123');
+      expect(url).toContain('session-abc123-app.');
+    });
+
+    it('returns the portal URL when multiple services are configured', () => {
+      const url = getSessionPreviewUrl(
+        { short_id: 'abc123' },
+        {
+          services: {
+            api: { task: 'api', expose: 'API_PORT' },
+            web: { task: 'web', expose: 'PORT' },
+          },
+          session: {
+            tasks: {
+              api: { run: 'node api', ports: ['API_PORT'] },
+              web: { run: 'vite', ports: ['PORT'] },
+            },
+          },
+        }
+      );
+      expect(url).toMatch(/session-abc123\./);
+      expect(url).not.toMatch(/session-abc123-/);
     });
 
     it('returns null without preview config', () => {
       expect(getSessionPreviewUrl({ short_id: 'abc123' }, {})).toBeNull();
+    });
+
+    it('returns null when only a legacy webserver key is present (ignored)', () => {
+      expect(
+        getSessionPreviewUrl(
+          { short_id: 'abc123' },
+          { webserver: { command: 'pnpm dev', ports: ['PORT'], expose: 'PORT' } }
+        )
+      ).toBeNull();
     });
   });
 
@@ -38,28 +70,18 @@ describe('preview-services', () => {
     expect(url).toBe('exp://session-abc123-expo.preview.example.com/');
   });
 
-  it('uses baguette:webserver label for inline command preview only', () => {
-    const defs = getPreviewServiceDefinitions(
-      { webserver: { command: 'npm start', ports: ['PORT'], expose: 'PORT' } },
-      'abc123'
-    );
-    expect(defs[0].task_key).toBeNull();
-    expect(defs[0].task_label).toBe('baguette:webserver:default');
-  });
-
-  it('getPreviewServiceDefinitions for webserver', () => {
+  it('getPreviewServiceDefinitions for a single service', () => {
     const defs = getPreviewServiceDefinitions(
       {
-        preview: { scheme: 'exp://' },
         session: { tasks: { dev: { run: 'vite', ports: ['VITE_PORT'] } } },
-        webserver: { task: 'dev', expose: 'VITE_PORT' },
+        services: { app: { task: 'dev', expose: 'VITE_PORT' } },
       },
       'abc123'
     );
     expect(defs).toHaveLength(1);
-    expect(defs[0].name).toBe('default');
+    expect(defs[0].name).toBe('app');
     expect(defs[0].task_label).toBe('dev');
-    expect(defs[0].deep_link_url).toContain('exp://session-abc123');
+    expect(defs[0].url).toContain('session-abc123-app.');
   });
 
   it('getPreviewServiceDefinitions for multi-service with per-service scheme', () => {
@@ -87,10 +109,12 @@ describe('preview-services', () => {
     const defs = getPreviewServiceDefinitions(
       {
         session: { tasks: { dev: { run: 'vite', ports: ['PORT'] } } },
-        webserver: {
-          task: 'dev',
-          expose: 'PORT',
-          description: '  Web UI  ',
+        services: {
+          app: {
+            task: 'dev',
+            expose: 'PORT',
+            description: '  Web UI  ',
+          },
         },
       },
       'abc'
