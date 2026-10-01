@@ -18,6 +18,24 @@ export function isHumanUserMessage(parsed) {
   return false;
 }
 
+/** User or Baguette-injected message that starts a new agent turn. */
+export function isTurnStartingUserMessage(msg) {
+  if (msg?.type !== 'user') return false;
+  return isHumanUserMessage(msg) || isBaguetteUserMessage(msg);
+}
+
+/**
+ * Index of the user message that started the latest agent turn, or 0 when none.
+ * @param {object[]} messages reconciled session messages in order
+ */
+export function findLastTurnStartIndex(messages) {
+  if (!Array.isArray(messages)) return 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (isTurnStartingUserMessage(messages[i])) return i;
+  }
+  return 0;
+}
+
 export function resolveTurnModel(source, session) {
   if (source?.model != null && source.model !== '') {
     return {

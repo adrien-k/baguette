@@ -226,6 +226,7 @@ export default function ChatView({
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     worktreePath: session?.absolute_worktree_path,
+    sessionTurnActive: isRunning,
   });
   const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
 

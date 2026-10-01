@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   attachSessionTurnModelFields,
+  findLastTurnStartIndex,
   isHumanUserMessage,
   resolveTurnModel,
   turnModelCreateFields,
@@ -30,6 +31,19 @@ describe('resolveTurnModel', () => {
       model: 'session-opus',
       modelParams: '[{"id":"x"}]',
     });
+  });
+});
+
+describe('findLastTurnStartIndex', () => {
+  it('returns the latest human or baguette user message index', () => {
+    const messages = [
+      { type: 'system', subtype: 'status' },
+      { type: 'user', message: { role: 'user', content: 'first' } },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'user', source: 'baguette', message: { role: 'user', content: 'nudge' } },
+      { type: 'assistant', message: { content: [] } },
+    ];
+    expect(findLastTurnStartIndex(messages)).toBe(3);
   });
 });
 

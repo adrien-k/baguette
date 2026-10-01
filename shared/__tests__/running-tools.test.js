@@ -62,6 +62,10 @@ describe('collectRunningTools', () => {
   it('dock lists every running Bash block with startedAt', () => {
     const messages = [
       {
+        type: 'user',
+        message: { role: 'user', content: 'go' },
+      },
+      {
         type: 'assistant',
         created_at: '2026-01-01T00:00:00.000Z',
         message: {
@@ -81,7 +85,7 @@ describe('collectRunningTools', () => {
         },
       },
     ];
-    const dock = collectRunningToolsForBottomBar(messages, []);
+    const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
     expect(dock).toHaveLength(2);
     expect(dock[0].id).toBe('bash1');
     expect(dock[0].startedAt).toBe('2026-01-01T00:00:00.000Z');
@@ -91,6 +95,10 @@ describe('collectRunningTools', () => {
 
   it('includes running RunProjectCommand in the dock', () => {
     const messages = [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'run tests' },
+      },
       {
         type: 'assistant',
         created_at: '2026-01-01T00:00:00.000Z',
@@ -106,9 +114,57 @@ describe('collectRunningTools', () => {
         },
       },
     ];
-    const dock = collectRunningToolsForBottomBar(messages, []);
+    const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
     expect(dock).toHaveLength(1);
     expect(dock[0].id).toBe('run1');
+  });
+
+  it('dock ignores orphaned running Bash from a previous cancelled turn', () => {
+    const messages = [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'first try' },
+      },
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'stale', name: 'Bash', input: { command: 'sleep 999' } },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        message: { role: 'user', content: 'retry' },
+      },
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'current', name: 'Bash', input: { command: 'pnpm test' } },
+          ],
+        },
+      },
+    ];
+    const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
+    expect(dock).toHaveLength(1);
+    expect(dock[0].id).toBe('current');
+  });
+
+  it('dock is empty when the session turn is not active', () => {
+    const messages = [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'go' },
+      },
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'bash1', name: 'Bash', input: { command: 'sleep' } }],
+        },
+      },
+    ];
+    expect(collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: false })).toEqual([]);
   });
 
   it('hides pinned running Bash from the message list', () => {

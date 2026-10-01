@@ -2,6 +2,8 @@
  * Collect in-flight tool_use blocks (no stitched tool_result yet) for chat status UI.
  */
 
+import { findLastTurnStartIndex } from './turn-model.js';
+
 const CURSOR_TOOL_ALIAS = {
   shell: 'Bash',
   read: 'Read',
@@ -185,13 +187,18 @@ function isPinnableRunningToolBlock(block) {
 
 /**
  * Running Bash/shell and RunProjectCommand blocks pinned above the composer until done.
+ * @param {{ worktreePath?: string; sessionTurnActive?: boolean }} [opts]
  * @returns {{ id: string; block: object; startedAt: string | null }[]}
  */
-export function collectRunningBashToolsForDock(messages, _chatDisplayItems, _opts = {}) {
+export function collectRunningBashToolsForDock(messages, _chatDisplayItems, opts = {}) {
   const out = [];
   if (!Array.isArray(messages)) return out;
+  if (opts.sessionTurnActive === false) return out;
 
-  for (const msg of messages) {
+  const turnStart = findLastTurnStartIndex(messages);
+  const turnMessages = messages.slice(turnStart);
+
+  for (const msg of turnMessages) {
     if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) continue;
     for (const block of msg.message.content) {
       if (!isPinnableRunningToolBlock(block)) continue;

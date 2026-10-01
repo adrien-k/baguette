@@ -125,8 +125,10 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]
   );
+  const isRunning = session?.review_status === 'running';
   const runningBashDock = collectRunningBashToolsForDock(displayMessages, chatDisplayItems, {
     worktreePath: session?.absolute_worktree_path,
+    sessionTurnActive: isRunning,
   });
   const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
   const systemPrompt = useMemo(
@@ -137,9 +139,6 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     const text = session?.review_initial_prompt?.trim();
     return text || null;
   }, [session?.review_initial_prompt]);
-
-  const isRunning = session?.review_status === 'running';
-  const reviewTurnActive = isRunning;
 
   const handleStop = async () => {
     if (!session?.id || stopping) return;
@@ -176,7 +175,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     if (!panelRevealed || messagesLoading || !scrollContainerRef.current) return;
     if (!isAtBottomRef.current) return;
     scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-  }, [panelRevealed, messagesLoading, session?.id, displayMessages.length, reviewTurnActive]);
+  }, [panelRevealed, messagesLoading, session?.id, displayMessages.length, isRunning]);
 
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
