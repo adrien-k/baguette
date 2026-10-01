@@ -386,6 +386,18 @@ async function requireOwnLoop(context) {
   return context;
 }
 
+/**
+ * Clear `sessions.loop_id` before the loop row is removed. SQLite could do the same with
+ * `REFERENCES loops(id) ON DELETE SET NULL`, but migration 020 left the column without an FK
+ * so `loops` / `sessions` migrations are not coupled (see that migration and CLAUDE.md).
+ */
+async function clearSessionLoopReferences(context) {
+  const loopId = context.id;
+  if (loopId == null) return context;
+  await context.app.get('db')('sessions').where({ loop_id: loopId }).update({ loop_id: null });
+  return context;
+}
+
 function normalizePatch(context) {
   const data = context.data;
   const existing = context.params.existingLoop;
@@ -530,7 +542,7 @@ export const loopsHooks = {
       normalizeCreate,
     ],
     patch: [scopeByUser, requireOwnLoop, only(WRITABLE_FIELDS), serializePlugins, normalizePatch],
-    remove: [scopeByUser, requireOwnLoop],
+    remove: [scopeByUser, requireOwnLoop, clearSessionLoopReferences],
   },
   after: {
     find: [formatResult, attachTiedSessions],

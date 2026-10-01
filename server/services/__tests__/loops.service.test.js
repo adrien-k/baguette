@@ -243,6 +243,23 @@ describe('Loops service', (hooks) => {
       );
     });
 
+    it('nullifies loop_id on sessions spawned by the loop when it is deleted', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      const spawnedId = await seedSession({ short_id: 'spawn1', loop_id: loop.id });
+      const otherLoopId = (
+        await app.service('loops').create(loopData({ prompt: 'other' }), params(aliceId))
+      ).id;
+      const otherSessionId = await seedSession({ short_id: 'spawn2', loop_id: otherLoopId });
+
+      await app.service('loops').remove(loop.id, params(aliceId));
+
+      expect(await db('loops').where({ id: loop.id }).first()).toBeUndefined();
+      expect((await db('sessions').where({ id: spawnedId }).first()).loop_id).toBeNull();
+      expect((await db('sessions').where({ id: otherSessionId }).first()).loop_id).toBe(
+        otherLoopId
+      );
+    });
+
     const seedSession = async (overrides = {}) => {
       const [id] = await db('sessions').insert({
         user_id: aliceId,
