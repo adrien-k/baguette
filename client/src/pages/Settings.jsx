@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, ScrollText } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';

@@ -429,7 +429,9 @@ export default function ReviewView({
         onClearReviewerChat={handleClearReview}
       />
       <SessionModelSelect
-        session={sessionForReviewComposer}
+        sdk={reviewAgentSdk}
+        model={reviewModel}
+        params={reviewModelParams}
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={setCursorModelPref}
