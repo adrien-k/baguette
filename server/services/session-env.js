@@ -80,7 +80,11 @@ export async function buildTaskEnv(db, sessionId) {
   const { baguetteConfig, interpolateOpts } = await buildInterpolateContext(db, sessionId);
 
   let sessionEnv = {};
-  if (interpolateOpts && baguetteConfig.session?.env && typeof baguetteConfig.session.env === 'object') {
+  if (
+    interpolateOpts &&
+    baguetteConfig.session?.env &&
+    typeof baguetteConfig.session.env === 'object'
+  ) {
     assertNoTaskPlaceholders(baguetteConfig.session.env, 'session.env');
     sessionEnv = interpolateEnv(baguetteConfig.session.env, {
       ...interpolateOpts,

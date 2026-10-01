@@ -12,16 +12,16 @@ Docker tasks **do not use `ports:`**. They are not published to random host port
 
 ### Docker task fields
 
-| Field                   | Description                                                                                                     |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `type`                  | Must be `docker`                                                                                                |
-| `env`                   | Container environment variables (passed to `docker run -e`)                                                     |
-| `container.image`       | Docker image to run (or tag for a built image when `container.build` is set); supports [env placeholders](#env) |
+| Field                   | Description                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                  | Must be `docker`                                                                                                                                    |
+| `env`                   | Container environment variables (passed to `docker run -e`)                                                                                         |
+| `container.image`       | Docker image to run (or tag for a built image when `container.build` is set); supports [env placeholders](#env)                                     |
 | `container.build`       | Build the image from the repo before `docker run` (path string or `context` / `dockerfile` / `args` / `target`; string fields support placeholders) |
-| `container.persist`     | Paths inside the container mounted on the session volume (placeholders supported)                               |
-| `container.command`     | Override the image default command (string runs via `sh -c`, or a argv list; placeholders supported)              |
-| `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`; `test` supports placeholders)         |
-| `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                            |
+| `container.persist`     | Paths inside the container mounted on the session volume (placeholders supported)                                                                   |
+| `container.command`     | Override the image default command (string runs via `sh -c`, or a argv list; placeholders supported)                                                |
+| `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`; `test` supports placeholders)                                               |
+| `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                                                                |
 
 Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 
@@ -102,19 +102,19 @@ Environment variables injected into all session tasks (init, cleanup, commands, 
 
 Session-level placeholders (resolved when the task is created):
 
-| Placeholder                                  | Description                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------ |
-| `${{ baguette.secrets.KEY }}`                | Secret stored in Settings > Secrets                                |
-| `${{ baguette.session.short_id }}`           | Unique 4-character hex identifier for this session                 |
-| `${{ baguette.session.public_uri }}`         | Public URL of the webserver (or portal URL for multi-service)      |
-| `${{ baguette.services.<name>.public_uri }}` | Public URL of a specific named service (multi-service only)      |
+| Placeholder                                  | Description                                                   |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `${{ baguette.secrets.KEY }}`                | Secret stored in Settings > Secrets                           |
+| `${{ baguette.session.short_id }}`           | Unique 4-character hex identifier for this session            |
+| `${{ baguette.session.public_uri }}`         | Public URL of the webserver (or portal URL for multi-service) |
+| `${{ baguette.services.<name>.public_uri }}` | Public URL of a specific named service (multi-service only)   |
 
 **Task `env`** (per task under `session.tasks`) also supports the session placeholders above, plus task-specific placeholders resolved **after `depends-on` tasks are ready**:
 
-| Placeholder                                           | Description                                                                                                                      |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname — the `<task-key>` must exist and be listed in `depends-on`                                              |
-| `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a command task that declares `ports:` — same `depends-on` requirement; unknown task keys fail at task start       |
+| Placeholder                                           | Description                                                                                                                |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname — the `<task-key>` must exist and be listed in `depends-on`                                        |
+| `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a command task that declares `ports:` — same `depends-on` requirement; unknown task keys fail at task start |
 
 Other config strings (`run`, docker `container`, webserver, etc.) use the same two-phase rules: session placeholders at task start, task port/host placeholders after dependencies are ready.
 

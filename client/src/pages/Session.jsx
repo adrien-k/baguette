@@ -36,6 +36,7 @@ import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
 import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
+import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
 import TaskLogModal from '../components/TaskLogModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
@@ -415,7 +416,7 @@ export default function Session() {
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
-  const [configCommands, setConfigCommands] = useState([]);
+  const configCommands = useSessionConfigCommands(gitSession);
   const [detailsScrollTo, setDetailsScrollTo] = useState(null);
   const [error, setError] = useState(null);
   const hasPreview = !!(session ?? sessionFromHook)?.preview_url;
@@ -557,17 +558,6 @@ export default function Session() {
       .then((d) => setModels(d.models || []))
       .catch(() => {});
   }, [session?.agent_sdk]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!sessionId) {
-      setConfigCommands([]);
-      return;
-    }
-    sessionsService
-      .commands(sessionId)
-      .then((d) => setConfigCommands(d.commands || []))
-      .catch(() => {});
-  }, [sessionId]);
-
   useEffect(() => {
     const onAppError = (msg) => {
       const text = msg.message || 'Something went wrong';
