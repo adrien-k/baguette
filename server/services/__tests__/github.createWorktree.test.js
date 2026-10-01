@@ -27,9 +27,12 @@ const { TEST_REPOS_DIR } = vi.hoisted(() => ({
   TEST_REPOS_DIR: `/tmp/baguette-git-test-${Math.random().toString(36).slice(2)}`,
 }));
 
-vi.mock('../config.js', () => ({
+vi.mock('../../config.js', () => ({
   REPOS_DIR: TEST_REPOS_DIR,
-  resolveDataDirRelativePath: (subpath) => `${TEST_REPOS_DIR}/${subpath}`,
+  resolveDataDirRelativePath: (subpath) => {
+    if (subpath == null || subpath === '') return subpath;
+    return `${TEST_REPOS_DIR}/${subpath}`;
+  },
 }));
 
 import {
@@ -163,6 +166,8 @@ describe('createWorktree', () => {
   it('worktree starts from the latest remote commit, not the stale bare-clone ref', async () => {
     const workPath = path.join(TEST_REPOS_DIR, 'work');
     const remotePath = path.join(TEST_REPOS_DIR, 'remote.git');
+
+    await git(workPath, 'checkout', BRANCH);
 
     // Push a new commit to the remote AFTER the bare clone was created
     await fs.promises.writeFile(path.join(workPath, 'update.txt'), 'updated\n');

@@ -16,14 +16,51 @@ describe('cursor-model-pricing', () => {
     );
   });
 
-  it('matches grok 4.7 500k fast variant', () => {
-    const params = [
-      { id: 'context', value: '500k' },
-      { id: 'fast', value: 'true' },
-    ];
-    expect(lookupCursorModelPricing('grok-4.7', params)).toEqual(
-      expect.objectContaining({ input: 6, output: 18 })
-    );
+  it('matches grok 4.7 list prices (256k/500k × standard/fast)', () => {
+    const grokRates = { cacheWrite: null };
+
+    expect(
+      lookupCursorModelPricing('grok-4.7', [
+        { id: 'context', value: '256k' },
+        { id: 'fast', value: 'false' },
+      ])
+    ).toEqual({ input: 2, cacheRead: 0.5, output: 6, ...grokRates });
+
+    expect(
+      lookupCursorModelPricing('grok-4.7', [
+        { id: 'context', value: '256k' },
+        { id: 'fast', value: 'true' },
+      ])
+    ).toEqual({ input: 4, cacheRead: 1, output: 12, ...grokRates });
+
+    expect(
+      lookupCursorModelPricing('grok-4.7', [
+        { id: 'context', value: '500k' },
+        { id: 'fast', value: 'false' },
+      ])
+    ).toEqual({ input: 4, cacheRead: 1, output: 12, ...grokRates });
+
+    expect(
+      lookupCursorModelPricing('grok-4.7', [
+        { id: 'context', value: '500k' },
+        { id: 'fast', value: 'true' },
+      ])
+    ).toEqual({ input: 6, cacheRead: 1.5, output: 18, ...grokRates });
+  });
+
+  it('matches Z.ai GLM 5.3 and GLM 5.3 Flash list prices', () => {
+    expect(lookupCursorModelPricing('glm-5p3', [])).toEqual({
+      input: 1.4,
+      cacheWrite: null,
+      cacheRead: 0.26,
+      output: 4.4,
+    });
+    expect(lookupCursorModelPricing('glm-5p3-flash', [])).toEqual({
+      input: 0.15,
+      cacheWrite: null,
+      cacheRead: 0.029,
+      output: 0.5,
+    });
   });
 
   it('returns null for unknown models', () => {

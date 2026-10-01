@@ -318,6 +318,19 @@ export async function trySetBranchUpstream(worktreePath, localBranch, remoteBran
   }
 }
 
+/** True when `worktreePath` is already a linked git worktree (not merely an existing directory). */
+async function isLinkedWorktree(worktreePath) {
+  try {
+    const dotGit = await fs.promises.readFile(path.join(worktreePath, '.git'), 'utf8');
+    if (!dotGit.trimStart().startsWith('gitdir:')) return false;
+    const gitdir = dotGit.trim().slice('gitdir:'.length).trim();
+    await fs.promises.access(gitdir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** @param {{ baseBranch?: string, detach?: boolean, localBranch?: string }} [opts] — `detach` defaults to true (false checks out `branch` in the new worktree). `localBranch` creates a unique local ref instead of checking out `branch`. */
 export async function createWorktree(repo, branch, worktreeId, token, opts = {}) {
   const { baseBranch, detach = true, localBranch = null } = opts;
@@ -384,9 +397,12 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
     }
   }
 
-  try {
-    await fs.promises.access(worktreePath);
-  } catch {
+  if (!(await isLinkedWorktree(worktreePath))) {
+    try {
+      await fs.promises.rm(worktreePath, { recursive: true, force: true });
+    } catch {
+      /* path may not exist yet */
+    }
     const addArgs = localBranch
       ? ['worktree', 'add', '-B', localBranch, worktreePath, branch]
       : detach

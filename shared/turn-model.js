@@ -2,8 +2,8 @@
  * Model for one agent turn: explicit fields on the message/queue/loop row, else the
  * session default. Creating a message with an explicit model must not patch the session.
  *
- * `model` and `model_params` are always a pair: both set on the row, or both omitted
- * (session defaults applied before the turn runs).
+ * Explicit `model` on a row selects that model for the turn (`model_params` may be null for
+ * Claude). Cursor turns usually set both. Omit both to use the session default.
  */
 
 /** Baguette-injected user message (collapsed Baguette block in chat). */
@@ -51,20 +51,12 @@ function readTurnModelPair(source) {
   };
 }
 
-/** @returns {string|null} Error message when the pair is invalid; null when ok. */
-export function getTurnModelPairError(source) {
-  if (!source) return null;
-  const { hasModel, hasParams } = readTurnModelPair(source);
-  if (hasModel === hasParams) return null;
-  return 'model and model_params must both be set or both omitted (session defaults apply when omitted)';
-}
-
 /**
  * Model + params for one turn: explicit snapshot on the row, or the session default.
  */
 export function resolveTurnModel(source, session) {
   const pair = readTurnModelPair(source);
-  if (pair.hasModel && pair.hasParams) {
+  if (pair.hasModel) {
     return { model: pair.model, modelParams: pair.modelParams };
   }
   const sessionPair = readTurnModelPair(session);
@@ -74,10 +66,10 @@ export function resolveTurnModel(source, session) {
   };
 }
 
-/** Fields to copy onto messages.create / queued-messages.create (pair only). */
+/** Fields to copy onto messages.create / queued-messages.create when model is explicit. */
 export function turnModelCreateFields(source) {
-  const { hasModel, hasParams, model, modelParams } = readTurnModelPair(source);
-  if (hasModel && hasParams) {
+  const { hasModel, model, modelParams } = readTurnModelPair(source);
+  if (hasModel) {
     return { model, model_params: modelParams };
   }
   return {};
@@ -90,7 +82,6 @@ export function turnModelCreateFields(source) {
 export function attachSessionTurnModelFields(data, session) {
   if (!data || data.type !== 'user') return data;
   const pair = readTurnModelPair(data);
-  if (pair.hasModel && pair.hasParams) return data;
   if (pair.hasModel) return data;
   let parsed;
   try {

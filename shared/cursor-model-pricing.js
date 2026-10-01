@@ -26,18 +26,22 @@ function rates(input, cacheWrite, cacheRead, output) {
 
 /** More specific rules (more match keys) must sort before broader ones. */
 const PRICING_RULES = [
-  // Cursor — Grok 4.7
+  // Cursor — Grok 4.7 (256k/500k × standard/fast; reasoning_effort does not affect price)
+  // Grok 4.7 500k (Fast): $6 / — / $1.5 / $18 per 1M tokens
   {
     modelIds: ['grok-4.7'],
     match: { context: '500k', fast: 'true' },
     rates: rates(6, null, 1.5, 18),
   },
+  // Grok 4.7 500k: $4 / — / $1 / $12
   {
     modelIds: ['grok-4.7'],
     match: { context: '500k', fast: 'false' },
     rates: rates(4, null, 1, 12),
   },
+  // Grok 4.7 (Fast): $4 / — / $1 / $12
   { modelIds: ['grok-4.7'], match: { fast: 'true' }, rates: rates(4, null, 1, 12) },
+  // Grok 4.7: $2 / — / $0.5 / $6
   { modelIds: ['grok-4.7'], match: { fast: 'false' }, rates: rates(2, null, 0.5, 6) },
   { modelIds: ['grok-4.7'], match: {}, rates: rates(2, null, 0.5, 6) },
   // Grok 4.6
@@ -91,6 +95,10 @@ const PRICING_RULES = [
 
   // Z.ai
   { modelIds: ['glm-5.2'], match: {}, rates: rates(1.4, null, 0.26, 4.4) },
+  // GLM 5.3: $1.4 / — / $0.26 / $4.4 per 1M tokens
+  { modelIds: ['glm-5p3'], match: {}, rates: rates(1.4, null, 0.26, 4.4) },
+  // GLM 5.3 Flash: $0.15 / — / $0.029 / $0.5
+  { modelIds: ['glm-5p3-flash'], match: {}, rates: rates(0.15, null, 0.029, 0.5) },
 
   // OpenAI
   { modelIds: ['gpt-5'], match: {}, rates: rates(1.25, null, 0.125, 10) },

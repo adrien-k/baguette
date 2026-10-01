@@ -189,20 +189,6 @@ describe('Messages service - create', () => {
     expect(session.model).toBe('opus');
   });
 
-  it('rejects model without model_params', async () => {
-    await expect(
-      app.service('messages').create(
-        {
-          session_id: sessionId,
-          type: 'user',
-          message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
-          model: 'sonnet',
-        },
-        params({ id: userId })
-      )
-    ).rejects.toThrow(/both be set/);
-  });
-
   it('calls sessions.onMessageCreated and claude-agent.onMessageCreated after create', async () => {
     const onMessageCreated = app.service('claude-agent').onMessageCreated;
     const msg = await app.service('messages').create(

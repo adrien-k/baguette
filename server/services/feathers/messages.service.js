@@ -1,12 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import { requireUser, scopeBySessionUser } from './hooks.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
-import {
-  attachSessionTurnModelFields,
-  getTurnModelPairError,
-  turnModelCreateFields,
-} from '../../../shared/turn-model.js';
-import { BadRequest } from '@feathersjs/errors';
+import { attachSessionTurnModelFields, turnModelCreateFields } from '../../../shared/turn-model.js';
 
 /**
  * Messages service (table: session_messages). Scoped by session; access restricted to sessions owned by params.user.
@@ -29,12 +24,6 @@ function extractForceParam(context) {
     context.params._force = true;
     delete context.data.force;
   }
-  return context;
-}
-
-function rejectPartialTurnModel(context) {
-  const err = getTurnModelPairError(context.data);
-  if (err) throw new BadRequest(err);
   return context;
 }
 
@@ -85,12 +74,7 @@ async function afterCreateNotifySessionsAndAgent(context) {
 export const messagesHooks = {
   before: {
     all: [requireUser, scopeBySessionUser],
-    create: [
-      extractForceParam,
-      rejectPartialTurnModel,
-      snapshotSessionModelOnUserMessage,
-      queueIfRunning,
-    ],
+    create: [extractForceParam, snapshotSessionModelOnUserMessage, queueIfRunning],
   },
   after: {
     create: [afterCreateNotifySessionsAndAgent],

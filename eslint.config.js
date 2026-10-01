@@ -39,6 +39,7 @@ export default [
   // Client (React + JSX)
   {
     files: ['client/src/**/*.{js,jsx}'],
+    ...js.configs.recommended,
     plugins: {
       react: reactPlugin,
       'react-hooks': reactHooksPlugin,

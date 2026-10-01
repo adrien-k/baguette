@@ -2,28 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   attachSessionTurnModelFields,
   findLastTurnStartIndex,
-  getTurnModelPairError,
   isHumanUserMessage,
   resolveTurnModel,
   turnModelCreateFields,
 } from '../turn-model.js';
-
-describe('getTurnModelPairError', () => {
-  it('accepts both omitted or both set', () => {
-    expect(getTurnModelPairError({})).toBeNull();
-    expect(
-      getTurnModelPairError({ model: 'grok-4.7', model_params: '[{"id":"fast","value":"true"}]' })
-    ).toBeNull();
-  });
-
-  it('rejects model without model_params', () => {
-    expect(getTurnModelPairError({ model: 'grok-4.7' })).toMatch(/both be set/);
-  });
-
-  it('rejects model_params without model', () => {
-    expect(getTurnModelPairError({ model_params: '[]' })).toMatch(/both be set/);
-  });
-});
 
 describe('resolveTurnModel', () => {
   const session = { model: 'session-opus', model_params: '[{"id":"x"}]' };
@@ -44,10 +26,10 @@ describe('resolveTurnModel', () => {
     });
   });
 
-  it('uses session defaults when only model is present without params (invalid API; treat as no snapshot)', () => {
-    expect(resolveTurnModel({ model: 'sonnet' }, session)).toEqual({
-      model: 'session-opus',
-      modelParams: '[{"id":"x"}]',
+  it('uses explicit model with null params (Claude)', () => {
+    expect(resolveTurnModel({ model: 'sonnet', model_params: null }, session)).toEqual({
+      model: 'sonnet',
+      modelParams: null,
     });
   });
 });
@@ -122,8 +104,14 @@ describe('turnModelCreateFields', () => {
     });
   });
 
-  it('returns nothing for a partial pair', () => {
-    expect(turnModelCreateFields({ model: 'sonnet' })).toEqual({});
+  it('copies model-only snapshots with null params', () => {
+    expect(turnModelCreateFields({ model: 'sonnet', model_params: null })).toEqual({
+      model: 'sonnet',
+      model_params: null,
+    });
+  });
+
+  it('returns nothing when only model_params is set', () => {
     expect(turnModelCreateFields({ model_params: '[]' })).toEqual({});
   });
 });

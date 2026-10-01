@@ -235,10 +235,10 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                 />
               )
             )}
-            {displayMessages.length === 0 && !reviewTurnActive && (
+            {displayMessages.length === 0 && !isRunning && (
               <p className="text-xs text-faint">Review progress and MCP tool calls appear here.</p>
             )}
-            {reviewTurnActive && (
+            {isRunning && (
               <div className="flex items-center justify-center gap-2 py-3 text-sm text-accent/90">
                 <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                 <span>Review in progress…</span>
