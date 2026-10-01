@@ -28,6 +28,7 @@ export default function SessionSidePanel({
   branchCommitsLoading,
   onRefreshBranchCommits,
   selectedDiffCommit,
+  diffViewActive,
   onSelectCommit,
   tasks,
   configCommands,
@@ -89,8 +90,8 @@ export default function SessionSidePanel({
             commits={branchCommits}
             commitsLoading={branchCommitsLoading}
             unavailable={filesUnavailable}
-            selectedSha={selectedDiffCommit !== 'all' ? selectedDiffCommit : null}
-            allCommitsSelected={selectedDiffCommit === 'all'}
+            selectedSha={diffViewActive && selectedDiffCommit !== 'all' ? selectedDiffCommit : null}
+            allCommitsSelected={diffViewActive && selectedDiffCommit === 'all'}
             onSelectCommit={onSelectCommit}
             onRefresh={onRefreshBranchCommits}
           />

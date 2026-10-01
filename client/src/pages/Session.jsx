@@ -1473,6 +1473,7 @@ export default function Session() {
               branchCommitsLoading={branchCommitsLoading}
               onRefreshBranchCommits={refreshBranchCommits}
               selectedDiffCommit={selectedDiffCommit}
+              diffViewActive={diffViewActive}
               onSelectCommit={handleSelectCommitFromSidebar}
               tasks={tasks}
               configCommands={configCommands}
