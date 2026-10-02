@@ -156,7 +156,7 @@ export default function Usage() {
             All activity
           </FilterChip>
           <FilterChip active={kind === 'session'} onClick={() => setFilter({ kind: 'session' })}>
-            Session
+            {KIND_LABELS.session}
           </FilterChip>
           <FilterChip active={kind === 'review'} onClick={() => setFilter({ kind: 'review' })}>
             Review

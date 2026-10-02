@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Loader2, Square, Terminal } from 'lucide-react';
+import { Square, Terminal } from 'lucide-react';
 import { tasksService } from '../feathers.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
@@ -78,12 +78,16 @@ export default function RunningTasksDropdown() {
       <div className="relative" ref={dropdownRef}>
         {runningTasks.length > 0 && (
           <button
+            type="button"
             onClick={() => setOpen(!open)}
-            className="flex items-center gap-2 text-fg-muted hover:text-heading transition-colors"
+            className="flex items-center gap-1.5 text-xs text-faint hover:text-secondary tabular-nums transition-colors shrink-0"
             title={`${runningTasks.length} running task${runningTasks.length !== 1 ? 's' : ''}`}
           >
-            <Loader2 className="w-4 h-4 animate-spin text-success" />
-            <span className="text-xs font-medium text-success">{runningTasks.length}</span>
+            <span className="w-2 h-2 rounded-full bg-ok animate-pulse shrink-0" aria-hidden />
+            <span className="sm:hidden">{runningTasks.length}</span>
+            <span className="hidden sm:inline whitespace-nowrap">
+              {runningTasks.length} {runningTasks.length === 1 ? 'task' : 'tasks'}
+            </span>
           </button>
         )}
 

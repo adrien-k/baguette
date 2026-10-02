@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'rea
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined, Monitor } from 'lucide-react';
-import NavbarSystemStats from './components/NavbarSystemStats.jsx';
+import NavbarTasksAndStats from './components/NavbarTasksAndStats.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 
@@ -12,7 +12,6 @@ const Session = lazy(() => import('./pages/Session.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Usage = lazy(() => import('./pages/Usage.jsx'));
 const Onboarding = lazy(() => import('./pages/Onboarding.jsx'));
-import RunningTasksDropdown from './components/RunningTasksDropdown.jsx';
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider } from './context/RepoContext.jsx';
 import { useFilterRoutes } from './hooks/useFilterRoutes.js';
@@ -90,13 +89,12 @@ function Nav() {
           </span>
         </Link>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
-          <NavbarSystemStats />
+          <NavbarTasksAndStats />
           <div className="hidden sm:block shrink-0">
             <ColorSchemeToggle />
           </div>
           <RepoPicker className="shrink" shrinkableTrigger />
           <div className="relative z-10 flex items-center gap-2 sm:gap-3 shrink-0">
-            <RunningTasksDropdown />
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}

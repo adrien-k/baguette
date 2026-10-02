@@ -39,7 +39,7 @@ export default function PreviewServicesDropdown({
           }}
         >
           <ChevronDown
-            className={`w-3 h-3 shrink-0 opacity-70 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`max-md:hidden w-3 h-3 shrink-0 opacity-70 transition-transform ${open ? 'rotate-180' : ''}`}
             aria-hidden
           />
         </ToolbarButton>

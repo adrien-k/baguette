@@ -275,6 +275,13 @@ function sessionListPromptPreview(s, maxWords = 12) {
   return `${parts.slice(0, maxWords).join(' ')}…`;
 }
 
+function sessionHeaderTitle(session, isMdUp) {
+  if (session?.label) return session.label;
+  if (isGlobalSession(session)) return 'Global session';
+  if (isMdUp && session?.repo_full_name) return session.repo_full_name;
+  return 'Session';
+}
+
 function MiniSessionEntry({
   session: s,
   currentId,
@@ -1240,10 +1247,7 @@ export default function Session() {
                     <div className="flex min-h-6 min-w-0 items-center gap-2">
                       <SessionStatusIndicator session={headerSession} />
                       <span className="min-w-0 truncate text-sm font-medium leading-snug text-fg">
-                        {headerSession.label ||
-                          (isGlobalSession(headerSession)
-                            ? 'Global session'
-                            : headerSession.repo_full_name)}
+                        {sessionHeaderTitle(headerSession, isMdUp)}
                       </span>
                       {headerSession.loop_id ? (
                         <SessionLoopBadge to={loopEditUrl(headerSession.loop_id)} />
@@ -1253,7 +1257,7 @@ export default function Session() {
                           show
                           truncate={false}
                           nowrap
-                          className="hidden sm:inline-flex"
+                          className="hidden md:inline-flex"
                           isGlobal={isGlobalSession(headerSession)}
                           repoFullName={headerSession.repo_full_name}
                         />

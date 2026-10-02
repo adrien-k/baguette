@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useStickToBottomScroll } from '../../hooks/useStickToBottomScroll.js';
 import { ChevronDown, ChevronRight, Loader2, Square } from 'lucide-react';
 import { sessionReviewService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
@@ -114,8 +115,6 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     hasMore,
   } = useGetReviewMessages(session?.id);
   const [stopping, setStopping] = useState(false);
-  const scrollContainerRef = useRef(null);
-  const isAtBottomRef = useRef(true);
   const isXlUp = useMediaQuery('(min-width: 1280px)');
   const panelRevealed = isXlUp || sidePanelOpen;
 
@@ -125,6 +124,11 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]
   );
+  const { scrollContainerRef, prepareLoadMore } = useStickToBottomScroll({
+    resetKey: panelRevealed ? session?.id : null,
+    contentLength: chatDisplayItems.length,
+    loading: messagesLoading,
+  });
   const isRunning = session?.review_status === 'running';
   const runningBashDock = collectRunningBashToolsForDock(displayMessages, chatDisplayItems, {
     worktreePath: session?.absolute_worktree_path,
@@ -152,30 +156,11 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
     }
   };
 
-  useEffect(() => {
-    isAtBottomRef.current = true;
-  }, [session?.id]);
-
-  useEffect(() => {
-    if (panelRevealed) isAtBottomRef.current = true;
-  }, [panelRevealed, session?.id]);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      isAtBottomRef.current = scrollTop + clientHeight >= scrollHeight - 80;
-    };
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!panelRevealed || messagesLoading || !scrollContainerRef.current) return;
-    if (!isAtBottomRef.current) return;
-    scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-  }, [panelRevealed, messagesLoading, session?.id, displayMessages.length, isRunning]);
+  const handleLoadMore = () => {
+    if (!hasMore || loadingMore) return;
+    prepareLoadMore();
+    loadMore();
+  };
 
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
@@ -199,7 +184,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
             {hasMore && (
               <button
                 type="button"
-                onClick={loadMore}
+                onClick={handleLoadMore}
                 disabled={loadingMore}
                 className="text-xs text-faint hover:text-secondary"
               >

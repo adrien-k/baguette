@@ -30,6 +30,7 @@ import {
   runningBashToolIds,
 } from '@baguette/shared/running-tools.js';
 import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
+import ChatCostSummary from '../../components/chat/ChatCostSummary.jsx';
 import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.jsx';
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
@@ -51,6 +52,7 @@ import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMe
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
+import { useSessionUsage } from '../../hooks/useSessionUsage.js';
 import { schedulePayload } from '../../utils/loopSchedule.js';
 import { turnModelCreateFields } from '@baguette/shared/turn-model.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
@@ -152,6 +154,7 @@ export default function ChatView({
 
   const isRunning = session?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
+  const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const hasInputMessage = Boolean(input.trim());
@@ -293,7 +296,7 @@ export default function ChatView({
   const messagesEndRef = useRef(null);
   const { scrollContainerRef, prepareLoadMore } = useStickToBottomScroll({
     resetKey: session?.id,
-    contentLength: messages.length,
+    contentLength: chatDisplayItems.length,
     loading,
   });
 
@@ -684,6 +687,9 @@ export default function ChatView({
                     />
                   </div>
                 )}
+              {session && !isRunning && !isProvisioning && (
+                <ChatCostSummary usage={sessionUsage} loading={sessionUsageLoading} />
+              )}
               <div ref={messagesEndRef} />
             </>
           )}

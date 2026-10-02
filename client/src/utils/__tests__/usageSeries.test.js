@@ -9,6 +9,8 @@ import {
   sumUsageMetrics,
   SERIES_COLORS,
   OTHER_KEY,
+  listSessionCostLines,
+  summarizeCostByModel,
   usageModelLabel,
   usageRepoLabel,
 } from '../usageSeries.js';
@@ -195,7 +197,7 @@ describe('buildSeries by kind', () => {
     ];
     const { series, byDay } = buildSeries(mixed, 'kind');
     expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
-      ['session', 'Session', 5],
+      ['session', 'Chat', 5],
       ['review', 'Review', 3],
     ]);
     expect([...byDay.get('2026-09-20')]).toEqual([
@@ -268,6 +270,31 @@ describe('sumUsageMetrics', () => {
         { total_tokens: 5, cache_write_tokens: 7 },
       ])
     ).toMatchObject({ total_tokens: 15, cache_write_tokens: 9 });
+  });
+});
+
+describe('listSessionCostLines', () => {
+  it('keeps session and review rows separate per model', () => {
+    const rows = listSessionCostLines([
+      { model: 'claude-opus-5', cost_usd: 0.1, kind: 'session' },
+      { model: 'composer-1', cost_usd: 0.02, kind: 'review' },
+      { model: 'composer-1', cost_usd: 0, kind: 'session' },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.kind).sort()).toEqual(['review', 'session']);
+  });
+});
+
+describe('summarizeCostByModel', () => {
+  it('sums cost per model and drops zero-cost rows', () => {
+    const rows = summarizeCostByModel([
+      { model: 'claude-opus-5', cost_usd: 0.1, kind: 'session' },
+      { model: 'claude-opus-5', cost_usd: 0.05, kind: 'review' },
+      { model: 'composer-1', cost_usd: 0, kind: 'session' },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].model).toBe('claude-opus-5');
+    expect(rows[0].cost_usd).toBeCloseTo(0.15, 6);
   });
 });
 

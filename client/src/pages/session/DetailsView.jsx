@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Copy, GitBranch, Pencil } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
-import MarkdownContent from '../../components/MarkdownContent.jsx';
+import CardRepoBadge from '../../components/CardRepoBadge.jsx';
+import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.jsx';
 import TextInput from '../../components/TextInput.jsx';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';
@@ -22,6 +24,41 @@ function DetailsCard({ label, children }) {
   );
 }
 
+function GitBranchRow({ label, value, emptyMessage }) {
+  const branch = value?.trim() || '';
+  const display = branch || emptyMessage || '—';
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-snug">
+      <span className="w-[4.25rem] shrink-0 text-faint">{label}</span>
+      <GitBranch className="w-3 h-3 shrink-0 text-faint" aria-hidden />
+      <span
+        className={`min-w-0 flex-1 truncate ${
+          branch ? 'font-mono text-secondary' : 'text-faint italic'
+        }`}
+        title={branch || undefined}
+      >
+        {display}
+      </span>
+      {branch ? (
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard.writeText(branch);
+            toast.success(`${label} branch copied`);
+          }}
+          className="shrink-0 rounded p-1 text-faint hover:text-fg-muted hover:bg-control transition-colors"
+          title={`Copy ${label.toLowerCase()} branch`}
+          aria-label={`Copy ${label.toLowerCase()} branch`}
+        >
+          <Copy className="w-3 h-3" />
+        </button>
+      ) : (
+        <span className="w-[1.625rem] shrink-0" aria-hidden />
+      )}
+    </div>
+  );
+}
+
 export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const defaultTitle =
     session?.label || (isGlobalSession(session) ? 'Global session' : session?.repo_full_name) || '';
@@ -30,7 +67,6 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(session?.label ?? '');
   const [saving, setSaving] = useState(false);
-  const [prTitle, setPrTitle] = useState(null);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
 
@@ -38,25 +74,6 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
     setTitle(session?.label ?? '');
     setEditingTitle(false);
   }, [session?.id, session?.label]);
-
-  useEffect(() => {
-    if (!session?.pr_number) {
-      setPrTitle(null);
-      return;
-    }
-    let cancelled = false;
-    sessionsService
-      .getPrDetails(session.id)
-      .then((details) => {
-        if (!cancelled) setPrTitle(details.title?.trim() || null);
-      })
-      .catch(() => {
-        if (!cancelled) setPrTitle(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.id, session?.pr_number]);
 
   useEffect(() => {
     if (!session?.id) {
@@ -112,10 +129,6 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
 
   const prDescription = session?.pr_description?.trim();
   const hasPr = !!(session?.pr_url || session?.pr_number != null);
-  const branchLine =
-    session?.base_branch && (session?.remote_branch || session?.local_branch)
-      ? `${session.base_branch} ← ${session.remote_branch || session.local_branch}`
-      : null;
   const showCost = usage?.breakdown?.some((row) => row.cost_usd > 0);
 
   return (
@@ -184,36 +197,49 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
 
           <div className={`text-sm ${TEXT_PRIMARY} min-w-0`}>
             {prDescription ? (
-              <MarkdownContent>{prDescription}</MarkdownContent>
+              <CollapsibleMarkdown previewLines={12} simpleToggle>
+                {prDescription}
+              </CollapsibleMarkdown>
             ) : (
               <p className="text-faint">No description yet.</p>
             )}
           </div>
         </DetailsCard>
 
-        {hasPr && (
-          <DetailsCard label="Pull request">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <PrStatusBadge
-                status={session.pr_status}
-                prNumber={session.pr_number}
-                prUrl={session.pr_url}
-              />
-              {branchLine && <span className="text-xs text-faint font-mono">{branchLine}</span>}
-            </div>
-            {prTitle && <p className="text-sm text-secondary">{prTitle}</p>}
-            {session.pr_url && (
-              <a
-                href={session.pr_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-accent hover:text-accent underline break-all"
-              >
-                {session.pr_url.replace(/^https?:\/\//, '')}
-              </a>
-            )}
-          </DetailsCard>
-        )}
+        <DetailsCard label="Git">
+          <CardRepoBadge
+            show
+            nowrap
+            isGlobal={isGlobalSession(session)}
+            repoFullName={session?.repo_full_name}
+          />
+          {isGlobalSession(session) ? (
+            <p className="text-sm text-faint">No repository branches for global sessions.</p>
+          ) : (
+            <>
+              <div className="space-y-2 pt-1">
+                <GitBranchRow label="Base" value={session?.base_branch} />
+                <GitBranchRow
+                  label="Remote"
+                  value={session?.remote_branch}
+                  emptyMessage="No remote branch"
+                />
+                <GitBranchRow label="Local" value={session?.local_branch} />
+              </div>
+              <div className="border-t border-line/60 pt-3">
+                {hasPr ? (
+                  <PrStatusBadge
+                    status={session.pr_status}
+                    prNumber={session.pr_number}
+                    prUrl={session.pr_url}
+                  />
+                ) : (
+                  <p className="text-[11px] text-faint">No pull request yet.</p>
+                )}
+              </div>
+            </>
+          )}
+        </DetailsCard>
 
         <DetailsCard label="Usage">
           {usageLoading ? (

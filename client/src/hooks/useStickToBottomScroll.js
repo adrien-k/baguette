@@ -16,9 +16,25 @@ export function useStickToBottomScroll({
   const isLoadingMoreRef = useRef(false);
   const isAtBottomRef = useRef(true);
 
+  const pinScrollToBottom = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, []);
+
   useEffect(() => {
     isAtBottomRef.current = true;
   }, [resetKey]);
+
+  useLayoutEffect(() => {
+    isAtBottomRef.current = true;
+    pinScrollToBottom();
+    const frame = requestAnimationFrame(() => {
+      pinScrollToBottom();
+      requestAnimationFrame(pinScrollToBottom);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [resetKey, pinScrollToBottom]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -29,6 +45,33 @@ export function useStickToBottomScroll({
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
   }, [threshold]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const maybePin = () => {
+      if (!isAtBottomRef.current || isLoadingMoreRef.current) return;
+      pinScrollToBottom();
+    };
+
+    const ro = new ResizeObserver(maybePin);
+    const observeContent = () => {
+      ro.disconnect();
+      const content = container.firstElementChild;
+      if (content) ro.observe(content);
+      maybePin();
+    };
+    observeContent();
+
+    const mo = new MutationObserver(observeContent);
+    mo.observe(container, { childList: true });
+
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, [resetKey, contentLength, pinScrollToBottom]);
 
   useLayoutEffect(() => {
     if (scrollAnchor.current && scrollContainerRef.current) {
@@ -42,17 +85,16 @@ export function useStickToBottomScroll({
   }, [contentLength]);
 
   useLayoutEffect(() => {
-    if (!isLoadingMoreRef.current && isAtBottomRef.current && scrollContainerRef.current) {
-      const container = scrollContainerRef.current;
-      container.scrollTop = container.scrollHeight;
+    if (!isLoadingMoreRef.current && isAtBottomRef.current) {
+      pinScrollToBottom();
     }
-  }, [contentLength]);
+  }, [contentLength, pinScrollToBottom]);
 
   useLayoutEffect(() => {
-    if (loading || !scrollContainerRef.current || isLoadingMoreRef.current) return;
+    if (loading || isLoadingMoreRef.current) return;
     if (!isAtBottomRef.current) return;
-    scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-  }, [loading, resetKey]);
+    pinScrollToBottom();
+  }, [loading, resetKey, pinScrollToBottom]);
 
   const prepareLoadMore = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -67,7 +109,11 @@ export function useStickToBottomScroll({
   const scrollToBottom = useCallback((behavior = 'smooth') => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior });
+    if (behavior === 'auto' || behavior === 'instant') {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    }
     isAtBottomRef.current = true;
   }, []);
 

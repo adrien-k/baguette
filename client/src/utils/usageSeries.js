@@ -48,7 +48,7 @@ export function usageKindOf(row) {
   return row?.kind === 'review' ? 'review' : 'session';
 }
 
-export const KIND_LABELS = { session: 'Session', review: 'Review' };
+export const KIND_LABELS = { session: 'Chat', review: 'Review' };
 export const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
 
 export function usageRepoLabel(fullName) {
@@ -64,6 +64,33 @@ export function usageRepoTitle(fullName) {
 /** Usage rows store a model id (or nothing, on older turns). */
 export function usageModelLabel(model) {
   return model || 'Unknown';
+}
+
+/** Sum `cost_usd` per model for session usage breakdown rows (session + review). */
+export function summarizeCostByModel(breakdown) {
+  if (!breakdown?.length) return [];
+  const byModel = new Map();
+  for (const row of breakdown) {
+    const model = row.model || 'unknown';
+    byModel.set(model, (byModel.get(model) ?? 0) + Number(row.cost_usd ?? 0));
+  }
+  return [...byModel.entries()]
+    .map(([model, cost_usd]) => ({ model, cost_usd }))
+    .filter((row) => row.cost_usd > 0)
+    .sort((a, b) => b.cost_usd - a.cost_usd);
+}
+
+/** Session usage rows with positive cost, one entry per model and activity kind. */
+export function listSessionCostLines(breakdown) {
+  if (!breakdown?.length) return [];
+  return breakdown
+    .filter((row) => Number(row.cost_usd ?? 0) > 0)
+    .map((row) => ({
+      kind: row.kind === 'review' ? 'review' : 'session',
+      model: row.model || 'unknown',
+      cost_usd: Number(row.cost_usd ?? 0),
+    }))
+    .sort((a, b) => b.cost_usd - a.cost_usd);
 }
 
 const EMPTY_USAGE_METRICS = {
