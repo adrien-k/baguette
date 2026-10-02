@@ -45,6 +45,8 @@
   --palette-track: var(--color-zinc-300);
   --palette-knob: #ffffff;
   --palette-soft-accent: var(--color-amber-50);
+  --palette-task-pending: var(--color-amber-500);
+  --palette-task-pending-bg: var(--color-amber-400);
   --palette-soft-success: var(--color-emerald-50);
   --palette-soft-danger: var(--color-red-50);
   --palette-soft-info: var(--color-sky-50);
@@ -83,6 +85,8 @@ html[data-theme='dark'] {
   --palette-track: var(--color-zinc-600);
   --palette-knob: #ffffff;
   --palette-soft-accent: var(--color-amber-950);
+  --palette-task-pending: var(--color-amber-400);
+  --palette-task-pending-bg: var(--color-amber-500);
   --palette-soft-success: var(--color-emerald-950);
   --palette-soft-danger: var(--color-red-950);
   --palette-soft-info: var(--color-sky-950);
@@ -121,6 +125,8 @@ html[data-theme='dark'] {
   --color-track: var(--palette-track);
   --color-knob: var(--palette-knob);
   --color-soft-accent: var(--palette-soft-accent);
+  --color-task-pending: var(--palette-task-pending);
+  --color-task-pending-bg: var(--palette-task-pending-bg);
   --color-soft-success: var(--palette-soft-success);
   --color-soft-danger: var(--palette-soft-danger);
   --color-soft-info: var(--palette-soft-info);

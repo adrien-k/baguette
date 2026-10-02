@@ -614,7 +614,7 @@ export class SessionsService extends KnexService {
 
       if (task) {
         task_id = task.id;
-        if (task.status === 'running') {
+        if (task.status === 'running' || task.status === 'waiting' || task.status === 'exiting') {
           const exposePort = def.expose ? task.ports[def.expose] : null;
           if (exposePort && (await isPortListening(exposePort))) {
             status = 'ready';
@@ -628,7 +628,7 @@ export class SessionsService extends KnexService {
           exit_code = task.exit_code;
           // A task we killed (Stop button, idle TTL) is stopped, not crashed, whatever the
           // exit code its child reported on SIGTERM.
-          const killed = !!task.kill_reason;
+          const killed = task.status === 'stopped' || !!task.kill_reason;
           status = !killed && exit_code != null && exit_code !== 0 ? 'crashed' : 'stopped';
         }
       }

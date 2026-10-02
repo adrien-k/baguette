@@ -414,7 +414,6 @@ export default function Session() {
     return session?.open_issues_count ?? 0;
   }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
   const [prInfo, setPrInfo] = useState(null);
-  const [killedTaskIds, setKilledTaskIds] = useState(new Set());
   const [showTasks, setShowTasks] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
   );
@@ -599,13 +598,13 @@ export default function Session() {
         label: t.label,
         task_key: t.task_key ?? null,
         created_at: t.created_at,
+        started_at: t.started_at,
         exited_at: t.exited_at,
         ports: t.ports ?? {},
-        status:
-          killedTaskIds.has(t.id) && t.status === 'running' ? 'exited' : (t.status ?? 'running'),
+        status: t.status ?? 'waiting',
         exitCode: t.exit_code,
       })),
-    [tasksFromHook, killedTaskIds]
+    [tasksFromHook]
   );
 
   const globalSessionViewDisabled = isGlobalSession(session);
@@ -735,7 +734,6 @@ export default function Session() {
   };
 
   const handleTaskKill = (taskId) => {
-    setKilledTaskIds((prev) => new Set([...prev, taskId]));
     tasksService.kill(taskId).catch((err) => toastError('Failed to kill task', err));
   };
 

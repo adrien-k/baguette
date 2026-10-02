@@ -93,7 +93,7 @@ const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   return vi.fn().mockImplementation((data) => {
     // Mirrors TasksService.create(), which defaults the label to the task key.
-    const task = { id: 99, label: data.label ?? data.task_key ?? null, status: 'running' };
+    const task = { id: 99, label: data.label ?? data.task_key ?? null, status: 'waiting' };
     setImmediate(() => {
       if (stdout) data.onLog?.(task.id, 'stdout', stdout);
       if (stderr) data.onLog?.(task.id, 'stderr', stderr);
@@ -660,7 +660,7 @@ describe('RunProjectCommand', () => {
     expect(result.ok).toBe(true);
     expect(result.taskId).toBe(99);
     expect(result.label).toBe('Run tests');
-    expect(result.status).toBe('running');
+    expect(result.status).toBe('waiting');
     expect(result.exitCode).toBeUndefined();
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests' }),

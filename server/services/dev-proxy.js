@@ -177,7 +177,7 @@ export class DevProxy {
     state.unsubLog?.();
     state.unsubExit?.();
     const task = state.task;
-    if (stopRunningTask && task?.status === 'running') {
+    if (stopRunningTask && (task?.status === 'running' || task?.status === 'waiting')) {
       void task.kill().catch((err) => logger.error(err, 'Error stopping preview task on retry'));
     }
     this.sse.purgeChannel(key);

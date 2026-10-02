@@ -45,16 +45,16 @@ describe('Task kill integration', () => {
     expect(task.getLogs()).toMatch(
       /Stopped manually \(SIGTERM; force kill after 0\.2s if still running\)/
     );
-    expect(task.status).toBe('running');
+    expect(task.status).toBe('exiting');
 
     await waitFor(() => task.getLogs().includes('sending SIGKILL'), {
       timeoutMs: 5000,
       msg: `Logs: ${task.getLogs()}`,
     });
     await killPromise;
-    await waitFor(() => task.status === 'exited', { timeoutMs: 5000 });
+    await waitFor(() => task.status === 'stopped', { timeoutMs: 5000 });
 
-    expect(task.status).toBe('exited');
+    expect(task.status).toBe('stopped');
     expect(task.exit_code).toBe(1);
   }, 15_000);
 

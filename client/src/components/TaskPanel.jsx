@@ -11,6 +11,13 @@ import {
   groupConfigCommandsForPanel,
 } from '../utils/taskPanelGrouping.js';
 import { INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
+import {
+  isTaskActive,
+  isTaskStoppable,
+  isTaskTerminal,
+  taskStatusDotClass,
+  taskStatusEndLabel,
+} from '../utils/taskStatusDisplay.js';
 
 function TaskMetaLine({ task }) {
   const duration = useTaskRunDuration(task);
@@ -47,92 +54,89 @@ export default function TaskPanel({
     setCommand('');
   };
 
-  const runningTasks = [...tasks.filter((t) => t.status === 'running')].sort(
+  const activeTasks = [...tasks.filter((t) => isTaskActive(t.status))].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
-  const finishedTasks = [...tasks.filter((t) => t.status !== 'running')].sort(
+  const finishedTasks = [...tasks.filter((t) => isTaskTerminal(t.status))].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
 
-  const renderTask = (task) => (
-    <button
-      key={task.id}
-      onClick={() => onViewLogs(task.id)}
-      className="w-full border-b border-line flex items-start justify-between px-3 py-2 hover:bg-control/50 transition-colors text-left gap-2"
-    >
-      <div className="flex items-start gap-2 min-w-0 flex-1">
-        <span
-          className={`w-2 h-2 rounded-full shrink-0 mt-1 ${
-            task.status === 'running' ? 'bg-ok animate-pulse' : 'bg-track'
-          }`}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <TaskDockerIcon task={task} className="w-3 h-3" />
-            <code className="text-xs text-secondary truncate block min-w-0">
-              {task.label || task.command}
-            </code>
-          </div>
-          {task.ports && Object.keys(task.ports).length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-0.5">
-              {Object.entries(task.ports).map(([name, port]) => (
-                <span
-                  key={name}
-                  className="text-[10px] font-mono text-info/80 bg-info/10 rounded px-1"
-                >
-                  {name}={port}
-                </span>
-              ))}
+  const renderTask = (task) => {
+    const endLabel = taskStatusEndLabel(task.status, task.exitCode);
+    return (
+      <button
+        key={task.id}
+        onClick={() => onViewLogs(task.id)}
+        className="w-full border-b border-line flex items-start justify-between px-3 py-2 hover:bg-control/50 transition-colors text-left gap-2"
+      >
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 mt-1 ${taskStatusDotClass(task.status)}`}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <TaskDockerIcon task={task} className="w-3 h-3" />
+              <code className="text-xs text-secondary truncate block min-w-0">
+                {task.label || task.command}
+              </code>
             </div>
-          )}
-          <TaskMetaLine task={task} />
+            {task.ports && Object.keys(task.ports).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {Object.entries(task.ports).map(([name, port]) => (
+                  <span
+                    key={name}
+                    className="text-[10px] font-mono text-info/80 bg-info/10 rounded px-1"
+                  >
+                    {name}={port}
+                  </span>
+                ))}
+              </div>
+            )}
+            <TaskMetaLine task={task} />
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-        {task.status === 'exited' && (
-          <span className={`text-xs ${task.exitCode === 0 ? 'text-success' : 'text-danger'}`}>
-            exit {task.exitCode}
-          </span>
-        )}
-        {!readonly && task.status === 'exited' && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onRetry(task.id);
-            }}
-            className="text-faint hover:text-accent transition-colors"
-            title="Retry"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-          </span>
-        )}
-        {!readonly && task.status === 'running' && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onKill(task.id);
-            }}
-            className={TASK_STOP_CONTROL_CLASS}
-            title="Stop"
-          >
-            <Square className="w-3.5 h-3.5 fill-current" />
-          </span>
-        )}
-        {!readonly && onDelete && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(task.id);
-            }}
-            className="text-faint hover:text-danger transition-colors"
-            title="Remove"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </span>
-        )}
-      </div>
-    </button>
-  );
+        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+          {endLabel && <span className={`text-xs ${endLabel.className}`}>{endLabel.text}</span>}
+          {!readonly && isTaskTerminal(task.status) && (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(task.id);
+              }}
+              className="text-faint hover:text-accent transition-colors"
+              title="Retry"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {!readonly && isTaskStoppable(task.status) && (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                onKill(task.id);
+              }}
+              className={TASK_STOP_CONTROL_CLASS}
+              title="Stop"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+            </span>
+          )}
+          {!readonly && onDelete && (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(task.id);
+              }}
+              className="text-faint hover:text-danger transition-colors"
+              title="Remove"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  };
 
   const { ungrouped: ungroupedCommands, namespaces: commandNamespaces } =
     groupConfigCommandsForPanel(configCommands);
@@ -201,12 +205,12 @@ export default function TaskPanel({
             <p className="text-faint text-xs">No tasks yet</p>
           </div>
         )}
-        {runningTasks.length > 0 && (
+        {activeTasks.length > 0 && (
           <>
             <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
               Running
             </div>
-            {runningTasks.map(renderTask)}
+            {activeTasks.map(renderTask)}
           </>
         )}
         {finishedTasks.length > 0 && (

@@ -282,6 +282,8 @@ describe('Task depends_on (integration)', () => {
     expect(main.exit_code).toBe(1);
     expect(main.getLogs()).not.toContain('dep2-should-not-run');
     expect(main.getLogs()).not.toContain('main-should-not-run');
+    expect(dep2._started).toBe(false);
+    expect(dep2.status).toBe('exited');
   });
 
   it('start() is idempotent — calling it twice does not spawn a second process', async () => {

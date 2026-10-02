@@ -1,5 +1,5 @@
 import { NotFound, BadRequest } from '@feathersjs/errors';
-import { Task, DEFAULT_TTL_MS } from '../task.js';
+import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import {
@@ -11,6 +11,7 @@ import {
   assertTaskEnvReferencesValid,
 } from '../baguette-config.js';
 import logger from '../../logger.js';
+import { isTaskActive, isTaskStoppable, isTaskTerminal } from '../../../shared/task-status.js';
 
 const MAX_TASKS = 20; // Only keeps 20 task (running + history)
 
@@ -60,7 +61,7 @@ export class TasksService {
     if (this._tasks.size >= MAX_TASKS) {
       let evicted = false;
       for (const [id, t] of this._tasks) {
-        if (t.status === 'exited') {
+        if (isTaskTerminal(t.status)) {
           this._tasks.delete(id);
           evicted = true;
           break;
@@ -94,10 +95,16 @@ export class TasksService {
       extraEnv,
       interpolateOpts,
     });
-    task.onLog((_id, stream, data) =>
-      this.emit('log', { id, session_id: sessionId, stream, data })
-    );
-    task.onExit((_id, _code) => this.emit('patched', task.toPublic()));
+    task.onLog((_id, stream, data) => {
+      if (typeof this.emit === 'function') {
+        this.emit('log', { id, session_id: sessionId, stream, data });
+      }
+    });
+    const emitPatched = () => {
+      if (typeof this.emit === 'function') this.emit('patched', task.toPublic());
+    };
+    task.onStatusChange(() => emitPatched());
+    task.onExit((_id, _code) => emitPatched());
     this._tasks.set(id, task);
     return task;
   }
@@ -132,7 +139,7 @@ export class TasksService {
   /** Starts graceful kill for each running task in a session; does not wait for exit. */
   killSessionTasks(sessionId) {
     for (const task of this._tasks.values()) {
-      if (task.session_id === sessionId && task.status === 'running') {
+      if (task.session_id === sessionId && isTaskStoppable(task.status)) {
         void task.kill().catch(() => {});
       }
     }
@@ -152,7 +159,7 @@ export class TasksService {
    * For server shutdown so child processes can exit cleanly before `process.exit`.
    */
   async killAllTasks() {
-    const running = Array.from(this._tasks.values()).filter((t) => t.status === 'running');
+    const running = Array.from(this._tasks.values()).filter((t) => isTaskStoppable(t.status));
     await Promise.all(running.map((t) => t.kill()));
     this._tasks.clear();
   }
@@ -179,7 +186,7 @@ export class TasksService {
   /** Find a running task by config task key, or by label when the task has no task_key. */
   _findRunningTask(sessionId, key) {
     for (const task of this._tasks.values()) {
-      if (task.session_id !== sessionId || task.status !== 'running') continue;
+      if (task.session_id !== sessionId || !isTaskActive(task.status)) continue;
       if (this._taskMatchesLookupKey(task, key)) return task;
     }
     return null;
@@ -257,7 +264,9 @@ export class TasksService {
     } = data;
     const isDependencyCreate = (_depChain?.length ?? 0) > 0;
     const effectiveTtl =
-      isDependencyCreate || ttlMs != null ? (ttlMs ?? DEFAULT_TTL_MS) : undefined;
+      isDependencyCreate || ttlMs != null
+        ? (ttlMs ?? (isDependencyCreate ? DEPENDS_ON_TTL_MS : DEFAULT_TTL_MS))
+        : undefined;
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
@@ -375,7 +384,7 @@ export class TasksService {
           env: initEnv,
           cwd,
           dependsOn: [],
-          ttl: DEFAULT_TTL_MS,
+          ttl: DEPENDS_ON_TTL_MS,
           interpolateOpts,
         });
         dependsOn.push(initTask);

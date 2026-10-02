@@ -1,12 +1,18 @@
-/** Wall-clock run time from task creation until exit (or `now` if still running). */
+import { isTaskRunTimerActive } from '../../../shared/task-status.js';
+
+/** Wall-clock run time from `started_at` until exit (or `now` while running). */
 export function getTaskRunDurationMs(task, now = Date.now()) {
-  const createdAt = task?.created_at ?? task?.createdAt;
-  if (!createdAt) return null;
-  const start = new Date(createdAt).getTime();
+  const startedAt = task?.started_at ?? task?.startedAt;
+  if (!startedAt) return null;
+  const start = new Date(startedAt).getTime();
   if (Number.isNaN(start)) return null;
 
   const exitedAt = task?.exited_at ?? task?.exitedAt;
-  const end = task?.status === 'running' ? now : exitedAt ? new Date(exitedAt).getTime() : null;
+  const end = isTaskRunTimerActive(task?.status)
+    ? now
+    : exitedAt
+      ? new Date(exitedAt).getTime()
+      : null;
   if (end == null || Number.isNaN(end)) return null;
   return Math.max(0, end - start);
 }

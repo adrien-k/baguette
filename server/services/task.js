@@ -13,9 +13,12 @@ import {
   stopDockerContainer,
   waitForContainerHealth,
 } from './docker-session.js';
+import { isTaskRunTimerActive, isTaskStoppable, isTaskTerminal } from '../../shared/task-status.js';
 
-/** Default idle TTL (ms) when `ttl` is set without an explicit value (preview auto-start, depends_on). */
+/** Default idle TTL (ms) when `ttl` is set without an explicit value (preview auto-start, etc.). */
 export const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
+/** Idle TTL for tasks created as another task's `depends_on` (or session init in that chain). */
+export const DEPENDS_ON_TTL_MS = 5 * 60 * 1000; // 5 minutes
 /** How often a task heartbeats its depends_on tasks. */
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 /** After SIGTERM, wait this long before escalating to SIGKILL. */
@@ -23,6 +26,11 @@ export const KILL_GRACE_MS = 30_000;
 
 function baguetteStatusLine(message) {
   return `\x1b[33m[baguette] ${message}\x1b[0m\n`;
+}
+
+/** True while `start()` may still run depends_on or spawn the process (not shutting down). */
+function isTaskStartupContinuing(status) {
+  return status === 'waiting' || status === 'running';
 }
 
 /** Env passed to `docker run -e` — session/task/extra/port keys only, not host process.env. */
@@ -131,16 +139,19 @@ export class Task {
     this._portEnvVars = Array.isArray(ports) ? ports : [];
     this._portMap = {}; // accumulated dep port assignments for interpolation
     this.pid = null;
-    this.status = 'running';
+    this.status = 'waiting';
     this.exit_code = null;
     /** Set by kill(): 'stopped' or 'ttl' (idle). null when it exited on its own. */
     this.kill_reason = null;
     this.created_at = new Date().toISOString();
+    /** When status first became `running` (run timer starts here). */
+    this.started_at = null;
     this.exited_at = null;
     this._env = env ?? null;
     this._cwd = cwd ?? null;
     this._logListeners = [];
     this._exitListeners = [];
+    this._statusListeners = [];
     this._dependsOn = Array.isArray(dependsOn) ? dependsOn : [];
     this._started = false;
     /** Set when depends_on tasks have all passed waitForReady (before _startProcess). */
@@ -186,7 +197,7 @@ export class Task {
    * (panel-started tasks), and for tasks that have already exited.
    */
   heartbeat() {
-    if (this.status === 'exited' || this._ttl == null) return;
+    if (!isTaskRunTimerActive(this.status) || this._ttl == null) return;
     clearTimeout(this.#idleTtlTimer);
     this.#idleTtlTimer = setTimeout(() => {
       this.addLog('stdout', baguetteStatusLine('TTL expired, stopping task...'));
@@ -255,9 +266,31 @@ export class Task {
     };
   }
 
+  /** Register a status listener: fn(id, status). Returns unsubscribe. */
+  onStatusChange(fn) {
+    this._statusListeners.push(fn);
+    return () => {
+      const idx = this._statusListeners.indexOf(fn);
+      if (idx !== -1) this._statusListeners.splice(idx, 1);
+    };
+  }
+
+  #setStatus(status) {
+    if (this.status === status) return;
+    this.status = status;
+    for (const fn of this._statusListeners) fn(this.id, status);
+  }
+
+  #enterRunning() {
+    if (this.started_at == null) {
+      this.started_at = new Date().toISOString();
+    }
+    this.#setStatus('running');
+  }
+
   /** Register an exit listener: fn(id, exitCode). Fires immediately if already exited. Returns unsubscribe. */
   onExit(fn) {
-    if (this.status === 'exited') {
+    if (isTaskTerminal(this.status)) {
       fn(this.id, this.exit_code);
       return () => {};
     }
@@ -279,8 +312,11 @@ export class Task {
 
     (async () => {
       try {
+        if (this._dependsOn.length === 0) {
+          this.#enterRunning();
+        }
         for (const depTask of this._dependsOn) {
-          if (this.status !== 'running') return this;
+          if (!isTaskStartupContinuing(this.status)) return this;
           const depLabel = depTask.label ?? 'unlabeled';
           this.addLog(
             'stdout',
@@ -304,7 +340,7 @@ export class Task {
             return this;
           }
 
-          if (this.status !== 'running') return this;
+          if (!isTaskStartupContinuing(this.status)) return this;
 
           if (depTask._portMap && typeof depTask._portMap === 'object') {
             for (const [depKey, depPorts] of Object.entries(depTask._portMap)) {
@@ -328,7 +364,7 @@ export class Task {
           this.addLog('stdout', `\x1b[2m──── Pre-requisite ${word}: ${depLabel}\x1b[0m\n`);
         }
 
-        if (this.status !== 'running') return this;
+        if (!isTaskStartupContinuing(this.status)) return this;
 
         if (this._taskEnvRaw) {
           try {
@@ -365,6 +401,7 @@ export class Task {
         }
 
         this._depsSatisfied = true;
+        this.#enterRunning();
         await this._startProcess();
       } catch (err) {
         this.#failStart(err);
@@ -392,7 +429,7 @@ export class Task {
     const hasDockerHealthcheck = this.#dockerContainerHasConfiguredHealthcheck();
     const isPortDep = this._portEnvVars.length > 0 || this.isDocker;
 
-    if (this.status === 'exited') {
+    if (isTaskTerminal(this.status)) {
       if (isPortDep || this.exit_code !== 0) {
         throw Object.assign(
           new Error(
@@ -436,7 +473,7 @@ export class Task {
 
     const pollPromise = (async () => {
       while (this._dependsOn.length > 0 && !this._depsSatisfied) {
-        if (this.status === 'exited') {
+        if (isTaskTerminal(this.status)) {
           throw Object.assign(
             new Error(`"${this.label ?? 'task'}" exited before depends_on tasks were ready`),
             { exitCode: this.exit_code }
@@ -446,7 +483,7 @@ export class Task {
       }
       if (this._portEnvVars.length) {
         while (Object.keys(this.ports).length !== this._portEnvVars.length) {
-          if (this.status === 'exited') {
+          if (isTaskTerminal(this.status)) {
             throw Object.assign(
               new Error(`"${this.label ?? 'task'}" exited before ports were ready`),
               { exitCode: this.exit_code }
@@ -457,7 +494,7 @@ export class Task {
       }
       if (this.isDocker) {
         while (!this._dockerContainerName) {
-          if (this.status === 'exited') {
+          if (isTaskTerminal(this.status)) {
             throw Object.assign(
               new Error(`"${this.label ?? 'task'}" exited before container started`),
               { exitCode: this.exit_code }
@@ -614,7 +651,7 @@ export class Task {
   }
 
   #waitForChildExit({ timeoutMs }) {
-    if (this.status !== 'running' || !this.#process) {
+    if (this.status !== 'exiting' || !this.#process) {
       return Promise.resolve();
     }
     const child = this.#process;
@@ -646,6 +683,38 @@ export class Task {
   }
 
   /**
+   * End depends_on tasks that never had `start()` called (and their nested trees).
+   * @param {{ reason?: 'stopped'|'ttl'|null }} opts - forwarded from `kill()`; omit on natural parent exit.
+   */
+  #cancelUnstartedDependsOnSubtree({ reason = null } = {}) {
+    if (isTaskTerminal(this.status)) return;
+    if (!this._started) {
+      if (reason) this.kill_reason = reason;
+      for (const nested of [...this._dependsOn].reverse()) {
+        nested.#cancelUnstartedDependsOnSubtree({ reason });
+      }
+      this.exit(0);
+    }
+  }
+
+  #cancelUnstartedDependsOn({ reason = null } = {}) {
+    for (const dep of [...this._dependsOn].reverse()) {
+      dep.#cancelUnstartedDependsOnSubtree({ reason });
+    }
+  }
+
+  async #stopDependsOnTask(dep, { timeoutMs, graceMs, reason }) {
+    if (isTaskTerminal(dep.status)) return;
+    if (!dep._started) {
+      dep.#cancelUnstartedDependsOnSubtree({ reason });
+      return;
+    }
+    if (isTaskStoppable(dep.status)) {
+      await dep.kill({ timeoutMs, graceMs, reason }).catch(() => {});
+    }
+  }
+
+  /**
    * Send SIGTERM; escalate to SIGKILL after `graceMs` if still running; await until the child exits or `timeoutMs`.
    * @param {{ timeoutMs?: number, graceMs?: number, reason?: 'stopped'|'ttl' }} opts - `reason` is recorded on the task so
    *   consumers can tell a deliberate stop from a crash (see DevProxy exit handling).
@@ -653,10 +722,11 @@ export class Task {
    */
   async kill({ timeoutMs, graceMs = KILL_GRACE_MS, reason = 'stopped' } = {}) {
     const waitMs = timeoutMs ?? graceMs + 5_000;
-    if (this.status !== 'running') {
+    if (!isTaskStoppable(this.status)) {
       return false;
     }
     this.kill_reason = reason;
+    this.#setStatus('exiting');
     const graceSec = graceMs / 1000;
     if (reason === 'stopped') {
       this.addLog(
@@ -672,9 +742,7 @@ export class Task {
       );
     }
     for (const dep of [...this._dependsOn].reverse()) {
-      if (dep.status === 'running') {
-        await dep.kill({ timeoutMs: waitMs, graceMs, reason }).catch(() => {});
-      }
+      await this.#stopDependsOnTask(dep, { timeoutMs: waitMs, graceMs, reason });
     }
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
@@ -689,7 +757,7 @@ export class Task {
     }
     this.#killProcessGroup('SIGTERM');
     const escalation = setTimeout(() => {
-      if (this.status === 'running' && this.#process) {
+      if (this.status === 'exiting' && this.#process) {
         this.addLog(
           'stdout',
           baguetteStatusLine('Still running after grace period, sending SIGKILL...')
@@ -738,12 +806,14 @@ export class Task {
 
   /** Mark the task as failed without a running process. */
   exit(exitCode = 1) {
-    if (this.status === 'exited') return;
+    if (isTaskTerminal(this.status)) return;
+    this.#cancelUnstartedDependsOn({ reason: this.kill_reason });
     clearTimeout(this.#idleTtlTimer);
     this.#stopDepHeartbeatLoop();
-    this.status = 'exited';
     this.exit_code = exitCode;
     this.exited_at = new Date().toISOString();
+    const finalStatus = this.kill_reason === 'stopped' ? 'stopped' : 'exited';
+    this.#setStatus(finalStatus);
     for (const fn of this._exitListeners) fn(this.id, exitCode);
   }
 
@@ -776,6 +846,7 @@ export class Task {
       status: this.status,
       exit_code: this.exit_code,
       created_at: this.created_at,
+      started_at: this.started_at,
       exited_at: this.exited_at,
       ports: this.ports,
       ttl_ms: this._ttl,

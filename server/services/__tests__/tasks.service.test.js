@@ -74,6 +74,8 @@ describe('Tasks service — in-memory', (hooks) => {
     app.service('tasks')._resetForTest();
 
     const t1 = app.service('tasks').createTask({ sessionId: sessionId1, command: 'echo 1' });
+    t1.status = 'running';
+    t1.started_at = new Date().toISOString();
     const t2 = app.service('tasks').createTask({ sessionId: sessionId1, command: 'echo 2' });
     t2.status = 'exited';
     t2.exit_code = 0;
@@ -180,7 +182,7 @@ describe('Tasks service — in-memory', (hooks) => {
         .create({ session_id: sessionId1, command: 'echo ok' }, providerParams(userId1));
       expect(task.session_id).toBe(sessionId1);
       expect(task.command).toBe('echo ok');
-      expect(task.status).toBe('running');
+      expect(task.status).toBe('waiting');
       await expect(
         app.service('tasks').get(task.id, providerParams(userId1))
       ).resolves.toMatchObject({ id: task.id });

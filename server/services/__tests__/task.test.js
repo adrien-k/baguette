@@ -31,6 +31,11 @@ import * as dockerSession from '../docker-session.js';
 
 let service;
 
+function setTaskRunning(task) {
+  task.status = 'running';
+  task.started_at = new Date().toISOString();
+}
+
 beforeEach(() => {
   service = new TasksService();
 });
@@ -43,7 +48,7 @@ describe('Task', () => {
     expect(task.id).toBe(1);
     expect(task.session_id).toBe(10);
     expect(task.command).toBe('echo hi');
-    expect(task.status).toBe('running');
+    expect(task.status).toBe('waiting');
     expect(task.pid).toBeNull();
     expect(task.exit_code).toBeNull();
   });
@@ -98,12 +103,51 @@ describe('Task', () => {
     await expect(task.kill()).resolves.toBe(false);
   });
 
+  it('starts as waiting until start() runs', () => {
+    const task = new Task({ id: 1, sessionId: 1, command: 'main' });
+    expect(task.status).toBe('waiting');
+    expect(task.started_at).toBeNull();
+    const dep = new Task({ id: 2, sessionId: 1, command: 'dep' });
+    const withDep = new Task({ id: 3, sessionId: 1, command: 'main', dependsOn: [dep] });
+    expect(withDep.status).toBe('waiting');
+  });
+
   it('kill() marks a running task exited when no child process exists yet', async () => {
     const task = new Task({ id: 1, sessionId: 1, command: 'x', ports: ['PORT'] });
-    expect(task.status).toBe('running');
+    task.status = 'running';
+    task.started_at = new Date().toISOString();
     await expect(task.kill()).resolves.toBe(true);
-    expect(task.status).toBe('exited');
+    expect(task.status).toBe('stopped');
     expect(task.exit_code).toBe(0);
+  });
+
+  it('kill() cancels depends_on tasks that have not started yet', async () => {
+    const depStarted = new Task({ id: 2, sessionId: 1, command: 'x', ports: ['PORT'] });
+    depStarted._started = true;
+    setTaskRunning(depStarted);
+    const depWaiting = new Task({ id: 3, sessionId: 1, command: 'echo later' });
+    const main = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo main',
+      dependsOn: [depStarted, depWaiting],
+    });
+    await main.kill();
+    expect(depWaiting.status).toBe('stopped');
+    expect(depWaiting._started).toBe(false);
+  });
+
+  it('exit() cancels depends_on tasks that have not started yet', () => {
+    const dep2 = new Task({ id: 3, sessionId: 1, command: 'echo never', label: 'later' });
+    const main = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo main',
+      dependsOn: [dep2],
+    });
+    main.exit(1);
+    expect(dep2._started).toBe(false);
+    expect(dep2.status).toBe('exited');
   });
 
   it('kill() logs a manual stop with SIGTERM and the grace delay', async () => {
@@ -127,13 +171,13 @@ describe('Task', () => {
 // ─── TasksService store ───────────────────────────────────────────────────────
 
 describe('TasksService.createTask', () => {
-  it('stores a Task with running status', () => {
+  it('stores a Task with waiting status until start()', () => {
     const task = service.createTask({ sessionId: 1, command: 'echo hi' });
     expect(task).toBeInstanceOf(Task);
     expect(task.id).toBe(1);
     expect(task.session_id).toBe(1);
     expect(task.command).toBe('echo hi');
-    expect(task.status).toBe('running');
+    expect(task.status).toBe('waiting');
   });
 
   it('assigns incrementing ids', () => {
@@ -227,6 +271,7 @@ describe('TasksService.filterTasks', () => {
 
   it('filters by status', () => {
     const t1 = service.createTask({ sessionId: 1, command: 'a' });
+    setTaskRunning(t1);
     const t2 = service.createTask({ sessionId: 1, command: 'b' });
     t2.status = 'exited';
     const result = service.filterTasks({ status: 'running' });
@@ -355,7 +400,7 @@ describe('Task heartbeat / TTL', () => {
     vi.advanceTimersByTime(DEFAULT_TTL_MS + 1);
 
     expect(kill).not.toHaveBeenCalled();
-    expect(task.status).toBe('running');
+    expect(task.status).toBe('waiting');
   });
 
   it('heartbeat() starts idle TTL when ttl is set', () => {
@@ -369,6 +414,7 @@ describe('Task heartbeat / TTL', () => {
     });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
 
+    setTaskRunning(task);
     task.heartbeat();
     vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
     expect(kill).not.toHaveBeenCalled();
@@ -389,6 +435,7 @@ describe('Task heartbeat / TTL', () => {
     });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
 
+    setTaskRunning(task);
     task.heartbeat();
     vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
     expect(kill).not.toHaveBeenCalled();
@@ -408,6 +455,7 @@ describe('Task heartbeat / TTL', () => {
     });
     const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
 
+    setTaskRunning(task);
     task.heartbeat();
     vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
     task.heartbeat();
@@ -896,7 +944,7 @@ describe('Task heartbeat / TTL', () => {
     runChild.emitExit(0);
     await killPromise;
 
-    expect(task.status).toBe('exited');
+    expect(task.status).toBe('stopped');
     expect(task.exit_code).toBe(0);
   });
 });

@@ -7,6 +7,13 @@ import { ansiToHtml } from '../utils/ansi.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { isAtScrollBottom } from '../utils/scrollBottom.js';
 import TaskDockerIcon from './TaskDockerIcon.jsx';
+import {
+  isTaskRunTimerActive,
+  isTaskStoppable,
+  isTaskTerminal,
+  taskStatusDotClass,
+  taskStatusEndLabel,
+} from '../utils/taskStatusDisplay.js';
 
 function selectionIn(el) {
   if (!el) return false;
@@ -113,7 +120,8 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
 
   if (!task) return null;
 
-  const isRunning = task.status === 'running';
+  const isRunning = isTaskRunTimerActive(task.status);
+  const endLabel = taskStatusEndLabel(task.status, task.exitCode);
   const sessionPath = session?.short_id ? sessionUrl(session.short_id) : null;
 
   return (
@@ -127,9 +135,7 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-line">
           <div className="flex items-center gap-3 min-w-0">
             <span
-              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                isRunning ? 'bg-ok animate-pulse' : 'bg-track'
-              }`}
+              className={`w-2.5 h-2.5 rounded-full shrink-0 ${taskStatusDotClass(task.status)}`}
             />
             <div className="min-w-0 flex flex-col gap-0.5">
               <div className="flex items-center gap-1.5 min-w-0">
@@ -142,15 +148,13 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {!isRunning && (
+            {isTaskTerminal(task.status) && (
               <>
-                <span
-                  className={`text-xs font-medium ${
-                    task.exitCode === 0 ? 'text-success' : 'text-danger'
-                  }`}
-                >
-                  exit {task.exitCode}
-                </span>
+                {endLabel && (
+                  <span className={`text-xs font-medium ${endLabel.className}`}>
+                    {endLabel.text}
+                  </span>
+                )}
                 {onRetry && (
                   <button
                     onClick={() => onRetry(task.id)}
@@ -162,7 +166,10 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
                 )}
               </>
             )}
-            {isRunning && (
+            {!isTaskTerminal(task.status) && endLabel && (
+              <span className={`text-xs font-medium ${endLabel.className}`}>{endLabel.text}</span>
+            )}
+            {isTaskStoppable(task.status) && (
               <button
                 onClick={() => onKill(task.id)}
                 className="text-danger hover:text-danger opacity-60 hover:opacity-100 transition-all"
