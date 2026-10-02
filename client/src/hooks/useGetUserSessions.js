@@ -28,9 +28,9 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
   }, [listQuery, repos]);
   const listKey = queryKey(listQuery);
 
-  const fetchPage = useCallback((skip, replace) => {
+  const fetchPage = useCallback((skip, replace, { silent = false } = {}) => {
     const query = { $limit: PAGE_SIZE, $skip: skip, ...listQueryRef.current };
-    if (replace) {
+    if (replace && !silent) {
       setLoading(true);
       setHasMore(false);
     }
@@ -55,17 +55,20 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
       })
       .catch((err) => {
         setError(err);
-        if (replace) setSessions([]);
+        if (replace && !silent) setSessions([]);
       })
       .finally(() => {
-        if (replace) setLoading(false);
+        if (replace && !silent) setLoading(false);
       });
   }, []);
 
-  const refetch = useCallback(() => {
-    skipRef.current = 0;
-    fetchPage(0, true);
-  }, [fetchPage]);
+  const refetch = useCallback(
+    (opts) => {
+      skipRef.current = 0;
+      fetchPage(0, true, opts);
+    },
+    [fetchPage]
+  );
 
   const loadMore = useCallback(() => {
     if (!hasMore) return;

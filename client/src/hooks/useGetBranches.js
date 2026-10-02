@@ -3,15 +3,47 @@ import { toastError } from '../utils/toastError.jsx';
 import { reposService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
+function sortBranches(all, defaultBranch) {
+  return defaultBranch && all.includes(defaultBranch)
+    ? [defaultBranch, ...all.filter((b) => b !== defaultBranch)]
+    : all;
+}
+
 export function useGetBranches(repo) {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [clearingCache, setClearingCache] = useState(false);
 
-  const refetch = useCallback(() => {
-    setReloadNonce((n) => n + 1);
-  }, []);
+  const loadBranches = useCallback(
+    ({ silent = false } = {}) => {
+      if (!repo?.full_name) {
+        setBranches([]);
+        return Promise.resolve();
+      }
+      if (!silent) setLoading(true);
+      return reposService
+        .branches(repo.full_name)
+        .then((d) => {
+          const all = d.branches ?? [];
+          setBranches(sortBranches(all, repo.default_branch));
+        })
+        .catch((err) => {
+          if (!silent) toastError('Failed to load branches', err);
+        })
+        .finally(() => {
+          if (!silent) setLoading(false);
+        });
+    },
+    [repo]
+  );
+
+  const refetch = useCallback(
+    (opts) => {
+      void loadBranches(opts);
+    },
+    [loadBranches]
+  );
 
   useRefetchOnSseReconnect(refetch, Boolean(repo?.full_name));
 
@@ -20,28 +52,8 @@ export function useGetBranches(repo) {
       setBranches([]);
       return;
     }
-    let cancelled = false;
-    setLoading(true);
-    reposService
-      .branches(repo.full_name)
-      .then((d) => {
-        if (cancelled) return;
-        const all = d.branches ?? [];
-        const defaultBranch = repo.default_branch;
-        setBranches(
-          defaultBranch && all.includes(defaultBranch)
-            ? [defaultBranch, ...all.filter((b) => b !== defaultBranch)]
-            : all
-        );
-      })
-      .catch((err) => toastError('Failed to load branches', err))
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repo?.full_name, repo?.default_branch, reloadNonce]);
+    void loadBranches();
+  }, [repo?.full_name, reloadNonce, loadBranches]);
 
   const clearCacheAndReload = useCallback(async () => {
     if (!repo?.full_name) return;

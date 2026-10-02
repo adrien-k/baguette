@@ -61,21 +61,24 @@ export function useGetSession(shortId) {
     sessionIdRef.current = session?.id ?? null;
   }, [session?.id]);
 
-  const refetch = useCallback(() => {
-    if (!shortId) return;
-    sessionsService
-      .getSessionByShortId({ short_id: shortId })
-      .then((s) => {
-        setSession(s);
-        setError(null);
-        setLoadedFor(shortId);
-      })
-      .catch((err) => {
-        setError(err);
-        setSession(null);
-        setLoadedFor(shortId);
-      });
-  }, [shortId]);
+  const refetch = useCallback(
+    (_opts) => {
+      if (!shortId) return;
+      sessionsService
+        .getSessionByShortId({ short_id: shortId })
+        .then((s) => {
+          setSession(s);
+          setError(null);
+          setLoadedFor(shortId);
+        })
+        .catch((err) => {
+          setError(err);
+          setSession(null);
+          setLoadedFor(shortId);
+        });
+    },
+    [shortId]
+  );
 
   useRefetchOnSseReconnect(refetch, Boolean(shortId));
 

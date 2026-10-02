@@ -6,7 +6,7 @@ export function useRefetchOnSseReconnect(refetch, enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     return subscribeSseReconnect(() => {
-      refetch();
+      refetch({ silent: true });
     });
   }, [enabled, refetch]);
 }

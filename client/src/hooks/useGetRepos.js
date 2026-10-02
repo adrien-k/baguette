@@ -8,13 +8,17 @@ export function useGetRepos(enabled = true) {
   const [loading, setLoading] = useState(true);
   const [clearingCache, setClearingCache] = useState(false);
 
-  const refetch = useCallback(() => {
-    setLoading(true);
+  const refetch = useCallback(({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     return reposService
       .find()
       .then((data) => setRepos(data))
-      .catch((err) => toastError('Failed to load repositories', err))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (!silent) toastError('Failed to load repositories', err);
+      })
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   }, []);
 
   const clearCacheAndReload = useCallback(async () => {

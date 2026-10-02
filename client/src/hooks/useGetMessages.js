@@ -29,26 +29,35 @@ export function useGetMessages(sessionId) {
     setInitialLoadFailed(true);
   }, []);
 
-  const refetch = useCallback(() => {
-    if (!sessionId || initialLoadFailed) return;
-    setLoading(true);
-    setMessages([]);
-    setHasMore(false);
-    oldestIdRef.current = null;
+  const refetch = useCallback(
+    ({ silent = false } = {}) => {
+      if (!sessionId || initialLoadFailed) return;
+      if (!silent) {
+        setLoading(true);
+        setMessages([]);
+        setHasMore(false);
+        oldestIdRef.current = null;
+      }
 
-    messagesService
-      .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
-      .then((res) => {
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        const sorted = [...list].reverse();
-        setMessages(sorted);
-        setHasMore(list.length === PAGE_SIZE);
-        oldestIdRef.current = sorted[0]?.id ?? null;
-        setError(null);
-      })
-      .catch(handleLoadError)
-      .finally(() => setLoading(false));
-  }, [sessionId, initialLoadFailed, handleLoadError]);
+      messagesService
+        .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+        .then((res) => {
+          const list = Array.isArray(res) ? res : (res?.data ?? []);
+          const sorted = [...list].reverse();
+          setMessages(sorted);
+          setHasMore(list.length === PAGE_SIZE);
+          oldestIdRef.current = sorted[0]?.id ?? null;
+          setError(null);
+        })
+        .catch((err) => {
+          if (!silent) handleLoadError(err);
+        })
+        .finally(() => {
+          if (!silent) setLoading(false);
+        });
+    },
+    [sessionId, initialLoadFailed, handleLoadError]
+  );
 
   useRefetchOnSseReconnect(refetch, Boolean(sessionId) && !initialLoadFailed);
 

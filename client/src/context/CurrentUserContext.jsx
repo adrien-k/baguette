@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usersService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
-import { subscribeSseReconnect } from '../utils/sseReconnect.js';
+import { useRefetchOnSseReconnect } from '../hooks/useRefetchOnSseReconnect.js';
 
 const CurrentUserContext = createContext(null);
 
@@ -14,27 +14,34 @@ export function CurrentUserProvider({ children }) {
   const [error, setError] = useState(null);
   const fetchIdRef = useRef(0);
 
-  const refetch = useCallback(() => {
-    if (authUserId == null) return;
-    const fetchId = ++fetchIdRef.current;
-    setLoading(true);
-    setError(null);
-    usersService
-      .get(authUserId)
-      .then((record) => {
-        if (fetchId !== fetchIdRef.current) return;
-        setCurrentUser(record);
+  const refetch = useCallback(
+    ({ silent = false } = {}) => {
+      if (authUserId == null) return;
+      const fetchId = ++fetchIdRef.current;
+      if (!silent) {
+        setLoading(true);
         setError(null);
-      })
-      .catch((err) => {
-        if (fetchId !== fetchIdRef.current) return;
-        setCurrentUser(null);
-        setError(err instanceof Error ? err : new Error(String(err)));
-      })
-      .finally(() => {
-        if (fetchId === fetchIdRef.current) setLoading(false);
-      });
-  }, [authUserId]);
+      }
+      usersService
+        .get(authUserId)
+        .then((record) => {
+          if (fetchId !== fetchIdRef.current) return;
+          setCurrentUser(record);
+          setError(null);
+        })
+        .catch((err) => {
+          if (fetchId !== fetchIdRef.current) return;
+          if (!silent) {
+            setCurrentUser(null);
+            setError(err instanceof Error ? err : new Error(String(err)));
+          }
+        })
+        .finally(() => {
+          if (fetchId === fetchIdRef.current && !silent) setLoading(false);
+        });
+    },
+    [authUserId]
+  );
 
   const updateCurrentUser = useCallback(
     (record) => {
@@ -68,10 +75,7 @@ export function CurrentUserProvider({ children }) {
     return () => usersService.off('patched', onPatched);
   }, [authUserId, refetch]);
 
-  useEffect(() => {
-    if (authUserId == null) return;
-    return subscribeSseReconnect(refetch);
-  }, [authUserId, refetch]);
+  useRefetchOnSseReconnect(refetch, authUserId != null);
 
   return (
     <CurrentUserContext.Provider

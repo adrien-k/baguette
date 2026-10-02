@@ -9,18 +9,25 @@ export function useGetSessionIssues(sessionId, { enabled = true } = {}) {
   const [loading, setLoading] = useState(false);
   const boundSessionIdRef = useRef(null);
 
-  const refetch = useCallback(() => {
-    if (!sessionId || !enabled) return;
-    setLoading(true);
-    sessionIssuesService
-      .find({ query: { session_id: sessionId, $sort: { id: 1 }, $limit: 100 } })
-      .then((res) => {
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        setIssues(sortIssuesBySeverity(list));
-      })
-      .catch((err) => toastError('Failed to load review issues', err))
-      .finally(() => setLoading(false));
-  }, [sessionId, enabled]);
+  const refetch = useCallback(
+    ({ silent = false } = {}) => {
+      if (!sessionId || !enabled) return;
+      if (!silent) setLoading(true);
+      sessionIssuesService
+        .find({ query: { session_id: sessionId, $sort: { id: 1 }, $limit: 100 } })
+        .then((res) => {
+          const list = Array.isArray(res) ? res : (res?.data ?? []);
+          setIssues(sortIssuesBySeverity(list));
+        })
+        .catch((err) => {
+          if (!silent) toastError('Failed to load review issues', err);
+        })
+        .finally(() => {
+          if (!silent) setLoading(false);
+        });
+    },
+    [sessionId, enabled]
+  );
 
   useRefetchOnSseReconnect(refetch, Boolean(sessionId) && enabled);
 

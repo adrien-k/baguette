@@ -11,27 +11,34 @@ export function useGetTasks({ sessionId = null, status = null, skip = false }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const refetch = useCallback(() => {
-    if (skip) return;
-    setLoading(true);
-    const query = {};
-    if (sessionId) query.session_id = sessionId;
-    if (status != null) query.status = status;
-    query['$sort'] = { created_at: -1 };
+  const refetch = useCallback(
+    ({ silent = false } = {}) => {
+      if (skip) return;
+      if (!silent) setLoading(true);
+      const query = {};
+      if (sessionId) query.session_id = sessionId;
+      if (status != null) query.status = status;
+      query['$sort'] = { created_at: -1 };
 
-    tasksService
-      .find({ query })
-      .then((res) => {
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        setTasks(list);
-        setError(null);
-      })
-      .catch((err) => {
-        setError(err);
-        setTasks([]);
-      })
-      .finally(() => setLoading(false));
-  }, [sessionId, status, skip]);
+      tasksService
+        .find({ query })
+        .then((res) => {
+          const list = Array.isArray(res) ? res : (res?.data ?? []);
+          setTasks(list);
+          setError(null);
+        })
+        .catch((err) => {
+          if (!silent) {
+            setError(err);
+            setTasks([]);
+          }
+        })
+        .finally(() => {
+          if (!silent) setLoading(false);
+        });
+    },
+    [sessionId, status, skip]
+  );
 
   useRefetchOnSseReconnect(refetch, !skip);
 

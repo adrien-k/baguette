@@ -71,24 +71,33 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
     };
   }, [sessionId, enabled]);
 
-  const reload = useCallback(() => {
-    if (!sessionId) return;
-    setLoading(true);
-    setMessages([]);
-    setHasMore(false);
-    oldestIdRef.current = null;
-    sessionReviewMessagesService
-      .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
-      .then((res) => {
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        const sorted = [...list].reverse();
-        setMessages(sorted);
-        setHasMore(list.length === PAGE_SIZE);
-        oldestIdRef.current = sorted[0]?.id ?? null;
-      })
-      .catch((err) => toastError('Failed to load review messages', err))
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+  const reload = useCallback(
+    ({ silent = false } = {}) => {
+      if (!sessionId) return;
+      if (!silent) {
+        setLoading(true);
+        setMessages([]);
+        setHasMore(false);
+        oldestIdRef.current = null;
+      }
+      sessionReviewMessagesService
+        .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+        .then((res) => {
+          const list = Array.isArray(res) ? res : (res?.data ?? []);
+          const sorted = [...list].reverse();
+          setMessages(sorted);
+          setHasMore(list.length === PAGE_SIZE);
+          oldestIdRef.current = sorted[0]?.id ?? null;
+        })
+        .catch((err) => {
+          if (!silent) toastError('Failed to load review messages', err);
+        })
+        .finally(() => {
+          if (!silent) setLoading(false);
+        });
+    },
+    [sessionId]
+  );
 
   useRefetchOnSseReconnect(reload, Boolean(sessionId) && enabled);
 
