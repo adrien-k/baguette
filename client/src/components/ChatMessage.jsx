@@ -136,26 +136,26 @@ export default function ChatMessage({
         : '';
     return (
       <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
-        <div className="text-xs text-success mb-1 font-medium flex items-center gap-2">
-          <span>You</span>
-          {message.created_at && (
-            <span className="text-faint font-normal">
-              {new Date(message.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
-          )}
-          {turnModelLabel && (
-            <span className="text-faint font-normal truncate max-w-[12rem] sm:max-w-xs">
-              {turnModelLabel}
-            </span>
-          )}
-          {userText && (
-            <span className="ml-auto">
-              <CopyButton text={userText} />
-            </span>
-          )}
+        <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="shrink-0">You</span>
+            {message.created_at && (
+              <span className="text-faint font-normal shrink-0">
+                {new Date(message.created_at).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0 min-w-0">
+            {turnModelLabel && (
+              <span className="text-faint font-normal truncate max-w-[12rem] sm:max-w-xs text-right">
+                {turnModelLabel}
+              </span>
+            )}
+            {userText && <CopyButton text={userText} />}
+          </div>
         </div>
         {Array.isArray(content) ? (
           <div className="space-y-2">

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Bot, Layers } from 'lucide-react';
 import { apiFetch } from '../api.js';
 import UsageGraph from '../components/UsageGraph.jsx';
+import ActiveAgentsSection from '../components/ActiveAgentsSection.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from '../components/RepoDropdown.jsx';
 import { chipOptionClassName } from '../components/LightChipDropdown.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
@@ -131,6 +132,8 @@ export default function Usage() {
           ))}
         </div>
       </div>
+
+      <ActiveAgentsSection />
 
       <div className="flex flex-wrap items-center gap-2">
         <RepoDropdown

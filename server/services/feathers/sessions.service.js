@@ -1247,6 +1247,14 @@ export class SessionsService extends KnexService {
     this._lastResultTotals.delete(totalsKey);
   }
 
+  async onTurnStart(sessionId) {
+    const db = this.app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (session) {
+      this.emit('turn:start', { session_id: sessionId, user_id: session.user_id });
+    }
+  }
+
   async onTurnComplete(sessionId) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -1745,7 +1753,7 @@ export function registerSessionsService(app, path = 'sessions') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new SessionsService(options), {
-    events: ['app:error', 'push:request', 'turn:complete'],
+    events: ['app:error', 'push:request', 'turn:start', 'turn:complete'],
     methods: [
       'find',
       'get',

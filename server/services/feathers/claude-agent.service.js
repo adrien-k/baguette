@@ -234,6 +234,7 @@ export class ClaudeAgentService {
     const sessionState = await this._startAgentLoop(session, { model });
 
     await this.app.service('sessions').patch(session.id, { status: 'running' });
+    await this.app.service('sessions').onTurnStart(session.id);
     return sessionState;
   }
 
@@ -457,6 +458,7 @@ export class ClaudeAgentService {
         await this.app
           .service('sessions')
           .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+        await this.app.service('sessions').onTurnStart(sessionId);
       },
       trackBackgroundTasks: true,
       activeKey: sessionId,
@@ -583,6 +585,7 @@ export class ClaudeAgentService {
     await this.app
       .service('sessions')
       .patch(sessionId, { status: 'running' }, { user: { id: session.userId } });
+    await this.app.service('sessions').onTurnStart(sessionId);
 
     const sessionRow = await db('sessions').where({ id: sessionId }).first();
     const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow?.worktree_path);

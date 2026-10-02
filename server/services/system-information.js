@@ -61,10 +61,84 @@ async function usageCostUsdSince(userId, sinceIso) {
   return parseFloat(row?.cost_usd ?? 0) || 0;
 }
 
+export const ACTIVE_AGENT_STATUSES = ['running', 'provisioning', 'archiving'];
+
+const ACTIVE_SESSION_COLUMNS = [
+  'id',
+  'short_id',
+  'label',
+  'repo_full_name',
+  'status',
+  'review_status',
+  'agent_sdk',
+  'model',
+  'model_params',
+  'review_agent_sdk',
+  'review_model',
+  'review_model_params',
+];
+
+function sessionAgentRow(row, kind) {
+  const isReview = kind === 'review';
+  return {
+    session_id: row.id,
+    short_id: row.short_id,
+    label: row.label,
+    repo_full_name: row.repo_full_name ?? '',
+    kind,
+    agent_sdk: isReview ? (row.review_agent_sdk ?? row.agent_sdk) : row.agent_sdk,
+    model: isReview ? (row.review_model ?? row.model) : row.model,
+    model_params: isReview ? (row.review_model_params ?? row.model_params) : row.model_params,
+  };
+}
+
+/** Running chat and review agents for the signed-in user (Usage page + ops). */
+export async function getActiveAgents(userId) {
+  const rows = await db('sessions')
+    .where({ user_id: userId })
+    .whereNull('archived_at')
+    .where((qb) => {
+      qb.whereIn('status', ACTIVE_AGENT_STATUSES).orWhere('review_status', 'running');
+    })
+    .select(ACTIVE_SESSION_COLUMNS);
+
+  const agents = [];
+  for (const row of rows) {
+    if (ACTIVE_AGENT_STATUSES.includes(row.status)) {
+      agents.push(sessionAgentRow(row, 'chat'));
+    }
+    if (row.review_status === 'running') {
+      agents.push(sessionAgentRow(row, 'review'));
+    }
+  }
+
+  agents.sort((a, b) => {
+    const labelA = a.label || a.short_id || '';
+    const labelB = b.label || b.short_id || '';
+    return labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
+  });
+  return agents;
+}
+
+async function runningSessionCounts(userId) {
+  const base = () => db('sessions').where({ user_id: userId }).whereNull('archived_at');
+  const [agentsRow, reviewersRow] = await Promise.all([
+    base().whereIn('status', ACTIVE_AGENT_STATUSES).count('* as count').first(),
+    base().where('review_status', 'running').count('* as count').first(),
+  ]);
+  return {
+    running_agents: Number(agentsRow?.count ?? 0),
+    running_reviewers: Number(reviewersRow?.count ?? 0),
+  };
+}
+
 /** Lightweight CPU, memory, disk, and usage snapshot for the navbar (polled often). */
 export async function getNavbarSystemInformation(userId) {
   const since = new Date(Date.now() - MS_PER_24H).toISOString();
-  const last24hCostUsd = await usageCostUsdSince(userId, since);
+  const [last24hCostUsd, sessionCounts] = await Promise.all([
+    usageCostUsdSince(userId, since),
+    runningSessionCounts(userId),
+  ]);
   const { cpu, loadAvg, memory, disk } = hostResourceSnapshot();
   return {
     cpu: { count: cpu.count },
@@ -80,5 +154,6 @@ export async function getNavbarSystemInformation(userId) {
     usage: {
       last_24h_cost_usd: last24hCostUsd,
     },
+    sessions: sessionCounts,
   };
 }

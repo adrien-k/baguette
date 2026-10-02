@@ -7,9 +7,9 @@ export default function NavbarTasksAndStats() {
   const { tasks: runningTasks } = useGetTasks({ status: 'running' });
   const leadingSeparator = runningTasks.length > 0;
   return (
-    <>
+    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
       <RunningTasksDropdown />
       <NavbarSystemStats leadingSeparator={leadingSeparator} />
-    </>
+    </div>
   );
 }

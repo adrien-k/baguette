@@ -364,6 +364,7 @@ ${body}`,
       await this.app
         .service('sessions')
         .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+      await this.app.service('sessions').onTurnStart(sessionId);
       const db = this.app.get('db');
       const agentOptions = await this._sessionAgentOptions(session, turnModel);
       const agent = await this.createOrResumeAgent(session, {

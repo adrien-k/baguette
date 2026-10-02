@@ -21,18 +21,20 @@ export default function BaguetteBlock({ message, models = [], session }) {
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-brand/10 transition-colors gap-2"
       >
-        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="text-accent text-xs font-medium shrink-0">Baguette</span>
+          <span className="text-fg-muted text-xs truncate min-w-0">{title}</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 min-w-0">
           {turnModelLabel ? (
-            <span className="text-faint text-xs font-normal truncate max-w-[12rem] sm:max-w-xs">
+            <span className="text-faint text-xs font-normal truncate max-w-[12rem] sm:max-w-xs text-right">
               {turnModelLabel}
             </span>
           ) : null}
-          <span className="text-fg-muted text-xs truncate min-w-0">{title}</span>
+          <ChevronDown
+            className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          />
         </div>
-        <ChevronDown
-          className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-        />
       </button>
       {expanded && (
         <div className="px-3 sm:px-4 py-3 border-t border-brand/30 text-xs text-fg-muted whitespace-pre-wrap">

@@ -1419,6 +1419,25 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect((found.data ?? found)[0].id).toBe(created.id);
     });
 
+    it('emits turn:start when onTurnStart runs', async () => {
+      const handler = vi.fn();
+      app.service('sessions').on('turn:start', handler);
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      handler.mockClear();
+
+      await app.service('sessions').onTurnStart(created.id);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith({
+        session_id: created.id,
+        user_id: userId1,
+      });
+    });
+
     it('emits turn:complete when onTurnComplete runs', async () => {
       const handler = vi.fn();
       app.service('sessions').on('turn:complete', handler);

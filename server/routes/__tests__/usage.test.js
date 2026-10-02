@@ -313,3 +313,49 @@ describe('GET /api/usage/breakdown', () => {
     expect(scoped[0].total_tokens).toBe(40);
   });
 });
+
+describe('GET /api/usage/active-agents', () => {
+  it('returns chat and review agents for the signed-in user only', async () => {
+    await db('sessions').insert({
+      user_id: USER,
+      short_id: 'run12345',
+      label: 'Feature work',
+      repo_full_name: 'acme/app',
+      base_branch: 'main',
+      initial_prompt: 'go',
+      status: 'running',
+      agent_sdk: 'claude',
+      model: 'claude-sonnet-4-20250514',
+      review_status: 'running',
+      review_agent_sdk: 'cursor',
+      review_model: 'composer',
+    });
+    await db('sessions').insert({
+      user_id: OTHER_USER,
+      short_id: 'other111',
+      repo_full_name: 'acme/other',
+      base_branch: 'main',
+      initial_prompt: 'go',
+      status: 'running',
+    });
+
+    const rows = await getJson('/api/usage/active-agents');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.kind).sort()).toEqual(['chat', 'review']);
+    expect(rows.every((r) => r.session_id)).toBe(true);
+    expect(rows.find((r) => r.kind === 'chat').model).toBe('claude-sonnet-4-20250514');
+    expect(rows.find((r) => r.kind === 'review').agent_sdk).toBe('cursor');
+  });
+
+  it('returns an empty list when nothing is running', async () => {
+    await db('sessions').insert({
+      user_id: USER,
+      short_id: 'done1111',
+      repo_full_name: 'acme/app',
+      base_branch: 'main',
+      initial_prompt: 'go',
+      status: 'completed',
+    });
+    expect(await getJson('/api/usage/active-agents')).toEqual([]);
+  });
+});

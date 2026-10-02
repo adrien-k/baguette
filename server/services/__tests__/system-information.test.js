@@ -1,16 +1,34 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../db.js', () => ({
-  default: () => ({
-    where: () => ({
-      where: () => ({
-        sum: () => ({
-          first: async () => ({ cost_usd: 1.25 }),
-        }),
-      }),
+vi.mock('../../db.js', () => {
+  const sessionCountChain = {
+    whereIn: () => sessionCountChain,
+    where: () => sessionCountChain,
+    count: () => ({
+      first: async () => ({ count: 2 }),
     }),
-  }),
-}));
+  };
+  return {
+    default: (table) => {
+      if (table === 'sessions') {
+        return {
+          where: () => ({
+            whereNull: () => sessionCountChain,
+          }),
+        };
+      }
+      return {
+        where: () => ({
+          where: () => ({
+            sum: () => ({
+              first: async () => ({ cost_usd: 1.25 }),
+            }),
+          }),
+        }),
+      };
+    },
+  };
+});
 
 import { getNavbarSystemInformation, getSystemInfo } from '../system-information.js';
 
@@ -45,6 +63,8 @@ describe('getNavbarSystemInformation', () => {
     expect(info.disk.totalBytes).toBeGreaterThan(0);
     expect(info.disk.path).toBeUndefined();
     expect(info.usage.last_24h_cost_usd).toBe(1.25);
+    expect(info.sessions.running_agents).toBe(2);
+    expect(info.sessions.running_reviewers).toBe(2);
     expect(info.gitSha).toBeUndefined();
     expect(info.hostname).toBeUndefined();
   });

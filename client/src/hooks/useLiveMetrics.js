@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../api.js';
+import { useAgentActivityRefresh } from './useAgentActivityRefresh.js';
 
 /**
  * @param {{ intervalMs?: number | null, onError?: (err: unknown) => void }} options
@@ -28,6 +29,8 @@ export function useLiveMetrics({ intervalMs = null, onError } = {}) {
     const id = setInterval(() => load(true), intervalMs);
     return () => clearInterval(id);
   }, [load, intervalMs]);
+
+  useAgentActivityRefresh(load);
 
   return { info, loading, reload: () => load(true) };
 }

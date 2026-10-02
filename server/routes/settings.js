@@ -10,7 +10,11 @@ import {
   loadFullSessionPromptTemplate,
   loadFullReviewPromptTemplate,
 } from '../services/session-prompt.js';
-import { getNavbarSystemInformation, getSystemInfo } from '../services/system-information.js';
+import {
+  getActiveAgents,
+  getNavbarSystemInformation,
+  getSystemInfo,
+} from '../services/system-information.js';
 import {
   stringifyAgentSessionDefaults,
   validateAgentSessionDefaults,
@@ -176,6 +180,14 @@ export default function createSettingsRoutes(requireAuth) {
           total_tokens: Number(r.total_tokens ?? 0),
         }))
       );
+    })
+  );
+
+  router.get(
+    '/api/usage/active-agents',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      res.json(await getActiveAgents(req.user.id));
     })
   );
 

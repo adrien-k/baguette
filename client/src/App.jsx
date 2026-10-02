@@ -81,57 +81,61 @@ function Nav() {
 
   return (
     <nav className={`${NAV_CLASS} relative z-40 shrink-0`}>
-      <div className="px-4 flex items-center gap-2 sm:gap-3 h-14 min-w-0">
-        <Link to={homeUrl} className="flex items-center gap-2 shrink-0">
+      <div className="px-4 flex xl:grid xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3 h-14 min-w-0">
+        <Link to={homeUrl} className="flex items-center gap-2 shrink-0 min-w-0">
           <BaguetteIcon className="w-6 h-6 shrink-0" />
           <span className="text-fg font-semibold text-sm font-display whitespace-nowrap">
             Baguette
           </span>
         </Link>
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
-          <NavbarTasksAndStats />
-          <div className="hidden sm:block shrink-0">
-            <ColorSchemeToggle />
+        <div className="flex flex-1 min-w-0 items-center justify-end gap-2 sm:gap-3 xl:contents">
+          <div className="flex items-center min-w-0 max-w-full overflow-hidden xl:justify-self-center xl:justify-center">
+            <NavbarTasksAndStats />
           </div>
-          <RepoPicker className="shrink" shrinkableTrigger />
-          <div className="relative z-10 flex items-center gap-2 sm:gap-3 shrink-0">
-            <div className="relative" ref={userMenuRef}>
-              <button
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-control/50 transition-colors"
-              >
-                <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
-                <span className="hidden sm:block text-secondary text-sm">{user.username}</span>
-              </button>
-              {userMenuOpen && (
-                <div
-                  className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 xl:justify-self-end xl:justify-end">
+            <div className="hidden sm:block shrink-0">
+              <ColorSchemeToggle />
+            </div>
+            <RepoPicker className="shrink" shrinkableTrigger />
+            <div className="relative flex items-center gap-2 sm:gap-3 shrink-0">
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-control/50 transition-colors"
                 >
-                  <div className="sm:hidden">
-                    <ColorSchemeToggle menuItem />
+                  <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
+                  <span className="hidden sm:block text-secondary text-sm">{user.username}</span>
+                </button>
+                {userMenuOpen && (
+                  <div
+                    className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+                  >
+                    <div className="sm:hidden">
+                      <ColorSchemeToggle menuItem />
+                    </div>
+                    <div className="border-t border-strong mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
+                      <Link to="/usage" className={MENU_ITEM_CLASS}>
+                        <ChartNoAxesCombined className="w-4 h-4 text-faint" />
+                        Usage
+                      </Link>
+                      <Link to="/system" className={MENU_ITEM_CLASS}>
+                        <Monitor className="w-4 h-4 text-faint" />
+                        System
+                      </Link>
+                      <Link to="/settings" className={MENU_ITEM_CLASS}>
+                        <SettingsIcon className="w-4 h-4 text-faint" />
+                        Settings
+                      </Link>
+                    </div>
+                    <div className="border-t border-strong mt-1 pt-1">
+                      <button onClick={logout} className={MENU_ITEM_CLASS}>
+                        <LogOut className="w-4 h-4 text-faint" />
+                        Sign out
+                      </button>
+                    </div>
                   </div>
-                  <div className="border-t border-strong mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
-                    <Link to="/usage" className={MENU_ITEM_CLASS}>
-                      <ChartNoAxesCombined className="w-4 h-4 text-faint" />
-                      Usage
-                    </Link>
-                    <Link to="/system" className={MENU_ITEM_CLASS}>
-                      <Monitor className="w-4 h-4 text-faint" />
-                      System
-                    </Link>
-                    <Link to="/settings" className={MENU_ITEM_CLASS}>
-                      <SettingsIcon className="w-4 h-4 text-faint" />
-                      Settings
-                    </Link>
-                  </div>
-                  <div className="border-t border-strong mt-1 pt-1">
-                    <button onClick={logout} className={MENU_ITEM_CLASS}>
-                      <LogOut className="w-4 h-4 text-faint" />
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
