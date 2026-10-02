@@ -4,7 +4,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 const FilterContext = createContext(null);
 
 export function FilterProvider({ children }) {
-  const persistent = usePersistentState('filters');
+  const persistent = usePersistentState('filters-agents');
   const [showArchived, setShowArchived] = persistent.useState('showArchived', false);
   // Loop runs are ordinary sessions and show by default; the toggle is there for loops that
   // fire often enough to bury everything else.

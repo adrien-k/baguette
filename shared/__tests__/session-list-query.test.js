@@ -26,6 +26,15 @@ describe('sessionsListQueryFromPath', () => {
       repo_id: 12,
     });
   });
+
+  it('treats /loops like the matching agents scope for session queries', () => {
+    expect(sessionsListQueryFromPath('/loops', { showArchived: true })).toMatchObject({
+      all_sessions: true,
+      include_archived: true,
+    });
+    expect(sessionsListQueryFromPath('/global/loops')).toMatchObject({ is_global: true });
+    expect(sessionsListQueryFromPath('/repos/4/loops/7')).toMatchObject({ repo_id: 4 });
+  });
 });
 
 describe('sessionMatchesListQuery', () => {

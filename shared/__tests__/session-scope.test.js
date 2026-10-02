@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  agentsScopePathFromPathname,
   homeUrlForScope,
   isAllSessionsPath,
+  isLoopsPath,
   isNewSessionRouteId,
   loopEditUrlForScope,
+  loopsHomeUrlForScope,
   NEW_SESSION_ROUTE_ID,
   sessionHref,
   sessionUrlForScope,
@@ -12,9 +15,22 @@ import {
 describe('isAllSessionsPath', () => {
   it('matches / and /sessions/…', () => {
     expect(isAllSessionsPath('/')).toBe(true);
-    expect(isAllSessionsPath('/loop/12')).toBe(true);
-    expect(isAllSessionsPath('/global/loop/12')).toBe(false);
-    expect(isAllSessionsPath('/repos/1/loop/12')).toBe(false);
+    expect(isAllSessionsPath('/loops')).toBe(true);
+    expect(isAllSessionsPath('/loops/12')).toBe(true);
+    expect(isAllSessionsPath('/global/loops/12')).toBe(false);
+    expect(isAllSessionsPath('/repos/1/loops/12')).toBe(false);
+  });
+});
+
+describe('isLoopsPath / agentsScopePathFromPathname', () => {
+  it('detects loops routes and strips scope for agents', () => {
+    expect(isLoopsPath('/loops')).toBe(true);
+    expect(isLoopsPath('/loops/9')).toBe(true);
+    expect(isLoopsPath('/global/loops')).toBe(true);
+    expect(isLoopsPath('/')).toBe(false);
+    expect(agentsScopePathFromPathname('/loops/9')).toBe('/');
+    expect(agentsScopePathFromPathname('/global/loops')).toBe('/global');
+    expect(agentsScopePathFromPathname('/repos/3/loops/9')).toBe('/repos/3');
   });
 });
 
@@ -23,21 +39,24 @@ describe('homeUrlForScope / sessionUrlForScope', () => {
     const scope = { fromAllSessions: true, selectedRepo: '__all__', repoId: 3 };
     expect(homeUrlForScope(scope)).toBe('/');
     expect(sessionUrlForScope('abc', scope)).toBe('/sessions/abc');
-    expect(loopEditUrlForScope(9, scope)).toBe('/loop/9');
+    expect(loopsHomeUrlForScope(scope)).toBe('/loops');
+    expect(loopEditUrlForScope(9, scope)).toBe('/loops/9');
   });
 
   it('uses Global', () => {
     const scope = { fromAllSessions: false, selectedRepo: '__global__', repoId: null };
     expect(homeUrlForScope(scope)).toBe('/global');
     expect(sessionUrlForScope('abc', scope)).toBe('/global/sessions/abc');
-    expect(loopEditUrlForScope(9, scope)).toBe('/global/loop/9');
+    expect(loopsHomeUrlForScope(scope)).toBe('/global/loops');
+    expect(loopEditUrlForScope(9, scope)).toBe('/global/loops/9');
   });
 
   it('uses the selected repo', () => {
     const scope = { fromAllSessions: false, selectedRepo: 'acme/app', repoId: 3 };
     expect(homeUrlForScope(scope)).toBe('/repos/3');
     expect(sessionUrlForScope('abc', scope)).toBe('/repos/3/sessions/abc');
-    expect(loopEditUrlForScope(9, scope)).toBe('/repos/3/loop/9');
+    expect(loopsHomeUrlForScope(scope)).toBe('/repos/3/loops');
+    expect(loopEditUrlForScope(9, scope)).toBe('/repos/3/loops/9');
   });
 });
 

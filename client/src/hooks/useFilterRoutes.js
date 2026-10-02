@@ -4,7 +4,9 @@ import { ALL_REPOS, GLOBAL_SCOPE, useRepoContext } from '../context/RepoContext.
 import {
   homeUrlForScope,
   isAllSessionsPath,
+  isLoopsPath,
   loopEditUrlForScope,
+  loopsHomeUrlForScope,
   sessionUrlForScope,
 } from '@baguette/shared/session-scope.js';
 
@@ -16,6 +18,7 @@ export function useFilterRoutes() {
   const { pathname } = useLocation();
   const { selectedRepo, repos } = useRepoContext() ?? {};
   const fromAllSessions = isAllSessionsPath(pathname);
+  const isLoopsView = isLoopsPath(pathname);
 
   const repoId = useMemo(() => {
     if (!selectedRepo || selectedRepo === ALL_REPOS || selectedRepo === GLOBAL_SCOPE) return null;
@@ -28,9 +31,10 @@ export function useFilterRoutes() {
   );
 
   const homeUrl = homeUrlForScope(scope);
+  const loopsHomeUrl = loopsHomeUrlForScope(scope);
   const showRepoDetails = fromAllSessions || selectedRepo === ALL_REPOS;
   const sessionUrl = useCallback((sessionId) => sessionUrlForScope(sessionId, scope), [scope]);
   const loopEditUrl = useCallback((loopId) => loopEditUrlForScope(loopId, scope), [scope]);
 
-  return { showRepoDetails, homeUrl, sessionUrl, loopEditUrl };
+  return { showRepoDetails, homeUrl, loopsHomeUrl, isLoopsView, sessionUrl, loopEditUrl };
 }

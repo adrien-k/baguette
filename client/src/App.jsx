@@ -215,7 +215,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/global/loop/:loopId"
+              path="/loops"
               element={
                 <ProtectedRoute>
                   <div className="flex-1 min-h-0 overflow-auto">
@@ -225,7 +225,27 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/loop/:loopId"
+              path="/loops/:loopId"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/global/loops"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/global/loops/:loopId"
               element={
                 <ProtectedRoute>
                   <div className="flex-1 min-h-0 overflow-auto">
@@ -253,7 +273,17 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/repos/:repoId/loop/:loopId"
+              path="/repos/:repoId/loops"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Dashboard />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/repos/:repoId/loops/:loopId"
               element={
                 <ProtectedRoute>
                   <div className="flex-1 min-h-0 overflow-auto">

@@ -33,7 +33,7 @@ export const PR_STATUS_BADGE_FALLBACK = PR_STATUS_BADGE_CONFIG.open;
 /** Compact list/header indicator — icon color only. */
 export const PR_STATUS_ICON_CLASS = {
   open: 'text-success',
-  draft: 'text-fg-muted',
+  draft: 'text-success',
   merged: 'text-merged drop-shadow-[0_0_5px_rgba(167,139,250,0.75)]',
   closed: 'text-danger',
 };

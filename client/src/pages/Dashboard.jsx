@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Bot, Loader2, Archive, Repeat } from 'lucide-react';
 import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { sessionsService, loopsService } from '../feathers.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
@@ -13,6 +13,8 @@ import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
+import NotFound from './NotFound.jsx';
+import { isFeathersNotFound } from '../utils/feathersErrors.js';
 
 function FilterToggle({ icon: Icon, label, checked, onChange }) {
   return (
@@ -41,13 +43,14 @@ export default function Dashboard() {
   const [createError, setCreateError] = useState(null);
   const [formKey, setFormKey] = useState(0);
   const [editingLoop, setEditingLoop] = useState(null);
+  const [loopLoading, setLoopLoading] = useState(false);
+  const [loopNotFound, setLoopNotFound] = useState(false);
   const [loopsRefresh, setLoopsRefresh] = useState(0);
-  const [dashboardTab, setDashboardTab] = useState('agents');
   const builderRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { repoId, loopId } = useParams();
-  const { homeUrl, loopEditUrl } = useFilterRoutes();
+  const { homeUrl, loopsHomeUrl, isLoopsView, loopEditUrl } = useFilterRoutes();
   const { sessions, loading, hasMore, loadMore } = useSessionsContext();
   const { repos, selectedRepo, setSelectedRepo } = useRepoContext();
   const { showArchived, setShowArchived, showLoopRuns, setShowLoopRuns } = useFilters();
@@ -142,7 +145,7 @@ export default function Dashboard() {
   const handleCreateLoop = async (loop) => {
     const created = await loopsService.create(loop);
     setLoopsRefresh((n) => n + 1);
-    setDashboardTab('loops');
+    navigate(loopsHomeUrl);
     toast.success(`Loop created — ${created.name || 'first run'} scheduled`);
     return created;
   };
@@ -152,7 +155,7 @@ export default function Dashboard() {
     setEditingLoop(null);
     setLoopsRefresh((n) => n + 1);
     toast.success('Loop saved');
-    navigate(homeUrl);
+    navigate(loopsHomeUrl);
     return updated;
   };
 
@@ -162,15 +165,16 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (loopId) setDashboardTab('loops');
-  }, [loopId]);
-
-  useEffect(() => {
     if (!loopId) {
       setEditingLoop(null);
+      setLoopNotFound(false);
+      setLoopLoading(false);
       return;
     }
     let cancelled = false;
+    setLoopLoading(true);
+    setLoopNotFound(false);
+    setEditingLoop(null);
     loopsService
       .get(loopId)
       .then((loop) => {
@@ -178,7 +182,17 @@ export default function Dashboard() {
         setEditingLoop(loop);
         builderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       })
-      .catch((err) => toastError('Failed to load loop', err));
+      .catch((err) => {
+        if (cancelled) return;
+        if (isFeathersNotFound(err)) {
+          setLoopNotFound(true);
+        } else {
+          toastError('Failed to load loop', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoopLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -202,14 +216,25 @@ export default function Dashboard() {
     : isGlobal || isAllSessions
       ? null
       : selectedRepo;
-  const builderMode = editingLoop || dashboardTab === 'loops' ? 'loop' : 'session';
+  const builderMode = editingLoop || isLoopsView ? 'loop' : 'session';
 
-  const dashboardTabClass = (tab) =>
+  const dashboardTabClass = (active) =>
     `flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px ${
-      dashboardTab === tab
-        ? 'border-brand text-accent'
-        : 'border-transparent text-fg-muted hover:text-fg'
+      active ? 'border-brand text-accent' : 'border-transparent text-fg-muted hover:text-fg'
     }`;
+
+  if (loopId && loopNotFound) {
+    return (
+      <NotFound
+        title="Loop not found"
+        message="This loop may have been deleted or you may not have access to it."
+      />
+    );
+  }
+
+  if (loopId && loopLoading) {
+    return <p className="text-faint text-center py-12">Loading loop…</p>;
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
@@ -221,26 +246,24 @@ export default function Dashboard() {
           role="tablist"
           aria-label="Dashboard"
         >
-          <button
-            type="button"
+          <Link
+            to={homeUrl}
             role="tab"
-            aria-selected={dashboardTab === 'agents'}
-            onClick={() => setDashboardTab('agents')}
-            className={dashboardTabClass('agents')}
+            aria-selected={!isLoopsView}
+            className={dashboardTabClass(!isLoopsView)}
           >
             <Bot className="w-4 h-4 shrink-0" aria-hidden />
             Agents
-          </button>
-          <button
-            type="button"
+          </Link>
+          <Link
+            to={loopsHomeUrl}
             role="tab"
-            aria-selected={dashboardTab === 'loops'}
-            onClick={() => setDashboardTab('loops')}
-            className={dashboardTabClass('loops')}
+            aria-selected={isLoopsView}
+            className={dashboardTabClass(isLoopsView)}
           >
             <Repeat className="w-4 h-4 shrink-0" aria-hidden />
             Loops
-          </button>
+          </Link>
         </div>
       )}
 
@@ -273,11 +296,11 @@ export default function Dashboard() {
 
         <BuilderForm
           // Remounting on the edited loop reseeds every field from it.
-          key={`builder-${formKey}-${selectedRepo}-${editingLoop?.id ?? 'new'}`}
+          key={`builder-${formKey}-${selectedRepo}-${isLoopsView ? 'loop' : 'session'}-${editingLoop?.id ?? 'new'}`}
           onSubmit={handleCreate}
           onCreateLoop={handleCreateLoop}
           onUpdateLoop={handleUpdateLoop}
-          onCancelEdit={() => navigate(homeUrl)}
+          onCancelEdit={() => navigate(loopsHomeUrl)}
           editingLoop={editingLoop}
           loading={creating}
           repoFullName={builderRepoFullName}
@@ -288,7 +311,7 @@ export default function Dashboard() {
         />
       </div>
 
-      {dashboardTab === 'loops' && loopsQuery ? (
+      {isLoopsView && loopsQuery ? (
         <LoopsPanel
           query={loopsQuery}
           editingLoopId={editingLoop?.id ?? null}

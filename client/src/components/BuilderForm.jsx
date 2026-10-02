@@ -82,11 +82,16 @@ export default function BuilderForm({
   defaultPrompt,
   mode: modeProp,
 }) {
+  const isLoopMode = modeProp === 'loop';
   const persistKey = editingLoop
     ? null
-    : allowRepoChoice
-      ? 'builder-form-all'
-      : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
+    : isLoopMode
+      ? allowRepoChoice
+        ? 'builder-loop-form-all'
+        : `builder-loop-form-${isGlobalProp ? 'global' : repoFullNameProp}`
+      : allowRepoChoice
+        ? 'builder-form-all'
+        : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
   const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
   const { repos, loading: loadingRepos } = useRepoContext();

@@ -14,18 +14,40 @@ export function isGlobalSession(session) {
   return Boolean(session?.is_global);
 }
 
-/** True on All sessions (`/`), unscoped session view (`/sessions/:id`), and loop edit (`/loop/:id`). */
-export function isAllSessionsPath(pathname) {
-  if (!pathname) return false;
-  return pathname === '/' || pathname.startsWith('/sessions/') || pathname.startsWith('/loop/');
+/** Strip `/loops` list or edit suffix so agent-scope helpers see the equivalent agents path. */
+export function agentsScopePathFromPathname(pathname) {
+  if (!pathname) return '/';
+  const stripped = pathname.replace(/\/loops(\/[^/]+)?$/, '');
+  return stripped || '/';
 }
 
-/** Dashboard home for the current picker scope (All sessions, Global, or a repo). */
+/** True when the dashboard is showing loops (list or edit). */
+export function isLoopsPath(pathname) {
+  if (!pathname) return false;
+  return pathname === '/loops' || pathname.endsWith('/loops') || pathname.includes('/loops/');
+}
+
+/** True on All sessions (`/`), unscoped session view (`/sessions/:id`), and unscoped loops (`/loops/…`). */
+export function isAllSessionsPath(pathname) {
+  if (!pathname) return false;
+  const scopePath = agentsScopePathFromPathname(pathname);
+  return scopePath === '/' || scopePath.startsWith('/sessions/');
+}
+
+/** Dashboard home for agents in the current picker scope (All sessions, Global, or a repo). */
 export function homeUrlForScope({ fromAllSessions, selectedRepo, repoId } = {}) {
   if (fromAllSessions || selectedRepo === ALL_REPOS || !selectedRepo) return '/';
   if (selectedRepo === GLOBAL_SCOPE) return '/global';
   if (repoId == null) return '/';
   return `/repos/${repoId}`;
+}
+
+/** Dashboard home for loops in the current picker scope. */
+export function loopsHomeUrlForScope({ fromAllSessions, selectedRepo, repoId } = {}) {
+  if (fromAllSessions || selectedRepo === ALL_REPOS || !selectedRepo) return '/loops';
+  if (selectedRepo === GLOBAL_SCOPE) return '/global/loops';
+  if (repoId == null) return '/loops';
+  return `/repos/${repoId}/loops`;
 }
 
 function scopedItemUrl(id, segment, scope) {
@@ -40,9 +62,11 @@ export function sessionUrlForScope(sessionId, scope) {
   return scopedItemUrl(sessionId, 'sessions', scope);
 }
 
-/** Loop-edit URL that stays in the same picker scope as `homeUrlForScope`. */
+/** Loop-edit URL that stays in the same picker scope as `loopsHomeUrlForScope`. */
 export function loopEditUrlForScope(loopId, scope) {
-  return scopedItemUrl(loopId, 'loop', scope);
+  const home = loopsHomeUrlForScope(scope);
+  if (!loopId) return home;
+  return `${home}/${loopId}`;
 }
 
 export function sessionHref(session, { fromAllSessions } = {}) {

@@ -1,4 +1,8 @@
-import { isAllSessionsPath, isGlobalSession } from './session-scope.js';
+import {
+  agentsScopePathFromPathname,
+  isAllSessionsPath,
+  isGlobalSession,
+} from './session-scope.js';
 import { isSessionShownInAllSessionsView } from './session-all-sessions.js';
 
 /** Custom `sessions.find` keys (not table columns). Stripped before Knex applies the query. */
@@ -21,15 +25,16 @@ export function sessionsListQueryFromPath(pathname, { showArchived, showLoopRuns
     include_archived: !!showArchived,
     include_loop_runs: showLoopRuns !== false,
   };
-  if (!pathname || isAllSessionsPath(pathname)) {
+  const scopePath = agentsScopePathFromPathname(pathname);
+  if (!scopePath || isAllSessionsPath(pathname)) {
     query.all_sessions = true;
     return query;
   }
-  if (pathname.startsWith('/global')) {
+  if (scopePath.startsWith('/global')) {
     query.is_global = true;
     return query;
   }
-  const repoMatch = pathname.match(/^\/repos\/(\d+)/);
+  const repoMatch = scopePath.match(/^\/repos\/(\d+)/);
   if (repoMatch) {
     query.repo_id = Number(repoMatch[1]);
     return query;

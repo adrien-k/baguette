@@ -70,6 +70,8 @@ import {
 } from '@baguette/shared/session-scope.js';
 import { sortSessionsForList } from '@baguette/shared/session-sort.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
+import NotFound from './NotFound.jsx';
+import { isFeathersNotFound } from '../utils/feathersErrors.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import CardRepoBadge from '../components/CardRepoBadge.jsx';
 import SessionStatusIndicator from '../components/SessionStatusIndicator.jsx';
@@ -375,9 +377,11 @@ export default function Session() {
   const { sessions, hasMore: hasMoreSessions, loadMore: loadMoreSessions } = useSessionsContext();
   const { selectedRepo, setSelectedRepo, repos } = useRepoContext();
   const { showArchived } = useFilters();
-  const { session: sessionFromHook, loading: sessionLoading } = useGetSession(
-    isNewSessionRoute ? null : short_id
-  );
+  const {
+    session: sessionFromHook,
+    loading: sessionLoading,
+    error: sessionLoadError,
+  } = useGetSession(isNewSessionRoute ? null : short_id);
   const sessionId = useMemo(() => {
     if (isNewSessionRoute || !short_id) return null;
     if (sessionFromHook?.short_id === short_id) return sessionFromHook.id;
@@ -614,9 +618,19 @@ export default function Session() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (isNewSessionRoute || !short_id || sessionLoading) return;
-    if (!sessionFromHook) navigate(homeUrl);
-  }, [sessionLoading, short_id, sessionFromHook, navigate, homeUrl, isNewSessionRoute]);
+    if (isNewSessionRoute || !short_id || sessionLoading || sessionFromHook) return;
+    if (!sessionLoadError || isFeathersNotFound(sessionLoadError)) return;
+    toastError('Failed to load session', sessionLoadError);
+    navigate(homeUrl);
+  }, [
+    isNewSessionRoute,
+    short_id,
+    sessionLoading,
+    sessionFromHook,
+    sessionLoadError,
+    navigate,
+    homeUrl,
+  ]);
 
   useEffect(() => {
     if (isNewSessionRoute || sessionLoading || !sessionFromHook?.id) return;
@@ -1109,6 +1123,24 @@ export default function Session() {
     !sessionLoading &&
     sessionFromHook?.short_id === short_id &&
     sessionNeedsLastViewedUpdate(sessionFromHook);
+
+  const sessionNotFound =
+    !isNewSessionRoute &&
+    short_id &&
+    !sessionLoading &&
+    !sessionFromHook &&
+    isFeathersNotFound(sessionLoadError);
+
+  if (sessionNotFound) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto">
+        <NotFound
+          title="Session not found"
+          message="This session may have been deleted or you may not have access to it."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { isLoopsPath } from '@baguette/shared/session-scope.js';
 import { Bot, Layers, Plus } from 'lucide-react';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from './RepoDropdown.jsx';
@@ -31,6 +32,8 @@ export default function RepoPicker({
 }) {
   const { repos, selectedRepo, setSelectedRepo, uniqueLabel } = useRepoContext();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const onLoops = isLoopsPath(pathname);
 
   const current = value !== undefined ? value : selectedRepo;
 
@@ -89,11 +92,11 @@ export default function RepoPicker({
     onChange?.(next);
     if (syncContext) setSelectedRepo(next);
     if (navigateOnSelect) {
-      if (next === ALL_REPOS) navigate('/');
-      else if (next === GLOBAL_SCOPE) navigate('/global');
+      if (next === ALL_REPOS) navigate(onLoops ? '/loops' : '/');
+      else if (next === GLOBAL_SCOPE) navigate(onLoops ? '/global/loops' : '/global');
       else {
         const repo = repos.find((r) => r.full_name === next);
-        if (repo) navigate(`/repos/${repo.id}`);
+        if (repo) navigate(onLoops ? `/repos/${repo.id}/loops` : `/repos/${repo.id}`);
       }
     }
   };
