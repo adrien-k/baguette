@@ -403,6 +403,26 @@ describe('Task heartbeat / TTL', () => {
     expect(task.status).toBe('waiting');
   });
 
+  it('heartbeat() starts idle TTL while the task is still waiting', () => {
+    vi.useFakeTimers();
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+
+    task.heartbeat();
+    vi.advanceTimersByTime(DEFAULT_TTL_MS - 1);
+    expect(kill).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(kill).toHaveBeenCalledWith({ reason: 'ttl' });
+  });
+
   it('heartbeat() starts idle TTL when ttl is set', () => {
     vi.useFakeTimers();
     const task = new Task({
@@ -517,6 +537,64 @@ describe('Task heartbeat / TTL', () => {
     main.exit(0);
     vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS * 2);
     expect(hb).toHaveBeenCalledTimes(2);
+  });
+
+  it('start() heartbeats an already-started depends_on task', () => {
+    vi.useFakeTimers();
+    const dep = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'x',
+      ports: ['PORT'],
+      ttl: DEFAULT_TTL_MS,
+    });
+    setTaskRunning(dep);
+    dep._started = true;
+    const hb = vi.spyOn(dep, 'heartbeat');
+    vi.spyOn(dep, 'start').mockImplementation(() => dep);
+    vi.spyOn(dep, 'waitForReady').mockResolvedValue();
+
+    const main = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'x',
+      dependsOn: [dep],
+    });
+    vi.spyOn(main, '_startProcess').mockResolvedValue(main);
+
+    main.start();
+    expect(hb).toHaveBeenCalled();
+  });
+
+  it('start() re-arms depends_on heartbeat loop when reusing an already-started task', async () => {
+    const nested = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'postgres',
+      dockerContainer: { image: 'postgres:16' },
+      ttl: DEFAULT_TTL_MS,
+    });
+    const mid = new Task({
+      id: 2,
+      sessionId: 1,
+      command: 'mid',
+      dependsOn: [nested],
+    });
+    mid._started = true;
+    const nestedHb = vi.spyOn(nested, 'heartbeat');
+
+    const main = new Task({
+      id: 3,
+      sessionId: 1,
+      command: 'main',
+      dependsOn: [mid],
+    });
+    vi.spyOn(mid, 'start').mockImplementation(() => mid);
+    vi.spyOn(mid, 'waitForReady').mockResolvedValue();
+    vi.spyOn(main, '_startProcess').mockResolvedValue(main);
+
+    main.start();
+    await vi.waitFor(() => expect(nestedHb).toHaveBeenCalled());
   });
 
   it('start() heartbeats depends_on immediately and every minute until exit', () => {

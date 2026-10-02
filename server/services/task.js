@@ -13,7 +13,7 @@ import {
   stopDockerContainer,
   waitForContainerHealth,
 } from './docker-session.js';
-import { isTaskRunTimerActive, isTaskStoppable, isTaskTerminal } from '../../shared/task-status.js';
+import { isTaskStoppable, isTaskTerminal } from '../../shared/task-status.js';
 
 /** Default idle TTL (ms) when `ttl` is set without an explicit value (preview auto-start, etc.). */
 export const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -30,6 +30,11 @@ function baguetteStatusLine(message) {
 
 /** True while `start()` may still run depends_on or spawn the process (not shutting down). */
 function isTaskStartupContinuing(status) {
+  return status === 'waiting' || status === 'running';
+}
+
+/** True when a parent heartbeat may refresh this task's idle TTL. */
+function isTaskHeartbeatEligible(status) {
   return status === 'waiting' || status === 'running';
 }
 
@@ -197,7 +202,7 @@ export class Task {
    * (panel-started tasks), and for tasks that have already exited.
    */
   heartbeat() {
-    if (!isTaskRunTimerActive(this.status) || this._ttl == null) return;
+    if (this._ttl == null || !isTaskHeartbeatEligible(this.status)) return;
     clearTimeout(this.#idleTtlTimer);
     this.#idleTtlTimer = setTimeout(() => {
       this.addLog('stdout', baguetteStatusLine('TTL expired, stopping task...'));
@@ -210,7 +215,7 @@ export class Task {
   }
 
   #startDepHeartbeatLoop() {
-    if (this._dependsOn.length === 0) return;
+    if (this._dependsOn.length === 0 || this.#heartbeatTimer != null) return;
     this.#heartbeatDeps();
     this.#heartbeatTimer = setInterval(() => this.#heartbeatDeps(), HEARTBEAT_INTERVAL_MS);
   }
@@ -327,7 +332,12 @@ export class Task {
           this.#addNestedTaskMarker(depTask);
 
           try {
+            const depAlreadyStarted = depTask._started;
             await depTask.start();
+            // Reused running deps skip start(); still (re)arm their depends_on heartbeat loop.
+            if (depAlreadyStarted && depTask._dependsOn.length > 0) {
+              depTask.#startDepHeartbeatLoop();
+            }
             await depTask.waitForReady();
           } catch (err) {
             // Reported here rather than by the outer catch: the dep name and its task id are what
