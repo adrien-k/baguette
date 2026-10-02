@@ -240,16 +240,16 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                 )}
               </div>
             )}
+            {runningBashDock.length > 0 && (
+              <ChatRunningBashDock
+                items={runningBashDock}
+                worktreePath={session?.absolute_worktree_path}
+                sessionId={session?.id}
+              />
+            )}
           </>
         )}
       </ChatMessagesViewport>
-      {runningBashDock.length > 0 && (
-        <ChatRunningBashDock
-          items={runningBashDock}
-          worktreePath={session?.absolute_worktree_path}
-          sessionId={session?.id}
-        />
-      )}
     </div>
   );
 }

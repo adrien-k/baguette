@@ -41,8 +41,7 @@ import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
 import PrDraftToggleButton, {
   canTogglePrDraftStatus,
 } from '../../components/PrDraftToggleButton.jsx';
-import QueuedMessages from '../../components/QueuedMessages.jsx';
-import TiedLoopMessages from '../../components/TiedLoopMessages.jsx';
+import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.jsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
@@ -120,6 +119,10 @@ export default function ChatView({
     session?.id ? `session-chat-${session.id}` : undefined
   );
   const [input, setInput] = persistentState.useState('input', '');
+  const [queueDrawerExpanded, setQueueDrawerExpanded] = persistentState.useState(
+    'queueDrawerExpanded',
+    true
+  );
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
   const [sending, setSending] = useState(false);
@@ -690,6 +693,13 @@ export default function ChatView({
               {session && !isRunning && !isProvisioning && (
                 <ChatCostSummary usage={sessionUsage} loading={sessionUsageLoading} />
               )}
+              {runningBashDock.length > 0 && (
+                <ChatRunningBashDock
+                  items={runningBashDock}
+                  worktreePath={session?.absolute_worktree_path}
+                  sessionId={session?.id}
+                />
+              )}
               <div ref={messagesEndRef} />
             </>
           )}
@@ -701,107 +711,100 @@ export default function ChatView({
           </div>
         )}
 
-        {runningBashDock.length > 0 && (
-          <ChatRunningBashDock
-            items={runningBashDock}
-            worktreePath={session?.absolute_worktree_path}
-            sessionId={session?.id}
-          />
-        )}
-
-        {!readonly && (queue.length > 0 || tiedLoops.length > 0) && (
-          <div className={`shrink-0 flex flex-col gap-2 pb-1 ${CHAT_COLUMN_CLASS}`}>
-            <QueuedMessages
-              queue={queue}
-              session={session}
-              models={models}
-              onDelete={handleQueueDelete}
-              onSendNow={handleQueueSendNow}
-              onEdit={handleQueueEdit}
-            />
-            <TiedLoopMessages
-              loops={tiedLoops}
-              editHref={(loop) => loopEditUrl(loop.id)}
-              onDelete={handleTiedLoopDelete}
-            />
-          </div>
-        )}
-
         {!readonly && session && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
-            <FileAttachmentPicker
-              className={`w-full ${CHAT_COLUMN_CLASS}`}
-              files={files}
-              onAdd={(picked) => {
-                setFileError(null);
-                setFiles((prev) => [...prev, ...picked]);
-              }}
-              onRemove={(i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
-              error={fileError}
-            >
-              {({ attachButton }) => (
-                <AgentMessageComposer
-                  skipColumn
-                  formClassName=""
-                  value={input}
-                  onChange={setInput}
-                  onSubmit={handleSend}
-                  placeholder={`Message ${session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
-                  sending={sending}
-                  sdk={session?.agent_sdk}
-                  model={composerModel}
-                  params={composerModelParams}
-                  autoPush={session?.auto_push}
+            <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
+              {(queue.length > 0 || tiedLoops.length > 0) && (
+                <QueuedScheduledDrawer
+                  queue={queue}
+                  tiedLoops={tiedLoops}
+                  session={session}
                   models={models}
-                  cursorModelPrefs={cursorModelPrefs}
-                  onCursorModelPrefChange={onCursorModelPrefChange}
-                  onModelChange={handleComposerModelChange}
-                  onAutoPushChange={onAutoPushChange}
-                  showAutoPushParam
-                  textareaId="chat-input"
-                  canSend={canSendDraft}
-                  submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
-                  toolbarExtra={
-                    <>
-                      {attachButton}
-                      {isRunning && (
-                        <button
-                          type="button"
-                          onClick={handleStop}
-                          disabled={stopping}
-                          title="Stop"
-                          className={COMPOSER_STOP_BUTTON_CLASS}
-                        >
-                          <Square className="w-3.5 h-3.5 fill-current" />
-                        </button>
-                      )}
-                    </>
-                  }
-                  sendAddon={
-                    <ComposerScheduleAddon
-                      disabled={isRunning || isProvisioning ? !canSendDraft : !canOpenScheduleMenu}
-                      onSendNow={
-                        isRunning || isProvisioning
-                          ? () => handleSend(undefined, { force: true })
-                          : undefined
-                      }
-                      onPreset={handleSchedulePreset}
-                      onCustomSchedule={openScheduleModal}
-                      extraItems={
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={openRegularlyModal}
-                          className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
-                        >
-                          Send regularly
-                        </button>
-                      }
-                    />
-                  }
+                  onDelete={handleQueueDelete}
+                  onSendNow={handleQueueSendNow}
+                  onEdit={handleQueueEdit}
+                  loopEditUrl={loopEditUrl}
+                  onTiedLoopDelete={handleTiedLoopDelete}
+                  expanded={queueDrawerExpanded}
+                  onExpandedChange={setQueueDrawerExpanded}
                 />
               )}
-            </FileAttachmentPicker>
+              <FileAttachmentPicker
+                className="w-full"
+                files={files}
+                onAdd={(picked) => {
+                  setFileError(null);
+                  setFiles((prev) => [...prev, ...picked]);
+                }}
+                onRemove={(i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                error={fileError}
+              >
+                {({ attachButton }) => (
+                  <AgentMessageComposer
+                    skipColumn
+                    formClassName=""
+                    value={input}
+                    onChange={setInput}
+                    onSubmit={handleSend}
+                    placeholder={`Message ${session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
+                    sending={sending}
+                    sdk={session?.agent_sdk}
+                    model={composerModel}
+                    params={composerModelParams}
+                    autoPush={session?.auto_push}
+                    models={models}
+                    cursorModelPrefs={cursorModelPrefs}
+                    onCursorModelPrefChange={onCursorModelPrefChange}
+                    onModelChange={handleComposerModelChange}
+                    onAutoPushChange={onAutoPushChange}
+                    showAutoPushParam
+                    textareaId="chat-input"
+                    canSend={canSendDraft}
+                    submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
+                    toolbarExtra={
+                      <>
+                        {attachButton}
+                        {isRunning && (
+                          <button
+                            type="button"
+                            onClick={handleStop}
+                            disabled={stopping}
+                            title="Stop"
+                            className={COMPOSER_STOP_BUTTON_CLASS}
+                          >
+                            <Square className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        )}
+                      </>
+                    }
+                    sendAddon={
+                      <ComposerScheduleAddon
+                        disabled={
+                          isRunning || isProvisioning ? !canSendDraft : !canOpenScheduleMenu
+                        }
+                        onSendNow={
+                          isRunning || isProvisioning
+                            ? () => handleSend(undefined, { force: true })
+                            : undefined
+                        }
+                        onPreset={handleSchedulePreset}
+                        onCustomSchedule={openScheduleModal}
+                        extraItems={
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={openRegularlyModal}
+                            className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
+                          >
+                            Send regularly
+                          </button>
+                        }
+                      />
+                    }
+                  />
+                )}
+              </FileAttachmentPicker>
+            </div>
           </div>
         )}
       </div>
