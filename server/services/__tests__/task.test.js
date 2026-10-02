@@ -771,6 +771,33 @@ describe('Task heartbeat / TTL', () => {
     return child;
   }
 
+  it('_startDockerProcess passes merged session and task env keys to docker run', async () => {
+    const runChild = mockDockerRunChild();
+    const spawn = vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({
+      child: runChild,
+      containerName: 'baguette_abcd_pg',
+    });
+
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'docker:postgres:16',
+      taskKey: 'postgres',
+      dockerContainer: { image: 'postgres:16' },
+    });
+    task._env = { FROM_SESSION: 'yes', POSTGRES_USER: 'postgres' };
+
+    await task._startDockerProcess({ FROM_SESSION: 'yes', POSTGRES_USER: 'postgres' }, {});
+
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskEnvKeys: ['FROM_SESSION', 'POSTGRES_USER'],
+        env: { FROM_SESSION: 'yes', POSTGRES_USER: 'postgres' },
+      })
+    );
+  });
+
   it('_startDockerProcess streams attached docker run output', async () => {
     const runChild = mockDockerRunChild();
     vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({

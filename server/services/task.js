@@ -99,7 +99,6 @@ export class Task {
     ttl,
     dockerContainer = null,
     dockerPortMappings = null,
-    dockerEnvKeys = null,
     taskEnvRaw = null,
     configTaskKeys = null,
     dependsOnKeys = null,
@@ -134,7 +133,6 @@ export class Task {
     this._shortId = shortId;
     this._dockerContainerRaw = dockerContainer;
     this._dockerPortMappings = Array.isArray(dockerPortMappings) ? dockerPortMappings : [];
-    this._dockerEnvKeys = Array.isArray(dockerEnvKeys) ? dockerEnvKeys : [];
     this._dockerContainer = null;
     this._dockerContainerName = null;
     this._taskEnvRaw =
@@ -296,9 +294,11 @@ export class Task {
           }
           if (depTask.isDocker && depTask.task_key && depTask._shortId) {
             const depKey = depTask.task_key;
+            const containerImage = depTask._dockerContainer?.image;
             this._portMap[depKey] = {
               ...(this._portMap[depKey] ?? {}),
               container_hostname: dockerContainerHostname(depTask._shortId, depTask.task_key),
+              ...(containerImage ? { container_image: containerImage } : {}),
             };
           }
           const word = depTask._portEnvVars.length > 0 ? 'ready' : 'completed';
@@ -556,7 +556,7 @@ export class Task {
       shortId: this._shortId,
       taskKey: this.task_key,
       container,
-      taskEnvKeys: this._dockerEnvKeys,
+      taskEnvKeys: Object.keys(fullEnv),
       env: fullEnv,
     });
     this._dockerContainerName = containerName;

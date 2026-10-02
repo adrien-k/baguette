@@ -3,7 +3,7 @@ import path from 'path';
 import * as yaml from 'js-yaml';
 import logger from '../logger.js';
 import { resolveDataDirRelativePath } from '../config.js';
-import { dockerContainerHostname } from './docker-session.js';
+import { dockerBuildImageTag, dockerContainerHostname } from './docker-session.js';
 
 export const BAGUETTE_DIR = '.baguette';
 export const CONFIG_FILENAME = '.baguette.yaml';
@@ -173,7 +173,9 @@ export function resolveTaskEnv(
 ) {
   if (!taskEnv || typeof taskEnv !== 'object' || Array.isArray(taskEnv)) return {};
   assertTaskEnvReferencesValid(taskEnv, configTaskKeys, dependsOnKeys ?? null);
-  const withoutTaskHostnames = interpolateOpts ? { ...interpolateOpts, taskHostnames: {} } : null;
+  const withoutTaskHostnames = interpolateOpts
+    ? { ...interpolateOpts, taskHostnames: {}, taskImages: {} }
+    : null;
   let resolved = withoutTaskHostnames
     ? interpolateBaguetteConfig(taskEnv, withoutTaskHostnames)
     : { ...taskEnv };
@@ -194,9 +196,33 @@ export function buildDockerTaskHostnames(baguetteConfig, shortId) {
   return hostnames;
 }
 
+/** Image refs for `type: docker` tasks (declared `container.image` or default build tag). */
+export function buildDockerTaskImages(baguetteConfig, shortId, interpolateOpts = null) {
+  const images = {};
+  const userTasks = baguetteConfig?.session?.tasks;
+  if (!userTasks || typeof userTasks !== 'object' || Array.isArray(userTasks)) return images;
+  if (!shortId) return images;
+  for (const [key, val] of Object.entries(userTasks)) {
+    if (val?.type !== 'docker') continue;
+    const container = val.container;
+    if (!container || typeof container !== 'object') continue;
+    let image =
+      container.image != null && typeof container.image === 'string' ? container.image.trim() : '';
+    if (image && interpolateOpts && image.includes('${{')) {
+      image = interpolateString(image, { ...interpolateOpts, taskHostnames: {}, taskImages: {} });
+    }
+    if (image) {
+      images[key] = image;
+    } else if (container.build) {
+      images[key] = dockerBuildImageTag(shortId, key);
+    }
+  }
+  return images;
+}
+
 export function interpolateString(
   str,
-  { shortId, secrets, publicUri, servicesUriMap = {}, taskHostnames = {} }
+  { shortId, secrets, publicUri, servicesUriMap = {}, taskHostnames = {}, taskImages = {} }
 ) {
   if (!str || typeof str !== 'string') return str;
   return str
@@ -208,6 +234,10 @@ export function interpolateString(
       if (attr === 'container_hostname') {
         const hostname = taskHostnames[taskKey];
         return hostname != null && hostname !== '' ? hostname : match;
+      }
+      if (attr === 'container_image') {
+        const image = taskImages[taskKey];
+        return image != null && image !== '' ? image : match;
       }
       // Host-port placeholders use the same pattern; resolved later via interpolateTaskPorts.
       return match;
@@ -243,7 +273,7 @@ export function deepMapStrings(value, mapString) {
 }
 
 /**
- * Session-time substitution: secrets, short_id, public URIs, docker container_hostname.
+ * Session-time substitution: secrets, short_id, public URIs, docker container_hostname / container_image.
  * Walks any config subtree (task env, container block, services, etc.).
  */
 export function interpolateBaguetteConfig(value, opts) {

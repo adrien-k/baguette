@@ -6,6 +6,7 @@ import {
   assertNoTaskPlaceholders,
   resolveServicesConfig,
   buildDockerTaskHostnames,
+  buildDockerTaskImages,
 } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 import { gitAuthorEnvFromUser } from './git-identity.js';
@@ -54,12 +55,16 @@ async function buildInterpolateContext(db, sessionId) {
             servicesConfig.map((s) => [s.name, getServicePreviewHost(session.short_id, s.name)])
           )
         : {};
-      interpolateOpts = {
+      const interpolateBase = {
         shortId: session.short_id,
         secrets,
         publicUri: getPreviewHost(session.short_id),
         servicesUriMap,
         taskHostnames: buildDockerTaskHostnames(baguetteConfig, session.short_id),
+      };
+      interpolateOpts = {
+        ...interpolateBase,
+        taskImages: buildDockerTaskImages(baguetteConfig, session.short_id, interpolateBase),
       };
     }
   }
@@ -89,6 +94,7 @@ export async function buildTaskEnv(db, sessionId) {
     sessionEnv = interpolateEnv(baguetteConfig.session.env, {
       ...interpolateOpts,
       taskHostnames: {},
+      taskImages: {},
     });
   }
 

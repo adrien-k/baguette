@@ -88,10 +88,11 @@ Session-level placeholders (resolved when the task is created):
 
 **Task `env`** (per task under `session.tasks`) also supports the session placeholders above, plus task-specific placeholders resolved **after `depends-on` tasks are ready**:
 
-| Placeholder                                           | Description                                                                                                                |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname — the `<task-key>` must exist and be listed in `depends-on`                                        |
-| `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a command task that declares `ports:` — same `depends-on` requirement; unknown task keys fail at task start |
+| Placeholder                                           | Description                                                                                                                 |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `${{ baguette.tasks.<task-key>.container_hostname }}` | Docker network hostname — the `<task-key>` must exist and be listed in `depends-on`                                         |
+| `${{ baguette.tasks.<task-key>.container_image }}`    | Docker image ref (`container.image`, or the session build tag when only `container.build` is set) — same `depends-on` rules |
+| `${{ baguette.tasks.<task-key>.<PORT> }}`             | Host port from a command task that declares `ports:` — same `depends-on` requirement; unknown task keys fail at task start  |
 
 Other config strings (`run`, docker `container`, `services`, etc.) use the same two-phase rules: session placeholders at task start, task port/host placeholders after dependencies are ready.
 
@@ -140,6 +141,8 @@ tasks:
 | `attach`     | boolean  | When `false`, detached mode is required to run the task (logs via task output APIs)                                              |
 | `internal`   | boolean  | When `true`, omit from session task buttons (task remains runnable via `task_key`, `depends-on`, `services`, etc.)               |
 | `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                                                   |
+
+For **`type: docker`** tasks, Baguette passes the same merged environment as command tasks (`session.env`, then task `env`, then any `extra_env`) into the container as `docker run -e` flags.
 
 #### Multi-line tasks
 

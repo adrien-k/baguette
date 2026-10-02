@@ -20,6 +20,7 @@ import {
   TaskEnvInterpolationError,
   interpolateDockerContainerTaskPorts,
   buildDockerTaskHostnames,
+  buildDockerTaskImages,
   interpolateEnvTaskPorts,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -220,6 +221,25 @@ describe('getAvailableTasks', () => {
     expect(env.DATABASE_URL).toBe('postgres://u:p@baguette_ab_postgres:5432/app');
   });
 
+  it('resolveTaskEnv applies container_image from portMap after depends-on', () => {
+    const env = resolveTaskEnv(
+      { PG_IMAGE: '${{ baguette.tasks.postgres.container_image }}' },
+      {
+        configTaskKeys: ['postgres'],
+        dependsOnKeys: ['postgres'],
+        portMap: { postgres: { container_image: 'postgres:16' } },
+        interpolateOpts: {
+          shortId: 'ab',
+          secrets: {},
+          publicUri: '',
+          servicesUriMap: {},
+          taskHostnames: {},
+        },
+      }
+    );
+    expect(env.PG_IMAGE).toBe('postgres:16');
+  });
+
   it('resolveTaskEnv fails when depends-on port is missing', () => {
     expect(() =>
       resolveTaskEnv(
@@ -336,6 +356,25 @@ describe('getAvailableTasks', () => {
       { taskHostnames: hostnames }
     );
     expect(url).toBe('postgres://u:p@baguette_a3de4_postgres:5432/app');
+  });
+
+  it('buildDockerTaskImages and interpolateString resolve container_image', () => {
+    const config = {
+      session: {
+        tasks: {
+          postgres: { type: 'docker', container: { image: 'postgres:16' } },
+          app: { type: 'docker', container: { build: { context: '.' } } },
+        },
+      },
+    };
+    const base = { shortId: 'a3de4', secrets: {}, publicUri: '', servicesUriMap: {} };
+    const images = buildDockerTaskImages(config, 'a3de4', base);
+    expect(images.postgres).toBe('postgres:16');
+    expect(images.app).toBe('baguette_a3de4_app');
+    const label = interpolateString('image=${{ baguette.tasks.postgres.container_image }}', {
+      taskImages: images,
+    });
+    expect(label).toBe('image=postgres:16');
   });
 });
 

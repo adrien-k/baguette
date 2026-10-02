@@ -325,8 +325,8 @@ export async function ensureSessionVolume(shortId) {
  * @param {string} opts.shortId
  * @param {string} opts.taskKey
  * @param {ReturnType<typeof normalizeDockerContainer>} opts.container
- * @param {string[]} opts.taskEnvKeys  keys from task.env to pass as container -e flags
- * @param {Record<string, string>} opts.env  merged task env (values for taskEnvKeys)
+ * @param {string[]} opts.taskEnvKeys  env keys to pass as container -e flags (same merged env as command tasks)
+ * @param {Record<string, string>} opts.env  merged task env (session.env, task.env, ports, etc.)
  */
 export async function spawnDockerContainer({
   shortId,
