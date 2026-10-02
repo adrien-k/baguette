@@ -771,6 +771,27 @@ describe('Task heartbeat / TTL', () => {
     return child;
   }
 
+  it('start() logs and fails when docker container config is invalid', async () => {
+    const task = new Task({
+      id: 1,
+      sessionId: 1,
+      shortId: 'abcd',
+      command: 'docker:bad',
+      taskKey: 'bad',
+      dockerContainer: { build: { dockerfile: 'Dockerfile' } },
+    });
+
+    const exited = new Promise((resolve) => task.onExit(() => resolve()));
+    task.start();
+    await exited;
+
+    expect(task.status).toBe('exited');
+    expect(task.exit_code).toBe(1);
+    const logs = task.getLogs();
+    expect(logs).toContain('container.build.context is required');
+    expect(logs).toContain('Failed to start task');
+  });
+
   it('_startDockerProcess passes merged session and task env keys to docker run', async () => {
     const runChild = mockDockerRunChild();
     const spawn = vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({

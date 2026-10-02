@@ -192,6 +192,12 @@ export class Task {
     this.#heartbeatTimer = null;
   }
 
+  #failStart(err) {
+    const message = err instanceof Error ? err.message : String(err);
+    this.addLog('stderr', `\x1b[31m──── Failed to start task "${this.label}": ${message}\x1b[0m\n`);
+    this.exit(err?.exitCode ?? 1);
+  }
+
   /**
    * Register a log listener: fn(id, stream, data). Replays accumulated buffer, then registers.
    * Returns unsubscribe.
@@ -342,16 +348,13 @@ export class Task {
         }
 
         this._depsSatisfied = true;
-        return this._startProcess();
+        await this._startProcess();
       } catch (err) {
-        this.addLog(
-          'stderr',
-          `\x1b[31m──── Failed to start task "${this.label}": ${err.message}\x1b[0m\n`
-        );
-        this.exit(err.exitCode ?? 1);
-        return this;
+        this.#failStart(err);
       }
-    })();
+    })().catch((err) => {
+      if (this.status === 'running') this.#failStart(err);
+    });
   }
 
   /**
@@ -485,7 +488,8 @@ export class Task {
     }
 
     if (this.isDocker) {
-      return this._startDockerProcess(fullEnv, portAssignments);
+      await this._startDockerProcess(fullEnv, portAssignments);
+      return this;
     }
 
     let scriptPath = null;
