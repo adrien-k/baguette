@@ -707,6 +707,8 @@ export default function ChatView({
           <div className={`shrink-0 flex flex-col gap-2 pb-1 ${CHAT_COLUMN_CLASS}`}>
             <QueuedMessages
               queue={queue}
+              session={session}
+              models={models}
               onDelete={handleQueueDelete}
               onSendNow={handleQueueSendNow}
               onEdit={handleQueueEdit}

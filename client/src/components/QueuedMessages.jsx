@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Clock, Pencil, Trash2, Send, Check, X } from 'lucide-react';
+import { resolveTurnModel } from '@baguette/shared/turn-model.js';
+import { messageModelLabel } from '../utils/messageModelLabel.js';
 
 function extractText(messageJson) {
   try {
@@ -63,7 +65,7 @@ function formatSendAt(sendAt) {
   }
 }
 
-function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
+function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
@@ -71,6 +73,8 @@ function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
   const hasFiles = hasFileAttachments(item.message_json);
   const isScheduled = item.kind === 'scheduled';
   const sendAtLabel = isScheduled ? formatSendAt(item.send_at) : null;
+  const { model, modelParams } = resolveTurnModel(item, session);
+  const turnModelLabel = messageModelLabel({ model, modelParams, models });
 
   const startEdit = () => {
     setEditText(text);
@@ -87,10 +91,17 @@ function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
 
   return (
     <div className="flex flex-col gap-1.5 bg-control/60 border border-strong/60 rounded-lg px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-xs text-accent/80 font-medium">
-        <Clock className="w-3 h-3" />
-        {isScheduled ? (sendAtLabel ? `Sends ${sendAtLabel}` : 'Scheduled') : 'Queued'}
-        {hasFiles && <span className="text-faint">· with attachment</span>}
+      <div className="flex items-center gap-1.5 text-xs text-accent/80 font-medium min-w-0">
+        <Clock className="w-3 h-3 shrink-0" />
+        <span className="truncate">
+          {isScheduled ? (sendAtLabel ? `Sends ${sendAtLabel}` : 'Scheduled') : 'Queued'}
+          {hasFiles && <span className="text-faint"> · with attachment</span>}
+        </span>
+        {turnModelLabel && (
+          <span className="text-faint font-normal truncate max-w-[12rem] sm:max-w-xs shrink-0 ml-auto">
+            {turnModelLabel}
+          </span>
+        )}
       </div>
 
       {editing ? (
@@ -159,7 +170,14 @@ function QueuedItem({ item, onDelete, onSendNow, onEdit }) {
   );
 }
 
-export default function QueuedMessages({ queue, onDelete, onSendNow, onEdit }) {
+export default function QueuedMessages({
+  queue,
+  session,
+  models = [],
+  onDelete,
+  onSendNow,
+  onEdit,
+}) {
   if (!queue.length) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -167,6 +185,8 @@ export default function QueuedMessages({ queue, onDelete, onSendNow, onEdit }) {
         <QueuedItem
           key={item.id}
           item={item}
+          session={session}
+          models={models}
           onDelete={onDelete}
           onSendNow={onSendNow}
           onEdit={onEdit}
