@@ -123,6 +123,8 @@ export class Task {
     env,
     cwd,
     dependsOn,
+    /** Panel / user-started task (not created only as another task's depends_on). */
+    isRoot = false,
     /** Idle TTL in ms; omit to disable idle shutdown. */
     ttl,
     dockerContainer = null,
@@ -158,6 +160,10 @@ export class Task {
     this._exitListeners = [];
     this._statusListeners = [];
     this._dependsOn = Array.isArray(dependsOn) ? dependsOn : [];
+    /** Tasks that list this task in `depends_on` (reverse edges for orphan shutdown). */
+    this._dependents = new Set();
+    this._isRoot = Boolean(isRoot);
+    for (const dep of this._dependsOn) dep.#registerDependent(this);
     this._started = false;
     /** Set when depends_on tasks have all passed waitForReady (before _startProcess). */
     this._depsSatisfied = false;
@@ -692,6 +698,37 @@ export class Task {
     }
   }
 
+  #registerDependent(task) {
+    this._dependents.add(task);
+  }
+
+  #removeDependent(task) {
+    this._dependents.delete(task);
+  }
+
+  #hasActiveDependents() {
+    for (const t of this._dependents) {
+      if (!isTaskTerminal(t.status)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * After a dependent exits, stop this task when it was only started for that chain.
+   * @param {{ reason?: 'stopped'|'ttl'|null }} opts
+   */
+  #tryStopIfOrphan({ reason = null } = {}) {
+    if (this._isRoot || this.#hasActiveDependents()) return;
+    if (isTaskTerminal(this.status)) return;
+    if (!this._started) {
+      this.#cancelUnstartedDependsOnSubtree({ reason });
+      return;
+    }
+    if (isTaskStoppable(this.status)) {
+      void this.kill({ reason: reason ?? 'stopped' }).catch(() => {});
+    }
+  }
+
   /**
    * End depends_on tasks that never had `start()` called (and their nested trees).
    * @param {{ reason?: 'stopped'|'ttl'|null }} opts - forwarded from `kill()`; omit on natural parent exit.
@@ -701,26 +738,17 @@ export class Task {
     if (!this._started) {
       if (reason) this.kill_reason = reason;
       for (const nested of [...this._dependsOn].reverse()) {
-        nested.#cancelUnstartedDependsOnSubtree({ reason });
+        nested.#removeDependent(this);
+        nested.#tryStopIfOrphan({ reason });
       }
       this.exit(0);
     }
   }
 
-  #cancelUnstartedDependsOn({ reason = null } = {}) {
+  #releaseDependsOn({ reason = null } = {}) {
     for (const dep of [...this._dependsOn].reverse()) {
-      dep.#cancelUnstartedDependsOnSubtree({ reason });
-    }
-  }
-
-  async #stopDependsOnTask(dep, { timeoutMs, graceMs, reason }) {
-    if (isTaskTerminal(dep.status)) return;
-    if (!dep._started) {
-      dep.#cancelUnstartedDependsOnSubtree({ reason });
-      return;
-    }
-    if (isTaskStoppable(dep.status)) {
-      await dep.kill({ timeoutMs, graceMs, reason }).catch(() => {});
+      dep.#removeDependent(this);
+      dep.#tryStopIfOrphan({ reason });
     }
   }
 
@@ -750,9 +778,6 @@ export class Task {
         'stdout',
         baguetteStatusLine(`TTL expired (SIGTERM; force kill after ${graceSec}s if still running)`)
       );
-    }
-    for (const dep of [...this._dependsOn].reverse()) {
-      await this.#stopDependsOnTask(dep, { timeoutMs: waitMs, graceMs, reason });
     }
     // Cancel before the child exists (still in init/depends_on) or if the child
     // already vanished without an exit event — otherwise the task stays "running"
@@ -817,7 +842,7 @@ export class Task {
   /** Mark the task as failed without a running process. */
   exit(exitCode = 1) {
     if (isTaskTerminal(this.status)) return;
-    this.#cancelUnstartedDependsOn({ reason: this.kill_reason });
+    this.#releaseDependsOn({ reason: this.kill_reason });
     clearTimeout(this.#idleTtlTimer);
     this.#stopDepHeartbeatLoop();
     this.exit_code = exitCode;

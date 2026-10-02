@@ -124,6 +124,7 @@ describe('Task', () => {
   it('kill() cancels depends_on tasks that have not started yet', async () => {
     const depStarted = new Task({ id: 2, sessionId: 1, command: 'x', ports: ['PORT'] });
     depStarted._started = true;
+    depStarted._isRoot = true;
     setTaskRunning(depStarted);
     const depWaiting = new Task({ id: 3, sessionId: 1, command: 'echo later' });
     const main = new Task({
@@ -135,6 +136,57 @@ describe('Task', () => {
     await main.kill();
     expect(depWaiting.status).toBe('stopped');
     expect(depWaiting._started).toBe(false);
+    expect(depStarted.status).toBe('running');
+  });
+
+  it('kill() stops a non-root depends_on task with no other dependents', async () => {
+    const dep = new Task({ id: 2, sessionId: 1, command: 'x', ports: ['PORT'] });
+    dep._started = true;
+    setTaskRunning(dep);
+    const main = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo main',
+      dependsOn: [dep],
+    });
+    await main.kill();
+    expect(dep.status).toBe('stopped');
+  });
+
+  it('kill() leaves a root depends_on task running when the parent stops', async () => {
+    const dep = new Task({ id: 2, sessionId: 1, command: 'x', ports: ['PORT'], isRoot: true });
+    dep._started = true;
+    setTaskRunning(dep);
+    const main = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo main',
+      dependsOn: [dep],
+    });
+    await main.kill();
+    expect(dep.status).toBe('running');
+  });
+
+  it('kill() leaves a shared depends_on task running while another dependent is active', async () => {
+    const dep = new Task({ id: 2, sessionId: 1, command: 'x', ports: ['PORT'] });
+    dep._started = true;
+    setTaskRunning(dep);
+    const main1 = new Task({
+      id: 1,
+      sessionId: 1,
+      command: 'echo one',
+      dependsOn: [dep],
+    });
+    const main2 = new Task({
+      id: 3,
+      sessionId: 1,
+      command: 'echo two',
+      dependsOn: [dep],
+    });
+    await main1.kill();
+    expect(dep.status).toBe('running');
+    await main2.kill();
+    expect(dep.status).toBe('stopped');
   });
 
   it('exit() cancels depends_on tasks that have not started yet', () => {
