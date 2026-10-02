@@ -82,6 +82,22 @@ import { diffFileDisplayPath } from '../utils/paths.js';
 const SIDE_PANEL_WIDTH_DEFAULT = 360;
 const SIDE_PANEL_WIDTH_MIN = 240;
 const SIDE_PANEL_WIDTH_MAX = 800;
+/** Minimum width for chat/diff/etc. between the sessions list and the side panel. */
+const SESSION_MAIN_MIN_WIDTH = 400;
+const SESSIONS_SIDEBAR_WIDTH = 256;
+
+function maxSidePanelWidth(viewportWidth, { sessionsSidebarOpen }) {
+  const hardMax = Math.min(SIDE_PANEL_WIDTH_MAX, Math.floor(viewportWidth * 0.65));
+  const reservedLeft = sessionsSidebarOpen && viewportWidth >= 768 ? SESSIONS_SIDEBAR_WIDTH : 0;
+  const maxForMain = viewportWidth - reservedLeft - SESSION_MAIN_MIN_WIDTH;
+  if (maxForMain < SIDE_PANEL_WIDTH_MIN) return hardMax;
+  return Math.min(hardMax, maxForMain);
+}
+
+function clampSidePanelWidth(width, viewportWidth, { sessionsSidebarOpen }) {
+  const max = maxSidePanelWidth(viewportWidth, { sessionsSidebarOpen });
+  return Math.round(Math.min(max, Math.max(SIDE_PANEL_WIDTH_MIN, width)));
+}
 
 /**
  * Processes a flat list of messages from session history:
@@ -1048,6 +1064,25 @@ export default function Session() {
 
   const clearScrollToDiffFile = useCallback(() => setScrollToDiffFile(null), []);
 
+  useLayoutEffect(() => {
+    if (!isMdUp || !isSidePanelOpen) return;
+    const next = clampSidePanelWidth(sidePanelWidth, window.innerWidth, {
+      sessionsSidebarOpen: isSidebarOpen,
+    });
+    if (next !== sidePanelWidth) setSidePanelWidth(next);
+  }, [isMdUp, isSidePanelOpen, isSidebarOpen, sidePanelWidth, setSidePanelWidth]);
+
+  useEffect(() => {
+    if (!isMdUp || !isSidePanelOpen) return;
+    const onResize = () => {
+      setSidePanelWidth((w) =>
+        clampSidePanelWidth(w, window.innerWidth, { sessionsSidebarOpen: isSidebarOpen })
+      );
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isMdUp, isSidePanelOpen, isSidebarOpen, setSidePanelWidth]);
+
   const handleSidePanelResizeStart = (event) => {
     event.preventDefault();
     const handle = event.currentTarget;
@@ -1055,10 +1090,9 @@ export default function Session() {
     const startX = event.clientX;
     const startW = sidePanelWidth;
     const onMove = (ev) => {
-      const max = Math.min(SIDE_PANEL_WIDTH_MAX, Math.floor(window.innerWidth * 0.65));
-      const next = Math.round(
-        Math.min(max, Math.max(SIDE_PANEL_WIDTH_MIN, startW + (startX - ev.clientX)))
-      );
+      const next = clampSidePanelWidth(startW + (startX - ev.clientX), window.innerWidth, {
+        sessionsSidebarOpen: isSidebarOpen,
+      });
       setSidePanelWidth(next);
     };
     const onUp = () => {
@@ -1253,7 +1287,10 @@ export default function Session() {
           </div>
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col md:min-w-[var(--session-main-min-w)]"
+          style={{ '--session-main-min-w': `${SESSION_MAIN_MIN_WIDTH}px` }}
+        >
           {/* View tabs — only above chat/diff/logs + tasks */}
           <div className="flex shrink-0 items-center border-b border-line bg-nav px-3 sm:px-4">
             <button
