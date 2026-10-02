@@ -64,4 +64,46 @@ describe('processCursorRunStream', () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0].message.content[0]).toEqual({ type: 'thinking', thinking: 'think more' });
   });
+
+  it('drains tool results that arrive after FINISHED before ending the run', async () => {
+    const callId = 'shell-1';
+    const persisted = [];
+    const { finishedOk } = await processCursorRunStream(
+      mockRun([
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: callId,
+          name: 'Shell',
+          args: { command: 'git commit' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        { type: 'status', status: 'FINISHED' },
+        {
+          type: 'tool_call',
+          status: 'completed',
+          call_id: callId,
+          name: 'Shell',
+          args: { command: 'git commit' },
+          agent_id: 'a',
+          run_id: 'r',
+          result: { exitCode: 0 },
+        },
+      ]),
+      {
+        persistMessage: async (msg) => {
+          persisted.push(msg);
+          return { id: persisted.length };
+        },
+        patchMessage: async () => {},
+        onStatus: async (sdkMsg) => {
+          if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
+        },
+      }
+    );
+
+    expect(finishedOk).toBe(true);
+    expect(persisted.some((m) => m.message?.content?.[0]?.type === 'tool_result')).toBe(true);
+  });
 });

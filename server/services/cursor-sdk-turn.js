@@ -18,6 +18,7 @@ export async function processCursorRunStream(run, options) {
   const { persistMessage, patchMessage, onUsage, onStatus, abortSignal } = options;
   const pendingToolCalls = new Map();
   let finishedOk = false;
+  let sawFinished = false;
   let hasBackgroundTask = false;
 
   let streamBuffer = null;
@@ -202,12 +203,16 @@ export async function processCursorRunStream(run, options) {
     if (sdkMsg.type === 'status' && onStatus) {
       const result = await onStatus(sdkMsg);
       if (result?.break) {
-        if (result.finishedOk) finishedOk = true;
-        break;
+        sawFinished = true;
+        if (pendingToolCalls.size === 0) {
+          if (result.finishedOk) finishedOk = true;
+          break;
+        }
       }
     }
   }
 
   await flushStreamBuffer();
+  if (sawFinished && pendingToolCalls.size === 0) finishedOk = true;
   return { finishedOk, hasBackgroundTask };
 }
