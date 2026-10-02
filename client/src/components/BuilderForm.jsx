@@ -145,6 +145,7 @@ export default function BuilderForm({
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
   const initAppliedRef = useRef(false);
+  const modelsSdkRef = useRef(agentSdk);
   const isCursor = agentSdk === 'cursor';
 
   const applySdkAndModel = (nextSdk, modelId, paramsJson) => {
@@ -168,6 +169,7 @@ export default function BuilderForm({
     () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
     [userSettings, selectedRepo]
   );
+  const availableSdkKey = availableSdks.join(',');
 
   useEffect(() => {
     if (!availableSdks.length) return;
@@ -249,17 +251,21 @@ export default function BuilderForm({
       .catch(() => setModels([]));
   };
 
-  // Load models for current harness whenever agentSdk changes
+  // Load models for the active SDK (avoid clearing the list when only availableSdks ref churns).
   useEffect(() => {
     if (!availableSdks.includes(agentSdk)) return;
-    setModels([]);
+    if (modelsSdkRef.current !== agentSdk) {
+      modelsSdkRef.current = agentSdk;
+      setModels([]);
+    }
     loadModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSdk, availableSdks]);
+  }, [agentSdk, availableSdkKey]);
 
   // Validate/default model when models load after an SDK change
   useEffect(() => {
     if (!models.length) return;
+    if (!editingLoop && !initAppliedRef.current) return;
     const current = models.find((m) => m.id === model);
     if (current) {
       if (isCursor && !modelParamsJson) {

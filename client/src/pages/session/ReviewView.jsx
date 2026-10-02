@@ -412,7 +412,8 @@ export default function ReviewView({
 
   useEffect(() => {
     if (!session?.id || readonly || !models.length) return;
-    if (reviewModel && models.some((m) => m.id === reviewModel)) return;
+    if (!reviewModel) return;
+    if (models.some((m) => m.id === reviewModel)) return;
     const fallback = defaultModelForSdk(models);
     if (!fallback) return;
     handleReviewModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));

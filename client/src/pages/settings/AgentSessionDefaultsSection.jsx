@@ -26,6 +26,7 @@ export default function AgentSessionDefaultsSection({ settings }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [defaultsReady, setDefaultsReady] = useState(false);
 
   const isLastUsedMode = agentSdk === LAST_USED_AGENT_SDK;
 
@@ -35,6 +36,7 @@ export default function AgentSessionDefaultsSection({ settings }) {
   );
 
   const loadDefaults = useCallback(() => {
+    setDefaultsReady(false);
     return apiFetch('/api/settings/agent-defaults')
       .then((d) => {
         if (d.use_last_used || !d.agent_sdk) {
@@ -49,7 +51,8 @@ export default function AgentSessionDefaultsSection({ settings }) {
         }
         setDirty(false);
       })
-      .catch((err) => toastError('Failed to load session defaults', err));
+      .catch((err) => toastError('Failed to load session defaults', err))
+      .finally(() => setDefaultsReady(true));
   }, [availableSdks]);
 
   useEffect(() => {
@@ -78,7 +81,7 @@ export default function AgentSessionDefaultsSection({ settings }) {
   }, [loadModels]);
 
   useEffect(() => {
-    if (!models.length) return;
+    if (!defaultsReady || !models.length) return;
     const current = models.find((m) => m.id === model);
     if (current) {
       if (agentSdk === 'cursor' && !modelParamsJson) {
