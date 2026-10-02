@@ -89,10 +89,10 @@ function Nav() {
           </span>
         </Link>
         <div className="flex flex-1 min-w-0 items-center justify-end gap-2 sm:gap-3 xl:contents">
-          <div className="flex items-center min-w-0 max-w-full overflow-hidden xl:justify-self-center xl:justify-center">
+          <div className="relative z-10 flex items-center min-w-0 max-w-full xl:justify-self-center xl:justify-center">
             <NavbarTasksAndStats />
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 xl:justify-self-end xl:justify-end">
+          <div className="relative z-0 flex min-w-0 items-center gap-2 sm:gap-3 shrink-0 xl:max-w-full xl:justify-self-end xl:justify-end">
             <div className="hidden sm:block shrink-0">
               <ColorSchemeToggle />
             </div>

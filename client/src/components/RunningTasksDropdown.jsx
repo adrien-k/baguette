@@ -80,7 +80,7 @@ export default function RunningTasksDropdown() {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            className="flex items-center gap-1.5 text-xs text-faint hover:text-secondary tabular-nums transition-colors shrink-0"
+            className="flex cursor-pointer items-center gap-1.5 text-xs text-faint hover:text-secondary tabular-nums transition-colors shrink-0"
             title={`${runningTasks.length} running task${runningTasks.length !== 1 ? 's' : ''}`}
           >
             <span className="w-2 h-2 rounded-full bg-ok animate-pulse shrink-0" aria-hidden />
