@@ -17,9 +17,6 @@ RUN npm run build
 
 FROM base AS runner
 
-ARG GIT_SHA=
-ENV BAGUETTE_GIT_SHA=$GIT_SHA
-
 # Add libs generally useful for development. Add your own to avoid re-installing them every time.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
@@ -105,6 +102,9 @@ ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/aarch64-linux-g
 ENV MISE_TRUSTED_CONFIG_PATHS=/data/.config/mise:/data/.baguette/repos
 ENV COMPOSE_PROJECT_NAME=baguette
 ENV DATA_DIR=/data/baguette
+
+ARG GIT_SHA=
+ENV BAGUETTE_GIT_SHA=$GIT_SHA
 
 EXPOSE 3000
 
