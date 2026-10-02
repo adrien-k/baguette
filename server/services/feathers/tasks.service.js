@@ -50,6 +50,7 @@ export class TasksService {
     ttl,
     dockerContainer,
     dockerPortMappings,
+    dockerEnvKeys,
     taskEnvRaw,
     configTaskKeys,
     dependsOnKeys,
@@ -86,6 +87,7 @@ export class TasksService {
       ttl,
       dockerContainer,
       dockerPortMappings,
+      dockerEnvKeys,
       taskEnvRaw,
       configTaskKeys,
       dependsOnKeys,
@@ -382,6 +384,16 @@ export class TasksService {
 
     await attachYamlDependsOn();
 
+    const sessionEnvKeys =
+      baguetteConfig?.session?.env &&
+      typeof baguetteConfig.session.env === 'object' &&
+      !Array.isArray(baguetteConfig.session.env)
+        ? Object.keys(baguetteConfig.session.env)
+        : [];
+    const dockerEnvKeys = [
+      ...new Set([...sessionEnvKeys, ...(taskEnvRaw ? Object.keys(taskEnvRaw) : [])]),
+    ];
+
     const task = this.createTask({
       sessionId: session_id,
       shortId: session.short_id,
@@ -395,6 +407,7 @@ export class TasksService {
       ttl: effectiveTtl,
       dockerContainer,
       dockerPortMappings: null,
+      dockerEnvKeys: isDockerTask ? dockerEnvKeys : null,
       taskEnvRaw,
       configTaskKeys: [...configTaskKeys],
       dependsOnKeys: taskDef?.depends_on ?? [],

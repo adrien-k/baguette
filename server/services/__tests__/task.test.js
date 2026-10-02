@@ -792,7 +792,7 @@ describe('Task heartbeat / TTL', () => {
     expect(logs).toContain('Failed to start task');
   });
 
-  it('_startDockerProcess passes merged session and task env keys to docker run', async () => {
+  it('_startDockerProcess passes session/task env keys to docker run, not host process.env', async () => {
     const runChild = mockDockerRunChild();
     const spawn = vi.spyOn(dockerSession, 'spawnDockerContainer').mockResolvedValue({
       child: runChild,
@@ -806,10 +806,15 @@ describe('Task heartbeat / TTL', () => {
       command: 'docker:postgres:16',
       taskKey: 'postgres',
       dockerContainer: { image: 'postgres:16' },
+      dockerEnvKeys: ['FROM_SESSION', 'POSTGRES_USER'],
     });
-    task._env = { FROM_SESSION: 'yes', POSTGRES_USER: 'postgres' };
+    const fullEnv = {
+      PATH: '/usr/bin',
+      FROM_SESSION: 'yes',
+      POSTGRES_USER: 'postgres',
+    };
 
-    await task._startDockerProcess({ FROM_SESSION: 'yes', POSTGRES_USER: 'postgres' }, {});
+    await task._startDockerProcess(fullEnv, {});
 
     expect(spawn).toHaveBeenCalledWith(
       expect.objectContaining({

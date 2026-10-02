@@ -25,6 +25,21 @@ function baguetteStatusLine(message) {
   return `\x1b[33m[baguette] ${message}\x1b[0m\n`;
 }
 
+/** Env passed to `docker run -e` — session/task/extra/port keys only, not host process.env. */
+export function buildDockerRunEnv(fullEnv, declaredKeys, extraEnv, portEnvVars = []) {
+  const keys = new Set(Array.isArray(declaredKeys) ? declaredKeys : []);
+  if (extraEnv && typeof extraEnv === 'object') {
+    for (const key of Object.keys(extraEnv)) keys.add(key);
+  }
+  for (const key of portEnvVars) keys.add(key);
+  const env = {};
+  for (const key of keys) {
+    const value = fullEnv[key];
+    if (value != null && value !== '') env[key] = value;
+  }
+  return env;
+}
+
 /** Release stdio streams and listeners after the child exits (task row stays for UI/logs). */
 function detachChildProcess(child) {
   try {
@@ -99,6 +114,7 @@ export class Task {
     ttl,
     dockerContainer = null,
     dockerPortMappings = null,
+    dockerEnvKeys = null,
     taskEnvRaw = null,
     configTaskKeys = null,
     dependsOnKeys = null,
@@ -133,6 +149,7 @@ export class Task {
     this._shortId = shortId;
     this._dockerContainerRaw = dockerContainer;
     this._dockerPortMappings = Array.isArray(dockerPortMappings) ? dockerPortMappings : [];
+    this._dockerEnvKeys = Array.isArray(dockerEnvKeys) ? dockerEnvKeys : [];
     this._dockerContainer = null;
     this._dockerContainerName = null;
     this._taskEnvRaw =
@@ -556,12 +573,18 @@ export class Task {
 
     const runLabel = container.image ?? 'container';
     this.addLog('stdout', baguetteStatusLine(`Running docker container (${runLabel})…`));
+    const dockerEnv = buildDockerRunEnv(
+      fullEnv,
+      this._dockerEnvKeys,
+      this._extraEnv,
+      this._portEnvVars
+    );
     const { child, containerName } = await spawnDockerContainer({
       shortId: this._shortId,
       taskKey: this.task_key,
       container,
-      taskEnvKeys: Object.keys(fullEnv),
-      env: fullEnv,
+      taskEnvKeys: Object.keys(dockerEnv),
+      env: dockerEnv,
     });
     this._dockerContainerName = containerName;
     this.#process = child;
