@@ -412,12 +412,14 @@ export default function Session() {
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
   );
   const isXlScreen = useMediaQuery('(min-width: 1280px)');
+  const isMdUp = useMediaQuery('(min-width: 768px)');
   const [showSidebar, setShowSidebar] = useState(null);
   const sidePanelPersist = usePersistentState('session-side-panel');
   const [sidePanelWidth, setSidePanelWidth] = sidePanelPersist.useState(
     'width',
     SIDE_PANEL_WIDTH_DEFAULT
   );
+  const [lastSidePanelTab, setLastSidePanelTab] = useState('tasks');
   useLayoutEffect(() => {
     try {
       const store = JSON.parse(localStorage.getItem('session-side-panel') || '{}');
@@ -429,12 +431,24 @@ export default function Session() {
     }
   }, [setSidePanelWidth]);
   const [scrollToDiffFile, setScrollToDiffFile] = useState(null);
+  const [selectedDiffFile, setSelectedDiffFile] = useState(null);
+  /** File path chosen from the sidebar while the diff request is still in flight. */
+  const [pendingSidebarDiffFile, setPendingSidebarDiffFile] = useState(null);
   const diffCommitParam = searchParams.get('commit');
   const selectedDiffCommit = diffCommitParam && diffCommitParam !== 'all' ? diffCommitParam : 'all';
   const filesCommitSha =
     activeView === 'diff' && selectedDiffCommit !== 'all' ? selectedDiffCommit : null;
   const panelParam = searchParams.get('panel');
-  const sidePanelTab = useMemo(() => resolveSidePanelTab(panelParam), [panelParam]);
+  const sidePanelTab = useMemo(
+    () => resolveSidePanelTab(panelParam, lastSidePanelTab),
+    [panelParam, lastSidePanelTab]
+  );
+
+  useEffect(() => {
+    if (panelParam && SIDE_PANEL_TAB_IDS.has(panelParam)) {
+      setLastSidePanelTab(panelParam);
+    }
+  }, [panelParam]);
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
@@ -451,10 +465,34 @@ export default function Session() {
   const diffViewActive = activeView === 'diff';
   const {
     diff: sessionDiff,
+    fileByFile: sessionDiffFileByFile,
+    diffFile: sessionDiffActiveFile,
     loading: sessionDiffLoading,
     error: sessionDiffError,
     refresh: refreshSessionDiff,
-  } = useSessionDiff(gitSession, selectedDiffCommit, diffViewActive);
+  } = useSessionDiff(
+    gitSession,
+    selectedDiffCommit,
+    diffViewActive,
+    selectedDiffFile ?? pendingSidebarDiffFile
+  );
+  const diffSelectorFile = selectedDiffFile ?? sessionDiffActiveFile;
+
+  useEffect(() => {
+    setSelectedDiffFile(null);
+    setPendingSidebarDiffFile(null);
+  }, [gitSession?.id, selectedDiffCommit]);
+
+  useEffect(() => {
+    if (!pendingSidebarDiffFile || sessionDiffLoading) return;
+    if (sessionDiffFileByFile) {
+      setSelectedDiffFile(pendingSidebarDiffFile);
+      setPendingSidebarDiffFile(null);
+      return;
+    }
+    setScrollToDiffFile(pendingSidebarDiffFile);
+    setPendingSidebarDiffFile(null);
+  }, [sessionDiffFileByFile, sessionDiffLoading, pendingSidebarDiffFile]);
   const [models, setModels] = useState([]);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [pushing, setPushing] = useState(false);
@@ -751,6 +789,7 @@ export default function Session() {
   const setSidePanelTab = useCallback(
     (tab, { openMobile = true } = {}) => {
       if (isNewSessionRoute || !SIDE_PANEL_TAB_IDS.has(tab)) return;
+      setLastSidePanelTab(tab);
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -784,10 +823,10 @@ export default function Session() {
   }, [setSearchParams]);
 
   const hideSidePanel = useCallback(() => {
-    if (isXlScreen) return;
+    if (isMdUp) return;
     setShowTasks(false);
     clearPanelFromUrl();
-  }, [setShowTasks, isXlScreen, clearPanelFromUrl]);
+  }, [setShowTasks, isMdUp, clearPanelFromUrl]);
 
   const handleDiffCommitChange = useCallback(
     (sha) => {
@@ -807,9 +846,20 @@ export default function Session() {
 
   const handleSelectCommitFromSidebar = useCallback(
     (sha) => {
-      handleDiffCommitChange(sha);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('view', 'diff');
+          if (sha && sha !== 'all') next.set('commit', sha);
+          else next.delete('commit');
+          if (!isMdUp) next.delete('panel');
+          return next;
+        },
+        { replace: true }
+      );
+      if (!isMdUp) setShowTasks(false);
     },
-    [handleDiffCommitChange]
+    [setSearchParams, isMdUp, setShowTasks]
   );
 
   const toggleSidePanel = useCallback(() => {
@@ -1031,7 +1081,6 @@ export default function Session() {
   const isArchiving =
     !isNewSessionRoute && !session?.archived_at && session?.status === 'archiving';
 
-  const isMdUp = useMediaQuery('(min-width: 768px)');
   const isSidebarOpen = showSidebar !== false;
   const desktopSidebarWidthClass = showSidebar === false ? 'w-0 border-r-0' : 'w-64';
 
@@ -1070,10 +1119,36 @@ export default function Session() {
   const handleSelectDiffFile = useCallback(
     (file) => {
       const path = diffFileDisplayPath(file);
-      if (activeView !== 'diff') setView('diff');
-      setScrollToDiffFile(path);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (activeView !== 'diff') next.set('view', 'diff');
+          if (!isMdUp) next.delete('panel');
+          return next;
+        },
+        { replace: true }
+      );
+      if (sessionDiffFileByFile) {
+        setSelectedDiffFile(path);
+        setPendingSidebarDiffFile(null);
+      } else if (sessionDiffLoading) {
+        setPendingSidebarDiffFile(path);
+      } else {
+        setScrollToDiffFile(path);
+        setPendingSidebarDiffFile(null);
+      }
+      if (!isMdUp) setShowTasks(false);
     },
-    [activeView, setView]
+    [
+      activeView,
+      sessionDiffFileByFile,
+      sessionDiffLoading,
+      isMdUp,
+      setSearchParams,
+      setShowTasks,
+      setSelectedDiffFile,
+      setPendingSidebarDiffFile,
+    ]
   );
 
   const clearScrollToDiffFile = useCallback(() => setScrollToDiffFile(null), []);
@@ -1507,6 +1582,10 @@ export default function Session() {
                 diffLoading={sessionDiffLoading}
                 diffError={sessionDiffError}
                 onRefreshDiff={refreshSessionDiff}
+                fileByFile={sessionDiffFileByFile}
+                changedFiles={diffFiles}
+                selectedFile={diffSelectorFile}
+                onSelectedFileChange={setSelectedDiffFile}
                 scrollToFile={scrollToDiffFile}
                 onScrolledToFile={clearScrollToDiffFile}
                 readonly={isReadonly}
@@ -1571,6 +1650,9 @@ export default function Session() {
               changedFilesLoading={changedFilesLoading}
               onRefreshChangedFiles={refreshChangedFiles}
               onSelectDiffFile={handleSelectDiffFile}
+              selectedDiffFilePath={
+                diffViewActive && sessionDiffFileByFile ? diffSelectorFile : null
+              }
               branchCommits={branchCommits}
               branchCommitsLoading={branchCommitsLoading}
               onRefreshBranchCommits={refreshBranchCommits}

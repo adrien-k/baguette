@@ -1,9 +1,18 @@
 import { RefreshCw } from 'lucide-react';
 import { splitRepoPath, diffFileDisplayPath } from '../../utils/paths.js';
 
+const SELECTED_FILE_BG = 'bg-brand/10';
+
+function fileRowClass(selected) {
+  return `w-full flex items-start justify-between gap-2 px-3 py-2 text-left transition-colors border-b border-line/50 ${
+    selected ? SELECTED_FILE_BG : 'hover:bg-control'
+  }`;
+}
+
 export default function SessionFilesPanel({
   diffFiles,
   filesLoading,
+  selectedFilePath = null,
   onSelectFile,
   onRefresh,
   unavailable,
@@ -40,12 +49,14 @@ export default function SessionFilesPanel({
           {diffFiles.map((file) => {
             const displayPath = diffFileDisplayPath(file);
             const { basename, dirname } = splitRepoPath(displayPath);
+            const selected = Boolean(selectedFilePath && selectedFilePath === displayPath);
             return (
               <button
                 key={displayPath}
                 type="button"
                 onClick={() => onSelectFile?.(file)}
-                className="w-full flex items-start justify-between gap-2 px-3 py-2 text-left hover:bg-control transition-colors border-b border-line/50"
+                className={fileRowClass(selected)}
+                aria-current={selected ? 'true' : undefined}
               >
                 <div className="min-w-0 flex-1">
                   <span className="font-mono text-xs text-secondary truncate block">

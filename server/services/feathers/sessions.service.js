@@ -19,8 +19,6 @@ import {
   gitShowCommitDiff,
   gitDiffNumstat,
   gitShowCommitNumstat,
-  gitHasUncommitted,
-  gitCommitsToPush,
   gitLocalAndRemoteSha,
   gitLogSinceBase,
   gitFetch,
@@ -68,6 +66,7 @@ import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
+import { resolveSessionDiffResponse } from '../session-diff.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import {
   queryFlagDisabled,
@@ -747,18 +746,34 @@ export class SessionsService extends KnexService {
         data && typeof data === 'object' && data.commit && data.commit !== 'all'
           ? String(data.commit)
           : null;
-      const diffFn = commitSha
-        ? () => gitShowCommitDiff(cwd, commitSha)
-        : () => gitDiff(cwd, session.base_branch);
-      const [diff, hasUncommitted, commitsToPush, { localSha, remoteSha }] = await Promise.all([
-        diffFn(),
-        gitHasUncommitted(cwd),
-        gitCommitsToPush(cwd, currentBranch),
-        gitLocalAndRemoteSha(cwd, currentBranch),
-      ]);
-      return { diff, hasUncommitted, commitsToPush, localSha, remoteSha, commit: commitSha };
+      const requestedFile =
+        data && typeof data === 'object' && data.file_path ? String(data.file_path).trim() : null;
+      const knownFileByFile = data && typeof data === 'object' && data.file_by_file === true;
+      const getFullDiff = (opts) =>
+        commitSha
+          ? gitShowCommitDiff(cwd, commitSha, opts)
+          : gitDiff(cwd, session.base_branch, opts);
+      const getFileList = () =>
+        commitSha ? gitShowCommitNumstat(cwd, commitSha) : gitDiffNumstat(cwd, session.base_branch);
+      const getFileDiff = (filePath) =>
+        commitSha
+          ? gitShowCommitDiff(cwd, commitSha, { filePath })
+          : gitDiff(cwd, session.base_branch, { filePath });
+      const { diff, file_by_file, file_path } = await resolveSessionDiffResponse({
+        getFullDiff,
+        getFileList,
+        getFileDiff,
+        requestedFile,
+        knownFileByFile,
+      });
+      return {
+        diff,
+        file_by_file,
+        file_path,
+        commit_sha: commitSha,
+      };
     } catch (err) {
-      return { diff: '', hasUncommitted: false, error: err.message };
+      return { diff: '', error: err.message };
     }
   }
 

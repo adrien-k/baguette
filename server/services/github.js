@@ -949,6 +949,7 @@ export async function gitDiff(
     const { stdout } = await execFileAsync('git', args, { maxBuffer });
     return stdout;
   } catch (err) {
+    if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw err;
     // Non-zero exit still produces stdout in some cases (e.g. binary files)
     if (err.stdout) return err.stdout;
     throw err;
@@ -962,18 +963,17 @@ export async function gitDiff(
 export async function gitShowCommitDiff(
   worktreePath,
   commitSha,
-  { maxBuffer = MAX_DIFF_BUFFER_SIZE } = {}
+  { maxBuffer = MAX_DIFF_BUFFER_SIZE, filePath } = {}
 ) {
   const sha = String(commitSha).trim();
   if (!/^[0-9a-f]{7,40}$/i.test(sha)) return '';
+  const args = ['-C', worktreePath, 'show', '--format=', '--no-color', sha];
+  if (filePath) args.push('--', filePath);
   try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'show', '--format=', '--no-color', sha],
-      { maxBuffer }
-    );
+    const { stdout } = await execFileAsync('git', args, { maxBuffer });
     return stdout;
   } catch (err) {
+    if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw err;
     if (err.stdout) return err.stdout;
     return '';
   }

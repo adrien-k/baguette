@@ -24,6 +24,7 @@ export default function SessionSidePanel({
   changedFilesLoading,
   onRefreshChangedFiles,
   onSelectDiffFile,
+  selectedDiffFilePath,
   branchCommits,
   branchCommitsLoading,
   onRefreshBranchCommits,
@@ -80,6 +81,7 @@ export default function SessionSidePanel({
           <SessionFilesPanel
             diffFiles={diffFiles}
             filesLoading={changedFilesLoading}
+            selectedFilePath={selectedDiffFilePath}
             onSelectFile={onSelectDiffFile}
             onRefresh={onRefreshChangedFiles}
             unavailable={filesUnavailable}

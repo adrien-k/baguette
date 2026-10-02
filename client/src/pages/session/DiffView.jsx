@@ -156,7 +156,6 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
         active ? 'ring-1 ring-inset ring-brand/60' : ''
       }`}
     >
-      {children}
       {canOpen && (
         <button
           type="button"
@@ -167,13 +166,14 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
           title={LINE_HINT}
           aria-label={LINE_HINT}
           aria-expanded={active}
-          className={`absolute right-1 top-0.5 z-10 inline-flex items-center justify-center w-6 h-6 rounded-md border border-strong bg-control/95 text-secondary shadow-sm transition-opacity hover:bg-control-hover hover:text-fg hover:border-faint ${
+          className={`z-10 mr-0.5 shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md border border-strong bg-control/95 text-secondary shadow-sm transition-opacity hover:bg-control-hover hover:text-fg hover:border-faint ${
             active ? 'opacity-100' : 'opacity-0 group-hover/diffline:opacity-100'
           }`}
         >
           <MessageSquarePlus className="w-3.5 h-3.5" strokeWidth={2} />
         </button>
       )}
+      {children}
     </div>
   );
 }
@@ -387,6 +387,10 @@ export default function DiffView({
   diffLoading,
   diffError,
   onRefreshDiff,
+  fileByFile = false,
+  changedFiles = [],
+  selectedFile = null,
+  onSelectedFileChange,
   scrollToFile,
   onScrolledToFile,
   readonly,
@@ -416,13 +420,12 @@ export default function DiffView({
 
   const handleRefresh = useCallback(() => {
     onRefreshCommits?.();
-    if (!isSingleCommit) {
-      onRefreshChangedFiles?.();
-      onRefreshDiff?.();
-    }
-  }, [onRefreshCommits, onRefreshChangedFiles, isSingleCommit, onRefreshDiff]);
+    onRefreshChangedFiles?.();
+    onRefreshDiff?.();
+  }, [onRefreshCommits, onRefreshChangedFiles, onRefreshDiff]);
 
-  const refreshBusy = commitsLoading || (!isSingleCommit && (loading || changedFilesLoading));
+  const refreshBusy =
+    commitsLoading || loading || (!fileByFile && !isSingleCommit && changedFilesLoading);
 
   const handleMerge = async ({ archive = false } = {}) => {
     setMerging(true);
@@ -444,11 +447,11 @@ export default function DiffView({
   const files = hasDiff ? parseDiff(diff) : [];
 
   useEffect(() => {
-    if (!scrollToFile || loading) return;
+    if (fileByFile || !scrollToFile || loading) return;
     const el = document.getElementById(diffFileScrollId(scrollToFile));
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     onScrolledToFile?.();
-  }, [scrollToFile, loading, diff, onScrolledToFile]);
+  }, [fileByFile, scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
   const handleLineClick = (ref) => {
@@ -507,9 +510,44 @@ export default function DiffView({
       </div>
     ) : null;
 
+  const fileSelectorOptions =
+    fileByFile && changedFiles.length > 0
+      ? changedFiles
+      : fileByFile && selectedFile
+        ? [{ oldPath: selectedFile, newPath: selectedFile }]
+        : [];
+  const fileSelector =
+    fileByFile && onSelectedFileChange && fileSelectorOptions.length > 0 ? (
+      <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/30">
+        <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} flex items-center gap-2 min-w-0`}>
+          <label className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-[10px] uppercase tracking-wide text-faint shrink-0">File</span>
+            <select
+              value={selectedFile ?? ''}
+              onChange={(e) => onSelectedFileChange(e.target.value)}
+              className="flex-1 min-w-0 max-w-md text-xs bg-control border border-strong rounded-md px-2 py-1 text-heading focus:outline-none focus:ring-1 focus:ring-brand/50 font-mono"
+            >
+              {fileSelectorOptions.map((f) => {
+                const path = diffFileDisplayPath(f);
+                return (
+                  <option key={path} value={path}>
+                    {path}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <span className="text-[10px] text-faint shrink-0 hidden sm:inline">
+            Diff too large — one file at a time
+          </span>
+        </div>
+      </div>
+    ) : null;
+
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {commitSelector}
+      {fileSelector}
       {/* Diff content */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
         <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} min-h-full`}>
@@ -543,7 +581,11 @@ export default function DiffView({
               {/* Header: file count + view mode toggle */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs text-faint">
-                  {files.length} file{files.length !== 1 ? 's' : ''} changed
+                  {fileByFile
+                    ? changedFilesLoading && changedFiles.length === 0
+                      ? 'Showing current file'
+                      : `Showing 1 of ${changedFiles.length || fileSelectorOptions.length} changed files`
+                    : `${files.length} file${files.length !== 1 ? 's' : ''} changed`}
                   {canComment && (
                     <span className="text-faint">
                       {' '}
