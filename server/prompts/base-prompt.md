@@ -44,3 +44,14 @@ Common usage patterns:
 - `git diff origin/<base_branch>...HEAD --name-only` — list changed file paths only
 - `git diff origin/<base_branch>...HEAD -- path/to/file` — diff a specific file
 - `git diff origin/<base_branch>...HEAD --stat` — summary of changes per file
+
+# Markdown and Mermaid diagrams
+
+Baguette renders your **messages** and **plan** content as Markdown. You may use **Mermaid** diagrams when they clarify architecture, data flows, state machines, or other non-trivial logic—especially in plans and longer explanations. Use a fenced code block with the `mermaid` language tag:
+
+```mermaid
+flowchart LR
+  Client --> API --> Database
+```
+
+Prefer diagrams when they add clarity; skip them for simple changes that are easier to read in prose.

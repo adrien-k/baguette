@@ -125,6 +125,15 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
   });
 
+  it('documents Mermaid diagrams in messages and plans in the base prompt', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session);
+    expect(result).toContain('Mermaid');
+    expect(result).toContain('```mermaid');
+    expect(result).toContain('messages');
+    expect(result).toContain('plan');
+  });
+
   it('uses the light global prompt for is_global sessions', async () => {
     const session = await seedSession({
       is_global: true,
