@@ -192,6 +192,7 @@ export const DOCKER_CONTAINER_RUN_OPTION_CANONICAL = new Set([
   'entrypoint',
   'env-file',
   'privileged',
+  'shm-size',
   'user',
 ]);
 
@@ -204,6 +205,7 @@ export const DOCKER_CONTAINER_RUN_OPTION_YAML_KEYS = [
   'mount',
   'privileged',
   'security-opt',
+  'shm-size',
   'user',
   'volume',
 ];
@@ -240,6 +242,7 @@ const DOCKER_RUN_OPTION_ALIASES = {
   cap_add: 'cap-add',
   cap_drop: 'cap-drop',
   env_file: 'env-file',
+  shm_size: 'shm-size',
 };
 
 /** Flags that accept only `true` (no value) in YAML. */

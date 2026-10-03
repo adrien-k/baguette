@@ -27,7 +27,7 @@ String values in the `container` block support [env placeholders](#env) with the
 
 Optional extra [`docker run`](https://docs.docker.com/reference/cli/docker/container/run/) flags as **sibling keys** on `container` (not nested). Baguette sets network, name, labels, task `env` (`-e`), and health checks — other flags are not available. Supported keys:
 
-`volume`, `mount`, `security-opt`, `cap-add`, `cap-drop`, `entrypoint`, `env-file`, `privileged`, `user`
+`volume`, `mount`, `security-opt`, `cap-add`, `cap-drop`, `entrypoint`, `env-file`, `privileged`, `shm-size`, `user`
 
 Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 

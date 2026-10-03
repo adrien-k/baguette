@@ -83,6 +83,11 @@ describe('docker-session helpers', () => {
     expect(normalizeDockerRunOptions({ privileged: true })).toEqual(['--privileged']);
   });
 
+  it('normalizeDockerRunOptions maps shm-size and shm_size alias', () => {
+    expect(normalizeDockerRunOptions({ 'shm-size': '2gb' })).toEqual(['--shm-size', '2gb']);
+    expect(normalizeDockerRunOptions({ shm_size: '512m' })).toEqual(['--shm-size', '512m']);
+  });
+
   it('normalizeDockerRunOptions rejects Baguette-managed flags', () => {
     expect(() => normalizeDockerRunOptions({ network: 'host' })).toThrow(/managed by Baguette/);
   });
@@ -94,6 +99,14 @@ describe('docker-session helpers', () => {
       user: '1000:1000',
     });
     expect(c.runOptions).toEqual(['--env-file', '/path/to/extra.env', '--user', '1000:1000']);
+  });
+
+  it('normalizeDockerContainer parses shm-size on container', () => {
+    const c = normalizeDockerContainer({
+      image: 'postgres:16',
+      'shm-size': '1gb',
+    });
+    expect(c.runOptions).toEqual(['--shm-size', '1gb']);
   });
 
   it('normalizeDockerContainer rejects nested options', () => {
