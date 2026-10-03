@@ -1,9 +1,11 @@
 import { KnexService } from '@feathersjs/knex';
 import { NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, encryptFields, decryptFields, only } from './hooks.js';
+import { normalizeAnthropicBaseUrl } from '../session-env.js';
 
 const WRITABLE_USER_REPO_FIELDS = [
   'anthropic_api_key',
+  'anthropic_base_url',
   'cursor_api_key',
   'agent_prompt',
   'review_prompt',
@@ -33,10 +35,21 @@ async function requireOwnUserRepo(context) {
   return context;
 }
 
+async function normalizeAnthropicBaseUrlPatch(context) {
+  if (context.data.anthropic_base_url === undefined) return context;
+  context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
+  return context;
+}
+
 export const userReposHooks = {
   before: {
     all: [requireUser, scopeByUser],
-    patch: [requireOwnUserRepo, only(WRITABLE_USER_REPO_FIELDS), encryptFields(USER_REPO_SECRETS)],
+    patch: [
+      requireOwnUserRepo,
+      only(WRITABLE_USER_REPO_FIELDS),
+      normalizeAnthropicBaseUrlPatch,
+      encryptFields(USER_REPO_SECRETS),
+    ],
   },
   after: {
     find: [decryptFields(USER_REPO_SECRETS)],

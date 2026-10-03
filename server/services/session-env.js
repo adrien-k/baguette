@@ -151,14 +151,30 @@ function applyClaudeCredential(env, credential) {
   return result;
 }
 
+/** Trim and strip trailing slashes; empty input becomes null. */
+export function normalizeAnthropicBaseUrl(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function applyAnthropicBaseUrl(env, configuredUrl) {
+  const normalized = normalizeAnthropicBaseUrl(configuredUrl);
+  if (!normalized) return env;
+  return { ...env, ANTHROPIC_BASE_URL: normalized };
+}
+
 /**
  * Build Claude subprocess env from a pre-decrypted user row.
  * All fields on `user` must already be plaintext (fetched via Feather service with no provider).
  * `anthropicApiKey` may be a Console API key or a `claude setup-token` OAuth token.
  */
-export function buildClaudeEnvFromPlainUser(user, anthropicApiKey) {
+export function buildClaudeEnvFromPlainUser(user, anthropicApiKey, anthropicBaseUrl = null) {
+  let env = applyClaudeCredential(stripServerEnv(process.env), anthropicApiKey);
+  env = applyAnthropicBaseUrl(env, anthropicBaseUrl);
   return {
-    ...applyClaudeCredential(stripServerEnv(process.env), anthropicApiKey),
+    ...env,
     ...gitAuthorEnvFromUser(user),
   };
 }
@@ -176,6 +192,7 @@ export async function getClaudeEnv(app, userId, repoFullName) {
   const user = await app.service('users').get(userId, {}); // no provider → plaintext secrets
 
   let repoApiKey = null;
+  let repoBaseUrl = null;
   if (repoFullName) {
     const db = app.get('db');
     const repo = await db('repos')
@@ -189,11 +206,13 @@ export async function getClaudeEnv(app, userId, repoFullName) {
         paginate: false,
       });
       repoApiKey = userRepos?.[0]?.anthropic_api_key || null;
+      repoBaseUrl = userRepos?.[0]?.anthropic_base_url ?? null;
     }
   }
 
   const apiKey = repoApiKey || user.anthropic_api_key || null;
-  return buildClaudeEnvFromPlainUser(user, apiKey);
+  const baseUrl = repoBaseUrl ?? user.anthropic_base_url ?? null;
+  return buildClaudeEnvFromPlainUser(user, apiKey, baseUrl);
 }
 
 /**

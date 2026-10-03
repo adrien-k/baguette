@@ -3,11 +3,17 @@ import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerUsersService } from '../feathers/users.service.js';
 import { registerUserReposService } from '../feathers/user-repos.service.js';
-import { isClaudeOAuthToken, buildClaudeEnvFromPlainUser, getClaudeEnv } from '../session-env.js';
+import {
+  isClaudeOAuthToken,
+  normalizeAnthropicBaseUrl,
+  buildClaudeEnvFromPlainUser,
+  getClaudeEnv,
+} from '../session-env.js';
 
 const HOST_API = 'host-api-key';
 const HOST_AUTH = 'host-auth-token';
 const HOST_OAUTH = 'host-oauth-token';
+const HOST_BASE_URL = 'https://api.anthropic.com';
 const USER = { username: 'alice', github_id: 1 };
 
 describe('isClaudeOAuthToken', () => {
@@ -25,11 +31,26 @@ describe('isClaudeOAuthToken', () => {
   });
 });
 
+describe('normalizeAnthropicBaseUrl', () => {
+  it('trims whitespace and trailing slashes', () => {
+    expect(normalizeAnthropicBaseUrl('  https://gateway.example.com/  ')).toBe(
+      'https://gateway.example.com'
+    );
+  });
+
+  it('returns null for empty values', () => {
+    expect(normalizeAnthropicBaseUrl('')).toBeNull();
+    expect(normalizeAnthropicBaseUrl('   ')).toBeNull();
+    expect(normalizeAnthropicBaseUrl(null)).toBeNull();
+  });
+});
+
 describe('buildClaudeEnvFromPlainUser', () => {
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', HOST_API);
     vi.stubEnv('ANTHROPIC_AUTH_TOKEN', HOST_AUTH);
     vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', HOST_OAUTH);
+    vi.stubEnv('ANTHROPIC_BASE_URL', HOST_BASE_URL);
   });
 
   afterEach(() => {
@@ -55,6 +76,16 @@ describe('buildClaudeEnvFromPlainUser', () => {
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-user');
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it('inherits host ANTHROPIC_BASE_URL when none is configured', () => {
+    const env = buildClaudeEnvFromPlainUser(USER, null);
+    expect(env.ANTHROPIC_BASE_URL).toBe(HOST_BASE_URL);
+  });
+
+  it('overrides host ANTHROPIC_BASE_URL when a custom base URL is set', () => {
+    const env = buildClaudeEnvFromPlainUser(USER, null, 'https://llm-gateway.example.com/');
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://llm-gateway.example.com');
   });
 });
 
@@ -112,5 +143,27 @@ describe('getClaudeEnv repo override', () => {
     const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-repo');
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+  });
+
+  it('lets a repo base URL override the account default', async () => {
+    vi.stubEnv('ANTHROPIC_BASE_URL', HOST_BASE_URL);
+    await app
+      .service('users')
+      .patch(user.id, { anthropic_base_url: 'https://account-gateway.example.com' }, { user });
+    const userRepos = await app.service('user-repos').find({
+      query: { repo_id: repo.id },
+      user,
+      paginate: false,
+    });
+    await app
+      .service('user-repos')
+      .patch(
+        userRepos[0].id,
+        { anthropic_base_url: 'https://repo-gateway.example.com/' },
+        { user }
+      );
+
+    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://repo-gateway.example.com');
   });
 });

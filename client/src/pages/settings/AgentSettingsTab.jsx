@@ -4,6 +4,7 @@ import { usersService, userReposService } from '../../feathers.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
+import TextInput from '../../components/TextInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
 import AgentSessionDefaultsSection from './AgentSessionDefaultsSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
@@ -23,6 +24,8 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
   const [anthropicApiKey, setAnthropicApiKey] = useState(null);
   const [anthropicApiKeyDirty, setAnthropicApiKeyDirty] = useState(false);
+  const [anthropicBaseUrl, setAnthropicBaseUrl] = useState('');
+  const [anthropicBaseUrlDirty, setAnthropicBaseUrlDirty] = useState(false);
   const [cursorApiKey, setCursorApiKey] = useState(null);
   const [cursorApiKeyDirty, setCursorApiKeyDirty] = useState(false);
 
@@ -34,14 +37,13 @@ export default function AgentSettingsTab({ settings, onSave }) {
   const repoById = useCallback((id) => repos.find((r) => String(r.id) === String(id)), [repos]);
 
   const loadClaudeFields = useCallback(() => {
-    if (!claudeRepoId) {
-      setAnthropicApiKey(null);
-      setAnthropicApiKeyDirty(false);
-      return;
-    }
     setAnthropicApiKey(null);
     setAnthropicApiKeyDirty(false);
-  }, [claudeRepoId]);
+    const scopeRepo = claudeRepoId ? repoById(claudeRepoId) : null;
+    const baseUrl = scopeRepo?.anthropic_base_url ?? settings?.anthropic_base_url ?? '';
+    setAnthropicBaseUrl(baseUrl || '');
+    setAnthropicBaseUrlDirty(false);
+  }, [claudeRepoId, repoById, settings?.anthropic_base_url]);
 
   const loadCursorFields = useCallback(() => {
     if (!cursorRepoId) {
@@ -74,7 +76,8 @@ export default function AgentSettingsTab({ settings, onSave }) {
       if (!claudeRepoId) {
         const patch = {};
         if (anthropicApiKeyDirty) patch.anthropic_api_key = anthropicApiKey ?? '';
-        if (!anthropicApiKeyDirty) {
+        if (anthropicBaseUrlDirty) patch.anthropic_base_url = anthropicBaseUrl.trim();
+        if (!anthropicApiKeyDirty && !anthropicBaseUrlDirty) {
           setClaudeSaving(false);
           return;
         }
@@ -83,17 +86,19 @@ export default function AgentSettingsTab({ settings, onSave }) {
       } else {
         const r = repoById(claudeRepoId);
         if (!r?.user_repo_id) throw new Error('Repository not linked');
-        if (!anthropicApiKeyDirty) {
+        if (!anthropicApiKeyDirty && !anthropicBaseUrlDirty) {
           setClaudeSaving(false);
           return;
         }
-        await userReposService.patch(r.user_repo_id, {
-          anthropic_api_key: anthropicApiKey ?? '',
-        });
+        const repoPatch = {};
+        if (anthropicApiKeyDirty) repoPatch.anthropic_api_key = anthropicApiKey ?? '';
+        if (anthropicBaseUrlDirty) repoPatch.anthropic_base_url = anthropicBaseUrl.trim();
+        await userReposService.patch(r.user_repo_id, repoPatch);
         await refetchRepos();
       }
       setAnthropicApiKey(null);
       setAnthropicApiKeyDirty(false);
+      setAnthropicBaseUrlDirty(false);
       flashSaved(setClaudeSaved);
     } catch (err) {
       toastError('Failed to save Claude credential', err);
@@ -190,12 +195,34 @@ export default function AgentSettingsTab({ settings, onSave }) {
               override your account default for that repository only.
             </p>
           </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-secondary mb-1">API base URL</label>
+            <TextInput
+              type="url"
+              key={`claude-base-url-${claudeRepoId || 'all'}`}
+              className="font-mono text-sm"
+              placeholder="https://api.anthropic.com"
+              value={anthropicBaseUrl}
+              onChange={(e) => {
+                setAnthropicBaseUrl(e.target.value);
+                setAnthropicBaseUrlDirty(true);
+              }}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="mt-1 text-xs text-faint">
+              Optional. Route Claude through a proxy or gateway by setting{' '}
+              <code className="text-fg-muted">ANTHROPIC_BASE_URL</code> (origin only — no{' '}
+              <code className="text-fg-muted">/v1</code> suffix). Leave blank to use the server
+              default. Per-repo values override your account default.
+            </p>
+          </div>
           <AgentSdkModelsSection sdk="claude" />
           <SettingsSaveRow
             saving={claudeSaving}
             saved={claudeSaved}
             onSave={handleSaveClaude}
-            disabled={!anthropicApiKeyDirty}
+            disabled={!anthropicApiKeyDirty && !anthropicBaseUrlDirty}
           />
         </SettingsSection>
 

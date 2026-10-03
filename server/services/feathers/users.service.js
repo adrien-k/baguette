@@ -12,6 +12,7 @@ import {
 import { withLastUsedFlag } from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
+import { normalizeAnthropicBaseUrl } from '../session-env.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -70,6 +71,12 @@ async function orderByCreatedAt(context) {
 async function normalizeColorSchemePatch(context) {
   if (context.data.color_scheme === undefined) return context;
   context.data.color_scheme = context.data.color_scheme === 'light' ? 'light' : 'dark';
+  return context;
+}
+
+async function normalizeAnthropicBaseUrlPatch(context) {
+  if (context.data.anthropic_base_url === undefined) return context;
+  context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
   return context;
 }
 
@@ -140,10 +147,16 @@ export const usersHooks = {
   before: {
     all: [requireUser],
     find: [orderByCreatedAt],
-    create: [normalizeColorSchemePatch, normalizeCursorModelPrefsPatch, encryptUserSecrets],
+    create: [
+      normalizeColorSchemePatch,
+      normalizeAnthropicBaseUrlPatch,
+      normalizeCursorModelPrefsPatch,
+      encryptUserSecrets,
+    ],
     patch: [
       restrictPatchToSelf,
       normalizeColorSchemePatch,
+      normalizeAnthropicBaseUrlPatch,
       normalizeCursorModelPrefsPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,

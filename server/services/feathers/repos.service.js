@@ -71,6 +71,7 @@ class ReposService extends KnexService {
         'repos.created_at',
         'user_repos.id as user_repo_id',
         'user_repos.anthropic_api_key_encrypted',
+        'user_repos.anthropic_base_url',
         'user_repos.cursor_api_key_encrypted',
         'user_repos.agent_prompt',
         'user_repos.review_prompt',

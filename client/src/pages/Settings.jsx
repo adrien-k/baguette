@@ -460,8 +460,8 @@ function IntegrationsTab({ settings, onRefreshSettings }) {
 // ─── Settings page ────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'repos', label: 'Repositories', icon: GitBranch },
   { id: 'agent', label: 'Agent', icon: Bot },
+  { id: 'repos', label: 'Repositories', icon: GitBranch },
   { id: 'prompts', label: 'Prompts', icon: ScrollText },
   { id: 'integrations', label: 'Integrations', icon: Blocks },
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
