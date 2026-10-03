@@ -12,16 +12,22 @@ Docker tasks **do not use `ports:`**. They are not published to random host port
 
 ### Docker task fields
 
-| Field                   | Description                                                                                                                                         |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`                  | Must be `docker`                                                                                                                                    |
-| `env`                   | Container environment variables (passed to `docker run -e`)                                                                                         |
-| `container.image`       | Docker image to run (or tag for a built image when `container.build` is set); supports [env placeholders](#env)                                     |
-| `container.build`       | Build the image from the repo before `docker run` (path string or `context` / `dockerfile` / `args` / `target`; string fields support placeholders) |
-| `container.persist`     | Paths inside the container mounted on the session volume (placeholders supported)                                                                   |
-| `container.command`     | Override the image default command (string runs via `sh -c`, or a argv list; placeholders supported)                                                |
-| `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`; `test` supports placeholders)                                               |
-| `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                                                                |
+String values in the `container` block support [env placeholders](#env) with the same rules as other config (see [Env](#env)).
+
+| Field                   | Description                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `type`                  | Must be `docker`                                                                                                |
+| `env`                   | Container environment variables (passed to `docker run -e`)                                                     |
+| `container.image`       | Docker image to run (or tag for a built image when `container.build` is set)                                    |
+| `container.build`       | Build the image from the repo before `docker run` (path string or `context` / `dockerfile` / `args` / `target`) |
+| `container.persist`     | Paths inside the container mounted on the session volume                                                        |
+| `container.command`     | Override the image default command (string runs via `sh -c`, or a argv list)                                    |
+| `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`)                                         |
+| `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                            |
+
+Optional extra [`docker run`](https://docs.docker.com/reference/cli/docker/container/run/) flags as **sibling keys** on `container` (not nested). Baguette sets network, name, labels, task `env` (`-e`), and health checks — other flags are not available. Supported keys:
+
+`volume`, `mount`, `security-opt`, `cap-add`, `cap-drop`, `entrypoint`, `env-file`, `privileged`, `user`
 
 Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 

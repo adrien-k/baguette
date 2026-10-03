@@ -5,6 +5,7 @@ import {
   parseDockerDuration,
   normalizeDockerContainer,
   normalizeDockerCommand,
+  normalizeDockerRunOptions,
   normalizeDockerBuild,
   resolveDockerBuildPaths,
   sessionVolumeName,
@@ -56,6 +57,70 @@ describe('docker-session helpers', () => {
       command: ['redis-server', '--appendonly', 'yes'],
     });
     expect(c.command).toEqual(['redis-server', '--appendonly', 'yes']);
+  });
+
+  it('normalizeDockerRunOptions maps binds, volumes, and security-opt', () => {
+    expect(
+      normalizeDockerRunOptions({
+        binds: ['/host:/mnt:ro'],
+        volumes: ['named-vol:/data'],
+        'security-opt': ['seccomp=unconfined'],
+        'cap-add': 'SYS_PTRACE',
+      })
+    ).toEqual([
+      '-v',
+      '/host:/mnt:ro',
+      '-v',
+      'named-vol:/data',
+      '--security-opt',
+      'seccomp=unconfined',
+      '--cap-add',
+      'SYS_PTRACE',
+    ]);
+  });
+
+  it('normalizeDockerRunOptions supports boolean flags', () => {
+    expect(normalizeDockerRunOptions({ privileged: true })).toEqual(['--privileged']);
+  });
+
+  it('normalizeDockerRunOptions rejects Baguette-managed flags', () => {
+    expect(() => normalizeDockerRunOptions({ network: 'host' })).toThrow(/managed by Baguette/);
+  });
+
+  it('normalizeDockerContainer parses extra run flags on container', () => {
+    const c = normalizeDockerContainer({
+      image: 'redis:7',
+      'env-file': '/path/to/extra.env',
+      user: '1000:1000',
+    });
+    expect(c.runOptions).toEqual(['--env-file', '/path/to/extra.env', '--user', '1000:1000']);
+  });
+
+  it('normalizeDockerContainer rejects nested options', () => {
+    expect(() =>
+      normalizeDockerContainer({
+        image: 'redis:7',
+        options: { 'cap-add': 'SYS_PTRACE' },
+      })
+    ).toThrow(/container\.options is not supported/);
+  });
+
+  it('normalizeDockerContainer rejects disallowed run flags', () => {
+    expect(() =>
+      normalizeDockerContainer({
+        image: 'redis:7',
+        tmpfs: '/run',
+      })
+    ).toThrow(/Unknown container field/);
+  });
+
+  it('normalizeDockerContainer rejects unknown container fields', () => {
+    expect(() =>
+      normalizeDockerContainer({
+        image: 'redis:7',
+        foo: 'bar',
+      })
+    ).toThrow(/Unknown container field/);
   });
 
   it('normalizeDockerContainer parses healthcheck', () => {

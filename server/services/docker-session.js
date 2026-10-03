@@ -172,9 +172,154 @@ export function isSessionBuiltImageRepository(repository, shortId) {
   );
 }
 
+/** Dedicated `container` fields (not passed through as `docker run` flags). */
+export const DOCKER_CONTAINER_STRUCTURED_KEYS = new Set([
+  'image',
+  'build',
+  'persist',
+  'command',
+  'healthcheck',
+  'options',
+]);
+
+/** Canonical Docker CLI flags allowed as extra keys on `container`. */
+export const DOCKER_CONTAINER_RUN_OPTION_CANONICAL = new Set([
+  'volume',
+  'mount',
+  'security-opt',
+  'cap-add',
+  'cap-drop',
+  'entrypoint',
+  'env-file',
+  'privileged',
+  'user',
+]);
+
+/** Recognized YAML key spellings for extra `container` fields (for docs and validation). */
+export const DOCKER_CONTAINER_RUN_OPTION_YAML_KEYS = [
+  'cap-add',
+  'cap-drop',
+  'entrypoint',
+  'env-file',
+  'mount',
+  'privileged',
+  'security-opt',
+  'user',
+  'volume',
+];
+
+/** Docker CLI flag names Baguette sets on every session container. */
+const RESERVED_DOCKER_RUN_OPTIONS = new Set([
+  'network',
+  'net',
+  'name',
+  'hostname',
+  'rm',
+  'label',
+  'labels',
+  'env',
+  'e',
+  'publish',
+  'p',
+  'port',
+  'ports',
+  'health-cmd',
+  'health-interval',
+  'health-timeout',
+  'health-retries',
+  'health-start-period',
+  'network-alias',
+]);
+
+const DOCKER_RUN_OPTION_ALIASES = {
+  volumes: 'volume',
+  binds: 'volume',
+  bind: 'volume',
+  v: 'volume',
+  security_opt: 'security-opt',
+  cap_add: 'cap-add',
+  cap_drop: 'cap-drop',
+  env_file: 'env-file',
+};
+
+/** Flags that accept only `true` (no value) in YAML. */
+const DOCKER_BOOLEAN_RUN_OPTIONS = new Set(['privileged']);
+
+function canonicalDockerRunOptionKey(key) {
+  const trimmed = String(key).trim();
+  if (!trimmed) throw new Error('container run option keys must be non-empty');
+  const normalized = trimmed.replace(/_/g, '-');
+  const lower = normalized.toLowerCase();
+  return DOCKER_RUN_OPTION_ALIASES[lower] ?? lower;
+}
+
+function isSupportedContainerRunOptionKey(key) {
+  const flag = canonicalDockerRunOptionKey(key);
+  return DOCKER_CONTAINER_RUN_OPTION_CANONICAL.has(flag);
+}
+
 /**
- * @returns {string[] | null}
+ * Extra `docker run` flags set as sibling keys on `container` in .baguette.yaml.
+ * @returns {string[]} CLI args (without the `docker run` prefix)
  */
+export function extractDockerRunOptionsFromContainer(container) {
+  if (!container || typeof container !== 'object') return [];
+  if (container.options != null) {
+    throw new Error(
+      'container.options is not supported; set docker run flags as sibling keys on container'
+    );
+  }
+  const options = {};
+  for (const [key, value] of Object.entries(container)) {
+    if (DOCKER_CONTAINER_STRUCTURED_KEYS.has(key)) continue;
+    if (!isSupportedContainerRunOptionKey(key)) {
+      throw new Error(`Unknown container field "${key}"`);
+    }
+    options[key] = value;
+  }
+  return normalizeDockerRunOptions(options);
+}
+
+/**
+ * @param {Record<string, unknown>} options
+ * @param {string} [keyPrefix]
+ * @returns {string[]} CLI args (without the `docker run` prefix)
+ */
+export function normalizeDockerRunOptions(options, keyPrefix = 'container') {
+  if (options == null) return [];
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error(`${keyPrefix} run options must be an object`);
+  }
+  const args = [];
+  for (const [key, value] of Object.entries(options)) {
+    const flag = canonicalDockerRunOptionKey(key);
+    if (RESERVED_DOCKER_RUN_OPTIONS.has(flag)) {
+      throw new Error(`${keyPrefix}.${key} is managed by Baguette and cannot be set`);
+    }
+    if (value === false || value == null) continue;
+
+    if (DOCKER_BOOLEAN_RUN_OPTIONS.has(flag)) {
+      if (value === true) args.push(`--${flag}`);
+      else throw new Error(`${keyPrefix}.${key} must be true or omitted`);
+      continue;
+    }
+
+    if (value === true) {
+      args.push(`--${flag}`);
+      continue;
+    }
+
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      if (item == null || item === '') continue;
+      const str = String(item);
+      if (flag === 'volume') args.push('-v', str);
+      else args.push(`--${flag}`, str);
+    }
+  }
+  return args;
+}
+
 export function normalizeDockerCommand(command) {
   if (command == null) return null;
   if (Array.isArray(command)) {
@@ -199,6 +344,7 @@ export function normalizeDockerCommand(command) {
  *   persist: string[],
  *   command: string[] | null,
  *   healthcheck: { test: string, intervalMs: number, timeoutMs: number, retries: number } | null,
+ *   runOptions: string[],
  * }}
  */
 export function normalizeDockerContainer(container) {
@@ -239,6 +385,7 @@ export function normalizeDockerContainer(container) {
   }
 
   const command = normalizeDockerCommand(container.command);
+  const runOptions = extractDockerRunOptionsFromContainer(container);
 
   return {
     image,
@@ -246,6 +393,7 @@ export function normalizeDockerContainer(container) {
     persist,
     command,
     healthcheck,
+    runOptions,
   };
 }
 
@@ -365,6 +513,10 @@ export async function spawnDockerContainer({
 
   for (const path of container.persist) {
     args.push('-v', `${volumeName}:${path}`);
+  }
+
+  if (container.runOptions?.length) {
+    args.push(...container.runOptions);
   }
 
   for (const key of taskEnvKeys) {
