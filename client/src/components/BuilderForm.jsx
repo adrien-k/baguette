@@ -144,8 +144,11 @@ export default function BuilderForm({
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
-  const initAppliedRef = useRef(false);
   const modelsSdkRef = useRef(agentSdk);
+  // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
+  // the models fetch waits for it so the persisted default never resolves against
+  // another SDK's list.
+  const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
   const isCursor = agentSdk === 'cursor';
 
   const applySdkAndModel = (nextSdk, modelId, paramsJson) => {
@@ -178,11 +181,11 @@ export default function BuilderForm({
   }, [availableSdks, agentSdk]);
 
   useEffect(() => {
-    if (editingLoop || initAppliedRef.current || userSettings == null) return;
+    if (editingLoop || sdkModelSeeded || userSettings == null) return;
     const defaults = userSettings.agent_defaults;
     const useLastUsed = !defaults || defaults.use_last_used || !defaults.agent_sdk;
     if (!useLastUsed) {
-      initAppliedRef.current = true;
+      setSdkModelSeeded(true);
       const sdk =
         defaults.agent_sdk && availableSdks.includes(defaults.agent_sdk)
           ? defaults.agent_sdk
@@ -197,28 +200,28 @@ export default function BuilderForm({
       return;
     }
     if (!repoFullName || isGlobal) {
-      initAppliedRef.current = true;
+      setSdkModelSeeded(true);
       return;
     }
     let cancelled = false;
     sessionsService
       .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
       .then((result) => {
-        if (cancelled || initAppliedRef.current) return;
-        initAppliedRef.current = true;
+        if (cancelled) return;
+        setSdkModelSeeded(true);
         const sessions = (result.data || []).filter((s) => s.agent_sdk || s.model);
         if (!sessions.length) return;
         const last = sessions[0];
         applySdkAndModel(last.agent_sdk, last.model, last.model_params || null);
       })
       .catch(() => {
-        if (!cancelled) initAppliedRef.current = true;
+        if (!cancelled) setSdkModelSeeded(true);
       });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from defaults or last session
-  }, [editingLoop, userSettings, availableSdks, repoFullName, isGlobal]);
+  }, [editingLoop, sdkModelSeeded, userSettings, availableSdks, repoFullName, isGlobal]);
   const {
     branches,
     loading: loadingBranches,
@@ -243,29 +246,38 @@ export default function BuilderForm({
     if (isGlobal && sessionStartMode === 'same-branch') setSessionStartMode('new-branch');
   }, [isGlobal, sessionStartMode]);
 
-  const loadModels = () => {
-    const getUrl =
-      agentSdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
+  const loadModels = (sdk) => {
+    const getUrl = sdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
     return apiFetch(getUrl)
-      .then((d) => setModels(d.models || []))
-      .catch(() => setModels([]));
+      .then((d) => {
+        // Drop a response for a previous SDK when the user switched mid-flight.
+        if (modelsSdkRef.current !== sdk) return;
+        setModels(d.models || []);
+      })
+      .catch(() => {
+        if (modelsSdkRef.current !== sdk) return;
+        setModels([]);
+      });
   };
 
-  // Load models for the active SDK (avoid clearing the list when only availableSdks ref churns).
+  // Load order: resolve the initial SDK/model/params (agent defaults or last session) first,
+  // then fetch the model list for that SDK — otherwise the persisted default model is resolved
+  // against whichever SDK's list lands first and falls back to that list's first model.
   useEffect(() => {
     if (!availableSdks.includes(agentSdk)) return;
+    if (!editingLoop && !sdkModelSeeded) return;
     if (modelsSdkRef.current !== agentSdk) {
       modelsSdkRef.current = agentSdk;
       setModels([]);
     }
-    loadModels();
+    loadModels(agentSdk);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSdk, availableSdkKey]);
+  }, [agentSdk, availableSdkKey, sdkModelSeeded]);
 
-  // Validate/default model when models load after an SDK change
+  // Validate/default model when models load after an SDK change. Models only load once
+  // sdkModelSeeded is true (or when editing a loop), so a non-empty list implies seeding done.
   useEffect(() => {
     if (!models.length) return;
-    if (!editingLoop && !initAppliedRef.current) return;
     const current = models.find((m) => m.id === model);
     if (current) {
       if (isCursor && !modelParamsJson) {
