@@ -72,7 +72,7 @@ export default function NavbarSystemStats({ leadingSeparator = false } = {}) {
   const showLeadingSep = leadingSeparator && (segments.length > 0 || systemLink);
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+    <div className="hidden sm:flex items-center gap-1.5 min-w-0 shrink-0">
       {showLeadingSep ? <DotSep /> : null}
       {segments.map((node, index) => (
         <Fragment key={node.key}>

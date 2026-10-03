@@ -84,7 +84,7 @@ function Nav() {
       <div className="px-4 flex xl:grid xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3 h-14 min-w-0">
         <Link to={homeUrl} className="flex items-center gap-2 shrink-0 min-w-0">
           <BaguetteIcon className="w-6 h-6 shrink-0" />
-          <span className="text-fg font-semibold text-sm font-display whitespace-nowrap">
+          <span className="hidden sm:inline text-fg font-semibold text-sm font-display whitespace-nowrap">
             Baguette
           </span>
         </Link>

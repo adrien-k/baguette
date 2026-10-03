@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Square, Terminal } from 'lucide-react';
 import { tasksService } from '../feathers.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
@@ -6,6 +6,7 @@ import { useSessionsContext } from '../context/SessionsContext.jsx';
 import TaskLogModal from './TaskLogModal.jsx';
 import TaskDockerIcon from './TaskDockerIcon.jsx';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
+import AnchoredMenu from './AnchoredMenu.jsx';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 export default function RunningTasksDropdown() {
@@ -13,7 +14,6 @@ export default function RunningTasksDropdown() {
   const { sessions } = useSessionsContext();
   const [open, setOpen] = useState(false);
   const [modalTaskId, setModalTaskId] = useState(null);
-  const dropdownRef = useRef(null);
 
   const sessionById = useMemo(() => {
     const m = new Map();
@@ -40,17 +40,6 @@ export default function RunningTasksDropdown() {
       .map(([key, group]) => ({ key, ...group }));
   }, [runningTasks, sessionById]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
   const handleKill = (taskId) => {
     tasksService.kill(taskId);
   };
@@ -75,75 +64,80 @@ export default function RunningTasksDropdown() {
 
   return (
     <>
-      <div className="relative" ref={dropdownRef}>
-        {runningTasks.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            className="flex cursor-pointer items-center gap-1.5 text-xs text-faint hover:text-secondary tabular-nums transition-colors shrink-0"
-            title={`${runningTasks.length} running task${runningTasks.length !== 1 ? 's' : ''}`}
-          >
-            <span className="w-2 h-2 rounded-full bg-ok animate-pulse shrink-0" aria-hidden />
-            <span className="sm:hidden">{runningTasks.length}</span>
-            <span className="hidden sm:inline whitespace-nowrap">
-              {runningTasks.length} {runningTasks.length === 1 ? 'task' : 'tasks'}
-            </span>
-          </button>
-        )}
-
-        {open && (
-          <div
-            className={`absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] ${DROPDOWN_PANEL_CLASS} overflow-hidden z-50`}
-          >
-            <div className="px-3 py-2 border-b border-line flex items-center gap-2">
-              <Terminal className="w-3.5 h-3.5 text-faint" />
-              <span className="text-xs font-medium text-fg-muted">Running Tasks</span>
-            </div>
-            <div className="max-h-64 overflow-auto">
-              {tasksByRepo.map(({ key, repoFullName, tasks }) => (
-                <div key={key}>
-                  <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider bg-nav border-b border-line sticky top-0">
-                    {repoFullName ? repoDisplayName(repoFullName) : 'Unknown repo'}
-                  </div>
-                  {tasks.map((task) => {
-                    const session = sessionById.get(task.session_id);
-                    return (
-                      <div
-                        key={task.id}
-                        onClick={() => openModal(task.id)}
-                        className="px-3 py-2.5 border-b border-line last:border-b-0 cursor-pointer hover:bg-control/60 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2 min-w-0">
-                          <div className="min-w-0 flex-1 overflow-hidden">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <TaskDockerIcon task={task} className="w-3 h-3" />
-                              <code className="text-xs text-heading truncate block min-w-0">
-                                {task.label || task.command}
-                              </code>
-                            </div>
-                            {session && (
-                              <span className="text-[11px] text-faint truncate block mt-0.5">
-                                {session.label || session.short_id}
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            onClick={(e) => handleKillFromDropdown(e, task.id)}
-                            className="text-danger hover:text-danger opacity-60 hover:opacity-100 transition-all shrink-0"
-                            title="Stop"
-                          >
-                            <Square className="w-3.5 h-3.5 fill-current" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+      {runningTasks.length > 0 && (
+        <AnchoredMenu
+          open={open}
+          onOpenChange={setOpen}
+          placement="bottom-end"
+          className={`w-[min(20rem,calc(100vw-2rem))] ${DROPDOWN_PANEL_CLASS} overflow-hidden`}
+          reference={({ ref, referenceProps }) => (
+            <button
+              type="button"
+              ref={ref}
+              {...referenceProps}
+              onClick={(e) => {
+                referenceProps.onClick?.(e);
+                setOpen((v) => !v);
+              }}
+              className="flex cursor-pointer items-center gap-1.5 text-xs text-faint hover:text-secondary tabular-nums transition-colors shrink-0"
+              title={`${runningTasks.length} running task${runningTasks.length !== 1 ? 's' : ''}`}
+            >
+              <span className="w-2 h-2 rounded-full bg-ok animate-pulse shrink-0" aria-hidden />
+              <span className="sm:hidden">{runningTasks.length}</span>
+              <span className="hidden sm:inline whitespace-nowrap">
+                {runningTasks.length} {runningTasks.length === 1 ? 'task' : 'tasks'}
+              </span>
+            </button>
+          )}
+        >
+          <div className="px-3 py-2 border-b border-line flex items-center gap-2">
+            <Terminal className="w-3.5 h-3.5 text-faint" />
+            <span className="text-xs font-medium text-fg-muted">Running Tasks</span>
           </div>
-        )}
-      </div>
+          <div className="max-h-64 overflow-auto">
+            {tasksByRepo.map(({ key, repoFullName, tasks }) => (
+              <div key={key}>
+                <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider bg-nav border-b border-line sticky top-0">
+                  {repoFullName ? repoDisplayName(repoFullName) : 'Unknown repo'}
+                </div>
+                {tasks.map((task) => {
+                  const session = sessionById.get(task.session_id);
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => openModal(task.id)}
+                      className="px-3 py-2.5 border-b border-line last:border-b-0 cursor-pointer hover:bg-control/60 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <TaskDockerIcon task={task} className="w-3 h-3" />
+                            <code className="text-xs text-heading truncate block min-w-0">
+                              {task.label || task.command}
+                            </code>
+                          </div>
+                          {session && (
+                            <span className="text-[11px] text-faint truncate block mt-0.5">
+                              {session.label || session.short_id}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => handleKillFromDropdown(e, task.id)}
+                          className="text-danger hover:text-danger opacity-60 hover:opacity-100 transition-all shrink-0"
+                          title="Stop"
+                        >
+                          <Square className="w-3.5 h-3.5 fill-current" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </AnchoredMenu>
+      )}
 
       {modalTaskId != null && modalTask && (
         <TaskLogModal
