@@ -436,33 +436,25 @@ export class ClaudeAgentService {
   async processMessages(sessionState) {
     const { sessionId, userId } = sessionState;
     const db = this.app.get('db');
-    const { turnComplete } = await this._consumeQuery(sessionState, {
+    const { turnComplete, outcome, streamFailed } = await this._consumeQuery(sessionState, {
       persistMessage: (message) => this.persistMessage(sessionState, message),
       persistStatus: (text) => this._persistSessionStatusMessage(sessionId, userId, text),
       onInitSessionId: async (id) => {
         await db('sessions').where({ id: sessionId }).update({ claude_session_id: id });
         sessionState.claudeSessionId = id;
       },
-      onResult: async (message) => {
-        const ok = message.subtype === 'success' && !message.is_error;
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: ok ? 'completed' : 'failed' }, { user: { id: userId } });
-      },
-      onStreamError: async () => {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-      },
-      onBackgroundAutoResume: async () => {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'running' }, { user: { id: userId } });
-        await this.app.service('sessions').onTurnStart(sessionId);
-      },
       trackBackgroundTasks: true,
       activeKey: sessionId,
     });
+
+    // One terminal status for the whole turn (including background-task auto-resume).
+    // Usage is recorded when the result message is persisted; queued follow-ups start after this.
+    if (turnComplete || streamFailed) {
+      const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
+      await this.app
+        .service('sessions')
+        .patch(sessionId, { status: terminalStatus }, { user: { id: userId } });
+    }
 
     if (turnComplete) {
       try {
@@ -475,7 +467,7 @@ export class ClaudeAgentService {
 
   /**
    * Consume an open Claude query until the turn ends (result, abort, or stream error).
-   * @returns {Promise<{ turnComplete: boolean, outcome: 'completed' | 'failed' | 'stopped' }>}
+   * @returns {Promise<{ turnComplete: boolean, streamFailed: boolean, outcome: 'completed' | 'failed' | 'stopped' }>}
    */
   async _consumeQuery(
     sessionState,
@@ -496,6 +488,7 @@ export class ClaudeAgentService {
     let pendingBackgroundTaskIds = new Set();
     let awaitingAutoResume = false;
     let turnComplete = false;
+    let streamFailed = false;
     let outcome = 'failed';
 
     try {
@@ -564,6 +557,7 @@ export class ClaudeAgentService {
           .service('sessions')
           .emit('app:error', { sessionId, message: userFacing, user_id: userId });
         outcome = 'failed';
+        streamFailed = true;
       } else {
         outcome = 'stopped';
       }
@@ -575,7 +569,7 @@ export class ClaudeAgentService {
       }
     }
 
-    return { turnComplete, outcome };
+    return { turnComplete, streamFailed, outcome };
   }
 
   async sendMessage(sessionId, content) {

@@ -121,6 +121,8 @@ function makeMockApp(db) {
           emit: sessionEmit,
           getClaudeEnv,
           onActivity: async () => {},
+          onTurnStart: async () => {},
+          onTurnComplete: async () => {},
           get: async (id) => db('sessions').where({ id }).first(),
         };
       if (name === 'messages') return { create: messageCreate, remove: genericRemove };
@@ -389,25 +391,14 @@ describe('ClaudeAgentService', (hooks) => {
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
       await service.createAgentSession(sessionRow);
 
-      // The task_notification message must have been persisted (loop stayed open past result)
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
           expect.objectContaining({ type: 'system', subtype: 'task_notification' }),
           expect.anything()
         );
+        const statusPatches = mockApp._sessionPatch.mock.calls.filter(([, patch]) => patch.status);
+        expect(statusPatches.map(([, patch]) => patch.status)).toEqual(['running', 'completed']);
       });
-
-      // Status reached completed (set at result time), then running (awaiting auto-resume)
-      expect(mockApp._sessionPatch).toHaveBeenCalledWith(
-        BASE_SESSION_ID,
-        { status: 'completed' },
-        expect.anything()
-      );
-      expect(mockApp._sessionPatch).toHaveBeenCalledWith(
-        BASE_SESSION_ID,
-        { status: 'running' },
-        expect.anything()
-      );
     });
 
     it('resumes the turn when a background task completes (SDK auto-continuation)', async () => {
@@ -450,25 +441,14 @@ describe('ClaudeAgentService', (hooks) => {
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
       await service.createAgentSession(sessionRow);
 
-      // The assistant message from the auto-continuation must be persisted
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
           expect.objectContaining({ type: 'assistant' }),
           expect.anything()
         );
+        const statusPatches = mockApp._sessionPatch.mock.calls.filter(([, patch]) => patch.status);
+        expect(statusPatches.map(([, patch]) => patch.status)).toEqual(['running', 'completed']);
       });
-
-      // Session must end up completed (from the second result)
-      const patchCalls = mockApp._sessionPatch.mock.calls;
-      const lastStatusPatch = [...patchCalls].reverse().find(([, patch]) => patch.status);
-      expect(lastStatusPatch[1]).toEqual({ status: 'completed' });
-
-      // Status was set to running when task_notification arrived (before auto-continuation)
-      expect(mockApp._sessionPatch).toHaveBeenCalledWith(
-        BASE_SESSION_ID,
-        { status: 'running' },
-        expect.anything()
-      );
     });
     it('does not restart the turn on intermediate task_notification events (non-terminal status)', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
@@ -522,24 +502,51 @@ describe('ClaudeAgentService', (hooks) => {
       await service.createAgentSession(sessionRow);
 
       await vi.waitFor(() => {
-        // All three task_notification messages must be persisted
         const notifCalls = mockApp._messageCreate.mock.calls.filter(
           ([msg]) => msg.subtype === 'task_notification'
         );
         expect(notifCalls).toHaveLength(3);
+        const statusPatches = mockApp._sessionPatch.mock.calls.filter(([, patch]) => patch.status);
+        expect(statusPatches.map(([, patch]) => patch.status)).toEqual(['running', 'completed']);
+      });
+    });
+
+    it('restores completed when auto-resume never arrives after a background task', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
       });
 
-      // status: 'running' must be patched exactly twice: once at session start (createAgentSession)
-      // and once for the terminal task_notification — never for intermediate notifications.
-      const runningPatches = mockApp._sessionPatch.mock.calls.filter(
-        ([, patch]) => patch.status === 'running'
+      query.mockImplementation(() =>
+        makeAsyncIterable([
+          {
+            type: 'system',
+            subtype: 'task_started',
+            task_id: 'bg-noresume',
+            task_type: 'local_bash',
+            description: 'sub',
+            is_backgrounded: true,
+          },
+          { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 },
+          {
+            type: 'system',
+            subtype: 'task_notification',
+            task_id: 'bg-noresume',
+            status: 'completed',
+            output_file: '',
+            summary: 'done',
+          },
+        ])
       );
-      expect(runningPatches).toHaveLength(2);
 
-      // Session must end completed
-      const patchCalls = mockApp._sessionPatch.mock.calls;
-      const lastStatusPatch = [...patchCalls].reverse().find(([, patch]) => patch.status);
-      expect(lastStatusPatch[1]).toEqual({ status: 'completed' });
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow);
+
+      await vi.waitFor(() => {
+        const patchCalls = mockApp._sessionPatch.mock.calls;
+        const lastStatusPatch = [...patchCalls].reverse().find(([, patch]) => patch.status);
+        expect(lastStatusPatch[1]).toEqual({ status: 'completed' });
+      });
     });
   });
 

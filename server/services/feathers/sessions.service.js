@@ -1151,12 +1151,9 @@ export class SessionsService extends KnexService {
     if (message.type === 'user') {
       status = 'running';
     } else if (message.type === 'result') {
-      const subtype = message.subtype;
-      status = 'failed';
+      // Chat status is applied once when the Claude turn ends. This path only records usage.
       try {
-        const parsed = JSON.parse(message.message_json || '{}');
-        if (subtype === 'success' && !parsed.is_error) status = 'completed';
-        result = parsed;
+        result = JSON.parse(message.message_json || '{}');
       } catch {
         /* invalid agent result JSON */
       }

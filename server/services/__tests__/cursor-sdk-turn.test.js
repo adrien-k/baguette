@@ -106,4 +106,30 @@ describe('processCursorRunStream', () => {
     expect(finishedOk).toBe(true);
     expect(persisted.some((m) => m.message?.content?.[0]?.type === 'tool_result')).toBe(true);
   });
+
+  it('treats FINISHED as success when the stream ends before a pending tool completes', async () => {
+    const { finishedOk } = await processCursorRunStream(
+      mockRun([
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'shell-stuck',
+          name: 'Shell',
+          args: { command: 'git push' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        { type: 'status', status: 'FINISHED' },
+      ]),
+      {
+        persistMessage: async () => ({ id: 1 }),
+        patchMessage: async () => {},
+        onStatus: async (sdkMsg) => {
+          if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
+        },
+      }
+    );
+
+    expect(finishedOk).toBe(true);
+  });
 });

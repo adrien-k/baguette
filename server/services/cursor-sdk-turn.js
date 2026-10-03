@@ -213,6 +213,7 @@ export async function processCursorRunStream(run, options) {
   }
 
   await flushStreamBuffer();
-  if (sawFinished && pendingToolCalls.size === 0) finishedOk = true;
+  // FINISHED means the agent turn ended; remaining pending tool rows should not keep the session running.
+  if (sawFinished) finishedOk = true;
   return { finishedOk, hasBackgroundTask };
 }

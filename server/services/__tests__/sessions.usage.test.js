@@ -182,7 +182,7 @@ describe('claude usage recording', () => {
     expect(await usageRows(sessionId)).toHaveLength(1);
   });
 
-  it('still sets status when the result carries no usage at all', async () => {
+  it('does not set session status from a result message', async () => {
     const { sessionId } = await seed();
     const service = makeService();
 
@@ -194,11 +194,7 @@ describe('claude usage recording', () => {
     });
 
     expect(await usageRows(sessionId)).toHaveLength(0);
-    expect(service._patch).toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ status: 'completed' }),
-      expect.anything()
-    );
+    expect(service._patch).not.toHaveBeenCalled();
   });
 
   it('records review usage without mixing chat running totals', async () => {

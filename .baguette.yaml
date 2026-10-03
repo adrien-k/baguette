@@ -1,15 +1,16 @@
 config:
   session:
     env:
+      # Per-session SQLite/migrations — not the Baguette server DATA_DIR (~/.baguette)
+      DATA_DIR: './data'
       # Hardcoded for local preview sessions only — not used in production
       ENCRYPTION_KEY: 'baguette-local-preview-encryption-key-not-for-prod'
       DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
       PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
       SOCKET_PATH: '/_baguette/ws/${{ baguette.session.short_id }}'
     init: |
-      mkdir -p ../../../dev-data-dir
+      mkdir -p data ../../../dev-data-dir
       pnpm install:all
-      # Uses default DATA_DIR (isolated per session / test temp dir), not shared dev-data-dir
       pnpm run migrate
     tasks:
       run-tests:
