@@ -17,7 +17,7 @@ function wrapClick(onToolClick) {
 
 export function canShowSessionPushTool(session, { readonly, onPush } = {}) {
   if (!session) return false;
-  return !!onPush && !readonly && session.pr_status !== 'merged' && !isGlobalSession(session);
+  return !!onPush && !readonly && !isGlobalSession(session);
 }
 
 /** Push CTA above the chat composer when local commits are not on the remote yet. */
