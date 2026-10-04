@@ -1,7 +1,7 @@
 import { Agent, AgentBusyError } from '@cursor/sdk';
 import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
@@ -19,6 +19,20 @@ import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
+
+/**
+ * The Cursor SDK has no systemPrompt option, so Baguette injects its prompt as an
+ * always-apply `.mdc` rules file. Both modes use the same filename under the
+ * session cursor-dir, in per-mode folders:
+ *   <cursor-dir>/build/.cursor/rules/system-prompt.mdc  — session builder prompt
+ *   <cursor-dir>/review/.cursor/rules/system-prompt.mdc — reviewer prompt
+ * Agent setup only ever receives its own mode folder, so an agent loads exactly
+ * one prompt even though both files exist side by side. Prompt files left behind
+ * by older Baguette versions (cursor-dir root, global review bucket) are never
+ * pointed at by agent setup, so they are simply left alone.
+ */
+const SYSTEM_PROMPT_RULE_FILENAME = 'system-prompt.mdc';
+const PROMPT_RULE_MODES = ['build', 'review'];
 
 function isHumanUserMessage(parsed) {
   const content = parsed.message?.content;
@@ -43,7 +57,10 @@ export class CursorAgentService {
     this.app = app;
   }
 
-  async writeAlwaysApplyRule(rulesRoot, { filename, description, body }) {
+  async writeAlwaysApplyRule(
+    rulesRoot,
+    { filename = SYSTEM_PROMPT_RULE_FILENAME, description, body }
+  ) {
     const rulesDir = join(rulesRoot, '.cursor', 'rules');
     await mkdir(rulesDir, { recursive: true });
     await writeFile(
@@ -56,6 +73,36 @@ alwaysApply: true
 ${body}`,
       'utf8'
     );
+    return rulesRoot;
+  }
+
+  /**
+   * Session cursor-dir root: sits alongside the session's working directory —
+   * `.../sessions/<id>/cursor-dir` for session worktrees, alongside the shared
+   * repos dir for global sessions. Sessions without a worktree path get no
+   * rules dir (writePromptRule returns null).
+   */
+  cursorDirForSession(session) {
+    const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
+    if (!absoluteCwd) return null;
+    return join(dirname(absoluteCwd), 'cursor-dir');
+  }
+
+  /**
+   * Write the always-apply system prompt for one agent mode ('build' | 'review') and
+   * return the rules root to pass as that agent's `dirs` entry. Each agent setup
+   * only ever receives its own mode folder, so an agent loads exactly one prompt
+   * even though both files exist side by side. Returns null for sessions without
+   * a worktree path — no rules file is written for them.
+   */
+  async writePromptRule(session, mode, { description, body }) {
+    if (!PROMPT_RULE_MODES.includes(mode)) {
+      throw new Error(`Unknown cursor prompt mode: ${mode}`);
+    }
+    const cursorDir = this.cursorDirForSession(session);
+    if (!cursorDir) return null;
+    const rulesRoot = join(cursorDir, mode);
+    await this.writeAlwaysApplyRule(rulesRoot, { description, body });
     return rulesRoot;
   }
 
@@ -177,14 +224,10 @@ ${body}`,
   }
 
   async _prepareGlobalRulesDir(session) {
-    const absoluteCwd = resolveDataDirRelativePath(session.worktree_path) || '';
-    // New structure: worktree is at .../sessions/<id>/worktree — cursor-dir sits alongside it.
-    // Old sessions: worktree_path points directly to the git root, fall back to DATA_DIR bucket.
-    const sessionRulesRoot =
-      basename(absoluteCwd) === 'worktree'
-        ? join(dirname(absoluteCwd), 'cursor-dir')
-        : join(DATA_DIR, 'cursor-rules', String(session.id));
+    if (!session.worktree_path) return null;
+    const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
     const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
+    // DB rows don't have absolute_worktree_path (added by the Feathers serializer), so inject it.
     const systemPrompt = await buildSystemPromptAppend(
       {
         ...session,
@@ -192,8 +235,7 @@ ${body}`,
       },
       { agentPrompt }
     );
-    return this.writeAlwaysApplyRule(sessionRulesRoot, {
-      filename: 'baguette.mdc',
+    return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',
       body: systemPrompt,
     });
@@ -250,8 +292,9 @@ ${body}`,
     const user = await this.app.service('users').get(session.user_id, {});
     const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
     const pluginDirs = await this._getPluginDirs(session);
+    const dirs = [...(baguetteRulesDir ? [baguetteRulesDir] : []), ...pluginDirs];
     return this.buildAgentOptions(session, {
-      dirs: [baguetteRulesDir, ...pluginDirs],
+      dirs,
       model: turnModel.model ?? session.model ?? user.cursor_model ?? null,
       modelParams: turnModel.modelParams ?? session.model_params,
     });
@@ -752,6 +795,7 @@ export function registerCursorAgentService(app, path = 'cursor-agent') {
       'runTurn',
       'buildAgentOptions',
       'writeAlwaysApplyRule',
+      'writePromptRule',
       'createOrResumeAgent',
       'generateSessionMetadata',
       'deleteAgent',

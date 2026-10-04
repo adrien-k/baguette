@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import { BadRequest } from '@feathersjs/errors';
 import logger from '../../logger.js';
 import { requireUser, disableExternal } from './hooks.js';
@@ -7,7 +6,7 @@ import { buildReviewSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveReviewPrompt } from '../effective-user-prompts.js';
 import { combinePromptExtensions } from '../../../shared/agent-prompts.js';
 import { buildReviewerMcpServer, buildReviewerCursorCustomTools } from '../baguette-mcp-server.js';
-import { DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
+import { resolveDataDirRelativePath } from '../../config.js';
 import { gitCommitCountSince } from '../github.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { markSessionReviewedAtHead } from '../session-branch-commits.js';
@@ -477,9 +476,7 @@ export class SessionReviewService {
     const db = this.app.get('db');
     const { persistMessage, persistStatus, patchMessage } = this._reviewPersist(session);
 
-    const rulesRoot = join(DATA_DIR, 'review-cursor-rules', String(session.id));
-    await cursorAgent.writeAlwaysApplyRule(rulesRoot, {
-      filename: 'review.mdc',
+    const rulesRoot = await cursorAgent.writePromptRule(session, 'review', {
       description: 'Baguette review rules (always applied)',
       body: systemPrompt,
     });

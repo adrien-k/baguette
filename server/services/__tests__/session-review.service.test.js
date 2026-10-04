@@ -67,7 +67,7 @@ function makeApp(dbRef) {
       stopTurn: async () => {},
       runTurn: async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }),
       buildAgentOptions: async () => ({}),
-      writeAlwaysApplyRule: async () => {},
+      writePromptRule: async () => '/tmp/review-rules',
       recordTurnUsage: async () => {},
     },
     {
@@ -76,7 +76,7 @@ function makeApp(dbRef) {
         'stopTurn',
         'runTurn',
         'buildAgentOptions',
-        'writeAlwaysApplyRule',
+        'writePromptRule',
         'recordTurnUsage',
       ],
     }
