@@ -25,9 +25,9 @@ String values in the `container` block support [env placeholders](#env) with the
 | `container.healthcheck` | Optional Docker health check (`test`, `interval`, `timeout`, `retries`)                                         |
 | `depends-on`            | Other task keys that must be ready before this task starts (unusual for DB services)                            |
 
-Optional extra [`docker run`](https://docs.docker.com/reference/cli/docker/container/run/) flags as **sibling keys** on `container` (not nested). Baguette sets network, name, labels, task `env` (`-e`), and health checks — other flags are not available. Supported keys:
+Optional extra [`docker run`](https://docs.docker.com/reference/cli/docker/container/run/) flags as **sibling keys** on `container` (not nested). Baguette sets network, name, labels, task `env` (`-e`), and health checks — other flags are not available. Supported keys (values match the corresponding `docker run` flags):
 
-`volume`, `mount`, `security-opt`, `cap-add`, `cap-drop`, `entrypoint`, `env-file`, `privileged`, `shm-size`, `user`
+`volumes`, `mount`, `security_opt`, `cap_add`, `cap_drop`, `entrypoint`, `env_file`, `privileged`, `shm_size`, `user`, `memory`
 
 Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 

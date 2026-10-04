@@ -182,33 +182,25 @@ export const DOCKER_CONTAINER_STRUCTURED_KEYS = new Set([
   'options',
 ]);
 
-/** Canonical Docker CLI flags allowed as extra keys on `container`. */
+/** Extra `container` fields allowed as `docker run` flags (keys match docker compose). */
 export const DOCKER_CONTAINER_RUN_OPTION_CANONICAL = new Set([
-  'volume',
-  'mount',
-  'security-opt',
-  'cap-add',
-  'cap-drop',
+  'cap_add',
+  'cap_drop',
   'entrypoint',
-  'env-file',
+  'env_file',
+  'memory',
+  'mount',
   'privileged',
-  'shm-size',
+  'security_opt',
+  'shm_size',
   'user',
+  'volumes',
 ]);
 
 /** Recognized YAML key spellings for extra `container` fields (for docs and validation). */
 export const DOCKER_CONTAINER_RUN_OPTION_YAML_KEYS = [
-  'cap-add',
-  'cap-drop',
-  'entrypoint',
-  'env-file',
-  'mount',
-  'privileged',
-  'security-opt',
-  'shm-size',
-  'user',
-  'volume',
-];
+  ...DOCKER_CONTAINER_RUN_OPTION_CANONICAL,
+].sort();
 
 /** Docker CLI flag names Baguette sets on every session container. */
 const RESERVED_DOCKER_RUN_OPTIONS = new Set([
@@ -225,25 +217,13 @@ const RESERVED_DOCKER_RUN_OPTIONS = new Set([
   'p',
   'port',
   'ports',
-  'health-cmd',
-  'health-interval',
-  'health-timeout',
-  'health-retries',
-  'health-start-period',
-  'network-alias',
+  'health_cmd',
+  'health_interval',
+  'health_timeout',
+  'health_retries',
+  'health_start_period',
+  'network_alias',
 ]);
-
-const DOCKER_RUN_OPTION_ALIASES = {
-  volumes: 'volume',
-  binds: 'volume',
-  bind: 'volume',
-  v: 'volume',
-  security_opt: 'security-opt',
-  cap_add: 'cap-add',
-  cap_drop: 'cap-drop',
-  env_file: 'env-file',
-  shm_size: 'shm-size',
-};
 
 /** Flags that accept only `true` (no value) in YAML. */
 const DOCKER_BOOLEAN_RUN_OPTIONS = new Set(['privileged']);
@@ -251,9 +231,13 @@ const DOCKER_BOOLEAN_RUN_OPTIONS = new Set(['privileged']);
 function canonicalDockerRunOptionKey(key) {
   const trimmed = String(key).trim();
   if (!trimmed) throw new Error('container run option keys must be non-empty');
-  const normalized = trimmed.replace(/_/g, '-');
-  const lower = normalized.toLowerCase();
-  return DOCKER_RUN_OPTION_ALIASES[lower] ?? lower;
+  return trimmed.toLowerCase();
+}
+
+/** Docker CLI flag for a canonical snake_case option key (`cap_add` → `--cap-add`). */
+function dockerRunOptionFlag(key) {
+  if (key === 'volumes') return '-v';
+  return `--${key.replace(/_/g, '-')}`;
 }
 
 function isSupportedContainerRunOptionKey(key) {
@@ -302,22 +286,20 @@ export function normalizeDockerRunOptions(options, keyPrefix = 'container') {
     if (value === false || value == null) continue;
 
     if (DOCKER_BOOLEAN_RUN_OPTIONS.has(flag)) {
-      if (value === true) args.push(`--${flag}`);
+      if (value === true) args.push(dockerRunOptionFlag(flag));
       else throw new Error(`${keyPrefix}.${key} must be true or omitted`);
       continue;
     }
 
     if (value === true) {
-      args.push(`--${flag}`);
+      args.push(dockerRunOptionFlag(flag));
       continue;
     }
 
     const values = Array.isArray(value) ? value : [value];
     for (const item of values) {
       if (item == null || item === '') continue;
-      const str = String(item);
-      if (flag === 'volume') args.push('-v', str);
-      else args.push(`--${flag}`, str);
+      args.push(dockerRunOptionFlag(flag), String(item));
     }
   }
   return args;

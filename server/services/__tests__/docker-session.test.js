@@ -59,13 +59,12 @@ describe('docker-session helpers', () => {
     expect(c.command).toEqual(['redis-server', '--appendonly', 'yes']);
   });
 
-  it('normalizeDockerRunOptions maps binds, volumes, and security-opt', () => {
+  it('normalizeDockerRunOptions maps volumes, security_opt, and cap_add', () => {
     expect(
       normalizeDockerRunOptions({
-        binds: ['/host:/mnt:ro'],
-        volumes: ['named-vol:/data'],
-        'security-opt': ['seccomp=unconfined'],
-        'cap-add': 'SYS_PTRACE',
+        volumes: ['/host:/mnt:ro', 'named-vol:/data'],
+        security_opt: ['seccomp=unconfined'],
+        cap_add: 'SYS_PTRACE',
       })
     ).toEqual([
       '-v',
@@ -79,13 +78,25 @@ describe('docker-session helpers', () => {
     ]);
   });
 
+  it('normalizeDockerRunOptions rejects kebab-case spellings', () => {
+    expect(() =>
+      normalizeDockerContainer({
+        image: 'redis:7',
+        'cap-add': 'SYS_PTRACE',
+      })
+    ).toThrow(/Unknown container field "cap-add"/);
+  });
+
   it('normalizeDockerRunOptions supports boolean flags', () => {
     expect(normalizeDockerRunOptions({ privileged: true })).toEqual(['--privileged']);
   });
 
-  it('normalizeDockerRunOptions maps shm-size and shm_size alias', () => {
-    expect(normalizeDockerRunOptions({ 'shm-size': '2gb' })).toEqual(['--shm-size', '2gb']);
-    expect(normalizeDockerRunOptions({ shm_size: '512m' })).toEqual(['--shm-size', '512m']);
+  it('normalizeDockerRunOptions maps shm_size', () => {
+    expect(normalizeDockerRunOptions({ shm_size: '2gb' })).toEqual(['--shm-size', '2gb']);
+  });
+
+  it('normalizeDockerRunOptions maps memory', () => {
+    expect(normalizeDockerRunOptions({ memory: '512m' })).toEqual(['--memory', '512m']);
   });
 
   it('normalizeDockerRunOptions rejects Baguette-managed flags', () => {
@@ -95,18 +106,19 @@ describe('docker-session helpers', () => {
   it('normalizeDockerContainer parses extra run flags on container', () => {
     const c = normalizeDockerContainer({
       image: 'redis:7',
-      'env-file': '/path/to/extra.env',
+      env_file: '/path/to/extra.env',
       user: '1000:1000',
     });
     expect(c.runOptions).toEqual(['--env-file', '/path/to/extra.env', '--user', '1000:1000']);
   });
 
-  it('normalizeDockerContainer parses shm-size on container', () => {
+  it('normalizeDockerContainer parses shm_size and memory on container', () => {
     const c = normalizeDockerContainer({
       image: 'postgres:16',
-      'shm-size': '1gb',
+      shm_size: '1gb',
+      memory: '4g',
     });
-    expect(c.runOptions).toEqual(['--shm-size', '1gb']);
+    expect(c.runOptions).toEqual(['--shm-size', '1gb', '--memory', '4g']);
   });
 
   it('normalizeDockerContainer rejects nested options', () => {
