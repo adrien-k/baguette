@@ -331,3 +331,123 @@ describe('Users service - remove', () => {
     );
   });
 });
+
+describe('Users service - defaultAgent', () => {
+  const addSession = (overrides = {}) =>
+    db('sessions').insert({
+      user_id: user1.id,
+      repo_full_name: 'o/r',
+      initial_prompt: 'do something',
+      base_branch: 'main',
+      short_id: `s${Math.random().toString(36).slice(2, 8)}`,
+      ...overrides,
+    });
+
+  it('unauthenticated defaultAgent is rejected', async () => {
+    await expect(app.service('users').defaultAgent({}, unauthParams)).rejects.toThrow(
+      'Not authenticated'
+    );
+  });
+
+  it('returns the stored defaults when the user pinned an SDK', async () => {
+    await db('users')
+      .where({ id: user1.id })
+      .update({
+        agent_defaults: JSON.stringify({
+          agent_sdk: 'cursor',
+          model: 'cursor-model',
+          model_params: [{ id: 'thinking', value: 'high' }],
+        }),
+      });
+    await addSession({ agent_sdk: 'claude', model: 'claude-model' });
+
+    const result = await app.service('users').defaultAgent({}, params(user1));
+    expect(result).toEqual({
+      agent_sdk: 'cursor',
+      model: 'cursor-model',
+      model_params: [{ id: 'thinking', value: 'high' }],
+      source: 'defaults',
+    });
+  });
+
+  it('falls back to the latest session when defaults are in last-used mode', async () => {
+    await addSession({
+      agent_sdk: 'claude',
+      model: 'older-model',
+      last_activity_at: '2026-01-01 00:00:00',
+    });
+    await addSession({
+      agent_sdk: 'cursor',
+      model: 'newest-model',
+      model_params: JSON.stringify([{ id: 'thinking', value: 'low' }]),
+      last_activity_at: '2026-02-01 00:00:00',
+    });
+
+    const result = await app.service('users').defaultAgent({}, params(user1));
+    expect(result).toEqual({
+      agent_sdk: 'cursor',
+      model: 'newest-model',
+      model_params: [{ id: 'thinking', value: 'low' }],
+      source: 'last_used',
+    });
+  });
+
+  it('ignores the selected repo — resolves from a session on any repo', async () => {
+    await addSession({
+      repo_full_name: 'other-owner/other-repo',
+      agent_sdk: 'cursor',
+      model: 'global-model',
+      last_activity_at: '2026-03-01 00:00:00',
+    });
+
+    const result = await app.service('users').defaultAgent({}, params(user1));
+    expect(result.agent_sdk).toBe('cursor');
+    expect(result.model).toBe('global-model');
+  });
+
+  it('ignores other users sessions', async () => {
+    await db('sessions').insert({
+      user_id: user2.id,
+      repo_full_name: 'o/r',
+      initial_prompt: 'bob work',
+      base_branch: 'main',
+      short_id: 'bob01',
+      agent_sdk: 'cursor',
+      model: 'bob-model',
+    });
+
+    const result = await app.service('users').defaultAgent({}, params(user1));
+    expect(result).toEqual({
+      agent_sdk: 'claude',
+      model: null,
+      model_params: null,
+      source: 'last_used',
+    });
+  });
+
+  it('falls back to claude when there is no session yet', async () => {
+    const result = await app.service('users').defaultAgent({}, params(user1));
+    expect(result).toEqual({
+      agent_sdk: 'claude',
+      model: null,
+      model_params: null,
+      source: 'last_used',
+    });
+  });
+
+  it('skips archived sessions', async () => {
+    await addSession({
+      agent_sdk: 'cursor',
+      model: 'archived-model',
+      archived_at: '2026-04-01 00:00:00',
+    });
+    await addSession({
+      agent_sdk: 'claude',
+      model: 'live-model',
+      last_activity_at: '2026-02-01 00:00:00',
+    });
+
+    const result = await app.service('users').defaultAgent({}, params(user1));
+    expect(result.model).toBe('live-model');
+  });
+});

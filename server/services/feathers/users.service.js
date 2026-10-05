@@ -9,7 +9,7 @@ import {
   parseCursorModelPrefsJson,
   stringifyCursorModelPrefs,
 } from '../../services/agent-preferences.js';
-import { withLastUsedFlag } from '../../services/agent-session-defaults.js';
+import { resolveDefaultAgent, withLastUsedFlag } from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
@@ -55,6 +55,16 @@ class UsersService extends KnexService {
     const db = this.options.Model;
     await db('users').where({ id: params.user.id }).update({ mcp_api_token_encrypted: null });
     return { ok: true };
+  }
+
+  /**
+   * Effective default agent for new sessions: stored defaults when the user pinned an SDK,
+   * otherwise the agent of their most recent session. Account-wide, not repo-scoped.
+   */
+  async defaultAgent(_data, params) {
+    const db = this.options.Model;
+    if (!params.user?.id) throw new NotAuthenticated('Not authenticated');
+    return resolveDefaultAgent(db, params.user.id);
   }
 }
 
@@ -204,6 +214,7 @@ export function registerUsersService(app, path = 'users') {
       'reject',
       'generateMcpToken',
       'revokeMcpToken',
+      'defaultAgent',
     ],
   });
   app.service(path).hooks(usersHooks);

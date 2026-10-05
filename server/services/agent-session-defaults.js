@@ -1,10 +1,12 @@
 import { BadRequest } from '@feathersjs/errors';
 import { availableAgentSdks } from '../../shared/agent-sdk-credentials.js';
 import {
+  isLastUsedAgentDefaults,
   mergeAgentSessionDefaults,
   parseAgentSessionDefaultsJson,
   stringifyAgentSessionDefaults,
 } from '../../shared/agent-session-defaults.js';
+import { getLastUsedSessionAgent } from './last-used-session-agent.js';
 import {
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,
@@ -82,4 +84,33 @@ export async function validateAgentSessionDefaults(user, input) {
 export function normalizeAgentDefaultsPatch(existingRaw, patch) {
   const merged = mergeAgentSessionDefaults(existingRaw, patch);
   return stringifyAgentSessionDefaults(merged);
+}
+
+/**
+ * Effective default agent for new sessions: the user's stored defaults when they pin an SDK,
+ * otherwise the sdk/model/params of their most recent session. Account-wide — deliberately
+ * independent of the selected repo so "Last used agent" resolves the same everywhere.
+ *
+ * @returns {Promise<{ agent_sdk: string, model: string | null, model_params: Array | null,
+ *   source: 'defaults' | 'last_used' }>}
+ */
+export async function resolveDefaultAgent(db, userId) {
+  const defaults = parseAgentSessionDefaultsJson(
+    userId == null ? null : (await db('users').where({ id: userId }).first())?.agent_defaults
+  );
+  if (!isLastUsedAgentDefaults(defaults)) {
+    return {
+      agent_sdk: defaults.agent_sdk,
+      model: defaults.model,
+      model_params: defaults.model_params,
+      source: 'defaults',
+    };
+  }
+  const lastUsed = await getLastUsedSessionAgent(db, userId);
+  return {
+    agent_sdk: lastUsed?.agent_sdk ?? 'claude',
+    model: lastUsed?.model ?? null,
+    model_params: lastUsed?.model_params ?? null,
+    source: 'last_used',
+  };
 }

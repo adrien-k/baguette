@@ -7,7 +7,7 @@ import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
 import { apiFetch } from '../api.js';
-import { sessionsService, pluginsService } from '../feathers.js';
+import { usersService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
 import { toastError } from '../utils/toastError.jsx';
@@ -201,6 +201,9 @@ export default function BuilderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setAgentSdk resets model state intentionally
   }, [availableSdks, agentSdk]);
 
+  // Seed SDK/model/params from the account default: the user's pinned defaults, else the agent
+  // of their most recent session. Resolved server-side so it is independent of the selected repo
+  // (All Sessions mode included) instead of filtering sessions by the current repo.
   useEffect(() => {
     if (editingLoop || sdkModelSeeded || userSettings == null) return;
     // A restored draft prompt means the persisted sdk/model/params were captured with it, so
@@ -209,37 +212,24 @@ export default function BuilderForm({
       setSdkModelSeeded(true);
       return;
     }
-    const defaults = userSettings.agent_defaults;
-    const useLastUsed = !defaults || defaults.use_last_used || !defaults.agent_sdk;
-    if (!useLastUsed) {
-      setSdkModelSeeded(true);
-      const sdk =
-        defaults.agent_sdk && availableSdks.includes(defaults.agent_sdk)
-          ? defaults.agent_sdk
-          : null;
-      applySdkAndModel(
-        sdk,
-        defaults.model || null,
-        defaults.model_params?.length && defaults.agent_sdk === 'cursor'
-          ? JSON.stringify(defaults.model_params)
-          : null
-      );
-      return;
-    }
-    if (!repoFullName || isGlobal) {
-      setSdkModelSeeded(true);
-      return;
-    }
     let cancelled = false;
-    sessionsService
-      .find({ query: { repo_full_name: repoFullName, $limit: 5 } })
-      .then((result) => {
+    usersService
+      .defaultAgent()
+      .then((resolved) => {
         if (cancelled) return;
         setSdkModelSeeded(true);
-        const sessions = (result.data || []).filter((s) => s.agent_sdk || s.model);
-        if (!sessions.length) return;
-        const last = sessions[0];
-        applySdkAndModel(last.agent_sdk, last.model, last.model_params || null);
+        if (!resolved) return;
+        const sdk =
+          resolved.agent_sdk && availableSdks.includes(resolved.agent_sdk)
+            ? resolved.agent_sdk
+            : null;
+        applySdkAndModel(
+          sdk,
+          resolved.model || null,
+          sdk === 'cursor' && resolved.model_params?.length
+            ? JSON.stringify(resolved.model_params)
+            : null
+        );
       })
       .catch(() => {
         if (!cancelled) setSdkModelSeeded(true);
@@ -247,8 +237,8 @@ export default function BuilderForm({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from defaults or last session
-  }, [editingLoop, sdkModelSeeded, userSettings, availableSdks, repoFullName, isGlobal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from the default agent
+  }, [editingLoop, sdkModelSeeded, userSettings, availableSdks]);
   const {
     branches,
     loading: loadingBranches,

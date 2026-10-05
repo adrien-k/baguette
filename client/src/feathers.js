@@ -91,7 +91,7 @@ export const queuedMessagesService = createService('queued-messages', {
 });
 export const loopsService = createService('loops');
 export const usersService = createService('users', {
-  customMethods: ['approve', 'reject', 'generateMcpToken', 'revokeMcpToken'],
+  customMethods: ['approve', 'reject', 'generateMcpToken', 'revokeMcpToken', 'defaultAgent'],
 });
 export const pluginsService = createService('admin/plugins', { customMethods: ['refresh'] });
 export const slackService = createService('admin/slack', {
