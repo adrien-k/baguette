@@ -128,40 +128,15 @@ export async function interpolateTaskDockerContainer(db, sessionId, container) {
   return interpolateTaskConfigValue(db, sessionId, container);
 }
 
-const CLAUDE_AUTH_ENV_KEYS = [
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_AUTH_TOKEN',
-  'CLAUDE_CODE_OAUTH_TOKEN',
-];
-
-/** Gateway model discovery for Claude subprocesses — always enabled. */
-const CLAUDE_GATEWAY_DISCOVERY_KEY = 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY';
-
-function applyClaudeGatewayModelDiscovery(env) {
-  return { ...env, [CLAUDE_GATEWAY_DISCOVERY_KEY]: '1' };
-}
-
 /**
- * Explicit API-key credential (Console `sk-ant-api…` keys): always mapped to
- * ANTHROPIC_API_KEY, stripping the other Claude auth env vars.
+ * Apply each credential field to its env var independently — an API key becomes
+ * ANTHROPIC_API_KEY and an auth token becomes ANTHROPIC_AUTH_TOKEN. Neither strips the
+ * other or the host environment: setting both is the user's responsibility to avoid.
  */
-function applyClaudeCredential(env, credential) {
-  if (!credential) return env;
-  const result = { ...env };
-  for (const key of CLAUDE_AUTH_ENV_KEYS) delete result[key];
-  result.ANTHROPIC_API_KEY = credential;
-  return result;
-}
-
-/**
- * Explicit auth-token credential (gateway "Bearer" style tokens): always mapped to
- * ANTHROPIC_AUTH_TOKEN, stripping the other Claude auth env vars.
- */
-function applyAnthropicAuthToken(env, authToken) {
-  if (!authToken) return env;
-  const result = { ...env };
-  for (const key of CLAUDE_AUTH_ENV_KEYS) delete result[key];
-  result.ANTHROPIC_AUTH_TOKEN = authToken;
+function applyClaudeCredentials(env, { apiKey, authToken }) {
+  let result = env;
+  if (apiKey) result = { ...result, ANTHROPIC_API_KEY: apiKey };
+  if (authToken) result = { ...result, ANTHROPIC_AUTH_TOKEN: authToken };
   return result;
 }
 
@@ -187,7 +162,6 @@ function applyAnthropicBaseUrl(env, configuredUrl) {
  * - `anthropicAuthToken`   — setup-token or gateway bearer token, set as ANTHROPIC_AUTH_TOKEN
  *                            (repo overrides user)
  * - `anthropicBaseUrl`     — ANTHROPIC_BASE_URL override (repo overrides user)
- * Gateway model discovery is always enabled (CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1).
  */
 export function buildClaudeEnvFromPlainUser(
   user,
@@ -195,12 +169,11 @@ export function buildClaudeEnvFromPlainUser(
   anthropicBaseUrl = null,
   { anthropicAuthToken = null } = {}
 ) {
-  let env = applyClaudeCredential(stripServerEnv(process.env), anthropicApiKey);
-  if (!anthropicApiKey) {
-    env = applyAnthropicAuthToken(env, anthropicAuthToken);
-  }
+  let env = applyClaudeCredentials(stripServerEnv(process.env), {
+    apiKey: anthropicApiKey || null,
+    authToken: anthropicAuthToken || null,
+  });
   env = applyAnthropicBaseUrl(env, anthropicBaseUrl);
-  env = applyClaudeGatewayModelDiscovery(env);
   return {
     ...env,
     ...gitAuthorEnvFromUser(user),

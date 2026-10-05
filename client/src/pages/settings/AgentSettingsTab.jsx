@@ -7,6 +7,7 @@ import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
 import AgentSessionDefaultsSection from './AgentSessionDefaultsSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
+import AgentTestButton from '../../components/AgentTestButton.jsx';
 import ClaudeAuthFields from '../../components/ClaudeAuthFields.jsx';
 import {
   SettingsSection,
@@ -187,6 +188,13 @@ export default function AgentSettingsTab({ settings, onSave }) {
               }}
             />
             <p className="mt-1 text-xs text-faint">Required to use the Cursor agent SDK.</p>
+          </div>
+          <div className="mt-4">
+            <AgentTestButton
+              sdk="cursor"
+              repoId={cursorRepoId || null}
+              fields={cursorApiKeyDirty ? { cursor_api_key: cursorApiKey ?? '' } : {}}
+            />
           </div>
           <AgentSdkModelsSection
             key={`cursor-models-${cursorRepoId || 'all'}-${cursorMasked ? '1' : '0'}`}

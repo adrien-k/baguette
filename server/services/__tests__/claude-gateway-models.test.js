@@ -1,14 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../../lib/cache.js', () => ({
   fetch: vi.fn((_key, _ttl, fn) => fn()),
   clear: vi.fn(async () => {}),
 }));
 
-import { clear as clearCacheSpy } from '../../lib/cache.js';
 import { modelsCacheKey } from '../anthropic-models.js';
 import {
-  clearModelsCache,
   gatewayAuthHeaders,
   gatewayDiscoveryActive,
   listGatewayModels,
@@ -103,25 +101,11 @@ describe('listGatewayModels', () => {
   });
 });
 
-describe('modelsCacheKey / clearModelsCache', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
+describe('modelsCacheKey', () => {
   it('derives the cache key from the normalized Claude API URL', () => {
     expect(modelsCacheKey('https://opencode.ai/zen/go/')).toBe(
       'anthropic-models:https://opencode.ai/zen/go'
     );
     expect(modelsCacheKey(null)).toBe('anthropic-models:https://api.anthropic.com');
-  });
-
-  it('clears the cache entry for the given endpoint (normalized)', async () => {
-    await clearModelsCache('https://opencode.ai/zen/go/');
-    expect(clearCacheSpy).toHaveBeenCalledWith('anthropic-models:https://opencode.ai/zen/go');
-  });
-
-  it('falls back to the default endpoint key without a URL', async () => {
-    await clearModelsCache(null);
-    expect(clearCacheSpy).toHaveBeenCalledWith('anthropic-models:https://api.anthropic.com');
   });
 });

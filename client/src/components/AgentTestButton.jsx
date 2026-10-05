@@ -3,12 +3,14 @@ import { PlugZap, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
 import { apiFetch } from '../api.js';
 import { toastError } from '../utils/toastError.jsx';
 
+const LABELS = { claude: 'Claude', cursor: 'Cursor' };
+
 /**
- * "Test connection" button for the Claude gateway config (Settings → Agent → Claude).
+ * "Test connection" button for an agent's credentials (Settings → Agent).
  * Posts dirty form fields (falling back to the effective saved config server-side) to
- * `/api/settings/claude/test` and shows a per-check pass/fail breakdown.
+ * `/api/settings/<sdk>/test` and shows a per-check pass/fail breakdown.
  */
-export default function ClaudeTestButton({ repoId = null, fields = {} }) {
+export default function AgentTestButton({ sdk = 'claude', repoId = null, fields = {} }) {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -18,13 +20,13 @@ export default function ClaudeTestButton({ repoId = null, fields = {} }) {
     try {
       const body = { ...fields };
       if (repoId) body.repo_id = repoId;
-      const res = await apiFetch('/api/settings/claude/test', {
+      const res = await apiFetch(`/api/settings/${sdk}/test`, {
         method: 'POST',
         body: JSON.stringify(body),
       });
       setResult(res);
     } catch (err) {
-      toastError('Claude connection test failed', err);
+      toastError(`${LABELS[sdk] ?? sdk} connection test failed`, err);
     } finally {
       setTesting(false);
     }

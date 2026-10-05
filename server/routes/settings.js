@@ -5,7 +5,9 @@ import { listCursorModels, refreshCursorModels } from '../services/cursor-models
 import { decrypt } from '../lib/encrypt.js';
 import { asyncHandler } from '../lib/app-error-handler.js';
 import db from '../db.js';
-import { buildClaudeEnvFromPlainUser, normalizeAnthropicBaseUrl } from '../services/session-env.js';
+import { normalizeAnthropicBaseUrl } from '../services/session-env.js';
+import { buildClaudeTestEnv, runClaudeConnectivityTest } from '../services/claude-connectivity.js';
+import { runCursorConnectivityTest } from '../services/cursor-connectivity.js';
 import { listClaudeModels } from '../services/claude-gateway-models.js';
 import {
   loadFullSessionPromptTemplate,
@@ -156,9 +158,7 @@ export default function createSettingsRoutes(requireAuth) {
     })
   );
 
-  // --- Claude gateway connectivity test ---
-
-  const CLAUDE_TEST_TIMEOUT_MS = 20_000;
+  // --- Claude / Cursor connectivity tests ---
 
   /**
    * Test the Claude credential / gateway config for a repo scope.
@@ -223,6 +223,38 @@ export default function createSettingsRoutes(requireAuth) {
     })
   );
 
+  /**
+   * Test the Cursor API key for a repo scope.
+   * Body: { repo_id?: number, cursor_api_key?: string } — unsent fields fall back to the
+   * effective (repo → account) saved config; sent plaintext keys are used as-is.
+   * Returns { ok, effective, checks: [{ id, label, ok, detail }] }.
+   */
+  router.post(
+    '/api/settings/cursor/test',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const userRow = await db('users').where({ id: req.user.id }).first();
+      if (!userRow) return res.status(404).json({ error: 'User not found' });
+
+      const data = req.body ?? {};
+      let repoRowData = null;
+      if (data.repo_id != null && data.repo_id !== '') {
+        repoRowData = await repoRow(data.repo_id, req.user.id);
+        if (!repoRowData) return res.status(400).json({ error: 'Repository not linked' });
+      }
+
+      const apiKey =
+        (data.cursor_api_key !== undefined
+          ? data.cursor_api_key
+          : decryptIfSet(repoRowData?.cursor_api_key_encrypted) ||
+            decryptIfSet(userRow.cursor_api_key_encrypted)) || null;
+
+      const result = await runCursorConnectivityTest({ apiKey });
+      result.effective = { cursor_api_key_configured: Boolean(apiKey) };
+      res.json(result);
+    })
+  );
+
   function firstNonEmpty(...values) {
     for (const value of values) {
       if (value !== undefined && value !== null && value !== '') return value;
@@ -237,173 +269,6 @@ export default function createSettingsRoutes(requireAuth) {
   async function repoRow(repoId, userId) {
     if (repoId == null || repoId === '') return null;
     return db('user_repos').where({ user_id: userId, repo_id: repoId }).first();
-  }
-
-  /** Plaintext env for the test fetch, mirroring the session env cascade (host env fallbacks). */
-  function buildClaudeTestEnv(userRow, effective) {
-    return buildClaudeEnvFromPlainUser(
-      { username: userRow.username, github_id: userRow.github_id },
-      effective.anthropic_api_key,
-      effective.anthropic_base_url,
-      {
-        anthropicAuthToken: effective.anthropic_auth_token,
-      }
-    );
-  }
-
-  /** Anthropic auth headers for a plaintext Claude env (Bearer for tokens, x-api-key for keys). */
-  function claudeTestHeaders(env) {
-    const headers = { 'anthropic-version': '2023-06-01' };
-    if (env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) {
-      headers.Authorization = `Bearer ${env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN}`;
-    } else if (env.ANTHROPIC_API_KEY) {
-      headers['x-api-key'] = env.ANTHROPIC_API_KEY;
-    }
-    return headers;
-  }
-
-  function timeoutCheck(timeoutMs) {
-    return `Timed out after ${Math.round(timeoutMs / 1000)}s`;
-  }
-
-  /**
-   * Two probes against the effective endpoint:
-   * 1. GET /v1/models — connectivity + auth + the gateway's model list.
-   * 2. POST /v1/messages (max_tokens: 1) — fallback for connectivity/auth when the endpoint
-   *    does not implement /v1/models (404).
-   */
-  async function runClaudeConnectivityTest(env, { baseUrl } = {}) {
-    const base = normalizeAnthropicBaseUrl(baseUrl) || 'https://api.anthropic.com';
-    const checks = [];
-    const modelIds = [];
-
-    let modelsRes = null;
-    let modelsParsed = null;
-    try {
-      modelsRes = await fetch(`${base}/v1/models?limit=100`, {
-        method: 'GET',
-        headers: claudeTestHeaders(env),
-        signal: AbortSignal.timeout(CLAUDE_TEST_TIMEOUT_MS),
-      });
-      const text = await modelsRes.text();
-      try {
-        modelsParsed = JSON.parse(text);
-      } catch {
-        /* non-JSON response (proxy error page etc.) */
-      }
-    } catch (err) {
-      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
-        return {
-          ok: false,
-          base_url: base,
-          checks: [
-            {
-              id: 'connectivity',
-              label: 'Connectivity',
-              ok: false,
-              detail: timeoutCheck(CLAUDE_TEST_TIMEOUT_MS),
-            },
-          ],
-        };
-      }
-      modelsRes = null;
-    }
-
-    const modelsReached = Boolean(modelsRes);
-    const modelsOk = Boolean(modelsRes?.ok);
-
-    // When /v1/models is unavailable or rejected, the messages probe takes over for
-    // connectivity and auth.
-    const needMessagesProbe = !modelsReached || !modelsOk;
-    const probeModel = 'claude-sonnet-4-5';
-    let messagesRes = null;
-    let messagesParsed = null;
-    let messagesErrorDetail = null;
-    if (needMessagesProbe) {
-      try {
-        messagesRes = await fetch(`${base}/v1/messages`, {
-          method: 'POST',
-          headers: claudeTestHeaders(env),
-          body: JSON.stringify({
-            model: probeModel,
-            max_tokens: 1,
-            messages: [{ role: 'user', content: 'ping' }],
-          }),
-          signal: AbortSignal.timeout(CLAUDE_TEST_TIMEOUT_MS),
-        });
-        const text = await messagesRes.text();
-        try {
-          messagesParsed = JSON.parse(text);
-        } catch {
-          /* non-JSON response */
-        }
-      } catch (err) {
-        messagesErrorDetail =
-          err?.name === 'TimeoutError' || err?.name === 'AbortError'
-            ? timeoutCheck(CLAUDE_TEST_TIMEOUT_MS)
-            : (err?.cause?.code ?? err?.message ?? 'Network error');
-      }
-    }
-
-    const reached = modelsReached || Boolean(messagesRes);
-    if (!reached) {
-      return {
-        ok: false,
-        base_url: base,
-        checks: [
-          { id: 'connectivity', label: 'Connectivity', ok: false, detail: messagesErrorDetail },
-        ],
-      };
-    }
-
-    // Auth is judged from whichever probe succeeded: a 2xx /v1/models proves the credential,
-    // otherwise the messages probe decides (its 404s are model errors, not auth errors).
-    const authOk = modelsOk || Boolean(messagesRes?.ok);
-    const authStatus = authOk ? null : (modelsRes ?? messagesRes);
-    checks.push({
-      id: 'connectivity',
-      label: 'Connectivity',
-      ok: true,
-      detail: authOk ? undefined : `${authStatus.status} ${authStatus.statusText}`.trim(),
-    });
-    checks.push({
-      id: 'auth',
-      label: 'Authentication',
-      ok: authOk,
-      detail: !authOk
-        ? (modelsParsed?.error?.message ?? messagesParsed?.error?.message ?? 'Unauthorized')
-        : undefined,
-    });
-
-    if (modelsReached) {
-      const list = Array.isArray(modelsParsed?.data) ? modelsParsed.data : [];
-      for (const entry of list) {
-        const id = entry?.id ?? entry?.name;
-        if (typeof id === 'string' && id) modelIds.push(id);
-      }
-      const unsupported = !modelsOk && [404, 405, 501].includes(modelsRes.status);
-      checks.push({
-        id: 'models',
-        label: 'Models endpoint',
-        // Informational only — never gates the overall result (auth/connectivity already do).
-        ok: unsupported ? null : modelsOk && modelIds.length > 0 ? true : modelsOk ? false : null,
-        detail: !modelsOk
-          ? `${modelsRes.status} ${modelsRes.statusText}`.trim()
-          : modelIds.length === 0
-            ? 'Gateway returned no models — model discovery may not be supported.'
-            : `${modelIds.length} model${modelIds.length === 1 ? '' : 's'} listed`,
-      });
-    } else {
-      checks.push({
-        id: 'models',
-        label: 'Models endpoint',
-        ok: null,
-        detail: 'Gateway does not expose /v1/models — checked /v1/messages instead',
-      });
-    }
-
-    const required = checks.filter((c) => c.ok !== null);
-    return { ok: required.every((c) => c.ok), base_url: base, models: modelIds, checks };
   }
 
   // --- Usage ---

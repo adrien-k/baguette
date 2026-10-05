@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import MaskedSecretInput from './MaskedSecretInput.jsx';
 import TextInput from './TextInput.jsx';
-import ClaudeTestButton from './ClaudeTestButton.jsx';
+import AgentTestButton from './AgentTestButton.jsx';
 
 /**
  * Claude credential + gateway fields shared by Settings → Agent and Onboarding.
@@ -130,7 +130,7 @@ export default function ClaudeAuthFields({
         </p>
       </div>
       <div className="mt-4">
-        <ClaudeTestButton repoId={repoId} fields={testFields} />
+        <AgentTestButton sdk="claude" repoId={repoId} fields={testFields} />
       </div>
     </div>
   );

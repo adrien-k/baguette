@@ -75,11 +75,3 @@ export async function listGatewayModels(config, { refresh = false } = {}) {
     return models;
   });
 }
-
-/**
- * Bust the cached Claude model list for the given API URL (call when the configured
- * endpoint changes so the next models call fetches fresh).
- */
-export async function clearModelsCache(claudeApiUrl) {
-  await cache.clear(modelsCacheKey(claudeApiUrl));
-}

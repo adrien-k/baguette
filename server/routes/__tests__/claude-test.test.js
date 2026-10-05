@@ -21,6 +21,14 @@ vi.mock('../../services/cursor-models.js', () => ({
   listCursorModels: vi.fn().mockResolvedValue([]),
   refreshCursorModels: vi.fn(),
 }));
+vi.mock('../../services/cursor-connectivity.js', () => ({
+  runCursorConnectivityTest: cursorTestMock.mockImplementation(async ({ apiKey }) => ({
+    ok: Boolean(apiKey),
+    effective: { cursor_api_key_configured: Boolean(apiKey) },
+    checks: [{ id: 'auth', label: 'Authentication', ok: Boolean(apiKey) }],
+  })),
+}));
+const cursorTestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/encrypt.js', () => ({
   encrypt: vi.fn((v) => `enc:${v}`),
   decrypt: vi.fn((v) => (v?.startsWith('enc:') ? v.slice(4) : v)),
@@ -47,6 +55,7 @@ beforeEach(async () => {
     user_id: USER,
     repo_id: repoId,
     anthropic_auth_token_encrypted: 'enc:repo-token',
+    cursor_api_key_encrypted: 'enc:cursor-repo',
   });
 
   const app = express();
@@ -167,5 +176,59 @@ describe('POST /api/settings/claude/test', () => {
     expect(body.ok).toBe(false);
     const byId = Object.fromEntries(body.checks.map((c) => [c.id, c]));
     expect(byId.connectivity.ok).toBe(false);
+  });
+});
+
+describe('POST /api/settings/cursor/test', () => {
+  it('uses the saved key and reports ok', async () => {
+    await db('users').where({ id: USER }).update({ cursor_api_key_encrypted: 'enc:cursor-saved' });
+    const { status, body } = await REAL_FETCH(`${baseUrl}/api/settings/cursor/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }).then(async (r) => ({ status: r.status, body: await r.json() }));
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.effective.cursor_api_key_configured).toBe(true);
+  });
+
+  it('prefers the typed key over the saved one', async () => {
+    const body = await REAL_FETCH(`${baseUrl}/api/settings/cursor/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cursor_api_key: 'typed' }),
+    }).then((r) => r.json());
+    expect(body.ok).toBe(true);
+    expect(body.effective.cursor_api_key_configured).toBe(true);
+  });
+
+  it('fails when no key is configured', async () => {
+    const body = await REAL_FETCH(`${baseUrl}/api/settings/cursor/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).then((r) => r.json());
+    expect(body.ok).toBe(false);
+    expect(body.checks[0]).toMatchObject({ id: 'auth', ok: false });
+  });
+
+  it('falls back to the repo key for the requested repo scope', async () => {
+    const repoId = (await db('repos').where({ full_name: 'alice/myrepo' }).first()).id;
+    const body = await REAL_FETCH(`${baseUrl}/api/settings/cursor/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_id: repoId }),
+    }).then((r) => r.json());
+    expect(body.ok).toBe(true);
+    expect(cursorTestMock).toHaveBeenCalledWith({ apiKey: 'cursor-repo' });
+  });
+
+  it('rejects unlinked repositories', async () => {
+    const { status } = await REAL_FETCH(`${baseUrl}/api/settings/cursor/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_id: 999 }),
+    });
+    expect(status).toBe(400);
   });
 });

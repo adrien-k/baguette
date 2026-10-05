@@ -13,7 +13,6 @@ import { withLastUsedFlag } from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
-import { clearModelsCache } from '../claude-gateway-models.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -75,20 +74,10 @@ async function normalizeColorSchemePatch(context) {
   return context;
 }
 
-/** Normalize the Claude base URL on user patches and bust the gateway model cache on change. */
+/** Normalize the Claude base URL on user patches. */
 async function normalizeAnthropicBaseUrlPatch(context) {
   if (context.data.anthropic_base_url === undefined) return context;
   context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
-  // Bust the cached gateway model list for the previously configured endpoint.
-  try {
-    const existing = await context.service.get(context.id, {
-      ...context.params,
-      provider: undefined,
-    });
-    await clearModelsCache(existing?.anthropic_base_url);
-  } catch {
-    /* user row may not exist yet (create) — nothing cached */
-  }
   return context;
 }
 

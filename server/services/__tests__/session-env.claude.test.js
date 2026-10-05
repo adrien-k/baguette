@@ -48,35 +48,28 @@ describe('buildClaudeEnvFromPlainUser', () => {
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH);
   });
 
-  it('sets ANTHROPIC_API_KEY for Console keys and strips other Claude auth env', () => {
-    const env = buildClaudeEnvFromPlainUser(USER, 'sk-ant-api03-user');
-    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-user');
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
-  });
-
-  it('maps the API key field to ANTHROPIC_API_KEY', () => {
+  it('maps the API key field to ANTHROPIC_API_KEY without touching the other auth vars', () => {
     const env = buildClaudeEnvFromPlainUser(USER, 'sk-ant-oat01-legacy-token');
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-oat01-legacy-token');
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe(HOST_AUTH);
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH);
   });
 
-  it('sets ANTHROPIC_AUTH_TOKEN when an explicit auth token is provided', () => {
+  it('maps the auth token field to ANTHROPIC_AUTH_TOKEN without touching the other auth vars', () => {
     const env = buildClaudeEnvFromPlainUser(USER, null, null, {
-      anthropicAuthToken: 'sk-ant-oat01-user',
+      anthropicAuthToken: 'gw-bearer-token',
     });
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-user');
-    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('gw-bearer-token');
+    expect(env.ANTHROPIC_API_KEY).toBe(HOST_API);
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH);
   });
 
-  it('prefers an API key over an auth token when both are set', () => {
+  it('applies both credentials independently when both are set', () => {
     const env = buildClaudeEnvFromPlainUser(USER, 'sk-ant-api03-user', null, {
       anthropicAuthToken: 'gw-bearer-token',
     });
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-user');
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('gw-bearer-token');
   });
 
   it('does not touch host auth env when neither credential kind is set', () => {
@@ -96,8 +89,8 @@ describe('buildClaudeEnvFromPlainUser', () => {
     expect(env.ANTHROPIC_BASE_URL).toBe('https://llm-gateway.example.com');
   });
 
-  it('always enables gateway model discovery', () => {
-    vi.stubEnv('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY', '0');
+  it('leaves gateway discovery env vars to the host environment', () => {
+    vi.stubEnv('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY', '1');
     const env = buildClaudeEnvFromPlainUser(USER, 'sk-ant-api03-user', null, {});
     expect(env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBe('1');
 
@@ -154,10 +147,10 @@ describe('getClaudeEnv repo override', () => {
       .patch(user.id, { anthropic_auth_token: 'sk-ant-oat01-user' }, { user });
     const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-user');
-    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBe(HOST_API); // host env inherited, not stripped
   });
 
-  it('lets a repo API key override a user auth token', async () => {
+  it('applies repo-level and account-level credentials independently', async () => {
     await app
       .service('users')
       .patch(user.id, { anthropic_auth_token: 'sk-ant-oat01-user' }, { user });
@@ -172,7 +165,7 @@ describe('getClaudeEnv repo override', () => {
 
     const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-repo');
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-user');
   });
 
   it('maps a legacy setup-token value in the API key field to ANTHROPIC_API_KEY', async () => {
@@ -181,7 +174,7 @@ describe('getClaudeEnv repo override', () => {
       .patch(user.id, { anthropic_api_key: 'sk-ant-oat01-legacy' }, { user });
     const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-oat01-legacy');
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH); // inherited, untouched
   });
 
   it('lets a repo base URL override the account default', async () => {
@@ -226,12 +219,12 @@ describe('getClaudeEnv repo override', () => {
 
     const env2 = await getClaudeEnv(app, user.id, 'alice/myrepo');
     expect(env2.ANTHROPIC_AUTH_TOKEN).toBe('repo-token');
-    expect(env2.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env2.ANTHROPIC_API_KEY).toBe(HOST_API); // host env inherited, not stripped
   });
 
-  it('always sets gateway model discovery in the session env', async () => {
+  it('does not set gateway discovery env vars in the session env', async () => {
     const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBe('1');
+    expect(env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBeUndefined();
   });
 
   it('ignores legacy default model / discovery fields in patches', async () => {

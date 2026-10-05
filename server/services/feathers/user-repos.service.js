@@ -2,7 +2,6 @@ import { KnexService } from '@feathersjs/knex';
 import { NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, encryptFields, decryptFields, only } from './hooks.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
-import { clearModelsCache } from '../claude-gateway-models.js';
 
 const WRITABLE_USER_REPO_FIELDS = [
   'anthropic_api_key',
@@ -38,19 +37,9 @@ async function requireOwnUserRepo(context) {
   return context;
 }
 
-/** Normalize the Claude base URL and bust the gateway model cache for the previous endpoint. */
 async function normalizeAnthropicBaseUrlPatch(context) {
   if (context.data.anthropic_base_url === undefined) return context;
   context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
-  try {
-    const existing = await context.service.get(context.id, {
-      ...context.params,
-      provider: undefined,
-    });
-    await clearModelsCache(existing?.anthropic_base_url);
-  } catch {
-    /* row may not exist yet */
-  }
   return context;
 }
 
