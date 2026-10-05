@@ -38,6 +38,12 @@ function parseRepoFullName(full) {
   return { owner: full.slice(0, i), name: full.slice(i + 1) };
 }
 
+// Form settings are only captured to localStorage while the prompt has text, so idle visits and
+// empty-prompt "just open a session" runs never overwrite the last composed snapshot. The only
+// exemption is targetScope below: it records which repo the form is pointed at — navigation
+// state, not composition state — so an empty-prompt "open a session" visit reopens the same repo.
+const hasPromptText = (store) => Boolean((store.prompt ?? '').trim());
+
 /** How a one-shot session starts (Start button); menu picks mode without submitting. */
 const SESSION_START_MODES = [
   {
@@ -94,6 +100,10 @@ export default function BuilderForm({
         : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
   const persistentState = usePersistentState(persistKey);
   const globalState = usePersistentState('builder-form-global');
+  // Whether this mount hydrated from a snapshot that captured prompt text. Such snapshots only
+  // exist through hasPromptText, so their sdk/model/params picks are intentional and should not
+  // be re-seeded from agent defaults or the last session.
+  const hasPersistedPromptRef = useRef(Boolean(persistKey && hasPromptText(persistentState.store)));
   const { repos, loading: loadingRepos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const defaultTarget = editingLoop
@@ -111,28 +121,39 @@ export default function BuilderForm({
   );
   const isGlobal = allowRepoChoice ? targetScope === GLOBAL_SCOPE : isGlobalProp;
   const repoFullName = allowRepoChoice ? (isGlobal ? null : targetScope) : repoFullNameProp;
-  const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '');
+  const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '', {
+    persistWhen: hasPromptText,
+  });
   const [initialPrompt, setInitialPrompt] = persistentState.useState(
     'prompt',
     editingLoop?.prompt ?? defaultPrompt ?? ''
   );
   const [showMore, setShowMore] = globalState.useState('showMore', false);
-  const [branchName, setBranchName] = persistentState.useState('branchName', '');
-  const [autoPush, setAutoPush] = persistentState.useState('autoPush', true);
+  const [branchName, setBranchName] = persistentState.useState('branchName', '', {
+    persistWhen: hasPromptText,
+  });
+  const [autoPush, setAutoPush] = persistentState.useState('autoPush', true, {
+    persistWhen: hasPromptText,
+  });
   const { currentUser: userSettings } = useCurrentUser();
   const [agentSdk, setAgentSdkRaw] = persistentState.useState(
     'agentSdk',
-    editingLoop?.agent_sdk ?? 'claude'
+    editingLoop?.agent_sdk ?? 'claude',
+    { persistWhen: hasPromptText }
   );
-  const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '');
+  const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '', {
+    persistWhen: hasPromptText,
+  });
   const [modelParamsJson, setModelParamsJson] = persistentState.useState(
     'modelParams',
-    editingLoop?.model_params ?? null
+    editingLoop?.model_params ?? null,
+    { persistWhen: hasPromptText }
   );
   const [models, setModels] = useState([]);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState(
     'plugins',
-    editingLoop?.plugins ?? []
+    editingLoop?.plugins ?? [],
+    { persistWhen: hasPromptText }
   );
   const [availablePlugins, setAvailablePlugins] = useState([]);
   const [files, setFiles] = useState([]);
@@ -182,6 +203,12 @@ export default function BuilderForm({
 
   useEffect(() => {
     if (editingLoop || sdkModelSeeded || userSettings == null) return;
+    // A restored draft prompt means the persisted sdk/model/params were captured with it, so
+    // keep them instead of re-seeding from agent defaults or the last session.
+    if (hasPersistedPromptRef.current) {
+      setSdkModelSeeded(true);
+      return;
+    }
     const defaults = userSettings.agent_defaults;
     const useLastUsed = !defaults || defaults.use_last_used || !defaults.agent_sdk;
     if (!useLastUsed) {
@@ -235,7 +262,10 @@ export default function BuilderForm({
       setBranch('');
       return;
     }
-    if (loadingBranches) return;
+    // Wait for a real branch list before judging the branch — on mount the list is still empty
+    // while loading is false, and replacing a restored branch with the repo default there would
+    // both lose it and persist the default over the snapshot.
+    if (loadingBranches || !branches.length) return;
     if (branch && branches.includes(branch)) return;
     const defaultBranch = selectedRepo?.default_branch || branches[0];
     if (defaultBranch) setBranch(defaultBranch);

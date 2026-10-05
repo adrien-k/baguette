@@ -4,6 +4,7 @@ dist/
 client/node_modules/
 client/dist/
 .data/
+data/
 .DS_Store
 config/credentials/
 .kamal/.env
