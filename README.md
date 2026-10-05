@@ -122,7 +122,7 @@ Notes:
 
 Configure your agent(s) in **Settings** > **Agent**.
 
-**Claude:** Enter a Console API key or a subscription token from `claude setup-token` (Pro/Max/Team/Enterprise). Format is detected automatically (`sk-ant-api…` vs `sk-ant-oat…`). Optionally set a default model. Claude Code must be installed (step 5 above).
+**Claude:** Enter a Console API key (`sk-ant-api…`) in **API key**, or a subscription token from `claude setup-token` (`sk-ant-oat…`) in **Auth token** (sent as `ANTHROPIC_AUTH_TOKEN`, Authorization: Bearer). To use an LLM gateway compatible with the Anthropic API, set **API base URL** (`ANTHROPIC_BASE_URL`) together with the **Auth token** or **API key** your gateway expects — the model list is then fetched from the gateway's `/v1/models` endpoint. All of these can be scoped to all repos or a single repository, and **Test connection** verifies connectivity and the gateway's model list. Claude Code must be installed (step 5 above).
 
 **Cursor:** Enter your Cursor API key and optionally set a default model and variant. No additional CLI installation required.
 

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { usersService, reposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { toastError } from '../utils/toastError.jsx';
 import MaskedSecretInput from '../components/MaskedSecretInput.jsx';
+import ClaudeAuthFields from '../components/ClaudeAuthFields.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
 
@@ -33,15 +35,49 @@ function StepLabel({ current }) {
   );
 }
 
+/**
+ * Collapsible section header for onboarding step 1: a toggle link with a rotating
+ * chevron and an unsaved-changes dot when the section contains dirty fields.
+ */
+function AgentSectionToggle({ label, open, onToggle, hasChanges = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="group flex w-full items-center gap-1.5 text-left transition-colors"
+    >
+      <ChevronDown
+        className={`w-4 h-4 text-faint transition-transform ${open ? '' : '-rotate-90'}`}
+      />
+      <span
+        className={`text-sm font-medium transition-colors ${
+          open ? 'text-heading' : 'text-secondary group-hover:text-heading'
+        }`}
+      >
+        {label}
+      </span>
+      {hasChanges && !open ? (
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-brand shrink-0"
+          title="Unsaved changes in this section"
+        />
+      ) : null}
+    </button>
+  );
+}
+
 export default function Onboarding() {
   const { user, setUser } = useAuth();
   const { repos, refetch: refetchRepos } = useRepoContext();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
 
-  // Step 1: API keys
-  const [anthropicApiKey, setAnthropicApiKey] = useState(null);
-  const [anthropicApiKeyDirty, setAnthropicApiKeyDirty] = useState(false);
+  // Step 1: API keys — Claude fields (patch + dirty state) come from ClaudeAuthFields.
+  // Sections stay mounted when collapsed so typed values are not lost.
+  const [claudeOpen, setClaudeOpen] = useState(false);
+  const [cursorOpen, setCursorOpen] = useState(false);
+  const [claudeChange, setClaudeChange] = useState({ patch: {}, hasChanges: false });
   const [cursorApiKey, setCursorApiKey] = useState(null);
   const [cursorApiKeyDirty, setCursorApiKeyDirty] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
@@ -53,11 +89,10 @@ export default function Onboarding() {
   const [completing, setCompleting] = useState(false);
 
   const handleSaveKeys = async (skip = false) => {
-    if (!skip && (anthropicApiKeyDirty || cursorApiKeyDirty)) {
+    if (!skip && (claudeChange.hasChanges || cursorApiKeyDirty)) {
       setSavingKeys(true);
       try {
-        const patch = {};
-        if (anthropicApiKeyDirty) patch.anthropic_api_key = anthropicApiKey ?? '';
+        const patch = { ...claudeChange.patch };
         if (cursorApiKeyDirty) patch.cursor_api_key = cursorApiKey ?? '';
         await usersService.patch(user.id, patch);
       } catch (err) {
@@ -112,46 +147,45 @@ export default function Onboarding() {
         {step === 1 && (
           <div>
             <StepLabel current={1} />
-            <h1 className="text-2xl font-bold text-fg mb-2">Set up your API keys</h1>
+            <h1 className="text-2xl font-bold text-fg mb-2">Connect your agents</h1>
             <p className="text-fg-muted text-sm mb-8">
-              Add your AI provider keys to get started. You can update these any time in Settings.
+              Expand a provider below to configure it. You can update these any time in Settings →
+              Agent.
             </p>
 
             <div className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-secondary mb-1.5">
-                  Claude credential
-                </label>
-                <MaskedSecretInput
-                  maskedValue={null}
-                  placeholder="sk-ant-…"
-                  onChange={(val, dirty) => {
-                    setAnthropicApiKey(val);
-                    setAnthropicApiKeyDirty(dirty);
-                  }}
+                <AgentSectionToggle
+                  label="Configure Claude Code"
+                  open={claudeOpen}
+                  onToggle={() => setClaudeOpen((v) => !v)}
+                  hasChanges={claudeChange.hasChanges}
                 />
-                <p className="mt-1.5 text-xs text-faint">
-                  Optional. Console API key (<code className="text-fg-muted">sk-ant-api…</code>) or
-                  a subscription token from{' '}
-                  <code className="text-fg-muted">claude setup-token</code> (
-                  <code className="text-fg-muted">sk-ant-oat…</code>). Leave empty to use Claude
-                  Code&apos;s default configuration.
-                </p>
+                <div className={claudeOpen ? 'mt-4' : 'hidden'}>
+                  <ClaudeAuthFields
+                    onChange={(patch, hasChanges) => setClaudeChange({ patch, hasChanges })}
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-secondary mb-1.5">
-                  Cursor API Key
-                </label>
-                <MaskedSecretInput
-                  maskedValue={null}
-                  placeholder="cursor-…"
-                  onChange={(val, dirty) => {
-                    setCursorApiKey(val);
-                    setCursorApiKeyDirty(dirty);
-                  }}
+                <AgentSectionToggle
+                  label="Configure Cursor"
+                  open={cursorOpen}
+                  onToggle={() => setCursorOpen((v) => !v)}
+                  hasChanges={cursorApiKeyDirty}
                 />
-                <p className="mt-1.5 text-xs text-faint">Required to use the Cursor agent SDK.</p>
+                <div className={cursorOpen ? 'mt-4' : 'hidden'}>
+                  <MaskedSecretInput
+                    maskedValue={null}
+                    placeholder="cursor-…"
+                    onChange={(val, dirty) => {
+                      setCursorApiKey(val);
+                      setCursorApiKeyDirty(dirty);
+                    }}
+                  />
+                  <p className="mt-1.5 text-xs text-faint">Required to use the Cursor agent SDK.</p>
+                </div>
               </div>
             </div>
 

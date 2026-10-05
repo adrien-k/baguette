@@ -13,6 +13,19 @@ describe('agent-sdk-credentials', () => {
     expect(availableAgentSdks(user, null)).toEqual(['claude']);
   });
 
+  it('counts a Claude auth token as a configured credential', () => {
+    const user = { anthropic_api_key: null, anthropic_auth_token: 'bearer-token' };
+    expect(hasAgentSdkCredential('claude', user, null)).toBe(true);
+    expect(availableAgentSdks(user, null)).toEqual(['claude']);
+    expect(resolveAgentSdkKeys(user, null).anthropic_auth_token).toBe('bearer-token');
+  });
+
+  it('counts a repo auth token as a configured credential', () => {
+    const repo = { anthropic_auth_token: 'repo-token' };
+    expect(hasAgentSdkCredential('claude', {}, repo)).toBe(true);
+    expect(resolveAgentSdkKeys({}, repo).anthropic_auth_token).toBe('repo-token');
+  });
+
   it('falls back to repo keys', () => {
     const user = {};
     const repo = { cursor_api_key: 'cursor-xxx' };

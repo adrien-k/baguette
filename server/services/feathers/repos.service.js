@@ -71,6 +71,7 @@ class ReposService extends KnexService {
         'repos.created_at',
         'user_repos.id as user_repo_id',
         'user_repos.anthropic_api_key_encrypted',
+        'user_repos.anthropic_auth_token_encrypted',
         'user_repos.anthropic_base_url',
         'user_repos.cursor_api_key_encrypted',
         'user_repos.agent_prompt',
@@ -502,6 +503,7 @@ export const reposHooks = {
     find: [
       decryptFields({
         anthropic_api_key: 'anthropic_api_key_encrypted',
+        anthropic_auth_token: 'anthropic_auth_token_encrypted',
         cursor_api_key: 'cursor_api_key_encrypted',
       }),
     ],

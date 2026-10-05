@@ -134,20 +134,34 @@ const CLAUDE_AUTH_ENV_KEYS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
 ];
 
-/** Long-lived Claude Pro/Max/Team/Enterprise tokens from `claude setup-token`. */
-export function isClaudeOAuthToken(value) {
-  return typeof value === 'string' && value.startsWith('sk-ant-oat');
+/** Gateway model discovery for Claude subprocesses — always enabled. */
+const CLAUDE_GATEWAY_DISCOVERY_KEY = 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY';
+
+function applyClaudeGatewayModelDiscovery(env) {
+  return { ...env, [CLAUDE_GATEWAY_DISCOVERY_KEY]: '1' };
 }
 
+/**
+ * Explicit API-key credential (Console `sk-ant-api…` keys): always mapped to
+ * ANTHROPIC_API_KEY, stripping the other Claude auth env vars.
+ */
 function applyClaudeCredential(env, credential) {
   if (!credential) return env;
   const result = { ...env };
   for (const key of CLAUDE_AUTH_ENV_KEYS) delete result[key];
-  if (isClaudeOAuthToken(credential)) {
-    result.CLAUDE_CODE_OAUTH_TOKEN = credential;
-  } else {
-    result.ANTHROPIC_API_KEY = credential;
-  }
+  result.ANTHROPIC_API_KEY = credential;
+  return result;
+}
+
+/**
+ * Explicit auth-token credential (gateway "Bearer" style tokens): always mapped to
+ * ANTHROPIC_AUTH_TOKEN, stripping the other Claude auth env vars.
+ */
+function applyAnthropicAuthToken(env, authToken) {
+  if (!authToken) return env;
+  const result = { ...env };
+  for (const key of CLAUDE_AUTH_ENV_KEYS) delete result[key];
+  result.ANTHROPIC_AUTH_TOKEN = authToken;
   return result;
 }
 
@@ -168,11 +182,25 @@ function applyAnthropicBaseUrl(env, configuredUrl) {
 /**
  * Build Claude subprocess env from a pre-decrypted user row.
  * All fields on `user` must already be plaintext (fetched via Feather service with no provider).
- * `anthropicApiKey` may be a Console API key or a `claude setup-token` OAuth token.
+ * Credential fields map one-to-one to their env vars:
+ * - `anthropicApiKey`      — Console API key, set as ANTHROPIC_API_KEY (repo overrides user)
+ * - `anthropicAuthToken`   — setup-token or gateway bearer token, set as ANTHROPIC_AUTH_TOKEN
+ *                            (repo overrides user)
+ * - `anthropicBaseUrl`     — ANTHROPIC_BASE_URL override (repo overrides user)
+ * Gateway model discovery is always enabled (CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1).
  */
-export function buildClaudeEnvFromPlainUser(user, anthropicApiKey, anthropicBaseUrl = null) {
+export function buildClaudeEnvFromPlainUser(
+  user,
+  anthropicApiKey,
+  anthropicBaseUrl = null,
+  { anthropicAuthToken = null } = {}
+) {
   let env = applyClaudeCredential(stripServerEnv(process.env), anthropicApiKey);
+  if (!anthropicApiKey) {
+    env = applyAnthropicAuthToken(env, anthropicAuthToken);
+  }
   env = applyAnthropicBaseUrl(env, anthropicBaseUrl);
+  env = applyClaudeGatewayModelDiscovery(env);
   return {
     ...env,
     ...gitAuthorEnvFromUser(user),
@@ -182,7 +210,7 @@ export function buildClaudeEnvFromPlainUser(user, anthropicApiKey, anthropicBase
 /**
  * Build the Claude agent subprocess environment for a given user + repo.
  * Fetches the user and per-repo key via Feather services (hooks decrypt, no raw DB access).
- * Per-repo key takes priority over the user-level key.
+ * repo-level values take priority over the user-level values.
  *
  * @param {object} app  - Feathers app instance
  * @param {number} userId
@@ -192,6 +220,7 @@ export async function getClaudeEnv(app, userId, repoFullName) {
   const user = await app.service('users').get(userId, {}); // no provider → plaintext secrets
 
   let repoApiKey = null;
+  let repoAuthToken = null;
   let repoBaseUrl = null;
   if (repoFullName) {
     const db = app.get('db');
@@ -206,13 +235,17 @@ export async function getClaudeEnv(app, userId, repoFullName) {
         paginate: false,
       });
       repoApiKey = userRepos?.[0]?.anthropic_api_key || null;
+      repoAuthToken = userRepos?.[0]?.anthropic_auth_token || null;
       repoBaseUrl = userRepos?.[0]?.anthropic_base_url ?? null;
     }
   }
 
   const apiKey = repoApiKey || user.anthropic_api_key || null;
+  const authToken = repoAuthToken || user.anthropic_auth_token || null;
   const baseUrl = repoBaseUrl ?? user.anthropic_base_url ?? null;
-  return buildClaudeEnvFromPlainUser(user, apiKey, baseUrl);
+  return buildClaudeEnvFromPlainUser(user, apiKey, baseUrl, {
+    anthropicAuthToken: authToken,
+  });
 }
 
 /**

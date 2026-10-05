@@ -25,6 +25,9 @@ function commandsToAllowedTools(commands) {
   return commands.map((cmd) => `Bash(${cmd}*)`);
 }
 
+/** Hard cap on session metadata (label/branch) generation — provisioning must not stall on CLI API retries. */
+const METADATA_TIMEOUT_MS = 30_000;
+
 function claudeSdkPermissionMode(sessionRow) {
   return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
 }
@@ -646,27 +649,54 @@ Task: ${initialPrompt}`;
     let branchName = fallbackBranch;
 
     const env = await getClaudeEnv(this.app, user.id, repo?.full_name ?? null);
-    for await (const message of query({
+    const q = query({
       prompt,
       options: { model: 'haiku', env },
-    })) {
-      if (message.type === 'result' && message.subtype === 'success' && !message.is_error) {
-        const text = (message.result || '').trim();
-        try {
-          const jsonText = text
-            .replace(/^```(?:json)?\n?/, '')
-            .replace(/\n?```$/, '')
-            .trim();
-          const parsed = JSON.parse(jsonText);
-          label = (parsed.label || '').slice(0, 80);
-          branchName = (parsed.branch || fallbackBranch)
-            .replace(/[^a-z0-9-]/g, '-')
-            .replace(/-+/g, '-')
-            .slice(0, 60);
-        } catch {
-          label = text.slice(0, 80);
+    });
+    const consume = (async () => {
+      for await (const message of q) {
+        if (message.type === 'result' && message.subtype === 'success' && !message.is_error) {
+          const text = (message.result || '').trim();
+          try {
+            const jsonText = text
+              .replace(/^```(?:json)?\n?/, '')
+              .replace(/\n?```$/, '')
+              .trim();
+            const parsed = JSON.parse(jsonText);
+            label = (parsed.label || '').slice(0, 80);
+            branchName = (parsed.branch || fallbackBranch)
+              .replace(/[^a-z0-9-]/g, '-')
+              .replace(/-+/g, '-')
+              .slice(0, 60);
+          } catch {
+            label = text.slice(0, 80);
+          }
         }
       }
+    })();
+
+    // The CLI retries failed API calls up to 10 times with exponential backoff; a bad
+    // credential or model can stall metadata for minutes. Provisioning must not wait on
+    // that — fail fast and let the caller fall back to the default label/branch.
+    let timer;
+    try {
+      await Promise.race([
+        consume,
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Metadata generation timed out')),
+            METADATA_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      try {
+        q.close(); // end the CLI subprocess after timeout or completion
+      } catch {
+        /* already closed */
+      }
+      consume.catch(() => {}); // late failures after timeout/close are non-fatal
     }
 
     return { label, branchName };

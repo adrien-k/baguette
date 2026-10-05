@@ -13,6 +13,7 @@ import { withLastUsedFlag } from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
+import { clearModelsCache } from '../claude-gateway-models.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -74,9 +75,30 @@ async function normalizeColorSchemePatch(context) {
   return context;
 }
 
+/** Normalize the Claude base URL on user patches and bust the gateway model cache on change. */
 async function normalizeAnthropicBaseUrlPatch(context) {
   if (context.data.anthropic_base_url === undefined) return context;
   context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
+  // Bust the cached gateway model list for the previously configured endpoint.
+  try {
+    const existing = await context.service.get(context.id, {
+      ...context.params,
+      provider: undefined,
+    });
+    await clearModelsCache(existing?.anthropic_base_url);
+  } catch {
+    /* user row may not exist yet (create) — nothing cached */
+  }
+  return context;
+}
+
+async function normalizeClaudeFieldsPatch(context) {
+  if (context.data.claude_gateway_model_discovery !== undefined) {
+    delete context.data.claude_gateway_model_discovery;
+  }
+  if (context.data.claude_default_model !== undefined) {
+    delete context.data.claude_default_model;
+  }
   return context;
 }
 
@@ -117,6 +139,7 @@ const encryptUserSecrets = encryptFields({
   access_token: 'access_token_encrypted',
   github_token: 'github_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
+  anthropic_auth_token: 'anthropic_auth_token_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
 });
@@ -125,6 +148,7 @@ const decryptUserSecrets = decryptFields({
   access_token: 'access_token_encrypted',
   github_token: 'github_token_encrypted',
   anthropic_api_key: 'anthropic_api_key_encrypted',
+  anthropic_auth_token: 'anthropic_auth_token_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
 });
@@ -150,6 +174,7 @@ export const usersHooks = {
     create: [
       normalizeColorSchemePatch,
       normalizeAnthropicBaseUrlPatch,
+      normalizeClaudeFieldsPatch,
       normalizeCursorModelPrefsPatch,
       encryptUserSecrets,
     ],
@@ -157,6 +182,7 @@ export const usersHooks = {
       restrictPatchToSelf,
       normalizeColorSchemePatch,
       normalizeAnthropicBaseUrlPatch,
+      normalizeClaudeFieldsPatch,
       normalizeCursorModelPrefsPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,
