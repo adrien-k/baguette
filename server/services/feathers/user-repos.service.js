@@ -5,6 +5,7 @@ import { normalizeAnthropicBaseUrl } from '../session-env.js';
 
 const WRITABLE_USER_REPO_FIELDS = [
   'anthropic_api_key',
+  'anthropic_auth_token',
   'anthropic_base_url',
   'cursor_api_key',
   'agent_prompt',
@@ -14,6 +15,7 @@ const WRITABLE_USER_REPO_FIELDS = [
 
 const USER_REPO_SECRETS = {
   anthropic_api_key: 'anthropic_api_key_encrypted',
+  anthropic_auth_token: 'anthropic_auth_token_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
 };
 

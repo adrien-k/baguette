@@ -1,40 +1,40 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import * as cache from '../lib/cache.js';
+import { normalizeAnthropicBaseUrl } from './session-env.js';
 
-const MODELS_CACHE_KEY = 'anthropic-models';
+const DEFAULT_CLAUDE_API_URL = 'https://api.anthropic.com';
 const MODELS_CACHE_TTL = Infinity;
 
-// Standard API models that may not appear in the agent SDK's supportedModels() list
-const EXTRA_MODELS = [
-  {
-    id: 'claude-sonnet-4-6',
-    display_name: 'Claude Sonnet 4.6 (200K)',
-    description: '200K context window',
-  },
-];
+/**
+ * Claude model cache key, derived from the (normalized) Claude API URL so each endpoint
+ * gets its own entries. Falls back to the default Anthropic endpoint when none is set.
+ * The gateway and built-in SDK list paths share this key (only one path is active per
+ * endpoint, so they never collide).
+ */
+export function modelsCacheKey(claudeApiUrl) {
+  const base = normalizeAnthropicBaseUrl(claudeApiUrl) || DEFAULT_CLAUDE_API_URL;
+  return `anthropic-models:${base}`;
+}
 
-export async function listModels() {
-  return cache.fetch(MODELS_CACHE_KEY, MODELS_CACHE_TTL, async () => {
+/**
+ * Models from the agent SDK's supportedModels() list (used when no Claude API base URL is
+ * configured). The cache key is derived from the effective Claude API URL, so changing the
+ * configured endpoint never serves a stale list. With `refresh`, the cached entry is
+ * dropped first so the next fetch is fresh (the "Refresh from provider" action).
+ */
+export async function listModels(claudeApiUrl = null, { refresh = false } = {}) {
+  if (refresh) await cache.clear(modelsCacheKey(claudeApiUrl));
+  return cache.fetch(modelsCacheKey(claudeApiUrl), MODELS_CACHE_TTL, async () => {
     const q = query({ prompt: '' });
     try {
       const sdkModels = await q.supportedModels();
-      const models = sdkModels.map((m) => ({
+      return sdkModels.map((m) => ({
         id: m.value,
         display_name: m.displayName,
         description: m.description,
       }));
-      const modelIds = new Set(models.map((m) => m.id));
-      for (const extra of EXTRA_MODELS) {
-        if (!modelIds.has(extra.id)) models.push(extra);
-      }
-      return models;
     } finally {
       q.close();
     }
   });
-}
-
-export async function refreshModels() {
-  await cache.clear(MODELS_CACHE_KEY);
-  return listModels();
 }

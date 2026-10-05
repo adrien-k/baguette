@@ -4,10 +4,11 @@ import { usersService, userReposService } from '../../feathers.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useRepoContext } from '../../context/RepoContext.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
-import TextInput from '../../components/TextInput.jsx';
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
 import AgentSessionDefaultsSection from './AgentSessionDefaultsSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
+import AgentTestButton from '../../components/AgentTestButton.jsx';
+import ClaudeAuthFields from '../../components/ClaudeAuthFields.jsx';
 import {
   SettingsSection,
   SettingsTabHeader,
@@ -22,10 +23,8 @@ export default function AgentSettingsTab({ settings, onSave }) {
   const [claudeRepoId, setClaudeRepoId] = useState('');
   const [cursorRepoId, setCursorRepoId] = useState('');
 
-  const [anthropicApiKey, setAnthropicApiKey] = useState(null);
-  const [anthropicApiKeyDirty, setAnthropicApiKeyDirty] = useState(false);
-  const [anthropicBaseUrl, setAnthropicBaseUrl] = useState('');
-  const [anthropicBaseUrlDirty, setAnthropicBaseUrlDirty] = useState(false);
+  // Claude field state lives inside ClaudeAuthFields; it reports the pending patch here.
+  const [claudeChange, setClaudeChange] = useState({ patch: {}, hasChanges: false });
   const [cursorApiKey, setCursorApiKey] = useState(null);
   const [cursorApiKeyDirty, setCursorApiKeyDirty] = useState(false);
 
@@ -36,32 +35,14 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
   const repoById = useCallback((id) => repos.find((r) => String(r.id) === String(id)), [repos]);
 
-  const loadClaudeFields = useCallback(() => {
-    setAnthropicApiKey(null);
-    setAnthropicApiKeyDirty(false);
-    const scopeRepo = claudeRepoId ? repoById(claudeRepoId) : null;
-    const baseUrl = scopeRepo?.anthropic_base_url ?? settings?.anthropic_base_url ?? '';
-    setAnthropicBaseUrl(baseUrl || '');
-    setAnthropicBaseUrlDirty(false);
-  }, [claudeRepoId, repoById, settings?.anthropic_base_url]);
-
   const loadCursorFields = useCallback(() => {
-    if (!cursorRepoId) {
-      setCursorApiKey(null);
-      setCursorApiKeyDirty(false);
-    } else {
-      setCursorApiKey(null);
-      setCursorApiKeyDirty(false);
-    }
-  }, [cursorRepoId]);
-
-  useEffect(() => {
-    loadClaudeFields();
-  }, [loadClaudeFields, settings]);
+    setCursorApiKey(null);
+    setCursorApiKeyDirty(false);
+  }, []);
 
   useEffect(() => {
     loadCursorFields();
-  }, [loadCursorFields, settings]);
+  }, [loadCursorFields, cursorRepoId]);
 
   const flashSaved = (setSaved) => {
     setSaved(true);
@@ -70,38 +51,23 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
   const handleSaveClaude = async () => {
     if (!user?.id) return;
+    const { patch: claudePatch, hasChanges } = claudeChange;
+    if (!hasChanges || !Object.keys(claudePatch).length) return;
     setClaudeSaving(true);
     setClaudeSaved(false);
     try {
       if (!claudeRepoId) {
-        const patch = {};
-        if (anthropicApiKeyDirty) patch.anthropic_api_key = anthropicApiKey ?? '';
-        if (anthropicBaseUrlDirty) patch.anthropic_base_url = anthropicBaseUrl.trim();
-        if (!anthropicApiKeyDirty && !anthropicBaseUrlDirty) {
-          setClaudeSaving(false);
-          return;
-        }
-        const updated = await usersService.patch(user.id, patch);
+        const updated = await usersService.patch(user.id, claudePatch);
         onSave(updated);
       } else {
         const r = repoById(claudeRepoId);
         if (!r?.user_repo_id) throw new Error('Repository not linked');
-        if (!anthropicApiKeyDirty && !anthropicBaseUrlDirty) {
-          setClaudeSaving(false);
-          return;
-        }
-        const repoPatch = {};
-        if (anthropicApiKeyDirty) repoPatch.anthropic_api_key = anthropicApiKey ?? '';
-        if (anthropicBaseUrlDirty) repoPatch.anthropic_base_url = anthropicBaseUrl.trim();
-        await userReposService.patch(r.user_repo_id, repoPatch);
+        await userReposService.patch(r.user_repo_id, claudePatch);
         await refetchRepos();
       }
-      setAnthropicApiKey(null);
-      setAnthropicApiKeyDirty(false);
-      setAnthropicBaseUrlDirty(false);
       flashSaved(setClaudeSaved);
     } catch (err) {
-      toastError('Failed to save Claude credential', err);
+      toastError('Failed to save Claude settings', err);
     } finally {
       setClaudeSaving(false);
     }
@@ -137,9 +103,12 @@ export default function AgentSettingsTab({ settings, onSave }) {
     }
   };
 
-  const claudeMasked = claudeRepoId
-    ? repoById(claudeRepoId)?.anthropic_api_key
-    : settings?.anthropic_api_key;
+  const claudeScopeRepo = claudeRepoId ? repoById(claudeRepoId) : null;
+  const claudeMasked = claudeScopeRepo?.anthropic_api_key ?? settings?.anthropic_api_key ?? null;
+  const claudeTokenMasked =
+    claudeScopeRepo?.anthropic_auth_token ?? settings?.anthropic_auth_token ?? null;
+  const claudeSavedBaseUrl =
+    claudeScopeRepo?.anthropic_base_url ?? settings?.anthropic_base_url ?? '';
   const cursorMasked = cursorRepoId
     ? repoById(cursorRepoId)?.cursor_api_key
     : settings?.cursor_api_key;
@@ -178,51 +147,21 @@ export default function AgentSettingsTab({ settings, onSave }) {
             />
           }
         >
-          <div>
-            <label className="block text-sm font-medium text-secondary mb-1">Credential</label>
-            <MaskedSecretInput
-              key={`claude-${claudeRepoId || 'all'}`}
-              maskedValue={claudeMasked}
-              placeholder="sk-ant-…"
-              onChange={(val, dirty) => {
-                setAnthropicApiKey(val);
-                setAnthropicApiKeyDirty(dirty);
-              }}
-            />
-            <p className="mt-1 text-xs text-faint">
-              Console API key (<code className="text-fg-muted">sk-ant-api…</code>) or subscription
-              token from <code className="text-fg-muted">claude setup-token</code>. Per-repo keys
-              override your account default for that repository only.
-            </p>
-          </div>
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-secondary mb-1">API base URL</label>
-            <TextInput
-              type="url"
-              key={`claude-base-url-${claudeRepoId || 'all'}`}
-              className="font-mono text-sm"
-              placeholder="https://api.anthropic.com"
-              value={anthropicBaseUrl}
-              onChange={(e) => {
-                setAnthropicBaseUrl(e.target.value);
-                setAnthropicBaseUrlDirty(true);
-              }}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="mt-1 text-xs text-faint">
-              Optional. Route Claude through a proxy or gateway by setting{' '}
-              <code className="text-fg-muted">ANTHROPIC_BASE_URL</code> (origin only — no{' '}
-              <code className="text-fg-muted">/v1</code> suffix). Leave blank to use the server
-              default. Per-repo values override your account default.
-            </p>
-          </div>
+          <ClaudeAuthFields
+            key={`claude-auth-${claudeRepoId || 'all'}`}
+            maskedApiKey={claudeMasked}
+            maskedAuthToken={claudeTokenMasked}
+            savedBaseUrl={claudeSavedBaseUrl}
+            repoId={claudeRepoId || null}
+            perRepoHint
+            onChange={(patch, hasChanges) => setClaudeChange({ patch, hasChanges })}
+          />
           <AgentSdkModelsSection sdk="claude" />
           <SettingsSaveRow
             saving={claudeSaving}
             saved={claudeSaved}
             onSave={handleSaveClaude}
-            disabled={!anthropicApiKeyDirty && !anthropicBaseUrlDirty}
+            disabled={!claudeChange.hasChanges}
           />
         </SettingsSection>
 
@@ -249,6 +188,13 @@ export default function AgentSettingsTab({ settings, onSave }) {
               }}
             />
             <p className="mt-1 text-xs text-faint">Required to use the Cursor agent SDK.</p>
+          </div>
+          <div className="mt-4">
+            <AgentTestButton
+              sdk="cursor"
+              repoId={cursorRepoId || null}
+              fields={cursorApiKeyDirty ? { cursor_api_key: cursorApiKey ?? '' } : {}}
+            />
           </div>
           <AgentSdkModelsSection
             key={`cursor-models-${cursorRepoId || 'all'}-${cursorMasked ? '1' : '0'}`}

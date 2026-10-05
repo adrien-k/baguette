@@ -5,7 +5,12 @@ export function hasAgentSdkCredential(sdk, userSettings, repo) {
   if (sdk === 'cursor') {
     return Boolean(userSettings?.cursor_api_key || repo?.cursor_api_key);
   }
-  return Boolean(userSettings?.anthropic_api_key || repo?.anthropic_api_key);
+  return Boolean(
+    userSettings?.anthropic_api_key ||
+    userSettings?.anthropic_auth_token ||
+    repo?.anthropic_api_key ||
+    repo?.anthropic_auth_token
+  );
 }
 
 export function availableAgentSdks(userSettings, repo) {
@@ -21,6 +26,7 @@ export function agentSdkCredentialTooltip(sdk) {
 export function resolveAgentSdkKeys(user, repo) {
   return {
     anthropic_api_key: repo?.anthropic_api_key || user?.anthropic_api_key || null,
+    anthropic_auth_token: repo?.anthropic_auth_token || user?.anthropic_auth_token || null,
     cursor_api_key: repo?.cursor_api_key || user?.cursor_api_key || null,
   };
 }

@@ -1,6 +1,6 @@
 import db from '../db.js';
 import { resolveAgentSdkKeys } from '../../shared/agent-sdk-credentials.js';
-import { listModels } from './anthropic-models.js';
+import { listClaudeModels, resolveClaudeGatewayConfig } from './claude-gateway-models.js';
 import { listCursorModels } from './cursor-models.js';
 import { parseCursorModelPrefsJson } from './agent-preferences.js';
 
@@ -32,6 +32,14 @@ export async function getModelUsageCounts(userId) {
 }
 
 /**
+ * Claude models for the user (gateway list when a base URL is configured, otherwise the
+ * SDK's built-in list).
+ */
+function listClaudeModelsForUser(user, repo) {
+  return listClaudeModels(resolveClaudeGatewayConfig(user, repo));
+}
+
+/**
  * Models available to the user (SDKs without an API key are omitted), with session usage counts.
  * When `repo` is set, account or repo-level keys apply (same rules as the session builder).
  */
@@ -41,8 +49,8 @@ export async function listModelsForUser(user, repo = null) {
   const prefs = parseCursorModelPrefsJson(user.agent_preferences);
   const entries = [];
 
-  if (keys.anthropic_api_key) {
-    const models = await listModels();
+  if (keys.anthropic_api_key || keys.anthropic_auth_token) {
+    const models = await listClaudeModelsForUser(user, repo);
     for (const m of models) {
       const sessionCount = usage.get(`claude:${m.id}`) ?? 0;
       entries.push({
@@ -91,6 +99,6 @@ export async function loadModelsForSdk(user, agentSdk, repo = null) {
     if (!keys.cursor_api_key) return [];
     return listCursorModels(keys.cursor_api_key);
   }
-  if (!keys.anthropic_api_key) return [];
-  return listModels();
+  if (!keys.anthropic_api_key && !keys.anthropic_auth_token) return [];
+  return listClaudeModelsForUser(user, repo);
 }
