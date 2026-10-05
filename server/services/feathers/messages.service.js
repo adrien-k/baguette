@@ -36,15 +36,7 @@ async function snapshotSessionModelOnUserMessage(context) {
   return context;
 }
 
-async function queueIfRunning(context) {
-  if (!context.params?.provider || context.data?.type !== 'user') return context;
-  if (context.params._force) return context;
-  const db = context.app.get('db');
-  const session = await db('sessions').where({ id: context.data.session_id }).first();
-  if (!session) return context;
-  // Queue while the agent is mid-turn, and while the worktree is still being created
-  // so a prompt typed immediately after create is not dispatched with no cwd.
-  if (session.status !== 'running' && session.status !== 'provisioning') return context;
+async function queueTurnMessage(context) {
   await context.app.service('queued-messages').create(
     {
       session_id: context.data.session_id,
@@ -56,6 +48,26 @@ async function queueIfRunning(context) {
   );
   context.result = { queued: true };
   return context;
+}
+
+async function queueIfRunning(context) {
+  if (!context.params?.provider || context.data?.type !== 'user') return context;
+  const db = context.app.get('db');
+  const session = await db('sessions').where({ id: context.data.session_id }).first();
+  if (!session) return context;
+
+  // While the session waits on monitored background tasks, every send — force
+  // included, since nothing can be steered into the still-open turn — is queued.
+  // Queued messages are dispatched by onTurnComplete only after the whole wake-up
+  // drain finishes and the session completes, so they never race the follow-ups.
+  if (session.status === 'background') return queueTurnMessage(context);
+
+  if (context.params._force) return context;
+  // Queue while the agent is mid-turn, and while the worktree is still being created
+  // so a prompt typed immediately after create is not dispatched with no cwd.
+  const queueable = session.status === 'running' || session.status === 'provisioning';
+  if (!queueable) return context;
+  return queueTurnMessage(context);
 }
 
 async function afterCreateNotifySessionsAndAgent(context) {

@@ -146,6 +146,8 @@ export class DevserverHandler {
         task_key: serviceConfig.taskKey,
         autoStart: false,
         ttl_ms: DEFAULT_TTL_MS,
+        // Preview/devproxy-attached servers are never killed by stop-turn.
+        origin: 'preview',
       },
       { user: { id: session.user_id } }
     );

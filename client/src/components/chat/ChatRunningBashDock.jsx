@@ -1,7 +1,7 @@
 import ToolUseBlock from './ToolUseBlock.jsx';
 
 /**
- * Running Bash and RunProjectCommand tool_use blocks at the end of the chat thread until they complete.
+ * Running Bash and RunCommand tool_use blocks at the end of the chat thread until they complete.
  */
 export default function ChatRunningBashDock({ items, worktreePath, sessionId }) {
   if (!items?.length) return null;

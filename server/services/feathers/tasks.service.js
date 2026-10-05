@@ -1,5 +1,5 @@
 import { NotFound, BadRequest } from '@feathersjs/errors';
-import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS } from '../task.js';
+import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS, compileNotifyPattern } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import {
@@ -14,6 +14,9 @@ import logger from '../../logger.js';
 import { isTaskActive, isTaskStoppable, isTaskTerminal } from '../../../shared/task-status.js';
 
 const MAX_TASKS = 20; // Only keeps 20 task (running + history)
+
+/** Default and cap for `awaitTask` waits (matches the wake-up loop's per-event budget). */
+export const TASK_AWAIT_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Tasks service — in-memory, no DB persistence.
@@ -47,6 +50,8 @@ export class TasksService {
     ports,
     env,
     cwd,
+    notifyPattern,
+    origin = 'user',
     dependsOn,
     isRoot = false,
     ttl,
@@ -85,6 +90,8 @@ export class TasksService {
       ports,
       env,
       cwd,
+      notifyPattern,
+      origin,
       dependsOn,
       isRoot,
       ttl,
@@ -108,6 +115,8 @@ export class TasksService {
     task.onStatusChange(() => emitPatched());
     task.onExit((_id, _code) => emitPatched());
     this._tasks.set(id, task);
+    // Guarded: bare service instances (unit tests) have no EventEmitter methods.
+    if (typeof this.emit === 'function') this.emit('created', task.toPublic());
     return task;
   }
 
@@ -145,6 +154,161 @@ export class TasksService {
         void task.kill().catch(() => {});
       }
     }
+  }
+
+  /**
+   * Kill every running task in a session that the *agent* started (RunCommand
+   * background tasks — monitored or not) plus any monitored task, since monitored
+   * tasks carry wake-up obligations that die with the turn. Tasks the user started
+   * (command panel / API), preview & devproxy tasks, and tasks belonging to
+   * user-started trees (deps, init) are left running.
+   */
+  killSessionAgentTasks(sessionId, reason = 'stopped') {
+    const killed = [];
+    for (const task of this._tasks.values()) {
+      if (task.session_id !== sessionId || !isTaskStoppable(task.status)) continue;
+      if (task.origin !== 'agent' && !task.notify_pattern) continue;
+      killed.push(task);
+      void task.kill({ reason }).catch(() => {});
+    }
+    return killed;
+  }
+
+  /**
+   * Wait for the first notify event (new pattern match or exit) among the given task ids.
+   *
+   * Resolves { task_id, event: 'pattern' | 'exit' | 'timeout', status, exit_code,
+   * matched_line, aborted }. Pattern events are consumed once: each call returns only
+   * matches that arrived since the last consumption, so awaiting the same running task
+   * twice waits for a *new* match the second time. Terminal tasks resolve immediately;
+   * 'timeout' (task_id null) when nothing fires within timeoutMs.
+   */
+  async waitForTaskEvent(taskIds, { timeoutMs = 10 * 60_000, signal = null } = {}) {
+    const ids = (taskIds ?? []).map((id) => Number(id)).filter((id) => this._tasks.has(id));
+    const timeoutResult = {
+      task_id: null,
+      event: 'timeout',
+      status: null,
+      exit_code: null,
+      matched_line: null,
+      aborted: false,
+    };
+    if (!ids.length) return { ...timeoutResult, aborted: Boolean(signal?.aborted) };
+
+    const tasks = ids.map((id) => this._tasks.get(id));
+
+    const finish = (partial) => ({ aborted: false, ...partial });
+
+    // Tasks that already have something to report resolve immediately.
+    for (const task of tasks) {
+      if (isTaskTerminal(task.status) && !task._exitConsumed) {
+        task._exitConsumed = true;
+        task._consumedNotifyMatches = task._matchedNotifyLines.length;
+        return finish({
+          task_id: task.id,
+          event: 'exit',
+          status: task.status,
+          exit_code: task.exit_code,
+          matched_line: task._matchedNotifyLines.at(-1) ?? null,
+        });
+      }
+      if (task._matchedNotifyLines.length > (task._consumedNotifyMatches ?? 0)) {
+        task._consumedNotifyMatches = task._matchedNotifyLines.length;
+        return finish({
+          task_id: task.id,
+          event: 'pattern',
+          status: task.status,
+          exit_code: null,
+          matched_line: task._matchedNotifyLines.at(-1),
+        });
+      }
+    }
+
+    let timeoutHandle = null;
+    let abortHandler = null;
+    let settled = false;
+    const unsubs = [];
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
+      for (const unsub of unsubs) unsub();
+    };
+
+    const listenPromise = new Promise((resolve) => {
+      const onEvent = (event) => {
+        const task = this._tasks.get(event.task_id);
+        if (task && event.event === 'exit') {
+          task._exitConsumed = true;
+        }
+        if (event.event === 'pattern' && task) {
+          task._consumedNotifyMatches = Math.max(
+            task._consumedNotifyMatches ?? 0,
+            task._matchedNotifyLines.length
+          );
+        }
+        resolve(event);
+      };
+      for (const task of tasks) {
+        unsubs.push(task.onNotify(onEvent));
+      }
+    });
+
+    const timeoutPromise = new Promise((resolve) => {
+      timeoutHandle = setTimeout(() => resolve({ ...timeoutResult }), Math.max(0, timeoutMs));
+    });
+
+    const abortPromise = signal
+      ? new Promise((resolve) => {
+          abortHandler = () => resolve({ ...timeoutResult, aborted: true });
+          if (signal.aborted) {
+            resolve({ ...timeoutResult, aborted: true });
+          } else {
+            signal.addEventListener('abort', abortHandler, { once: true });
+          }
+        })
+      : null;
+
+    try {
+      const event = await Promise.race(
+        abortPromise
+          ? [listenPromise, timeoutPromise, abortPromise]
+          : [listenPromise, timeoutPromise]
+      );
+      return finish(event);
+    } finally {
+      cleanup();
+    }
+  }
+
+  /**
+   * Observe notify events (pattern match / exit) of a session's monitored tasks as they
+   * fire, without consuming them — `waitForTaskEvent` consumers (wake-up drain, awaitTask)
+   * are unaffected. Also attaches to monitored tasks created while watching. The callback
+   * receives (event, task) and must not throw. Returns an unsubscribe function.
+   */
+  watchSessionTaskNotifies(sessionId, cb) {
+    const unsubs = [];
+    const attached = new Set();
+    const attach = (task) => {
+      if (!task || task.session_id !== sessionId || !task.notify_pattern) return;
+      // create() emits `created` both explicitly and via the Feathers event hook, so
+      // guard against double-attaching the same task.
+      if (attached.has(task)) return;
+      attached.add(task);
+      unsubs.push(task.onNotify((event) => cb(event, task)));
+    };
+    for (const task of this._tasks.values()) attach(task);
+    const onCreated = (pub) => attach(this._tasks.get(pub.id));
+    // Guarded: bare service instances (unit tests) have no EventEmitter methods, so
+    // tasks created later are simply not observed there.
+    if (typeof this.on === 'function') this.on('created', onCreated);
+    return () => {
+      if (typeof this.removeListener === 'function') this.removeListener('created', onCreated);
+      for (const unsub of unsubs) unsub();
+    };
   }
 
   /** Remove all tasks for a session from memory. */
@@ -257,6 +421,8 @@ export class TasksService {
       ports,
       task_key,
       extra_env,
+      notify_pattern: notifyPattern,
+      origin: requestedOrigin,
       onLog,
       onExit,
       skipInit,
@@ -264,6 +430,14 @@ export class TasksService {
       autoStart = true,
       ttl_ms: ttlMs,
     } = data;
+    // External creates (command panel / API) are user tasks. Internal creates are
+    // agent tasks unless the caller says otherwise: preview services pass 'preview'
+    // and dependency/init creates inherit their root task's origin.
+    const taskOrigin = params?.provider ? 'user' : (requestedOrigin ?? 'agent');
+    const hasNotifyPattern = typeof notifyPattern === 'string' && notifyPattern.length > 0;
+    if (hasNotifyPattern && !compileNotifyPattern(notifyPattern)) {
+      throw new BadRequest(`Invalid notify_pattern regex: ${notifyPattern}`);
+    }
     const isDependencyCreate = (_depChain?.length ?? 0) > 0;
     const effectiveTtl =
       isDependencyCreate || ttlMs != null
@@ -352,6 +526,7 @@ export class TasksService {
               skipInit: true,
               _depChain: [...depChain],
               autoStart: false,
+              origin: taskOrigin,
             },
             // Internal: omit provider so `only()` does not strip `_depChain`.
             { user: params.user }
@@ -385,6 +560,7 @@ export class TasksService {
           ports: [],
           env: initEnv,
           cwd,
+          origin: taskOrigin,
           dependsOn: [],
           ttl: DEPENDS_ON_TTL_MS,
           interpolateOpts,
@@ -414,6 +590,8 @@ export class TasksService {
       ports: effectivePorts,
       env,
       cwd,
+      notifyPattern: hasNotifyPattern ? notifyPattern : null,
+      origin: taskOrigin,
       dependsOn,
       isRoot: !isDependencyCreate,
       ttl: effectiveTtl,
@@ -428,7 +606,7 @@ export class TasksService {
     });
     if (onLog) task.onLog(onLog);
     if (onExit) task.onExit(onExit);
-    this.emit('created', task.toPublic());
+    // `created` fires inside createTask so every task creation path emits exactly once.
 
     if (dependsOn.length > 0) {
       const initDep = dependsOn.find((t) => t.task_key === 'baguette:init');
@@ -475,11 +653,31 @@ export class TasksService {
     const logs = this.getTask(task.id)?.getLogs() ?? '';
     return { id: task.id, logs };
   }
+
+  /**
+   * Block until the task reports its next notify event — a new notify_pattern match
+   * or its exit — or until `timeout_ms` (query param) elapses. Default and cap:
+   * TASK_AWAIT_TIMEOUT_MS. Same consumed-once semantics as waitForTaskEvent: a
+   * wake-up already delivered to a previous wait is not repeated, so repeated calls
+   * only surface fresh events. Resolves with the event plus a small `output_tail`
+   * so callers rarely need a second logs read.
+   */
+  async awaitTask(id, params) {
+    const pub = await this.get(id, params); // verifies ownership
+    const requested = Number(params?.query?.timeout_ms);
+    const timeoutMs =
+      Number.isFinite(requested) && requested >= 0
+        ? Math.min(requested, TASK_AWAIT_TIMEOUT_MS)
+        : TASK_AWAIT_TIMEOUT_MS;
+    const event = await this.waitForTaskEvent([pub.id], { timeoutMs });
+    const task = this.getTask(pub.id);
+    return { ...event, output_tail: task ? task.tailLogs() : null };
+  }
 }
 
 export function registerTasksService(app, path = 'tasks') {
   app.use(path, new TasksService(), {
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'kill', 'logs'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'kill', 'logs', 'awaitTask'],
     events: ['log'],
   });
   app.service(path).hooks(tasksHooks);
@@ -489,8 +687,9 @@ export const tasksHooks = {
   before: {
     all: [requireUser],
     // `task_key` names a .baguette.yaml task (command/ports/label resolved server-side);
-    // `command` is the ad-hoc "Run a command…" escape hatch.
-    create: [only(['session_id', 'task_key', 'command', 'args'])],
+    // `command` is the ad-hoc "Run a command…" escape hatch. `extra_env` and
+    // `notify_pattern` are the monitored-run knobs surfaced via RunCommand.
+    create: [only(['session_id', 'task_key', 'command', 'args', 'extra_env', 'notify_pattern'])],
     patch: [disableExternal],
   },
 };

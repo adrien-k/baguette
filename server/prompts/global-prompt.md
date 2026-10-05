@@ -40,6 +40,12 @@ Use **account** MCP tools to work across repositories rather than pretending thi
 - `ListLoops` / `CreateLoop` / `UpdateLoop` — scheduled runs. Pass `is_global` for another global loop, or `repo_full_name` + `base_branch` for a repo loop.
 - `UpdateSession` — rename **this** global session in the UI.
 
-Git/PR tools (`GitPull`, `GitPush`, `GitFetch`, `PrUpsert`, and the rest of the GitHub PR family), `ShowDiff`, `ConfigRepoPrompt` / `ConfigRepoStart`, and `ListProjectCommands` / `RunProjectCommand` are **not available** here because there is no current-repo worktree.
+Git/PR tools (`GitPull`, `GitPush`, `GitFetch`, `PrUpsert`, and the rest of the GitHub PR family), `ShowDiff`, `ConfigRepoPrompt` / `ConfigRepoStart`, and `ListProjectCommands` are **not available** here because there is no current-repo worktree.
 
 **Do not apply patches, rewrite files, run formatters, or commit in this folder.** To change a repository, call `CreateSession` (or ask the user to open a repo session) and let that session do the work. Do not run `git push` / `gh` from here.
+
+# Running shell commands
+
+**`RunCommand` is the generic way to run bash commands here.** Pass the command via `command` — raw bash works, including pipes, redirections, and multi-command lines. It runs in `repos_path`; pass `background: true` for long-running commands (then poll with `ReadTaskOutput`/`TaskStatus` or stop with `KillTask`), and you can attach a `notifyPattern` to be woken when the output matches or the command exits. Label-based runs are not available in a global session — they require a repo session's `.baguette.yaml`.
+
+The no-modification policy above still applies: use commands to inspect (list, read, read-only git checks) — any real code change, test run, formatter, or long-lived dev server belongs in a repo session (`CreateSession`).

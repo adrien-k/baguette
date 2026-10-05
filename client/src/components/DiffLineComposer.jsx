@@ -58,6 +58,7 @@ export default function DiffLineComposer({
 
   const isRunning = session?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
+  const isBackground = session?.status === 'background';
   const canSendDraft = Boolean(input.trim() && session?.id && !sending);
   const composerTurnFields = () =>
     turnModelCreateFields({ model: composerModel, model_params: composerModelParams });
@@ -155,12 +156,14 @@ export default function DiffLineComposer({
         textareaId="diff-line-composer"
         autoFocus
         canSend={canSendDraft}
-        submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
+        submitLabel={isRunning || isProvisioning || isBackground ? 'Queue' : 'Send'}
         sendAddon={
           <ComposerScheduleAddon
             disabled={!canSendDraft}
             onSendNow={
-              isRunning || isProvisioning ? () => handleSend(undefined, { force: true }) : undefined
+              isRunning || isProvisioning || isBackground
+                ? () => handleSend(undefined, { force: true })
+                : undefined
             }
             onPreset={(delayMs) => scheduleMessageAt(new Date(Date.now() + delayMs).toISOString())}
             onCustomSchedule={() => setShowScheduleModal(true)}

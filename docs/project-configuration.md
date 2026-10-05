@@ -144,7 +144,6 @@ tasks:
 | `ports`      | string[] | For **command** tasks only: env var names that Baguette assigns free **host** ports to before launching (omit on `type: docker`) |
 | `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                             |
 | `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)                                    |
-| `attach`     | boolean  | When `false`, detached mode is required to run the task (logs via task output APIs)                                              |
 | `internal`   | boolean  | When `true`, omit from session task buttons (task remains runnable via `task_key`, `depends-on`, `services`, etc.)               |
 | `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                                                   |
 

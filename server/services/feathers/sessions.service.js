@@ -457,6 +457,9 @@ export class SessionsService extends KnexService {
               command: cleanupCommand,
               label: 'baguette:cleanup',
               skipInit: true,
+              // Infrastructure, not agent-owned: a concurrent stop-turn must not
+              // kill the cleanup before it finalizes session removal.
+              origin: 'user',
               onExit: async () => {
                 try {
                   await this._finalizeRemoval(session.id);
@@ -717,6 +720,8 @@ export class SessionsService extends KnexService {
       {
         session_id: session.id,
         task_key: serviceConfig.taskKey,
+        // Marked 'preview' so stop-turn never kills the devproxy-attached server.
+        origin: 'preview',
       },
       // Internal call: omit `provider` so `only()` does not strip fields.
       { user: params.user, clientIp: params.clientIp }

@@ -95,13 +95,6 @@ describe('getAvailableTasks', () => {
     expect(tasks.noop).toBeUndefined();
   });
 
-  it('preserves attach: false on tasks', () => {
-    const tasks = getAvailableTasks({
-      session: { tasks: { 'run-tests': { run: 'pnpm test', attach: false } } },
-    });
-    expect(tasks['run-tests'].attach).toBe(false);
-  });
-
   it('preserves internal: true on tasks', () => {
     const tasks = getAvailableTasks({
       session: {

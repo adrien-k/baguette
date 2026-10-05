@@ -16,6 +16,7 @@ import { BadRequest, NotFound } from '@feathersjs/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
+import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import {
   createWorktree,
@@ -151,6 +152,7 @@ function makeApp(db) {
   );
   registerSessionsService(app);
   registerMessagesService(app);
+  registerQueuedMessagesService(app);
   return app;
 }
 
@@ -1455,6 +1457,39 @@ describe('Sessions service - find, get, create', (hooks) => {
         session_id: created.id,
         user_id: userId1,
       });
+    });
+
+    it('onTurnComplete dispatches the oldest queued turn message once the turn is done', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+      await db('sessions').where({ id: created.id }).update({ status: 'completed' });
+
+      await db('queued_messages').insert({
+        session_id: created.id,
+        user_id: userId1,
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'Queued while waiting' },
+        }),
+        kind: 'turn',
+        send_at: null,
+      });
+
+      await app.service('sessions').onTurnComplete(created.id);
+
+      const queue = await db('queued_messages').where({ session_id: created.id, kind: 'turn' });
+      expect(queue).toHaveLength(0);
+      const messages = await db('session_messages')
+        .where({ session_id: created.id, type: 'user' })
+        .orderBy('id', 'asc');
+      // The first user message is the session's initial prompt; the dispatched
+      // queued message is the second one.
+      const dispatched = messages.filter((m) => m.message_json.includes('Queued while waiting'));
+      expect(dispatched).toHaveLength(1);
+      // The dispatched message starts the next turn.
+      const session = await db('sessions').where({ id: created.id }).first();
+      expect(session.status).toBe('running');
     });
 
     it('emits a created event when a session is created', async () => {

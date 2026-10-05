@@ -695,7 +695,7 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
     );
   }
 
-  if (toolShortName === 'RunProjectCommand') {
+  if (toolShortName === 'RunCommand') {
     return (
       <CommandBlock
         baguetteOp={{ arg: { label: block.input?.label ?? '', args: block.input?.args ?? [] } }}

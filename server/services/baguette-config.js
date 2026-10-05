@@ -366,8 +366,7 @@ export function interpolateEnvTaskPorts(env, taskPortMap) {
 
 /**
  * Build a tasks hash from a baguette config.
- * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, attach?, internal? } }`.
- * `attach: false` means RunProjectCommand must not use attach mode (detached only).
+ * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, internal? } }`.
  *
  * Supports both the new `session.tasks` hash format and the legacy `session.commands` array.
  * Synthesizes `baguette:init` from `session.init` if defined.
@@ -392,7 +391,6 @@ export function getAvailableTasks(baguetteConfig) {
           container: val.container,
           ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
           ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
-          ...(val.attach === false ? { attach: false } : {}),
           ...(val.internal === true ? { internal: true } : {}),
         };
         continue;
@@ -406,7 +404,6 @@ export function getAvailableTasks(baguetteConfig) {
         ...(val.ports ? { ports: val.ports } : {}),
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
-        ...(val.attach === false ? { attach: false } : {}),
         ...(val.internal === true ? { internal: true } : {}),
       };
     }
@@ -417,7 +414,6 @@ export function getAvailableTasks(baguetteConfig) {
           type: 'command',
           run: cmd.run,
           ...(cmd.ports ? { ports: cmd.ports } : {}),
-          ...(cmd.attach === false ? { attach: false } : {}),
           ...(cmd.internal === true ? { internal: true } : {}),
         };
       }
@@ -430,7 +426,7 @@ export function getAvailableTasks(baguetteConfig) {
 /**
  * Build the full list of available commands from a baguette config.
  * Backward-compatible wrapper around getAvailableTasks().
- * Returns an array of { label, run, ports?, attach? } (`attach: false` when attach mode is disallowed).
+ * Returns an array of { label, run, ports? }.
  */
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
@@ -444,14 +440,12 @@ export function getAvailableCommands(baguetteConfig) {
           image: t.container?.image,
           ...(t.container?.build ? { build: t.container.build } : {}),
           ...(t.ports?.length ? { ports: t.ports } : {}),
-          ...(t.attach === false ? { attach: false } : {}),
         };
       }
       return {
         label: key,
         run: t.run,
         ...(t.ports?.length ? { ports: t.ports } : {}),
-        ...(t.attach === false ? { attach: false } : {}),
       };
     });
 }

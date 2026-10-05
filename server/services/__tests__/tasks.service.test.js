@@ -188,6 +188,41 @@ describe('Tasks service — in-memory', (hooks) => {
       ).resolves.toMatchObject({ id: task.id });
     });
 
+    it('marks external (command panel / API) creates as user-origin', async () => {
+      const task = await app
+        .service('tasks')
+        .create({ session_id: sessionId1, command: 'echo ok' }, providerParams(userId1));
+      expect(task.origin).toBe('user');
+    });
+
+    it('ignores a spoofed origin on external creates', async () => {
+      const task = await app
+        .service('tasks')
+        .create(
+          { session_id: sessionId1, command: 'echo ok', origin: 'agent' },
+          providerParams(userId1)
+        );
+      // only() strips `origin` from external data; the provider check wins.
+      expect(task.origin).toBe('user');
+    });
+
+    it('defaults internal creates to agent-origin', async () => {
+      const task = await app
+        .service('tasks')
+        .create({ session_id: sessionId1, command: 'echo ok' }, { user: { id: userId1 } });
+      expect(task.origin).toBe('agent');
+    });
+
+    it('keeps an explicit preview origin on internal creates', async () => {
+      const task = await app
+        .service('tasks')
+        .create(
+          { session_id: sessionId1, command: 'echo ok', origin: 'preview' },
+          { user: { id: userId1 } }
+        );
+      expect(task.origin).toBe('preview');
+    });
+
     it('returns 404 when session belongs to another user', async () => {
       await expect(
         app
@@ -306,6 +341,72 @@ describe('Tasks service — in-memory', (hooks) => {
       await expect(app.service('tasks').remove(taskId1, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+  });
+
+  // ── watchSessionTaskNotifies ───────────────────────────────────────────────
+
+  describe('task.watchSessionTaskNotifies', () => {
+    it('fires on pattern matches and exits without consuming them', () => {
+      const service = app.service('tasks');
+      const events = [];
+      const unwatch = service.watchSessionTaskNotifies(sessionId1, (event, task) => {
+        events.push({ event, task });
+      });
+      const task = service.createTask({
+        sessionId: sessionId1,
+        command: 'x',
+        notifyPattern: 'Build complete',
+      });
+      task.addLog('stdout', 'Build complete\n');
+      task.exit(0);
+
+      expect(events.map((e) => e.event.event)).toEqual(['pattern', 'exit']);
+      expect(events[0].event.matched_line).toBe('Build complete');
+      expect(events[0].task).toBe(task);
+      expect(events[1].event.exit_code).toBe(0);
+
+      // Non-consuming: waitForTaskEvent (wake-up drain / awaitTask) still sees them.
+      return service.waitForTaskEvent([task.id]).then((consumed) => {
+        expect(consumed.event).toBe('exit');
+        unwatch();
+      });
+    });
+
+    it('attaches to monitored tasks created while watching', async () => {
+      const service = app.service('tasks');
+      const events = [];
+      const unwatch = service.watchSessionTaskNotifies(sessionId1, (event) => events.push(event));
+      const created = await service.create(
+        { session_id: sessionId1, command: 'x', notify_pattern: 'error' },
+        { user: { id: userId1 } }
+      );
+      service.getTask(created.id).addLog('stdout', 'an error happened\n');
+      expect(events).toHaveLength(1);
+      expect(events[0].matched_line).toBe('an error happened');
+      unwatch();
+    });
+
+    it('ignores tasks from other sessions and stops after unsubscribe', () => {
+      const service = app.service('tasks');
+      const events = [];
+      const unwatch = service.watchSessionTaskNotifies(sessionId1, (event) => events.push(event));
+      const other = service.createTask({
+        sessionId: sessionId2,
+        command: 'x',
+        notifyPattern: 'match',
+      });
+      other.addLog('stdout', 'match\n');
+      expect(events).toHaveLength(0);
+
+      const mine = service.createTask({
+        sessionId: sessionId1,
+        command: 'x',
+        notifyPattern: 'match',
+      });
+      unwatch();
+      mine.addLog('stdout', 'match\n');
+      expect(events).toHaveLength(0);
     });
   });
 });

@@ -60,8 +60,8 @@ export function runningToolDisplay(block, opts = {}) {
 
   if (name.startsWith('mcp__baguette__')) {
     const short = name.replace('mcp__baguette__', '');
-    if (short === 'RunProjectCommand') {
-      const label = input.label ?? 'RunProjectCommand';
+    if (short === 'RunCommand') {
+      const label = input.label ?? 'RunCommand';
       const args = input.args;
       const detail = Array.isArray(args) && args.length > 0 ? args.join(' ') : undefined;
       return { label, detail };
@@ -167,11 +167,11 @@ export function collectRunningTools(messages, opts = {}) {
   return out;
 }
 
-function isRunningRunProjectCommandBlock(block) {
+function isRunningRunCommandBlock(block) {
   if (block.type !== 'tool_use' || block._hidden) return false;
   if (block.result != null) return false;
-  if (block.name === 'mcp__baguette__RunProjectCommand') return true;
-  if (block.name === 'mcp' && block.input?.toolName === 'RunProjectCommand') return true;
+  if (block.name === 'mcp__baguette__RunCommand') return true;
+  if (block.name === 'mcp' && block.input?.toolName === 'RunCommand') return true;
   return false;
 }
 
@@ -182,11 +182,11 @@ function isRunningBashToolBlock(block) {
 }
 
 function isPinnableRunningToolBlock(block) {
-  return isRunningBashToolBlock(block) || isRunningRunProjectCommandBlock(block);
+  return isRunningBashToolBlock(block) || isRunningRunCommandBlock(block);
 }
 
 /**
- * Running Bash/shell and RunProjectCommand blocks pinned above the composer until done.
+ * Running Bash/shell and RunCommand blocks pinned above the composer until done.
  * @param {{ worktreePath?: string; sessionTurnActive?: boolean }} [opts]
  * @returns {{ id: string; block: object; startedAt: string | null }[]}
  */

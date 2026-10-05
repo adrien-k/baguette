@@ -32,8 +32,9 @@ export class QueuedMessagesService extends KnexService {
 
       try {
         // messages.queueIfRunning only runs when params.provider is set. Use 'rest' so a
-        // firing schedule behaves like the user clicking Send: if the turn is still running,
-        // the message becomes a kind=turn queued row instead of starting a parallel agent.
+        // firing schedule behaves like the user clicking Send: if the turn is still
+        // running (or the session waits on background tasks), the message becomes a
+        // kind=turn queued row instead of starting a parallel agent.
         await this.app.service('messages').create(
           {
             session_id: row.session_id,

@@ -93,7 +93,12 @@ const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   return vi.fn().mockImplementation((data) => {
     // Mirrors TasksService.create(), which defaults the label to the task key.
-    const task = { id: 99, label: data.label ?? data.task_key ?? null, status: 'waiting' };
+    const task = {
+      id: 99,
+      label: data.label ?? data.task_key ?? null,
+      status: 'waiting',
+      notify_pattern: data.notify_pattern ?? null,
+    };
     setImmediate(() => {
       if (stdout) data.onLog?.(task.id, 'stdout', stdout);
       if (stderr) data.onLog?.(task.id, 'stderr', stderr);
@@ -105,7 +110,7 @@ function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
 
 function makeApp(
   sessionData,
-  { tasksCreate, tasksGetTask, tasksFilterTasks, usageRows = [] } = {}
+  { tasksCreate, tasksGetTask, tasksFilterTasks, tasksAwaitTask, usageRows = [] } = {}
 ) {
   let sessionSnapshot = {
     ...DEFAULT_SESSION,
@@ -120,6 +125,7 @@ function makeApp(
   const mockCreate = tasksCreate ?? vi.fn().mockResolvedValue({ id: 99 });
   const mockGetTask = tasksGetTask ?? vi.fn().mockReturnValue(null);
   const mockFilterTasks = tasksFilterTasks ?? vi.fn().mockReturnValue([]);
+  const mockAwaitTask = tasksAwaitTask ?? vi.fn().mockResolvedValue({ event: 'timeout' });
   const emptyUsageQuery = () => {
     const chain = {
       where: () => chain,
@@ -157,22 +163,48 @@ function makeApp(
     service: (name) => {
       if (name === 'users') return { get: async () => ({ id: 1, access_token: 'tok' }) };
       if (name === 'tasks')
-        return { getTask: mockGetTask, filterTasks: mockFilterTasks, create: mockCreate };
+        return {
+          getTask: mockGetTask,
+          filterTasks: mockFilterTasks,
+          create: mockCreate,
+          awaitTask: mockAwaitTask,
+        };
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };
     },
   };
-  return { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+  return {
+    app,
+    mockPatch,
+    mockGetTaskEnv,
+    mockCreate,
+    mockGetTask,
+    mockFilterTasks,
+    mockAwaitTask,
+  };
 }
 
 async function buildServer(sessionOverrides = {}, appOpts = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
-  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
-    sessionRow,
-    appOpts
-  );
+  const {
+    app,
+    mockPatch,
+    mockGetTaskEnv,
+    mockCreate,
+    mockGetTask,
+    mockFilterTasks,
+    mockAwaitTask,
+  } = makeApp(sessionRow, appOpts);
   await buildBaguetteMcpServer(sessionRow, app);
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
-  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+  return {
+    tools,
+    mockPatch,
+    mockGetTaskEnv,
+    mockCreate,
+    mockGetTask,
+    mockFilterTasks,
+    mockAwaitTask,
+  };
 }
 
 function callTool(tools, name, args = {}) {
@@ -192,7 +224,7 @@ beforeEach(() => {
 });
 
 describe('global sessions', () => {
-  it('omits git and PR tools', async () => {
+  it('omits git and PR tools but keeps RunCommand', async () => {
     const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('GitPull');
@@ -202,12 +234,44 @@ describe('global sessions', () => {
     expect(names).not.toContain('PrRead');
     expect(names).not.toContain('ConfigRepoPrompt');
     expect(names).not.toContain('ListProjectCommands');
+    expect(names).toContain('RunCommand');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');
     expect(names).not.toContain('CreateIssue');
+  });
+
+  it('runs raw commands in the repos folder cwd', async () => {
+    const { tools, mockCreate } = await buildServer(
+      { is_global: true, repo_full_name: '', repo_id: null, worktree_path: 'repos' },
+      { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'hi\n' }) }
+    );
+    const result = parseResult(await callTool(tools, 'RunCommand', { command: 'echo hi' }));
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdoutLines).toEqual(['hi']);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'echo hi', session_id: 1 }),
+      expect.anything()
+    );
+  });
+
+  it('rejects label runs in global sessions', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = await buildServer({
+      is_global: true,
+      repo_full_name: '',
+      repo_id: null,
+      worktree_path: 'repos',
+    });
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Run tests' }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/raw command/);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -623,11 +687,11 @@ describe('ListProjectCommands', () => {
   });
 });
 
-describe('RunProjectCommand', () => {
+describe('RunCommand', () => {
   it('returns ok: false when config is missing', async () => {
     loadBaguetteConfig.mockResolvedValue(null);
     const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(false);
   });
 
@@ -636,7 +700,7 @@ describe('RunProjectCommand', () => {
       session: { commands: [{ label: 'Build', run: 'npm run build' }] },
     });
     const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Unknown' }));
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Unknown' }));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/Unknown/);
   });
@@ -644,11 +708,11 @@ describe('RunProjectCommand', () => {
   it('returns ok: false when config has a parse error', async () => {
     loadBaguetteConfig.mockResolvedValue({ error: 'bad YAML' });
     const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(false);
   });
 
-  it('detached (default): creates task and returns taskId immediately', async () => {
+  it('background: true — creates task and returns taskId immediately', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -656,7 +720,9 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(
+      await callTool(tools, 'RunCommand', { label: 'Run tests', background: true })
+    );
     expect(result.ok).toBe(true);
     expect(result.taskId).toBe(99);
     expect(result.label).toBe('Run tests');
@@ -668,7 +734,7 @@ describe('RunProjectCommand', () => {
     );
   });
 
-  it('detached (default): does not pass onLog/onExit callbacks', async () => {
+  it('background: true — does not pass onLog/onExit callbacks', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -676,46 +742,14 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    await callTool(tools, 'RunCommand', { label: 'Run tests', background: true });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.not.objectContaining({ onLog: expect.anything(), onExit: expect.anything() }),
       expect.anything()
     );
   });
 
-  it('attach: true — rejected when task has attach: false in config', async () => {
-    loadBaguetteConfig.mockResolvedValue({
-      session: { tasks: { 'Run tests': { run: 'npm test', attach: false } } },
-    });
-    const { tools, mockCreate } = await buildServer(
-      {},
-      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
-    );
-    const result = parseResult(
-      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
-    );
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/attach: false/);
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it('detached run allowed when task has attach: false in config', async () => {
-    loadBaguetteConfig.mockResolvedValue({
-      session: { tasks: { 'Run tests': { run: 'npm test', attach: false } } },
-    });
-    const { tools, mockCreate } = await buildServer(
-      {},
-      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
-    );
-    const result = parseResult(
-      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: false })
-    );
-    expect(result.ok).toBe(true);
-    expect(result.taskId).toBe(99);
-    expect(mockCreate).toHaveBeenCalled();
-  });
-
-  it('attach: true — waits for exit and returns stdout on exit 0', async () => {
+  it('waits for exit by default and returns stdout on exit 0', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -723,9 +757,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
-    const result = parseResult(
-      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
-    );
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
     expect(result.stdoutLines).toEqual(['all tests passed']);
@@ -736,7 +768,7 @@ describe('RunProjectCommand', () => {
     );
   });
 
-  it('attach: true — returns stdout and stderr when command exits non-zero', async () => {
+  it('returns stdout and stderr when command exits non-zero', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -744,15 +776,13 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 1, stderr: 'Test failed\n' }) }
     );
-    const result = parseResult(
-      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
-    );
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(1);
     expect(result.stderrLines).toEqual(['Test failed']);
   });
 
-  it('attach: true — returns full stdout as lines without truncation', async () => {
+  it('returns full stdout as lines without truncation', async () => {
     const huge = `${'x'.repeat(90_000)}\nLAST_LINE\n`;
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
@@ -761,9 +791,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: huge }) }
     );
-    const result = parseResult(
-      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', attach: true })
-    );
+    const result = parseResult(await callTool(tools, 'RunCommand', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
     const joined = result.stdoutLines.join('\n');
     expect(joined).toBe(huge.replace(/\n$/, ''));
@@ -781,7 +809,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests', args: ['src/foo.test.js'] });
+    await callTool(tools, 'RunCommand', { label: 'Run tests', args: ['src/foo.test.js'] });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests', args: ['src/foo.test.js'] }),
       expect.anything()
@@ -796,7 +824,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', {
+    await callTool(tools, 'RunCommand', {
       label: 'Run tests',
       args: ['--reporter', 'verbose', 'src/foo.test.js'],
     });
@@ -809,7 +837,7 @@ describe('RunProjectCommand', () => {
     );
   });
 
-  it('never sends a command — the task is named, not spelled out', async () => {
+  it('never sends a command when running by label — the task is named, not spelled out', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
     });
@@ -817,7 +845,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    await callTool(tools, 'RunCommand', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests', args: [] }),
       expect.anything()
@@ -828,6 +856,113 @@ describe('RunProjectCommand', () => {
     );
   });
 
+  it('accepts a raw command instead of a label (no config lookup)', async () => {
+    loadBaguetteConfig.mockResolvedValue(null); // no config: raw commands still work
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunCommand', { command: 'echo hi', background: true })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.taskId).toBe(99);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'echo hi', args: [] }),
+      expect.anything()
+    );
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ task_key: expect.anything() }),
+      expect.anything()
+    );
+  });
+
+  it('waits for a raw command to exit by default', async () => {
+    loadBaguetteConfig.mockResolvedValue(null);
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'hi\n' }) }
+    );
+    const result = parseResult(await callTool(tools, 'RunCommand', { command: 'echo hi' }));
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdoutLines).toEqual(['hi']);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'echo hi' }),
+      expect.anything()
+    );
+  });
+
+  it('fails when neither label nor command is provided', async () => {
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(await callTool(tools, 'RunCommand', {}));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/label|command/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('passes notify_pattern through and reports it in the result', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = await buildServer(
+      { agent_sdk: 'cursor' },
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunCommand', {
+        label: 'Run tests',
+        notifyPattern: 'READY',
+        background: true,
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.notify_pattern).toBe('READY');
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ notify_pattern: 'READY' }),
+      expect.anything()
+    );
+  });
+
+  it('rejects notifyPattern without background: true', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = await buildServer(
+      {},
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunCommand', { label: 'Run tests', notifyPattern: 'READY' })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/background: true/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects notifyPattern for non-Cursor sessions (no wake-up loop there)', async () => {
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const { tools, mockCreate } = await buildServer(
+      { agent_sdk: 'claude' },
+      { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
+    );
+    const result = parseResult(
+      await callTool(tools, 'RunCommand', {
+        label: 'Run tests',
+        notifyPattern: 'READY',
+        background: true,
+      })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Cursor/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it('passes extra_env to task create when env is provided', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
@@ -836,7 +971,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', {
+    await callTool(tools, 'RunCommand', {
       label: 'Run tests',
       env: { MY_VAR: 'hello', ANOTHER: 'world' },
     });
@@ -854,11 +989,61 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    await callTool(tools, 'RunCommand', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.not.objectContaining({ extra_env: expect.anything() }),
       expect.anything()
     );
+  });
+});
+
+describe('AwaitTask', () => {
+  it('awaits via the tasks service and returns the event payload', async () => {
+    const awaitTask = vi.fn().mockResolvedValue({
+      task_id: 99,
+      event: 'pattern',
+      status: 'running',
+      exit_code: null,
+      matched_line: 'ready on port 3000',
+      aborted: false,
+      output_tail: 'ready on port 3000\n',
+    });
+    const { tools, mockAwaitTask } = await buildServer({}, { tasksAwaitTask: awaitTask });
+    const result = parseResult(await callTool(tools, 'AwaitTask', { taskId: 99 }));
+    expect(result.ok).toBe(true);
+    expect(result.event).toBe('pattern');
+    expect(result.matched_line).toBe('ready on port 3000');
+    expect(result.output_tail).toBe('ready on port 3000\n');
+    expect(mockAwaitTask).toHaveBeenCalledWith(99, expect.objectContaining({ user: { id: 1 } }));
+    expect(mockAwaitTask.mock.calls[0][1].query.timeout_ms).toBeUndefined();
+  });
+
+  it('forwards timeoutMs as timeout_ms in the query', async () => {
+    const awaitTask = vi.fn().mockResolvedValue({
+      task_id: 99,
+      event: 'exit',
+      status: 'exited',
+      exit_code: 0,
+      matched_line: null,
+      aborted: false,
+      output_tail: '',
+    });
+    const { tools, mockAwaitTask } = await buildServer({}, { tasksAwaitTask: awaitTask });
+    const result = parseResult(await callTool(tools, 'AwaitTask', { taskId: 99, timeoutMs: 2500 }));
+    expect(result.ok).toBe(true);
+    expect(result.event).toBe('exit');
+    expect(mockAwaitTask).toHaveBeenCalledWith(
+      99,
+      expect.objectContaining({ query: { timeout_ms: 2500 } })
+    );
+  });
+
+  it('returns ok: false when the task does not exist', async () => {
+    const awaitTask = vi.fn().mockRejectedValue(new Error('Task 99 not found'));
+    const { tools } = await buildServer({}, { tasksAwaitTask: awaitTask });
+    const result = parseResult(await callTool(tools, 'AwaitTask', { taskId: 99 }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not found/);
   });
 });
 

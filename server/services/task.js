@@ -24,6 +24,19 @@ export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 /** After SIGTERM, wait this long before escalating to SIGKILL. */
 export const KILL_GRACE_MS = 30_000;
 
+/** Cap on remembered matching lines per monitored task. */
+const MAX_NOTIFY_MATCHES = 20;
+
+/** Compile a notify pattern (null when absent); invalid patterns yield null. */
+export function compileNotifyPattern(notifyPattern) {
+  if (!notifyPattern) return null;
+  try {
+    return new RegExp(notifyPattern);
+  } catch {
+    return null;
+  }
+}
+
 function baguetteStatusLine(message) {
   return `\x1b[33m[baguette] ${message}\x1b[0m\n`;
 }
@@ -125,8 +138,16 @@ export class Task {
     dependsOn,
     /** Panel / user-started task (not created only as another task's depends_on). */
     isRoot = false,
+    /**
+     * Who started this task: 'user' (command panel / API create), 'agent'
+     * (RunCommand from the agent), or 'preview' (preview/devproxy service).
+     * Stop-turn kills agent tasks; user and preview tasks keep running.
+     */
+    origin = 'user',
     /** Idle TTL in ms; omit to disable idle shutdown. */
     ttl,
+    /** Regex source tested against each output line; when it matches, notify listeners fire. */
+    notifyPattern = null,
     dockerContainer = null,
     dockerPortMappings = null,
     dockerEnvKeys = null,
@@ -142,6 +163,8 @@ export class Task {
     this.label = label ?? null;
     /** `.baguette.yaml` task this was resolved from, if any. Lets a client re-run it by name. */
     this.task_key = taskKey ?? null;
+    /** Who started this task: 'user' | 'agent' | 'preview'. Drives stop-turn kill scope. */
+    this.origin = origin;
     this.ports = {}; // { ENV_VAR_NAME: portNumber } — populated after _startProcess()
     this._portEnvVars = Array.isArray(ports) ? ports : [];
     this._portMap = {}; // accumulated dep port assignments for interpolation
@@ -183,6 +206,18 @@ export class Task {
     this._extraEnv =
       extraEnv && typeof extraEnv === 'object' && !Array.isArray(extraEnv) ? extraEnv : null;
     this._interpolateOpts = interpolateOpts;
+    // ── Notify monitoring (wake-ups) ────────────────────────────────────────
+    this.notify_pattern = notifyPattern ?? null;
+    this._notifyRegex = compileNotifyPattern(notifyPattern);
+    /** Lines that matched the notify pattern (most recent last, capped). */
+    this._matchedNotifyLines = [];
+    /** Matches consumed by a waitForTaskEvent call; later waits only see newer matches. */
+    this._consumedNotifyMatches = 0;
+    /** Set when a waitForTaskEvent (or a deliberate kill) consumed this task's exit. */
+    this._exitConsumed = false;
+    this._pendingNotifyLine = '';
+    /** fn(event) — event: { task_id, event: 'pattern'|'exit', status, exit_code, matched_line }. */
+    this._notifyListeners = [];
   }
 
   get isDocker() {
@@ -763,6 +798,8 @@ export class Task {
     if (!isTaskStoppable(this.status)) {
       return false;
     }
+    // Deliberate kills consume the exit: a stopped monitored task owes no wake-up.
+    this._exitConsumed = true;
     this.kill_reason = reason;
     this.#setStatus('exiting');
     const graceSec = graceMs / 1000;
@@ -819,9 +856,48 @@ export class Task {
     }
   }
 
+  /** Register a notify listener: fn(event). Fires on pattern matches and on exit. */
+  onNotify(fn) {
+    this._notifyListeners.push(fn);
+    return () => {
+      const idx = this._notifyListeners.indexOf(fn);
+      if (idx !== -1) this._notifyListeners.splice(idx, 1);
+    };
+  }
+
+  /** Emit a notify event to all listeners. */
+  #emitNotify(event) {
+    for (const fn of this._notifyListeners) fn(event);
+  }
+
+  /**
+   * Test completed output lines against the notify pattern. Chunks can split lines,
+   * so a pending partial line is buffered until its newline arrives.
+   */
+  #consumeNotifyLines(data) {
+    if (!this._notifyRegex || isTaskTerminal(this.status)) return;
+    this._pendingNotifyLine += data;
+    const lines = this._pendingNotifyLine.split(/\r?\n/);
+    this._pendingNotifyLine = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!this._notifyRegex.test(line)) continue;
+      const matched = line.slice(0, 500);
+      this._matchedNotifyLines.push(matched);
+      if (this._matchedNotifyLines.length > MAX_NOTIFY_MATCHES) this._matchedNotifyLines.shift();
+      this.#emitNotify({
+        task_id: this.id,
+        event: 'pattern',
+        status: this.status,
+        exit_code: null,
+        matched_line: matched,
+      });
+    }
+  }
+
   /** Inject a synthetic log line (e.g. a status message before the process starts). */
   addLog(stream, data) {
     this.#pushLogEntry({ stream, data });
+    this.#consumeNotifyLines(data);
     for (const fn of this._logListeners) fn(this.id, stream, data);
   }
 
@@ -849,11 +925,17 @@ export class Task {
     this.exited_at = new Date().toISOString();
     const finalStatus = this.kill_reason === 'stopped' ? 'stopped' : 'exited';
     this.#setStatus(finalStatus);
+    this.#emitNotify({
+      task_id: this.id,
+      event: 'exit',
+      status: finalStatus,
+      exit_code: exitCode,
+      matched_line: null,
+    });
     for (const fn of this._exitListeners) fn(this.id, exitCode);
   }
 
-  /**
-   * Return the full log buffer as a single string.
+  /** Return the full log buffer as a single string.
    * @param {{ includeNestedTasks?: boolean }} opts - when true, splice in the logs of the
    *   depends_on tasks (recursively) where each dependency ran.
    */
@@ -869,6 +951,24 @@ export class Task {
     return out;
   }
 
+  /** Return the last `maxBytes` of the task's log (characters). */
+  tailLogs(maxBytes = 4000) {
+    const logs = this.getLogs();
+    if (logs.length <= maxBytes) return logs;
+    return logs.slice(-maxBytes);
+  }
+
+  /**
+   * True while this monitored task still owes the agent a wake-up: it is active, or
+   * it exited/finalised without its exit event having been delivered yet. Deliberate
+   * kills (kill()) consume the exit so stopped tasks don't nag future turns.
+   */
+  isNotifyPending() {
+    if (!this.notify_pattern) return false;
+    if (!isTaskTerminal(this.status)) return true;
+    return !this._exitConsumed;
+  }
+
   /** Return a plain public object (no private fields). */
   toPublic() {
     return {
@@ -877,15 +977,21 @@ export class Task {
       command: this.command,
       label: this.label,
       task_key: this.task_key,
+      origin: this.origin,
       pid: this.pid,
       status: this.status,
       exit_code: this.exit_code,
+      kill_reason: this.kill_reason,
       created_at: this.created_at,
       started_at: this.started_at,
       exited_at: this.exited_at,
       ports: this.ports,
       ttl_ms: this._ttl,
       is_docker: this.isDocker,
+      notify_pattern: this.notify_pattern,
+      pattern_matched: this._matchedNotifyLines.length > this._consumedNotifyMatches,
+      has_matched: this._matchedNotifyLines.length > 0,
+      notify_pending: this.isNotifyPending(),
     };
   }
 }

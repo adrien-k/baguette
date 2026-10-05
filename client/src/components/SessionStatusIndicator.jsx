@@ -17,7 +17,12 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
   if (isArchived) {
     return <Archive className={`${iconSize} text-faint shrink-0`} aria-hidden />;
   }
-  if (isArchiving || session.status === 'running' || session.status === 'provisioning') {
+  if (
+    isArchiving ||
+    session.status === 'running' ||
+    session.status === 'background' ||
+    session.status === 'provisioning'
+  ) {
     return (
       <SessionStatusIcon
         status={isArchiving ? 'archiving' : session.status}
