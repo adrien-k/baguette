@@ -89,6 +89,7 @@ const TEST_DATA_DIR = path.join(
 );
 
 export const DATA_DIR = getDataDir();
+delete process.env.DATA_DIR;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 /**
