@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { processCursorRunStream } from '../cursor-sdk-turn.js';
+import { MessageStreamWriter } from '../../../shared/message-stream-writer.js';
 
 function mockRun(events) {
   return {
@@ -9,9 +10,26 @@ function mockRun(events) {
   };
 }
 
+function mockWriter() {
+  const rows = [];
+  const writer = new MessageStreamWriter({
+    sessionId: 1,
+    turnId: 1,
+    createRow: async (row) => {
+      const payload = JSON.parse(row.message_json);
+      rows.push(payload);
+      return { id: rows.length };
+    },
+    patchRow: async (id, patch) => {
+      rows[id - 1] = JSON.parse(patch.message_json);
+    },
+  });
+  return { writer, rows };
+}
+
 describe('processCursorRunStream', () => {
   it('buffers assistant text chunks into one message', async () => {
-    const persisted = [];
+    const { writer, rows } = mockWriter();
     await processCursorRunStream(
       mockRun([
         {
@@ -25,24 +43,20 @@ describe('processCursorRunStream', () => {
         { type: 'status', status: 'FINISHED' },
       ]),
       {
-        persistMessage: async (msg) => {
-          persisted.push(msg);
-          return { id: persisted.length };
-        },
-        patchMessage: async () => {},
+        writer,
         onStatus: async (sdkMsg) => {
           if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
         },
       }
     );
 
-    const assistant = persisted.find((m) => m.message?.content?.[0]?.type === 'text');
-    expect(assistant.message.content[0].text).toBe('Hi there');
-    expect(persisted.filter((m) => m.message?.content?.[0]?.type === 'text')).toHaveLength(1);
+    const assistant = rows.find((m) => m.type === 'assistant');
+    expect(assistant.blocks[0].text).toBe('Hi there');
+    expect(rows.filter((m) => m.type === 'assistant')).toHaveLength(1);
   });
 
   it('buffers thinking chunks into one message', async () => {
-    const persisted = [];
+    const { writer, rows } = mockWriter();
     await processCursorRunStream(
       mockRun([
         { type: 'thinking', agent_id: 'a', run_id: 'r', text: 'think ' },
@@ -50,24 +64,20 @@ describe('processCursorRunStream', () => {
         { type: 'status', status: 'FINISHED' },
       ]),
       {
-        persistMessage: async (msg) => {
-          persisted.push(msg);
-          return { id: persisted.length };
-        },
-        patchMessage: async () => {},
+        writer,
         onStatus: async (sdkMsg) => {
           if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
         },
       }
     );
 
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0].message.content[0]).toEqual({ type: 'thinking', thinking: 'think more' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].blocks[0]).toEqual({ type: 'thinking', thinking: 'think more' });
   });
 
-  it('drains tool results that arrive after FINISHED before ending the run', async () => {
+  it('completes tool calls without separate tool_result user rows', async () => {
     const callId = 'shell-1';
-    const persisted = [];
+    const { writer, rows } = mockWriter();
     const { finishedOk } = await processCursorRunStream(
       mockRun([
         {
@@ -92,11 +102,7 @@ describe('processCursorRunStream', () => {
         },
       ]),
       {
-        persistMessage: async (msg) => {
-          persisted.push(msg);
-          return { id: persisted.length };
-        },
-        patchMessage: async () => {},
+        writer,
         onStatus: async (sdkMsg) => {
           if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
         },
@@ -104,10 +110,14 @@ describe('processCursorRunStream', () => {
     );
 
     expect(finishedOk).toBe(true);
-    expect(persisted.some((m) => m.message?.content?.[0]?.type === 'tool_result')).toBe(true);
+    const tool = rows.find((m) => m.type === 'tool_call');
+    expect(tool.status).toBe('completed');
+    expect(tool.result).toBeTruthy();
+    expect(rows.some((m) => m.type === 'user')).toBe(false);
   });
 
   it('treats FINISHED as success when the stream ends before a pending tool completes', async () => {
+    const { writer } = mockWriter();
     const { finishedOk } = await processCursorRunStream(
       mockRun([
         {
@@ -122,8 +132,7 @@ describe('processCursorRunStream', () => {
         { type: 'status', status: 'FINISHED' },
       ]),
       {
-        persistMessage: async () => ({ id: 1 }),
-        patchMessage: async () => {},
+        writer,
         onStatus: async (sdkMsg) => {
           if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
         },

@@ -14,55 +14,7 @@ import {
   runningBashToolIds,
 } from '@baguette/shared/running-tools.js';
 import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
-
-function parseMessageRow(row) {
-  try {
-    return { ...row, ...JSON.parse(row.message_json || '{}'), id: row.id };
-  } catch {
-    return { ...row, type: row.type, id: row.id };
-  }
-}
-
-function reconcileMessages(messages) {
-  const toolResults = new Map();
-  const visible = [];
-  for (const msg of messages) {
-    if (msg.type === 'user' && Array.isArray(msg.message?.content)) {
-      const blocks = msg.message.content;
-      if (blocks.length > 0 && blocks.every((b) => b.type === 'tool_result')) {
-        for (const block of blocks) {
-          const result =
-            typeof block.content === 'string'
-              ? block.content
-              : Array.isArray(block.content)
-                ? block.content
-                    .map((c) => (c.type === 'text' ? c.text : JSON.stringify(c)))
-                    .join('\n')
-                : JSON.stringify(block.content);
-          toolResults.set(block.tool_use_id, { result, isError: !!block.is_error });
-        }
-        continue;
-      }
-    }
-    visible.push(msg);
-  }
-  if (toolResults.size === 0) return visible;
-  return visible.map((msg) => {
-    if (msg.type !== 'assistant' || !msg.message?.content) return msg;
-    if (!msg.message.content.some((b) => b.type === 'tool_use')) return msg;
-    return {
-      ...msg,
-      message: {
-        ...msg.message,
-        content: msg.message.content.map((b) => {
-          if (b.type !== 'tool_use') return b;
-          const tr = toolResults.get(b.id);
-          return tr ? { ...b, ...tr } : b;
-        }),
-      },
-    };
-  });
-}
+import { parseMessageRow } from '@baguette/shared/parse-message-row.js';
 
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
@@ -119,7 +71,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
   const panelRevealed = isXlUp || sidePanelOpen;
 
   const rawMessages = useMemo(() => (hookMessages || []).map(parseMessageRow), [hookMessages]);
-  const displayMessages = useMemo(() => reconcileMessages(rawMessages), [rawMessages]);
+  const displayMessages = rawMessages;
   const chatDisplayItems = useMemo(
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]

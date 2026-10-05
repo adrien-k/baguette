@@ -10,7 +10,7 @@ import { resolveDataDirRelativePath } from '../../config.js';
 import { gitCommitCountSince } from '../github.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { markSessionReviewedAtHead } from '../session-branch-commits.js';
-import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
+import { emptyTurnUsage } from '../turn-usage.js';
 
 const BAGUETTE_REVIEW_START_TITLE = 'Start review';
 const BAGUETTE_REVIEW_START_CONTENT = 'Begin the code review following your system instructions.';
@@ -93,8 +93,7 @@ function buildReviewStartMessage(data) {
   const trimmed = reviewInitialPromptFromStartData(data);
   if (trimmed) {
     return {
-      persist: { type: 'user', message: { role: 'user', content: trimmed } },
-      sdkText: trimmed,
+      persist: { type: 'user', content: trimmed },
     };
   }
   const content = BAGUETTE_REVIEW_START_CONTENT;
@@ -104,9 +103,8 @@ function buildReviewStartMessage(data) {
       subtype: 'baguette',
       source: 'baguette',
       title: BAGUETTE_REVIEW_START_TITLE,
-      message: { role: 'user', content },
+      content,
     },
-    sdkText: content,
   };
 }
 
@@ -119,6 +117,66 @@ const REVIEW_RESTART_PROMPT =
 export class SessionReviewService {
   constructor() {
     this._active = new Map();
+    /** @type {Map<number, { extraPrompt?: string, continuation?: boolean }>} */
+    this._turnExtras = new Map();
+  }
+
+  peekTurnExtras(sessionId) {
+    return this._turnExtras.get(sessionId) ?? null;
+  }
+
+  async buildClaudeQueryOptions(session, { model, continuation = false, extraPrompt } = {}) {
+    const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
+    const turnAgent = reviewTurnAgentMetadata('claude', { model });
+    const resumeId = continuation ? session.review_claude_session_id : null;
+    return await this.app.service('claude-agent').buildQueryOptions(session, {
+      systemPrompt,
+      mcpServer: buildReviewerMcpServer(session, this.app, turnAgent),
+      allowedTools: REVIEWER_ALLOWED_TOOLS,
+      settingSources: [],
+      resume: resumeId,
+      model: model || session.review_model || session.model,
+      permissionMode: 'acceptEdits',
+    });
+  }
+
+  async buildCursorReviewAgentOptions(
+    session,
+    { model, modelParams, continuation = false, extraPrompt } = {}
+  ) {
+    const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
+    const cursorAgent = this.app.service('cursor-agent');
+    const rulesRoot = await cursorAgent.writePromptRule(session, 'review', {
+      description: 'Baguette review rules (always applied)',
+      body: systemPrompt,
+    });
+    const turnAgent = reviewTurnAgentMetadata('cursor', { model, modelParams });
+    return await cursorAgent.buildAgentOptions(session, {
+      customTools: buildReviewerCursorCustomTools(session, this.app, turnAgent),
+      settingSources: [],
+      dirs: rulesRoot ? [rulesRoot] : [],
+      model,
+      modelParams,
+    });
+  }
+
+  async onAgentTurnComplete(session, outcome, { sdk, turnUsage, agent, turnModel } = {}) {
+    this._turnExtras.delete(session.id);
+    if (sdk === 'cursor' && outcome === 'completed' && agent) {
+      await this.app
+        .service('cursor-agent')
+        .recordTurnUsage(session, agent, turnUsage ?? emptyTurnUsage(), {
+          kind: 'review',
+          turnModel,
+        })
+        .catch((err) =>
+          logger.warn(
+            { sessionId: session.id, err: err.message },
+            'session review: failed to record cursor usage'
+          )
+        );
+    }
+    await this._finishReviewTurn(session, outcome);
   }
 
   setup(app) {
@@ -169,20 +227,12 @@ export class SessionReviewService {
       await this._wipeReviewMessages(session);
       this.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(session.id));
 
-      const { persist: startMessage, sdkText: userMessageText } = buildReviewStartMessage(data);
-      await this._persist(session, startMessage);
-
-      const extraPrompt = data.extra_prompt;
-      const run =
-        agentSdk === 'cursor'
-          ? this._runCursorReview(session, { model, modelParams, extraPrompt, userMessageText })
-          : this._runClaudeReview(session, { model, extraPrompt, userMessageText });
-
-      run.catch(async (err) => {
-        logger.error({ sessionId: session.id, err: err.message }, 'session review failed');
-        await this._dispose(session.id);
-        await this._patchReviewStatus(session, 'failed').catch(() => {});
+      this._turnExtras.set(session.id, {
+        extraPrompt: data.extra_prompt,
+        continuation: false,
       });
+      const { persist: startMessage } = buildReviewStartMessage(data);
+      await this._persist(session, startMessage);
 
       return { ok: true, review_status: 'running' };
     } catch (err) {
@@ -232,42 +282,20 @@ export class SessionReviewService {
       await this.app.service('sessions').onTurnStart(session.id);
       const baguetteTitle =
         typeof data?.baguette_title === 'string' ? data.baguette_title.trim() : '';
+      this._turnExtras.set(session.id, { continuation: true });
       const userMessage = baguetteTitle
         ? {
             type: 'user',
             subtype: 'baguette',
             source: 'baguette',
             title: baguetteTitle,
-            message: { role: 'user', content: message },
+            content: message,
           }
         : {
             type: 'user',
-            message: { role: 'user', content: message },
+            content: message,
           };
       await this._persist(session, userMessage);
-
-      const run =
-        agentSdk === 'cursor'
-          ? this._runCursorReview(session, {
-              model,
-              modelParams,
-              userMessageText: message,
-              continuation: true,
-            })
-          : this._runClaudeReview(session, {
-              model,
-              userMessageText: message,
-              continuation: true,
-            });
-
-      run.catch(async (err) => {
-        logger.error(
-          { sessionId: session.id, err: err.message },
-          'session review follow-up failed'
-        );
-        await this._dispose(session.id);
-        await this._patchReviewStatus(session, 'failed').catch(() => {});
-      });
 
       return { ok: true, review_status: 'running' };
     } catch (err) {
@@ -360,8 +388,8 @@ export class SessionReviewService {
   async _wipeReviewMessages(session) {
     const userParams = { provider: undefined, user: { id: session.user_id } };
     const ids = await this.app
-      .get('db')('session_review_messages')
-      .where({ session_id: session.id })
+      .get('db')('session_messages')
+      .where({ session_id: session.id, agent_type: 'reviewer' })
       .pluck('id');
     for (const id of ids) {
       await this.app.service('session-review-messages').remove(id, userParams);
@@ -374,23 +402,6 @@ export class SessionReviewService {
       return combinePromptExtensions(base, extraPrompt);
     }
     return base;
-  }
-
-  _reviewPersist(session) {
-    const userId = session.user_id;
-    return {
-      persistMessage: (message) => this._persist(session, message),
-      persistStatus: (text) => this._persistStatus(session, text),
-      patchMessage: (id, message) =>
-        this.app.service('session-review-messages').patch(
-          id,
-          {
-            type: message.type,
-            message_json: JSON.stringify(message),
-          },
-          { provider: undefined, user: { id: userId } }
-        ),
-    };
   }
 
   async _prepareReviewPrompt(session, extraPrompt, continuation) {
@@ -420,128 +431,6 @@ export class SessionReviewService {
         )
       );
     }
-  }
-
-  async _runClaudeReview(session, { model, extraPrompt, userMessageText, continuation = false }) {
-    const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
-    const db = this.app.get('db');
-    const sessionRow = await db('sessions').where({ id: session.id }).first();
-    const resumeId = continuation ? sessionRow?.review_claude_session_id : null;
-    const { persistMessage, persistStatus } = this._reviewPersist(session);
-
-    const turnAgent = reviewTurnAgentMetadata('claude', { model });
-    const queryOptions = await this.app.service('claude-agent').buildQueryOptions(session, {
-      systemPrompt,
-      mcpServer: buildReviewerMcpServer(session, this.app, turnAgent),
-      allowedTools: REVIEWER_ALLOWED_TOOLS,
-      settingSources: [],
-      resume: resumeId,
-      model: model || session.model,
-      permissionMode: 'acceptEdits',
-    });
-
-    const { outcome } = await this.app.service('claude-agent').runTurn({
-      sessionId: session.id,
-      userId: session.user_id,
-      prompt: userMessageText,
-      queryOptions,
-      persistMessage,
-      persistStatus,
-      onInitSessionId: (id) =>
-        db('sessions').where({ id: session.id }).update({ review_claude_session_id: id }),
-      onResult: (message) =>
-        this.app
-          .service('sessions')
-          .recordClaudeUsage(session, message, {
-            kind: 'review',
-            model: model ?? session.review_model ?? session.model,
-            totalsKey: reviewTurnKey(session.id),
-            patchSessionCost: true,
-          })
-          .catch(() => {}),
-      activeKey: reviewTurnKey(session.id),
-      connectionClosedHint:
-        'Review agent connection closed before the response finished. Try starting the review again.',
-    });
-
-    await this._finishReviewTurn(session, outcome);
-  }
-
-  async _runCursorReview(
-    session,
-    { model, modelParams, extraPrompt, userMessageText, continuation = false }
-  ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
-    const cursorAgent = this.app.service('cursor-agent');
-    const db = this.app.get('db');
-    const { persistMessage, persistStatus, patchMessage } = this._reviewPersist(session);
-
-    const rulesRoot = await cursorAgent.writePromptRule(session, 'review', {
-      description: 'Baguette review rules (always applied)',
-      body: systemPrompt,
-    });
-
-    const turnAgent = reviewTurnAgentMetadata('cursor', { model, modelParams });
-    const agentOptions = await cursorAgent.buildAgentOptions(session, {
-      customTools: buildReviewerCursorCustomTools(session, this.app, turnAgent),
-      settingSources: [],
-      dirs: [rulesRoot],
-      model,
-      modelParams,
-    });
-
-    const storedAgentId = continuation
-      ? (await db('sessions').where({ id: session.id }).first())?.review_cursor_agent_id
-      : null;
-
-    const turnUsage = emptyTurnUsage();
-    const { outcome, agent } = await cursorAgent.runTurn({
-      session,
-      userText: userMessageText,
-      agentOptions,
-      resumeAgentId: storedAgentId,
-      persistAgentId: (agentId) =>
-        db('sessions').where({ id: session.id }).update({ review_cursor_agent_id: agentId }),
-      persistMessage,
-      patchMessage,
-      persistStatus,
-      onUsage: (sdkMsg) => {
-        addTokenUsage(turnUsage, sdkMsg.usage);
-        turnUsage.model =
-          sdkMsg.model ?? model ?? session.review_model ?? session.model ?? turnUsage.model;
-      },
-      onStatus: async (sdkMsg) => {
-        const { status } = sdkMsg;
-        if (status === 'FINISHED') {
-          return { break: true, finishedOk: true };
-        }
-        if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
-          const statusMsg =
-            status === 'CANCELLED'
-              ? 'Review was cancelled.'
-              : `Review agent error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''}`;
-          await persistStatus(statusMsg);
-          return { break: true, finishedOk: false };
-        }
-      },
-      activeKey: reviewTurnKey(session.id),
-    });
-
-    if (outcome === 'completed' && agent) {
-      await cursorAgent
-        .recordTurnUsage(session, agent, turnUsage, {
-          kind: 'review',
-          turnModel: { model, modelParams },
-        })
-        .catch((err) =>
-          logger.warn(
-            { sessionId: session.id, err: err.message },
-            'session review: failed to record cursor usage'
-          )
-        );
-    }
-
-    await this._finishReviewTurn(session, outcome);
   }
 
   async _dispose(sessionId) {
@@ -600,31 +489,13 @@ export class SessionReviewService {
     }
     try {
       await this._persistStatus(session, 'Server restarted — resuming review');
+      this._turnExtras.set(session.id, { continuation: true });
       await this._persist(session, {
         type: 'user',
         subtype: 'baguette',
         source: 'baguette',
         title: 'Server restarted',
-        message: { role: 'user', content: REVIEW_RESTART_PROMPT },
-      });
-      const { model, modelParams } = reviewTurnModel(session);
-      const run =
-        sdk === 'cursor'
-          ? this._runCursorReview(session, {
-              model,
-              modelParams,
-              userMessageText: REVIEW_RESTART_PROMPT,
-              continuation: true,
-            })
-          : this._runClaudeReview(session, {
-              model,
-              userMessageText: REVIEW_RESTART_PROMPT,
-              continuation: true,
-            });
-      run.catch(async (err) => {
-        logger.error({ sessionId: session.id, err: err.message }, 'resumed session review failed');
-        await this._dispose(session.id);
-        await this._patchReviewStatus(session, 'failed').catch(() => {});
+        content: REVIEW_RESTART_PROMPT,
       });
       return true;
     } catch (err) {

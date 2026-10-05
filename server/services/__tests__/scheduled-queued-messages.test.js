@@ -193,67 +193,12 @@ describe('scheduled dispatcher', () => {
 
     const turnQueue = await db('queued_messages').where({ session_id: sessionId, kind: 'turn' });
     expect(turnQueue).toHaveLength(1);
-    expect(turnQueue[0].message_json).toBe(messageJson);
-
-    const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
-    expect(messages).toHaveLength(0);
-  });
-
-  it('queues into turn queue (not rejected) when session waits on background tasks', async () => {
-    await db('sessions').where({ id: sessionId }).update({ status: 'background' });
-    const sendAt = new Date(Date.now() - 1_000).toISOString();
-    await db('queued_messages').insert({
-      session_id: sessionId,
-      user_id: userId,
-      message_json: messageJson,
-      kind: 'scheduled',
-      send_at: sendAt,
+    expect(JSON.parse(turnQueue[0].message_json)).toEqual({
+      type: 'user',
+      content: 'Later',
     });
 
-    await app.service('queued-messages').runDue();
-
-    const turnQueue = await db('queued_messages').where({ session_id: sessionId, kind: 'turn' });
-    expect(turnQueue).toHaveLength(1);
-    expect(turnQueue[0].message_json).toBe(messageJson);
     const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
     expect(messages).toHaveLength(0);
-  });
-
-  it('queues live user sends while the session waits on background tasks', async () => {
-    await db('sessions').where({ id: sessionId }).update({ status: 'background' });
-    const result = await app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: 'user',
-        message_json: messageJson,
-      },
-      params({ id: userId })
-    );
-    expect(result).toEqual({ queued: true });
-
-    const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
-    expect(messages).toHaveLength(0);
-    const queue = await db('queued_messages').where({ session_id: sessionId, kind: 'turn' });
-    expect(queue).toHaveLength(1);
-    expect(queue[0].message_json).toBe(messageJson);
-  });
-
-  it('queues force sends while the session waits on background tasks (nothing to steer)', async () => {
-    await db('sessions').where({ id: sessionId }).update({ status: 'background' });
-    const result = await app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: 'user',
-        message_json: messageJson,
-        force: true,
-      },
-      params({ id: userId })
-    );
-    expect(result).toEqual({ queued: true });
-
-    const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
-    expect(messages).toHaveLength(0);
-    const queue = await db('queued_messages').where({ session_id: sessionId, kind: 'turn' });
-    expect(queue).toHaveLength(1);
   });
 });

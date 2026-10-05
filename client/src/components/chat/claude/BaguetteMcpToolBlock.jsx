@@ -2,15 +2,15 @@ import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { sessionsService } from '../../feathers.js';
-import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
-import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
-import MarkdownContent from '../MarkdownContent.jsx';
-import { ansiToHtml } from '../../utils/ansi.js';
-import { parseShellToolResult } from '../../utils/shellToolResult.js';
-import { stripCdWorktreePrefix } from '../../utils/paths.js';
-import { splitPreviewLines } from '../../utils/chatContentPreview.js';
-import ToolRunElapsed from './ToolRunElapsed.jsx';
+import { sessionsService } from '../../../feathers.js';
+import { useFilterRoutes } from '../../../hooks/useFilterRoutes.js';
+import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../../utils/diffLineWrap.js';
+import MarkdownContent from '../../MarkdownContent.jsx';
+import { ansiToHtml } from '../../../utils/ansi.js';
+import { parseShellToolResult } from '../../../utils/shellToolResult.js';
+import { stripCdWorktreePrefix } from '../../../utils/paths.js';
+import { splitPreviewLines } from '../../../utils/chatContentPreview.js';
+import ToolRunElapsed from '../ToolRunElapsed.jsx';
 
 const TERMINAL_PRE_CLASS =
   'ansi-log font-mono text-xs whitespace-pre overflow-x-auto overflow-y-auto max-h-80 max-w-full rounded p-2';
@@ -109,10 +109,13 @@ export function QuietToolBlock({ icon, label, detail, isError, result, input }) 
 export function BashToolBlock({ command, worktreePath, block, startedAt }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = block.result == null;
-  const { exitCode, stdout, stderr } = useMemo(
-    () => parseShellToolResult(block.result),
-    [block.result]
-  );
+  const { exitCode, stdout, stderr } = useMemo(() => {
+    const r = block.result;
+    if (r && typeof r === 'object' && 'exit_code' in r) {
+      return { exitCode: r.exit_code, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+    }
+    return parseShellToolResult(block.result);
+  }, [block.result]);
   const hasError = block.isError || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
   const headerPreview =
     stripCdWorktreePrefix(command, worktreePath)
@@ -695,10 +698,12 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
     );
   }
 
-  if (toolShortName === 'RunCommand') {
+  if (toolShortName === 'RunProjectCommand') {
+    const label = block.input?.label ?? 'RunProjectCommand';
+    const args = block.input?.args ?? [];
     return (
       <CommandBlock
-        baguetteOp={{ arg: { label: block.input?.label ?? '', args: block.input?.args ?? [] } }}
+        baguetteOp={{ arg: { label, args } }}
         block={block}
         startedAt={runningStartedAt}
       />

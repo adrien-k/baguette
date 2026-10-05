@@ -157,9 +157,6 @@ export default function ChatView({
 
   const isRunning = session?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
-  // Waiting on monitored background tasks: sends are queued server-side and
-  // delivered by onTurnComplete once every background turn has finished.
-  const isBackground = session?.status === 'background';
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
@@ -749,6 +746,7 @@ export default function ChatView({
                     value={input}
                     onChange={setInput}
                     onSubmit={handleSend}
+                    placeholder={`Message ${session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
                     sending={sending}
                     sdk={session?.agent_sdk}
                     model={composerModel}
@@ -762,21 +760,16 @@ export default function ChatView({
                     showAutoPushParam
                     textareaId="chat-input"
                     canSend={canSendDraft}
-                    submitLabel={isRunning || isProvisioning || isBackground ? 'Queue' : 'Send'}
-                    placeholder={
-                      isBackground
-                        ? 'Waiting for background tasks — messages are queued…'
-                        : `Message ${session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`
-                    }
+                    submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
                     toolbarExtra={
                       <>
                         {attachButton}
-                        {(isRunning || isBackground) && (
+                        {isRunning && (
                           <button
                             type="button"
                             onClick={handleStop}
                             disabled={stopping}
-                            title={isBackground ? 'Stop background tasks' : 'Stop'}
+                            title="Stop"
                             className={COMPOSER_STOP_BUTTON_CLASS}
                           >
                             <Square className="w-3.5 h-3.5 fill-current" />
@@ -787,9 +780,7 @@ export default function ChatView({
                     sendAddon={
                       <ComposerScheduleAddon
                         disabled={
-                          isRunning || isProvisioning || isBackground
-                            ? !canSendDraft
-                            : !canOpenScheduleMenu
+                          isRunning || isProvisioning ? !canSendDraft : !canOpenScheduleMenu
                         }
                         onSendNow={
                           isRunning || isProvisioning

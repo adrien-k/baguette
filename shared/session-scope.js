@@ -102,4 +102,5 @@ export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   'ConfigRepoStart',
   'ShowDiff',
   'ListProjectCommands',
+  'RunProjectCommand',
 ];

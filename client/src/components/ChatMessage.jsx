@@ -6,6 +6,7 @@ import ThinkingBlock from './chat/ThinkingBlock.jsx';
 import BaguetteBlock from './chat/BaguetteBlock.jsx';
 import McpAgentBlock, { isMcpAgentMessage } from './chat/McpAgentBlock.jsx';
 import ToolUseBlock from './chat/ToolUseBlock.jsx';
+import PlanReviewBlock from './chat/PlanReviewBlock.jsx';
 import { shouldHideRunningBashInFlow } from '@baguette/shared/running-tools.js';
 import { isHumanUserMessage } from '@baguette/shared/turn-model.js';
 import { messageModelLabel } from '../utils/messageModelLabel.js';
@@ -72,6 +73,29 @@ export default function ChatMessage({
     return allMessages.slice(messageIndex + 1).some(isHumanReply);
   }, [allMessages, messageIndex]);
 
+  if (message.type === 'plan') {
+    return (
+      <PlanReviewBlock
+        markdown={message.markdown}
+        sessionId={sessionId}
+        userReplied={userReplied}
+      />
+    );
+  }
+
+  if (message.type === 'tool_call' && message.block) {
+    return (
+      <ToolUseBlock
+        block={message.block}
+        worktreePath={worktreePath}
+        sessionId={sessionId}
+        userReplied={userReplied}
+        runningStartedAt={message.tool_started_at ?? message.started_at}
+        agentSdk={session?.agent_sdk}
+      />
+    );
+  }
+
   if (message.type === 'assistant' && message.message?.content) {
     return (
       <div className="space-y-2">
@@ -97,6 +121,7 @@ export default function ChatMessage({
                 worktreePath={worktreePath}
                 sessionId={sessionId}
                 userReplied={userReplied}
+                agentSdk={session?.agent_sdk}
               />
             );
           }
@@ -118,7 +143,8 @@ export default function ChatMessage({
   }
 
   if (message.type === 'user') {
-    const content = message.message?.content;
+    const content =
+      typeof message.content === 'string' ? message.content : message.message?.content;
     const turnModelLabel = isHumanReply(message)
       ? messageModelLabel({
           model: message.model,
@@ -212,7 +238,7 @@ export default function ChatMessage({
     );
   }
 
-  if (message.type === 'result') {
+  if (message.type === 'turn_result' || message.type === 'result') {
     const isError = message.is_error || message.subtype === 'error';
     return (
       <>

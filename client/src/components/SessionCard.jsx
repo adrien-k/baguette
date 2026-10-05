@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Hourglass } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Circle, XCircle } from 'lucide-react';
 import SessionTools, { sessionToolsVisible } from './SessionTools.jsx';
 import { formatSessionActiveLabel } from '../utils/dates.js';
 import ArchiveSession from './ArchiveSession.jsx';
@@ -17,8 +17,6 @@ export function SessionStatusIcon({ status, compact = false, ...props }) {
   switch (status) {
     case 'running':
       return <Loader2 className={`${size} text-success animate-spin shrink-0`} {...props} />;
-    case 'background':
-      return <Hourglass className={`${size} text-warning animate-pulse shrink-0`} {...props} />;
     case 'provisioning':
       return <Loader2 className={`${size} text-fg-muted animate-spin shrink-0`} {...props} />;
     case 'archiving':
@@ -39,7 +37,6 @@ export function SessionStatusIcon({ status, compact = false, ...props }) {
 
 const STATUS_ACCENT = {
   running: 'border-l-success',
-  background: 'border-l-warning',
   provisioning: 'border-l-faint',
   archiving: 'border-l-brand/50',
   approval: 'border-l-brand',

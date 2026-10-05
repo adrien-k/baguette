@@ -59,11 +59,24 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
+  app.use('users', { get: async (id) => ({ id, access_token: 'tok' }) }, { methods: ['get'] });
   registerClaudeAgentService(app);
   app.use(
     'cursor-agent',
     {
       onMessageCreated: async () => {},
+      handleTableMessageCreated: async (row) => {
+        if (row.type !== 'user') return;
+        const session = await dbRef('sessions').where({ id: row.session_id }).first();
+        const { outcome, agent } = await app.service('cursor-agent').runTurn({
+          session,
+          userText: 'review',
+        });
+        await app.service('session-review').onAgentTurnComplete(session, outcome, {
+          sdk: 'cursor',
+          agent,
+        });
+      },
       stopTurn: async () => {},
       runTurn: async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }),
       buildAgentOptions: async () => ({}),
@@ -73,6 +86,7 @@ function makeApp(dbRef) {
     {
       methods: [
         'onMessageCreated',
+        'handleTableMessageCreated',
         'stopTurn',
         'runTurn',
         'buildAgentOptions',
@@ -238,7 +252,7 @@ describe('session-review service', () => {
     const firstUser = rows.find((m) => m.type === 'user');
     const parsed = JSON.parse(firstUser.message_json);
     expect(parsed.source).toBeUndefined();
-    expect(parsed.message.content).toBe('Focus on auth changes');
+    expect(parsed.content).toBe('Focus on auth changes');
     const session = await db('sessions').where({ id: sessionId }).first();
     expect(session.review_initial_prompt).toBe('Focus on auth changes');
   });
@@ -293,7 +307,8 @@ describe('session-review service', () => {
   });
 
   it('send rejects when a review turn is active in memory', async () => {
-    await db('session_review_messages').insert({
+    await db('session_messages').insert({
+      agent_type: 'reviewer',
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
@@ -309,7 +324,8 @@ describe('session-review service', () => {
   });
 
   it('send runs a follow-up turn without clearing messages', async () => {
-    await db('session_review_messages').insert({
+    await db('session_messages').insert({
+      agent_type: 'reviewer',
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
@@ -350,7 +366,10 @@ describe('session-review service', () => {
         'completed'
       );
     });
-    const first = await db('session_review_messages').where({ session_id: sessionId });
+    const first = await db('session_messages').where({
+      session_id: sessionId,
+      agent_type: 'reviewer',
+    });
     expect(first.some((m) => m.message_json?.includes('first pass'))).toBe(true);
 
     await vi.waitFor(() => {
@@ -364,13 +383,17 @@ describe('session-review service', () => {
         'completed'
       );
     });
-    const second = await db('session_review_messages').where({ session_id: sessionId });
+    const second = await db('session_messages').where({
+      session_id: sessionId,
+      agent_type: 'reviewer',
+    });
     expect(second.some((m) => m.message_json?.includes('first pass'))).toBe(false);
     expect(second.some((m) => m.message_json?.includes('second pass'))).toBe(true);
   });
 
   it('resumes an interrupted review that has a stored agent id', async () => {
-    await db('session_review_messages').insert({
+    await db('session_messages').insert({
+      agent_type: 'reviewer',
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
@@ -391,7 +414,10 @@ describe('session-review service', () => {
     });
     const callOptions = query.mock.calls.at(-1)?.[0]?.options;
     expect(callOptions?.resume).toBe('claude-review-resume');
-    const msgs = await db('session_review_messages').where({ session_id: sessionId });
+    const msgs = await db('session_messages').where({
+      session_id: sessionId,
+      agent_type: 'reviewer',
+    });
     expect(msgs.some((m) => m.message_json?.includes('Server restarted'))).toBe(true);
   });
 
@@ -487,7 +513,10 @@ describe('session-review service', () => {
       .service('session-review')
       .clearContext({ session_id: sessionId }, params(user));
     expect(cleared.ok).toBe(true);
-    const rows = await db('session_review_messages').where({ session_id: sessionId });
+    const rows = await db('session_messages').where({
+      session_id: sessionId,
+      agent_type: 'reviewer',
+    });
     expect(rows.length).toBe(0);
     const session = await db('sessions').where({ id: sessionId }).first();
     expect(session.review_claude_session_id).toBeNull();
@@ -511,8 +540,8 @@ describe('session-review service', () => {
     await git(wt, 'commit', '--allow-empty', '-m', 'second');
 
     await app.service('session-review').reviewNewCommits({ session_id: sessionId }, params(user));
-    const rows = await db('session_review_messages')
-      .where({ session_id: sessionId, type: 'user' })
+    const rows = await db('session_messages')
+      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.source).toBe('baguette');
@@ -543,12 +572,17 @@ describe('session-review service', () => {
         { session_id: sessionId, user_message: 'check auth middleware' },
         params(user)
       );
-    const rows = await db('session_review_messages')
-      .where({ session_id: sessionId, type: 'user' })
+    const rows = await db('session_messages')
+      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
-    expect(latest.message.content).toMatch(/Additional instructions:/);
-    expect(latest.message.content).toMatch(/check auth middleware/);
+    expect(latest.content).toMatch(/Additional instructions:/);
+    expect(latest.content).toMatch(/check auth middleware/);
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
     await fs.promises.rm(wt, { recursive: true, force: true });
   });
 
@@ -565,12 +599,17 @@ describe('session-review service', () => {
     });
 
     await app.service('session-review').reviewNewCommits({ session_id: sessionId }, params(user));
-    const rows = await db('session_review_messages')
-      .where({ session_id: sessionId, type: 'user' })
+    const rows = await db('session_messages')
+      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.title).toBe('Review latest changes');
-    expect(latest.message.content).toMatch(/uncommitted work/);
+    expect(latest.content).toMatch(/uncommitted work/);
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
     await fs.promises.rm(wt, { recursive: true, force: true });
   });
 
@@ -609,23 +648,27 @@ describe('session-review service', () => {
 
     query.mockImplementation(() => makeQueryResult());
     await app.service('session-review').reviewNewCommits({ session_id: sessionId }, params(user));
-    const rows = await db('session_review_messages')
-      .where({ session_id: sessionId, type: 'user' })
+    const rows = await db('session_messages')
+      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.title).toBe('Review latest changes');
-    expect(latest.message.content).toMatch(/base branch `main`/);
-    expect(latest.message.content).toMatch(/git diff main\.\.\.HEAD/);
+    expect(latest.content).toMatch(/base branch `main`/);
+    expect(latest.content).toMatch(/git diff main\.\.\.HEAD/);
     await vi.waitFor(async () => {
       expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
         'completed'
       );
     });
-    await fs.promises.rm(wt, { recursive: true, force: true });
+    await vi.waitFor(() => {
+      expect(app.service('session-review')._active.has(sessionId)).toBe(false);
+    });
+    await fs.promises.rm(wt, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it('clearContext rejects while a review turn is active', async () => {
-    await db('session_review_messages').insert({
+    await db('session_messages').insert({
+      agent_type: 'reviewer',
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),

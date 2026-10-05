@@ -5,9 +5,7 @@ import { toastError } from '../utils/toastError.jsx';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../utils/buttonStyles.js';
 
 export function isSessionStoppable(session) {
-  return (
-    !session?.archived_at && (session?.status === 'running' || session?.status === 'background')
-  );
+  return !session?.archived_at && session?.status === 'running';
 }
 
 export default function StopSession({ session }) {

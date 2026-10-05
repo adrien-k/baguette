@@ -6,7 +6,8 @@ import { isBaguetteUserMessage, isHumanUserMessage } from './turn-model.js';
  */
 export function messageCountsAsSessionActivity(row) {
   const type = row?.type;
-  if (type === 'result' || type === 'assistant') return true;
+  if (type === 'result' || type === 'turn_result' || type === 'assistant' || type === 'tool_call')
+    return true;
   if (type !== 'user') return false;
   let parsed;
   try {

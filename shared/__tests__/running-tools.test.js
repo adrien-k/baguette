@@ -93,7 +93,7 @@ describe('collectRunningTools', () => {
     expect(dock[1].id).toBe('bash2');
   });
 
-  it('includes running RunCommand in the dock', () => {
+  it('includes running RunProjectCommand in the dock', () => {
     const messages = [
       {
         type: 'user',
@@ -107,7 +107,7 @@ describe('collectRunningTools', () => {
             {
               type: 'tool_use',
               id: 'run1',
-              name: 'mcp__baguette__RunCommand',
+              name: 'mcp__baguette__RunProjectCommand',
               input: { label: 'Run tests' },
             },
           ],
@@ -180,7 +180,7 @@ describe('collectRunningTools', () => {
       id: 'm1',
       name: 'mcp',
       input: {
-        toolName: 'RunCommand',
+        toolName: 'RunProjectCommand',
         args: { label: 'Run tests', args: ['--grep', 'foo'] },
       },
     };

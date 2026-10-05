@@ -69,9 +69,7 @@ export const sessionsService = createService('sessions', {
   ],
 });
 export const messagesService = createService('messages');
-export const tasksService = createService('tasks', {
-  customMethods: ['kill', 'logs', 'awaitTask'],
-});
+export const tasksService = createService('tasks', { customMethods: ['kill', 'logs'] });
 export const reposService = createService('repos', {
   customMethods: [
     'findRemote',

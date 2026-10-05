@@ -13,6 +13,7 @@ export default [
       'client/dist/**',
       'client/scripts/**',
       '.data/**',
+      'data/**',
     ],
   },
 
@@ -25,7 +26,14 @@ export default [
 
   // Server (Node.js ESM)
   {
-    files: ['server/**/*.js', 'shared/**/*.js', 'bin/**', 'knexfile.js', 'vitest.config.js'],
+    files: [
+      'server/**/*.js',
+      'shared/**/*.js',
+      'scripts/**/*.js',
+      'bin/**',
+      'knexfile.js',
+      'vitest.config.js',
+    ],
     ...js.configs.recommended,
     languageOptions: {
       ecmaVersion: 'latest',
@@ -33,6 +41,14 @@ export default [
       globals: {
         ...globals.node,
       },
+    },
+  },
+
+  // Operator-facing CLI scripts print to stdout/stderr.
+  {
+    files: ['scripts/**/*.js'],
+    rules: {
+      'no-console': 'off',
     },
   },
 

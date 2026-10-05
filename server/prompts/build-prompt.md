@@ -78,26 +78,23 @@ When the user asks you to fix issue `#N` (or all submitted issues): call **`List
 
 # Running shell commands
 
-**`RunCommand` is the generic way to run bash commands in this session.** Use it for every shell command — ad-hoc commands you would otherwise type in a terminal and commands defined in `.baguette.yaml` alike. It runs in the session worktree with the session environment (secrets stay server-side and are never exposed), output is captured in the command panel, running tasks are visible via `ListRunningTasks`, and background/monitored runs integrate with wake-ups and stop-turn cleanup.
+Use the built-in **Bash** / **shell** tool for everyday ad-hoc commands in the worktree (`git`, one-off scripts, quick checks). Do **not** use its background mode or **background subagents** — end your turn normally.
 
-- **Ad-hoc commands** — pass the bash command via `command`: `command: "git diff --stat"`, `command: "ls server/services"`. Pipes, redirections and multi-command lines work (`command: "pnpm build 2>&1 | tail -20"`).
-- **Configured commands** — pass a `label` that exactly matches one of the labels returned by `ListProjectCommands` (e.g. `"Run tests"`), with an optional `args` array appended to the underlying command to scope execution (a file path, name pattern, or flag).
+For commands defined in **`.baguette.yaml`** (tests, formatters, dev servers, migrations), use **`RunProjectCommand`** via `ListProjectCommands`:
 
-By default the call blocks until the command exits and returns `exitCode`/`stdoutLines`/`stderrLines` inline. Prefer `RunCommand` over the built-in Shell/Bash tool for anything beyond a trivial read: shells you background with the built-in tool are killed when the run ends and their output notifications are never delivered, while `RunCommand` tasks survive the turn, can be monitored, and are reaped correctly when the user stops the session (agent-started tasks die with the turn; user-started tasks keep running).
+- `label` — task key from the config (e.g. `"run-tests"`)
+- `args` — optional extra arguments appended to the task command
 
-## Background and monitored tasks
+**Default (`detach: false`):** wait for exit and return `exitCode` / `stdoutLines` / `stderrLines` inline (typical for tests and formatters).
 
-- `background: true`: run detached as a background task that survives the turn; you get a `taskId` immediately and can poll with `ReadTaskOutput`/`TaskStatus`, stop it with `KillTask`, or block on its next event with `AwaitTask`. If the user stops the turn, your background tasks are killed along with it.
-- `notifyPattern` (requires `background: true`; a regex tested against each output line, e.g. `"Build complete|error|Tests passed"`): the task is monitored — you will be woken with a task notification when it matches or when the task exits, including the matched line and recent output. While a monitored task is pending, the session waits in the background and new user messages are queued (delivered only after all background work finishes and the session completes); you are woken automatically, so end your reply after starting monitored work instead of polling.
-
-Do not end your turn waiting on the built-in Shell tool's background mode — start a monitored task via `RunCommand` (`background: true` + `notifyPattern`) instead and baguette will wake you with the results.
+For **long-running** project tasks (dev servers, slow builds): `RunProjectCommand` with **`detach: true`** — you get a `taskId`; poll `ReadTaskOutput` / `TaskStatus` and stop with `KillTask`. Baguette does not auto-wake you when detached tasks finish.
 
 ## Running Tests
 
-**HIGH PRIORITY**: Always prefer running tests via `RunCommand` using the label defined in `.baguette.yaml`:
+**HIGH PRIORITY**: Prefer **`RunProjectCommand`** with the test label from `.baguette.yaml`:
 
-1. Call `ListProjectCommands` to find the test command label (e.g. `"Run tests"`).
-2. Call `RunCommand` with `label: "Run tests"` and, when relevant, `args` to narrow scope.
+1. Call `ListProjectCommands` to find the test command label (e.g. `"run-tests"`).
+2. Call `RunProjectCommand` with that `label` and, when relevant, `args` to narrow scope.
 
 **Use `args` to target specific tests** rather than running the full suite every time:
 
@@ -106,4 +103,4 @@ Do not end your turn waiting on the built-in Shell tool's background mode — st
 - Run a test at a specific line: `args: ["src/foo.test.js:42"]` (vitest/jest)
 - Pass any other flag the test runner supports: `args: ["--verbose"]`, `args: ["--bail"]`, etc.
 
-Only if `.baguette.yaml` does not exist or has no test command defined should you fall back to running the test runner directly (e.g. `bundle exec rspec`, `pnpm test`, `pytest`). In that case, if the project defines a `session.init` command, run it first via `RunCommand` before running tests.
+Only if `.baguette.yaml` does not exist or has no test command defined should you fall back to the Bash tool (e.g. `pnpm test`, `pytest`). If the project defines `session.init`, run that task via `RunProjectCommand` first when a label exists.

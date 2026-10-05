@@ -193,13 +193,13 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
         const session_id = session.id;
         const db = app.get('db');
         const { count } = await db('session_messages')
-          .where({ session_id })
+          .where({ session_id, agent_type: 'builder' })
           .count('* as count')
           .first();
         const messageCount = Number(count ?? 0);
 
         const lastAssistant = await db('session_messages')
-          .where({ session_id })
+          .where({ session_id, agent_type: 'builder' })
           .whereIn('type', ['assistant'])
           .orderBy('id', 'desc')
           .first();
@@ -316,7 +316,7 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
         const typeFilter = types?.length ? types : ['user', 'assistant'];
         const db = app.get('db');
         let query = db('session_messages')
-          .where({ session_id })
+          .where({ session_id, agent_type: 'builder' })
           .whereIn('type', typeFilter)
           .orderBy('id', 'asc');
 
@@ -352,7 +352,9 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
         const session_id = session.id;
 
         const db = app.get('db');
-        const row = await db('session_messages').where({ id: message_id, session_id }).first();
+        const row = await db('session_messages')
+          .where({ id: message_id, session_id, agent_type: 'builder' })
+          .first();
         if (!row) return fail('Message not found');
 
         try {

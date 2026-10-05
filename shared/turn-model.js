@@ -14,7 +14,9 @@ export function isBaguetteUserMessage(parsed) {
 /** User-typed chat message (not Baguette-injected, not a tool-result carrier). */
 export function isHumanUserMessage(parsed) {
   if (parsed?.type !== 'user') return false;
+  if (parsed.legacy_tool_result_carrier) return false;
   if (isBaguetteUserMessage(parsed)) return false;
+  if (typeof parsed.content === 'string') return true;
   const content = parsed.message?.content;
   if (typeof content === 'string') return true;
   if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');

@@ -11,10 +11,22 @@ import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from '../../claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
-import { attachSessionTurnModelFields, resolveTurnModel } from '../../../shared/turn-model.js';
+import {
+  attachSessionTurnModelFields,
+  isBaguetteUserMessage,
+  resolveTurnModel,
+} from '../../../shared/turn-model.js';
+import { reviewTurnKey } from './session-review.service.js';
+import {
+  isDispatchableUserMessage,
+  parseUserRow,
+  rejectTurnMismatch,
+} from '../agent-message-dispatch.js';
+import { createMessageStreamWriter } from '../message-writer-factory.js';
 
 function isHumanUserMessage(message) {
   if (message.type !== 'user') return false;
+  if (typeof message.content === 'string') return true;
   const content = message.message?.content;
   if (typeof content === 'string') return true;
   if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');
@@ -189,55 +201,113 @@ export class ClaudeAgentService {
     await this._disposeActiveSession(activeKey);
   }
 
-  async onMessageCreated(message) {
-    if (message.type !== 'user') return;
+  async handleTableMessageCreated(row, table) {
+    if (row.type !== 'user') return;
 
-    const sessionId = message.session_id;
+    const parsedStorage = parseUserRow(row);
+    if (!parsedStorage || !isDispatchableUserMessage(parsedStorage)) return;
 
-    const rawParsed =
-      typeof message.message_json === 'string'
-        ? JSON.parse(message.message_json)
-        : message.message_json;
-    const parsed = normalizeUserMessageForAgentSdk(rawParsed);
+    const sessionId = row.session_id;
+    const session = await this.app.service('sessions').get(sessionId);
+    if (!session || session.archived_at) return;
 
-    // Only respond to human user messages, not tool_result rows we persisted from the SDK stream.
-    // Baguette-injected messages use source: 'baguette' and are delivered via this hook only.
-    if (!isHumanUserMessage(parsed) && parsed.source !== 'baguette') return;
+    const channel = table === 'session-review-messages' ? 'review' : 'chat';
+    const sdk = channel === 'review' ? session.review_agent_sdk : session.agent_sdk;
+    if (sdk !== 'claude') return;
 
-    // Check in-memory first — handles active sessions before claude_session_id is persisted
-    const active = this.getActiveSession(sessionId);
+    if (channel === 'chat') {
+      if (session.status === 'archiving' || session.status === 'archived') return;
+      if (session.repo_full_name && !session.worktree_path) return;
+    }
+
+    const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
+    const active = this.getActiveSession(activeKey);
+    const activeTurnId =
+      channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+
+    let forSdk = parsedStorage;
+    if (isBaguetteUserMessage(parsedStorage) && typeof parsedStorage.content === 'string') {
+      forSdk = {
+        type: 'user',
+        source: 'baguette',
+        title: parsedStorage.title,
+        message: { role: 'user', content: parsedStorage.content },
+      };
+    } else if (typeof parsedStorage.content === 'string') {
+      forSdk = { type: 'user', message: { role: 'user', content: parsedStorage.content } };
+    }
+    const parsed = normalizeUserMessageForAgentSdk(forSdk);
+
     if (active) {
+      if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
+        await rejectTurnMismatch(this.app, {
+          session,
+          row,
+          channel,
+          activeTurnId,
+          userId: session.user_id,
+        });
+        return;
+      }
       active.channel.push(parsed);
       return;
     }
 
-    const session = await this.app.service('sessions').get(sessionId);
-    if (
-      !session ||
-      session.archived_at ||
-      session.status === 'archiving' ||
-      session.status === 'archived'
-    )
-      return;
-    if (session.repo_full_name && !session.worktree_path) return;
+    const db = this.app.get('db');
+    if (row.turn_id != null) {
+      const activeField =
+        channel === 'review'
+          ? { active_review_turn_id: row.turn_id }
+          : { active_chat_turn_id: row.turn_id };
+      await db('sessions').where({ id: sessionId }).update(activeField);
+    }
 
-    const { model } = resolveTurnModel(message, session);
+    const { model } = resolveTurnModel(row, session);
+    const writer =
+      row.turn_id != null
+        ? createMessageStreamWriter(this.app, {
+            sessionId,
+            userId: session.user_id,
+            turnId: row.turn_id,
+            channel,
+            worktreePath: session.worktree_path,
+          })
+        : null;
 
     let agentSession;
-    if (session.claude_session_id) {
-      agentSession = await this.ensureActiveSession(session, { model });
+    const resumeId =
+      channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
+    if (resumeId) {
+      agentSession = await this.ensureActiveSession(session, { model, channel, activeKey, writer });
     } else {
-      agentSession = await this.createAgentSession(session, { model });
+      agentSession = await this.createAgentSession(session, {
+        model,
+        channel,
+        activeKey,
+        writer,
+      });
     }
 
     agentSession.channel.push(parsed);
   }
 
-  async createAgentSession(session, { model } = {}) {
-    const sessionState = await this._startAgentLoop(session, { model });
+  /** @deprecated use handleTableMessageCreated */
+  async onMessageCreated(message) {
+    return this.handleTableMessageCreated(message, 'messages');
+  }
 
-    await this.app.service('sessions').patch(session.id, { status: 'running' });
-    await this.app.service('sessions').onTurnStart(session.id);
+  async createAgentSession(session, { model, channel, activeKey, writer } = {}) {
+    const sessionState = await this._startAgentLoop(session, {
+      model,
+      channel,
+      activeKey,
+      writer,
+    });
+
+    if (channel !== 'review') {
+      await this.app.service('sessions').patch(session.id, { status: 'running' });
+      await this.app.service('sessions').onTurnStart(session.id);
+    }
     return sessionState;
   }
 
@@ -320,9 +390,10 @@ export class ClaudeAgentService {
     return async (toolName, input) => {
       if (toolName === 'ExitPlanMode') {
         return {
-          behavior: 'deny',
+          behavior: 'allow',
+          updatedInput: input,
           message:
-            'The plan has been presented to the user for review. They will send a message when ready to proceed or to request revisions.',
+            'Plan saved for user review in chat. The turn can complete; the user will message when ready to execute or refine.',
         };
       }
 
@@ -339,20 +410,19 @@ export class ClaudeAgentService {
   async injectBaguetteMessage(sessionState, { title, content }) {
     const { sessionId } = sessionState;
     const app = this.app;
-    const msg = {
+    const payload = {
       type: 'user',
-      // Baguette speaks on the session's behalf here; `source` is what tells the chat to render
-      // this as a collapsed Baguette block instead of a message the user typed.
       source: 'baguette',
-      message: { role: 'user', content },
       title,
+      content,
+      subtype: 'baguette',
     };
 
     await app.service('messages').create({
       session_id: sessionId,
       type: 'user',
       subtype: 'baguette',
-      message_json: JSON.stringify(msg),
+      message_json: JSON.stringify(payload),
     });
   }
 
@@ -361,7 +431,7 @@ export class ClaudeAgentService {
    * channel, query instance, session state, and kicks off the
    * message-processing loop.
    */
-  async _startAgentLoop(sessionRow, { model } = {}) {
+  async _startAgentLoop(sessionRow, { model, channel = 'chat', activeKey, writer } = {}) {
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
     const sessionSettings = {
@@ -369,11 +439,23 @@ export class ClaudeAgentService {
     };
     const canUseTool = this.createCanUseTool();
     const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser(user));
-    const queryOptions = await this._buildSessionQueryOptions(sessionRow, {
-      canUseTool,
-      allowedTools,
-      ...(model !== undefined ? { model } : {}),
-    });
+    const resolvedActiveKey = activeKey ?? sessionId;
+    let queryOptions;
+    if (channel === 'review') {
+      const extras = this.app.service('session-review').peekTurnExtras(sessionId) ?? {};
+      const resumeId = sessionRow.review_claude_session_id;
+      queryOptions = await this.app.service('session-review').buildClaudeQueryOptions(sessionRow, {
+        model,
+        continuation: !!resumeId || Boolean(extras.continuation),
+        extraPrompt: extras.extraPrompt,
+      });
+    } else {
+      queryOptions = await this._buildSessionQueryOptions(sessionRow, {
+        canUseTool,
+        allowedTools,
+        ...(model !== undefined ? { model } : {}),
+      });
+    }
 
     const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path) || '';
     const sessionState = this._openQuery({
@@ -388,8 +470,11 @@ export class ClaudeAgentService {
         token: getGithubToken(user),
         sessionSettings,
         ...(sessionRow.claude_session_id ? { claudeSessionId: sessionRow.claude_session_id } : {}),
+        streamWriter: writer ?? null,
+        turnChannel: channel,
+        activeKey: resolvedActiveKey,
       },
-      activeKey: sessionId,
+      activeKey: resolvedActiveKey,
     });
 
     attachAppErrorHandler(this.app, this.processMessages(sessionState), {
@@ -402,10 +487,17 @@ export class ClaudeAgentService {
     return sessionState;
   }
 
-  async resumeSession(session, { model } = {}) {
-    if (!session.claude_session_id) throw new Error('No Claude session to resume');
+  async resumeSession(session, { model, channel, activeKey, writer } = {}) {
+    const resumeId =
+      channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
+    if (!resumeId) throw new Error('No Claude session to resume');
 
-    const sessionState = await this._startAgentLoop(session, { model });
+    const sessionState = await this._startAgentLoop(session, {
+      model,
+      channel,
+      activeKey,
+      writer,
+    });
 
     logger.info(
       { sessionId: session.id, claudeSessionId: session.claude_session_id },
@@ -415,7 +507,7 @@ export class ClaudeAgentService {
     return sessionState;
   }
 
-  async ensureActiveSession(sessionOrId, { model } = {}) {
+  async ensureActiveSession(sessionOrId, { model, channel, activeKey, writer } = {}) {
     const sessionRow =
       typeof sessionOrId === 'object' && sessionOrId !== null
         ? sessionOrId
@@ -423,43 +515,91 @@ export class ClaudeAgentService {
     if (!sessionRow) return null;
 
     const sessionId = sessionRow.id;
-    const existing = this._activeSessions.get(sessionId);
+    const key = activeKey ?? sessionId;
+    const existing = this._activeSessions.get(key);
     if (existing) return existing;
 
-    if (!this._resumePromises.has(sessionId)) {
-      const promise = this.resumeSession(sessionRow, { model }).finally(() => {
-        this._resumePromises.delete(sessionId);
+    if (!this._resumePromises.has(key)) {
+      const promise = this.resumeSession(sessionRow, {
+        model,
+        channel,
+        activeKey: key,
+        writer,
+      }).finally(() => {
+        this._resumePromises.delete(key);
       });
-      this._resumePromises.set(sessionId, promise);
+      this._resumePromises.set(key, promise);
     }
 
-    return this._resumePromises.get(sessionId);
+    return this._resumePromises.get(key);
   }
 
   async processMessages(sessionState) {
     const { sessionId, userId } = sessionState;
     const db = this.app.get('db');
-    const { turnComplete, outcome, streamFailed } = await this._consumeQuery(sessionState, {
+    const activeKey = sessionState.activeKey ?? sessionId;
+    const isReview = sessionState.turnChannel === 'review';
+    const { turnComplete, streamFailed, outcome } = await this._consumeQuery(sessionState, {
+      streamWriter: sessionState.streamWriter ?? null,
       persistMessage: (message) => this.persistMessage(sessionState, message),
-      persistStatus: (text) => this._persistSessionStatusMessage(sessionId, userId, text),
+      persistStatus: isReview
+        ? async (text) => {
+            const session = await db('sessions').where({ id: sessionId }).first();
+            if (session) {
+              await this.app.service('session-review')._persistStatus(session, text);
+            }
+          }
+        : (text) => this._persistSessionStatusMessage(sessionId, userId, text),
       onInitSessionId: async (id) => {
-        await db('sessions').where({ id: sessionId }).update({ claude_session_id: id });
+        const field =
+          sessionState.turnChannel === 'review'
+            ? { review_claude_session_id: id }
+            : { claude_session_id: id };
+        await db('sessions').where({ id: sessionId }).update(field);
         sessionState.claudeSessionId = id;
       },
+      onResult: async (message) => {
+        if (!isReview) return; // Chat status is patched once after the stream ends below.
+        const ok = message.subtype === 'success' && !message.is_error;
+        const session = await db('sessions').where({ id: sessionId }).first();
+        await this.app
+          .service('sessions')
+          .recordClaudeUsage(session, message, {
+            kind: 'review',
+            model: session.review_model ?? session.model,
+            totalsKey: reviewTurnKey(sessionId),
+            patchSessionCost: true,
+          })
+          .catch(() => {});
+        await this.app
+          .service('session-review')
+          .onAgentTurnComplete(session, ok ? 'completed' : 'failed', { sdk: 'claude' });
+      },
+      onStreamError: async () => {
+        if (!isReview) return; // Chat status is patched once after the stream ends below.
+        const session = await db('sessions').where({ id: sessionId }).first();
+        await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+          sdk: 'claude',
+        });
+      },
+      onBackgroundAutoResume: async () => {
+        if (isReview) return;
+        await this.app.service('sessions').onTurnStart(sessionId);
+      },
       trackBackgroundTasks: true,
-      activeKey: sessionId,
+      activeKey,
     });
 
     // One terminal status for the whole turn (including background-task auto-resume).
     // Usage is recorded when the result message is persisted; queued follow-ups start after this.
-    if (turnComplete || streamFailed) {
+    if (!isReview && (turnComplete || streamFailed)) {
       const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
       await this.app
         .service('sessions')
         .patch(sessionId, { status: terminalStatus }, { user: { id: userId } });
     }
 
-    if (turnComplete) {
+    if (turnComplete && !isReview) {
       try {
         await this.app.service('sessions').onTurnComplete(sessionId);
       } catch (err) {
@@ -475,6 +615,7 @@ export class ClaudeAgentService {
   async _consumeQuery(
     sessionState,
     {
+      streamWriter,
       persistMessage,
       persistStatus,
       onInitSessionId,
@@ -526,7 +667,11 @@ export class ClaudeAgentService {
           }
         }
 
-        await persistMessage(message);
+        if (streamWriter) {
+          await streamWriter.handleClaudeEvent(message);
+        } else {
+          await persistMessage(message);
+        }
 
         if (message.type === 'result') {
           turnComplete = true;
@@ -611,6 +756,7 @@ export class ClaudeAgentService {
     const row = {
       session_id: sessionId,
       type: 'user',
+      agent_type: 'builder',
       message_json: JSON.stringify(sdkMessage),
     };
     attachSessionTurnModelFields(row, sessionRow);
@@ -706,6 +852,10 @@ Task: ${initialPrompt}`;
     const { sessionId, userId } = sessionState;
     const app = this.app;
 
+    if (message.type === 'system' && message.subtype === 'thinking_tokens') {
+      return;
+    }
+
     await app.service('messages').create(
       {
         session_id: sessionId,
@@ -727,7 +877,8 @@ Task: ${initialPrompt}`;
 }
 
 export function registerClaudeAgentService(app, path = 'claude-agent') {
-  app.use(path, new ClaudeAgentService(), {
+  const service = new ClaudeAgentService();
+  app.use(path, service, {
     methods: [
       'createAgentSession',
       'resumeSession',
@@ -739,6 +890,7 @@ export function registerClaudeAgentService(app, path = 'claude-agent') {
       'buildQueryOptions',
       'syncSessionSettingsFromPatch',
       'onMessageCreated',
+      'handleTableMessageCreated',
     ],
   });
 }

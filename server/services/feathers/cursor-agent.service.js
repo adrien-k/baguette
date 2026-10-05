@@ -1,7 +1,6 @@
 import { Agent, AgentBusyError } from '@cursor/sdk';
 import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
@@ -18,6 +17,14 @@ import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handl
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
+import { reviewTurnKey } from './session-review.service.js';
+import {
+  isDispatchableUserMessage,
+  parseUserRow,
+  rejectTurnMismatch,
+} from '../agent-message-dispatch.js';
+import { createMessageStreamWriter } from '../message-writer-factory.js';
+import { isHumanUserMessage as isHumanUserMessageShared } from '../../../shared/turn-model.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -35,186 +42,12 @@ const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 const SYSTEM_PROMPT_RULE_FILENAME = 'system-prompt.mdc';
 const PROMPT_RULE_MODES = ['build', 'review'];
 
-function isHumanUserMessage(parsed) {
-  const content = parsed.message?.content;
-  if (typeof content === 'string') return true;
-  if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');
-  return false;
-}
-
 function extractUserText(parsed) {
+  if (typeof parsed.content === 'string') return parsed.content;
   const content = parsed.message?.content;
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return expandUserContentForAgent(content);
   return '';
-}
-
-/** Max follow-up runs the wake-up loop may send per turn. */
-export const BACKGROUND_WAKE_MAX_FOLLOW_UPS = 10;
-/** How long the wake-up loop waits for the next task event before waking the agent anyway. */
-export const BACKGROUND_WAKE_EVENT_TIMEOUT_MS = 10 * 60_000;
-/**
- * Max consecutive wait timeouts (nothing reported) before the wake-up loop gives up:
- * ~1 hour of silence at the default 10-minute event timeout.
- */
-export const BACKGROUND_WAKE_MAX_SILENT_CYCLES = 6;
-/** Bytes of task output included in wake-up texts. */
-const WAKE_OUTPUT_TAIL_BYTES = 4000;
-
-/**
- * Session-level status for a task_notification row, consistent with the Claude
- * task_notification statuses ('completed' | 'failed' | 'cancelled').
- */
-export function taskNotificationStatus(event) {
-  if (event?.event !== 'exit') return 'running';
-  if (event.status === 'stopped') return 'cancelled';
-  return (event.exit_code ?? 1) === 0 ? 'completed' : 'failed';
-}
-
-/**
- * Human-readable summary of a background task wake-up event.
- */
-export function describeTaskWakeStatus(event, task = null) {
-  switch (event?.event) {
-    case 'pattern':
-      return task?.status && task.status !== 'running'
-        ? `reported a match and then finished`
-        : 'reported a pattern match (still running)';
-    case 'exit':
-      if (event.status === 'stopped') return 'was cancelled';
-      if ((event.exit_code ?? 1) === 0) return 'exited successfully (exit code 0)';
-      if (event.exit_code != null) return `exited with code ${event.exit_code}`;
-      return `finished (${event.status ?? 'failed'})`;
-    default:
-      return 'has not reported yet (timed out waiting)';
-  }
-}
-
-/**
- * Agent-facing text for a background task wake-up. Persisted as a user-role
- * message and sent to the agent so it continues its turn.
- */
-export function buildTaskWakeText({ event, task = null }) {
-  const desc = task?.label || (task?.command ? task.command.slice(0, 80) : null);
-  const label = desc ? ` (${desc})` : '';
-  const status = describeTaskWakeStatus(event, task);
-  const lines = [
-    `Background task notification: task #${event.task_id ?? 'unknown'}${label} ${status}.`,
-  ];
-  if (event.matched_line) lines.push(`Matched line: ${event.matched_line}`);
-  const tail = task?.output_tail ?? event.output_tail;
-  if (tail) {
-    lines.push('Recent output:', tail.trimEnd());
-  }
-  lines.push(
-    'Continue your work. Other monitored tasks will notify you when they report; use TaskStatus for a quick status or ReadTaskOutput for logs, and KillTask to stop one.'
-  );
-  return lines.join('\n');
-}
-
-/**
- * task_notification message recorded the moment a monitored task reports (pattern match
- * or exit) — same payload shape the wake-up drain used to persist, so the record exists
- * at event time even while a run is still streaming.
- */
-export function taskNotificationPayload(event, task = null) {
-  return {
-    type: 'system',
-    subtype: 'task_notification',
-    uuid: randomUUID(),
-    task_id: event.task_id,
-    event: event.event,
-    status: taskNotificationStatus(event),
-    matched_line: event.matched_line ?? null,
-    output_tail: task?.tailLogs(WAKE_OUTPUT_TAIL_BYTES) ?? null,
-    ambient: false,
-  };
-}
-
-/**
- * Deliver baguette-monitored background task wake-ups to the agent.
- *
- * Called from _runTurn after the main run finished: while the session has monitored
- * tasks (RunCommand with a notifyPattern) still running, mark the session
- * 'background', wait for the next event (pattern match or exit), mark the session
- * 'running', and send the agent a follow-up message so it continues working. Bounded by
- * maxFollowUps and eventTimeoutMs so the turn always ends eventually.
- *
- * Wait timeouts are not agent wakes: when nothing reports within eventTimeoutMs the
- * loop keeps waiting without waking the agent or consuming a follow-up slot, bounded
- * by maxSilentCycles so a task that never reports still ends the turn eventually.
- *
- * Task-event notification messages are persisted at event time by the turn's notify
- * watcher (watchSessionTaskNotifies); this loop only persists the synthetic wake_limit
- * notice. When the limit is reached (follow-ups exhausted or silence budget spent) it
- * tells the agent and cancels the remaining tasks so they don't linger (and don't
- * delay future turns).
- *
- * Returns 'drained' when there is nothing left to wait for, 'aborted' when the turn
- * was stopped by the user, or 'send_failed' when a follow-up run did not finish ok.
- * Dependencies are injectable for tests.
- */
-export async function drainBackgroundTaskWakeups({
-  listMonitoredPending,
-  waitForEvent,
-  getTask,
-  persistNotification,
-  sendFollowUp,
-  killTask,
-  setStatus = null,
-  signal = null,
-  maxFollowUps = BACKGROUND_WAKE_MAX_FOLLOW_UPS,
-  eventTimeoutMs = BACKGROUND_WAKE_EVENT_TIMEOUT_MS,
-  maxSilentCycles = BACKGROUND_WAKE_MAX_SILENT_CYCLES,
-}) {
-  let followUps = 0;
-  let silentCycles = 0;
-  while (!signal?.aborted) {
-    const pending = listMonitoredPending();
-    if (pending.length === 0) return 'drained';
-    if (followUps >= maxFollowUps || silentCycles >= maxSilentCycles) {
-      // Give up watching: tell the agent and cancel the remaining tasks so they
-      // don't linger (and don't delay future turns).
-      await persistNotification({
-        type: 'system',
-        subtype: 'task_notification',
-        uuid: randomUUID(),
-        task_id: null,
-        event: 'wake_limit',
-        status: 'cancelled',
-        task_ids: pending.map((t) => t.id ?? t.task_id),
-        matched_line: null,
-        output_tail: null,
-        ambient: false,
-      });
-      for (const t of pending) {
-        await killTask(t.id ?? t.task_id, { reason: 'wake-up limit reached' });
-      }
-      return 'drained';
-    }
-    await setStatus?.('background');
-    const event = await waitForEvent(
-      pending.map((t) => t.id ?? t.task_id),
-      { timeoutMs: eventTimeoutMs, signal }
-    );
-    if (signal?.aborted) return 'aborted';
-    if (event?.event === 'timeout') {
-      // Nothing reported within the wait window: keep waiting without waking the
-      // agent or consuming a follow-up slot. The silence budget bounds the wait so
-      // a task that never reports still ends the turn eventually.
-      silentCycles += 1;
-      continue;
-    }
-    silentCycles = 0;
-    followUps += 1;
-    await setStatus?.('running');
-    const task = event.task_id ? getTask(event.task_id) : null;
-    // No persistNotification here: task-event notifications are recorded at event time
-    // by the turn's notify watcher (watchSessionTaskNotifies in _runTurn).
-    const finishedOk = await sendFollowUp(buildTaskWakeText({ event, task }));
-    if (!finishedOk) return 'send_failed';
-  }
-  return 'aborted';
 }
 
 export class CursorAgentService {
@@ -349,47 +182,61 @@ ${body}`,
     return agentOptions;
   }
 
-  async onMessageCreated(message) {
-    if (message.type !== 'user') return;
+  async handleTableMessageCreated(row, table) {
+    if (row.type !== 'user') return;
 
-    const sessionId = message.session_id;
+    const parsed = parseUserRow(row);
+    if (!parsed || !isDispatchableUserMessage(parsed)) return;
 
-    const parsed =
-      typeof message.message_json === 'string'
-        ? JSON.parse(message.message_json)
-        : message.message_json;
+    const sessionId = row.session_id;
+    const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
+    if (!session || session.archived_at) return;
 
-    // Only respond to human user messages, not tool_result messages we persisted ourselves
-    if (!isHumanUserMessage(parsed)) return;
+    const channel = table === 'session-review-messages' ? 'review' : 'chat';
+    const sdk = channel === 'review' ? session.review_agent_sdk : session.agent_sdk;
+    if (sdk !== 'cursor') return;
 
-    const active = this._activeSessions.get(sessionId);
+    if (channel === 'chat') {
+      if (session.status === 'archiving' || session.status === 'archived') return;
+      if (session.repo_full_name && !session.worktree_path) return;
+    }
+
+    const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
+    const active = this._activeSessions.get(activeKey);
+    const activeTurnId =
+      channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+
     if (active?.isProcessing) {
-      // Force-send: steer the active run mid-turn instead of dropping the message
-      if (message.force && active.currentRun?.steer) {
+      if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
+        await rejectTurnMismatch(this.app, {
+          session,
+          row,
+          channel,
+          activeTurnId,
+          userId: session.user_id,
+        });
+        return;
+      }
+      if (row.force && active.currentRun?.steer && isHumanUserMessageShared(parsed)) {
         const text = extractUserText(parsed);
         if (text) active.currentRun.steer(text).catch(() => {});
       }
       return;
     }
 
-    const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
-    if (
-      !session ||
-      session.archived_at ||
-      session.status === 'archiving' ||
-      session.status === 'archived' ||
-      session.agent_sdk !== 'cursor'
-    )
-      return;
-    if (session.repo_full_name && !session.worktree_path) return;
-
-    const turnModel = resolveTurnModel(message, session);
-    attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel), {
+    const turnModel = resolveTurnModel(row, session);
+    const meta = { turnId: row.turn_id, channel, activeKey };
+    attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel, meta), {
       userId: session.user_id,
       sessionId: session.id,
     }).catch((err) => {
       logger.error({ sessionId, err: err.message }, 'cursor-agent turn failed');
     });
+  }
+
+  /** @deprecated use handleTableMessageCreated */
+  async onMessageCreated(message) {
+    return this.handleTableMessageCreated(message, 'messages');
   }
 
   async _prepareGlobalRulesDir(session) {
@@ -562,74 +409,82 @@ ${body}`,
         // ignore cancellation errors
       }
     }
-    // A stopped turn kills the agent's own background tasks and releases their
-    // monitored-task wake-up obligations. User-started tasks (command panel) and
-    // preview/devproxy tasks keep running. This runs even when no turn is
-    // active: stopping an idle session must still reap the agent's leftover
-    // background tasks (e.g. unmonitored tasks from its last completed turn).
-    try {
-      this.app.service('tasks')?.killSessionAgentTasks(activeKey, 'turn stopped by user');
-    } catch (err) {
-      logger.warn(
-        { sessionId: activeKey, err: err.message },
-        'cursor-agent: failed to kill agent tasks on stop'
-      );
-    }
     this._activeSessions.delete(activeKey);
   }
 
-  async _runTurn(session, parsed, turnModel = {}) {
+  async _runTurn(session, parsed, turnModel = {}, meta = {}) {
     const sessionId = session.id;
     const userId = session.user_id;
+    const channel = meta.channel ?? 'chat';
+    const activeKey = meta.activeKey ?? sessionId;
+    const turnId = meta.turnId ?? null;
     let turnFinishedOk = false;
     // The user stopped the turn (sessions.stop); don't auto-dispatch queued messages.
     let userStopped = false;
     // The turn ended without finishing cleanly (follow-up/wake-up run died silently);
     // the session was settled out of a non-terminal status and queued messages can go.
     let turnEndedUnexpectedly = false;
-    // Notify watcher unsubscribe; assigned once the turn starts (visible to finally).
-    let unwatchNotifies = null;
+    const db = this.app.get('db');
+    if (turnId != null) {
+      const activeField =
+        channel === 'review' ? { active_review_turn_id: turnId } : { active_chat_turn_id: turnId };
+      await db('sessions').where({ id: sessionId }).update(activeField);
+    }
+
+    const writer =
+      turnId != null
+        ? createMessageStreamWriter(this.app, {
+            sessionId,
+            userId,
+            turnId,
+            channel,
+            worktreePath: session.worktree_path,
+          })
+        : null;
 
     const sessionState = {
       isProcessing: true,
       userId,
       currentRun: null,
       abortController: new AbortController(),
+      writer,
+      turnId,
+      channel,
     };
-    this._activeSessions.set(sessionId, sessionState);
+    this._activeSessions.set(activeKey, sessionState);
     const turnUsage = emptyTurnUsage();
     try {
-      await this.app
-        .service('sessions')
-        .patch(sessionId, { status: 'running' }, { user: { id: userId } });
-      await this.app.service('sessions').onTurnStart(sessionId);
-      const tasksService = this.app.service('tasks');
-      // Record task_notification messages the moment monitored tasks report — even
-      // while a run is still streaming. Deliberate kills are skipped (their wake-up
-      // was consumed and the wake_limit notice already covers them), and pattern
-      // bursts coalesce to one record per task until a wake-up consumes the event.
-      const recordedPatternTasks = new Set();
-      unwatchNotifies = tasksService.watchSessionTaskNotifies(sessionId, (event, task) => {
-        if (task._exitConsumed) return;
-        if (event.event === 'pattern') {
-          if (recordedPatternTasks.has(event.task_id)) return;
-          recordedPatternTasks.add(event.task_id);
-        }
-        void this._persistMessage(sessionId, userId, taskNotificationPayload(event, task)).catch(
-          (err) =>
-            logger.warn(
-              { sessionId, task_id: event.task_id, err: err.message },
-              'cursor-agent: failed to persist task notification'
-            )
-        );
-      });
-      const db = this.app.get('db');
-      const agentOptions = await this._sessionAgentOptions(session, turnModel);
+      if (channel !== 'review') {
+        await this.app
+          .service('sessions')
+          .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+        await this.app.service('sessions').onTurnStart(sessionId);
+      }
+      const resumeAgentId =
+        channel === 'review' ? session.review_cursor_agent_id : session.cursor_agent_id;
+      const reviewExtras =
+        channel === 'review'
+          ? (this.app.service('session-review').peekTurnExtras(sessionId) ?? {})
+          : null;
+      const agentOptions =
+        channel === 'review'
+          ? await this.app.service('session-review').buildCursorReviewAgentOptions(session, {
+              model: turnModel.model,
+              modelParams: turnModel.modelParams,
+              continuation: !!resumeAgentId || Boolean(reviewExtras.continuation),
+              extraPrompt: reviewExtras.extraPrompt,
+            })
+          : await this._sessionAgentOptions(session, turnModel);
       const agent = await this.createOrResumeAgent(session, {
         agentOptions,
-        resumeAgentId: session.cursor_agent_id,
-        persistAgentId: (agentId) =>
-          db('sessions').where({ id: sessionId }).update({ cursor_agent_id: agentId }),
+        resumeAgentId,
+        persistAgentId: (agentId) => {
+          const field =
+            channel === 'review'
+              ? { review_cursor_agent_id: agentId }
+              : { cursor_agent_id: agentId };
+          return db('sessions').where({ id: sessionId }).update(field);
+        },
       });
       const userText = extractUserText(parsed);
       const sendOptions = {};
@@ -644,7 +499,8 @@ ${body}`,
         session,
         run,
         turnUsage,
-        turnModel
+        turnModel,
+        { activeKey, channel, writer }
       );
 
       if (mainFinished) {
@@ -664,7 +520,11 @@ ${body}`,
             );
             sessionState.currentRun = followUpRun;
             const { finishedOk: followUpDone, hasBackgroundTask: moreFollowUps } =
-              await this._streamOneRun(session, followUpRun, turnUsage, turnModel);
+              await this._streamOneRun(session, followUpRun, turnUsage, turnModel, {
+                activeKey,
+                channel,
+                writer,
+              });
 
             if (!followUpDone) {
               allDone = false;
@@ -675,84 +535,29 @@ ${body}`,
           }
         }
 
-        // Baguette-monitored background tasks (RunCommand with notifyPattern):
-        // wait for wake-up events and deliver them to the agent as follow-up messages.
-        // The events themselves were already recorded by the notify watcher above.
-        if (allDone) {
-          const wakeupStatus = await drainBackgroundTaskWakeups({
-            signal: sessionState.abortController?.signal ?? null,
-            listMonitoredPending: () =>
-              tasksService
-                .filterTasks({ sessionIds: new Set([sessionId]) })
-                .filter((t) => t.notify_pending),
-            waitForEvent: async (taskIds, opts) => {
-              const event = await tasksService.waitForTaskEvent(taskIds, opts);
-              // Consumed: the task's next match deserves its own notification record.
-              if (event.task_id != null) recordedPatternTasks.delete(event.task_id);
-              return event;
-            },
-            getTask: (taskId) => {
-              const task = tasksService.getTask(taskId);
-              if (!task) return null;
-              const pub = task.toPublic();
-              pub.output_tail = task.tailLogs(WAKE_OUTPUT_TAIL_BYTES);
-              return pub;
-            },
-            setStatus: async (status) => {
-              await this.app
-                .service('sessions')
-                .patch(sessionId, { status }, { user: { id: userId } });
-            },
-            persistNotification: (payload) => this._persistMessage(sessionId, userId, payload),
-            sendFollowUp: async (text) => {
-              // Persist the wake-up as a visible user message, then hand it to the agent.
-              await this._persistMessage(sessionId, userId, {
-                type: 'user',
-                message: { role: 'user', content: text },
-              });
-              const wakeRun = await this._sendWithBusyRetry(agent, session, text, sendOptions);
-              sessionState.currentRun = wakeRun;
-              const { finishedOk } = await this._streamOneRun(
-                session,
-                wakeRun,
-                turnUsage,
-                turnModel
-              );
-              return finishedOk;
-            },
-            killTask: (taskId, opts = {}) => {
-              const task = tasksService.getTask(taskId);
-              return task
-                ? task.kill({ reason: opts.reason ?? 'stopped' })
-                : Promise.resolve(false);
-            },
-          });
-          if (wakeupStatus === 'aborted') {
-            // The user stopped the turn (sessions.stop sets status 'stopped' and
-            // stopTurn already killed the agent's tasks). Don't fight that status,
-            // and don't auto-dispatch queued messages after an explicit stop.
-            userStopped = true;
-            allDone = false;
-            tasksService.killSessionAgentTasks(sessionId, 'turn stopped by user');
-          } else if (wakeupStatus === 'send_failed') {
-            allDone = false;
-          }
-        }
-
         if (allDone) {
           turnFinishedOk = true;
-          await this.app
-            .service('sessions')
-            .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+          if (channel === 'review') {
+            await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
+              sdk: 'cursor',
+              turnUsage,
+              agent,
+              turnModel,
+            });
+          } else {
+            await this.app
+              .service('sessions')
+              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+          }
         } else if (!userStopped) {
           // A follow-up or wake-up run ended without a terminal status (e.g. the SDK
           // stream died silently), so the session may still be marked 'running' or
-          // 'background' with nothing left to run. Settle it so new messages dispatch
+          // 'running' with nothing left to run. Settle it so new messages dispatch
           // instead of queueing forever, and let onTurnComplete drain the queue below.
           // A 'stopped' row (a user stop racing the send failure) is left alone.
           const current = await db('sessions').where({ id: sessionId }).first();
           const status = current?.status;
-          if (status === 'running' || status === 'background') {
+          if (status === 'running') {
             await this.app
               .service('sessions')
               .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
@@ -766,7 +571,7 @@ ${body}`,
         }
       }
 
-      if (turnFinishedOk) {
+      if (turnFinishedOk && channel !== 'review') {
         await this._recordTurnUsage(session, agent, turnUsage, { turnModel }).catch((err) =>
           logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to record turn usage')
         );
@@ -776,10 +581,17 @@ ${body}`,
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId, err: err.message }, 'Cursor session stream error');
         try {
-          await this.app
-            .service('sessions')
-            .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-          await this._persistStatusMessage(sessionId, userId, err.message);
+          if (channel === 'review') {
+            await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+              sdk: 'cursor',
+            });
+            await this.app.service('session-review')._persistStatus(session, err.message);
+          } else {
+            await this.app
+              .service('sessions')
+              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+            await this._persistStatusMessage(sessionId, userId, err.message);
+          }
         } catch {
           // ignore secondary errors
         }
@@ -788,14 +600,19 @@ ${body}`,
           .emit('app:error', { sessionId, message: err.message, user_id: userId });
       }
     } finally {
-      unwatchNotifies?.();
-      this._activeSessions.delete(sessionId);
+      const clearField =
+        channel === 'review' ? { active_review_turn_id: null } : { active_chat_turn_id: null };
+      await db('sessions')
+        .where({ id: sessionId })
+        .update(clearField)
+        .catch(() => {});
+      this._activeSessions.delete(activeKey);
     }
 
     // Agent is fully disposed — safe to start the next queued message as a fresh turn.
     // Runs on clean completion and on the unexpected-end recovery path (never after a
     // user stop), so queued messages don't sit forever when a run dies silently.
-    if (turnFinishedOk || turnEndedUnexpectedly) {
+    if ((turnFinishedOk || turnEndedUnexpectedly) && channel !== 'review') {
       try {
         await this.app.service('sessions').onTurnComplete(sessionId);
       } catch (err) {
@@ -809,20 +626,25 @@ ${body}`,
    * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message.
    * FINISHED is left for the caller to handle (so follow-up runs can be chained first).
    */
-  async _streamOneRun(session, run, turnUsage = emptyTurnUsage(), turnModel = {}) {
+  async _streamOneRun(session, run, turnUsage = emptyTurnUsage(), turnModel = {}, streamOpts = {}) {
     const sessionId = session.id;
     const userId = session.user_id;
+    const channel = streamOpts.channel ?? 'chat';
+    const activeKey = streamOpts.activeKey ?? session.id;
+    const sessionState = this._activeSessions.get(activeKey);
+    const writer =
+      streamOpts.writer ??
+      sessionState?.writer ??
+      createMessageStreamWriter(this.app, {
+        sessionId,
+        userId: session.user_id,
+        turnId: sessionState?.turnId ?? 1,
+        channel: sessionState?.channel ?? 'chat',
+        worktreePath: session.worktree_path,
+      });
 
     return processCursorRunStream(run, {
-      persistMessage: (message) => this._persistMessage(sessionId, userId, message),
-      patchMessage: (id, message) =>
-        this.app
-          .service('messages')
-          .patch(
-            id,
-            { message_json: JSON.stringify(message) },
-            { provider: undefined, user: { id: userId } }
-          ),
+      writer,
       onUsage: (sdkMsg) => {
         addTokenUsage(turnUsage, sdkMsg.usage);
         turnUsage.model = run.model?.id ?? turnModel.model ?? session.model ?? turnUsage.model;
@@ -852,10 +674,17 @@ ${body}`,
           } else {
             statusMsg = `Cursor agent encountered an error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''} Send your message again to continue in a fresh conversation.`;
           }
-          await this.app
-            .service('sessions')
-            .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-          await this._persistStatusMessage(sessionId, userId, statusMsg);
+          if (channel === 'review') {
+            await this.app.service('session-review')._persistStatus(session, statusMsg);
+            await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+              sdk: 'cursor',
+            });
+          } else {
+            await this.app
+              .service('sessions')
+              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+            await this._persistStatusMessage(sessionId, userId, statusMsg);
+          }
           return { break: true, finishedOk: false };
         }
       },
@@ -1088,9 +917,12 @@ Task: ${initialPrompt}`;
 }
 
 export function registerCursorAgentService(app, path = 'cursor-agent') {
-  app.use(path, new CursorAgentService(), {
+  const service = new CursorAgentService();
+  service.setup(app);
+  app.use(path, service, {
     methods: [
       'onMessageCreated',
+      'handleTableMessageCreated',
       'stopSession',
       'stopTurn',
       'runTurn',

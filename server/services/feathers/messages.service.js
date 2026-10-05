@@ -2,6 +2,9 @@ import { KnexService } from '@feathersjs/knex';
 import { requireUser, scopeBySessionUser } from './hooks.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
 import { attachSessionTurnModelFields, turnModelCreateFields } from '../../../shared/turn-model.js';
+import { assignTurnOnUserMessageCreate } from '../../../shared/turn-assignment.js';
+import { dispatchCreatedMessageToAgents } from '../agent-message-dispatch.js';
+import { scopeAgentType } from './session-review-messages.service.js';
 
 /**
  * Messages service (table: session_messages). Scoped by session; access restricted to sessions owned by params.user.
@@ -56,12 +59,6 @@ async function queueIfRunning(context) {
   const session = await db('sessions').where({ id: context.data.session_id }).first();
   if (!session) return context;
 
-  // While the session waits on monitored background tasks, every send — force
-  // included, since nothing can be steered into the still-open turn — is queued.
-  // Queued messages are dispatched by onTurnComplete only after the whole wake-up
-  // drain finishes and the session completes, so they never race the follow-ups.
-  if (session.status === 'background') return queueTurnMessage(context);
-
   if (context.params._force) return context;
   // Queue while the agent is mid-turn, and while the worktree is still being created
   // so a prompt typed immediately after create is not dispatched with no cwd.
@@ -70,25 +67,29 @@ async function queueIfRunning(context) {
   return queueTurnMessage(context);
 }
 
-async function afterCreateNotifySessionsAndAgent(context) {
+async function afterCreateNotifySessions(context) {
   if (!context.result || context.result.queued) return context;
   const message = context.params._force ? { ...context.result, force: true } : context.result;
   await context.app.service('sessions').onMessageCreated(message);
-  const session = await context.app.get('db')('sessions').where({ id: message.session_id }).first();
-  if (session?.agent_sdk === 'cursor') {
-    await context.app.service('cursor-agent').onMessageCreated(message);
-  } else {
-    await context.app.service('claude-agent').onMessageCreated(message);
-  }
   return context;
+}
+
+async function afterCreateDispatchAgents(context) {
+  if (!context.result || context.result.queued) return context;
+  await dispatchCreatedMessageToAgents(context.app, context.result, 'messages');
+  return context;
+}
+
+async function assignChatTurn(context) {
+  return assignTurnOnUserMessageCreate(context, 'chat');
 }
 
 export const messagesHooks = {
   before: {
-    all: [requireUser, scopeBySessionUser],
-    create: [extractForceParam, snapshotSessionModelOnUserMessage, queueIfRunning],
+    all: [requireUser, scopeBySessionUser, scopeAgentType('builder')],
+    create: [extractForceParam, assignChatTurn, snapshotSessionModelOnUserMessage, queueIfRunning],
   },
   after: {
-    create: [afterCreateNotifySessionsAndAgent],
+    create: [afterCreateNotifySessions, afterCreateDispatchAgents],
   },
 };

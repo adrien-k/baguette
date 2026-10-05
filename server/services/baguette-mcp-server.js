@@ -854,106 +854,57 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     },
 
     {
-      name: 'RunCommand',
+      name: 'RunProjectCommand',
       description:
-        'The generic way to run bash/shell commands in the session working directory (the repo worktree for repo sessions; the shared repos folder for global sessions) — for any ad-hoc command pass a raw `command`; for a command defined in .baguette.yaml pass its `label` (a task key from ListProjectCommands; labels are not available in global sessions). Prefer this over the built-in shell tool: commands run with the session env, show up in the command panel and ListRunningTasks, and background/monitored runs integrate with wake-ups and stop-turn cleanup. By default (background: false) waits for the command to finish and returns exitCode/stdoutLines/stderrLines inline. Pass background: true to run detached in the background — returns a taskId immediately (poll with ReadTaskOutput or TaskStatus, stop with KillTask, or block on its next event with AwaitTask). Pass notifyPattern (a regex tested against each output line) to be monitored: you will be woken with a task notification when it matches or when the task exits, with the matched line and recent output — the session waits in the background until monitored tasks report. notifyPattern requires background: true.',
+        'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline. detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, stop with KillTask. Do not use Shell background mode or background subagents.',
       schema: {
-        label: z
-          .string()
-          .optional()
-          .describe('Task key exactly as returned by ListProjectCommands'),
-        command: z
-          .string()
-          .optional()
-          .describe(
-            'Raw bash command to run in the session working directory (the repo worktree, or the shared repos folder for global sessions) — the generic way to run ad-hoc shell commands (a label is used when a ListProjectCommands entry fits)'
-          ),
+        label: z.string().describe('Task key exactly as returned by ListProjectCommands'),
         args: z
           .array(z.string())
           .optional()
           .describe(
-            'Extra arguments appended to the command (e.g. a test file path, name pattern, or CLI flag)'
+            'Extra arguments appended to the command (file path, test pattern, flags, etc.)'
           ),
         env: z
           .record(z.string())
           .optional()
-          .describe(
-            'Extra environment variables to set for this command run, merged on top of session env'
-          ),
-        background: z
+          .describe('Extra environment variables merged on top of session env'),
+        detach: z
           .boolean()
           .optional()
           .describe(
-            'If true, run detached in the background and return a taskId immediately (poll with ReadTaskOutput/TaskStatus, stop with KillTask, or wait on it with AwaitTask). Default false: wait for the command to exit and return exitCode/stdoutLines/stderrLines inline. Required when notifyPattern is set.'
-          ),
-        notifyPattern: z
-          .string()
-          .optional()
-          .describe(
-            'Regex tested against each output line; when it matches (or the task exits) you are woken with a task notification. Requires background: true. Example: "Tests passed|error|ready on"'
+            'If true, run as a detached baguette task and return taskId immediately (use ReadTaskOutput/TaskStatus). Default false: wait for exit and return output inline.'
           ),
       },
-      handler: async ({
-        label,
-        command,
-        args = [],
-        env: extraEnv,
-        background = false,
-        notifyPattern,
-      }) => {
-        if (!label && !command) {
-          return fail('Provide a label from ListProjectCommands or a raw command');
+      handler: async ({ label, args = [], env: extraEnv, detach = false }) => {
+        if (isGlobalSession(session)) {
+          return fail('RunProjectCommand requires a repo session with a .baguette.yaml worktree');
         }
-        if (notifyPattern && !background) {
-          return fail('notifyPattern requires background: true');
-        }
-        if (notifyPattern && session.agent_sdk !== 'cursor') {
-          // Only the Cursor path delivers wake-ups; Claude has native background tasks.
-          return fail('notifyPattern wake-ups are currently only supported for Cursor sessions');
+        let tasks;
+        try {
+          const cfg = await loadBaguetteConfig(session.worktree_path);
+          if (cfg?.error) throw new Error(cfg.error);
+          tasks = cfg ? getAvailableTasks(cfg) : null;
+        } catch (err) {
+          return fail(err.message);
         }
 
-        const hasLabel = Boolean(label);
-        if (hasLabel) {
-          if (isGlobalSession(session)) {
-            return fail(
-              'Label runs need a repo session with a .baguette.yaml — pass a raw command instead'
-            );
-          }
-          let tasks;
-          try {
-            const cfg = await loadBaguetteConfig(session.worktree_path);
-            if (cfg?.error) throw new Error(cfg.error);
-            tasks = cfg ? getAvailableTasks(cfg) : null;
-          } catch (err) {
-            return fail(err.message);
-          }
-
-          if (!tasks) return fail('Baguette config not found');
-
-          if (!tasks[label]) {
-            return fail(`Unknown command label: ${label}`);
-          }
-        }
+        if (!tasks) return fail('Baguette config not found');
+        if (!tasks[label]) return fail(`Unknown command label: ${label}`);
 
         const createData = {
           session_id: session.id,
-          ...(hasLabel ? { task_key: label } : { command }),
+          task_key: label,
           args,
           extra_env: extraEnv,
-          ...(notifyPattern ? { notify_pattern: notifyPattern } : {}),
         };
 
-        if (background) {
+        if (detach) {
           try {
             const task = await app
               .service('tasks')
               .create(createData, { user: { id: session.user_id } });
-            return ok({
-              taskId: task.id,
-              label: task.label,
-              status: task.status,
-              notify_pattern: task.notify_pattern ?? null,
-            });
+            return ok({ taskId: task.id, label: task.label, status: task.status });
           } catch (err) {
             return fail(err.message);
           }
@@ -993,7 +944,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'ListRunningTasks',
       description:
-        'List currently running baguette tasks for this session, including their labels, assigned ports, and whether they are monitored (notify_pattern) for wake-ups.',
+        'List currently running baguette tasks for this session, including their labels and assigned ports.',
       schema: {},
       handler: async () => {
         const tasks = app.service('tasks').filterTasks({
@@ -1001,15 +952,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           status: 'running',
         });
         return ok({
-          tasks: tasks.map((t) => ({
-            id: t.id,
-            label: t.label,
-            status: t.status,
-            ports: t.ports,
-            origin: t.origin,
-            notify_pattern: t.notify_pattern ?? null,
-            pattern_matched: t.pattern_matched ?? false,
-          })),
+          tasks: tasks.map((t) => ({ id: t.id, label: t.label, status: t.status, ports: t.ports })),
         });
       },
     },
@@ -1017,9 +960,9 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'TaskStatus',
       description:
-        'Get the status of a baguette task by its ID, including whether each assigned port is currently listening. Useful for checking if a dev server is ready after starting it with RunCommand.',
+        'Get the status of a baguette task by its ID, including whether each assigned port is currently listening. Useful for checking if a dev server is ready after starting it with RunProjectCommand (detach: true).',
       schema: {
-        taskId: z.number().int().describe('Task ID from RunCommand or ListRunningTasks'),
+        taskId: z.number().int().describe('Task ID from RunProjectCommand or ListRunningTasks'),
       },
       handler: async ({ taskId }) => {
         const task = app.service('tasks').getTask(taskId);
@@ -1096,33 +1039,6 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
             endByte: actualEnd,
             log,
           });
-        } catch (err) {
-          return fail(err.message);
-        }
-      },
-    },
-
-    {
-      name: 'AwaitTask',
-      description:
-        'Block until a baguette task reports its next event: a new notifyPattern match (when the task was started with one) or the task exits. Returns event ("pattern" | "exit" | "timeout"), the task status, exit_code, matched_line and a short output tail — usually avoiding a follow-up ReadTaskOutput. Events are consumed once: each call only reports what happened since the previous await. Use it to wait in-turn for a background command instead of polling TaskStatus/ReadTaskOutput.',
-      schema: {
-        taskId: z.number().int().describe('Task ID from RunCommand or ListRunningTasks'),
-        timeoutMs: z
-          .number()
-          .int()
-          .optional()
-          .describe(
-            'Maximum time to wait, in milliseconds (default and cap: 600000). Returns event: "timeout" when nothing fires in time.'
-          ),
-      },
-      handler: async ({ taskId, timeoutMs }) => {
-        try {
-          const result = await app.service('tasks').awaitTask(taskId, {
-            user: { id: session.user_id },
-            query: { timeout_ms: timeoutMs },
-          });
-          return ok(result);
         } catch (err) {
           return fail(err.message);
         }

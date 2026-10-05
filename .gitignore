@@ -9,4 +9,3 @@ data/
 config/credentials/
 .kamal/.env
 fly.toml
-data/

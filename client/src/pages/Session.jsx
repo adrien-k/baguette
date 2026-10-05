@@ -80,6 +80,7 @@ import ReviewInProgressBadge, { isReviewInProgress } from '../components/ReviewI
 import { SessionLoopBadge, SessionLoopIcon } from '../components/SessionLoopIndicator.jsx';
 import { BANNER_DANGER } from '../utils/ui.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
+import { parseMessageRow } from '@baguette/shared/parse-message-row.js';
 
 const SIDE_PANEL_WIDTH_DEFAULT = 360;
 const SIDE_PANEL_WIDTH_MIN = 240;
@@ -101,67 +102,19 @@ function clampSidePanelWidth(width, viewportWidth, { sessionsSidebarOpen }) {
   return Math.round(Math.min(max, Math.max(SIDE_PANEL_WIDTH_MIN, width)));
 }
 
-/**
- * Processes a flat list of messages from session history:
- * - Collects tool results from user messages that consist only of tool_result blocks
- * - Stitches those results onto the matching tool_use blocks in assistant messages
- * - Filters out the standalone tool_result user messages (they'd render as noise)
- */
-function reconcileMessages(messages) {
-  const toolResults = new Map();
-  const visible = [];
-
-  for (const msg of messages) {
-    if (msg.type === 'user' && Array.isArray(msg.message?.content)) {
-      const blocks = msg.message.content;
-      if (blocks.length > 0 && blocks.every((b) => b.type === 'tool_result')) {
-        for (const block of blocks) {
-          const result =
-            typeof block.content === 'string'
-              ? block.content
-              : Array.isArray(block.content)
-                ? block.content
-                    .map((c) => (c.type === 'text' ? c.text : JSON.stringify(c)))
-                    .join('\n')
-                : JSON.stringify(block.content);
-          toolResults.set(block.tool_use_id, { result, isError: !!block.is_error });
-        }
-        continue; // don't add to visible list
-      }
-    }
-    visible.push(msg);
-  }
-
-  const reconciled =
-    toolResults.size === 0
-      ? visible
-      : visible.map((msg) => {
-          if (msg.type !== 'assistant' || !msg.message?.content) return msg;
-          if (!msg.message.content.some((b) => b.type === 'tool_use')) return msg;
-          return {
-            ...msg,
-            message: {
-              ...msg.message,
-              content: msg.message.content.map((b) => {
-                if (b.type !== 'tool_use') return b;
-                const tr = toolResults.get(b.id);
-                return tr ? { ...b, ...tr } : b;
-              }),
-            },
-          };
-        });
-
+/** Chat display enrichments (TodoWrite collapse, sub-agent activity). Typed rows need no tool-result stitch. */
+function enrichChatMessages(messages) {
   // Find the last TodoWrite block reference so we can hide all previous ones
   let lastTodoWriteBlock = null;
-  for (const msg of reconciled) {
+  for (const msg of messages) {
     if (msg.type !== 'assistant' || !msg.message?.content) continue;
     for (const b of msg.message.content) {
       if (b.type === 'tool_use' && b.name === 'TodoWrite') lastTodoWriteBlock = b;
     }
   }
   const withHiddenTodos = !lastTodoWriteBlock
-    ? reconciled
-    : reconciled.map((msg) => {
+    ? messages
+    : messages.map((msg) => {
         if (msg.type !== 'assistant' || !msg.message?.content) return msg;
         if (
           !msg.message.content.some(
@@ -243,14 +196,6 @@ function reconcileMessages(messages) {
         },
       };
     });
-}
-
-function parseMessageRow(row) {
-  try {
-    return { ...row, ...JSON.parse(row.message_json || '{}'), id: row.id };
-  } catch {
-    return { ...row, type: row.type, id: row.id };
-  }
 }
 
 function useMediaQuery(query) {
@@ -521,7 +466,7 @@ export default function Session() {
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
 
   const rawMessages = useMemo(() => (hookMessages || []).map(parseMessageRow), [hookMessages]);
-  const messages = useMemo(() => reconcileMessages(rawMessages), [rawMessages]);
+  const messages = useMemo(() => enrichChatMessages(rawMessages), [rawMessages]);
   const systemPrompt = useMemo(
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
     [rawMessages]

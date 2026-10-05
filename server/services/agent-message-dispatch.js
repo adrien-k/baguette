@@ -1,0 +1,66 @@
+import { isBaguetteUserMessage, isHumanUserMessage } from '../../shared/turn-model.js';
+import { normalizeUserPayloadForStorage } from '../../shared/session-message-mappers.js';
+import { persistTypedMessage } from './message-writer-factory.js';
+
+/**
+ * @param {object} row - DB message row
+ * @param {'messages' | 'session-review-messages'} table
+ */
+export function parseUserRow(row) {
+  try {
+    return normalizeUserPayloadForStorage(JSON.parse(row.message_json || '{}'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Route a persisted user row to agent services (each ignores non-matching SDK).
+ * @param {import('@feathersjs/feathers').Application} app
+ * @param {object} row
+ * @param {'messages' | 'session-review-messages'} table
+ */
+export async function dispatchCreatedMessageToAgents(app, row, table) {
+  if (row.type !== 'user') return;
+  const session = await app.get('db')('sessions').where({ id: row.session_id }).first();
+  if (!session) return;
+  const sdk =
+    table === 'session-review-messages'
+      ? (session.review_agent_sdk ?? session.agent_sdk)
+      : session.agent_sdk;
+  const agent = app.service(sdk === 'cursor' ? 'cursor-agent' : 'claude-agent');
+  if (agent?.handleTableMessageCreated) {
+    await agent.handleTableMessageCreated(row, table);
+  }
+}
+
+/**
+ * Shared turn-id validation and reject system message.
+ * @param {import('@feathersjs/feathers').Application} app
+ */
+export async function rejectTurnMismatch(app, { session, row, channel, activeTurnId, userId }) {
+  const text =
+    `Cannot accept message for turn ${row.turn_id}: agent is still processing turn ${activeTurnId}. ` +
+    'Wait for the current turn to finish or stop the session.';
+  await persistTypedMessage(
+    app,
+    {
+      sessionId: session.id,
+      userId,
+      turnId: row.turn_id,
+      channel,
+    },
+    {
+      type: 'system',
+      subtype: 'status',
+      status: text,
+    }
+  );
+}
+
+/**
+ * @param {object} parsed
+ */
+export function isDispatchableUserMessage(parsed) {
+  return isHumanUserMessage(parsed) || isBaguetteUserMessage(parsed);
+}

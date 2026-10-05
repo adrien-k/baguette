@@ -189,9 +189,9 @@ describe('Messages service - create', () => {
     expect(session.model).toBe('opus');
   });
 
-  it('calls sessions.onMessageCreated and claude-agent.onMessageCreated after create', async () => {
-    const onMessageCreated = app.service('claude-agent').onMessageCreated;
-    const msg = await app.service('messages').create(
+  it('calls sessions.onMessageCreated after create', async () => {
+    const sessionsOnMessage = vi.spyOn(app.service('sessions'), 'onMessageCreated');
+    await app.service('messages').create(
       {
         session_id: sessionId,
         type: 'user',
@@ -199,8 +199,8 @@ describe('Messages service - create', () => {
       },
       params({ id: userId })
     );
-    expect(onMessageCreated).toHaveBeenCalledOnce();
-    expect(onMessageCreated).toHaveBeenCalledWith(msg, expect.anything());
+    expect(sessionsOnMessage).toHaveBeenCalledOnce();
+    sessionsOnMessage.mockRestore();
   });
 
   it("rejects creating a message for another user's session", async () => {

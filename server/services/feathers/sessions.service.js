@@ -1149,14 +1149,15 @@ export class SessionsService extends KnexService {
   async onMessageCreated(message) {
     const sessionId = message.session_id;
     if (!sessionId) return;
-    if (message.type !== 'user' && message.type !== 'result') return;
+    if (message.type !== 'user' && message.type !== 'result' && message.type !== 'turn_result')
+      return;
 
     let status;
     let result = null;
     if (message.type === 'user') {
       status = 'running';
-    } else if (message.type === 'result') {
-      // Chat status is applied once when the Claude turn ends. This path only records usage.
+    } else if (message.type === 'result' || message.type === 'turn_result') {
+      // Chat status is applied once when the agent turn ends. This path only records usage.
       try {
         result = JSON.parse(message.message_json || '{}');
       } catch {
@@ -1261,6 +1262,10 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (session) {
+      await db('sessions')
+        .where({ id: sessionId })
+        .update({ active_chat_turn_id: null, active_review_turn_id: null })
+        .catch(() => {});
       this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
     }
     const queued = await db('queued_messages')

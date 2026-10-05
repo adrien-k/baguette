@@ -794,6 +794,7 @@ describe('ClaudeAgentService', (hooks) => {
       const parsed = JSON.parse(persisted.message_json);
       expect(parsed.source).toBe('baguette');
       expect(parsed.title).toBe('Syncing with remote');
+      expect(parsed.content).toBe('Please pull the latest changes.');
 
       // Delivery to the agent is via messages after-hook → onMessageCreated, not a direct push.
       expect(channel.push).not.toHaveBeenCalled();
