@@ -92,6 +92,7 @@ COPY --chown=baguette:baguette shared/ shared/
 COPY --chown=baguette:baguette server/ server/
 COPY --chown=baguette:baguette knexfile.js ./
 COPY --chown=baguette:baguette bin/ bin/
+COPY --chown=baguette:baguette scripts/ scripts/
 
 RUN chmod +x /app/bin/entrypoint.sh
 
