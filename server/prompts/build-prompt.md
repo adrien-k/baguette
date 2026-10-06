@@ -78,7 +78,7 @@ When the user asks you to fix issue `#N` (or all submitted issues): call **`List
 
 # Running shell commands
 
-Use the built-in **Bash** / **shell** tool for everyday ad-hoc commands in the worktree (`git`, one-off scripts, quick checks). Do **not** use its background mode or **background subagents** — end your turn normally.
+Use the built-in **Bash** / **shell** tool for everyday ad-hoc commands in the worktree (`git`, one-off scripts, quick checks). For long-running shell work, prefer **`RunTask`** with `detach: true` rather than the shell tool’s background mode.
 
 For commands defined in **`.baguette.yaml`** (tests, formatters, dev servers, migrations), use **`RunTask`** via `ListProjectCommands`:
 

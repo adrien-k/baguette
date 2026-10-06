@@ -17,7 +17,11 @@ import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
-import { processCursorRunStream } from '../cursor/cursor-sdk-turn.ts';
+import {
+  processCursorRunStream,
+  type CursorStreamStatusCallback,
+  type CursorStreamUsageCallback,
+} from '../cursor/cursor-sdk-turn.ts';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
 import {
   isHumanUserMessage as isHumanUserMessageShared,
@@ -73,6 +77,9 @@ type StreamOneRunOpts = {
   activeKey?: string | number;
   channel?: MessageChannel;
   writer?: MessageStreamWriter | null;
+  abortSignal?: AbortSignal;
+  onUsage?: CursorStreamUsageCallback;
+  onStatus?: CursorStreamStatusCallback;
 };
 
 type StreamOneRunResult = { finishedOk: boolean; hasBackgroundTask: boolean };
@@ -491,13 +498,26 @@ ${body}`,
       });
       const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
       sessionState.currentRun = run;
-      const { finishedOk } = await processCursorRunStream(run, {
-        writer,
-        onUsage,
-        onStatus,
-        abortSignal: controller.signal,
-      });
-      outcome = finishedOk ? 'completed' : 'failed';
+      const turnUsage = emptyTurnUsage() as TurnUsage;
+      const { allFinishedOk } = await this._streamRunChainWithFollowUps(
+        session,
+        agent,
+        run,
+        turnUsage,
+        { model: session.model },
+        {
+          activeKey: key,
+          channel: 'chat',
+          writer,
+          abortSignal: controller.signal,
+          onUsage,
+          onStatus,
+        },
+        (nextRun) => {
+          sessionState.currentRun = nextRun;
+        }
+      );
+      outcome = allFinishedOk ? 'completed' : 'failed';
       return { outcome, agent, run };
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -623,60 +643,31 @@ ${body}`,
       const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
       sessionState.currentRun = run;
 
-      const { finishedOk: mainFinished, hasBackgroundTask } = await this._streamOneRun(
+      const { allFinishedOk } = await this._streamRunChainWithFollowUps(
         session,
+        agent,
         run,
         turnUsage,
         turnModel,
-        { activeKey, channel, writer }
+        { activeKey, channel, writer },
+        (nextRun) => {
+          sessionState.currentRun = nextRun;
+        }
       );
 
-      if (mainFinished) {
-        let allDone = true;
-        let lastCompletedRunId: string = run.id;
-
-        // If a background task was spawned, poll for the agent-scheduled follow-up run.
-        if (hasBackgroundTask) {
-          const MAX_FOLLOW_UPS = 10;
-          for (let i = 0; i < MAX_FOLLOW_UPS; i++) {
-            const followUpRun = await this._findFollowUpRun(session, agent, lastCompletedRunId);
-            if (!followUpRun) break;
-
-            logger.info(
-              { sessionId, followUpRunId: followUpRun.id, followUpIndex: i },
-              'cursor-agent: processing follow-up run from background task'
-            );
-            sessionState.currentRun = followUpRun;
-            const { finishedOk: followUpDone, hasBackgroundTask: moreFollowUps } =
-              await this._streamOneRun(session, followUpRun, turnUsage, turnModel, {
-                activeKey,
-                channel,
-                writer,
-              });
-
-            if (!followUpDone) {
-              allDone = false;
-              break;
-            }
-            lastCompletedRunId = followUpRun.id;
-            if (!moreFollowUps) break;
-          }
-        }
-
-        if (allDone) {
-          turnFinishedOk = true;
-          if (channel === 'review') {
-            await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
-              sdk: 'cursor',
-              turnUsage,
-              agent,
-              turnModel,
-            });
-          } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
-          }
+      if (allFinishedOk) {
+        turnFinishedOk = true;
+        if (channel === 'review') {
+          await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
+            sdk: 'cursor',
+            turnUsage,
+            agent,
+            turnModel,
+          });
+        } else {
+          await this.app
+            .service('sessions')
+            .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
         }
       }
 
@@ -778,13 +769,20 @@ ${body}`,
         modelParams: turnModel.modelParams,
       });
 
+    const { abortSignal, onUsage: onUsageOverride, onStatus: onStatusOverride } = streamOpts;
+
     return processCursorRunStream(run, {
       writer,
+      abortSignal,
       onUsage: (sdkMsg: SDKUsageMessage) => {
+        onUsageOverride?.(sdkMsg);
         addTokenUsage(turnUsage, sdkMsg.usage);
         turnUsage.model = run.model?.id ?? turnModel.model ?? session.model ?? turnUsage.model;
       },
       onStatus: async (sdkMsg: SDKStatusMessage) => {
+        const custom = await onStatusOverride?.(sdkMsg);
+        if (custom?.break) return custom;
+
         const { status } = sdkMsg;
         if (status === 'FINISHED') {
           return { break: true, finishedOk: true };
@@ -827,8 +825,47 @@ ${body}`,
   }
 
   /**
+   * Stream the initial Cursor run and any follow-up runs scheduled for background subagents.
+   */
+  async _streamRunChainWithFollowUps(
+    session: AgentSessionRow,
+    agent: SDKAgent,
+    firstRun: Run,
+    turnUsage: TurnUsage,
+    turnModel: { model?: string | null; modelParams?: unknown },
+    streamOpts: StreamOneRunOpts,
+    onFollowUpRun?: (run: Run) => void
+  ): Promise<{ allFinishedOk: boolean }> {
+    const sessionId = session.id;
+    let lastCompletedRunId = firstRun.id;
+    const first = await this._streamOneRun(session, firstRun, turnUsage, turnModel, streamOpts);
+
+    if (!first.finishedOk) return { allFinishedOk: false };
+
+    let hasBackgroundTask = first.hasBackgroundTask;
+
+    const MAX_FOLLOW_UPS = 10;
+    for (let i = 0; hasBackgroundTask && i < MAX_FOLLOW_UPS; i++) {
+      const followUpRun = await this._findFollowUpRun(session, agent, lastCompletedRunId);
+      if (!followUpRun) break;
+
+      logger.info(
+        { sessionId, followUpRunId: followUpRun.id, followUpIndex: i },
+        'cursor-agent: processing follow-up run from background task'
+      );
+      onFollowUpRun?.(followUpRun);
+      const next = await this._streamOneRun(session, followUpRun, turnUsage, turnModel, streamOpts);
+      if (!next.finishedOk) return { allFinishedOk: false };
+      lastCompletedRunId = followUpRun.id;
+      hasBackgroundTask = next.hasBackgroundTask;
+    }
+
+    return { allFinishedOk: true };
+  }
+
+  /**
    * Polls Agent.listRuns for a follow-up run created by a background task.
-   * Returns the run if found within the timeout, null otherwise.
+   * Returns the run if found within the idle timeout, null otherwise.
    */
   async _findFollowUpRun(
     session: AgentSessionRow,
@@ -837,15 +874,17 @@ ${body}`,
   ): Promise<Run | null> {
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
     const store = await this.openSessionStore(session);
-    const POLLS = 8;
-    const DELAY_MS = 2000;
+    const INTERVAL_MS = 2000;
+    const MAX_IDLE_POLLS = 30;
 
-    for (let i = 0; i < POLLS; i++) {
-      if (i > 0) await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+    let idlePolls = 0;
+    while (idlePolls < MAX_IDLE_POLLS) {
+      if (idlePolls > 0) await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
       try {
         const { items } = await Agent.listRuns(agent.agentId, { cwd, store });
         const followUp = items.find((r) => r.status === 'running' && r.id !== completedRunId);
         if (followUp) return followUp;
+        idlePolls += 1;
       } catch (err) {
         logger.warn(
           { sessionId: session.id, err: (err as Error).message },

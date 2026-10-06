@@ -459,7 +459,7 @@ describe('ClaudeAgentService', (hooks) => {
       });
 
       // Intermediate notifications (status !== 'completed'/'failed'/'error') must not trigger
-      // awaitingAutoResume or a status: 'running' patch. Only the final 'completed' one should.
+      // an extra status: 'running' patch. Only the final 'completed' one may extend the stream.
       const mockIterable = makeAsyncIterable([
         {
           type: 'system',
@@ -485,7 +485,7 @@ describe('ClaudeAgentService', (hooks) => {
           status: 'running',
           summary: 'still going 2',
         },
-        // Final terminal notification — this one should trigger awaitingAutoResume
+        // Final terminal notification — keep consuming for SDK auto-continuation
         {
           type: 'system',
           subtype: 'task_notification',

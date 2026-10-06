@@ -10,9 +10,24 @@
  * in-flight count.
  */
 
-import type { Run, SDKStatusMessage, SDKUsageMessage } from '@cursor/sdk';
+import type { Run, SDKMessage, SDKStatusMessage, SDKUsageMessage } from '@cursor/sdk';
 import { isCursorPlanTool, mapCursorEvent } from './cursor-mapping.ts';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
+
+function taskToolArgsBackgrounded(args: unknown): boolean {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return false;
+  const a = args as Record<string, unknown>;
+  return a.run_in_background === true || a.runInBackground === true;
+}
+
+/** True when the SDK signals a background subagent that may schedule a follow-up run. */
+export function cursorSdkMessageIndicatesBackgroundWork(sdkMsg: SDKMessage): boolean {
+  if (sdkMsg.type === 'task') return true;
+  if (sdkMsg.type !== 'tool_call') return false;
+  const name = sdkMsg.name;
+  if (name !== 'Task' && name !== 'task') return false;
+  return taskToolArgsBackgrounded(sdkMsg.args);
+}
 
 export type CursorStreamStatusCallback = (
   sdkMsg: SDKStatusMessage
@@ -60,7 +75,7 @@ export async function processCursorRunStream(
       }
     }
 
-    if (sdkMsg.type === 'task') hasBackgroundTask = true;
+    if (cursorSdkMessageIndicatesBackgroundWork(sdkMsg)) hasBackgroundTask = true;
 
     if (sdkMsg.type === 'usage') {
       onUsage?.(sdkMsg);

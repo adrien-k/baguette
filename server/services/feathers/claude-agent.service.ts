@@ -95,7 +95,6 @@ type ConsumeQueryOpts = {
   onInitSessionId?: (id: string) => Promise<void>;
   onResult?: (message: SDKMessage) => Promise<void>;
   onStreamError?: (err: Error) => Promise<void>;
-  onBackgroundAutoResume?: () => Promise<void>;
   trackBackgroundTasks?: boolean;
   activeKey?: string | number;
   connectionClosedHint?: string;
@@ -770,10 +769,6 @@ export class ClaudeAgentService {
             sdk: 'claude',
           });
         },
-        onBackgroundAutoResume: async () => {
-          if (isReview) return;
-          await this.app.service('sessions').onTurnStart(sessionId);
-        },
         trackBackgroundTasks: true,
         activeKey,
       }
@@ -833,7 +828,6 @@ export class ClaudeAgentService {
       onInitSessionId,
       onResult,
       onStreamError,
-      onBackgroundAutoResume,
       trackBackgroundTasks = false,
       activeKey,
       connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
@@ -854,7 +848,6 @@ export class ClaudeAgentService {
       persistStatus,
       onInitSessionId,
       onResult,
-      onBackgroundAutoResume,
       trackBackgroundTasks,
       connectionClosedHint,
       onStreamError: async (err) => {

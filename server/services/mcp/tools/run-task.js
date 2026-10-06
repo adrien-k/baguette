@@ -9,7 +9,7 @@ export function createRunTaskTool(ctx) {
   return {
     name: 'RunTask',
     description:
-      'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline. detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, await completion with AwaitDetachedTask, stop with KillTask. Before ending your turn, usually AwaitDetachedTask or KillTask any detached tasks you started (except dev servers you intend to keep). Do not use Shell background mode or background subagents.',
+      'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline. detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, await completion with AwaitDetachedTask, stop with KillTask. Before ending your turn, usually AwaitDetachedTask or KillTask any detached tasks you started (except dev servers you intend to keep).',
     schema: {
       label: z.string().describe('Task key exactly as returned by ListProjectCommands'),
       args: z

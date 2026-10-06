@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { processCursorRunStream } from '../cursor/cursor-sdk-turn.ts';
+import {
+  cursorSdkMessageIndicatesBackgroundWork,
+  processCursorRunStream,
+} from '../cursor/cursor-sdk-turn.ts';
 import { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import { cursorBuildToolCallStart, cursorBuildToolCallComplete } from '../cursor/cursor-mapping.ts';
 
@@ -34,7 +37,60 @@ function mockWriter() {
   return { writer, rows };
 }
 
+describe('cursorSdkMessageIndicatesBackgroundWork', () => {
+  it('returns true for SDK task events', () => {
+    expect(cursorSdkMessageIndicatesBackgroundWork({ type: 'task', text: 'spawned' })).toBe(true);
+  });
+
+  it('returns true for Task tool calls with run_in_background', () => {
+    expect(
+      cursorSdkMessageIndicatesBackgroundWork({
+        type: 'tool_call',
+        name: 'Task',
+        status: 'running',
+        args: { run_in_background: true },
+      })
+    ).toBe(true);
+  });
+
+  it('returns false for foreground Task tool calls', () => {
+    expect(
+      cursorSdkMessageIndicatesBackgroundWork({
+        type: 'tool_call',
+        name: 'Task',
+        status: 'running',
+        args: { description: 'explore' },
+      })
+    ).toBe(false);
+  });
+});
+
 describe('processCursorRunStream', () => {
+  it('sets hasBackgroundTask when a background Task tool call runs', async () => {
+    const { writer } = mockWriter();
+    const { hasBackgroundTask } = await processCursorRunStream(
+      mockRun([
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'task-1',
+          name: 'Task',
+          args: { run_in_background: true, description: 'sub' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        { type: 'status', status: 'FINISHED' },
+      ]),
+      {
+        writer,
+        onStatus: async (sdkMsg) => {
+          if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
+        },
+      }
+    );
+    expect(hasBackgroundTask).toBe(true);
+  });
+
   it('buffers assistant text chunks into one message', async () => {
     const { writer, rows } = mockWriter();
     await processCursorRunStream(
