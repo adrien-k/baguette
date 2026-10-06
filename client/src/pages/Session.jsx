@@ -465,13 +465,11 @@ export default function Session() {
   const [showBaguetteConfigModal, setShowBaguetteConfigModal] = useState(false);
   const [error, setError] = useState(null);
   const showReviewerSidePanelTab = useMemo(() => {
+    if (!sessionId || isNewSessionRoute || isGlobalSessionsRoute) return false;
     const s = session ?? sessionFromHook;
-    if (!sessionId || isGlobalSession(s ?? {})) return false;
-    const status = s?.review_status;
-    return (
-      status === 'running' || status === 'completed' || status === 'failed' || status === 'stopped'
-    );
-  }, [sessionId, session, sessionFromHook]);
+    if (s && isGlobalSession(s)) return false;
+    return true;
+  }, [sessionId, isNewSessionRoute, isGlobalSessionsRoute, session, sessionFromHook]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
