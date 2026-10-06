@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { messagesService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
+import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 
 export type AskUserQuestion = {
   question: string;
@@ -47,10 +48,12 @@ function isAnswerComplete(questions: AskUserQuestion[], answers: AnswerState[]):
 export default function AskUserQuestionBlock({
   questions: questionsProp,
   sessionId,
+  session,
   userReplied = false,
 }: {
   questions?: AskUserQuestion[] | null;
   sessionId?: number | null;
+  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   const questions = questionsProp ?? [];
@@ -66,6 +69,7 @@ export default function AskUserQuestionBlock({
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
+      ...builderMessageCreateFields(session ?? {}),
     });
 
   const toggle = (i: number, label: string) => {

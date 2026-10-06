@@ -29,7 +29,7 @@ export function createGetSessionMessagesTool(ctx) {
       const typeFilter = types?.length ? types : ['user', 'assistant'];
       const db = app.get('db');
       let query = db('session_messages')
-        .where({ session_id })
+        .where({ session_id, agent_type: 'builder' })
         .whereIn('type', typeFilter)
         .orderBy('id', 'asc');
 

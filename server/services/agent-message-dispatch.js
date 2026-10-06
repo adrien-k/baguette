@@ -1,10 +1,13 @@
-import { isBaguetteUserMessage, isHumanUserMessage } from '../../shared/turn-model.js';
+import {
+  isBaguetteUserMessage,
+  isHumanUserMessage,
+  resolveTurnModel,
+} from '../../shared/turn-model.js';
 import { normalizeUserPayloadForStorage } from '../../shared/normalize-user-payload.js';
 import { persistTypedMessage } from './message-writer-factory.ts';
 
 /**
  * @param {object} row - DB message row
- * @param {'messages' | 'session-review-messages'} table
  */
 export function parseUserRow(row) {
   try {
@@ -14,24 +17,8 @@ export function parseUserRow(row) {
   }
 }
 
-/**
- * Route a persisted user row to agent services (each ignores non-matching SDK).
- * @param {import('@feathersjs/feathers').Application} app
- * @param {object} row
- * @param {'messages' | 'session-review-messages'} table
- */
-export async function dispatchCreatedMessageToAgents(app, row, table) {
-  if (row.type !== 'user') return;
-  const session = await app.get('db')('sessions').where({ id: row.session_id }).first();
-  if (!session) return;
-  const sdk =
-    table === 'session-review-messages'
-      ? (session.review_agent_sdk ?? session.agent_sdk)
-      : session.agent_sdk;
-  const agent = app.service(sdk === 'cursor' ? 'cursor-agent' : 'claude-agent');
-  if (agent?.handleTableMessageCreated) {
-    await agent.handleTableMessageCreated(row, table);
-  }
+export function channelFromAgentType(agentType) {
+  return agentType === 'reviewer' ? 'review' : 'chat';
 }
 
 /**
@@ -43,6 +30,7 @@ export async function rejectTurnMismatch(app, { session, row, channel, activeTur
   const text =
     `Cannot accept message for turn ${row.turn_id}: agent is still processing turn ${activeTurnId}. ` +
     'Wait for the current turn to finish or stop the session.';
+  const { model, modelParams } = resolveTurnModel(row, session);
   await persistTypedMessage(
     app,
     {
@@ -50,6 +38,9 @@ export async function rejectTurnMismatch(app, { session, row, channel, activeTur
       userId,
       turnId: row.turn_id,
       channel,
+      agentSdk: row.agent_sdk ?? undefined,
+      model: model ?? session.model,
+      modelParams,
     },
     {
       type: 'system',

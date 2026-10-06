@@ -6,6 +6,7 @@ import {
   canPostToSession,
   crossSessionPostError,
 } from '../lib/session-resolution.js';
+import { sessionMessageIdentity } from '../../feathers/message-create-fields.js';
 
 export function createCreateSessionMessageTool(ctx) {
   const { app, userId, callerSession } = ctx;
@@ -40,12 +41,14 @@ export function createCreateSessionMessageTool(ctx) {
 
       const message_json = buildMcpUserMessageJson(text);
       const userParams = { provider: 'rest', user: { id: userId } };
+      const session = await app.service('sessions').get(session_id, { user: { id: userId } });
+      const identity = sessionMessageIdentity(session, 'builder');
 
       if (send_at) {
         try {
           const row = await app
             .service('queued-messages')
-            .schedule({ session_id, message_json, send_at }, { user: { id: userId } });
+            .schedule({ session_id, message_json, send_at, ...identity }, { user: { id: userId } });
           return ok({
             scheduled: true,
             queued_message_id: row.id,
@@ -64,6 +67,7 @@ export function createCreateSessionMessageTool(ctx) {
             type: 'user',
             subtype: 'mcp',
             message_json,
+            ...identity,
             ...(force ? { force: true } : {}),
           },
           userParams

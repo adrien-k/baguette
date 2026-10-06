@@ -27,8 +27,10 @@ import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
+  channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
+import { sessionMessageIdentity } from './message-create-fields.js';
 import {
   processClaudeQueryStream,
   type ClaudeStreamTurnOutcome,
@@ -38,7 +40,6 @@ import type { SystemMessagePayload, UserMessagePayload } from '../../../shared/s
 import type {
   AgentApp,
   AgentSessionRow,
-  ChatTable,
   DbLike,
   MessageChannel,
   MessageRowLike,
@@ -135,6 +136,7 @@ export class ClaudeAgentService {
   app!: AgentApp;
   private _activeSessions: Map<string | number, ClaudeAgentState>;
   private _resumePromises: Map<string | number, Promise<ClaudeAgentState>>;
+  private _handlingMessageIds = new Set<number>();
 
   constructor() {
     this._activeSessions = new Map();
@@ -143,6 +145,15 @@ export class ClaudeAgentService {
 
   setup(app: AgentApp, _path?: string) {
     this.app = app;
+    if ((this as { _messageListenerBound?: boolean })._messageListenerBound) return;
+    (this as { _messageListenerBound?: boolean })._messageListenerBound = true;
+    const messages = this.app.service('messages');
+    if (typeof messages?.on !== 'function') return;
+    messages.on('created', (row: MessageRowLike) => {
+      void this.handleMessageCreated(row).catch((err) =>
+        logger.error({ err: (err as Error).message }, 'claude-agent: handleMessageCreated failed')
+      );
+    });
   }
 
   /**
@@ -301,9 +312,18 @@ export class ClaudeAgentService {
     await this._disposeActiveSession(activeKey);
   }
 
-  async handleTableMessageCreated(row: MessageRowLike, table: ChatTable): Promise<void> {
+  async handleMessageCreated(row: MessageRowLike): Promise<void> {
     if (row.type !== 'user') return;
+    if (row.id != null && this._handlingMessageIds.has(row.id)) return;
+    if (row.id != null) this._handlingMessageIds.add(row.id);
+    try {
+      await this._handleMessageCreatedImpl(row);
+    } finally {
+      if (row.id != null) this._handlingMessageIds.delete(row.id);
+    }
+  }
 
+  async _handleMessageCreatedImpl(row: MessageRowLike): Promise<void> {
     const parsedStorage = parseUserRow(row);
     if (!parsedStorage || !isDispatchableUserMessage(parsedStorage)) return;
 
@@ -311,8 +331,9 @@ export class ClaudeAgentService {
     const session = await this.app.service('sessions').get(sessionId);
     if (!session || session.archived_at) return;
 
-    const channel: MessageChannel = table === 'session-review-messages' ? 'review' : 'chat';
-    const sdk = channel === 'review' ? session.review_agent_sdk : session.agent_sdk;
+    const channel: MessageChannel = channelFromAgentType(row.agent_type as string);
+    const sdk =
+      row.agent_sdk ?? (channel === 'review' ? session.review_agent_sdk : session.agent_sdk);
     if (sdk !== 'claude') return;
 
     if (channel === 'chat') {
@@ -369,7 +390,7 @@ export class ClaudeAgentService {
       await db('sessions').where({ id: sessionId }).update(activeField);
     }
 
-    const { model } = resolveTurnModel(row, session);
+    const { model, modelParams } = resolveTurnModel(row, session);
     const writer =
       row.turn_id != null
         ? createMessageStreamWriter(this.app, {
@@ -379,6 +400,8 @@ export class ClaudeAgentService {
             channel,
             worktreePath: session.worktree_path,
             agentType: 'claude',
+            model: model ?? session.model ?? '',
+            modelParams,
           })
         : null;
 
@@ -404,11 +427,6 @@ export class ClaudeAgentService {
     }
 
     agentSession.channel.push(parsed);
-  }
-
-  /** @deprecated use handleTableMessageCreated */
-  async onMessageCreated(message: MessageRowLike): Promise<void> {
-    return this.handleTableMessageCreated(message, 'messages');
   }
 
   async createAgentSession(
@@ -506,12 +524,17 @@ export class ClaudeAgentService {
       subtype: 'status',
       status: statusText,
     };
+    const sessionRow = await (this.app.get('db') as DbLike)('sessions')
+      .where({ id: sessionId })
+      .first();
+    if (!sessionRow) return;
     await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
+        ...sessionMessageIdentity(sessionRow, 'builder'),
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -544,6 +567,7 @@ export class ClaudeAgentService {
   ) {
     const { sessionId } = sessionState;
     const app = this.app;
+    const db = this.app.get('db') as DbLike;
     const payload: UserMessagePayload & { subtype: string } = {
       type: 'user',
       source: 'baguette',
@@ -552,11 +576,21 @@ export class ClaudeAgentService {
       subtype: 'baguette',
     };
 
+    const sessionRow = await db('sessions').where({ id: sessionId }).first();
+    if (!sessionRow) return;
+    const channel = sessionState.turnChannel ?? 'chat';
+    const identity = sessionMessageIdentity(
+      sessionRow,
+      channel === 'review' ? 'reviewer' : 'builder',
+      { agent_sdk: 'claude', model: sessionRow.model }
+    );
+
     await app.service('messages').create({
       session_id: sessionId,
       type: 'user',
       subtype: 'baguette',
       message_json: JSON.stringify(payload),
+      ...identity,
     });
   }
 
@@ -678,69 +712,95 @@ export class ClaudeAgentService {
     return this._resumePromises.get(key) ?? null;
   }
 
+  /** Persist one turn's Claude usage from the final SDK `result` for this consume pass. */
+  async _recordClaudeTurnUsage(
+    session: AgentSessionRow,
+    result: SDKMessage,
+    channel: MessageChannel
+  ): Promise<void> {
+    const isReview = channel === 'review';
+    await this.app
+      .service('sessions')
+      .recordClaudeUsage(session, result, {
+        kind: isReview ? 'review' : undefined,
+        model: isReview ? (session.review_model ?? session.model) : undefined,
+        totalsKey: isReview ? reviewTurnKey(session.id) : undefined,
+        patchSessionCost: true,
+      })
+      .catch((err) =>
+        logger.warn(
+          { sessionId: session.id, err: (err as Error).message },
+          'claude-agent: failed to record turn usage'
+        )
+      );
+  }
+
   async processMessages(sessionState: ClaudeAgentState): Promise<void> {
     const { sessionId, userId } = sessionState;
     const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
-    const { turnComplete, streamFailed, outcome } = await this._consumeQuery(sessionState, {
-      streamWriter: sessionState.streamWriter ?? null,
-      persistMessage: (message) => this.persistMessage(sessionState, message),
-      persistStatus: isReview
-        ? async (text) => {
-            const session = await db('sessions').where({ id: sessionId }).first();
-            if (session) {
-              await this.app.service('session-review')._persistStatus(session, text);
+    const { turnComplete, streamFailed, outcome, lastResult } = await this._consumeQuery(
+      sessionState,
+      {
+        streamWriter: sessionState.streamWriter ?? null,
+        persistMessage: (message) => this.persistMessage(sessionState, message),
+        persistStatus: isReview
+          ? async (text) => {
+              const session = await db('sessions').where({ id: sessionId }).first();
+              if (session) {
+                await this.app.service('session-review')._persistStatus(session, text);
+              }
             }
-          }
-        : (text) => this._persistSessionStatusMessage(sessionId, userId, text),
-      onInitSessionId: async (id) => {
-        const field =
-          sessionState.turnChannel === 'review'
-            ? { review_claude_session_id: id }
-            : { claude_session_id: id };
-        await db('sessions').where({ id: sessionId }).update(field);
-        sessionState.claudeSessionId = id;
-      },
-      onResult: async (message) => {
-        if (!isReview) return; // Chat status is patched once after the stream ends below.
-        const result = message as SDKMessage & { subtype?: string; is_error?: boolean };
-        const ok = result.subtype === 'success' && !result.is_error;
-        const session = (await db('sessions').where({ id: sessionId }).first()) as
-          AgentSessionRow | undefined;
-        if (!session) return;
-        await this.app
-          .service('sessions')
-          .recordClaudeUsage(session, message, {
-            kind: 'review',
-            model: session.review_model ?? session.model,
-            totalsKey: reviewTurnKey(sessionId),
-            patchSessionCost: true,
-          })
-          .catch(() => {});
+          : (text) => this._persistSessionStatusMessage(sessionId, userId, text),
+        onInitSessionId: async (id) => {
+          const field =
+            sessionState.turnChannel === 'review'
+              ? { review_claude_session_id: id }
+              : { claude_session_id: id };
+          await db('sessions').where({ id: sessionId }).update(field);
+          sessionState.claudeSessionId = id;
+        },
+        onStreamError: async () => {
+          if (!isReview) return; // Chat status is patched once after the stream ends below.
+          const session = (await db('sessions').where({ id: sessionId }).first()) as
+            AgentSessionRow | undefined;
+          if (!session) return;
+          await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+            sdk: 'claude',
+          });
+        },
+        onBackgroundAutoResume: async () => {
+          if (isReview) return;
+          await this.app.service('sessions').onTurnStart(sessionId);
+        },
+        trackBackgroundTasks: true,
+        activeKey,
+      }
+    );
+
+    if (lastResult) {
+      const session = (await db('sessions').where({ id: sessionId }).first()) as
+        AgentSessionRow | undefined;
+      if (session) {
+        await this._recordClaudeTurnUsage(session, lastResult, sessionState.turnChannel ?? 'chat');
+      }
+    }
+
+    if (isReview && turnComplete) {
+      const session = (await db('sessions').where({ id: sessionId }).first()) as
+        AgentSessionRow | undefined;
+      if (session) {
         await this.app
           .service('session-review')
-          .onAgentTurnComplete(session, ok ? 'completed' : 'failed', { sdk: 'claude' });
-      },
-      onStreamError: async () => {
-        if (!isReview) return; // Chat status is patched once after the stream ends below.
-        const session = (await db('sessions').where({ id: sessionId }).first()) as
-          AgentSessionRow | undefined;
-        if (!session) return;
-        await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
-          sdk: 'claude',
-        });
-      },
-      onBackgroundAutoResume: async () => {
-        if (isReview) return;
-        await this.app.service('sessions').onTurnStart(sessionId);
-      },
-      trackBackgroundTasks: true,
-      activeKey,
-    });
+          .onAgentTurnComplete(session, outcome === 'completed' ? 'completed' : 'failed', {
+            sdk: 'claude',
+          });
+      }
+    }
 
     // One terminal status for the whole turn (including background-task auto-resume).
-    // Usage is recorded when the result message is persisted; queued follow-ups start after this.
+    // Usage is recorded from the last SDK result; queued follow-ups start after this.
     if (!isReview && (turnComplete || streamFailed)) {
       const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
       await this.app
@@ -778,7 +838,12 @@ export class ClaudeAgentService {
       activeKey,
       connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
     }: ConsumeQueryOpts
-  ): Promise<{ turnComplete: boolean; streamFailed: boolean; outcome: TurnOutcome }> {
+  ): Promise<{
+    turnComplete: boolean;
+    streamFailed: boolean;
+    outcome: TurnOutcome;
+    lastResult: SDKMessage | null;
+  }> {
     const { queryInstance, sessionId, userId } = sessionState;
     const key = activeKey ?? sessionId;
 
@@ -823,6 +888,7 @@ export class ClaudeAgentService {
       turnComplete: result.turnComplete,
       streamFailed: result.streamFailed || streamFailed,
       outcome: result.outcome,
+      lastResult: result.lastResult,
     };
   }
 
@@ -870,6 +936,7 @@ export class ClaudeAgentService {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content }),
+        ...sessionMessageIdentity(sessionRow, 'builder'),
       },
       { user: { id: sessionRow.user_id } }
     );
@@ -988,6 +1055,18 @@ Task: ${initialPrompt}`;
       return;
     }
 
+    const sessionRow = await (this.app.get('db') as DbLike)('sessions')
+      .where({ id: sessionId })
+      .first();
+    if (!sessionRow) return;
+
+    const channel = sessionState.turnChannel ?? 'chat';
+    const identity = sessionMessageIdentity(
+      sessionRow,
+      channel === 'review' ? 'reviewer' : 'builder',
+      { agent_sdk: 'claude', model: sessionRow.model }
+    );
+
     await app.service('messages').create(
       {
         session_id: sessionId,
@@ -996,6 +1075,7 @@ Task: ${initialPrompt}`;
         uuid: msg.uuid ?? null,
         message_json: JSON.stringify(msg),
         total_cost_usd: msg.type === 'result' ? (msg.total_cost_usd ?? null) : null,
+        ...identity,
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -1010,6 +1090,7 @@ Task: ${initialPrompt}`;
 
 export function registerClaudeAgentService(app: AgentApp, path = 'claude-agent') {
   const service = new ClaudeAgentService();
+  service.setup(app);
   app.use(path, service, {
     methods: [
       'createAgentSession',
@@ -1021,8 +1102,6 @@ export function registerClaudeAgentService(app: AgentApp, path = 'claude-agent')
       'runTurn',
       'buildQueryOptions',
       'syncSessionSettingsFromPatch',
-      'onMessageCreated',
-      'handleTableMessageCreated',
     ],
   });
 }

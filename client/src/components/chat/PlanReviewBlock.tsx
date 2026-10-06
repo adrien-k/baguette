@@ -2,15 +2,18 @@ import { useState } from 'react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { messagesService, sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
+import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 export default function PlanReviewBlock({
   markdown,
   sessionId,
+  session,
   userReplied = false,
 }: {
   markdown?: string | null;
   sessionId?: number | null;
+  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
@@ -24,6 +27,7 @@ export default function PlanReviewBlock({
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'Proceed with the plan.' }),
+        ...builderMessageCreateFields(session ?? {}),
       });
     } catch (err) {
       toastError('Failed to run plan', err);

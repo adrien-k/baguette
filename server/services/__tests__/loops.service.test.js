@@ -42,6 +42,8 @@ const loopData = (overrides = {}) => ({
   prompt: 'Check the dependencies',
   schedule_type: 'interval',
   interval_minutes: 60,
+  agent_sdk: 'claude',
+  model: 'sonnet',
   ...overrides,
 });
 
@@ -505,6 +507,8 @@ describe('Loops service', (hooks) => {
 
       expect(queuedCreate.mock.calls[0][0]).toMatchObject({
         session_id: sessionId,
+        agent_type: 'builder',
+        agent_sdk: 'claude',
         model: 'sonnet',
       });
     });

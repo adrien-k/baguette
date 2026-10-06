@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toastError } from '../utils/toastError.jsx';
-import { sessionReviewMessagesService } from '../feathers.js';
+import { messagesService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const PAGE_SIZE = 50;
@@ -31,8 +31,15 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
     setHasMore(false);
     oldestIdRef.current = null;
 
-    sessionReviewMessagesService
-      .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+    messagesService
+      .find({
+        query: {
+          session_id: sessionId,
+          agent_type: 'reviewer',
+          $sort: { id: -1 },
+          $limit: PAGE_SIZE,
+        },
+      })
       .then((res) => {
         if (cancelled) return;
         const list = Array.isArray(res) ? res : (res?.data ?? []);
@@ -50,24 +57,27 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
 
     const onCreated = (message) => {
       if (message.session_id !== sessionId) return;
+      if (message.agent_type !== 'reviewer') return;
       setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
     };
     const onPatched = (message) => {
       if (message.session_id !== sessionId) return;
+      if (message.agent_type !== 'reviewer') return;
       setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
     };
     const onRemoved = (message) => {
       if (message.session_id !== sessionId) return;
+      if (message.agent_type !== 'reviewer') return;
       setMessages((prev) => prev.filter((m) => m.id !== message.id));
     };
-    sessionReviewMessagesService.on('created', onCreated);
-    sessionReviewMessagesService.on('patched', onPatched);
-    sessionReviewMessagesService.on('removed', onRemoved);
+    messagesService.on('created', onCreated);
+    messagesService.on('patched', onPatched);
+    messagesService.on('removed', onRemoved);
     return () => {
       cancelled = true;
-      sessionReviewMessagesService.off('created', onCreated);
-      sessionReviewMessagesService.off('patched', onPatched);
-      sessionReviewMessagesService.off('removed', onRemoved);
+      messagesService.off('created', onCreated);
+      messagesService.off('patched', onPatched);
+      messagesService.off('removed', onRemoved);
     };
   }, [sessionId, enabled]);
 
@@ -80,8 +90,15 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
         setHasMore(false);
         oldestIdRef.current = null;
       }
-      sessionReviewMessagesService
-        .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+      messagesService
+        .find({
+          query: {
+            session_id: sessionId,
+            agent_type: 'reviewer',
+            $sort: { id: -1 },
+            $limit: PAGE_SIZE,
+          },
+        })
         .then((res) => {
           const list = Array.isArray(res) ? res : (res?.data ?? []);
           const sorted = [...list].reverse();
@@ -106,9 +123,10 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const res = await sessionReviewMessagesService.find({
+      const res = await messagesService.find({
         query: {
           session_id: sessionId,
+          agent_type: 'reviewer',
           id: { $lt: oldestIdRef.current },
           $sort: { id: -1 },
           $limit: PAGE_SIZE,

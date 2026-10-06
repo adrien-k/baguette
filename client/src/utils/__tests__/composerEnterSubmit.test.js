@@ -2,17 +2,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { isComposerEnterSubmitKey } from '../composerEnterSubmit.js';
 
 describe('isComposerEnterSubmitKey', () => {
-  const originalNavigator = global.navigator;
+  const originalNavigator = globalThis.navigator;
 
   beforeEach(() => {
-    Object.defineProperty(global, 'navigator', {
+    Object.defineProperty(globalThis, 'navigator', {
       value: { userAgent: 'Mozilla/5.0' },
       configurable: true,
     });
   });
 
   afterEach(() => {
-    Object.defineProperty(global, 'navigator', {
+    Object.defineProperty(globalThis, 'navigator', {
       value: originalNavigator,
       configurable: true,
     });
@@ -27,7 +27,7 @@ describe('isComposerEnterSubmitKey', () => {
   });
 
   it('rejects Enter on mobile user agents', () => {
-    Object.defineProperty(global, 'navigator', {
+    Object.defineProperty(globalThis, 'navigator', {
       value: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' },
       configurable: true,
     });

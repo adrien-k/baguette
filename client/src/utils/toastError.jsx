@@ -44,7 +44,18 @@ function ErrorToast({ t, label, detail }) {
  * @param {string} label - Human-readable action label, e.g. "Failed to delete session"
  * @param {unknown} [err] - The caught error; its `message` is shown in the collapsible detail
  */
+function detailMessage(err, label) {
+  if (!err?.message || err.message === label) return null;
+  // Client bugs (missing imports, etc.) — log for developers, not end users.
+  if (err instanceof ReferenceError || err instanceof TypeError) {
+    // eslint-disable-next-line no-console -- developer-facing signal for client bugs
+    console.error(label, err);
+    return null;
+  }
+  return err.message;
+}
+
 export function toastError(label, err) {
-  const detail = err?.message && err.message !== label ? err.message : null;
+  const detail = detailMessage(err, label);
   toast.custom((t) => <ErrorToast t={t} label={label} detail={detail} />, { duration: 5000 });
 }

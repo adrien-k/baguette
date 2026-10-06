@@ -50,7 +50,9 @@ export function usePersistentState(storageKey) {
           );
           try {
             localStorage.setItem(storageKey, JSON.stringify(persisted));
-          } catch {}
+          } catch {
+            // ignore quota / private mode
+          }
         }
         return next;
       });

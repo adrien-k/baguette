@@ -3,7 +3,7 @@ import { BadRequest, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import logger from '../../logger.js';
-import { turnModelCreateFields } from '../../../shared/turn-model.js';
+import { requireQueuedMessageIdentity } from './message-identity.js';
 
 const SCHEDULED_DISPATCH_BATCH = 20;
 
@@ -39,7 +39,10 @@ export class QueuedMessagesService extends KnexService {
             session_id: row.session_id,
             type: 'user',
             message_json: row.message_json,
-            ...turnModelCreateFields(row),
+            agent_type: row.agent_type ?? 'builder',
+            agent_sdk: row.agent_sdk,
+            model: row.model,
+            ...(row.model_params != null ? { model_params: row.model_params } : {}),
           },
           { provider: 'rest', user: { id: row.user_id } }
         );
@@ -70,7 +73,10 @@ export class QueuedMessagesService extends KnexService {
         message_json: data.message_json,
         kind: 'scheduled',
         send_at: when.toISOString(),
-        ...turnModelCreateFields(data),
+        agent_type: data.agent_type ?? 'builder',
+        agent_sdk: data.agent_sdk,
+        model: data.model,
+        ...(data.model_params != null ? { model_params: data.model_params } : {}),
       },
       { user: params.user }
     );
@@ -135,13 +141,31 @@ const queuedMessagesHooks = {
     all: [requireUser],
     create: [
       disableExternal,
-      only(['session_id', 'message_json', 'kind', 'send_at', 'model', 'model_params']),
+      only([
+        'session_id',
+        'message_json',
+        'kind',
+        'send_at',
+        'model',
+        'model_params',
+        'agent_type',
+        'agent_sdk',
+      ]),
       validateSessionOwnership,
       normalizeInternalCreate,
+      requireQueuedMessageIdentity,
       scopeByUser,
     ],
     schedule: [
-      only(['session_id', 'message_json', 'send_at', 'model', 'model_params']),
+      only([
+        'session_id',
+        'message_json',
+        'send_at',
+        'model',
+        'model_params',
+        'agent_type',
+        'agent_sdk',
+      ]),
       validateSessionOwnership,
     ],
     find: [scopeByUser],

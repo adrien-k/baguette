@@ -40,7 +40,14 @@ export function useGetMessages(sessionId) {
       }
 
       messagesService
-        .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+        .find({
+          query: {
+            session_id: sessionId,
+            agent_type: 'builder',
+            $sort: { id: -1 },
+            $limit: PAGE_SIZE,
+          },
+        })
         .then((res) => {
           const list = Array.isArray(res) ? res : (res?.data ?? []);
           const sorted = [...list].reverse();
@@ -80,7 +87,14 @@ export function useGetMessages(sessionId) {
     oldestIdRef.current = null;
 
     messagesService
-      .find({ query: { session_id: sessionId, $sort: { id: -1 }, $limit: PAGE_SIZE } })
+      .find({
+        query: {
+          session_id: sessionId,
+          agent_type: 'builder',
+          $sort: { id: -1 },
+          $limit: PAGE_SIZE,
+        },
+      })
       .then((res) => {
         if (cancelled) return;
         const list = Array.isArray(res) ? res : (res?.data ?? []);
@@ -99,11 +113,13 @@ export function useGetMessages(sessionId) {
 
     const onCreated = (message) => {
       if (message.session_id !== sessionId) return;
+      if (message.agent_type === 'reviewer') return;
       setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
     };
 
     const onPatched = (message) => {
       if (message.session_id !== sessionId) return;
+      if (message.agent_type === 'reviewer') return;
       setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
     };
 
@@ -126,6 +142,7 @@ export function useGetMessages(sessionId) {
       const res = await messagesService.find({
         query: {
           session_id: sessionId,
+          agent_type: 'builder',
           id: { $lt: oldestIdRef.current },
           $sort: { id: -1 },
           $limit: PAGE_SIZE,

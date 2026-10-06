@@ -10,8 +10,8 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
-import { registerSessionReviewMessagesService } from '../feathers/session-review-messages.service.js';
 import { registerSessionReviewService } from '../feathers/session-review.service.js';
+import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { gitRevParseShort } from '../github.js';
 import { registerClaudeAgentService } from '../feathers/claude-agent.service.ts';
 
@@ -55,19 +55,27 @@ function makeQueryResult() {
   return gen;
 }
 
-function makeApp(dbRef) {
+function wireAgentMessageListeners(app) {
+  const cursor = app.service('cursor-agent');
+  app.service('messages').on('created', (row) => {
+    if (cursor?.handleMessageCreated) void cursor.handleMessageCreated(row);
+  });
+}
+
+function makeApp(db) {
   const app = feathers();
-  app.set('db', dbRef);
+  app.set('db', db);
   registerSessionsService(app);
   app.use('users', { get: async (id) => ({ id, access_token: 'tok' }) }, { methods: ['get'] });
+  registerMessagesService(app);
+  registerQueuedMessagesService(app);
   registerClaudeAgentService(app);
   app.use(
     'cursor-agent',
     {
-      onMessageCreated: async () => {},
-      handleTableMessageCreated: async (row) => {
-        if (row.type !== 'user') return;
-        const session = await dbRef('sessions').where({ id: row.session_id }).first();
+      handleMessageCreated: async (row) => {
+        if (row.type !== 'user' || row.agent_sdk !== 'cursor') return;
+        const session = await db('sessions').where({ id: row.session_id }).first();
         const { outcome, agent } = await app.service('cursor-agent').runTurn({
           session,
           userText: 'review',
@@ -81,23 +89,19 @@ function makeApp(dbRef) {
       runTurn: async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }),
       buildAgentOptions: async () => ({}),
       writePromptRule: async () => '/tmp/review-rules',
-      recordTurnUsage: async () => {},
     },
     {
       methods: [
-        'onMessageCreated',
-        'handleTableMessageCreated',
+        'handleMessageCreated',
         'stopTurn',
         'runTurn',
         'buildAgentOptions',
         'writePromptRule',
-        'recordTurnUsage',
       ],
     }
   );
-  registerMessagesService(app);
+  wireAgentMessageListeners(app);
   registerSessionIssuesService(app);
-  registerSessionReviewMessagesService(app);
   registerSessionReviewService(app);
   return app;
 }
@@ -164,13 +168,15 @@ describe('session-review service', () => {
     const session = await db('sessions').where({ id: sessionId }).first();
     expect(session.status).toBe('stopped');
 
-    const msgs = await app.service('session-review-messages').find({
-      query: { session_id: sessionId, $sort: { id: 1 } },
+    const msgs = await app.service('messages').find({
+      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
       ...params(user),
     });
     const rows = msgs.data ?? msgs;
     const firstUser = rows.find((m) => m.type === 'user');
     expect(firstUser).toBeTruthy();
+    expect(firstUser.model).toBe('sonnet');
+    expect(firstUser.agent_sdk).toBe('claude');
     expect(JSON.parse(firstUser.message_json).source).toBe('baguette');
     expect(rows.some((m) => m.type === 'assistant')).toBe(true);
     expect(query).toHaveBeenCalled();
@@ -206,7 +212,7 @@ describe('session-review service', () => {
     expect(row.agent_sdk).toBe('claude');
   });
 
-  it('uses the session sdk even if start requests a different one', async () => {
+  it('honors agent_sdk from the start request over the session builder sdk', async () => {
     const runTurn = vi.fn(async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }));
     app.service('cursor-agent').runTurn = runTurn;
     await db('sessions')
@@ -222,11 +228,12 @@ describe('session-review service', () => {
         'completed'
       );
     });
-    expect(runTurn).toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalled();
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalled();
     const row = await db('sessions').where({ id: sessionId }).first();
-    expect(row.review_agent_sdk).toBe('cursor');
+    expect(row.review_agent_sdk).toBe('claude');
     expect(row.review_model).toBe('sonnet');
+    expect(row.agent_sdk).toBe('cursor');
   });
 
   it('persists a human user message when focus text is provided', async () => {
@@ -244,8 +251,8 @@ describe('session-review service', () => {
       expect(row.review_status).toBe('completed');
     });
 
-    const msgs = await app.service('session-review-messages').find({
-      query: { session_id: sessionId, $sort: { id: 1 } },
+    const msgs = await app.service('messages').find({
+      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
       ...params(user),
     });
     const rows = msgs.data ?? msgs;
@@ -306,21 +313,78 @@ describe('session-review service', () => {
     });
   });
 
-  it('send rejects when a review turn is active in memory', async () => {
+  it('send queues when a review turn is active', async () => {
     await db('session_messages').insert({
       agent_type: 'reviewer',
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
     });
-    await db('sessions').where({ id: sessionId }).update({ review_status: 'completed' });
-    app.service('session-review')._active.set(sessionId, { pending: true });
+    await db('sessions').where({ id: sessionId }).update({ review_status: 'running' });
 
-    await expect(
-      app
-        .service('session-review')
-        .send({ session_id: sessionId, message: 'follow up' }, params(user))
-    ).rejects.toThrow('review turn is in progress');
+    const result = await app.service('session-review').send(
+      {
+        session_id: sessionId,
+        message: 'follow up',
+        agent_sdk: 'claude',
+        model: 'sonnet',
+      },
+      params(user)
+    );
+    expect(result).toEqual({ ok: true, queued: true });
+    const queued = await db('queued_messages').where({ session_id: sessionId });
+    expect(queued).toHaveLength(1);
+    expect(queued[0].agent_type).toBe('reviewer');
+    expect(queued[0].agent_sdk).toBe('claude');
+    expect(queued[0].model).toBe('sonnet');
+  });
+
+  it('keeps review_status running until a queued follow-up turn finishes', async () => {
+    await db('session_messages').insert({
+      agent_type: 'reviewer',
+      session_id: sessionId,
+      type: 'user',
+      message_json: JSON.stringify({ type: 'user', content: 'initial review' }),
+      turn_id: 1,
+    });
+    await db('sessions').where({ id: sessionId }).update({
+      review_status: 'running',
+      review_claude_session_id: 'claude-review-1',
+      active_review_turn_id: 1,
+      current_turn_id: 1,
+    });
+
+    await app.service('session-review').send(
+      {
+        session_id: sessionId,
+        message: 'queued follow-up',
+        agent_sdk: 'claude',
+        model: 'sonnet',
+      },
+      params(user)
+    );
+
+    const session = await db('sessions').where({ id: sessionId }).first();
+    query.mockClear();
+    await app.service('session-review').onAgentTurnComplete(session, 'completed');
+
+    const mid = await db('sessions').where({ id: sessionId }).first();
+    expect(mid.review_status).toBe('running');
+    expect(app.service('session-review')._active.has(sessionId)).toBe(true);
+    expect(await db('queued_messages').where({ session_id: sessionId })).toHaveLength(0);
+
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    expect(query).toHaveBeenCalled();
+    const flushed = await db('session_messages')
+      .where({ session_id: sessionId, agent_type: 'reviewer', type: 'user' })
+      .orderBy('id', 'asc');
+    expect(flushed.some((m) => m.message_json.includes('queued follow-up'))).toBe(true);
+    const followUpRow = flushed.find((m) => m.message_json.includes('queued follow-up'));
+    expect(followUpRow.turn_id).toBe(1);
   });
 
   it('send runs a follow-up turn without clearing messages', async () => {
@@ -345,8 +409,8 @@ describe('session-review service', () => {
       expect(row.review_status).toBe('completed');
     });
 
-    const msgs = await app.service('session-review-messages').find({
-      query: { session_id: sessionId, $sort: { id: 1 } },
+    const msgs = await app.service('messages').find({
+      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
       ...params(user),
     });
     const rows = msgs.data ?? msgs;

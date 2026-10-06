@@ -8,7 +8,12 @@ import { TEXT_MUTED } from '../utils/ui.js';
 
 const PLACEHOLDER = 'Message to send to the reviewer…';
 
-export default function ReviewFollowUpModal({ onConfirm, onCancel, submitting }) {
+export default function ReviewFollowUpModal({
+  onConfirm,
+  onCancel,
+  submitting,
+  submitLabel = 'Send',
+}) {
   const [message, setMessage] = useState('');
   const trimmed = message.trim();
   const canSubmit = Boolean(trimmed) && !submitting;
@@ -63,7 +68,7 @@ export default function ReviewFollowUpModal({ onConfirm, onCancel, submitting })
           disabled={!canSubmit}
           className={PRIMARY_BUTTON_SIZED}
         >
-          {submitting ? 'Sending…' : 'Send'}
+          {submitting ? 'Sending…' : submitLabel}
         </button>
       </ModalActions>
     </Modal>

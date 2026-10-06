@@ -123,6 +123,7 @@ function makeMockApp(db) {
           onActivity: async () => {},
           onTurnStart: async () => {},
           onTurnComplete: async () => {},
+          recordClaudeUsage: vi.fn().mockResolvedValue(undefined),
           get: async (id) => db('sessions').where({ id }).first(),
         };
       if (name === 'messages') return { create: messageCreate, remove: genericRemove };
@@ -146,7 +147,8 @@ const BASE_SESSION_DATA = {
   base_branch: 'main',
   initial_prompt: 'Fix the bug',
   plan_mode: false,
-  model: null,
+  agent_sdk: 'claude',
+  model: 'sonnet',
   // Must follow REPOS_DIR/<stripped>/sessions/<id> so createCanUseTool can derive the repo dir
   worktree_path: path.join(REPOS_DIR, 'owner-repo', 'sessions', 'test-session'),
   repo_id: 7,
@@ -628,9 +630,9 @@ describe('ClaudeAgentService', (hooks) => {
     });
   });
 
-  // ── 6. onMessageCreated (imperative callback) ───────────────────────────────
+  // ── 6. handleMessageCreated ───────────────────────────────────────────────
 
-  describe('onMessageCreated', () => {
+  describe('handleMessageCreated', () => {
     it('does nothing for non-user messages', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
@@ -640,7 +642,7 @@ describe('ClaudeAgentService', (hooks) => {
         .spyOn(service, 'createAgentSession')
         .mockResolvedValue({ channel: { push: vi.fn() } });
 
-      await service.onMessageCreated({
+      await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'assistant',
         message_json: '{}',
@@ -662,7 +664,7 @@ describe('ClaudeAgentService', (hooks) => {
       const pushSpy = vi.spyOn(active.channel, 'push');
 
       const userMsg = { type: 'user', message: { role: 'user', content: 'Hi' } };
-      await service.onMessageCreated({
+      await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'user',
         message_json: JSON.stringify(userMsg),
@@ -690,7 +692,7 @@ describe('ClaudeAgentService', (hooks) => {
           content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'ok' }],
         },
       };
-      await service.onMessageCreated({
+      await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'user',
         message_json: JSON.stringify(toolResultMsg),
@@ -717,7 +719,7 @@ describe('ClaudeAgentService', (hooks) => {
         title: 'Syncing with remote',
         message: { role: 'user', content: 'Please pull.' },
       };
-      await service.onMessageCreated({
+      await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'user',
         subtype: 'baguette',
@@ -735,7 +737,7 @@ describe('ClaudeAgentService', (hooks) => {
       });
 
       const userMsg = { type: 'user', message: { role: 'user', content: 'Start' } };
-      await service.onMessageCreated({
+      await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'user',
         message_json: JSON.stringify(userMsg),
@@ -759,7 +761,7 @@ describe('ClaudeAgentService', (hooks) => {
         return makeAsyncIterable([]);
       });
 
-      await service.onMessageCreated({
+      await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Start' } }),
@@ -796,7 +798,7 @@ describe('ClaudeAgentService', (hooks) => {
       expect(parsed.title).toBe('Syncing with remote');
       expect(parsed.content).toBe('Please pull the latest changes.');
 
-      // Delivery to the agent is via messages after-hook → onMessageCreated, not a direct push.
+      // Delivery to the agent is via messages `created` → handleMessageCreated, not a direct push.
       expect(channel.push).not.toHaveBeenCalled();
     });
   });

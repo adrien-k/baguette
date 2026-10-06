@@ -48,7 +48,9 @@ export function parseModelField(model) {
   try {
     const parsed = JSON.parse(model);
     if (parsed?.id) return parsed.id;
-  } catch {}
+  } catch {
+    // not JSON-encoded model field
+  }
   return model;
 }
 
@@ -57,6 +59,8 @@ export function parseModelFieldFull(model) {
   try {
     const parsed = JSON.parse(model);
     if (parsed?.id) return { id: parsed.id, params: parsed.params || null };
-  } catch {}
+  } catch {
+    // not JSON-encoded model field
+  }
   return { id: model, params: null };
 }

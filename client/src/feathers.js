@@ -95,7 +95,6 @@ export const slackService = createService('admin/slack', {
   customMethods: ['test'],
 });
 export const sessionIssuesService = createService('session-issues');
-export const sessionReviewMessagesService = createService('session-review-messages');
 export const sessionReviewService = createService('session-review', {
   customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
 });

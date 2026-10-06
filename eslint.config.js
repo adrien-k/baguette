@@ -96,6 +96,8 @@ export default [
       react: { version: '19' },
     },
     rules: {
+      // Client block sets `rules` explicitly; merge recommended so `no-undef` etc. are not dropped.
+      ...js.configs.recommended.rules,
       ...reactPlugin.configs.recommended.rules,
       ...reactHooksPlugin.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off',

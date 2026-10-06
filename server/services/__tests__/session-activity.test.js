@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
-import { registerSessionReviewMessagesService } from '../feathers/session-review-messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { DEBOUNCE_DELAY_MS } from '../session-activity.js';
 
@@ -13,7 +12,6 @@ function makeApp(dbRef) {
   app.set('db', dbRef);
   registerMessagesService(app);
   registerSessionsService(app);
-  registerSessionReviewMessagesService(app);
   app.use(
     'claude-agent',
     { syncSessionSettingsFromPatch: async () => {}, onMessageCreated: async () => {} },

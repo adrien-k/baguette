@@ -9,8 +9,6 @@ import type { SessionMessageRow } from '../../../shared/session-messages.ts';
 
 export type MessageChannel = 'chat' | 'review';
 
-export type ChatTable = 'messages' | 'session-review-messages';
-
 /** Minimal Feathers application surface used by the agent services. */
 export type AgentApp = {
   get(key: string): unknown;

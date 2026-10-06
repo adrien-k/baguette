@@ -6,7 +6,7 @@ import ComposerScheduleAddon from './ComposerScheduleAddon.jsx';
 import ScheduleMessageModal from './ScheduleMessageModal.jsx';
 import { messagesService, queuedMessagesService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
-import { turnModelCreateFields } from '@baguette/shared/turn-model.js';
+import { builderMessageCreateFields } from '../utils/messageCreateFields.js';
 import {
   contentBlocksFromLineDraft,
   createFileReferenceBlock,
@@ -66,7 +66,10 @@ export default function DiffLineComposer({
   const isProvisioning = session?.status === 'provisioning';
   const canSendDraft = Boolean(input.trim() && session?.id && !sending);
   const composerTurnFields = () =>
-    turnModelCreateFields({ model: composerModel, model_params: composerModelParams });
+    builderMessageCreateFields(session, {
+      model: composerModel,
+      model_params: composerModelParams,
+    });
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {
     setComposerModel(modelId);

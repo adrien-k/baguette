@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import {
+  createTestDb,
+  testSessionAgentDefaults,
+  testMessageIdentityDefaults,
+} from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
@@ -47,12 +51,14 @@ describe('baguette session MCP tools', () => {
       base_branch: 'main',
       local_branch: 'feat/auth',
       status: 'stopped',
+      ...testSessionAgentDefaults,
     });
     await db('session_messages').insert([
       {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+        ...testMessageIdentityDefaults,
       },
       {
         session_id: sessionId,
@@ -61,6 +67,7 @@ describe('baguette session MCP tools', () => {
           type: 'assistant',
           message: { role: 'assistant', content: 'hello' },
         }),
+        ...testMessageIdentityDefaults,
       },
     ]);
 
@@ -114,6 +121,7 @@ describe('baguette session MCP tools', () => {
       local_branch: 'feature/shared-head-bbbb',
       remote_branch: sharedRemote,
       status: 'stopped',
+      ...testSessionAgentDefaults,
     });
     await db('sessions')
       .where({ id: sessionId })
@@ -185,6 +193,7 @@ describe('baguette session MCP tools', () => {
       base_branch: 'main',
       local_branch: 'feat/other',
       status: 'stopped',
+      ...testSessionAgentDefaults,
     });
     const create = tools.find((t) => t.name === 'CreateSessionMessage');
     const out = parseResult(await create.handler({ session_id: otherId, text: 'nope' }));
@@ -203,6 +212,7 @@ describe('baguette session MCP tools', () => {
       label: 'Global',
       initial_prompt: 'Orchestrate',
       status: 'stopped',
+      ...testSessionAgentDefaults,
     });
     const [targetId] = await db('sessions').insert({
       user_id: userId,
@@ -214,6 +224,7 @@ describe('baguette session MCP tools', () => {
       base_branch: 'main',
       local_branch: 'feat/target',
       status: 'stopped',
+      ...testSessionAgentDefaults,
     });
     const globalTools = buildBaguetteSessionMcpTools({ id: userId }, app, {
       callerSession: { id: globalId, is_global: true },

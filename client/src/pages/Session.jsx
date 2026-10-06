@@ -37,6 +37,7 @@ import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
 } from '@baguette/shared/session-unread.js';
+import { applyTodoWriteCollapse } from '@baguette/shared/todo-write-display.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
@@ -104,45 +105,36 @@ function clampSidePanelWidth(width, viewportWidth, { sessionsSidebarOpen }) {
 
 /** Chat display enrichments (TodoWrite collapse, sub-agent activity). */
 function enrichChatMessages(messages) {
-  let lastTodoWriteKey = null;
   let lastTodoWriteBlock = null;
   for (const msg of messages) {
-    if (msg.type === 'tool_call' && (msg.name === 'TodoWrite' || msg.kind === 'todo')) {
-      lastTodoWriteKey = msg.call_id ?? `tool-${msg.id}`;
-    }
     if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
       for (const b of msg.message.content) {
         if (b.type === 'tool_use' && b.name === 'TodoWrite') lastTodoWriteBlock = b;
       }
     }
   }
-  const withHiddenTodos =
-    !lastTodoWriteBlock && !lastTodoWriteKey
-      ? messages
-      : messages.map((msg) => {
-          if (msg.type === 'tool_call' && msg.name === 'TodoWrite' && lastTodoWriteKey) {
-            const key = msg.call_id ?? `tool-${msg.id}`;
-            if (key !== lastTodoWriteKey) return { ...msg, _hidden: true };
-          }
-          if (msg.type !== 'assistant' || !msg.message?.content) return msg;
-          if (
-            !msg.message.content.some(
-              (b) => b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock
-            )
-          )
-            return msg;
-          return {
-            ...msg,
-            message: {
-              ...msg.message,
-              content: msg.message.content.map((b) => {
-                if (b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock)
-                  return { ...b, _hidden: true };
-                return b;
-              }),
-            },
-          };
-        });
+
+  const withHiddenTodos = applyTodoWriteCollapse(messages).map((msg) => {
+    if (msg.type !== 'assistant' || !msg.message?.content) return msg;
+    if (
+      !msg.message.content.some(
+        (b) => b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock
+      )
+    ) {
+      return msg;
+    }
+    return {
+      ...msg,
+      message: {
+        ...msg.message,
+        content: msg.message.content.map((b) => {
+          if (b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock)
+            return { ...b, _hidden: true };
+          return b;
+        }),
+      },
+    };
+  });
 
   // Collect sub-agent activity lines per Task/Agent tool_use_id
   const taskActivities = new Map(); // tool_use_id -> string[]

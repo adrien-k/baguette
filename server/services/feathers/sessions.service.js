@@ -66,10 +66,12 @@ import { getGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
+import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
+import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
-import { turnModelCreateFields } from '../../../shared/turn-model.js';
+import { sessionMessageIdentity } from './message-create-fields.js';
 import {
   queryFlagDisabled,
   queryFlagEnabled,
@@ -114,14 +116,13 @@ export class SessionsService extends KnexService {
     this._archivePendingSessionIds = new Set();
   }
 
-  /** Wire `messages` / `session-review-messages` create events → `last_activity_at` (call after all services register). */
+  /** Wire `messages` create events → `last_activity_at` (call after all services register). */
   registerActivityMessageListeners(app) {
     if (this._sessionActivityListenersRegistered) return;
     this._sessionActivityListenersRegistered = true;
     this.app = app;
     const onCreated = (data) => this._bumpLastActivityOnMessageCreated(data);
     app.service('messages').on('created', onCreated);
-    app.service('session-review-messages').on('created', onCreated);
   }
 
   _bumpLastActivityOnMessageCreated(message) {
@@ -226,7 +227,9 @@ export class SessionsService extends KnexService {
    * Restart a single interrupted session. Returns true if it was resumed, false if it was
    * only marked stopped (nothing to resume from).
    */
-  async _restartInterruptedSession(session) {
+  async _restartInterruptedSession(partial) {
+    const session = await this.app.get('db')('sessions').where({ id: partial.id }).first();
+    if (!session) return false;
     const userParams = { user: { id: session.user_id } };
     const resumable =
       session.agent_sdk === 'cursor' ? !!session.cursor_agent_id : !!session.claude_session_id;
@@ -240,24 +243,26 @@ export class SessionsService extends KnexService {
 
     await this._postStatusMessage(session.id, userParams, 'Server restarted — resuming session');
     try {
-      // An internal create (no `provider`) skips the queue-while-running hook and goes straight
-      // to the agent service, which resumes the stored conversation before pushing this message.
-      await this.app.service('messages').create(
+      const created = await this.app.service('messages').create(
         {
           session_id: session.id,
           type: 'user',
           subtype: 'baguette',
-          // `source` makes the chat collapse this into a Baguette block rather than showing it
-          // as something the user typed, and keeps it from counting as a user reply.
           message_json: JSON.stringify({
             type: 'user',
             source: 'baguette',
             message: { role: 'user', content: RESTART_PROMPT },
             title: 'Server restarted',
           }),
+          ...sessionMessageIdentity(session, 'builder'),
         },
         userParams
       );
+      const agentSdk = session.agent_sdk === 'cursor' ? 'cursor' : 'claude';
+      const agentService = this.app.service(`${agentSdk}-agent`);
+      if (agentService?.handleMessageCreated) {
+        await agentService.handleMessageCreated(created);
+      }
     } catch (err) {
       // The dispatch above flips the session back to `running`; leaving it there would show a
       // live session with no agent behind it, so fall back to the stopped path.
@@ -358,13 +363,16 @@ export class SessionsService extends KnexService {
     await this.app.service('sessions').patch(sessionId, { status: 'stopped' }, userParams);
   }
 
-  _postStatusMessage(sessionId, userParams, status, extra = {}) {
+  async _postStatusMessage(sessionId, userParams, status, extra = {}) {
+    const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
+    if (!session) return null;
     return this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify({ type: 'system', subtype: 'status', status, ...extra }),
+        ...sessionMessageIdentity(session, 'builder'),
       },
       userParams
     );
@@ -1126,6 +1134,7 @@ export class SessionsService extends KnexService {
           subtype: 'status',
           status: worktreeExists ? 'Session restored' : 'Session restored — worktree recreated',
         }),
+        ...sessionMessageIdentity(session, 'builder'),
       },
       { user: { id: session.user_id } }
     );
@@ -1139,20 +1148,10 @@ export class SessionsService extends KnexService {
   async onMessageCreated(message) {
     const sessionId = message.session_id;
     if (!sessionId) return;
-    if (message.type !== 'user' && message.type !== 'result' && message.type !== 'turn_result')
+    if (message.type !== 'user') return;
+    if (message.agent_type === 'reviewer') {
+      await this.onReviewerMessageCreated(message);
       return;
-
-    let status;
-    let result = null;
-    if (message.type === 'user') {
-      status = 'running';
-    } else if (message.type === 'result' || message.type === 'turn_result') {
-      // Chat status is applied once when the agent turn ends. This path only records usage.
-      try {
-        result = JSON.parse(message.message_json || '{}');
-      } catch {
-        /* invalid agent result JSON */
-      }
     }
 
     const db = this.app.get('db');
@@ -1165,33 +1164,54 @@ export class SessionsService extends KnexService {
     )
       return;
 
-    const patch = {};
-    if (status !== undefined && session.status !== status) patch.status = status;
+    if (session.status !== 'running') {
+      await this.app.service('sessions').patch(
+        sessionId,
+        { status: 'running' },
+        {
+          provider: undefined,
+          user: { id: session.user_id },
+        }
+      );
+    }
+  }
 
-    if (result !== null) {
-      const costUpdate = await this.recordClaudeUsage(session, result);
-      if (costUpdate > 0) {
-        patch.total_cost_usd = parseFloat(session.total_cost_usd ?? 0) + costUpdate;
-      }
+  async onReviewerMessageCreated(message) {
+    const sessionId = message.session_id;
+    const db = this.app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (!session || session.archived_at) return;
+
+    if (session.review_status !== 'running') {
+      await this.app.service('sessions').patch(
+        sessionId,
+        { review_status: 'running' },
+        {
+          provider: undefined,
+          user: { id: session.user_id },
+        }
+      );
     }
 
-    if (Object.keys(patch).length === 0) return;
-    await this.app.service('sessions').patch(sessionId, patch, {
-      provider: undefined,
-      user: { id: session.user_id },
-    });
+    const review = this.app.service('session-review');
+    if (review && !review._active.has(sessionId)) {
+      review._active.set(sessionId, { pending: true });
+      if (!review._turnExtras.has(sessionId)) {
+        review._turnExtras.set(sessionId, { continuation: true });
+      }
+    }
   }
 
   /**
-   * Incremental Claude cost/tokens for one SDK `result`. Chat goes through
-   * `onMessageCreated`; review results never land on `messages`, so review
-   * calls this directly with `{ kind: 'review', totalsKey }`.
+   * Incremental Claude cost/tokens for one finished turn's final SDK `result`.
+   * Called from claude-agent after the query stream ends (see `_recordClaudeTurnUsage`).
    *
    * `total_cost_usd` and `modelUsage` are running totals for the query, so this
    * turn's share is the difference from the last result for `totalsKey`. See
    * server/services/turn-usage.js.
    *
-   * @returns {Promise<number>} cost delta to add to `sessions.total_cost_usd`
+   * TODO: should rather be implemented on the claude-agent service
+   * @returns {Promise<number>} cost delta written to `usage.cost_usd`
    */
   async recordClaudeUsage(session, result, { kind, model, totalsKey, patchSessionCost } = {}) {
     if (!session || !result) return 0;
@@ -1211,7 +1231,10 @@ export class SessionsService extends KnexService {
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUpdate, 0),
-      agent_sdk: session.agent_sdk || 'claude',
+      agent_sdk:
+        kind === 'review'
+          ? session.review_agent_sdk || session.agent_sdk || 'claude'
+          : session.agent_sdk || 'claude',
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
@@ -1236,6 +1259,58 @@ export class SessionsService extends KnexService {
     return costUpdate;
   }
 
+  /**
+   * One Cursor turn: token totals from the run stream plus USD estimated from our pricing table.
+   * Local Cursor agents cannot report billed USD via `agent.getUsage()` (feature_unavailable).
+   *
+   * TODO: should rather be implemented on the cursor-agent service
+   * @param {Record<string, unknown>} turnUsage per-turn accumulator; derivation mutates it in place
+   * @returns {Promise<number>} cost delta written to `usage.cost_usd`
+   */
+  async recordCursorUsage(session, turnUsage, { kind, turnModel, patchSessionCost } = {}) {
+    if (!session || !turnUsage) return 0;
+
+    applyCursorUsageDerivation(turnUsage);
+    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
+
+    if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
+
+    const db = this.app.get('db');
+    await db('usage').insert({
+      session_id: session.id,
+      user_id: session.user_id,
+      repo_full_name: session.repo_full_name,
+      cost_usd: Math.max(costUsd, 0),
+      agent_sdk: 'cursor',
+      kind: kind ?? null,
+      input_tokens: turnUsage.input_tokens,
+      output_tokens: turnUsage.output_tokens,
+      cache_read_tokens: turnUsage.cache_read_tokens,
+      cache_write_tokens: turnUsage.cache_write_tokens,
+      reasoning_tokens: turnUsage.reasoning_tokens,
+      total_tokens: turnUsage.total_tokens,
+      raw_token_usage: turnUsage.raw_token_usage,
+      model:
+        turnUsage.model ??
+        turnModel?.model ??
+        (kind === 'review' ? session.review_model : null) ??
+        session.model ??
+        null,
+    });
+
+    if (!patchSessionCost || costUsd <= 0) return costUsd;
+
+    const latest = await db('sessions').where({ id: session.id }).first();
+    await this.app
+      .service('sessions')
+      .patch(
+        session.id,
+        { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUsd },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+    return costUsd;
+  }
+
   resetClaudeUsageTotals(totalsKey) {
     this._lastResultTotals.delete(totalsKey);
   }
@@ -1249,17 +1324,24 @@ export class SessionsService extends KnexService {
   }
 
   async onTurnComplete(sessionId) {
+    await this.flushNextQueuedTurn(sessionId, 'builder');
+  }
+
+  /** Flush the oldest queued turn message for this session and agent_type. */
+  async flushNextQueuedTurn(sessionId, agentType = 'builder') {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (session) {
-      await db('sessions')
-        .where({ id: sessionId })
-        .update({ active_chat_turn_id: null, active_review_turn_id: null })
-        .catch(() => {});
-      this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
+      if (agentType === 'builder') {
+        await db('sessions')
+          .where({ id: sessionId })
+          .update({ active_chat_turn_id: null })
+          .catch(() => {});
+        this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
+      }
     }
     const queued = await db('queued_messages')
-      .where({ session_id: sessionId, kind: 'turn' })
+      .where({ session_id: sessionId, kind: 'turn', agent_type: agentType })
       .orderBy('created_at', 'asc')
       .first();
     if (!queued) return;
@@ -1271,7 +1353,10 @@ export class SessionsService extends KnexService {
         session_id: sessionId,
         type: 'user',
         message_json: queued.message_json,
-        ...turnModelCreateFields(queued),
+        agent_type: queued.agent_type ?? agentType,
+        agent_sdk: queued.agent_sdk,
+        model: queued.model,
+        ...(queued.model_params != null ? { model_params: queued.model_params } : {}),
       },
       { user: { id: queued.user_id } }
     );
@@ -1558,8 +1643,8 @@ async function failSessionProvisioning(app, sessionId, user, err) {
   logger.error({ err, sessionId }, 'Session provisioning failed');
   const userParams = { provider: undefined, user };
   const message = err?.message || 'Session setup failed';
+  const db = app.get('db');
   try {
-    const db = app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (session && !session.archived_at) {
       const repo = session.repo_id
@@ -1569,19 +1654,29 @@ async function failSessionProvisioning(app, sessionId, user, err) {
         logger.warn({ err: rmErr, sessionId }, 'Failed to remove worktree after provisioning error')
       );
     }
-    await app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: 'system',
-        subtype: 'status',
-        message_json: JSON.stringify({
+    if (session) {
+      await app.service('messages').create(
+        {
+          session_id: sessionId,
           type: 'system',
           subtype: 'status',
-          status: `Setup failed — ${message}`,
-        }),
-      },
-      userParams
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: `Setup failed — ${message}`,
+          }),
+          ...sessionMessageIdentity(session, 'builder'),
+        },
+        userParams
+      );
+    }
+  } catch (patchErr) {
+    logger.error(
+      { err: patchErr, sessionId },
+      'Failed to post setup failure message after provisioning error'
     );
+  }
+  try {
     await app
       .service('sessions')
       .patch(sessionId, { status: 'failed', worktree_path: null }, userParams);
@@ -1933,6 +2028,7 @@ async function persistSystemPrompt(context) {
         subtype: 'prompt',
         content: promptAppend,
       }),
+      ...sessionMessageIdentity(session, 'builder'),
     },
     { provider: undefined, user: context.params.user }
   );
@@ -1957,6 +2053,7 @@ async function createFirstMessage(context) {
       session_id: session.id,
       type: 'user',
       message_json: JSON.stringify(initialSdkMessage),
+      ...sessionMessageIdentity(session, 'builder'),
     },
     { user: context.params.user }
   );

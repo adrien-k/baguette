@@ -147,6 +147,7 @@ function TypedMessage({
         <PlanReviewBlock
           markdown={message.markdown}
           sessionId={sessionId}
+          session={session}
           userReplied={userReplied}
         />
       );
@@ -159,6 +160,7 @@ function TypedMessage({
           message={message}
           worktreePath={worktreePath}
           sessionId={sessionId ?? undefined}
+          session={session}
           userReplied={userReplied}
         />
       );

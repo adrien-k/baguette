@@ -16,7 +16,6 @@ import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
-import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 import { processCursorRunStream } from '../cursor/cursor-sdk-turn.ts';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
@@ -24,7 +23,6 @@ import {
   isHumanUserMessage as isHumanUserMessageShared,
   resolveTurnModel,
 } from '../../../shared/turn-model.js';
-import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
@@ -34,14 +32,15 @@ import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
+  channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
+import { sessionMessageIdentity } from './message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
 import type {
   AgentApp,
   AgentSessionRow,
-  ChatTable,
   DbLike,
   MessageChannel,
   MessageRowLike,
@@ -92,6 +91,8 @@ function extractUserText(parsed: unknown): string {
 
 export class CursorAgentService {
   app!: AgentApp;
+  private _messageListenerBound = false;
+  private _handlingMessageIds = new Set<number>();
   private _activeSessions: Map<string | number, CursorSessionState>;
   private _sessionStores: Map<number, SqliteLocalAgentStore>;
 
@@ -121,6 +122,15 @@ export class CursorAgentService {
 
   setup(app: AgentApp) {
     this.app = app;
+    if (this._messageListenerBound) return;
+    this._messageListenerBound = true;
+    const messages = this.app.service('messages');
+    if (typeof messages?.on !== 'function') return;
+    messages.on('created', (row: MessageRowLike) => {
+      void this.handleMessageCreated(row).catch((err) =>
+        logger.error({ err: (err as Error).message }, 'cursor-agent: handleMessageCreated failed')
+      );
+    });
   }
 
   async writeAlwaysApplyRule(
@@ -256,9 +266,18 @@ ${body}`,
     return agentOptions;
   }
 
-  async handleTableMessageCreated(row: MessageRowLike, table: ChatTable) {
+  async handleMessageCreated(row: MessageRowLike) {
     if (row.type !== 'user') return;
+    if (row.id != null && this._handlingMessageIds.has(row.id)) return;
+    if (row.id != null) this._handlingMessageIds.add(row.id);
+    try {
+      await this._handleMessageCreatedImpl(row);
+    } finally {
+      if (row.id != null) this._handlingMessageIds.delete(row.id);
+    }
+  }
 
+  async _handleMessageCreatedImpl(row: MessageRowLike) {
     const parsed = parseUserRow(row);
     if (!parsed || !isDispatchableUserMessage(parsed)) return;
 
@@ -268,8 +287,9 @@ ${body}`,
       .first()) as AgentSessionRow | undefined;
     if (!session || session.archived_at) return;
 
-    const channel: MessageChannel = table === 'session-review-messages' ? 'review' : 'chat';
-    const sdk = channel === 'review' ? session.review_agent_sdk : session.agent_sdk;
+    const channel: MessageChannel = channelFromAgentType(row.agent_type as string);
+    const sdk =
+      row.agent_sdk ?? (channel === 'review' ? session.review_agent_sdk : session.agent_sdk);
     if (sdk !== 'cursor') return;
 
     if (channel === 'chat') {
@@ -308,11 +328,6 @@ ${body}`,
     }).catch((err) => {
       logger.error({ sessionId, err: (err as Error).message }, 'cursor-agent turn failed');
     });
-  }
-
-  /** @deprecated use handleTableMessageCreated */
-  async onMessageCreated(message: MessageRowLike) {
-    return this.handleTableMessageCreated(message, 'messages');
   }
 
   async _prepareGlobalRulesDir(session: AgentSessionRow): Promise<string | null> {
@@ -551,6 +566,8 @@ ${body}`,
             channel,
             worktreePath: session.worktree_path,
             agentType: 'cursor',
+            model: turnModel.model ?? session.model ?? '',
+            modelParams: turnModel.modelParams,
           })
         : null;
 
@@ -663,13 +680,20 @@ ${body}`,
         }
       }
 
-      if (turnFinishedOk && channel !== 'review') {
-        await this._recordTurnUsage(session, agent, turnUsage, { turnModel }).catch((err) =>
-          logger.warn(
-            { sessionId, err: (err as Error).message },
-            'cursor-agent: failed to record turn usage'
-          )
-        );
+      if (turnFinishedOk) {
+        await this.app
+          .service('sessions')
+          .recordCursorUsage(session, turnUsage, {
+            kind: channel === 'review' ? 'review' : undefined,
+            turnModel,
+            patchSessionCost: true,
+          })
+          .catch((err) =>
+            logger.warn(
+              { sessionId, err: (err as Error).message },
+              'cursor-agent: failed to record turn usage'
+            )
+          );
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -687,7 +711,13 @@ ${body}`,
             await this.app
               .service('sessions')
               .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-            await this._persistStatusMessage(sessionId, userId, (err as Error).message);
+            await this._persistStatusMessage(
+              sessionId,
+              userId,
+              (err as Error).message,
+              session,
+              channel
+            );
           }
         } catch {
           // ignore secondary errors
@@ -744,6 +774,8 @@ ${body}`,
         channel: sessionState?.channel ?? 'chat',
         worktreePath: session.worktree_path,
         agentType: 'cursor',
+        model: turnModel.model ?? session.model ?? '',
+        modelParams: turnModel.modelParams,
       });
 
     return processCursorRunStream(run, {
@@ -786,7 +818,7 @@ ${body}`,
             await this.app
               .service('sessions')
               .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-            await this._persistStatusMessage(sessionId, userId, statusMsg);
+            await this._persistStatusMessage(sessionId, userId, statusMsg, session, channel);
           }
           return { break: true, finishedOk: false };
         }
@@ -825,90 +857,13 @@ ${body}`,
     return null;
   }
 
-  /**
-   * Record one `usage` row for the finished turn: token counts from the run stream
-   * plus USD estimated from our pricing table (see shared/cursor-model-pricing.js).
-   *
-   * We do not call `agent.getUsage()` for cost. Baguette runs Cursor local agents;
-   * their usage endpoint answers `feature_unavailable`, so billed USD is never
-   * available there. Cloud agents could return cost, but we keep one code path:
-   * token-derived estimates only.
-   *
-   * `kind: 'review'` tags reviewer usage separately from session-chat turns.
-   */
-  async recordTurnUsage(
+  async _persistMessage(
+    sessionId: number,
+    userId: number,
+    message: Record<string, unknown>,
     session: AgentSessionRow,
-    agent: SDKAgent,
-    turnUsage: TurnUsage,
-    options: { kind?: string; turnModel?: { model?: string | null } } = {}
-  ): Promise<void> {
-    return this._recordTurnUsage(session, agent, turnUsage, options);
-  }
-
-  async _recordTurnUsage(
-    session: AgentSessionRow,
-    _agent: SDKAgent,
-    turnUsage: TurnUsage,
-    { kind, turnModel }: { kind?: string; turnModel?: { model?: string | null } } = {}
-  ): Promise<void> {
-    const db = this.app.get('db') as DbLike;
-    const sessionId = session.id;
-    const userId = session.user_id;
-
-    applyCursorUsageDerivation(turnUsage);
-    const deltaCostUsd = this._turnCostUsd(session, turnUsage, { kind, turnModel });
-
-    // Nothing to say about this turn at all — don't write an empty row.
-    if (deltaCostUsd <= 0 && turnUsage.total_tokens <= 0) return;
-
-    await db('usage').insert({
-      session_id: sessionId,
-      user_id: userId,
-      repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(deltaCostUsd, 0),
-      agent_sdk: 'cursor',
-      kind: kind ?? null,
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      raw_token_usage: turnUsage.raw_token_usage,
-      model:
-        turnUsage.model ??
-        turnModel?.model ??
-        (kind === 'review' ? session.review_model : null) ??
-        session.model ??
-        null,
-    });
-
-    if (deltaCostUsd <= 0) return;
-
-    const currentSession = await db('sessions')
-      .where({ id: sessionId })
-      .select('total_cost_usd')
-      .first();
-    const prevSessionCost = parseFloat(String(currentSession?.total_cost_usd ?? 0));
-    await this.app
-      .service('sessions')
-      .patch(
-        sessionId,
-        { total_cost_usd: prevSessionCost + deltaCostUsd },
-        { provider: undefined, user: { id: userId } }
-      );
-  }
-
-  /** Per-turn USD from token counts when the model is in our pricing table; else 0. */
-  _turnCostUsd(
-    session: AgentSessionRow,
-    turnUsage: TurnUsage,
-    { kind, turnModel }: { kind?: string; turnModel?: { model?: string | null } } = {}
-  ): number {
-    return estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
-  }
-
-  async _persistMessage(sessionId: number, userId: number, message: Record<string, unknown>) {
+    channel: MessageChannel = 'chat'
+  ) {
     return await this.app.service('messages').create(
       {
         session_id: sessionId,
@@ -917,12 +872,21 @@ ${body}`,
         uuid: (message.uuid as string | undefined) ?? null,
         message_json: JSON.stringify(message),
         total_cost_usd: null,
+        ...sessionMessageIdentity(session, channel === 'review' ? 'reviewer' : 'builder', {
+          agent_sdk: 'cursor',
+        }),
       },
       { provider: undefined, user: { id: userId } }
     );
   }
 
-  async _persistStatusMessage(sessionId: number, userId: number, statusText: string) {
+  async _persistStatusMessage(
+    sessionId: number,
+    userId: number,
+    statusText: string,
+    session: AgentSessionRow,
+    channel: MessageChannel = 'chat'
+  ) {
     const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
     await this.app.service('messages').create(
       {
@@ -930,6 +894,9 @@ ${body}`,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
+        ...sessionMessageIdentity(session, channel === 'review' ? 'reviewer' : 'builder', {
+          agent_sdk: 'cursor',
+        }),
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -1057,8 +1024,6 @@ export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent')
   service.setup(app);
   app.use(path, service, {
     methods: [
-      'onMessageCreated',
-      'handleTableMessageCreated',
       'stopSession',
       'stopTurn',
       'runTurn',
@@ -1069,7 +1034,6 @@ export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent')
       'generateSessionMetadata',
       'openSessionStore',
       'disposeSessionStore',
-      'recordTurnUsage',
     ],
   });
 }

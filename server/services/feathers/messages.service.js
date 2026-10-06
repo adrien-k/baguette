@@ -1,10 +1,8 @@
 import { KnexService } from '@feathersjs/knex';
 import { requireUser, scopeBySessionUser } from './hooks.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
-import { attachSessionTurnModelFields, turnModelCreateFields } from '../../../shared/turn-model.js';
 import { assignTurnOnUserMessageCreate } from '../../../shared/turn-assignment.js';
-import { dispatchCreatedMessageToAgents } from '../agent-message-dispatch.js';
-import { scopeAgentType } from './session-review-messages.service.js';
+import { scopeAgentTypeDefaultFind, requireMessageIdentity } from './message-identity.js';
 
 /**
  * Messages service (table: session_messages). Scoped by session; access restricted to sessions owned by params.user.
@@ -30,22 +28,16 @@ function extractForceParam(context) {
   return context;
 }
 
-async function snapshotSessionModelOnUserMessage(context) {
-  const data = context.data;
-  if (!data?.session_id || data.type !== 'user') return context;
-  const session = await context.app.get('db')('sessions').where({ id: data.session_id }).first();
-  if (!session) return context;
-  attachSessionTurnModelFields(data, session);
-  return context;
-}
-
 async function queueTurnMessage(context) {
   await context.app.service('queued-messages').create(
     {
       session_id: context.data.session_id,
       message_json: context.data.message_json,
       kind: 'turn',
-      ...turnModelCreateFields(context.data),
+      agent_type: context.data.agent_type,
+      agent_sdk: context.data.agent_sdk,
+      model: context.data.model,
+      ...(context.data.model_params != null ? { model_params: context.data.model_params } : {}),
     },
     { user: context.params.user }
   );
@@ -60,9 +52,12 @@ async function queueIfRunning(context) {
   if (!session) return context;
 
   if (context.params._force) return context;
-  // Queue while the agent is mid-turn, and while the worktree is still being created
-  // so a prompt typed immediately after create is not dispatched with no cwd.
-  const queueable = session.status === 'running' || session.status === 'provisioning';
+
+  const agentType = context.data.agent_type === 'reviewer' ? 'reviewer' : 'builder';
+  const queueable =
+    agentType === 'reviewer'
+      ? session.review_status === 'running'
+      : session.status === 'running' || session.status === 'provisioning';
   if (!queueable) return context;
   return queueTurnMessage(context);
 }
@@ -74,22 +69,17 @@ async function afterCreateNotifySessions(context) {
   return context;
 }
 
-async function afterCreateDispatchAgents(context) {
-  if (!context.result || context.result.queued) return context;
-  await dispatchCreatedMessageToAgents(context.app, context.result, 'messages');
-  return context;
-}
-
-async function assignChatTurn(context) {
-  return assignTurnOnUserMessageCreate(context, 'chat');
+async function assignTurn(context) {
+  const channel = context.data?.agent_type === 'reviewer' ? 'review' : 'chat';
+  return assignTurnOnUserMessageCreate(context, channel);
 }
 
 export const messagesHooks = {
   before: {
-    all: [requireUser, scopeBySessionUser, scopeAgentType('builder')],
-    create: [extractForceParam, assignChatTurn, snapshotSessionModelOnUserMessage, queueIfRunning],
+    all: [requireUser, scopeAgentTypeDefaultFind, scopeBySessionUser],
+    create: [extractForceParam, requireMessageIdentity, assignTurn, queueIfRunning],
   },
   after: {
-    create: [afterCreateNotifySessions, afterCreateDispatchAgents],
+    create: [afterCreateNotifySessions],
   },
 };

@@ -4,6 +4,7 @@ import { agentEventLogPath, appendAgentEvent } from './agent-event-log.js';
 import type { SessionMessagePayload, SessionMessageRow } from '../../shared/session-messages.ts';
 import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from './claude/claude-mapping.ts';
 import { cursorBuildToolCallComplete, cursorBuildToolCallStart } from './cursor/cursor-mapping.ts';
+import { createClaudeTaskTracker } from '../../shared/claude-task-tracker.js';
 
 /** @param app Feathers application */
 export type WriterFactoryApp = {
@@ -28,15 +29,36 @@ export type MessageWriterOpts = {
   worktreePath?: string | null;
   /** Which provider is producing this turn's stream. */
   agentType: 'claude' | 'cursor';
+  model: string;
+  modelParams?: unknown;
 };
 
+function messageIdentityFromChannel(
+  channel: 'chat' | 'review',
+  agentSdk: 'claude' | 'cursor',
+  model: string,
+  modelParams?: unknown
+) {
+  return {
+    agent_type: channel === 'review' ? 'reviewer' : 'builder',
+    agent_sdk: agentSdk,
+    model,
+    ...(modelParams != null && agentSdk === 'cursor' ? { model_params: modelParams } : {}),
+  };
+}
+
 /**
- * Build a MessageStreamWriter bound to the chat or review messages service.
+ * Build a MessageStreamWriter bound to the messages service.
  * @param app - Feathers application
  */
 export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWriterOpts) {
-  const serviceName = opts.channel === 'review' ? 'session-review-messages' : 'messages';
   const userParams = { provider: undefined, user: { id: opts.userId } };
+  const identity = messageIdentityFromChannel(
+    opts.channel,
+    opts.agentType,
+    opts.model,
+    opts.modelParams
+  );
   const logPath = agentEventLogPath({
     sessionId: opts.sessionId,
     worktreePath: opts.worktreePath,
@@ -50,20 +72,43 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
           buildToolCallStart: cursorBuildToolCallStart,
           buildToolCallComplete: cursorBuildToolCallComplete,
         }
-      : {
-          buildToolCallStart: claudeBuildToolCallStart,
-          buildToolCallComplete: claudeBuildToolCallComplete,
-        };
+      : (() => {
+          const taskTracker = createClaudeTaskTracker();
+          return {
+            buildToolCallStart: (
+              callId: string,
+              name: string,
+              args: Record<string, unknown>,
+              startedAt?: string
+            ) => {
+              const input = args.taskId != null ? taskTracker.enrichTaskUpdateInput(args) : args;
+              return claudeBuildToolCallStart(callId, name, input, startedAt);
+            },
+            buildToolCallComplete: (prev, opts) => {
+              const rawArgs = opts.args ?? {};
+              const isTaskUpdate = rawArgs.taskId != null;
+              const isTaskCreate =
+                !isTaskUpdate &&
+                (typeof rawArgs.subject === 'string' || typeof rawArgs.description === 'string');
+              const input = isTaskUpdate ? taskTracker.enrichTaskUpdateInput(rawArgs) : rawArgs;
+              const completed = claudeBuildToolCallComplete(prev, { ...opts, args: input });
+              if (isTaskCreate) {
+                taskTracker.registerTaskFromCreateResult(opts.rawResult, rawArgs);
+              }
+              return completed;
+            },
+          };
+        })();
 
   return new MessageStreamWriter({
     sessionId: opts.sessionId,
     turnId: opts.turnId,
     createRow: async (row) => {
-      const created = await app.service(serviceName).create(row, userParams);
+      const created = await app.service('messages').create({ ...row, ...identity }, userParams);
       return { id: created.id };
     },
     patchRow: async (id, patch) => {
-      await app.service(serviceName).patch(id, patch, userParams);
+      await app.service('messages').patch(id, patch, userParams);
     },
     appendRaw: async (event) => {
       await appendAgentEvent(logPath, event);
@@ -77,6 +122,9 @@ export type TypedMessageOpts = {
   userId: number;
   turnId?: number | null;
   channel: 'chat' | 'review';
+  agentSdk?: 'claude' | 'cursor';
+  model: string;
+  modelParams?: unknown;
 };
 
 /**
@@ -88,9 +136,10 @@ export async function persistTypedMessage(
   opts: TypedMessageOpts,
   payload: SessionMessagePayload
 ) {
-  const serviceName = opts.channel === 'review' ? 'session-review-messages' : 'messages';
-  const row = dbRowFromPayload(opts.sessionId, opts.turnId ?? null, payload);
-  return app.service(serviceName).create(row, {
+  const agentSdk = opts.agentSdk ?? 'claude';
+  const identity = messageIdentityFromChannel(opts.channel, agentSdk, opts.model, opts.modelParams);
+  const row = dbRowFromPayload(opts.sessionId, opts.turnId ?? null, payload, identity);
+  return app.service('messages').create(row, {
     provider: undefined,
     user: { id: opts.userId },
   });

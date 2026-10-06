@@ -9,6 +9,17 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsPath = path.join(__dirname, '../migrations');
 
+/** Default agent identity on sessions / messages rows in tests (matches messages.create requirements). */
+export const testSessionAgentDefaults = {
+  agent_sdk: 'claude',
+  model: 'sonnet',
+};
+
+export const testMessageIdentityDefaults = {
+  agent_type: 'builder',
+  ...testSessionAgentDefaults,
+};
+
 async function createAndMigrate() {
   const db = Knex({
     client: 'better-sqlite3',

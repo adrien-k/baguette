@@ -49,6 +49,16 @@ export function resolveTurnIdForUserCreate(session, data, opts) {
     return { turnId: activeTurn, increment: false };
   }
 
+  if (
+    running &&
+    !steering &&
+    opts.channel === 'review' &&
+    isHumanUserMessage(normalized) &&
+    activeTurn != null
+  ) {
+    return { turnId: activeTurn, increment: false };
+  }
+
   if (running && !steering && isBaguetteUserMessage(normalized) && activeTurn != null) {
     return { turnId: activeTurn, increment: false };
   }

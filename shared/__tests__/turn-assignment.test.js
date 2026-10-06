@@ -44,4 +44,23 @@ describe('resolveTurnIdForUserCreate', () => {
     );
     expect(r).toEqual({ turnId: 4, increment: false });
   });
+
+  it('reuses active_review_turn_id for human follow-ups while review is running', () => {
+    const session = {
+      review_status: 'running',
+      active_review_turn_id: 4,
+      status: 'stopped',
+      active_chat_turn_id: null,
+    };
+    const { turnId, increment } = resolveTurnIdForUserCreate(
+      session,
+      {
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', content: 'follow up' }),
+      },
+      { channel: 'review' }
+    );
+    expect(increment).toBe(false);
+    expect(turnId).toBe(4);
+  });
 });

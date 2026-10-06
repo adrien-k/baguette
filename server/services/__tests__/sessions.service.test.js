@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { BadRequest, NotFound } from '@feathersjs/errors';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, testSessionAgentDefaults } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
@@ -31,8 +31,6 @@ import {
 
 const {
   stopSession,
-  onMessageCreated,
-  handleTableMessageCreated,
   syncSessionSettingsFromPatch,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -42,8 +40,6 @@ const {
   resumeInterruptedReviews,
 } = vi.hoisted(() => ({
   stopSession: vi.fn().mockResolvedValue(undefined),
-  onMessageCreated: vi.fn().mockResolvedValue(undefined),
-  handleTableMessageCreated: vi.fn().mockResolvedValue(undefined),
   syncSessionSettingsFromPatch: vi.fn(),
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   readBaguetteConfigRaw: vi.fn().mockResolvedValue({ missing: true }),
@@ -91,14 +87,25 @@ vi.mock('../session-prompt.js', () => ({
 
 const params = (user) => ({ provider: 'rest', user });
 
-const cursorOnMessageCreated = vi.fn().mockResolvedValue(undefined);
-const cursorHandleTableMessageCreated = vi.fn().mockResolvedValue(undefined);
+const claudeHandleMessageCreated = vi.fn().mockResolvedValue(undefined);
+const cursorHandleMessageCreated = vi.fn().mockResolvedValue(undefined);
 const deleteSessionTasks = vi.fn();
 const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, access_token: 'test-token' });
 // Not Feathers methods (like the real service): called directly by sessions.service.
 const findRunningTask = vi.fn().mockReturnValue(null);
 const tasksCreate = vi.fn(async (data) => ({ id: 42, ...data }));
 const getTask = vi.fn().mockReturnValue(null);
+
+function wireAgentMessageListeners(app) {
+  app.service('messages').on('created', async (row) => {
+    if (row.type !== 'user') return;
+    const agentName = row.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
+    const agent = app.service(agentName);
+    if (agent?.handleMessageCreated) {
+      await agent.handleMessageCreated(row);
+    }
+  });
+}
 
 function makeApp(db) {
   const app = feathers();
@@ -126,16 +133,14 @@ function makeApp(db) {
     'claude-agent',
     {
       stopSession,
-      onMessageCreated,
-      handleTableMessageCreated,
+      handleMessageCreated: claudeHandleMessageCreated,
       syncSessionSettingsFromPatch,
       generateSessionMetadata,
     },
     {
       methods: [
         'stopSession',
-        'onMessageCreated',
-        'handleTableMessageCreated',
+        'handleMessageCreated',
         'syncSessionSettingsFromPatch',
         'generateSessionMetadata',
       ],
@@ -146,16 +151,10 @@ function makeApp(db) {
     {
       stopSession,
       generateSessionMetadata,
-      onMessageCreated: cursorOnMessageCreated,
-      handleTableMessageCreated: cursorHandleTableMessageCreated,
+      handleMessageCreated: cursorHandleMessageCreated,
     },
     {
-      methods: [
-        'stopSession',
-        'generateSessionMetadata',
-        'onMessageCreated',
-        'handleTableMessageCreated',
-      ],
+      methods: ['stopSession', 'generateSessionMetadata', 'handleMessageCreated'],
     }
   );
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
@@ -166,6 +165,7 @@ function makeApp(db) {
   );
   registerSessionsService(app);
   registerMessagesService(app);
+  wireAgentMessageListeners(app);
   return app;
 }
 
@@ -188,6 +188,7 @@ async function seedUserAndSession(db, { github_id, username, shortId, worktreePa
     short_id: shortId,
     status: 'active',
     worktree_path: worktreePath,
+    ...testSessionAgentDefaults,
   });
 
   return { user, repo, sessId };
@@ -890,6 +891,7 @@ function sessionData(overrides = {}) {
     repo_full_name: 'test/repo',
     base_branch: 'main',
     initial_prompt: 'Fix the bug',
+    ...testSessionAgentDefaults,
     ...overrides,
   };
 }
@@ -1563,7 +1565,10 @@ describe('Sessions service - find, get, create', (hooks) => {
     it('does not generate metadata for a global session without initial_prompt', async () => {
       const session = await app
         .service('sessions')
-        .create({ is_global: true, initial_prompt: '' }, params({ id: userId1 }));
+        .create(
+          { is_global: true, initial_prompt: '', ...testSessionAgentDefaults },
+          params({ id: userId1 })
+        );
 
       expect(session.is_global).toBe(true);
       expect(generateSessionMetadata).not.toHaveBeenCalled();
@@ -1687,7 +1692,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       const session = await app
         .service('sessions')
         .create(
-          { is_global: true, initial_prompt: 'Look across all repos' },
+          { is_global: true, initial_prompt: 'Look across all repos', ...testSessionAgentDefaults },
           params({ id: userId1 })
         );
 
@@ -1854,6 +1859,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
         initial_prompt: 'Interrupted task',
         short_id: Math.random().toString(16).slice(2, 10),
         status: 'running',
+        ...testSessionAgentDefaults,
         ...overrides,
       })
       .then(([id]) => id);
@@ -1872,10 +1878,8 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    onMessageCreated.mockResolvedValue(undefined);
-    handleTableMessageCreated.mockResolvedValue(undefined);
-    cursorOnMessageCreated.mockResolvedValue(undefined);
-    cursorHandleTableMessageCreated.mockResolvedValue(undefined);
+    claudeHandleMessageCreated.mockResolvedValue(undefined);
+    cursorHandleMessageCreated.mockResolvedValue(undefined);
     loadBaguetteConfig.mockResolvedValue(null);
 
     await db('users').insert({ github_id: 2001, username: 'alice', approved: true });
@@ -1884,6 +1888,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
 
     app = makeApp(db);
+    app.service('messages').removeAllListeners('created');
     await app.setup();
   });
 
@@ -1897,7 +1902,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     expect(resumeInterruptedReviews).toHaveBeenCalled();
 
     // The nudge reaches the agent as a collapsible Baguette message, not as a user message.
-    const dispatched = userDispatches(handleTableMessageCreated);
+    const dispatched = userDispatches(claudeHandleMessageCreated);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0][0].session_id).toBe(sessId);
     const parsed = JSON.parse(dispatched[0][0].message_json);
@@ -1911,10 +1916,10 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const result = await app.service('sessions').restartInterruptedSessions();
 
     expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
-    const dispatched = userDispatches(cursorHandleTableMessageCreated);
+    const dispatched = userDispatches(cursorHandleMessageCreated);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0][0].session_id).toBe(sessId);
-    expect(userDispatches(handleTableMessageCreated)).toHaveLength(0);
+    expect(userDispatches(claudeHandleMessageCreated)).toHaveLength(0);
   });
 
   it('stops a session with no transcript to resume from and offers a Continue button', async () => {
@@ -1924,7 +1929,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
 
     expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
-    expect(userDispatches(handleTableMessageCreated)).toHaveLength(0);
+    expect(userDispatches(claudeHandleMessageCreated)).toHaveLength(0);
 
     const [status] = await messagesFor(sessId);
     const parsed = JSON.parse(status.message_json);
@@ -1938,12 +1943,12 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const result = await app.service('sessions').restartInterruptedSessions();
 
     expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
-    expect(userDispatches(cursorHandleTableMessageCreated)).toHaveLength(0);
+    expect(userDispatches(cursorHandleMessageCreated)).toHaveLength(0);
   });
 
   it('falls back to stopped when the agent fails to resume', async () => {
     const sessId = await seedSession({ claude_session_id: 'claude-abc' });
-    handleTableMessageCreated.mockImplementation(async (message) => {
+    claudeHandleMessageCreated.mockImplementation(async (message) => {
       if (message.type === 'user') throw new Error('worktree is gone');
     });
 
@@ -1979,7 +1984,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const result = await app.service('sessions').restartInterruptedSessions();
 
     expect(result).toEqual({ restarted: 0, stopped: 0, failed: 0 });
-    expect(handleTableMessageCreated).not.toHaveBeenCalled();
+    expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
     expect(await db('session_messages')).toHaveLength(0);
   });
 
@@ -2022,8 +2027,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
   it('keeps going when one session cannot be recovered at all', async () => {
     const failing = await seedSession({ claude_session_id: 'claude-1' });
     const healthy = await seedSession({ claude_session_id: 'claude-2' });
-    // Rejecting the status message too means even the stopped fallback cannot be written.
-    handleTableMessageCreated.mockImplementation(async (message) => {
+    claudeHandleMessageCreated.mockImplementation(async (message) => {
       if (message.session_id === failing) throw new Error('boom');
     });
 

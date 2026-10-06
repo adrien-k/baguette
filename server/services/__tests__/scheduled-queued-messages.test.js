@@ -24,6 +24,13 @@ const messageJson = JSON.stringify({
   message: { role: 'user', content: 'Later' },
 });
 
+const builderIdentity = (extra = {}) => ({
+  agent_type: 'builder',
+  agent_sdk: 'claude',
+  model: 'sonnet',
+  ...extra,
+});
+
 function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
@@ -71,7 +78,7 @@ describe('queued-messages schedule', () => {
     const row = await app
       .service('queued-messages')
       .schedule(
-        { session_id: sessionId, message_json: messageJson, send_at: sendAt },
+        { session_id: sessionId, message_json: messageJson, send_at: sendAt, ...builderIdentity() },
         params({ id: userId })
       );
     expect(row.kind).toBe('scheduled');
@@ -86,8 +93,7 @@ describe('queued-messages schedule', () => {
         session_id: sessionId,
         message_json: messageJson,
         send_at: sendAt,
-        model: 'sonnet',
-        model_params: '[{"id":"fast"}]',
+        ...builderIdentity({ model: 'sonnet', model_params: '[{"id":"fast"}]' }),
       },
       params({ id: userId })
     );
@@ -108,7 +114,7 @@ describe('queued-messages schedule', () => {
     const scheduled = await app
       .service('queued-messages')
       .schedule(
-        { session_id: sessionId, message_json: messageJson, send_at: sendAt },
+        { session_id: sessionId, message_json: messageJson, send_at: sendAt, ...builderIdentity() },
         params({ id: userId })
       );
 
@@ -121,6 +127,7 @@ describe('queued-messages schedule', () => {
       }),
       kind: 'turn',
       send_at: null,
+      ...builderIdentity(),
     });
 
     const updatedJson = JSON.stringify({
@@ -146,6 +153,7 @@ describe('scheduled dispatcher', () => {
       message_json: messageJson,
       kind: 'scheduled',
       send_at: sendAt,
+      ...builderIdentity(),
     });
 
     await app.service('queued-messages').runDue();
@@ -155,7 +163,7 @@ describe('scheduled dispatcher', () => {
 
     const messages = await db('session_messages').where({ session_id: sessionId, type: 'user' });
     expect(messages).toHaveLength(1);
-    expect(messages[0].model).toBeNull();
+    expect(messages[0].model).toBe('sonnet');
   });
 
   it('passes the queued model onto the created message', async () => {
@@ -166,8 +174,7 @@ describe('scheduled dispatcher', () => {
       message_json: messageJson,
       kind: 'scheduled',
       send_at: sendAt,
-      model: 'sonnet',
-      model_params: '[{"id":"fast"}]',
+      ...builderIdentity({ model: 'sonnet', model_params: '[{"id":"fast"}]' }),
     });
 
     await app.service('queued-messages').runDue();
@@ -187,6 +194,7 @@ describe('scheduled dispatcher', () => {
       message_json: messageJson,
       kind: 'scheduled',
       send_at: sendAt,
+      ...builderIdentity(),
     });
 
     await app.service('queued-messages').runDue();

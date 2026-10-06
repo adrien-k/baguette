@@ -67,6 +67,8 @@ export type ProcessClaudeQueryStreamResult = {
   turnComplete: boolean;
   streamFailed: boolean;
   outcome: ClaudeStreamTurnOutcome;
+  /** Last `result` message seen in this consume pass (may follow background auto-resume). */
+  lastResult: SDKMessage | null;
 };
 
 export async function processClaudeQueryStream(
@@ -90,6 +92,7 @@ export async function processClaudeQueryStream(
   let turnComplete = false;
   let streamFailed = false;
   let outcome: ClaudeStreamTurnOutcome = 'failed';
+  let lastResult: SDKMessage | null = null;
 
   try {
     for await (const message of query) {
@@ -152,6 +155,7 @@ export async function processClaudeQueryStream(
         };
         const ok = resultMsg.subtype === 'success' && !resultMsg.is_error;
         outcome = ok ? 'completed' : 'failed';
+        lastResult = message;
         await onResult?.(message);
       }
 
@@ -177,5 +181,5 @@ export async function processClaudeQueryStream(
     }
   }
 
-  return { turnComplete, streamFailed, outcome };
+  return { turnComplete, streamFailed, outcome, lastResult };
 }

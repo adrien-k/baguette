@@ -37,6 +37,12 @@ type QuietCall = Exclude<
 
 function TodoBlock({ todos }: { todos?: unknown }) {
   const list = Array.isArray(todos) ? todos : [];
+  const visible = list.filter(
+    (todo) =>
+      typeof (todo as { content?: string }).content === 'string' &&
+      (todo as { content?: string }).content!.trim()
+  );
+  if (visible.length === 0) return null;
   return (
     <div className="py-0.5 pl-1 space-y-0.5">
       {list.map((todo, i) => {
@@ -196,11 +202,13 @@ export default function ToolCallBlock({
   message,
   worktreePath,
   sessionId,
+  session,
   userReplied = false,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   worktreePath?: string | null;
   sessionId?: number;
+  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   if (message._hidden) return null;
@@ -210,6 +218,7 @@ export default function ToolCallBlock({
       message={message}
       worktreePath={worktreePath}
       sessionId={sessionId}
+      session={session}
       userReplied={userReplied}
     />
   );
@@ -223,11 +232,13 @@ function ToolCallSwitch({
   message,
   worktreePath,
   sessionId,
+  session,
   userReplied,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   worktreePath?: string | null;
   sessionId?: number;
+  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   const isError = message.status === 'error';
@@ -256,6 +267,7 @@ function ToolCallSwitch({
         <AskUserQuestionBlock
           questions={message.args.questions as AskUserQuestion[]}
           sessionId={sessionId}
+          session={session}
           userReplied={userReplied}
         />
       );
@@ -264,6 +276,7 @@ function ToolCallSwitch({
         <PlanReviewBlock
           markdown={message.args.plan}
           sessionId={sessionId}
+          session={session}
           userReplied={userReplied}
         />
       );

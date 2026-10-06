@@ -53,7 +53,7 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import { useSessionUsage } from '../../hooks/useSessionUsage.js';
 import { schedulePayload } from '../../utils/loopSchedule.js';
-import { turnModelCreateFields } from '@baguette/shared/turn-model.js';
+import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
@@ -147,7 +147,10 @@ export default function ChatView({
   }, [session?.id, session?.model, session?.model_params]);
 
   const composerTurnFields = () =>
-    turnModelCreateFields({ model: composerModel, model_params: composerModelParams });
+    builderMessageCreateFields(session, {
+      model: composerModel,
+      model_params: composerModelParams,
+    });
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {
     setComposerModel(modelId);
@@ -267,6 +270,7 @@ export default function ChatView({
       session_id: session.id,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
+      ...builderMessageCreateFields(session),
     });
   };
 
@@ -338,7 +342,7 @@ export default function ChatView({
       session_id: session.id,
       type: 'user',
       message_json: messageJson,
-      ...turnModelCreateFields({ model, model_params }),
+      ...builderMessageCreateFields(session, { model, model_params }),
       ...(force ? { force: true } : {}),
     });
   };

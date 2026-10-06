@@ -8,6 +8,7 @@ import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -22,6 +23,14 @@ const db = createTestDb({ beforeEach, afterEach });
 const params = (user) => ({ provider: 'rest', user });
 const unauthParams = { provider: 'rest' };
 
+const builderFields = (extra = {}) => ({
+  agent_type: 'builder',
+  agent_sdk: 'claude',
+  model: 'sonnet',
+  model_params: '[{"id":"effort","value":"high"}]',
+  ...extra,
+});
+
 function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
@@ -35,6 +44,7 @@ function makeApp(dbRef) {
     { methods: ['onMessageCreated', 'syncSessionSettingsFromPatch'] }
   );
   registerMessagesService(app);
+  registerQueuedMessagesService(app);
   return app;
 }
 
@@ -79,10 +89,14 @@ beforeEach(async () => {
     initial_prompt: 'Other',
     short_id: 'cc22dd',
     status: 'active',
+    model: 'sonnet',
   });
 
   [msgId] = await db('session_messages').insert({
     session_id: sessionId,
+    agent_type: 'builder',
+    agent_sdk: 'claude',
+    model: 'sonnet',
     type: 'assistant',
     message_json: JSON.stringify({ type: 'assistant', content: 'Hello' }),
   });
@@ -162,6 +176,7 @@ describe('Messages service - create', () => {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        ...builderFields(),
       },
       params({ id: userId })
     );
@@ -178,8 +193,10 @@ describe('Messages service - create', () => {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
-        model: 'sonnet',
-        model_params: '[{"id":"fast","value":"true"}]',
+        ...builderFields({
+          model: 'sonnet',
+          model_params: '[{"id":"fast","value":"true"}]',
+        }),
       },
       params({ id: userId })
     );
@@ -196,6 +213,7 @@ describe('Messages service - create', () => {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        ...builderFields(),
       },
       params({ id: userId })
     );
@@ -220,6 +238,91 @@ describe('Messages service - create', () => {
         .service('messages')
         .create({ session_id: sessionId, type: 'user', message_json: '{}' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent_type / queueWhileRunning
+// ---------------------------------------------------------------------------
+
+describe('Messages service - agent_type and queue', () => {
+  it('defaults find to builder rows only', async () => {
+    await db('session_messages').insert({
+      session_id: sessionId,
+      agent_type: 'reviewer',
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      type: 'user',
+      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'review' } }),
+    });
+
+    const result = await app.service('messages').find({
+      query: { session_id: sessionId },
+      ...params({ id: userId }),
+    });
+    const data = result.data ?? result;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe(msgId);
+  });
+
+  it('rejects client create with agent_type reviewer', async () => {
+    await expect(
+      app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'user',
+          agent_type: 'reviewer',
+          agent_sdk: 'claude',
+          model: 'sonnet',
+          message_json: JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: 'nope' },
+          }),
+        },
+        params({ id: userId })
+      )
+    ).rejects.toThrow(/Review messages cannot be created from the client/);
+  });
+
+  it('queues a builder user message while the session turn is running', async () => {
+    await db('sessions').where({ id: sessionId }).update({ status: 'running' });
+
+    const result = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'follow up' },
+        }),
+        ...builderFields(),
+      },
+      params({ id: userId })
+    );
+
+    expect(result).toEqual({ queued: true });
+    const queued = await db('queued_messages').where({ session_id: sessionId });
+    expect(queued).toHaveLength(1);
+    expect(queued[0].agent_type).toBe('builder');
+    expect(queued[0].kind).toBe('turn');
+    expect(queued[0].agent_sdk).toBe('claude');
+    expect(queued[0].model).toBe('sonnet');
+  });
+
+  it('rejects create without required identity fields', async () => {
+    await expect(
+      app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'user',
+          message_json: JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: 'Hi' },
+          }),
+        },
+        params({ id: userId })
+      )
+    ).rejects.toThrow(/Missing required message fields/);
   });
 });
 

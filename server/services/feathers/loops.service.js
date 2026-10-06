@@ -5,6 +5,7 @@ import { DEFAULT_PAGINATE } from '../../config.js';
 import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-schedule.js';
 import logger from '../../logger.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
+import { sessionMessageIdentity } from './message-create-fields.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -144,13 +145,14 @@ export class LoopsService extends KnexService {
       message: { role: 'user', content: loop.prompt },
     });
     const turnModel = turnModelCreateFields(loop);
+    const identity = sessionMessageIdentity(tied, 'builder', { ...loop, ...turnModel });
 
     // Cursor has no compaction command, so its sessions just get the prompt again.
     if (tied.agent_sdk === 'cursor') {
       await this.app
         .service('messages')
         .create(
-          { session_id: tied.id, type: 'user', message_json: promptMessage, ...turnModel },
+          { session_id: tied.id, type: 'user', message_json: promptMessage, ...identity },
           userParams
         );
       return { sessionId: tied.id };
@@ -161,7 +163,10 @@ export class LoopsService extends KnexService {
     // and leave the prompt sitting in the queue until some unrelated turn released it.
     const queued = await this.app
       .service('queued-messages')
-      .create({ session_id: tied.id, message_json: promptMessage, ...turnModel }, userParams);
+      .create(
+        { session_id: tied.id, message_json: promptMessage, kind: 'turn', ...identity },
+        userParams
+      );
     try {
       await this.app.service('messages').create(
         {
@@ -176,6 +181,7 @@ export class LoopsService extends KnexService {
             message: { role: 'user', content: '/compact' },
             title: 'Loop run — compacting the conversation',
           }),
+          ...identity,
         },
         userParams
       );
