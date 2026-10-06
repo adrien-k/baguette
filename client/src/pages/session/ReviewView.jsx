@@ -389,6 +389,7 @@ export default function ReviewView({
     if (!session?.id || readonly) return;
     try {
       await sessionsService.patch(session.id, {
+        review_agent_sdk: reviewAgentSdk,
         review_model: modelId,
         review_model_params: modelParamsJson ?? null,
       });
@@ -398,7 +399,8 @@ export default function ReviewView({
   };
 
   const handleReviewSdkChange = async (sdk) => {
-    if (!session?.id || readonly || !sdk || sdk === reviewAgentSdk) return;
+    if (!session?.id || readonly || !sdk) return;
+    if (session.review_agent_sdk === sdk) return;
     try {
       await sessionsService.patch(session.id, {
         review_agent_sdk: sdk,

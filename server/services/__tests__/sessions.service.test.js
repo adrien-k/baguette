@@ -1411,6 +1411,21 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(updated.id).toBe(sessId1);
       expect(updated.status).toBe('completed');
     });
+
+    it('persists review_agent_sdk from client patch', async () => {
+      const updated = await app.service('sessions').patch(
+        sessId1,
+        {
+          review_agent_sdk: 'cursor',
+          review_model: 'composer',
+          review_model_params: null,
+        },
+        params({ id: userId1 })
+      );
+
+      expect(updated.review_agent_sdk).toBe('cursor');
+      expect(updated.review_model).toBe('composer');
+    });
   });
 
   // ── create ─────────────────────────────────────────────────────────────────
