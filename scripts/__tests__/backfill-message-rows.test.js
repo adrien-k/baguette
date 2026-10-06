@@ -101,6 +101,70 @@ describe('backfill-message-rows', () => {
     expect(session.current_turn_id).toBe(1);
   });
 
+  it('drops duplicate assistant tool_use rows that share a tool_call_id', async () => {
+    const sessionId = await seedSession('bf-dup');
+    const toolUseId = 'call-dup-1';
+    const createdAt = new Date().toISOString();
+    await db('session_messages').insert([
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', content: 'run' }),
+        created_at: createdAt,
+      },
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        type: 'assistant',
+        message_json: JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: toolUseId,
+                name: 'Bash',
+                input: { command: 'echo hi' },
+              },
+            ],
+          },
+        }),
+        created_at: createdAt,
+      },
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        type: 'assistant',
+        message_json: JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: toolUseId,
+                name: 'Bash',
+                input: { command: 'echo hi' },
+              },
+            ],
+          },
+        }),
+        created_at: createdAt,
+      },
+    ]);
+
+    const counts = await backfillMessageRows(db);
+    expect(counts.duplicateToolCallRowsRemoved).toBe(1);
+    expect(counts.toolCallsRewritten).toBe(1);
+
+    const rows = await db('session_messages').where({ session_id: sessionId }).orderBy('id', 'asc');
+    expect(rows).toHaveLength(2);
+    expect(rows[1].type).toBe('tool_call');
+    expect(rows[1].tool_call_id).toBe(toolUseId);
+  });
+
   it('stamps turns across builder and reviewer rows in the shared table', async () => {
     const sessionId = await seedSession('bf2');
     const createdAt = new Date().toISOString();

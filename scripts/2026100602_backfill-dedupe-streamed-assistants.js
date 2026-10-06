@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 import Knex from 'knex';
 import knexfile from '../knexfile.js';
+import { applySessionMessageWrites, forEachSessionMessageGroup } from './backfill-db.js';
 import { createSessionProgress } from './backfill-progress.js';
 
 function parseJson(s) {
@@ -199,6 +200,105 @@ export function collapseStreamableAssistantRun(runRows) {
 }
 
 /**
+ * @param {object[]} rows
+ * @returns {{ deleteIds: number[], patches: { id: number, patch: Record<string, unknown> }[], groupsCollapsed: number, rowsDeleted: number }}
+ */
+export function planStreamedAssistantDedupeForSession(rows) {
+  let run = [];
+  const deleteIds = [];
+  const patches = [];
+  let groupsCollapsed = 0;
+  let rowsDeleted = 0;
+
+  const flushRun = () => {
+    if (!run.length) return;
+    const plan = collapseStreamableAssistantRun(run);
+    run = [];
+    if (!plan) return;
+    patches.push({
+      id: plan.keepId,
+      patch: { type: 'assistant', message_json: plan.message_json },
+    });
+    if (plan.deleteIds.length) {
+      deleteIds.push(...plan.deleteIds);
+      rowsDeleted += plan.deleteIds.length;
+    }
+    groupsCollapsed += 1;
+  };
+
+  for (const row of rows) {
+    if (isStreamableAssistantRow(row)) {
+      run.push(row);
+      continue;
+    }
+    flushRun();
+    if (!HARD_BOUNDARY_TYPES.has(row.type)) {
+      // thinking-only system rows, etc. — still break assistant runs
+    }
+  }
+  flushRun();
+
+  return { deleteIds, patches, groupsCollapsed, rowsDeleted };
+}
+
+/**
+ * @param {object[]} rows
+ * @returns {{ deleteIds: number[], patches: { id: number, patch: Record<string, unknown> }[], groupsCollapsed: number, rowsDeleted: number }}
+ */
+export function planThinkingTokensDedupeForSession(rows) {
+  let run = [];
+  const deleteIds = [];
+  const patches = [];
+  let groupsCollapsed = 0;
+  let rowsDeleted = 0;
+
+  const flushRun = () => {
+    if (!run.length) return;
+    const plan = collapseThinkingTokensRun(run);
+    run = [];
+    if (!plan) return;
+    patches.push({
+      id: plan.keepId,
+      patch: {
+        type: 'system',
+        subtype: 'thinking_tokens',
+        message_json: plan.message_json,
+      },
+    });
+    if (plan.deleteIds.length) {
+      deleteIds.push(...plan.deleteIds);
+      rowsDeleted += plan.deleteIds.length;
+    }
+    groupsCollapsed += 1;
+  };
+
+  for (const row of rows) {
+    if (isThinkingTokensRow(row)) {
+      run.push(row);
+      continue;
+    }
+    flushRun();
+  }
+  flushRun();
+
+  return { deleteIds, patches, groupsCollapsed, rowsDeleted };
+}
+
+function mergeDedupePlans(...plans) {
+  const deleteIds = [];
+  const patches = [];
+  let groupsCollapsed = 0;
+  let rowsDeleted = 0;
+  for (const plan of plans) {
+    deleteIds.push(...plan.deleteIds);
+    patches.push(...plan.patches);
+    groupsCollapsed += plan.groupsCollapsed;
+    rowsDeleted += plan.rowsDeleted;
+  }
+  return { deleteIds, patches, groupsCollapsed, rowsDeleted };
+}
+
+/**
  * @param {import('knex').Knex} knex
  * @param {{ reportProgress?: boolean }} [options]
  * @returns {Promise<{ sessions: number, groupsCollapsed: number, rowsDeleted: number }>}
@@ -211,41 +311,13 @@ export async function dedupeStreamedAssistantRows(knex, { reportProgress = false
     ? createSessionProgress('Dedupe streamed assistants', sessions.length)
     : null;
 
-  for (const { session_id: sessionId } of sessions) {
-    const rows = await knex('session_messages')
-      .where({ session_id: sessionId })
-      .orderBy('id', 'asc');
-
-    let run = [];
-    const flushRun = async () => {
-      if (!run.length) return;
-      const plan = collapseStreamableAssistantRun(run);
-      run = [];
-      if (!plan) return;
-      await knex('session_messages').where({ id: plan.keepId }).update({
-        type: 'assistant',
-        message_json: plan.message_json,
-      });
-      if (plan.deleteIds.length) {
-        await knex('session_messages').whereIn('id', plan.deleteIds).delete();
-        counts.rowsDeleted += plan.deleteIds.length;
-      }
-      counts.groupsCollapsed += 1;
-    };
-
-    for (const row of rows) {
-      if (isStreamableAssistantRow(row)) {
-        run.push(row);
-        continue;
-      }
-      await flushRun();
-      if (!HARD_BOUNDARY_TYPES.has(row.type)) {
-        // thinking-only system rows, etc. — still break assistant runs
-      }
-    }
-    await flushRun();
+  await forEachSessionMessageGroup(knex, async (_sessionId, rows) => {
+    const plan = planStreamedAssistantDedupeForSession(rows);
+    counts.groupsCollapsed += plan.groupsCollapsed;
+    counts.rowsDeleted += plan.rowsDeleted;
+    await applySessionMessageWrites(knex, plan);
     progress?.sessionDone();
-  }
+  });
 
   progress?.done();
   return counts;
@@ -264,54 +336,60 @@ export async function dedupeThinkingTokenRows(knex, { reportProgress = false } =
     ? createSessionProgress('Dedupe thinking_tokens', sessions.length)
     : null;
 
-  for (const { session_id: sessionId } of sessions) {
-    const rows = await knex('session_messages')
-      .where({ session_id: sessionId })
-      .orderBy('id', 'asc');
-
-    let run = [];
-    const flushRun = async () => {
-      if (!run.length) return;
-      const plan = collapseThinkingTokensRun(run);
-      run = [];
-      if (!plan) return;
-      await knex('session_messages').where({ id: plan.keepId }).update({
-        type: 'system',
-        subtype: 'thinking_tokens',
-        message_json: plan.message_json,
-      });
-      if (plan.deleteIds.length) {
-        await knex('session_messages').whereIn('id', plan.deleteIds).delete();
-        counts.rowsDeleted += plan.deleteIds.length;
-      }
-      counts.groupsCollapsed += 1;
-    };
-
-    for (const row of rows) {
-      if (isThinkingTokensRow(row)) {
-        run.push(row);
-        continue;
-      }
-      await flushRun();
-    }
-    await flushRun();
+  await forEachSessionMessageGroup(knex, async (_sessionId, rows) => {
+    const plan = planThinkingTokensDedupeForSession(rows);
+    counts.groupsCollapsed += plan.groupsCollapsed;
+    counts.rowsDeleted += plan.rowsDeleted;
+    await applySessionMessageWrites(knex, plan);
     progress?.sessionDone();
-  }
+  });
 
   progress?.done();
   return counts;
 }
 
+/**
+ * Both dedupe passes in one table scan (used by the CLI entrypoint).
+ * @param {import('knex').Knex} knex
+ * @param {{ reportProgress?: boolean }} [options]
+ */
+export async function dedupeLegacyStreamRows(knex, { reportProgress = false } = {}) {
+  const sessions = await knex('session_messages').distinct('session_id');
+  const assistantCounts = { sessions: sessions.length, groupsCollapsed: 0, rowsDeleted: 0 };
+  const tokenCounts = { sessions: sessions.length, groupsCollapsed: 0, rowsDeleted: 0 };
+
+  const progress = reportProgress
+    ? createSessionProgress('Dedupe legacy stream rows', sessions.length)
+    : null;
+
+  await forEachSessionMessageGroup(knex, async (_sessionId, rows) => {
+    const assistantPlan = planStreamedAssistantDedupeForSession(rows);
+    const tokenPlan = planThinkingTokensDedupeForSession(rows);
+    assistantCounts.groupsCollapsed += assistantPlan.groupsCollapsed;
+    assistantCounts.rowsDeleted += assistantPlan.rowsDeleted;
+    tokenCounts.groupsCollapsed += tokenPlan.groupsCollapsed;
+    tokenCounts.rowsDeleted += tokenPlan.rowsDeleted;
+
+    const merged = mergeDedupePlans(assistantPlan, tokenPlan);
+    await applySessionMessageWrites(knex, merged);
+    progress?.sessionDone();
+  });
+
+  progress?.done();
+  return { assistantCounts, tokenCounts };
+}
+
 async function main() {
   const db = Knex(knexfile);
   try {
-    const assistantCounts = await dedupeStreamedAssistantRows(db, { reportProgress: true });
+    const { assistantCounts, tokenCounts } = await dedupeLegacyStreamRows(db, {
+      reportProgress: true,
+    });
     console.log(
       `Deduped streamed assistants across ${assistantCounts.sessions} session(s): ` +
         `${assistantCounts.groupsCollapsed} group(s) collapsed, ` +
         `${assistantCounts.rowsDeleted} row(s) deleted.`
     );
-    const tokenCounts = await dedupeThinkingTokenRows(db, { reportProgress: true });
     console.log(
       `Deduped thinking_tokens across ${tokenCounts.sessions} session(s): ` +
         `${tokenCounts.groupsCollapsed} group(s) collapsed, ${tokenCounts.rowsDeleted} row(s) deleted.`
