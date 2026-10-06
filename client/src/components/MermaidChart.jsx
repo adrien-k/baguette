@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { useColorScheme } from '../hooks/useColorScheme.jsx';
+import MermaidFallback from './MermaidFallback.jsx';
 
 let idCounter = 0;
 
 export default function MermaidChart({ chart }) {
   const { colorScheme } = useColorScheme();
   const ref = useRef(null);
-  const [error, setError] = useState(null);
+  const [failed, setFailed] = useState(false);
   const id = useRef(`mermaid-${++idCounter}`);
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
+    setFailed(false);
     mermaid.initialize({
       startOnLoad: false,
       theme: colorScheme === 'light' ? 'default' : 'dark',
@@ -23,20 +24,18 @@ export default function MermaidChart({ chart }) {
         if (!cancelled && ref.current) ref.current.innerHTML = svg;
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || 'Failed to render diagram');
+        // Surface for devtools only — the chat should never see a raw Mermaid
+        // "Syntax error in text" message. MermaidFallback renders the source.
+        // eslint-disable-next-line no-console
+        console.warn('Mermaid render failed:', err);
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
     };
   }, [chart, colorScheme]);
 
-  if (error) {
-    return (
-      <pre className="bg-control border border-red-700 text-danger text-xs p-3 rounded-lg overflow-auto my-2">
-        {error}
-      </pre>
-    );
-  }
+  if (failed) return <MermaidFallback chart={chart} />;
 
   return <div ref={ref} className="my-2 flex justify-center overflow-auto" />;
 }

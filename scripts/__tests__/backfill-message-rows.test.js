@@ -95,7 +95,13 @@ describe('backfill-message-rows', () => {
     expect(toolRow.tool_status).toBe('completed');
     const payload = JSON.parse(toolRow.message_json);
     expect(payload.kind).toBe('bash');
-    expect(payload.result).toEqual({ exit_code: 0, stdout: 'hi\n', stderr: '' });
+    expect(payload.result).toEqual({
+      status: 'ok',
+      error_message: null,
+      exit_code: 0,
+      stdout: 'hi\n',
+      stderr: '',
+    });
 
     const session = await db('sessions').where({ id: sessionId }).first();
     expect(session.current_turn_id).toBe(1);

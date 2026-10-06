@@ -4,16 +4,6 @@
 
 import { findLastTurnStartIndex } from './turn-model.js';
 
-const CURSOR_TOOL_ALIAS = {
-  shell: 'Bash',
-  read: 'Read',
-  write: 'Write',
-  edit: 'Edit',
-  glob: 'Glob',
-  grep: 'Grep',
-  task: 'Task',
-};
-
 function stripWorktreePath(filePath, worktreePath) {
   if (!filePath || !worktreePath) return filePath;
   const root = worktreePath.endsWith('/') ? worktreePath.slice(0, -1) : worktreePath;
@@ -24,31 +14,18 @@ function stripWorktreePath(filePath, worktreePath) {
 }
 
 function normalizeBlock(block) {
-  const effectiveName = CURSOR_TOOL_ALIAS[block.name] ?? block.name;
+  // The block's `name` is already canonical PascalCase (the typed row stores
+  // it that way). The MCP meta-tool is the one exception: it was historically
+  // stored under the bare `mcp` name with the real tool nested inside the
+  // args payload.
   if (block.name === 'mcp') {
-    // Legacy Cursor meta-tool input nests under `args` ({toolName, args}); typed tool_call
-    // args are flat ({tool, ...fields}).
     const toolName = block.input?.toolName ?? block.input?.tool ?? 'mcp';
     return {
       name: `mcp__baguette__${toolName}`,
       input: block.input?.args ?? block.input ?? {},
     };
   }
-  if (
-    effectiveName !== block.name &&
-    (block.name === 'edit' || block.name === 'write' || block.name === 'read')
-  ) {
-    const inp = block.input ?? {};
-    return {
-      name: effectiveName,
-      input: {
-        ...inp,
-        file_path: inp.path ?? inp.file_path,
-        pattern: inp.pattern ?? inp.query,
-      },
-    };
-  }
-  return { name: effectiveName, input: block.input ?? {} };
+  return { name: block.name, kind: block.kind, input: block.input ?? {} };
 }
 
 /**
@@ -58,7 +35,7 @@ function normalizeBlock(block) {
  */
 export function runningToolDisplay(block, opts = {}) {
   const { worktreePath } = opts;
-  const { name, input } = normalizeBlock(block);
+  const { name, kind, input } = normalizeBlock(block);
 
   if (name.startsWith('mcp__baguette__')) {
     const short = name.replace('mcp__baguette__', '');
@@ -143,10 +120,10 @@ export function runningToolDisplay(block, opts = {}) {
     return { label: name === 'semSearch' ? 'Grep' : name, detail };
   }
 
-  if (name === 'TodoWrite' || name === 'updateTodos') {
+  if (kind === 'todo' || name === 'TodoWrite') {
     const inProgress = (input.todos ?? []).find((t) => t.status === 'in_progress');
     return {
-      label: 'TodoWrite',
+      label: 'Todo',
       detail: inProgress?.content ?? undefined,
     };
   }
@@ -181,7 +158,10 @@ export function collectRunningTools(messages, opts = {}) {
   for (const msg of messages) {
     if (msg.type !== 'tool_call') continue;
     if (!isRunningToolCallView(msg)) continue;
-    const { label, detail } = runningToolDisplay({ name: msg.name, input: msg.args ?? {} }, opts);
+    const { label, detail } = runningToolDisplay(
+      { name: msg.name, kind: msg.kind, input: msg.args ?? {} },
+      opts
+    );
     out.push({ id: toolCallViewId(msg), label, detail });
   }
 

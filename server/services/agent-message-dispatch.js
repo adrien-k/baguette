@@ -1,5 +1,5 @@
 import { isBaguetteUserMessage, isHumanUserMessage } from '../../shared/turn-model.js';
-import { normalizeUserPayloadForStorage } from '../../shared/session-message-mappers.js';
+import { normalizeUserPayloadForStorage } from '../../shared/normalize-user-payload.js';
 import { persistTypedMessage } from './message-writer-factory.ts';
 
 /**

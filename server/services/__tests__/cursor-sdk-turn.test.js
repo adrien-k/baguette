@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { processCursorRunStream } from '../cursor-sdk-turn.js';
+import { processCursorRunStream } from '../cursor/cursor-sdk-turn.ts';
 import { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
+import { cursorBuildToolCallStart, cursorBuildToolCallComplete } from '../cursor/cursor-mapping.ts';
+
+const cursorBuilders = {
+  buildToolCallStart: cursorBuildToolCallStart,
+  buildToolCallComplete: cursorBuildToolCallComplete,
+};
 
 function mockRun(events) {
   return {
@@ -23,6 +29,7 @@ function mockWriter() {
     patchRow: async (id, patch) => {
       rows[id - 1] = JSON.parse(patch.message_json);
     },
+    builders: cursorBuilders,
   });
   return { writer, rows };
 }

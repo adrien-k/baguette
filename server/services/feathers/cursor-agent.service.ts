@@ -1,4 +1,4 @@
-import { Agent, AgentBusyError } from '@cursor/sdk';
+import { Agent, AgentBusyError, type SDKStatusMessage, type SDKUsageMessage } from '@cursor/sdk';
 import type {
   AgentOptions,
   ModelParameterValue,
@@ -17,7 +17,7 @@ import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
-import { processCursorRunStream } from '../cursor-sdk-turn.js';
+import { processCursorRunStream } from '../cursor/cursor-sdk-turn.ts';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
 import {
   isHumanUserMessage as isHumanUserMessageShared,
@@ -526,6 +526,7 @@ ${body}`,
             turnId,
             channel,
             worktreePath: session.worktree_path,
+            agentType: 'cursor',
           })
         : null;
 
@@ -718,20 +719,16 @@ ${body}`,
         turnId: sessionState?.turnId ?? 1,
         channel: sessionState?.channel ?? 'chat',
         worktreePath: session.worktree_path,
+        agentType: 'cursor',
       });
 
     return processCursorRunStream(run, {
       writer,
-      onUsage: (sdkMsg: { usage?: unknown }) => {
+      onUsage: (sdkMsg: SDKUsageMessage) => {
         addTokenUsage(turnUsage, sdkMsg.usage);
         turnUsage.model = run.model?.id ?? turnModel.model ?? session.model ?? turnUsage.model;
       },
-      onStatus: async (sdkMsg: {
-        status?: string;
-        message?: string;
-        agent_id?: string;
-        run_id?: string;
-      }) => {
+      onStatus: async (sdkMsg: SDKStatusMessage) => {
         const { status } = sdkMsg;
         if (status === 'FINISHED') {
           return { break: true, finishedOk: true };

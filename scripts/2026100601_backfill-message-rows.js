@@ -19,11 +19,11 @@ import { pathToFileURL } from 'node:url';
 import Knex from 'knex';
 import knexfile from '../knexfile.js';
 import { isBaguetteUserMessage, isHumanUserMessage } from '../shared/turn-model.js';
+import { normalizeUserPayloadForStorage } from '../shared/normalize-user-payload.js';
 import {
-  buildToolCallComplete,
-  buildToolCallStart,
-  normalizeUserPayloadForStorage,
-} from '../shared/session-message-mappers.js';
+  claudeBuildToolCallComplete,
+  claudeBuildToolCallStart,
+} from '../server/services/claude/claude-mapping.ts';
 import {
   applySessionMessageWrites,
   forEachSessionMessageGroup,
@@ -104,7 +104,7 @@ export function planMessageRowBackfill(rows) {
           continue;
         }
         seenToolCallIds.add(toolUse.id);
-        const start = buildToolCallStart(
+        const start = claudeBuildToolCallStart(
           toolUse.id,
           toolUse.name,
           toolUse.input ?? {},
@@ -112,7 +112,7 @@ export function planMessageRowBackfill(rows) {
         );
         const tr = toolResultsById.get(toolUse.id);
         const completed = tr
-          ? buildToolCallComplete(start, {
+          ? claudeBuildToolCallComplete(start, {
               name: toolUse.name,
               args: toolUse.input,
               rawResult: tr.content,

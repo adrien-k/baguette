@@ -98,7 +98,7 @@ describe('collectRunningTools', () => {
     ).toBe(false);
   });
 
-  it('unwraps Cursor mcp meta-tool for display', () => {
+  it('unwraps the mcp meta-tool name to its real tool for display', () => {
     const block = {
       type: 'tool_use',
       id: 'm1',

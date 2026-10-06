@@ -29,6 +29,10 @@ import {
   rejectTurnMismatch,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
+import {
+  processClaudeQueryStream,
+  type ClaudeStreamTurnOutcome,
+} from '../claude/claude-sdk-turn.ts';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload, UserMessagePayload } from '../../../shared/session-messages.ts';
 import type {
@@ -40,7 +44,7 @@ import type {
   MessageRowLike,
 } from './agent-service-types.ts';
 
-type TurnOutcome = 'completed' | 'failed' | 'stopped';
+type TurnOutcome = ClaudeStreamTurnOutcome;
 
 /** Push/end handle feeding user messages into an open SDK query. */
 type ChannelHandle = {
@@ -104,21 +108,6 @@ type StartAgentLoopOpts = {
 };
 
 type SessionOrId = number | string | { id: number };
-
-function isHumanUserMessage(message: unknown): boolean {
-  const msg = message as {
-    type?: string;
-    content?: unknown;
-    message?: { content?: unknown };
-  };
-  if (msg.type !== 'user') return false;
-  if (typeof msg.content === 'string') return true;
-  const content = msg.message?.content;
-  if (typeof content === 'string') return true;
-  if (Array.isArray(content))
-    return !content.some((b) => (b as { type?: string }).type === 'tool_result');
-  return false;
-}
 
 function commandsToAllowedTools(commands: string[]): string[] {
   return commands.map((cmd) => `Bash(${cmd}*)`);
@@ -389,6 +378,7 @@ export class ClaudeAgentService {
             turnId: row.turn_id,
             channel,
             worktreePath: session.worktree_path,
+            agentType: 'claude',
           })
         : null;
 
@@ -769,6 +759,10 @@ export class ClaudeAgentService {
 
   /**
    * Consume an open Claude query until the turn ends (result, abort, or stream error).
+   *
+   * Delegates the SDK event loop to `processClaudeQueryStream`; this method
+   * owns the Feathers-layer concerns (logging, app:error emission, query
+   * dispose) that wrap the stream.
    */
   async _consumeQuery(
     sessionState: ClaudeAgentState,
@@ -787,93 +781,34 @@ export class ClaudeAgentService {
   ): Promise<{ turnComplete: boolean; streamFailed: boolean; outcome: TurnOutcome }> {
     const { queryInstance, sessionId, userId } = sessionState;
     const key = activeKey ?? sessionId;
-    const pendingBackgroundTaskIds = new Set<string>();
-    let awaitingAutoResume = false;
-    let turnComplete = false;
+
     let streamFailed = false;
-    let outcome: TurnOutcome = 'failed';
-
-    try {
-      for await (const message of queryInstance) {
-        const msg = message as SDKMessage & {
-          subtype?: string;
-          session_id?: string;
-          isReplay?: boolean;
-          ambient?: boolean;
-          task_id?: string;
-          status?: string;
-          is_error?: boolean;
-        };
-        if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-          await onInitSessionId?.(msg.session_id);
+    const result = await processClaudeQueryStream(queryInstance, {
+      writer: streamWriter,
+      persistMessage,
+      persistStatus,
+      onInitSessionId,
+      onResult,
+      onBackgroundAutoResume,
+      trackBackgroundTasks,
+      connectionClosedHint,
+      onStreamError: async (err) => {
+        // Service-level error wiring: log, emit app:error, route through
+        // onStreamError. The stream mapper has already persisted the status row.
+        if (err.name !== 'AbortError') {
+          handleAppError(this.app, err, { userId, sessionId });
+          logger.error({ sessionId }, 'Session stream error');
+          logger.error(err, 'Session stream error');
+          const userFacing =
+            err.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : err.message;
+          this.app
+            .service('sessions')
+            .emit('app:error', { sessionId, message: userFacing, user_id: userId });
+          streamFailed = true;
         }
-
-        if (msg.isReplay) continue;
-        if (isHumanUserMessage(msg)) continue;
-
-        if (trackBackgroundTasks) {
-          if (msg.type === 'system' && msg.subtype === 'task_started' && !msg.ambient) {
-            pendingBackgroundTaskIds.add(msg.task_id as string);
-          }
-          if (msg.type === 'system' && msg.subtype === 'task_notification' && !msg.ambient) {
-            const taskStatus = (msg as { status?: string }).status;
-            const isTerminal =
-              taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'error';
-            if (isTerminal) {
-              pendingBackgroundTaskIds.delete(msg.task_id as string);
-              if (turnComplete && pendingBackgroundTaskIds.size === 0) {
-                awaitingAutoResume = true;
-                await onBackgroundAutoResume?.();
-              }
-            }
-          }
-        }
-
-        if (streamWriter) {
-          await streamWriter.handleClaudeEvent(msg);
-        } else {
-          await persistMessage?.(msg);
-        }
-
-        if (msg.type === 'result') {
-          turnComplete = true;
-          awaitingAutoResume = false;
-          const ok = msg.subtype === 'success' && !msg.is_error;
-          outcome = ok ? 'completed' : 'failed';
-          await onResult?.(msg);
-        }
-
-        if (turnComplete && pendingBackgroundTaskIds.size === 0 && !awaitingAutoResume) {
-          break;
-        }
-      }
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        handleAppError(this.app, err, { userId, sessionId });
-        logger.error({ sessionId }, 'Session stream error');
-        logger.error(err, 'Session stream error');
-        const userFacing =
-          (err as Error).message === SDK_QUERY_CLOSED_MESSAGE
-            ? connectionClosedHint
-            : (err as Error).message;
-        try {
-          await persistStatus?.(userFacing);
-        } catch (persistErr) {
-          logger.warn(
-            { sessionId, err: (persistErr as Error).message },
-            'Failed to persist session error status'
-          );
-        }
-        await onStreamError?.(err as Error);
-        this.app
-          .service('sessions')
-          .emit('app:error', { sessionId, message: userFacing, user_id: userId });
-        outcome = 'failed';
-        streamFailed = true;
-      } else {
-        outcome = 'stopped';
-      }
-    } finally {
+        await onStreamError?.(err);
+      },
+    }).finally(async () => {
       try {
         await this._disposeActiveSession(key);
       } catch (disposeErr) {
@@ -882,9 +817,13 @@ export class ClaudeAgentService {
           'claude-agent dispose failed'
         );
       }
-    }
+    });
 
-    return { turnComplete, streamFailed, outcome };
+    return {
+      turnComplete: result.turnComplete,
+      streamFailed: result.streamFailed || streamFailed,
+      outcome: result.outcome,
+    };
   }
 
   async sendMessage(sessionId: number, content: string): Promise<void> {

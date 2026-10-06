@@ -109,7 +109,7 @@ export default function AskUserQuestionBlock({
   return (
     <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 border-b border-brand/10">
-        <p className="text-xs text-accent/70">Claude has a question</p>
+        <p className="text-xs text-accent/70">The agent has a question</p>
       </div>
       <div className="px-3 sm:px-4 py-3 space-y-4">
         {questions.map((q, i) => {

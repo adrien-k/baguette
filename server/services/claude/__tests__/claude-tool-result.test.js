@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatClaudeToolResult } from '../claude-tool-result.js';
-import { buildToolCallComplete, buildToolCallStart } from '../session-message-mappers.js';
+import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from '../claude-mapping.ts';
 
 describe('formatClaudeToolResult', () => {
   it('joins text blocks from tool_result content array', () => {
@@ -15,10 +15,10 @@ describe('formatClaudeToolResult', () => {
 
 describe('mcp tool result persistence', () => {
   it('stores MCP response text on completed tool_call rows', () => {
-    const start = buildToolCallStart('id', 'mcp__baguette__CurrentSessionInfo', {
+    const start = claudeBuildToolCallStart('id', 'mcp__baguette__CurrentSessionInfo', {
       tool: 'CurrentSessionInfo',
     });
-    const done = buildToolCallComplete(start, {
+    const done = claudeBuildToolCallComplete(start, {
       rawResult: [{ type: 'text', text: '{"ok":true}' }],
     });
     expect(done.result).toMatchObject({ status: 'ok', content: '{"ok":true}' });

@@ -2,6 +2,8 @@ import { MessageStreamWriter } from '../../shared/message-stream-writer.ts';
 import { dbRowFromPayload, dbPatchFromPayload } from '../../shared/message-db-row.js';
 import { agentEventLogPath, appendAgentEvent } from './agent-event-log.js';
 import type { SessionMessagePayload, SessionMessageRow } from '../../shared/session-messages.ts';
+import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from './claude/claude-mapping.ts';
+import { cursorBuildToolCallComplete, cursorBuildToolCallStart } from './cursor/cursor-mapping.ts';
 
 /** @param app Feathers application */
 export type WriterFactoryApp = {
@@ -24,6 +26,8 @@ export type MessageWriterOpts = {
   turnId: number;
   channel: 'chat' | 'review';
   worktreePath?: string | null;
+  /** Which provider is producing this turn's stream. */
+  agentType: 'claude' | 'cursor';
 };
 
 /**
@@ -40,6 +44,17 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
     turnId: opts.turnId,
   });
 
+  const builders =
+    opts.agentType === 'cursor'
+      ? {
+          buildToolCallStart: cursorBuildToolCallStart,
+          buildToolCallComplete: cursorBuildToolCallComplete,
+        }
+      : {
+          buildToolCallStart: claudeBuildToolCallStart,
+          buildToolCallComplete: claudeBuildToolCallComplete,
+        };
+
   return new MessageStreamWriter({
     sessionId: opts.sessionId,
     turnId: opts.turnId,
@@ -53,6 +68,7 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
     appendRaw: async (event) => {
       await appendAgentEvent(logPath, event);
     },
+    builders,
   });
 }
 

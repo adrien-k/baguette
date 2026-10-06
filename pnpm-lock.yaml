@@ -11,6 +11,9 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.247
         version: 0.3.247(@anthropic-ai/sdk@0.102.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(zod@4.4.3)
+      '@anthropic-ai/sdk':
+        specifier: ^0.102.0
+        version: 0.102.0(zod@4.4.3)
       '@cursor/sdk':
         specifier: 1.0.31
         version: 1.0.31
@@ -49,7 +52,7 @@ importers:
         version: 18.0.5
       ejs:
         specifier: latest
-        version: 6.0.1
+        version: 7.0.1
       express:
         specifier: latest
         version: 5.2.1(supports-color@10.2.2)
@@ -2501,8 +2504,8 @@ packages:
     engines: {node: '>=0.10.0'}
     hasBin: true
 
-  ejs@6.0.1:
-    resolution: {integrity: sha512-UaaM14yby8U3k02ihS1Bmj5Kz2d7CCQM1scxpgs4Mhkq8F1wR2gl3+Ts4h5Ne4Mnt7M9m4Dw7jsuMr3+xO4vZA==}
+  ejs@7.0.1:
+    resolution: {integrity: sha512-TrAb1fY4jNY6aQrNjMJsoWQxGUK47A38JxuUvnt75vDcAA9Ln7ur6FHo+irVa5Bwd3w9rdUT3xLSl5MRgHIugg==}
     engines: {node: '>=0.12.18'}
     hasBin: true
 
@@ -7345,7 +7348,7 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  ejs@6.0.1: {}
+  ejs@7.0.1: {}
 
   electron-to-chromium@1.5.401: {}
 

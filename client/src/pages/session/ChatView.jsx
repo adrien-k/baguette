@@ -160,6 +160,9 @@ export default function ChatView({
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
+  const agentDisplayName = session?.agent_sdk
+    ? session.agent_sdk.charAt(0).toUpperCase() + session.agent_sdk.slice(1)
+    : 'Agent';
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
 
@@ -554,7 +557,7 @@ export default function ChatView({
                     displayMessages={displayMessages}
                     worktreePath={session.absolute_worktree_path}
                     sessionId={session.id}
-                    agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                    agentName={agentDisplayName}
                     models={models}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
@@ -565,7 +568,7 @@ export default function ChatView({
                     isLatestMessage={item.index === displayMessages.length - 1}
                     worktreePath={session.absolute_worktree_path}
                     sessionId={session.id}
-                    agentName={session.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}
+                    agentName={agentDisplayName}
                     messageIndex={item.index}
                     allMessages={displayMessages}
                     models={models}
@@ -746,7 +749,7 @@ export default function ChatView({
                     value={input}
                     onChange={setInput}
                     onSubmit={handleSend}
-                    placeholder={`Message ${session?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude'}...`}
+                    placeholder={`Message ${agentDisplayName}...`}
                     sending={sending}
                     sdk={session?.agent_sdk}
                     model={composerModel}

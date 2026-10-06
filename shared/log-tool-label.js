@@ -1,5 +1,3 @@
-import { canonicalToolName } from './session-message-mappers.js';
-
 /**
  * Human-readable tool label for logs and debug views (chat uses richer blocks).
  * @param {string | null | undefined} name
@@ -23,8 +21,7 @@ export function logToolDisplayName(name, args = {}) {
     }
     return `MCP · ${parts[parts.length - 1] ?? name}`;
   }
-  const canonical = canonicalToolName(name ?? '');
-  return canonical || name || 'tool';
+  return name || 'tool';
 }
 
 /**
@@ -36,7 +33,7 @@ export function logToolCallSummary(call) {
   const args = call.args ?? {};
   const label = logToolDisplayName(name, args);
 
-  if (call.kind === 'bash' || name === 'Bash' || name === 'shell') {
+  if (call.kind === 'bash' || name === 'Bash') {
     const cmd = args.command ?? args.cmd;
     if (typeof cmd === 'string' && cmd.trim()) {
       return `${label} — ${cmd.trim().replace(/\s+/g, ' ').slice(0, 100)}`;

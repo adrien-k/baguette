@@ -131,7 +131,7 @@ function TypedMessage({
   isLatestMessage,
   worktreePath,
   sessionId,
-  agentName = 'Claude',
+  agentName = 'Agent',
   models,
   session,
   pinnedRunningBashIds,

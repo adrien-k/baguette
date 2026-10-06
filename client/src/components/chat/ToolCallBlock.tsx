@@ -1,14 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Bot, ChevronDown, CheckSquare2, Loader2, Square } from 'lucide-react';
 import type {
-  BashToolResult,
-  EditToolResult,
   GenericToolResult,
-  McpToolResult,
-  TaskToolResult,
+  ToolCallKind,
   ToolCallPayload,
+  ToolResultByKind,
 } from '@baguette/shared/session-messages.ts';
-import { planMarkdownFromToolInput } from '@baguette/shared/session-message-mappers.js';
 import { stripWorktreePath } from '../../utils/paths.js';
 import EditDiffView from './EditDiffView.tsx';
 import QuietToolBlock from './QuietToolBlock.tsx';
@@ -28,6 +25,15 @@ type TypedToolCall = ToolCallPayload & {
   tool_started_at?: string | null;
   call_id?: string | null;
 };
+
+/** The `tool_call` variant narrowed to a single kind. */
+type CallOfKind<K extends ToolCallKind> = Extract<TypedToolCall, { kind: K }>;
+
+/** Every `tool_call` except the ones with a bespoke block. */
+type QuietCall = Exclude<
+  TypedToolCall,
+  { kind: 'bash' | 'edit' | 'write' | 'todo' | 'task' | 'ask_user' | 'exit_plan' | 'mcp' }
+>;
 
 function TodoBlock({ todos }: { todos?: unknown }) {
   const list = Array.isArray(todos) ? todos : [];
@@ -57,12 +63,12 @@ function TodoBlock({ todos }: { todos?: unknown }) {
   );
 }
 
-function TaskToolBlock({ message }: { message: TypedToolCall }) {
+function TaskToolBlock({ message }: { message: CallOfKind<'task'> }) {
   const [expanded, setExpanded] = useState(false);
-  const result = message.result as TaskToolResult | null;
+  const result = message.result;
   const isRunning = result == null;
-  const description = (message.args.description as string | undefined) || 'Task';
-  const subagentType = message.args.subagent_type ? String(message.args.subagent_type) : null;
+  const description = message.args.description || 'Task';
+  const subagentType = message.args.subagent_type;
   const summary = result?.summary;
 
   return (
@@ -100,27 +106,22 @@ function EditWriteToolBlock({
   message,
   worktreePath,
 }: {
-  message: TypedToolCall;
+  message: CallOfKind<'edit'> | CallOfKind<'write'>;
   worktreePath?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isWrite = message.kind === 'write';
-  const result = message.result as EditToolResult | null;
+  const result = message.result as ToolResultByKind['edit'] | null;
   const isRunning = result == null;
   const isError = message.status === 'error';
   const filePath = message.args.path
     ? stripWorktreePath(String(message.args.path), worktreePath)
     : null;
 
-  const oldString = isWrite ? '' : ((message.args.old_string as string | null) ?? null);
-  const newString = isWrite
-    ? ((message.args.content as string | null) ?? null)
-    : ((message.args.new_string as string | null) ?? null);
-  // Cursor-native edits persist their diff string on the result.
-  const cursorDiff = useMemo(() => {
-    const diff = result?.diff;
-    return diff ? { diffString: diff } : null;
-  }, [result?.diff]);
+  const oldString = isWrite ? '' : (message.args.old_string ?? null);
+  const newString = isWrite ? message.args.content : (message.args.new_string ?? null);
+  // Some agents persist their diff string on the result.
+  const storedDiff = result?.diff ?? null;
 
   return (
     <div
@@ -148,11 +149,11 @@ function EditWriteToolBlock({
         )}
       </button>
 
-      {!expanded && (result?.diff || oldString != null || newString != null) && (
+      {!expanded && (storedDiff || oldString != null || newString != null) && (
         <EditDiffView
           oldString={oldString}
           newString={newString}
-          cursorDiff={cursorDiff}
+          diffString={storedDiff}
           collapsed
           onExpand={() => setExpanded(true)}
           label={isWrite ? 'Content' : 'Changes'}
@@ -161,11 +162,11 @@ function EditWriteToolBlock({
 
       {expanded && (
         <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
-          {result?.diff || oldString != null || newString != null ? (
+          {storedDiff || oldString != null || newString != null ? (
             <EditDiffView
               oldString={oldString}
               newString={newString}
-              cursorDiff={cursorDiff}
+              diffString={storedDiff}
               onExpand={() => setExpanded(true)}
               label={isWrite ? 'Content' : 'Changes'}
             />
@@ -203,34 +204,57 @@ export default function ToolCallBlock({
   userReplied?: boolean;
 }) {
   if (message._hidden) return null;
+
+  return (
+    <ToolCallSwitch
+      message={message}
+      worktreePath={worktreePath}
+      sessionId={sessionId}
+      userReplied={userReplied}
+    />
+  );
+}
+
+/**
+ * Dispatches on `kind`. Each branch narrows `message` to a single union
+ * variant, so `args` and `result` are fully typed there — no casts.
+ */
+function ToolCallSwitch({
+  message,
+  worktreePath,
+  sessionId,
+  userReplied,
+}: {
+  message: TypedToolCall & { _hidden?: boolean };
+  worktreePath?: string | null;
+  sessionId?: number;
+  userReplied?: boolean;
+}) {
   const isError = message.status === 'error';
   const startedAt = message.tool_started_at ?? message.started_at;
-  const args = message.args ?? {};
 
   switch (message.kind) {
-    case 'bash': {
-      const result = message.result as BashToolResult | null;
+    case 'bash':
       return (
         <BashToolBlock
-          command={String(args.command ?? '')}
+          command={message.args.command}
           worktreePath={worktreePath}
-          result={result}
+          result={message.result}
           isError={isError}
           startedAt={startedAt}
         />
       );
-    }
     case 'edit':
     case 'write':
       return <EditWriteToolBlock message={message} worktreePath={worktreePath} />;
     case 'todo':
-      return <TodoBlock todos={args.todos} />;
+      return <TodoBlock todos={message.args.todos} />;
     case 'task':
       return <TaskToolBlock message={message} />;
     case 'ask_user':
       return (
         <AskUserQuestionBlock
-          questions={(args.questions ?? []) as AskUserQuestion[]}
+          questions={message.args.questions as AskUserQuestion[]}
           sessionId={sessionId}
           userReplied={userReplied}
         />
@@ -238,60 +262,77 @@ export default function ToolCallBlock({
     case 'exit_plan':
       return (
         <PlanReviewBlock
-          markdown={planMarkdownFromToolInput(args)}
+          markdown={message.args.plan}
           sessionId={sessionId}
           userReplied={userReplied}
         />
       );
     case 'mcp': {
       // Typed mcp args are flat: { tool: shortName, ...toolFields }.
-      const { tool, ...fields } = args as { tool?: string } & Record<string, unknown>;
-      const toolName = tool ?? message.name.replace(/^mcp__baguette__/, '') ?? 'mcp';
+      const { tool, ...fields } = message.args;
+      const toolName = tool || message.name.replace(/^mcp__baguette__/, '') || 'mcp';
       return (
         <BaguetteMcpToolBlock
           tool={toolName}
           args={fields}
-          result={(message.result as McpToolResult | null)?.data ?? message.result}
+          result={message.result?.data ?? message.result}
           isError={isError}
           startedAt={startedAt}
           sessionId={sessionId}
         />
       );
     }
-    default: {
-      // read / delete / glob / grep / generic — quiet one-line rows
-      const quietResult = message.result as GenericToolResult | null;
-      const resultForDisplay = isError
-        ? (quietResult?.error_message ?? '')
-        : quietResult != null
-          ? ''
-          : undefined;
-      let detail: string | undefined;
-      if (message.kind === 'glob') {
-        detail = (args.pattern as string) ?? (args.path as string) ?? undefined;
-      } else if (message.kind === 'grep') {
-        detail =
-          [args.pattern, args.path ? stripWorktreePath(String(args.path), worktreePath) : null]
-            .filter(Boolean)
-            .join(' ') || undefined;
-      } else if (args.path) {
-        detail = stripWorktreePath(String(args.path), worktreePath);
-      } else if (args.label) {
-        detail = String(args.label);
-      }
-      const label =
-        message.kind === 'generic'
-          ? message.name
-          : message.kind.charAt(0).toUpperCase() + message.kind.slice(1);
-      return (
-        <QuietToolBlock
-          label={label}
-          detail={detail}
-          isError={isError}
-          result={resultForDisplay}
-          input={args}
-        />
-      );
-    }
+    default:
+      return <QuietCallBlock message={message} worktreePath={worktreePath} isError={isError} />;
   }
+}
+
+/** read / delete / glob / grep / generic — quiet one-line rows. */
+function QuietCallBlock({
+  message,
+  worktreePath,
+  isError,
+}: {
+  message: QuietCall;
+  worktreePath?: string | null;
+  isError: boolean;
+}) {
+  const quietResult = message.result as GenericToolResult | null;
+  const resultForDisplay = isError
+    ? (quietResult?.error_message ?? '')
+    : quietResult != null
+      ? ''
+      : undefined;
+
+  let detail: string | undefined;
+  if (message.kind === 'glob') {
+    detail = message.args.pattern || message.args.path || undefined;
+  } else if (message.kind === 'grep') {
+    detail =
+      [
+        message.args.pattern,
+        message.args.path ? stripWorktreePath(message.args.path, worktreePath) : null,
+      ]
+        .filter(Boolean)
+        .join(' ') || undefined;
+  } else if (message.kind === 'generic') {
+    detail = message.args.detail ?? undefined;
+  } else {
+    detail = message.args.path ? stripWorktreePath(message.args.path, worktreePath) : undefined;
+  }
+
+  const label =
+    message.kind === 'generic'
+      ? message.name
+      : message.kind.charAt(0).toUpperCase() + message.kind.slice(1);
+
+  return (
+    <QuietToolBlock
+      label={label}
+      detail={detail}
+      isError={isError}
+      result={resultForDisplay}
+      input={message.args as Record<string, unknown>}
+    />
+  );
 }

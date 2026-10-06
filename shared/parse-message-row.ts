@@ -1,8 +1,6 @@
-import {
-  mapClaudeAssistantPayload,
-  normalizeUserPayloadForStorage,
-} from './session-message-mappers.js';
+import { normalizeUserPayloadForStorage } from './normalize-user-payload.js';
 import type {
+  AssistantBlock,
   AssistantMessagePayload,
   ChatMessageView,
   MessageViewMeta,
@@ -13,6 +11,24 @@ import type {
   TurnResultPayload,
   UserMessagePayload,
 } from './session-messages.ts';
+
+/**
+ * Read assistant blocks out of a legacy raw-SDK `content` array.
+ *
+ * Only rows written before the typed assistant payload landed can still carry
+ * this shape; typed rows already store `{ type: 'assistant', blocks: [...] }`.
+ */
+function blocksFromLegacyContent(content: unknown): AssistantBlock[] {
+  if (!Array.isArray(content)) return [];
+  const blocks: AssistantBlock[] = [];
+  for (const raw of content) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const b = raw as { type?: string; text?: string; thinking?: string };
+    if (b.type === 'text') blocks.push({ type: 'text', text: b.text ?? '' });
+    if (b.type === 'thinking') blocks.push({ type: 'thinking', thinking: b.thinking ?? '' });
+  }
+  return blocks;
+}
 
 /**
  * Merge a DB row + message_json into a client view model for chat, logs, and grouping.
@@ -33,6 +49,8 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
   const meta = base as unknown as MessageViewMeta;
 
   if (payloadType === 'tool_call' || row.type === 'tool_call') {
+    // `message_json` is untrusted JSON: `kind` is re-derived from the payload
+    // rather than validated against the union, so this is a boundary cast.
     const call = payload as unknown as ToolCallPayload;
     return {
       ...meta,
@@ -48,7 +66,7 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
       tool_status: row.tool_status ?? call.status,
       tool_started_at: row.tool_started_at ?? call.started_at,
       tool_ended_at: row.tool_ended_at ?? call.ended_at ?? null,
-    };
+    } as ChatMessageView;
   }
 
   if (payloadType === 'assistant' && Array.isArray(payload.blocks)) {
@@ -62,7 +80,7 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
   ) {
     const envelope = payload.message as { content?: unknown } | undefined;
     const content = envelope?.content ?? payload.content;
-    const { blocks } = mapClaudeAssistantPayload({ message: { content } });
+    const blocks = blocksFromLegacyContent(content);
     if (blocks.length > 0) {
       return { ...meta, type: 'assistant', blocks };
     }

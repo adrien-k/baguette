@@ -10,8 +10,8 @@ describe('logToolDisplayName', () => {
     expect(logToolDisplayName('mcp__baguette__PrRead', {})).toBe('MCP · Baguette · PrRead');
   });
 
-  it('canonicalizes shell alias', () => {
-    expect(logToolDisplayName('shell', {})).toBe('Bash');
+  it('returns the canonical name unchanged', () => {
+    expect(logToolDisplayName('Bash', {})).toBe('Bash');
   });
 });
 

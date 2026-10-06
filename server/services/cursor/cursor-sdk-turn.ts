@@ -1,21 +1,47 @@
 /**
  * Stream one Cursor SDK run through a MessageStreamWriter.
  *
- * @param {import('@cursor/sdk').Run} run
- * @param {{
- *   writer: import('../../shared/message-stream-writer.ts').MessageStreamWriter,
- *   onUsage?: (sdkMsg: object) => void,
- *   onStatus?: (sdkMsg: object) => Promise<{ break: boolean, finishedOk?: boolean } | void>,
- *   abortSignal?: AbortSignal,
- * }} options
+ * Cursor's SDK reports tool lifecycle in a single event carrying `status`
+ * (`running` | `completed` | `error`); this loop counts in-flight tool calls
+ * so the terminal-status break can wait for late completions, unwraps the
+ * Cursor success envelope via `mapCursorEvent`, and lets the writer persist
+ * each row. Plan tools never open a tool_call row — the writer turns them
+ * into a single plan row on completion — so they are excluded from the
+ * in-flight count.
  */
-export async function processCursorRunStream(run, options) {
+
+import type { Run, SDKStatusMessage, SDKUsageMessage } from '@cursor/sdk';
+import { isCursorPlanTool, mapCursorEvent } from './cursor-mapping.ts';
+import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
+
+export type CursorStreamStatusCallback = (
+  sdkMsg: SDKStatusMessage
+) => Promise<{ break: boolean; finishedOk?: boolean } | void>;
+
+export type CursorStreamUsageCallback = (sdkMsg: SDKUsageMessage) => void;
+
+export type ProcessCursorRunStreamOptions = {
+  writer: MessageStreamWriter;
+  onUsage?: CursorStreamUsageCallback;
+  onStatus?: CursorStreamStatusCallback;
+  abortSignal?: AbortSignal;
+};
+
+export type ProcessCursorRunStreamResult = {
+  finishedOk: boolean;
+  hasBackgroundTask: boolean;
+};
+
+export async function processCursorRunStream(
+  run: Run,
+  options: ProcessCursorRunStreamOptions
+): Promise<ProcessCursorRunStreamResult> {
   const { writer, onUsage, onStatus, abortSignal } = options;
   let finishedOk = false;
   let hasBackgroundTask = false;
   let pendingToolCount = 0;
   /** Call ids already counted while running, so repeated `running` deltas count once. */
-  const countedCalls = new Set();
+  const countedCalls = new Set<string>();
 
   for await (const sdkMsg of run.stream()) {
     if (abortSignal?.aborted) break;
@@ -23,7 +49,7 @@ export async function processCursorRunStream(run, options) {
     if (sdkMsg.type === 'tool_call') {
       // Plan tool calls (createPlan / ExitPlanMode) never produce tool rows — the writer
       // turns the completed call into a single plan row — so they must not be counted.
-      const isPlanTool = writer.isPlanToolName(sdkMsg.name);
+      const isPlanTool = isCursorPlanTool(sdkMsg.name);
       if (sdkMsg.status === 'running') {
         if (!isPlanTool && sdkMsg.call_id && !countedCalls.has(sdkMsg.call_id)) {
           countedCalls.add(sdkMsg.call_id);
@@ -40,7 +66,8 @@ export async function processCursorRunStream(run, options) {
       onUsage?.(sdkMsg);
     }
 
-    await writer.handleCursorEvent(sdkMsg);
+    await writer.log(sdkMsg);
+    await writer.apply(mapCursorEvent(sdkMsg));
 
     if (sdkMsg.type === 'status' && onStatus) {
       const result = await onStatus(sdkMsg);

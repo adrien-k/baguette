@@ -1,5 +1,5 @@
 import { isBaguetteUserMessage, isHumanUserMessage } from './turn-model.js';
-import { normalizeUserPayloadForStorage } from './session-message-mappers.js';
+import { normalizeUserPayloadForStorage } from './normalize-user-payload.js';
 
 function parsePayload(messageJson) {
   try {

@@ -101,31 +101,32 @@ function DiffStringView({
 /**
  * Renders a diff for Edit/Write tool calls.
  *
- * Pass oldString=null to signal "no string inputs available" — cursor diff will be used.
- * Pass oldString="" for Write (new file, all additions).
+ * Pass oldString=null to signal "no string inputs available" — the stored
+ * `diffString` (when present) will be used instead. Pass oldString="" for
+ * Write (new file, all additions).
  *
  * collapsed=true → compact preview (5 lines); collapsed=false → full diff.
  */
 export default function EditDiffView({
   oldString,
   newString,
-  cursorDiff,
+  diffString,
   collapsed = false,
   onExpand,
   label = 'Changes',
 }: {
   oldString?: string | null;
   newString?: string | null;
-  cursorDiff?: { diffString?: string | null } | null;
+  diffString?: string | null;
   collapsed?: boolean;
   onExpand?: () => void;
   label?: string;
 }) {
-  const useCursorDiff = cursorDiff?.diffString != null && oldString == null;
+  const useStoredDiff = diffString != null && oldString == null;
 
   if (collapsed) {
-    return useCursorDiff ? (
-      <DiffStringView diffString={cursorDiff.diffString} maxLines={7} onExpand={onExpand} />
+    return useStoredDiff ? (
+      <DiffStringView diffString={diffString} maxLines={7} onExpand={onExpand} />
     ) : (
       <EditDiffPreview
         oldString={oldString ?? ''}
@@ -138,11 +139,11 @@ export default function EditDiffView({
   return (
     <div>
       <div className="text-faint font-medium mb-1">{label}</div>
-      {useCursorDiff ? (
+      {useStoredDiff ? (
         <div
           className={`text-xs font-mono max-h-96 rounded bg-page/50 py-1 ${DIFF_SCROLL_WRAP_CLASS}`}
         >
-          <DiffStringView diffString={cursorDiff.diffString} />
+          <DiffStringView diffString={diffString} />
         </div>
       ) : (
         <pre
