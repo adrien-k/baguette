@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { messagesService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
@@ -49,7 +49,7 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
         oldestIdRef.current = sorted[0]?.id ?? null;
       })
       .catch((err) => {
-        if (!cancelled) toastError('Failed to load review messages', err);
+        if (!cancelled) toastFeathersError('Failed to load review messages', err);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -107,7 +107,7 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
           oldestIdRef.current = sorted[0]?.id ?? null;
         })
         .catch((err) => {
-          if (!silent) toastError('Failed to load review messages', err);
+          if (!silent) toastFeathersError('Failed to load review messages', err);
         })
         .finally(() => {
           if (!silent) setLoading(false);
@@ -138,7 +138,7 @@ export function useGetReviewMessages(sessionId, { enabled = true } = {}) {
       setMessages((prev) => [...older, ...prev]);
       setHasMore(older.length === PAGE_SIZE);
     } catch (err) {
-      toastError('Failed to load more review messages', err);
+      toastFeathersError('Failed to load more review messages', err);
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);

@@ -23,6 +23,9 @@ export function isHumanUserMessage(parsed) {
   if (isBaguetteUserMessage(parsed)) return false;
   if (isMcpUserMessage(parsed)) return false;
   if (typeof parsed.content === 'string') return true;
+  if (Array.isArray(parsed.content)) {
+    return !parsed.content.some((b) => b.type === 'tool_result');
+  }
   const content = parsed.message?.content;
   if (typeof content === 'string') return true;
   if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');

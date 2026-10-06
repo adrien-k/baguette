@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { tasksService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
@@ -11,7 +11,7 @@ export function useGetTaskLogs(taskId) {
     tasksService
       .logs(taskId)
       .then((res) => setLogs(res.logs ?? ''))
-      .catch((err) => toastError('Failed to load task logs', err));
+      .catch((err) => toastFeathersError('Failed to load task logs', err));
   }, [taskId]);
 
   useRefetchOnSseReconnect(refetch, Boolean(taskId));
@@ -22,7 +22,7 @@ export function useGetTaskLogs(taskId) {
     tasksService
       .logs(taskId)
       .then((res) => setLogs(res.logs ?? ''))
-      .catch((err) => toastError('Failed to load task logs', err));
+      .catch((err) => toastFeathersError('Failed to load task logs', err));
 
     const onLog = (data) => {
       if (data.id !== taskId) return;

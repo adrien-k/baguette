@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { resolveBashCommand } from '@baguette/shared/resolve-bash-command.js';
 import { parseShellToolResult } from '../../utils/shellToolResult.js';
 import { stripCdWorktreePrefix } from '../../utils/paths.js';
 import ToolRunElapsed from './ToolRunElapsed.tsx';
@@ -12,18 +13,21 @@ import TerminalLogBlock from './TerminalLogBlock.tsx';
  */
 export default function BashToolBlock({
   command,
+  args,
   worktreePath,
   result,
   isError,
   startedAt,
 }: {
   command?: string | null;
+  args?: Record<string, unknown> | null;
   worktreePath?: string | null;
   result?: unknown;
   isError?: boolean;
   startedAt?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const resolvedCommand = command?.trim() ? command : resolveBashCommand(args ?? undefined);
   const isRunning = result == null;
   const { exitCode, stdout, stderr } = useMemo(() => {
     const shell = result as
@@ -42,19 +46,19 @@ export default function BashToolBlock({
   }, [result]);
   const hasError = isError || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
   const headerPreview =
-    stripCdWorktreePrefix(command, worktreePath)
+    stripCdWorktreePrefix(resolvedCommand, worktreePath)
       ?.split('\n')
       .find((l: string) => l.trim()) ?? '';
 
   const commandAndStdout = useMemo(() => {
     const parts: string[] = [];
-    if (command) parts.push(command);
+    if (resolvedCommand) parts.push(resolvedCommand);
     if (stdout) parts.push(stdout);
     if (parts.length === 0 && result != null && !stderr) {
       parts.push(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
     }
     return parts.join('\n');
-  }, [command, stdout, stderr, result]);
+  }, [resolvedCommand, stdout, stderr, result]);
 
   return (
     <div

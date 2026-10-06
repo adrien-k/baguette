@@ -1,15 +1,44 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { messagesService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const PAGE_SIZE = 100;
+
+function normalizeMessageList(res) {
+  return Array.isArray(res) ? res : (res?.data ?? []);
+}
+
+/** Page builder messages with id > afterId, optionally capped at maxId. */
+async function pageBuilderMessagesAfter(sessionId, afterId, maxId = null) {
+  const accumulated = [];
+  let page;
+  let cursor = afterId;
+  do {
+    const idFilter = maxId != null ? { $gt: cursor, $lte: maxId } : { $gt: cursor };
+    const res = await messagesService.find({
+      query: {
+        session_id: sessionId,
+        agent_type: 'builder',
+        id: idFilter,
+        $sort: { id: 1 },
+        $limit: PAGE_SIZE,
+      },
+    });
+    page = normalizeMessageList(res);
+    if (page.length === 0) break;
+    accumulated.push(...page);
+    cursor = page[page.length - 1].id;
+  } while (page.length === PAGE_SIZE);
+  return accumulated;
+}
 
 /**
  * Returns messages for a session with cursor-based pagination.
  * - Initial load: last 100 messages (newest first, then reversed for display)
  * - loadMore(): prepends the next 100 older messages
  * - Real-time created events always append to the tail
+ * - SSE reconnect: reconcile patches in the loaded id window, then page in newer rows (no full reload)
  */
 export function useGetMessages(sessionId) {
   const [messages, setMessages] = useState([]);
@@ -21,6 +50,11 @@ export function useGetMessages(sessionId) {
 
   const oldestIdRef = useRef(null);
   const loadingMoreRef = useRef(false);
+  const messagesRef = useRef([]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const handleLoadError = useCallback((err) => {
     setError(err);
@@ -29,15 +63,43 @@ export function useGetMessages(sessionId) {
     setInitialLoadFailed(true);
   }, []);
 
+  const syncMessagesOnReconnect = useCallback(async () => {
+    if (!sessionId || initialLoadFailed) return;
+    const loaded = messagesRef.current;
+    if (!loaded.length) return;
+
+    const minId = loaded[0].id;
+    const maxId = loaded[loaded.length - 1].id;
+
+    try {
+      const inWindow = await pageBuilderMessagesAfter(sessionId, minId - 1, maxId);
+      const newer = await pageBuilderMessagesAfter(sessionId, maxId);
+      if (inWindow.length === 0 && newer.length === 0) return;
+
+      const freshById = new Map(inWindow.map((m) => [m.id, m]));
+      setMessages((prev) => {
+        const merged = prev.map((m) => freshById.get(m.id) ?? m);
+        const seen = new Set(merged.map((m) => m.id));
+        const appended = newer.filter((m) => !seen.has(m.id));
+        return appended.length ? [...merged, ...appended] : merged;
+      });
+    } catch (err) {
+      toastFeathersError('Failed to load new messages', err);
+    }
+  }, [sessionId, initialLoadFailed]);
+
   const refetch = useCallback(
     ({ silent = false } = {}) => {
       if (!sessionId || initialLoadFailed) return;
-      if (!silent) {
-        setLoading(true);
-        setMessages([]);
-        setHasMore(false);
-        oldestIdRef.current = null;
+      if (silent) {
+        syncMessagesOnReconnect();
+        return;
       }
+
+      setLoading(true);
+      setMessages([]);
+      setHasMore(false);
+      oldestIdRef.current = null;
 
       messagesService
         .find({
@@ -56,14 +118,10 @@ export function useGetMessages(sessionId) {
           oldestIdRef.current = sorted[0]?.id ?? null;
           setError(null);
         })
-        .catch((err) => {
-          if (!silent) handleLoadError(err);
-        })
-        .finally(() => {
-          if (!silent) setLoading(false);
-        });
+        .catch((err) => handleLoadError(err))
+        .finally(() => setLoading(false));
     },
-    [sessionId, initialLoadFailed, handleLoadError]
+    [sessionId, initialLoadFailed, handleLoadError, syncMessagesOnReconnect]
   );
 
   useRefetchOnSseReconnect(refetch, Boolean(sessionId) && !initialLoadFailed);
@@ -157,7 +215,7 @@ export function useGetMessages(sessionId) {
       setHasMore(older.length === PAGE_SIZE);
     } catch (err) {
       setHasMore(false);
-      toastError('Failed to load more messages', err);
+      toastFeathersError('Failed to load more messages', err);
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);

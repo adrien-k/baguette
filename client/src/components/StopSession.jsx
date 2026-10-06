@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Square } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../utils/buttonStyles.js';
 
 export function isSessionStoppable(session) {
@@ -18,7 +18,7 @@ export default function StopSession({ session }) {
     try {
       await sessionsService.stop(session.id);
     } catch (err) {
-      toastError('Failed to stop session', err);
+      toastFeathersError('Failed to stop session', err);
       setStopping(false);
     }
   };

@@ -11,7 +11,7 @@ config:
     init: |
       mkdir -p .data ../../../dev-data-dir
       pnpm install:all
-      pnpm run migrate
+      .baguette/scripts/dev-data-load.sh
     tasks:
       run-tests:
         run: pnpm test
@@ -20,19 +20,7 @@ config:
       migrate-dev-environment:
         run: pnpm run migrate
       dev-data:load:
-        # Replaces ./.data with ../../../dev-data-dir, migrates, then message backfills (temporary).
-        run: |
-          set -e
-          src="../../../dev-data-dir"
-          if [ ! -d "$src" ]; then
-            echo "Dev data source not found: $src" >&2
-            exit 1
-          fi
-          rm -rf .data
-          cp -a "$src" .data
-          pnpm run migrate
-          node scripts/2026100601_backfill-message-rows.js
-          node scripts/2026100602_backfill-dedupe-streamed-assistants.js
+        run: .baguette/scripts/dev-data-load.sh
       dev-server:
         # Starts Express (on $PORT) + Vite dev server (on $VITE_PORT) concurrently.
         # Vite proxies /api, /auth, /socket.io to Express.

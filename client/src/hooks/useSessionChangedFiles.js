@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { sessionsService } from '../feathers.js';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { parseChangedFilesResponse } from '../utils/changedFilesResponse.js';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
@@ -63,7 +63,7 @@ export function useSessionChangedFiles(session, commitSha = null, enabled = fals
       .catch((err) => {
         if (!cancelled) {
           setSessionFiles([]);
-          toastError('Failed to load changed files', err);
+          toastFeathersError('Failed to load changed files', err);
         }
       })
       .finally(() => {
@@ -97,7 +97,7 @@ export function useSessionChangedFiles(session, commitSha = null, enabled = fals
       .catch((err) => {
         if (cancelled) return;
         setCommitFilesBySha((prev) => ({ ...prev, [commitSha]: [] }));
-        toastError('Failed to load changed files', err);
+        toastFeathersError('Failed to load changed files', err);
       })
       .finally(() => {
         if (!cancelled) setCommitLoading(false);

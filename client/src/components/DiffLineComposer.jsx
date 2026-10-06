@@ -7,14 +7,10 @@ import ScheduleMessageModal from './ScheduleMessageModal.jsx';
 import { messagesService, queuedMessagesService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { builderMessageCreateFields } from '../utils/messageCreateFields.js';
-import {
-  contentBlocksFromLineDraft,
-  createFileReferenceBlock,
-  fileReferenceAgentText,
-} from '@baguette/shared/user-message-content.js';
+import { contentBlocksFromLineDraft } from '@baguette/shared/user-message-content.js';
 
 /**
- * Inline chat composer shown under a clicked diff line, prefilled with `@path:line`.
+ * Inline chat composer shown under a clicked diff line (file ref is attached on send, not in the textarea).
  */
 export default function DiffLineComposer({
   session,
@@ -28,17 +24,14 @@ export default function DiffLineComposer({
   onModelChange,
   onClose,
 }) {
-  const lineRefBlock = () => createFileReferenceBlock(path, line, { short_sha: shortSha, change });
-  const [input, setInput] = useState(() => `${fileReferenceAgentText(lineRefBlock())} `);
+  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [composerModel, setComposerModel] = useState(session?.model ?? null);
   const [composerModelParams, setComposerModelParams] = useState(session?.model_params ?? null);
 
   useEffect(() => {
-    setInput(
-      `${fileReferenceAgentText(createFileReferenceBlock(path, line, { short_sha: shortSha, change }))} `
-    );
+    setInput('');
   }, [path, line, shortSha, change]);
 
   useEffect(() => {
@@ -64,7 +57,7 @@ export default function DiffLineComposer({
 
   const isRunning = session?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
-  const canSendDraft = Boolean(input.trim() && session?.id && !sending);
+  const canSendDraft = Boolean(session?.id && !sending);
   const composerTurnFields = () =>
     builderMessageCreateFields(session, {
       model: composerModel,
@@ -141,6 +134,12 @@ export default function DiffLineComposer({
         <p className="text-[11px] text-faint">
           Message about <span className="font-mono text-fg-muted">{path}</span>
           <span className="text-faint">:{line}</span>
+          {shortSha ? (
+            <span className="text-faint">
+              {' '}
+              · commit <span className="font-mono text-fg-muted">{shortSha}</span>
+            </span>
+          ) : null}
         </p>
         <button
           type="button"

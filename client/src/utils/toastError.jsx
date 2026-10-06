@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, ChevronDown, ChevronUp, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isFeathersError } from './feathersErrors.js';
 
 function ErrorToast({ t, label, detail }) {
   const [open, setOpen] = useState(false);
@@ -58,4 +59,14 @@ function detailMessage(err, label) {
 export function toastError(label, err) {
   const detail = detailMessage(err, label);
   toast.custom((t) => <ErrorToast t={t} label={label} detail={detail} />, { duration: 5000 });
+}
+
+/** Like toastError, but only surfaces Feathers API errors (ignores network/client bugs). */
+export function toastFeathersError(label, err) {
+  if (!isFeathersError(err)) {
+    // eslint-disable-next-line no-console -- developer-facing signal for non-API failures
+    console.error(label, err);
+    return;
+  }
+  toastError(label, err);
 }

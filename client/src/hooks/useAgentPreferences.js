@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usersService } from '../feathers.js';
 import { useAuth } from './useAuth.jsx';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import {
   normalizeCursorModelPrefs,
@@ -37,7 +37,7 @@ export function useCursorModelPrefs() {
       return;
     }
     if (userError) {
-      toastError('Failed to load model preferences', userError);
+      toastFeathersError('Failed to load model preferences', userError);
       setLoaded(true);
       return;
     }
@@ -71,7 +71,7 @@ export function useCursorModelPrefs() {
     usersService
       .patch(id, { agent_preferences: patch })
       .then(updateCurrentUser)
-      .catch((err) => toastError('Failed to save model preferences', err));
+      .catch((err) => toastFeathersError('Failed to save model preferences', err));
   }, [updateCurrentUser]);
 
   const scheduleSaveKey = useCallback(

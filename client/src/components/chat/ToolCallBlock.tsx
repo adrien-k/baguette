@@ -6,6 +6,7 @@ import type {
   ToolCallPayload,
   ToolResultByKind,
 } from '@baguette/shared/session-messages.ts';
+import { isBashToolName, resolveBashCommand } from '@baguette/shared/resolve-bash-command.js';
 import { stripWorktreePath } from '../../utils/paths.js';
 import EditDiffView from './EditDiffView.tsx';
 import QuietToolBlock from './QuietToolBlock.tsx';
@@ -244,11 +245,17 @@ function ToolCallSwitch({
   const isError = message.status === 'error';
   const startedAt = message.tool_started_at ?? message.started_at;
 
+  const bashCommand =
+    message.kind === 'bash' || isBashToolName(message.name)
+      ? resolveBashCommand(message.args as Record<string, unknown>)
+      : '';
+
   switch (message.kind) {
     case 'bash':
       return (
         <BashToolBlock
-          command={message.args.command}
+          command={bashCommand}
+          args={message.args as Record<string, unknown>}
           worktreePath={worktreePath}
           result={message.result}
           isError={isError}
@@ -296,6 +303,18 @@ function ToolCallSwitch({
       );
     }
     default:
+      if (isBashToolName(message.name)) {
+        return (
+          <BashToolBlock
+            command={bashCommand}
+            args={message.args as Record<string, unknown>}
+            worktreePath={worktreePath}
+            result={message.result}
+            isError={isError}
+            startedAt={startedAt}
+          />
+        );
+      }
       return <QuietCallBlock message={message} worktreePath={worktreePath} isError={isError} />;
   }
 }

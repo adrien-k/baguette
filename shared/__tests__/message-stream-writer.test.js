@@ -199,6 +199,74 @@ describe('MessageStreamWriter', () => {
     expect(patchRow).toHaveBeenCalledTimes(1);
   });
 
+  it('merges streamed bash input_json deltas into the running row', async () => {
+    const createRow = vi.fn().mockResolvedValue({ id: 21 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+      builders: claudeBuilders,
+    });
+
+    await writer.apply([
+      { op: 'tool_stream_block_start', index: 0, call_id: 'c2', name: 'Bash', input: {} },
+      { op: 'tool_stream_input_delta', index: 0, partial_json: '{"command":"echo test"' },
+      {
+        op: 'tool_stream_input_delta',
+        index: 0,
+        partial_json: ',"description":"Run echo"}',
+      },
+      { op: 'tool_result', call_id: 'c2', raw: 'test', is_error: false },
+    ]);
+
+    const completed = JSON.parse(patchRow.mock.calls.at(-1)[1].message_json);
+    expect(completed.args.command).toBe('echo test');
+    expect(completed.args.description).toBe('Run echo');
+  });
+
+  it('does not wipe bash command when tool_result carries empty input', async () => {
+    const createRow = vi.fn().mockResolvedValue({ id: 22 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+      builders: claudeBuilders,
+    });
+
+    await writer.apply([
+      { op: 'tool_start', call_id: 'c3', name: 'Bash', input: { command: 'echo test' } },
+      { op: 'tool_result', call_id: 'c3', input: {}, raw: 'test', is_error: false },
+    ]);
+
+    const completed = JSON.parse(patchRow.mock.calls.at(-1)[1].message_json);
+    expect(completed.args.command).toBe('echo test');
+  });
+
+  it('merges later tool_start args into the running bash row', async () => {
+    const createRow = vi.fn().mockResolvedValue({ id: 20 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+      builders: claudeBuilders,
+    });
+
+    await writer.apply([
+      { op: 'tool_start', call_id: 'c1', name: 'Bash', input: {} },
+      { op: 'tool_start', call_id: 'c1', name: 'Bash', input: { command: 'echo test' } },
+      { op: 'tool_result', call_id: 'c1', raw: 'test', is_error: false },
+    ]);
+
+    const completed = JSON.parse(patchRow.mock.calls.at(-1)[1].message_json);
+    expect(completed.args.command).toBe('echo test');
+  });
+
   it('marks pending tools cancelled when finish() runs', async () => {
     const createRow = vi.fn().mockResolvedValue({ id: 20 });
     const patchRow = vi.fn().mockResolvedValue(undefined);

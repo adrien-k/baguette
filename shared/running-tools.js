@@ -3,6 +3,7 @@
  */
 
 import { findLastTurnStartIndex } from './turn-model.js';
+import { isBashToolName, resolveBashCommand } from './resolve-bash-command.js';
 
 function stripWorktreePath(filePath, worktreePath) {
   if (!filePath || !worktreePath) return filePath;
@@ -81,8 +82,8 @@ export function runningToolDisplay(block, opts = {}) {
     return { label: short };
   }
 
-  if (name === 'Bash') {
-    const command = input.command ?? '';
+  if (name === 'Bash' || isBashToolName(name)) {
+    const command = resolveBashCommand(input) || input.command || '';
     const firstLine =
       command
         .split('\n')
@@ -171,7 +172,7 @@ export function collectRunningTools(messages, opts = {}) {
 /** Typed tool_call row pinned to the dock while running: Bash, RunTask, or AwaitDetachedTask. */
 function isPinnableRunningToolCallView(msg) {
   if (!isRunningToolCallView(msg)) return false;
-  if (msg.kind === 'bash' || msg.name === 'Bash') return true;
+  if (msg.kind === 'bash' || msg.name === 'Bash' || isBashToolName(msg.name)) return true;
   if (msg.kind === 'mcp') {
     const tool = msg.args?.tool ?? msg.args?.toolName;
     return tool === 'RunTask' || tool === 'AwaitDetachedTask';

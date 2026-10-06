@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sessionsService } from '../feathers.js';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
 
@@ -44,7 +44,7 @@ export function useSessionBranchCommits(session, enabled = false) {
       .catch((err) => {
         if (!cancelled) {
           setCommits([]);
-          toastError('Failed to load commits', err);
+          toastFeathersError('Failed to load commits', err);
         }
       })
       .finally(() => {

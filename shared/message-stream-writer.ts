@@ -1,4 +1,9 @@
 import { dbRowFromPayload, dbPatchFromPayload } from './message-db-row.js';
+import {
+  hasNonemptyToolInput,
+  mergeToolCallInput,
+  toolInputFromPayload,
+} from './merge-tool-call-input.js';
 import type {
   AssistantBlock,
   AssistantMessagePayload,
@@ -49,7 +54,8 @@ export type WriterDeps = {
   builders: ToolCallBuilders;
 };
 
-type PendingTool = { id: number; payload: ToolCallPayload };
+type PendingTool = { id: number; payload: ToolCallPayload; rawInput: Record<string, unknown> };
+type ToolStreamBlock = { callId: string; name: string; json: string };
 
 /**
  * Applies canonical `MessageOp`s to `session_messages`.
@@ -64,6 +70,7 @@ type PendingTool = { id: number; payload: ToolCallPayload };
 export class MessageStreamWriter {
   readonly deps: WriterDeps;
   private pendingTools: Map<string, PendingTool>;
+  private toolStreamByIndex: Map<number, ToolStreamBlock>;
   private assistantRowId: number | null;
   private assistantPayload: AssistantMessagePayload;
   private streamBufferKind: 'assistant' | 'thinking' | null;
@@ -74,6 +81,7 @@ export class MessageStreamWriter {
   constructor(deps: WriterDeps) {
     this.deps = deps;
     this.pendingTools = new Map();
+    this.toolStreamByIndex = new Map();
     this.assistantRowId = null;
     this.assistantPayload = { type: 'assistant', blocks: [] };
     this.streamBufferKind = null;
@@ -171,10 +179,42 @@ export class MessageStreamWriter {
 
   async startTool(callId: string, name: string, args: Record<string, unknown>): Promise<number> {
     await this.flushAssistant();
-    const payload = this.deps.builders.buildToolCallStart(callId, name, args);
+    const rawInput = { ...args };
+    const payload = this.deps.builders.buildToolCallStart(callId, name, rawInput);
     const { id } = await this.persistPayload(payload);
-    this.pendingTools.set(callId, { id, payload });
+    this.pendingTools.set(callId, { id, payload, rawInput });
     return id;
+  }
+
+  /** Merge later tool_start frames (streaming args) into the running tool_call row. */
+  async mergeToolStart(
+    callId: string,
+    name: string,
+    input: Record<string, unknown>
+  ): Promise<void> {
+    const pending = this.pendingTools.get(callId);
+    if (!pending) {
+      await this.startTool(callId, name, input);
+      return;
+    }
+    const merged = mergeToolCallInput(pending.rawInput, input);
+    if (JSON.stringify(merged) === JSON.stringify(pending.rawInput)) return;
+
+    pending.rawInput = merged;
+    const payload = this.deps.builders.buildToolCallStart(
+      callId,
+      name || pending.payload.name,
+      merged,
+      pending.payload.started_at ?? new Date().toISOString()
+    );
+    const next: ToolCallPayload = {
+      ...payload,
+      status: pending.payload.status,
+      result: pending.payload.result,
+      ended_at: pending.payload.ended_at,
+    };
+    pending.payload = next;
+    await this.patchPayload(pending.id, next);
   }
 
   async completeTool(
@@ -195,9 +235,14 @@ export class MessageStreamWriter {
     const base =
       pending?.payload ??
       this.deps.builders.buildToolCallStart(callId, opts.name ?? 'generic', opts.args ?? {});
+    const rawInput = pending?.rawInput ?? toolInputFromPayload(base);
+    const mergedArgs =
+      opts.args != null && hasNonemptyToolInput(opts.args)
+        ? mergeToolCallInput(rawInput, opts.args)
+        : rawInput;
     const completed = this.deps.builders.buildToolCallComplete(base, {
       name: opts.name,
-      args: opts.args,
+      args: mergedArgs,
       rawResult: opts.rawResult,
       isError: opts.isError,
       toolCallStatus: opts.toolCallStatus,
@@ -271,11 +316,37 @@ export class MessageStreamWriter {
 
       switch (op.op) {
         case 'tool_start':
-          // Cursor re-emits `running` while args stream in; the first one wins.
           if (!this.pendingTools.has(op.call_id)) {
             await this.startTool(op.call_id, op.name, op.input);
+          } else {
+            await this.mergeToolStart(op.call_id, op.name, op.input);
           }
           break;
+        case 'tool_stream_block_start':
+          this.toolStreamByIndex.set(op.index, {
+            callId: op.call_id,
+            name: op.name,
+            json: hasNonemptyToolInput(op.input) ? JSON.stringify(op.input) : '',
+          });
+          if (!this.pendingTools.has(op.call_id)) {
+            await this.startTool(op.call_id, op.name, op.input);
+          } else {
+            await this.mergeToolStart(op.call_id, op.name, op.input);
+          }
+          break;
+        case 'tool_stream_input_delta': {
+          const block = this.toolStreamByIndex.get(op.index);
+          if (!block) break;
+          block.json += op.partial_json;
+          let parsed: Record<string, unknown> | null = null;
+          try {
+            parsed = JSON.parse(block.json) as Record<string, unknown>;
+          } catch {
+            break;
+          }
+          await this.mergeToolStart(block.callId, block.name, parsed);
+          break;
+        }
         case 'tool_result':
           await this.completeTool(op.call_id, {
             name: op.name,

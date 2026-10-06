@@ -1324,6 +1324,9 @@ export class SessionsService extends KnexService {
   }
 
   async onTurnComplete(sessionId) {
+    const db = this.app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (session?.status === 'stopped') return;
     await this.flushNextQueuedTurn(sessionId, 'builder');
   }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { reposService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
@@ -29,7 +29,7 @@ export function useGetBranches(repo) {
           setBranches(sortBranches(all, repo.default_branch));
         })
         .catch((err) => {
-          if (!silent) toastError('Failed to load branches', err);
+          if (!silent) toastFeathersError('Failed to load branches', err);
         })
         .finally(() => {
           if (!silent) setLoading(false);
@@ -62,7 +62,7 @@ export function useGetBranches(repo) {
       await reposService.refresh({});
       setReloadNonce((n) => n + 1);
     } catch (err) {
-      toastError('Failed to clear GitHub cache', err);
+      toastFeathersError('Failed to clear GitHub cache', err);
     } finally {
       setClearingCache(false);
     }

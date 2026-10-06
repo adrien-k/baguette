@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { sessionIssuesService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
@@ -20,7 +20,7 @@ export function useGetSessionIssues(sessionId, { enabled = true } = {}) {
           setIssues(sortIssuesBySeverity(list));
         })
         .catch((err) => {
-          if (!silent) toastError('Failed to load review issues', err);
+          if (!silent) toastFeathersError('Failed to load review issues', err);
         })
         .finally(() => {
           if (!silent) setLoading(false);
@@ -56,7 +56,7 @@ export function useGetSessionIssues(sessionId, { enabled = true } = {}) {
           setIssues(sortIssuesBySeverity(list));
         })
         .catch((err) => {
-          if (!cancelled) toastError('Failed to load review issues', err);
+          if (!cancelled) toastFeathersError('Failed to load review issues', err);
         })
         .finally(() => {
           if (!cancelled) setLoading(false);

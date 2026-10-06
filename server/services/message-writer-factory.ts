@@ -1,4 +1,5 @@
 import { MessageStreamWriter } from '../../shared/message-stream-writer.ts';
+import { hasNonemptyToolInput } from '../../shared/merge-tool-call-input.js';
 import { dbRowFromPayload, dbPatchFromPayload } from '../../shared/message-db-row.js';
 import { agentEventLogPath, appendAgentEvent } from './agent-event-log.js';
 import type { SessionMessagePayload, SessionMessageRow } from '../../shared/session-messages.ts';
@@ -85,13 +86,18 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
               return claudeBuildToolCallStart(callId, name, input, startedAt);
             },
             buildToolCallComplete: (prev, opts) => {
-              const rawArgs = opts.args ?? {};
-              const isTaskUpdate = rawArgs.taskId != null;
+              const rawArgs = opts.args;
+              const isTaskUpdate = rawArgs != null && rawArgs.taskId != null;
               const isTaskCreate =
+                rawArgs != null &&
                 !isTaskUpdate &&
                 (typeof rawArgs.subject === 'string' || typeof rawArgs.description === 'string');
-              const input = isTaskUpdate ? taskTracker.enrichTaskUpdateInput(rawArgs) : rawArgs;
-              const completed = claudeBuildToolCallComplete(prev, { ...opts, args: input });
+              const input =
+                rawArgs != null && isTaskUpdate
+                  ? taskTracker.enrichTaskUpdateInput(rawArgs)
+                  : rawArgs;
+              const completeArgs = input != null && hasNonemptyToolInput(input) ? input : undefined;
+              const completed = claudeBuildToolCallComplete(prev, { ...opts, args: completeArgs });
               if (isTaskCreate) {
                 taskTracker.registerTaskFromCreateResult(opts.rawResult, rawArgs);
               }

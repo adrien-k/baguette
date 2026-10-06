@@ -1,8 +1,6 @@
 import type { FileReferenceBlock as FileReferenceBlockType } from '@baguette/shared/message-types.ts';
 
 export default function FileReferenceBlock({ block }: { block: FileReferenceBlockType }) {
-  const changeLabel =
-    block.change === 'added' ? 'added' : block.change === 'removed' ? 'removed' : null;
   const changeClass =
     block.change === 'added'
       ? 'text-success border-success/30 bg-success/10'
@@ -22,9 +20,6 @@ export default function FileReferenceBlock({ block }: { block: FileReferenceBloc
       </span>
       {block.short_sha && (
         <span className="text-fg-muted font-sans text-[11px]">commit {block.short_sha}</span>
-      )}
-      {changeLabel && (
-        <span className="text-fg-muted font-sans text-[11px]">change: {changeLabel}</span>
       )}
     </div>
   );

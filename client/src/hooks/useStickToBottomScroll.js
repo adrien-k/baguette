@@ -4,6 +4,7 @@ import { SCROLL_BOTTOM_THRESHOLD_PX, isAtScrollBottom } from '../utils/scrollBot
 /**
  * Stick-to-bottom scroll for chronological feeds (chat, logs, review).
  * Preserves scroll position when prepending via prepareLoadMore().
+ * Starts pinned to the bottom (new session / initial load); stops auto-scroll after the user scrolls up.
  */
 export function useStickToBottomScroll({
   resetKey,
@@ -44,7 +45,7 @@ export function useStickToBottomScroll({
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [threshold]);
+  }, [resetKey, threshold]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;

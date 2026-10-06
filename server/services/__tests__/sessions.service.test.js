@@ -1513,6 +1513,37 @@ describe('Sessions service - find, get, create', (hooks) => {
       });
     });
 
+    it('does not flush queued messages when onTurnComplete runs on a stopped session', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await app
+        .get('db')('queued_messages')
+        .insert({
+          session_id: created.id,
+          user_id: userId1,
+          kind: 'turn',
+          agent_type: 'builder',
+          message_json: JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: 'queued' },
+          }),
+          created_at: new Date().toISOString(),
+        });
+
+      await app
+        .service('sessions')
+        .patch(created.id, { status: 'stopped' }, params({ id: userId1 }));
+
+      await app.service('sessions').onTurnComplete(created.id);
+
+      const remaining = await app
+        .get('db')('queued_messages')
+        .where({ session_id: created.id, kind: 'turn' });
+      expect(remaining).toHaveLength(1);
+    });
+
     it('emits a created event when a session is created', async () => {
       const createdHandler = vi.fn();
       app.service('sessions').on('created', createdHandler);

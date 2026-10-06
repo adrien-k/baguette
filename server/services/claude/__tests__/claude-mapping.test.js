@@ -37,6 +37,38 @@ describe('mapClaudeMessage', () => {
     expect(ops).toEqual([{ op: 'assistant_thinking', text: 'pondering' }]);
   });
 
+  it('maps lowercase bash tool_use to Bash bash kind', () => {
+    const ops = mapClaudeMessage(
+      asClaude({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'call_bash',
+              name: 'bash',
+              input: { command: 'git status', description: 'Show working tree status' },
+            },
+          ],
+        },
+      })
+    );
+    expect(ops).toEqual([
+      {
+        op: 'tool_start',
+        call_id: 'call_bash',
+        name: 'Bash',
+        input: { command: 'git status', description: 'Show working tree status' },
+      },
+    ]);
+    const start = claudeBuildToolCallStart('call_bash', 'bash', {
+      command: 'git status',
+      description: 'Show working tree status',
+    });
+    expect(start.kind).toBe('bash');
+    expect(start.args.command).toBe('git status');
+  });
+
   it('maps tool_use to a tool_start op', () => {
     const ops = mapClaudeMessage(
       asClaude({
@@ -228,6 +260,11 @@ describe('claudeCanonicalToolName', () => {
     expect(claudeCanonicalToolName('Bash')).toBe('Bash');
     expect(claudeCanonicalToolName('Read')).toBe('Read');
   });
+
+  it('maps lowercase bash/shell to Bash', () => {
+    expect(claudeCanonicalToolName('bash')).toBe('Bash');
+    expect(claudeCanonicalToolName('shell')).toBe('Bash');
+  });
 });
 
 describe('claudeToolKindFromName', () => {
@@ -418,5 +455,15 @@ describe('claudeBuildToolCallStart / claudeBuildToolCallComplete', () => {
     expect(
       claudeBuildToolCallComplete(start, { toolCallStatus: 'error', isError: true }).status
     ).toBe('error');
+  });
+
+  it('keeps bash command when complete args are an empty object', () => {
+    const start = claudeBuildToolCallStart('id-4', 'Bash', {
+      command: 'echo test',
+      description: 'd',
+    });
+    const done = claudeBuildToolCallComplete(start, { args: {}, rawResult: 'test' });
+    expect(done.args.command).toBe('echo test');
+    expect(done.args.description).toBe('d');
   });
 });

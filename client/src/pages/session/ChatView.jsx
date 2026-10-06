@@ -20,7 +20,8 @@ import {
   queuedMessagesService,
   loopsService,
 } from '../../feathers.js';
-import { toastError } from '../../utils/toastError.jsx';
+import { toastFeathersError } from '../../utils/toastError.jsx';
+import { useRefetchOnSseReconnect } from '../../hooks/useRefetchOnSseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
@@ -168,9 +169,10 @@ export default function ChatView({
     : 'Agent';
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
+  const chatSessionId = session?.id;
 
   useEffect(() => {
-    if (!session?.id) {
+    if (!chatSessionId) {
       setTiedLoops([]);
       return;
     }
@@ -189,20 +191,27 @@ export default function ChatView({
       loopsService.off('patched', load);
       loopsService.off('removed', load);
     };
-  }, [session?.id]);
+  }, [chatSessionId]);
 
-  useEffect(() => {
-    if (!session?.id) return;
+  const reloadQueuedMessages = useCallback(() => {
+    if (!chatSessionId) return;
     queuedMessagesService
-      .find({ query: { session_id: session.id, $sort: { created_at: 1 }, $limit: 50 } })
+      .find({ query: { session_id: chatSessionId, $sort: { created_at: 1 }, $limit: 50 } })
       .then((res) => setQueue(res.data ?? res))
       .catch(() => {});
+  }, [chatSessionId]);
+
+  useRefetchOnSseReconnect(reloadQueuedMessages, Boolean(chatSessionId));
+
+  useEffect(() => {
+    if (!chatSessionId) return;
+    reloadQueuedMessages();
 
     const onCreated = (item) => {
-      if (item.session_id === session.id) setQueue((q) => [...q, item]);
+      if (item.session_id === chatSessionId) setQueue((q) => [...q, item]);
     };
     const onPatched = (item) => {
-      if (item.session_id === session.id)
+      if (item.session_id === chatSessionId)
         setQueue((q) => q.map((m) => (m.id === item.id ? item : m)));
     };
     const onRemoved = (item) => {
@@ -216,7 +225,7 @@ export default function ChatView({
       queuedMessagesService.off('patched', onPatched);
       queuedMessagesService.off('removed', onRemoved);
     };
-  }, [session?.id]);
+  }, [chatSessionId, reloadQueuedMessages]);
 
   const displayMessages = useMemo(() => {
     const result = [];
@@ -280,7 +289,7 @@ export default function ChatView({
     try {
       await sessionsService.restore(session.id);
     } catch (err) {
-      toastError('Failed to restore session', err);
+      toastFeathersError('Failed to restore session', err);
     } finally {
       setRestoring(false);
     }
@@ -295,7 +304,7 @@ export default function ChatView({
       setShowMergeModal(false);
       toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
     } catch (err) {
-      toastError(mergeFailureToastLabel(err), err);
+      toastFeathersError(mergeFailureToastLabel(err), err);
       setMergeError(err.message || mergeFailureToastLabel(err));
     } finally {
       setMerging(false);
@@ -386,7 +395,7 @@ export default function ChatView({
     } catch (err) {
       setInput(text);
       setFiles(filesToSend);
-      toastError('Failed to schedule message', err);
+      toastFeathersError('Failed to schedule message', err);
     } finally {
       setSending(false);
     }
@@ -450,7 +459,7 @@ export default function ChatView({
       setShowRegularlyModal(false);
       toast.success('Loop created — this session will run on a schedule');
     } catch (err) {
-      toastError('Failed to create loop', err);
+      toastFeathersError('Failed to create loop', err);
     } finally {
       setCreatingLoop(false);
     }
@@ -485,7 +494,7 @@ export default function ChatView({
     } catch (err) {
       setInput(text);
       setFiles(filesToSend);
-      toastError('Failed to send message', err);
+      toastFeathersError('Failed to send message', err);
     } finally {
       setSending(false);
     }
@@ -495,7 +504,7 @@ export default function ChatView({
     try {
       await queuedMessagesService.remove(id);
     } catch (err) {
-      toastError('Failed to delete queued message', err);
+      toastFeathersError('Failed to delete queued message', err);
     }
   };
 
@@ -504,7 +513,7 @@ export default function ChatView({
     try {
       await loopsService.remove(loop.id);
     } catch (err) {
-      toastError('Failed to delete loop', err);
+      toastFeathersError('Failed to delete loop', err);
     }
   };
 
@@ -517,7 +526,7 @@ export default function ChatView({
         model_params: item.model_params,
       });
     } catch (err) {
-      toastError('Failed to send message', err);
+      toastFeathersError('Failed to send message', err);
     }
   };
 
@@ -525,7 +534,7 @@ export default function ChatView({
     try {
       await queuedMessagesService.patch(id, { message_json: newMessageJson });
     } catch (err) {
-      toastError('Failed to update queued message', err);
+      toastFeathersError('Failed to update queued message', err);
     }
   };
 

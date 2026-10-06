@@ -1,4 +1,5 @@
 import { normalizeUserPayloadForStorage } from './normalize-user-payload.js';
+import { isBashToolName } from './resolve-bash-command.js';
 import type {
   AssistantBlock,
   AssistantMessagePayload,
@@ -52,10 +53,12 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
     // `message_json` is untrusted JSON: `kind` is re-derived from the payload
     // rather than validated against the union, so this is a boundary cast.
     const call = payload as unknown as ToolCallPayload;
+    const kind =
+      call.kind === 'generic' && isBashToolName(call.name) ? ('bash' as const) : call.kind;
     return {
       ...meta,
       type: 'tool_call',
-      kind: call.kind,
+      kind,
       name: call.name,
       status: call.status,
       started_at: call.started_at,

@@ -16,7 +16,7 @@ import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
-import { toastError } from '../../utils/toastError.jsx';
+import { toastFeathersError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import { diffFileDisplayPath, diffFileScrollId } from '../../utils/paths.js';
 const DIFF_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-5xl mx-auto';
@@ -182,8 +182,10 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
   );
 }
 
-function isLineActive(active, filePath, line) {
-  return Boolean(active && active.path === filePath && Number(active.line) === Number(line));
+function isLineActive(active, filePath, line, change) {
+  if (!active || active.path !== filePath || Number(active.line) !== Number(line)) return false;
+  if (active.change != null && change != null) return active.change === change;
+  return true;
 }
 
 const LINE_HINT = 'Comment on this line';
@@ -207,7 +209,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
           );
         }
         const ref = lineRefFromRow(row, filePath);
-        const active = ref ? isLineActive(activeLine, filePath, ref.line) : false;
+        const active = ref ? isLineActive(activeLine, filePath, ref.line, ref.change) : false;
         const openComposer = onLineReference ? () => sendRef(row) : undefined;
         let body;
         if (row.type === 'removed') {
@@ -262,9 +264,13 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
             </div>
           );
         }
-        const leftActive = row.left?.num ? isLineActive(activeLine, filePath, row.left.num) : false;
+        const leftChange = row.type === 'change' ? 'removed' : undefined;
+        const rightChange = row.type === 'change' ? 'added' : undefined;
+        const leftActive = row.left?.num
+          ? isLineActive(activeLine, filePath, row.left.num, leftChange)
+          : false;
         const rightActive = row.right?.num
-          ? isLineActive(activeLine, filePath, row.right.num)
+          ? isLineActive(activeLine, filePath, row.right.num, rightChange)
           : false;
         const showComposer = leftActive || rightActive;
         const leftCell =
@@ -390,6 +396,8 @@ export default function DiffView({
   diff,
   diffLoading,
   diffError,
+  diffStale = false,
+  diffHasFetched = false,
   onRefreshDiff,
   fileByFile = false,
   changedFiles = [],
@@ -421,6 +429,8 @@ export default function DiffView({
   const selectedCommitMeta = isSingleCommit
     ? (commits ?? []).find((c) => c.sha === selectedCommit)
     : null;
+  /** Branch tip (all-commits diff); git log is newest-first. */
+  const branchHeadShortSha = (commits ?? [])[0]?.short_sha ?? null;
 
   const handleRefresh = useCallback(() => {
     onRefreshCommits?.();
@@ -439,7 +449,7 @@ export default function DiffView({
       setShowMergeModal(false);
       toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
     } catch (err) {
-      toastError(mergeFailureToastLabel(err), err);
+      toastFeathersError(mergeFailureToastLabel(err), err);
       setMergeError(err.message || mergeFailureToastLabel(err));
     } finally {
       setMerging(false);
@@ -458,10 +468,10 @@ export default function DiffView({
   }, [fileByFile, scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
-  const enrichLineRef = (ref) => ({
-    ...ref,
-    ...(selectedCommitMeta?.short_sha ? { short_sha: selectedCommitMeta.short_sha } : {}),
-  });
+  const enrichLineRef = (ref) => {
+    const short_sha = selectedCommitMeta?.short_sha ?? branchHeadShortSha;
+    return short_sha ? { ...ref, short_sha } : ref;
+  };
 
   const handleLineClick = (ref) => {
     if (!canComment || !ref) return;
@@ -561,10 +571,32 @@ export default function DiffView({
       </div>
     ) : null;
 
+  const showDiffRefreshBanner = !loading && diffStale && diffHasFetched;
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
       {commitSelector}
       {fileSelector}
+      {showDiffRefreshBanner && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center px-3 pt-2">
+          <div
+            className={`pointer-events-auto ${DIFF_CONTENT_MAX_WIDTH_CLASS} flex items-center justify-between gap-3 rounded-lg border border-brand/40 bg-nav/95 backdrop-blur-sm px-3 py-2 shadow-md`}
+          >
+            <span className="text-xs text-secondary">
+              The diff may be out of date. Refresh to load the latest changes.
+            </span>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshBusy}
+              className="flex items-center gap-1.5 shrink-0 text-xs font-medium text-brand hover:text-brand/90 disabled:opacity-40"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshBusy ? 'animate-spin' : ''}`} />
+              Refresh diff
+            </button>
+          </div>
+        </div>
+      )}
       {/* Diff content */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
         <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} min-h-full`}>
@@ -579,7 +611,7 @@ export default function DiffView({
               {error}
             </div>
           )}
-          {!loading && !error && !hasDiff && (
+          {!loading && !error && diffHasFetched && !hasDiff && !diffStale && (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-faint text-sm">
               <p>
                 {isSingleCommit ? (

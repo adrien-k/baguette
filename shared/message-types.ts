@@ -91,7 +91,7 @@ export type AskUserQuestion = {
  * argument shape is defined by the called tool, not by us.
  */
 export type ToolArgsByKind = {
-  bash: { command: string };
+  bash: { command: string; description?: string | null };
   read: { path: string };
   delete: { path: string };
   write: { path: string; content: string };
@@ -251,6 +251,14 @@ export type MessageOp =
   | { op: 'assistant_text'; text: string }
   | { op: 'assistant_thinking'; text: string }
   | { op: 'tool_start'; call_id: string; name: string; input: Record<string, unknown> }
+  | {
+      op: 'tool_stream_block_start';
+      index: number;
+      call_id: string;
+      name: string;
+      input: Record<string, unknown>;
+    }
+  | { op: 'tool_stream_input_delta'; index: number; partial_json: string }
   | {
       op: 'tool_result';
       call_id: string;

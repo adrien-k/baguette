@@ -30,7 +30,7 @@ import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
 import { sessionsService, tasksService } from '../feathers.js';
 import {
@@ -423,6 +423,8 @@ export default function Session() {
     diffFile: sessionDiffActiveFile,
     loading: sessionDiffLoading,
     error: sessionDiffError,
+    stale: sessionDiffStale,
+    hasFetched: sessionDiffHasFetched,
     refresh: refreshSessionDiff,
   } = useSessionDiff(
     gitSession,
@@ -610,7 +612,7 @@ export default function Session() {
   useEffect(() => {
     if (isNewSessionRoute || !short_id || sessionLoading || sessionFromHook) return;
     if (!sessionLoadError || isFeathersNotFound(sessionLoadError)) return;
-    toastError('Failed to load session', sessionLoadError);
+    toastFeathersError('Failed to load session', sessionLoadError);
     navigate(homeUrl);
   }, [
     isNewSessionRoute,
@@ -662,25 +664,25 @@ export default function Session() {
     if (modelParams !== null) patch.model_params = modelParams;
     sessionsService
       .patch(session.id, patch)
-      .catch((err) => toastError('Failed to change model', err));
+      .catch((err) => toastFeathersError('Failed to change model', err));
   };
 
   // Named .baguette.yaml task: the server resolves the command, ports and dependencies.
   const handleTaskStart = (taskKey) => {
     tasksService
       .create({ session_id: session?.id, task_key: taskKey })
-      .catch((err) => toastError('Failed to start task', err));
+      .catch((err) => toastFeathersError('Failed to start task', err));
   };
 
   // Ad-hoc command typed by the user — the only case where the client supplies a command.
   const handleCommandRun = (command) => {
     tasksService
       .create({ session_id: session?.id, command })
-      .catch((err) => toastError('Failed to run command', err));
+      .catch((err) => toastFeathersError('Failed to run command', err));
   };
 
   const handleTaskKill = (taskId) => {
-    tasksService.kill(taskId).catch((err) => toastError('Failed to kill task', err));
+    tasksService.kill(taskId).catch((err) => toastFeathersError('Failed to kill task', err));
   };
 
   const handleTaskRetry = (taskId) => {
@@ -693,12 +695,12 @@ export default function Session() {
         session_id: session?.id,
         ...(task.task_key ? { task_key: task.task_key } : { command: task.command }),
       })
-      .catch((err) => toastError('Failed to start task', err));
+      .catch((err) => toastFeathersError('Failed to start task', err));
     setActiveTaskModal(null);
   };
 
   const handleTaskDelete = (taskId) => {
-    tasksService.remove(taskId).catch((err) => toastError('Failed to delete task', err));
+    tasksService.remove(taskId).catch((err) => toastFeathersError('Failed to delete task', err));
   };
 
   const handleViewTaskLogs = (taskId) => {
@@ -709,7 +711,7 @@ export default function Session() {
     if (!session?.id) return;
     sessionsService
       .patch(session.id, { auto_push: enabled })
-      .catch((err) => toastError('Failed to update auto-push setting', err));
+      .catch((err) => toastFeathersError('Failed to update auto-push setting', err));
   };
 
   const handlePush = () => {
@@ -728,9 +730,9 @@ export default function Session() {
       toast.success('Pushed successfully');
     } catch (err) {
       if (err.data?.conflict) {
-        toastError('Push failed — use Git Sync to resolve conflicts first', err);
+        toastFeathersError('Push failed — use Git Sync to resolve conflicts first', err);
       } else {
-        toastError('Push failed', err);
+        toastFeathersError('Push failed', err);
       }
     } finally {
       setPushing(false);
@@ -1529,6 +1531,8 @@ export default function Session() {
                 diff={sessionDiff}
                 diffLoading={sessionDiffLoading}
                 diffError={sessionDiffError}
+                diffStale={sessionDiffStale}
+                diffHasFetched={sessionDiffHasFetched}
                 onRefreshDiff={refreshSessionDiff}
                 fileByFile={sessionDiffFileByFile}
                 changedFiles={diffFiles}

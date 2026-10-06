@@ -27,6 +27,7 @@ import type {
   SDKStatusMessage,
   SDKSystemMessage,
   SDKThinkingTokensMessage,
+  SDKPartialAssistantMessage,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { planMarkdownFromToolInput } from '../../../shared/plan-markdown.ts';
@@ -39,6 +40,11 @@ import type {
   ToolResultBase,
 } from '../../../shared/message-types.ts';
 import { formatClaudeToolResult } from './claude-tool-result.js';
+import {
+  hasNonemptyToolInput,
+  mergeToolCallInput,
+  toolInputFromPayload,
+} from '../../../shared/merge-tool-call-input.js';
 
 export type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
@@ -59,6 +65,12 @@ export function isClaudeTaskTrackerTool(name?: string | null): boolean {
   return TASK_TRACKER_TOOL_NAMES.has(name ?? '');
 }
 
+/** Claude Agent SDK registers the shell tool as lowercase `bash`. */
+const CLAUDE_TOOL_ALIAS: Record<string, string> = {
+  bash: 'Bash',
+  shell: 'Bash',
+};
+
 /**
  * Translate Claude-native tool names into the canonical vocabulary the rest of
  * the codebase consumes. MCP tool names are kept verbatim since they carry
@@ -68,6 +80,8 @@ export function canonicalizeClaudeToolName(name: string): string {
   if (!name) return name;
   if (name.startsWith('mcp__')) return name;
   if (TASK_TRACKER_TOOL_NAMES.has(name)) return 'TodoWrite';
+  const alias = CLAUDE_TOOL_ALIAS[name.toLowerCase()];
+  if (alias) return alias;
   return name;
 }
 
@@ -256,9 +270,41 @@ export function mapClaudeMessage(msg: SDKMessage): MessageOp[] | null {
       return mapSystemVariant(msg);
     case 'result':
       return mapResult(msg);
+    case 'stream_event':
+      return mapClaudeStreamEvent(msg as SDKPartialAssistantMessage);
     default:
       return null;
   }
+}
+
+/** Map Claude partial stream frames into tool input merge ops. */
+function mapClaudeStreamEvent(msg: SDKPartialAssistantMessage): MessageOp[] | null {
+  const ev = msg.event;
+  if (ev.type === 'content_block_start') {
+    const block = ev.content_block;
+    if (block.type === 'tool_use') {
+      return [
+        {
+          op: 'tool_stream_block_start',
+          index: ev.index,
+          call_id: block.id,
+          name: canonicalizeClaudeToolName(block.name),
+          input: asInput(block.input),
+        },
+      ];
+    }
+    return null;
+  }
+  if (ev.type === 'content_block_delta' && ev.delta.type === 'input_json_delta') {
+    return [
+      {
+        op: 'tool_stream_input_delta',
+        index: ev.index,
+        partial_json: ev.delta.partial_json,
+      },
+    ];
+  }
+  return null;
 }
 
 /** Type guard for assistant messages, used by downstream consumers. */
@@ -361,8 +407,15 @@ export function mapClaudeToolArgs<K extends ToolCallKind>(
 ): ToolArgsByKind[K] {
   const inp = input ?? {};
   switch (kind) {
-    case 'bash':
-      return { command: str(inp.command) } as ToolArgsByKind[K];
+    case 'bash': {
+      const unwrapped = unwrapNestedToolInput(inp);
+      const command = str(unwrapped.command ?? unwrapped.cmd ?? inp.command ?? inp.cmd);
+      const description = strOrNull(unwrapped.description ?? inp.description);
+      return {
+        command,
+        ...(description ? { description } : {}),
+      } as ToolArgsByKind[K];
+    }
     case 'read':
     case 'delete':
       return { path: str(inp.path ?? inp.file_path) } as ToolArgsByKind[K];
@@ -435,7 +488,7 @@ export function mapClaudeToolArgs<K extends ToolCallKind>(
     default:
       return {
         label: toolName,
-        detail: strOrNull(inp.description ?? inp.command),
+        detail: strOrNull(inp.command ?? inp.description),
         input: inp,
       } as ToolArgsByKind[K];
   }
@@ -649,13 +702,17 @@ export function claudeBuildToolCallComplete(
   if (isError || toolCallStatus === 'error') status = 'error';
   else if (toolCallStatus === 'cancelled') status = 'cancelled';
 
+  const prevInput = toolInputFromPayload(prev);
+  const mergedInput =
+    args != null && hasNonemptyToolInput(args) ? mergeToolCallInput(prevInput, args) : prevInput;
+
   return {
     ...prev,
     kind,
     name: claudeCanonicalToolName(finalName),
     status,
     ended_at: endedAt ?? new Date().toISOString(),
-    args: mapClaudeToolArgs(kind, finalName, args ?? (prev.args as Dict)),
+    args: mapClaudeToolArgs(kind, finalName, mergedInput),
     result: mapClaudeToolResult(kind, rawResult, { isError }),
   } as ToolCallPayload;
 }

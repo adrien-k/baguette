@@ -1,3 +1,5 @@
+import { isBashToolName, resolveBashCommand } from './resolve-bash-command.js';
+
 /**
  * Human-readable tool label for logs and debug views (chat uses richer blocks).
  * @param {string | null | undefined} name
@@ -33,8 +35,8 @@ export function logToolCallSummary(call) {
   const args = call.args ?? {};
   const label = logToolDisplayName(name, args);
 
-  if (call.kind === 'bash' || name === 'Bash') {
-    const cmd = args.command ?? args.cmd;
+  if (call.kind === 'bash' || name === 'Bash' || isBashToolName(name)) {
+    const cmd = resolveBashCommand(args) || args.command || args.cmd;
     if (typeof cmd === 'string' && cmd.trim()) {
       return `${label} — ${cmd.trim().replace(/\s+/g, ' ').slice(0, 100)}`;
     }

@@ -90,6 +90,7 @@ function extractUserText(parsed: unknown): string {
     message?: { content?: unknown };
   };
   if (typeof p.content === 'string') return p.content;
+  if (Array.isArray(p.content)) return expandUserContentForAgent(p.content);
   const content = p.message?.content;
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return expandUserContentForAgent(content);

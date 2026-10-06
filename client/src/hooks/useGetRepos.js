@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { toastError } from '../utils/toastError.jsx';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { reposService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
@@ -14,7 +14,7 @@ export function useGetRepos(enabled = true) {
       .find()
       .then((data) => setRepos(data))
       .catch((err) => {
-        if (!silent) toastError('Failed to load repositories', err);
+        if (!silent) toastFeathersError('Failed to load repositories', err);
       })
       .finally(() => {
         if (!silent) setLoading(false);
@@ -27,7 +27,7 @@ export function useGetRepos(enabled = true) {
       await reposService.refresh({});
       await refetch();
     } catch (err) {
-      toastError('Failed to clear GitHub cache', err);
+      toastFeathersError('Failed to clear GitHub cache', err);
     } finally {
       setClearingCache(false);
     }

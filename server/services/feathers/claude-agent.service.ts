@@ -362,6 +362,14 @@ export class ClaudeAgentService {
         type: 'user',
         message: { role: 'user', content: (parsedStorage as { content: string }).content },
       };
+    } else if (Array.isArray((parsedStorage as { content?: unknown }).content)) {
+      forSdk = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: (parsedStorage as { content: unknown[] }).content,
+        },
+      };
     }
     const parsed = normalizeUserMessageForAgentSdk(forSdk);
 
@@ -803,7 +811,7 @@ export class ClaudeAgentService {
         .patch(sessionId, { status: terminalStatus }, { user: { id: userId } });
     }
 
-    if (turnComplete && !isReview) {
+    if (turnComplete && !isReview && outcome === 'completed') {
       try {
         await this.app.service('sessions').onTurnComplete(sessionId);
       } catch (err) {

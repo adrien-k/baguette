@@ -64,6 +64,18 @@ describe('isHumanUserMessage', () => {
       true
     );
   });
+
+  it('accepts stored user content with file_reference blocks', () => {
+    expect(
+      isHumanUserMessage({
+        type: 'user',
+        content: [
+          { type: 'file_reference', path: 'README.md', line: 28, change: 'removed' },
+          { type: 'text', text: 'test' },
+        ],
+      })
+    ).toBe(true);
+  });
 });
 
 describe('attachSessionTurnModelFields', () => {
