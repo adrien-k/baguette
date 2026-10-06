@@ -16,7 +16,7 @@ function flushSseReconnectListeners() {
   }
 }
 
-/** Subscribe to SSE reconnect after the tab becomes visible/online again. */
+/** Subscribe when the live event stream reconnects (drop, tab visible, or online again). */
 export function subscribeSseReconnect(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);

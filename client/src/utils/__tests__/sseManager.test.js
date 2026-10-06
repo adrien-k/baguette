@@ -19,7 +19,10 @@ describe('createSseManager', () => {
     EventSourceImpl = vi.fn(function FakeEventSource() {
       this.onmessage = null;
       this.onopen = null;
+      this.onerror = null;
+      this.readyState = 1;
       this.close = vi.fn(() => {
+        this.readyState = 2;
         instances = instances.filter((s) => s !== this);
       });
       instances.push(this);
@@ -163,6 +166,45 @@ describe('createSseManager', () => {
     instances[0].onopen?.();
     expect(onReconnect).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+
+  it('refetches when the stream opens again after a drop without hidden/offline', () => {
+    const onReconnect = vi.fn();
+    const manager = createManager({ onReconnect });
+    manager.start();
+    instances[0].onopen?.();
+    expect(onReconnect).not.toHaveBeenCalled();
+
+    instances[0].onopen?.();
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('reopens SSE when the browser closes the stream and refetches on success', () => {
+    const onReconnect = vi.fn();
+    const manager = createManager({ onReconnect });
+    manager.start();
+    const first = instances[0];
+    first.onopen?.();
+
+    first.readyState = 2;
+    first.onerror?.();
+    expect(instances).toHaveLength(2);
+    expect(first.close).not.toHaveBeenCalled();
+
+    instances[1].onopen?.();
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reopen on error while the browser is still retrying', () => {
+    const manager = createManager();
+    manager.start();
+    const first = instances[0];
+    first.onopen?.();
+
+    first.readyState = 0;
+    first.onerror?.();
+    expect(instances).toHaveLength(1);
+    expect(instances[0]).toBe(first);
   });
 
   it('stop closes the stream and detaches listeners without refetch', () => {

@@ -1,9 +1,13 @@
-/** Wait after visible/online before reopening SSE so the network can settle. */
+/** Wait before reopening SSE so the network can settle (hidden/offline or after a drop). */
 export const SSE_RECONNECT_DELAY_MS = 500;
 
+/** @see EventSource.readyState when the browser will not retry on its own */
+const EVENT_SOURCE_CLOSED = 2;
+
 /**
- * Keeps the live event stream open only while the tab is visible and the browser is online.
- * Closes on hidden/offline; opens again on visible/online and runs `onReconnect` after reopen.
+ * Keeps the live event stream open while the tab is visible and the browser is online.
+ * Closes on hidden/offline; reconnects after drops, visible/online, and runs `onReconnect`
+ * after every reopen once the stream has opened at least once.
  *
  * @param {{
  *   url: string,
@@ -41,6 +45,7 @@ export function createSseManager({
   /** @type {EventSource | null} */
   let source = null;
   let paused = false;
+  let hadOpen = false;
   let started = false;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let reconnectTimer = null;
@@ -66,9 +71,17 @@ export function createSseManager({
     source = new EventSourceImpl(url, { withCredentials });
     source.onmessage = onMessage;
     source.onopen = () => {
-      if (!paused) return;
+      const reconnecting = hadOpen || paused;
+      if (!hadOpen) hadOpen = true;
       paused = false;
-      onReconnect?.();
+      if (reconnecting) onReconnect?.();
+    };
+    source.onerror = () => {
+      if (!started || !shouldConnect() || !source) return;
+      if (source.readyState !== EVENT_SOURCE_CLOSED) return;
+      source = null;
+      paused = true;
+      scheduleConnect();
     };
   };
 
@@ -107,6 +120,7 @@ export function createSseManager({
     removeWindowListener('offline', sync);
     started = false;
     paused = false;
+    hadOpen = false;
     clearReconnectTimer();
     disconnect(false);
   };
