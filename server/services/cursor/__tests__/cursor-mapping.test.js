@@ -159,6 +159,25 @@ describe('mapCursorToolArgs', () => {
       expect.objectContaining({ content: 'Polish plan', status: 'in_progress' }),
     ]);
   });
+
+  it('reads content from a flat { content, status } updateTodos payload', () => {
+    const args = mapCursorToolArgs('todo', 'updateTodos', {
+      content: 'Ship the fix',
+      status: 'completed',
+    });
+    expect(args.todos).toEqual([
+      expect.objectContaining({ content: 'Ship the fix', status: 'completed' }),
+    ]);
+  });
+
+  it('defaults content to an empty string instead of the tool name', () => {
+    // Regression: previously fell back to "TodoWrite" (the tool name) when
+    // subject/description were missing, so the row rendered the literal
+    // "TodoWrite" placeholder.
+    const args = mapCursorToolArgs('todo', 'updateTodos', { status: 'completed' });
+    expect(args.todos[0].content).toBe('');
+    expect(args.todos[0].status).toBe('completed');
+  });
 });
 
 describe('mapCursorBashToolResult', () => {

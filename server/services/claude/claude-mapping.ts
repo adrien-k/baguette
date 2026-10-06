@@ -390,7 +390,24 @@ export function mapClaudeToolArgs<K extends ToolCallKind>(
     case 'todo': {
       if (Array.isArray(inp.todos)) return { todos: inp.todos as Dict[] } as ToolArgsByKind[K];
       const inner = unwrapNestedToolInput(inp);
-      const content = str(inner.subject ?? inner.description ?? toolName, toolName);
+      // Single-todo update — three input shapes land here:
+      //   - Claude's newer TodoWrite emits { content, status, activeForm }
+      //     directly instead of an enclosing array.
+      //   - TaskCreate emits { subject, description, activeForm? }.
+      //   - TaskUpdate patches a task by id and may carry { subject? } and/or
+      //     { description? } to retitle it.
+      // Concatenate subject + description so TaskCreate / TaskUpdate render
+      // the full task text instead of dropping the description. Default to an
+      // empty string (never the tool name) so a malformed payload never leaks
+      // the literal "TodoWrite" placeholder into the chat row.
+      const contentFromFlat = str(inner.content, '');
+      const subject = str(inner.subject, '');
+      const description = str(inner.description, '');
+      const subjectDescription = (() => {
+        if (subject && description) return `${subject}: ${description}`;
+        return subject || description;
+      })();
+      const content = contentFromFlat || subjectDescription;
       return {
         todos: [
           {

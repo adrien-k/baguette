@@ -293,11 +293,12 @@ export function mapCursorToolArgs<K extends ToolCallKind>(
     case 'todo':
       // Cursor's `updateTodos` tool is a single-subject payload; surface as a
       // one-element todos array so the rest of the pipeline sees a uniform
-      // shape.
+      // shape. Default content to an empty string (not the tool name) so a
+      // malformed payload never renders as the literal "TodoWrite" placeholder.
       return {
         todos: [
           {
-            content: str(inp.subject ?? inp.description ?? toolName, toolName),
+            content: str(inp.subject ?? inp.content ?? inp.description ?? '', ''),
             status: str(inp.status ?? 'pending'),
             activeForm: str(inp.activeForm ?? inp.active_form ?? ''),
           },

@@ -265,11 +265,93 @@ describe('mapClaudeToolArgs', () => {
     ]);
   });
 
+  it('concatenates TaskCreate subject and description with a colon', () => {
+    const args = mapClaudeToolArgs('todo', 'TaskCreate', {
+      subject: 'Ship the fix',
+      description: 'Run the deploy script and verify the build',
+      status: 'in_progress',
+    });
+    expect(args.todos[0]).toMatchObject({
+      content: 'Ship the fix: Run the deploy script and verify the build',
+      status: 'in_progress',
+    });
+  });
+
+  it('uses TaskUpdate subject when only subject is provided', () => {
+    const args = mapClaudeToolArgs('todo', 'TaskUpdate', {
+      taskId: '1',
+      subject: 'Retitled task',
+    });
+    expect(args.todos[0]).toMatchObject({
+      content: 'Retitled task',
+      status: 'pending',
+    });
+  });
+
+  it('uses TaskUpdate description when only description is provided', () => {
+    const args = mapClaudeToolArgs('todo', 'TaskUpdate', {
+      taskId: '1',
+      description: 'Just the description, no subject',
+    });
+    expect(args.todos[0].content).toBe('Just the description, no subject');
+  });
+
+  it('concatenates TaskUpdate subject and description when both are patched', () => {
+    const args = mapClaudeToolArgs('todo', 'TaskUpdate', {
+      taskId: '1',
+      subject: 'Retitled task',
+      description: 'With a longer description',
+      status: 'completed',
+    });
+    expect(args.todos[0]).toMatchObject({
+      content: 'Retitled task: With a longer description',
+      status: 'completed',
+    });
+  });
+
+  it('prefers content over subject/description when both are set', () => {
+    // A flat { content } wins so a Claude TodoWrite single-object payload
+    // is not accidentally rewritten into "subject: description" form.
+    const args = mapClaudeToolArgs('todo', 'TodoWrite', {
+      content: 'From content',
+      subject: 'From subject',
+      description: 'From description',
+    });
+    expect(args.todos[0].content).toBe('From content');
+  });
+
   it('passes a pre-formed todos list through', () => {
     const args = mapClaudeToolArgs('todo', 'TodoWrite', {
       todos: [{ content: 'A', status: 'pending' }],
     });
     expect(args.todos).toEqual([{ content: 'A', status: 'pending' }]);
+  });
+
+  it('reads content from a single-todo TodoWrite payload (no array wrapper)', () => {
+    // Claude's newer TodoWrite sometimes emits a flat { content, status,
+    // activeForm } object instead of wrapping in { todos: [...] }. The mapper
+    // must surface the real content, not fall back to the literal tool name.
+    const args = mapClaudeToolArgs('todo', 'TodoWrite', {
+      content: 'Ship the fix',
+      status: 'completed',
+      activeForm: 'Shipping the fix',
+    });
+    expect(args.todos).toEqual([
+      {
+        content: 'Ship the fix',
+        status: 'completed',
+        activeForm: 'Shipping the fix',
+      },
+    ]);
+  });
+
+  it('defaults content to an empty string instead of the tool name', () => {
+    // Regression: the previous fallback used toolName ("TodoWrite") as the
+    // content default, so malformed / subject-less payloads rendered as the
+    // literal string "TodoWrite" in the chat list.
+    const args = mapClaudeToolArgs('todo', 'TodoWrite', { status: 'completed' });
+    expect(args.todos[0].content).toBe('');
+    expect(args.todos[0].status).toBe('completed');
   });
 });
 
