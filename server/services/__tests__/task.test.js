@@ -358,6 +358,24 @@ describe('TasksService.deleteTask', () => {
   });
 });
 
+describe('TasksService.listTasksForSession', () => {
+  it('returns newest tasks first with filters', () => {
+    const a = service.createTask({ sessionId: 1, command: 'a', taskKey: 'one' });
+    const b = service.createTask({ sessionId: 1, command: 'b', taskKey: 'two' });
+    service.createTask({ sessionId: 2, command: 'c', taskKey: 'other' });
+    b.status = 'exited';
+
+    const all = service.listTasksForSession(1);
+    expect(all.map((t) => t.id)).toEqual([b.id, a.id]);
+
+    const exited = service.listTasksForSession(1, { status: 'exited' });
+    expect(exited).toHaveLength(1);
+    expect(exited[0].task_key).toBe('two');
+
+    expect(service.findLatestTaskByTaskKey(1, 'one')?.id).toBe(a.id);
+  });
+});
+
 describe('TasksService.killSessionTasks', () => {
   it('starts kill for all running tasks for a session', () => {
     const t1 = service.createTask({ sessionId: 1, command: 'a' });

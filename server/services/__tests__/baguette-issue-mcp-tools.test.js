@@ -4,6 +4,7 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
+import { buildSessionIssueReadTools } from '../mcp/registries/base_agent.js';
 import {
   buildReviewerIssueMcpTools,
   buildSessionAgentIssueMcpTools,
@@ -137,7 +138,10 @@ describe('session agent issue MCP tools', () => {
           title: 'N+1',
         })
     );
-    const tools = buildSessionAgentIssueMcpTools(session, app);
+    const tools = [
+      ...buildSessionIssueReadTools(session, app),
+      ...buildSessionAgentIssueMcpTools(session, app),
+    ];
     expect(tools.map((t) => t.name).sort()).toEqual([
       'ListIssues',
       'ReadIssue',
@@ -159,13 +163,15 @@ describe('session agent issue MCP tools', () => {
     );
     expect(resolved.issue.status).toBe('resolved');
 
-    const bad = parseOk(
-      await tools
-        .find((t) => t.name === 'UpdateIssueStatus')
-        .handler({
-          issue_id: created.issue.id,
-          status: 'opened',
-        })
+    const bad = JSON.parse(
+      (
+        await tools
+          .find((t) => t.name === 'UpdateIssueStatus')
+          .handler({
+            issue_id: created.issue.id,
+            status: 'opened',
+          })
+      ).content[0].text
     );
     expect(bad.ok).toBe(false);
   });

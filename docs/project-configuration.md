@@ -320,8 +320,6 @@ config:
 
 - `depends-on: [api]` ensures the API is listening before Expo starts.
 
----
-
 ## Examples
 
 ### Rails + Vite

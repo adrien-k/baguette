@@ -4,6 +4,7 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
+import { TasksService } from '../feathers/tasks.service.js';
 import { buildBaguetteSessionMcpTools } from '../baguette-session-mcp-tools.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
@@ -65,6 +66,12 @@ describe('baguette session MCP tools', () => {
 
     app = feathers();
     app.set('db', db);
+    app.use('users', {
+      async get(id) {
+        const row = await db('users').where({ id }).first();
+        return row ?? { id };
+      },
+    });
     registerSessionsService(app);
     app.use(
       'claude-agent',
@@ -76,6 +83,9 @@ describe('baguette session MCP tools', () => {
     );
     registerQueuedMessagesService(app);
     registerMessagesService(app);
+    const tasksService = new TasksService();
+    tasksService.setup(app);
+    app.use('tasks', tasksService);
     await app.setup();
     tools = buildBaguetteSessionMcpTools({ id: userId }, app, {
       callerSession: { id: sessionId, is_global: false },
@@ -218,5 +228,55 @@ describe('baguette session MCP tools', () => {
     const create = externalTools.find((t) => t.name === 'CreateSessionMessage');
     const out = parseOk(await create.handler({ session_id: sessionId, text: 'from external mcp' }));
     expect(out.message_id).toBeTruthy();
+  });
+
+  it('ListRunningTasks returns only running tasks for a session', async () => {
+    const tasks = app.service('tasks');
+    const running = tasks.createTask({
+      sessionId,
+      command: 'sleep 9',
+      label: 'dev-server',
+      taskKey: 'dev-server',
+    });
+    const exited = tasks.createTask({
+      sessionId,
+      command: 'false',
+      label: 'Run tests',
+      taskKey: 'Run tests',
+    });
+    exited.status = 'exited';
+
+    const list = tools.find((t) => t.name === 'ListRunningTasks');
+    const listed = parseOk(await list.handler({ session_id: sessionId }));
+    expect(listed.session_id).toBe(sessionId);
+    expect(listed.tasks).toHaveLength(1);
+    expect(listed.tasks[0].id).toBe(running.id);
+    expect(listed.tasks[0].task_key).toBe('dev-server');
+  });
+
+  it('PrRead uses caller session when session_id omitted', async () => {
+    await db('sessions')
+      .where({ id: sessionId })
+      .update({ pr_url: 'https://github.com/o/r/pull/1', pr_number: 1 });
+    const prRead = tools.find((t) => t.name === 'PrRead');
+    const out = parseOk(await prRead.handler({}));
+    expect(out.pr_url).toBe('https://github.com/o/r/pull/1');
+  });
+
+  it('GetSession includes last_failed_tasks', async () => {
+    const tasks = app.service('tasks');
+    const task = tasks.createTask({
+      sessionId,
+      command: 'false',
+      label: 'ci',
+      taskKey: 'ci',
+    });
+    task.status = 'exited';
+    task.exit_code = 2;
+
+    const get = tools.find((t) => t.name === 'GetSession');
+    const out = parseOk(await get.handler({ session_id: sessionId }));
+    expect(out.last_failed_tasks).toHaveLength(1);
+    expect(out.last_failed_tasks[0].exit_code).toBe(2);
   });
 });

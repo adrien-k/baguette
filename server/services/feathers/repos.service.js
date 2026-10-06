@@ -23,7 +23,6 @@ import {
   toStrippedName,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
-import loadPrompt from '../../prompts/loadPrompt.js';
 import { requireUser, decryptFields } from './hooks.js';
 import { getGithubToken } from '../agent-settings.js';
 import { REPOS_DIR } from '../../config.js';
@@ -484,15 +483,6 @@ class ReposService extends KnexService {
 
     return { repo, hasBaguetteConfig };
   }
-
-  /** Generate an onboarding prompt for a registered repo. */
-  async configure(data, _params) {
-    const db = this.options.Model;
-    const repo = await db('repos').where({ id: data }).first();
-    if (!repo) throw new NotFound('Repository not found');
-    const prompt = await loadPrompt('onboarding-prompt', {});
-    return { prompt, repoFullName: repo.full_name };
-  }
 }
 
 export const reposHooks = {
@@ -526,7 +516,6 @@ export function registerReposService(app, path = 'repos') {
       'findRemote',
       'findOrgs',
       'branches',
-      'configure',
       'refresh',
       'findAll',
       'unlink',

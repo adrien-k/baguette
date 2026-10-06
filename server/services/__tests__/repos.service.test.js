@@ -6,7 +6,6 @@
  * - branches: returns branches for a repo (mocked)
  * - create: registers a repo via ensureBareClone (mocked); revives soft-deleted repos
  * - remove: soft-deletes a repo and its active sessions
- * - configure: generates an onboarding prompt for a registered repo
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
@@ -598,10 +597,6 @@ describe('Repos service - soft-delete lifecycle', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// configure — generate onboarding prompt
-// ---------------------------------------------------------------------------
-
 describe('Repos service - get', () => {
   it('any authenticated user can get a repo by id', async () => {
     const [repoId] = await db('repos').insert({
@@ -649,47 +644,5 @@ describe('Repos service - patch', () => {
     await expect(
       app.service('repos').patch(repoId, { bare_path: '/updated' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
-  });
-});
-
-describe('Repos service - configure', () => {
-  it('admin generates an onboarding prompt for a registered repo', async () => {
-    const [repoId] = await db('repos').insert({
-      full_name: 'alice/project',
-      bare_path: '/nonexistent',
-      stripped_name: 'alice-project',
-    });
-
-    const result = await app.service('repos').configure(repoId, params(adminUser));
-
-    expect(result.prompt).toMatch('Check if `.baguette.yaml` already exists');
-  });
-
-  it('throws NotFound for an unknown repo id', async () => {
-    await expect(app.service('repos').configure(99999, params(adminUser))).rejects.toBeInstanceOf(
-      NotFound
-    );
-  });
-
-  it('any authenticated user can configure a repo', async () => {
-    const [repoId] = await db('repos').insert({
-      full_name: 'alice/project',
-      bare_path: '/nonexistent',
-      stripped_name: 'alice-project',
-    });
-
-    const result = await app.service('repos').configure(repoId, params(regularUser));
-    expect(result.prompt).toMatch('Check if `.baguette.yaml` already exists');
-  });
-
-  it('unauthenticated configure is rejected', async () => {
-    const [repoId] = await db('repos').insert({
-      full_name: 'alice/project',
-      bare_path: '/nonexistent',
-      stripped_name: 'alice-project',
-    });
-    await expect(app.service('repos').configure(repoId, unauthParams)).rejects.toThrow(
-      'Not authenticated'
-    );
   });
 });

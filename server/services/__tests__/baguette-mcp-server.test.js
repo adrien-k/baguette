@@ -150,7 +150,7 @@ function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
 
 function makeApp(
   sessionData,
-  { tasksCreate, tasksGetTask, tasksFilterTasks, usageRows = [] } = {}
+  { tasksCreate, tasksGetTask, tasksFilterTasks, tasksFindLatestTaskByTaskKey, usageRows = [] } = {}
 ) {
   let sessionSnapshot = {
     ...DEFAULT_SESSION,
@@ -165,6 +165,7 @@ function makeApp(
   const mockCreate = tasksCreate ?? vi.fn().mockResolvedValue({ id: 99 });
   const mockGetTask = tasksGetTask ?? vi.fn().mockReturnValue(null);
   const mockFilterTasks = tasksFilterTasks ?? vi.fn().mockReturnValue([]);
+  const mockFindLatestTaskByTaskKey = tasksFindLatestTaskByTaskKey ?? vi.fn().mockReturnValue(null);
   const emptyUsageQuery = () => {
     const chain = {
       where: () => chain,
@@ -197,12 +198,27 @@ function makeApp(
     return { where: () => ({ first: async () => null }) };
   };
   db.raw = (sql) => sql;
+  const sessionsService = {
+    patch: mockPatch,
+    get: async (id) => ({ ...sessionSnapshot, id: Number(id) }),
+    getInterpolateOpts: async () => ({}),
+    getInterpolatedConfigValue: async (_id, value) => value,
+    getTaskEnv: mockGetTaskEnv,
+    create: mockCreate,
+  };
   const app = {
     get: (key) => (key === 'db' ? db : null),
     service: (name) => {
       if (name === 'users') return { get: async () => ({ id: 1, access_token: 'tok' }) };
       if (name === 'tasks')
-        return { getTask: mockGetTask, filterTasks: mockFilterTasks, create: mockCreate };
+        return {
+          getTask: mockGetTask,
+          filterTasks: mockFilterTasks,
+          listTasksForSession: () => [],
+          findLatestTaskByTaskKey: mockFindLatestTaskByTaskKey,
+          create: mockCreate,
+        };
+      if (name === 'sessions') return sessionsService;
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };
     },
   };
@@ -244,7 +260,8 @@ describe('global sessions', () => {
     expect(names).not.toContain('GitFetch');
     expect(names).not.toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
-    expect(names).not.toContain('PrRead');
+    expect(names).toContain('PrRead');
+    expect(names).toContain('ListRunningTasks');
     expect(names).not.toContain('ConfigRepoPrompt');
     expect(names).not.toContain('ListProjectCommands');
     expect(names).not.toContain('RunTask');
@@ -1179,6 +1196,31 @@ describe('ReadTaskOutput', () => {
     );
     const result = parseResult(await callTool(tools, 'ReadTaskOutput', { taskId: 42 }));
     expect(result.ok).toBe(false);
+  });
+
+  it('reads logs for another owned session when session_id is set', async () => {
+    const logTask = {
+      id: 7,
+      session_id: 99,
+      task_key: 'run-tests',
+      getLogs: () => 'failed assertion\n',
+    };
+    const { tools } = await buildServer(
+      {},
+      {
+        tasksFindLatestTaskByTaskKey: vi.fn().mockReturnValue(logTask),
+      }
+    );
+    const result = parseResult(
+      await callTool(tools, 'ReadTaskOutput', {
+        session_id: 99,
+        task_key: 'run-tests',
+        startByte: 0,
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.session_id).toBe(99);
+    expect(result.log).toContain('failed assertion');
   });
 });
 

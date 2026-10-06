@@ -7,6 +7,7 @@ import {
   ISSUE_STATUSES,
   assertIssueSeverity,
   assertIssueStatus,
+  assertAgentIssueStatus,
 } from '../session-issues.js';
 
 export class SessionIssuesService extends KnexService {
@@ -18,12 +19,13 @@ export class SessionIssuesService extends KnexService {
     } catch (err) {
       throw new BadRequest(err.message);
     }
-    if (!data.title?.trim()) throw new BadRequest('title is required');
+    const title = data.title != null ? String(data.title).trim() : '';
+    if (!title) throw new BadRequest('title is required');
     return super.create(
       {
         session_id: data.session_id,
         severity: data.severity,
-        title: data.title,
+        title,
         description: data.description ?? '',
         status: data.status ?? 'opened',
         agent_sdk: data.agent_sdk ?? null,
@@ -37,7 +39,10 @@ export class SessionIssuesService extends KnexService {
   async patch(id, data, params) {
     try {
       if (data.severity) assertIssueSeverity(data.severity);
-      if (data.status) assertIssueStatus(data.status);
+      if (data.status) {
+        if (params?.agentStatusUpdate) assertAgentIssueStatus(data.status);
+        else assertIssueStatus(data.status);
+      }
     } catch (err) {
       throw new BadRequest(err.message);
     }
@@ -57,6 +62,17 @@ export class SessionIssuesService extends KnexService {
 function rejectExternalCreate(context) {
   if (context.params?.provider) {
     throw new Forbidden('Issues are created by the reviewer agent');
+  }
+  return context;
+}
+
+function validateFindStatus(context) {
+  const status = context.params?.query?.status;
+  if (status == null) return context;
+  try {
+    assertIssueStatus(status);
+  } catch (err) {
+    throw new BadRequest(err.message);
   }
   return context;
 }
@@ -92,7 +108,7 @@ export function registerSessionIssuesService(app, path = 'session-issues') {
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeBySessionUser],
-      find: [excludeClosedSessionIssues],
+      find: [validateFindStatus, excludeClosedSessionIssues],
       create: [rejectExternalCreate],
       patch: [only(['status', 'title', 'description', 'severity'])],
     },

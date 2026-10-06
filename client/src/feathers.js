@@ -75,7 +75,6 @@ export const reposService = createService('repos', {
     'findRemote',
     'findOrgs',
     'branches',
-    'configure',
     'refresh',
     'findAll',
     'unlink',

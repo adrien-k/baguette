@@ -121,11 +121,37 @@ export class TasksService {
   /**
    * Return public task objects filtered by a Set of session IDs and/or status.
    */
-  filterTasks({ sessionIds = null, status = null } = {}) {
+  filterTasks({ sessionIds = null, status = null, taskKey = null } = {}) {
     let result = Array.from(this._tasks.values());
     if (sessionIds != null) result = result.filter((t) => sessionIds.has(t.session_id));
     if (status != null) result = result.filter((t) => t.status === status);
+    if (taskKey != null) result = result.filter((t) => t.task_key === taskKey);
     return result.map((t) => t.toPublic());
+  }
+
+  /**
+   * Tasks for one session, newest first. Used by cross-session MCP tools.
+   * @param {number} sessionId
+   * @param {{ status?: string, taskKey?: string, limit?: number }} [filters]
+   */
+  listTasksForSession(sessionId, { status = null, taskKey = null, limit = 50 } = {}) {
+    let result = Array.from(this._tasks.values()).filter((t) => t.session_id === sessionId);
+    if (status != null) result = result.filter((t) => t.status === status);
+    if (taskKey != null) result = result.filter((t) => t.task_key === taskKey);
+    result.sort((a, b) => b.id - a.id);
+    const cap = Math.min(Math.max(limit ?? 50, 1), 100);
+    return result.slice(0, cap).map((t) => t.toPublic());
+  }
+
+  /** Most recent task in a session with the given task_key (any status). */
+  findLatestTaskByTaskKey(sessionId, taskKey) {
+    let latest = null;
+    for (const task of this._tasks.values()) {
+      if (task.session_id === sessionId && task.task_key === taskKey) {
+        if (!latest || task.id > latest.id) latest = task;
+      }
+    }
+    return latest;
   }
 
   /**
