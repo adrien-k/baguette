@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Bot, Layers } from 'lucide-react';
 import { apiFetch } from '../api.js';
 import UsageGraph from '../components/UsageGraph.jsx';
+import UsageModelLabel from '../components/UsageModelLabel.jsx';
 import ActiveAgentsSection from '../components/ActiveAgentsSection.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from '../components/RepoDropdown.jsx';
 import { chipOptionClassName } from '../components/LightChipDropdown.jsx';
@@ -17,7 +18,6 @@ import {
   metricOf,
   parseUsageDays,
   sumUsageMetrics,
-  usageModelLabel,
   usageRepoLabel,
   usageRepoTitle,
 } from '../utils/usageSeries.js';
@@ -279,12 +279,10 @@ export default function Usage() {
                       </td>
                       {byModel && (
                         <td className="px-3 py-2.5 text-fg-muted">
-                          <span
+                          <UsageModelLabel
+                            model={row.model}
                             className="block truncate max-w-[14rem]"
-                            title={row.model || undefined}
-                          >
-                            {usageModelLabel(row.model)}
-                          </span>
+                          />
                         </td>
                       )}
                       <td className="px-3 py-2.5 text-fg-muted">

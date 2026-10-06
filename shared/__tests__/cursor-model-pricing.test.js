@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  describeCursorModelPricing,
   estimateCursorTurnCostUsd,
   estimateCostUsdFromRates,
   hasCursorModelPricing,
@@ -66,6 +67,27 @@ describe('cursor-model-pricing', () => {
   it('returns null for unknown models', () => {
     expect(hasCursorModelPricing('auto-smart', [])).toBe(false);
     expect(hasCursorModelPricing('composer-2', [])).toBe(false);
+    expect(describeCursorModelPricing('auto-smart', [])).toBeNull();
+  });
+
+  it('describes list prices for tooltips', () => {
+    expect(describeCursorModelPricing('claude-sonnet-5-5', [])).toEqual({
+      header: 'USD per 1M tokens',
+      rows: [
+        { label: 'Input', value: '$2' },
+        { label: 'Cache write', value: '$2.5' },
+        { label: 'Cache read', value: '$0.2' },
+        { label: 'Output', value: '$10' },
+      ],
+    });
+    expect(describeCursorModelPricing('glm-5p3', [])).toEqual({
+      header: 'USD per 1M tokens',
+      rows: [
+        { label: 'Input', value: '$1.4' },
+        { label: 'Cache read', value: '$0.26' },
+        { label: 'Output', value: '$4.4' },
+      ],
+    });
   });
 
   it('matches Claude Opus 5.5 and Sonnet 5.5 list prices', () => {

@@ -194,6 +194,32 @@ export function hasCursorModelPricing(modelId, modelParams) {
   return lookupCursorModelPricing(modelId, modelParams) != null;
 }
 
+/** @param {number|null|undefined} usd */
+function formatListPriceUsd(usd) {
+  const value = Number(usd);
+  if (!Number.isFinite(value)) return '—';
+  const text = Number.isInteger(value) ? String(value) : String(value).replace(/\.?0+$/, '');
+  return `$${text}`;
+}
+
+/**
+ * Cursor list prices for UI tooltips, or null when the model is not in the table.
+ * @returns {{ header: string, rows: { label: string, value: string }[] }|null}
+ */
+export function describeCursorModelPricing(modelId, modelParams) {
+  const rates = lookupCursorModelPricing(modelId, modelParams);
+  if (!rates) return null;
+  const rows = [{ label: 'Input', value: formatListPriceUsd(rates.input) }];
+  if (rates.cacheWrite != null) {
+    rows.push({ label: 'Cache write', value: formatListPriceUsd(rates.cacheWrite) });
+  }
+  if (rates.cacheRead != null) {
+    rows.push({ label: 'Cache read', value: formatListPriceUsd(rates.cacheRead) });
+  }
+  rows.push({ label: 'Output', value: formatListPriceUsd(rates.output) });
+  return { header: 'USD per 1M tokens', rows };
+}
+
 /** @param {Record<string, number>} turnUsage @param {ReturnType<typeof rates>} priceRates */
 export function estimateCostUsdFromRates(turnUsage, priceRates) {
   if (!priceRates || !turnUsage) return 0;

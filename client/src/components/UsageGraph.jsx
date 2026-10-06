@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { buildSeries, formatMetric, metricOf, recentDays, sumBy } from '../utils/usageSeries.js';
+import {
+  buildSeries,
+  formatMetric,
+  metricOf,
+  OTHER_KEY,
+  recentDays,
+  sumBy,
+} from '../utils/usageSeries.js';
+import UsageModelLabel from './UsageModelLabel.jsx';
 
 const METRICS = [
   { key: 'tokens', label: 'Tokens' },
@@ -205,7 +213,11 @@ export default function UsageGraph({
               {hoveredSeries.slice(0, 3).map((s) => (
                 <span key={s.key} className="flex items-center gap-1 min-w-0 shrink">
                   <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} />
-                  <span className="text-xs text-faint truncate">{s.label}</span>
+                  {activeDimension === 'model' && s.key !== OTHER_KEY ? (
+                    <UsageModelLabel model={s.key} className="text-xs text-faint truncate" />
+                  ) : (
+                    <span className="text-xs text-faint truncate">{s.label}</span>
+                  )}
                   <span className="text-xs text-faint shrink-0">
                     {formatMetric(s.value, metric)}
                   </span>
@@ -240,9 +252,17 @@ export default function UsageGraph({
             {series.map((s) => (
               <div key={s.key} className="flex items-center gap-1.5 min-w-0">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${s.color}`} />
-                <span className="text-xs text-fg-muted truncate max-w-48" title={s.title}>
-                  {s.label}
-                </span>
+                {activeDimension === 'model' && s.key !== OTHER_KEY ? (
+                  <UsageModelLabel
+                    model={s.key}
+                    className="text-xs text-fg-muted truncate max-w-48"
+                    title={s.title}
+                  />
+                ) : (
+                  <span className="text-xs text-fg-muted truncate max-w-48" title={s.title}>
+                    {s.label}
+                  </span>
+                )}
                 <span className="text-xs text-faint">{formatMetric(s.total, metric)}</span>
               </div>
             ))}
