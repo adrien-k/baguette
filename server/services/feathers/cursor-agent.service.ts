@@ -114,11 +114,9 @@ export class CursorAgentService {
     return store;
   }
 
+  /** Drop the in-memory store handle only; on-disk state stays for {@link Agent.resume}. */
   async disposeSessionStore(sessionId: number): Promise<void> {
-    const store = this._sessionStores.get(sessionId);
-    if (!store) return;
     this._sessionStores.delete(sessionId);
-    await store.dispose().catch(() => {});
   }
 
   setup(app: AgentApp) {
@@ -949,21 +947,6 @@ ${body}`,
     return this.getActiveSession(id);
   }
 
-  async deleteAgent(session: AgentSessionRow | null | undefined): Promise<void> {
-    if (!session?.cursor_agent_id) return;
-    const sessionId = session.id;
-    const store = await this.openSessionStore(session);
-    try {
-      await Agent.delete(session.cursor_agent_id, { store });
-      logger.info(
-        { sessionId, agentId: session.cursor_agent_id },
-        'cursor-agent: deleted agent on archive'
-      );
-    } finally {
-      await this.disposeSessionStore(sessionId);
-    }
-  }
-
   async generateSessionMetadata(
     initialPrompt: string,
     shortId = '',
@@ -1016,39 +999,35 @@ Task: ${initialPrompt}`;
       workspaceRef: cursorWorkspaceRef(homeSession),
       stateRoot: cursorSdkStateRoot(homeSession) ?? join(DATA_DIR, 'cursor-sdk-store'),
     });
-    try {
-      const agent = await Agent.create({
-        apiKey,
-        model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
-        local: {
-          settingSources: [],
-          store,
-        },
-      } as AgentOptions);
+    const agent = await Agent.create({
+      apiKey,
+      model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
+      local: {
+        settingSources: [],
+        store,
+      },
+    } as AgentOptions);
 
-      const run = await agent.send(prompt);
+    const run = await agent.send(prompt);
 
-      for await (const sdkMsg of run.stream()) {
-        if (sdkMsg.type === 'assistant') {
-          const content = (
-            sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
-          ).message?.content;
-          for (const block of content ?? []) {
-            if (block.type === 'text') collectedText += block.text ?? '';
-          }
-        }
-        if (
-          sdkMsg.type === 'status' &&
-          (sdkMsg as { status?: string }).status &&
-          ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
-            (sdkMsg as { status?: string }).status as string
-          )
-        ) {
-          break;
+    for await (const sdkMsg of run.stream()) {
+      if (sdkMsg.type === 'assistant') {
+        const content = (
+          sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
+        ).message?.content;
+        for (const block of content ?? []) {
+          if (block.type === 'text') collectedText += block.text ?? '';
         }
       }
-    } finally {
-      await store.dispose().catch(() => {});
+      if (
+        sdkMsg.type === 'status' &&
+        (sdkMsg as { status?: string }).status &&
+        ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
+          (sdkMsg as { status?: string }).status as string
+        )
+      ) {
+        break;
+      }
     }
 
     const text = collectedText.trim();
@@ -1088,7 +1067,6 @@ export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent')
       'writePromptRule',
       'createOrResumeAgent',
       'generateSessionMetadata',
-      'deleteAgent',
       'openSessionStore',
       'disposeSessionStore',
       'recordTurnUsage',

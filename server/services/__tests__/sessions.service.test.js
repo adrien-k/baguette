@@ -38,7 +38,6 @@ const {
   readBaguetteConfigRaw,
   generateSessionMetadata,
   buildSystemPromptAppend,
-  deleteAgent,
   reviewStop,
   resumeInterruptedReviews,
 } = vi.hoisted(() => ({
@@ -52,7 +51,6 @@ const {
     .fn()
     .mockResolvedValue({ label: 'Test task', branchName: 'test-task-abc' }),
   buildSystemPromptAppend: vi.fn().mockResolvedValue('mocked builder system prompt'),
-  deleteAgent: vi.fn().mockResolvedValue(undefined),
   reviewStop: vi.fn().mockResolvedValue({ ok: true }),
   resumeInterruptedReviews: vi.fn().mockResolvedValue({ resumed: 0, failed: 0 }),
 }));
@@ -147,7 +145,6 @@ function makeApp(db) {
     'cursor-agent',
     {
       stopSession,
-      deleteAgent,
       generateSessionMetadata,
       onMessageCreated: cursorOnMessageCreated,
       handleTableMessageCreated: cursorHandleTableMessageCreated,
@@ -155,7 +152,6 @@ function makeApp(db) {
     {
       methods: [
         'stopSession',
-        'deleteAgent',
         'generateSessionMetadata',
         'onMessageCreated',
         'handleTableMessageCreated',
@@ -687,27 +683,16 @@ describe('Sessions service - custom methods', (hooks) => {
       );
     });
 
-    it('deletes cursor agent when archiving a cursor session', async () => {
-      const cursorAgentId = 'test-cursor-agent-id';
+    it('archives cursor sessions like claude sessions', async () => {
       await db('sessions').where({ id: sessId }).update({
         agent_sdk: 'cursor',
-        cursor_agent_id: cursorAgentId,
+        cursor_agent_id: 'test-cursor-agent-id',
       });
 
       await app.service('sessions').remove(sessId, params({ id: userId }));
 
-      expect(deleteAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ id: sessId, cursor_agent_id: cursorAgentId }),
-        expect.anything()
-      );
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();
-    });
-
-    it('does not call deleteAgent for claude sessions', async () => {
-      await app.service('sessions').remove(sessId, params({ id: userId }));
-
-      expect(deleteAgent).not.toHaveBeenCalled();
     });
   });
 
