@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { MessageStreamWriter } from '../message-stream-writer.js';
 
 describe('MessageStreamWriter', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('forwards raw SDK events to appendRaw', async () => {
     const appendRaw = vi.fn().mockResolvedValue(undefined);
     const writer = new MessageStreamWriter({
@@ -72,8 +76,10 @@ describe('MessageStreamWriter', () => {
       uuid: 'b',
     };
 
+    vi.useFakeTimers();
     await writer.handleClaudeEvent(first);
     await writer.handleClaudeEvent(second);
+    await vi.runAllTimersAsync();
 
     expect(createRow).toHaveBeenCalledTimes(1);
     expect(patchRow).toHaveBeenCalledTimes(1);
@@ -86,5 +92,43 @@ describe('MessageStreamWriter', () => {
       estimated_tokens_delta: 4,
     });
     expect(patch.subtype).toBe('thinking_tokens');
+  });
+
+  it('debounces assistant text patches while streaming', async () => {
+    vi.useFakeTimers();
+    const createRow = vi.fn().mockResolvedValue({ id: 1 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+    });
+
+    await writer.appendAssistantText('a');
+    await writer.appendAssistantText('b');
+    await writer.appendAssistantText('c');
+    expect(patchRow).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+    expect(patchRow).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks pending tools cancelled when finish() runs', async () => {
+    const createRow = vi.fn().mockResolvedValue({ id: 20 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+    });
+
+    await writer.startTool('tool-1', 'Bash', { command: 'sleep 9' });
+    await writer.finish();
+
+    expect(patchRow).toHaveBeenCalled();
+    const payload = JSON.parse(patchRow.mock.calls[0][1].message_json);
+    expect(payload.status).toBe('cancelled');
   });
 });

@@ -11,11 +11,7 @@ import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from '../../claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
-import {
-  attachSessionTurnModelFields,
-  isBaguetteUserMessage,
-  resolveTurnModel,
-} from '../../../shared/turn-model.js';
+import { isBaguetteUserMessage, resolveTurnModel } from '../../../shared/turn-model.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
   isDispatchableUserMessage,
@@ -355,6 +351,16 @@ export class ClaudeAgentService {
   async _disposeActiveSession(activeKey) {
     const session = this._activeSessions.get(activeKey);
     if (!session) return;
+    if (session.streamWriter) {
+      try {
+        await session.streamWriter.finish();
+      } catch (err) {
+        logger.warn(
+          { sessionId: session.sessionId, err: err.message },
+          'claude-agent stream writer finish failed'
+        );
+      }
+    }
     try {
       // No further user turns on this query; abort signals the SDK side to stop.
       session.channel.end();
@@ -721,51 +727,45 @@ export class ClaudeAgentService {
   }
 
   async sendMessage(sessionId, content) {
-    const session = await this.ensureActiveSession(sessionId);
     const db = this.app.get('db');
-
-    await this.app
-      .service('sessions')
-      .patch(sessionId, { status: 'running' }, { user: { id: session.userId } });
-    await this.app.service('sessions').onTurnStart(sessionId);
-
     const sessionRow = await db('sessions').where({ id: sessionId }).first();
-    const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow?.worktree_path);
-    if (sessionRow?.remote_branch && absoluteWorktreePath && session.token) {
+    if (!sessionRow) throw new Error('Session not found');
+
+    const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path);
+    const user = await this.app.service('users').get(sessionRow.user_id, {});
+    const token = getGithubToken(user);
+    if (sessionRow.remote_branch && absoluteWorktreePath && token) {
       try {
         const hasNew = await remoteHasNewCommits(
           absoluteWorktreePath,
           sessionRow.remote_branch,
-          session.token,
-          session.repoFullName
+          token,
+          sessionRow.repo_full_name
         );
         if (hasNew) {
-          await this.injectBaguetteMessage(session, {
-            title: 'Syncing with remote',
-            content:
-              'There are new commits on the remote branch. Please pull the latest changes, ' +
-              'resolve any merge conflicts, and commit the merge before we proceed.',
-          });
+          await this.injectBaguetteMessage(
+            { sessionId },
+            {
+              title: 'Syncing with remote',
+              content:
+                'There are new commits on the remote branch. Please pull the latest changes, ' +
+                'resolve any merge conflicts, and commit the merge before we proceed.',
+            }
+          );
         }
       } catch (err) {
         logger.error(err, 'Remote check error (non-fatal)');
       }
     }
 
-    const sdkMessage = { type: 'user', message: { role: 'user', content } };
-    const row = {
-      session_id: sessionId,
-      type: 'user',
-      agent_type: 'builder',
-      message_json: JSON.stringify(sdkMessage),
-    };
-    attachSessionTurnModelFields(row, sessionRow);
-    await db('session_messages').insert(row);
-
-    session.channel.push({
-      type: 'user',
-      message: { role: 'user', content },
-    });
+    await this.app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', content }),
+      },
+      { user: { id: sessionRow.user_id } }
+    );
   }
 
   syncSessionSettingsFromPatch(sessionId, sessionRow) {

@@ -117,7 +117,7 @@ describe('processCursorRunStream', () => {
   });
 
   it('treats FINISHED as success when the stream ends before a pending tool completes', async () => {
-    const { writer } = mockWriter();
+    const { writer, rows } = mockWriter();
     const { finishedOk } = await processCursorRunStream(
       mockRun([
         {
@@ -140,5 +140,7 @@ describe('processCursorRunStream', () => {
     );
 
     expect(finishedOk).toBe(true);
+    const tool = rows.find((m) => m.type === 'tool_call');
+    expect(tool.status).toBe('cancelled');
   });
 });

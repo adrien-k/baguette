@@ -26,4 +26,13 @@ describe('session-message-mappers', () => {
     expect(start.status).toBe('running');
     expect(start.result).toBeNull();
   });
+
+  it('supports cancelled tool completion', () => {
+    const start = buildToolCallStart('id-3', 'Bash', { command: 'true' });
+    const done = buildToolCallComplete(start, {
+      toolCallStatus: 'cancelled',
+      rawResult: 'Turn ended',
+    });
+    expect(done.status).toBe('cancelled');
+  });
 });

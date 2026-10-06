@@ -10,6 +10,22 @@ function parsePayload(messageJson) {
 }
 
 /**
+ * Atomically increment sessions.current_turn_id and return the new value.
+ * @param {import('knex').Knex} db
+ * @param {number} sessionId
+ * @returns {Promise<number|null>}
+ */
+export async function allocateNextTurnId(db, sessionId) {
+  const rows = await db('sessions')
+    .where({ id: sessionId })
+    .increment('current_turn_id', 1)
+    .returning('current_turn_id');
+  if (!rows?.length) return null;
+  const row = rows[0];
+  return row?.current_turn_id ?? row ?? null;
+}
+
+/**
  * @param {object} session
  * @param {object} data - messages.create data
  * @param {{ channel: 'chat' | 'review'; force?: boolean }} opts
@@ -37,8 +53,7 @@ export function resolveTurnIdForUserCreate(session, data, opts) {
     return { turnId: activeTurn, increment: false };
   }
 
-  const next = (session.current_turn_id ?? 0) + 1;
-  return { turnId: next, increment: true, newCurrentTurnId: next };
+  return { turnId: null, increment: true };
 }
 
 /**
@@ -53,14 +68,16 @@ export async function assignTurnOnUserMessageCreate(context, channel) {
   const session = await db('sessions').where({ id: data.session_id }).first();
   if (!session) return context;
 
-  const { turnId, increment, newCurrentTurnId } = resolveTurnIdForUserCreate(session, data, {
+  const { turnId, increment } = resolveTurnIdForUserCreate(session, data, {
     channel,
     force: context.params._force,
   });
 
-  if (turnId != null) data.turn_id = turnId;
-  if (increment && newCurrentTurnId != null) {
-    await db('sessions').where({ id: session.id }).update({ current_turn_id: newCurrentTurnId });
+  if (increment) {
+    const allocated = await allocateNextTurnId(db, session.id);
+    if (allocated != null) data.turn_id = allocated;
+  } else if (turnId != null) {
+    data.turn_id = turnId;
   }
 
   const parsed = parsePayload(data.message_json);

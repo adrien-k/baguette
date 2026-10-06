@@ -32,6 +32,7 @@ import {
 const {
   stopSession,
   onMessageCreated,
+  handleTableMessageCreated,
   syncSessionSettingsFromPatch,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -43,6 +44,7 @@ const {
 } = vi.hoisted(() => ({
   stopSession: vi.fn().mockResolvedValue(undefined),
   onMessageCreated: vi.fn().mockResolvedValue(undefined),
+  handleTableMessageCreated: vi.fn().mockResolvedValue(undefined),
   syncSessionSettingsFromPatch: vi.fn(),
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   readBaguetteConfigRaw: vi.fn().mockResolvedValue({ missing: true }),
@@ -92,6 +94,7 @@ vi.mock('../session-prompt.js', () => ({
 const params = (user) => ({ provider: 'rest', user });
 
 const cursorOnMessageCreated = vi.fn().mockResolvedValue(undefined);
+const cursorHandleTableMessageCreated = vi.fn().mockResolvedValue(undefined);
 const deleteSessionTasks = vi.fn();
 const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, access_token: 'test-token' });
 // Not Feathers methods (like the real service): called directly by sessions.service.
@@ -126,6 +129,7 @@ function makeApp(db) {
     {
       stopSession,
       onMessageCreated,
+      handleTableMessageCreated,
       syncSessionSettingsFromPatch,
       generateSessionMetadata,
     },
@@ -133,6 +137,7 @@ function makeApp(db) {
       methods: [
         'stopSession',
         'onMessageCreated',
+        'handleTableMessageCreated',
         'syncSessionSettingsFromPatch',
         'generateSessionMetadata',
       ],
@@ -140,8 +145,22 @@ function makeApp(db) {
   );
   app.use(
     'cursor-agent',
-    { stopSession, deleteAgent, generateSessionMetadata, onMessageCreated: cursorOnMessageCreated },
-    { methods: ['stopSession', 'deleteAgent', 'generateSessionMetadata', 'onMessageCreated'] }
+    {
+      stopSession,
+      deleteAgent,
+      generateSessionMetadata,
+      onMessageCreated: cursorOnMessageCreated,
+      handleTableMessageCreated: cursorHandleTableMessageCreated,
+    },
+    {
+      methods: [
+        'stopSession',
+        'deleteAgent',
+        'generateSessionMetadata',
+        'onMessageCreated',
+        'handleTableMessageCreated',
+      ],
+    }
   );
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
   app.use(
@@ -1805,7 +1824,9 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
   beforeEach(async () => {
     vi.clearAllMocks();
     onMessageCreated.mockResolvedValue(undefined);
+    handleTableMessageCreated.mockResolvedValue(undefined);
     cursorOnMessageCreated.mockResolvedValue(undefined);
+    cursorHandleTableMessageCreated.mockResolvedValue(undefined);
     loadBaguetteConfig.mockResolvedValue(null);
 
     await db('users').insert({ github_id: 2001, username: 'alice', approved: true });
@@ -1827,12 +1848,12 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     expect(resumeInterruptedReviews).toHaveBeenCalled();
 
     // The nudge reaches the agent as a collapsible Baguette message, not as a user message.
-    const dispatched = userDispatches(onMessageCreated);
+    const dispatched = userDispatches(handleTableMessageCreated);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0][0].session_id).toBe(sessId);
     const parsed = JSON.parse(dispatched[0][0].message_json);
     expect(parsed.source).toBe('baguette');
-    expect(parsed.message.content).toMatch(/interrupted your previous turn/);
+    expect(parsed.content).toMatch(/interrupted your previous turn/);
   });
 
   it('routes a Cursor session to the cursor agent', async () => {
@@ -1841,10 +1862,10 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const result = await app.service('sessions').restartInterruptedSessions();
 
     expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
-    const dispatched = userDispatches(cursorOnMessageCreated);
+    const dispatched = userDispatches(cursorHandleTableMessageCreated);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0][0].session_id).toBe(sessId);
-    expect(userDispatches(onMessageCreated)).toHaveLength(0);
+    expect(userDispatches(handleTableMessageCreated)).toHaveLength(0);
   });
 
   it('stops a session with no transcript to resume from and offers a Continue button', async () => {
@@ -1854,7 +1875,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
 
     expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
-    expect(userDispatches(onMessageCreated)).toHaveLength(0);
+    expect(userDispatches(handleTableMessageCreated)).toHaveLength(0);
 
     const [status] = await messagesFor(sessId);
     const parsed = JSON.parse(status.message_json);
@@ -1868,12 +1889,12 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const result = await app.service('sessions').restartInterruptedSessions();
 
     expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
-    expect(userDispatches(cursorOnMessageCreated)).toHaveLength(0);
+    expect(userDispatches(cursorHandleTableMessageCreated)).toHaveLength(0);
   });
 
   it('falls back to stopped when the agent fails to resume', async () => {
     const sessId = await seedSession({ claude_session_id: 'claude-abc' });
-    onMessageCreated.mockImplementation(async (message) => {
+    handleTableMessageCreated.mockImplementation(async (message) => {
       if (message.type === 'user') throw new Error('worktree is gone');
     });
 
@@ -1909,7 +1930,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const result = await app.service('sessions').restartInterruptedSessions();
 
     expect(result).toEqual({ restarted: 0, stopped: 0, failed: 0 });
-    expect(onMessageCreated).not.toHaveBeenCalled();
+    expect(handleTableMessageCreated).not.toHaveBeenCalled();
     expect(await db('session_messages')).toHaveLength(0);
   });
 
@@ -1953,13 +1974,13 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const failing = await seedSession({ claude_session_id: 'claude-1' });
     const healthy = await seedSession({ claude_session_id: 'claude-2' });
     // Rejecting the status message too means even the stopped fallback cannot be written.
-    onMessageCreated.mockImplementation(async (message) => {
+    handleTableMessageCreated.mockImplementation(async (message) => {
       if (message.session_id === failing) throw new Error('boom');
     });
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 1 });
+    expect(result).toEqual({ restarted: 1, stopped: 1, failed: 0 });
     expect((await db('sessions').where({ id: healthy }).first()).status).toBe('running');
   });
 });

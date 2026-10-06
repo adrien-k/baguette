@@ -9,6 +9,9 @@ import {
 
 const PLAN_TOOL_NAMES = new Set(['ExitPlanMode', 'createPlan']);
 
+/** Throttle assistant row patches during streaming (UI still updates via `patched` events). */
+const ASSISTANT_PATCH_DEBOUNCE_MS = 250;
+
 /**
  * @typedef {{
  *   sessionId: number;
@@ -29,6 +32,32 @@ export class MessageStreamWriter {
     this.streamBufferKind = null;
     /** @type {number|null} */
     this.thinkingTokensRowId = null;
+    /** @type {ReturnType<typeof setTimeout>|null} */
+    this._assistantPatchTimer = null;
+    this._assistantPatchDirty = false;
+  }
+
+  clearAssistantPatchTimer() {
+    if (this._assistantPatchTimer != null) {
+      clearTimeout(this._assistantPatchTimer);
+      this._assistantPatchTimer = null;
+    }
+  }
+
+  scheduleAssistantPatch() {
+    this._assistantPatchDirty = true;
+    if (this._assistantPatchTimer != null) return;
+    this._assistantPatchTimer = setTimeout(() => {
+      this._assistantPatchTimer = null;
+      void this.flushAssistantPatch();
+    }, ASSISTANT_PATCH_DEBOUNCE_MS);
+  }
+
+  async flushAssistantPatch() {
+    this.clearAssistantPatchTimer();
+    if (!this._assistantPatchDirty || !this.assistantRowId) return;
+    this._assistantPatchDirty = false;
+    await this.patchPayload(this.assistantRowId, this.assistantPayload);
   }
 
   resetThinkingTokensRow() {
@@ -72,6 +101,8 @@ export class MessageStreamWriter {
 
   async flushAssistant() {
     if (!this.assistantRowId) return;
+    this.clearAssistantPatchTimer();
+    this._assistantPatchDirty = false;
     await this.patchPayload(this.assistantRowId, this.assistantPayload);
     this.assistantRowId = null;
     this.assistantPayload = { type: 'assistant', blocks: [] };
@@ -94,7 +125,7 @@ export class MessageStreamWriter {
     const existing = blocks.find((b) => b.type === 'text');
     if (existing) existing.text += text ?? '';
     else blocks.push({ type: 'text', text: text ?? '' });
-    await this.patchPayload(this.assistantRowId, this.assistantPayload);
+    this.scheduleAssistantPatch();
   }
 
   async appendThinking(text) {
@@ -112,7 +143,7 @@ export class MessageStreamWriter {
     }
     const block = this.assistantPayload.blocks.find((b) => b.type === 'thinking');
     if (block) block.thinking += text ?? '';
-    await this.patchPayload(this.assistantRowId, this.assistantPayload);
+    this.scheduleAssistantPatch();
   }
 
   async startTool(callId, name, args) {
@@ -279,6 +310,7 @@ export class MessageStreamWriter {
   }
 
   async finish() {
+    await this.flushAssistantPatch();
     await this.flushAssistant();
     this.resetThinkingTokensRow();
     for (const [callId, pending] of this.pendingTools) {
@@ -286,9 +318,9 @@ export class MessageStreamWriter {
         await this.completeTool(callId, {
           name: pending.payload.name,
           args: pending.payload.args,
-          rawResult: null,
-          isError: true,
-          toolCallStatus: 'error',
+          rawResult: 'Turn ended before the tool finished',
+          isError: false,
+          toolCallStatus: 'cancelled',
         });
       }
     }

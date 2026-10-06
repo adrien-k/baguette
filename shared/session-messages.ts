@@ -3,7 +3,7 @@
  * reviewer rows (differentiated by the `agent_type` column).
  */
 
-export type ToolCallStatus = 'running' | 'completed' | 'error';
+export type ToolCallStatus = 'running' | 'completed' | 'error' | 'cancelled';
 
 export type GenericToolResult = {
   status: 'ok' | 'error';

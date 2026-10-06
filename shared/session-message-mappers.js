@@ -316,7 +316,9 @@ export function buildToolCallComplete(
 ) {
   const finalName = name ?? prev.name;
   const kind = toolKindFromName(finalName);
-  const status = isError || toolCallStatus === 'error' ? 'error' : 'completed';
+  let status = 'completed';
+  if (isError || toolCallStatus === 'error') status = 'error';
+  else if (toolCallStatus === 'cancelled') status = 'cancelled';
   return {
     ...prev,
     kind,
