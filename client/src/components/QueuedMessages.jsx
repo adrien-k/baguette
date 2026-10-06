@@ -2,54 +2,11 @@ import { useState } from 'react';
 import { Clock, Pencil, Trash2, Send, Check, X } from 'lucide-react';
 import { resolveTurnModel } from '@baguette/shared/turn-model.js';
 import { messageModelLabel } from '../utils/messageModelLabel.js';
-
-function extractText(messageJson) {
-  try {
-    const parsed = JSON.parse(messageJson);
-    const content = parsed.message?.content;
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      return content
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n\n');
-    }
-  } catch {
-    /* ignore */
-  }
-  return '';
-}
-
-function hasFileAttachments(messageJson) {
-  try {
-    const parsed = JSON.parse(messageJson);
-    const content = parsed.message?.content;
-    if (Array.isArray(content)) {
-      return content.some((b) => b.type !== 'text');
-    }
-  } catch {
-    /* ignore */
-  }
-  return false;
-}
-
-function rebuildMessageJson(messageJson, newText) {
-  try {
-    const parsed = JSON.parse(messageJson);
-    const content = parsed.message?.content;
-    if (typeof content === 'string') {
-      parsed.message.content = newText;
-    } else if (Array.isArray(content)) {
-      const nonTextBlocks = content.filter((b) => b.type !== 'text');
-      parsed.message.content = newText
-        ? [{ type: 'text', text: newText }, ...nonTextBlocks]
-        : nonTextBlocks;
-    }
-    return JSON.stringify(parsed);
-  } catch {
-    return messageJson;
-  }
-}
+import {
+  queuedMessageHasAttachments,
+  readQueuedMessageText,
+  rebuildQueuedMessageJson,
+} from '../utils/queuedMessagePayload.js';
 
 function formatSendAt(sendAt) {
   if (!sendAt) return null;
@@ -69,8 +26,8 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
-  const text = extractText(item.message_json);
-  const hasFiles = hasFileAttachments(item.message_json);
+  const text = readQueuedMessageText(item.message_json);
+  const hasFiles = queuedMessageHasAttachments(item.message_json);
   const isScheduled = item.kind === 'scheduled';
   const sendAtLabel = isScheduled ? formatSendAt(item.send_at) : null;
   const { model, modelParams } = resolveTurnModel(item, session);
@@ -85,7 +42,7 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
 
   const saveEdit = () => {
     if (!editText.trim() && !hasFiles) return;
-    onEdit(item.id, rebuildMessageJson(item.message_json, editText.trim()));
+    onEdit(item.id, rebuildQueuedMessageJson(item.message_json, editText.trim()));
     setEditing(false);
   };
 
