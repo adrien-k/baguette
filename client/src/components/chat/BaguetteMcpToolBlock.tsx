@@ -620,12 +620,12 @@ export default function BaguetteMcpToolBlock({
   }
 
   if (toolShortName === 'RunTask') {
-    const label = block.input?.label ?? 'RunTask';
-    const args = block.input?.args ?? [];
+    const label = (args.label as string | undefined) ?? 'RunTask';
+    const runArgs = (args.args as unknown[]) ?? [];
     return (
       <CommandBlock
         label={label}
-        args={args}
+        args={runArgs}
         result={result}
         isError={isError}
         startedAt={startedAt}
@@ -634,7 +634,7 @@ export default function BaguetteMcpToolBlock({
   }
 
   if (toolShortName === 'AwaitDetachedTask') {
-    const taskId = block.input?.taskId;
+    const taskId = args.taskId;
     const label = taskId != null ? `Await task #${taskId}` : 'AwaitDetachedTask';
     return <CommandBlock label={label} result={result} isError={isError} startedAt={startedAt} />;
   }
