@@ -24,6 +24,7 @@ Each linked repository is a subdirectory of `repos_path` (from `CurrentSessionIn
       <session-short-id>/
         worktree/                  # that session's working copy
         cursor-dir/                # Cursor-only session files (when present)
+        cursor-sdk-store/          # Cursor agent SQLite store for that session (when present)
 ```
 
 - `main/` is the clone Baguette uses as the source for new session worktrees. Do not delete it, and do not edit files inside it.

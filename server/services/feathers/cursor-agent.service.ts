@@ -10,6 +10,7 @@ import type {
 import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { cursorSdkStateRoot, cursorWorkspaceRef } from '../cursor/cursor-session-paths.js';
 import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
@@ -92,9 +93,32 @@ function extractUserText(parsed: unknown): string {
 export class CursorAgentService {
   app!: AgentApp;
   private _activeSessions: Map<string | number, CursorSessionState>;
+  private _sessionStores: Map<number, SqliteLocalAgentStore>;
 
   constructor() {
     this._activeSessions = new Map();
+    this._sessionStores = new Map();
+  }
+
+  async openSessionStore(session: AgentSessionRow): Promise<SqliteLocalAgentStore> {
+    const sessionId = session.id;
+    if (sessionId != null) {
+      const cached = this._sessionStores.get(sessionId);
+      if (cached) return cached;
+    }
+    const store = await SqliteLocalAgentStore.open({
+      workspaceRef: cursorWorkspaceRef(session),
+      stateRoot: cursorSdkStateRoot(session) ?? join(DATA_DIR, 'cursor-sdk-store'),
+    });
+    if (sessionId != null) this._sessionStores.set(sessionId, store);
+    return store;
+  }
+
+  async disposeSessionStore(sessionId: number): Promise<void> {
+    const store = this._sessionStores.get(sessionId);
+    if (!store) return;
+    this._sessionStores.delete(sessionId);
+    await store.dispose().catch(() => {});
   }
 
   setup(app: AgentApp) {
@@ -190,14 +214,15 @@ ${body}`,
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
     const resolvedApiKey = apiKey !== undefined ? apiKey : await this.resolveApiKey(session);
     const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
+    const store = await this.openSessionStore(session);
     const agentOptions = {
       apiKey: resolvedApiKey,
       local: {
         cwd,
+        store,
         settingSources: settingSources as unknown as SettingSource[],
         dirs: dirs ?? [],
         customTools: resolvedTools as unknown as Record<string, SDKCustomTool>,
-        stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
       },
     } as AgentOptions;
     const modelId = model ?? null;
@@ -387,6 +412,8 @@ ${body}`,
     userText: string,
     sendOptions: Record<string, unknown> = {}
   ): Promise<Run> {
+    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const store = await this.openSessionStore(session);
     try {
       return await agent.send(userText, sendOptions as never);
     } catch (err) {
@@ -394,8 +421,7 @@ ${body}`,
         err instanceof AgentBusyError ||
         (err as Error)?.message?.includes('already has active run');
       if (!isActiveRunError) throw err;
-      const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
-      const { items } = await Agent.listRuns(agent.agentId, { cwd });
+      const { items } = await Agent.listRuns(agent.agentId, { cwd, store });
       const stale = items.find((r) => r.status === 'running');
       if (stale) await stale.cancel();
       return agent.send(userText, sendOptions as never);
@@ -780,13 +806,14 @@ ${body}`,
     completedRunId: string
   ): Promise<Run | null> {
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const store = await this.openSessionStore(session);
     const POLLS = 8;
     const DELAY_MS = 2000;
 
     for (let i = 0; i < POLLS; i++) {
       if (i > 0) await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
       try {
-        const { items } = await Agent.listRuns(agent.agentId, { cwd });
+        const { items } = await Agent.listRuns(agent.agentId, { cwd, store });
         const followUp = items.find((r) => r.status === 'running' && r.id !== completedRunId);
         if (followUp) return followUp;
       } catch (err) {
@@ -925,11 +952,7 @@ ${body}`,
   async deleteAgent(session: AgentSessionRow | null | undefined): Promise<void> {
     if (!session?.cursor_agent_id) return;
     const sessionId = session.id;
-    const cwd = resolveDataDirRelativePath(session.worktree_path) || DATA_DIR;
-    const store = await SqliteLocalAgentStore.open({
-      workspaceRef: cwd,
-      stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
-    });
+    const store = await this.openSessionStore(session);
     try {
       await Agent.delete(session.cursor_agent_id, { store });
       logger.info(
@@ -937,7 +960,7 @@ ${body}`,
         'cursor-agent: deleted agent on archive'
       );
     } finally {
-      await store.dispose().catch(() => {});
+      await this.disposeSessionStore(sessionId);
     }
   }
 
@@ -976,33 +999,56 @@ Task: ${initialPrompt}`;
     // without an explicit model fall back to a cheap one so provisioning stays fast.
     const modelId = session?.model || CURSOR_CHEAP_MODEL_ID;
     const modelParams = this.parseModelParams(session?.model_params);
-    const agent = await Agent.create({
-      apiKey,
-      model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
-      local: { settingSources: [] },
-    } as AgentOptions);
+    let repoFullName: string | null = null;
+    if (repo?.id) {
+      const repoRow = await (this.app.get('db') as DbLike)('repos').where({ id: repo.id }).first();
+      repoFullName = (repoRow?.full_name as string) ?? null;
+    }
+    const homeSession = {
+      short_id: shortId,
+      repo_full_name: repoFullName,
+      worktree_path: null,
+    } as AgentSessionRow;
 
-    const run = await agent.send(prompt);
     let collectedText = '';
 
-    for await (const sdkMsg of run.stream()) {
-      if (sdkMsg.type === 'assistant') {
-        const content = (
-          sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
-        ).message?.content;
-        for (const block of content ?? []) {
-          if (block.type === 'text') collectedText += block.text ?? '';
+    const store = await SqliteLocalAgentStore.open({
+      workspaceRef: cursorWorkspaceRef(homeSession),
+      stateRoot: cursorSdkStateRoot(homeSession) ?? join(DATA_DIR, 'cursor-sdk-store'),
+    });
+    try {
+      const agent = await Agent.create({
+        apiKey,
+        model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
+        local: {
+          settingSources: [],
+          store,
+        },
+      } as AgentOptions);
+
+      const run = await agent.send(prompt);
+
+      for await (const sdkMsg of run.stream()) {
+        if (sdkMsg.type === 'assistant') {
+          const content = (
+            sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
+          ).message?.content;
+          for (const block of content ?? []) {
+            if (block.type === 'text') collectedText += block.text ?? '';
+          }
+        }
+        if (
+          sdkMsg.type === 'status' &&
+          (sdkMsg as { status?: string }).status &&
+          ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
+            (sdkMsg as { status?: string }).status as string
+          )
+        ) {
+          break;
         }
       }
-      if (
-        sdkMsg.type === 'status' &&
-        (sdkMsg as { status?: string }).status &&
-        ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
-          (sdkMsg as { status?: string }).status as string
-        )
-      ) {
-        break;
-      }
+    } finally {
+      await store.dispose().catch(() => {});
     }
 
     const text = collectedText.trim();
@@ -1043,6 +1089,8 @@ export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent')
       'createOrResumeAgent',
       'generateSessionMetadata',
       'deleteAgent',
+      'openSessionStore',
+      'disposeSessionStore',
       'recordTurnUsage',
     ],
   });
