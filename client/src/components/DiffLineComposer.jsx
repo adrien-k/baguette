@@ -9,6 +9,7 @@ import { toastError } from '../utils/toastError.jsx';
 import { turnModelCreateFields } from '@baguette/shared/turn-model.js';
 import {
   contentBlocksFromLineDraft,
+  createFileReferenceBlock,
   fileReferenceAgentText,
 } from '@baguette/shared/user-message-content.js';
 
@@ -19,21 +20,26 @@ export default function DiffLineComposer({
   session,
   path,
   line,
+  shortSha,
+  change,
   models,
   cursorModelPrefs,
   onCursorModelPrefChange,
   onModelChange,
   onClose,
 }) {
-  const [input, setInput] = useState(() => `${fileReferenceAgentText({ path, line })} `);
+  const lineRefBlock = () => createFileReferenceBlock(path, line, { short_sha: shortSha, change });
+  const [input, setInput] = useState(() => `${fileReferenceAgentText(lineRefBlock())} `);
   const [sending, setSending] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [composerModel, setComposerModel] = useState(session?.model ?? null);
   const [composerModelParams, setComposerModelParams] = useState(session?.model_params ?? null);
 
   useEffect(() => {
-    setInput(`${fileReferenceAgentText({ path, line })} `);
-  }, [path, line]);
+    setInput(
+      `${fileReferenceAgentText(createFileReferenceBlock(path, line, { short_sha: shortSha, change }))} `
+    );
+  }, [path, line, shortSha, change]);
 
   useEffect(() => {
     setComposerModel(session?.model ?? null);
@@ -73,7 +79,12 @@ export default function DiffLineComposer({
       type: 'user',
       message: {
         role: 'user',
-        content: contentBlocksFromLineDraft(input, { path, line }),
+        content: contentBlocksFromLineDraft(input, {
+          path,
+          line,
+          short_sha: shortSha,
+          change,
+        }),
       },
     });
 

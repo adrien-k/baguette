@@ -1,4 +1,5 @@
 import type { ChatMessageView, TypedMessageView } from '@baguette/shared/session-messages.ts';
+import UserMessageContent, { userMessagePlainText } from './chat/UserMessageContent.tsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import CollapsibleMarkdown from './chat/CollapsibleMarkdown.tsx';
 import ThinkingBlock from './chat/ThinkingBlock.tsx';
@@ -48,7 +49,7 @@ function TypedUserMessage({
         models,
       })
     : null;
-  const userText = message.content ?? '';
+  const userText = userMessagePlainText(message);
   return (
     <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
       <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
@@ -72,7 +73,10 @@ function TypedUserMessage({
           {userText && <CopyButton text={userText} />}
         </div>
       </div>
-      <MarkdownContent hardBreaks>{userText}</MarkdownContent>
+      <UserMessageContent
+        content={message.content}
+        message={(message as { message?: { content?: unknown } }).message}
+      />
     </div>
   );
 }

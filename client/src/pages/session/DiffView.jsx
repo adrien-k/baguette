@@ -141,8 +141,12 @@ const DIFF_LINE_CONTENT_CLS = `px-2 flex-1 ${DIFF_LINE_WRAP_CLASS}`;
 
 function lineRefFromRow(row, filePath) {
   if (row.type === 'hunk') return null;
-  if (row.type === 'added' && row.newNum) return { path: filePath, line: row.newNum };
-  if (row.type === 'removed' && row.oldNum) return { path: filePath, line: row.oldNum };
+  if (row.type === 'added' && row.newNum) {
+    return { path: filePath, line: row.newNum, change: 'added' };
+  }
+  if (row.type === 'removed' && row.oldNum) {
+    return { path: filePath, line: row.oldNum, change: 'removed' };
+  }
   const line = row.newNum ?? row.oldNum;
   if (!line) return null;
   return { path: filePath, line };
@@ -244,8 +248,8 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
 
 function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer }) {
   const rows = buildSideBySideRows(lines);
-  const sendRef = (line) => {
-    if (line?.num) onLineReference?.({ path: filePath, line: line.num });
+  const sendRef = (line, change) => {
+    if (line?.num) onLineReference?.({ path: filePath, line: line.num, change });
   };
   return (
     <div className={`font-mono text-xs leading-5 ${DIFF_FILE_BODY_CLASS}`}>
@@ -268,7 +272,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
             row.left ? (
               <DiffCodeRow
                 rowClass={DIFF_REMOVED_ROW}
-                onOpenComposer={onLineReference ? () => sendRef(row.left) : undefined}
+                onOpenComposer={onLineReference ? () => sendRef(row.left, 'removed') : undefined}
                 active={leftActive}
               >
                 <span className={NUM_CLS}>{row.left.num}</span>
@@ -295,7 +299,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
             row.right ? (
               <DiffCodeRow
                 rowClass={DIFF_ADDED_ROW}
-                onOpenComposer={onLineReference ? () => sendRef(row.right) : undefined}
+                onOpenComposer={onLineReference ? () => sendRef(row.right, 'added') : undefined}
                 active={rightActive}
               >
                 <span className={NUM_CLS}>{row.right.num}</span>
@@ -454,19 +458,32 @@ export default function DiffView({
   }, [fileByFile, scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
+  const enrichLineRef = (ref) => ({
+    ...ref,
+    ...(selectedCommitMeta?.short_sha ? { short_sha: selectedCommitMeta.short_sha } : {}),
+  });
+
   const handleLineClick = (ref) => {
     if (!canComment || !ref) return;
+    const next = enrichLineRef(ref);
     setLineComposer((prev) =>
-      prev && prev.path === ref.path && Number(prev.line) === Number(ref.line) ? null : ref
+      prev &&
+      prev.path === next.path &&
+      Number(prev.line) === Number(next.line) &&
+      prev.change === next.change
+        ? null
+        : next
     );
   };
   const lineComposerEl =
     lineComposer && canComment ? (
       <DiffLineComposer
-        key={`${lineComposer.path}:${lineComposer.line}`}
+        key={`${lineComposer.path}:${lineComposer.line}:${lineComposer.change ?? ''}`}
         session={session}
         path={lineComposer.path}
         line={lineComposer.line}
+        shortSha={lineComposer.short_sha}
+        change={lineComposer.change}
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}

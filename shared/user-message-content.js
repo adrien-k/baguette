@@ -1,17 +1,23 @@
 /** Text form agents see for a diff line reference (Cursor / Claude). */
-export function fileReferenceAgentText({ path, line }) {
-  return `@${path}:${line}`;
+export function fileReferenceAgentText({ path, line, short_sha, change }) {
+  let text = `@${path}:${line}`;
+  if (short_sha?.trim()) text += ` commit: ${short_sha.trim()}`;
+  if (change === 'added' || change === 'removed') text += ` change: ${change}`;
+  return text;
 }
 
-export function createFileReferenceBlock(path, line) {
+export function createFileReferenceBlock(path, line, { short_sha, change } = {}) {
   const n = Number(line);
   if (!path?.trim() || !Number.isFinite(n) || n < 1) {
     throw new Error('file_reference requires path and a positive line number');
   }
-  return { type: 'file_reference', path: path.trim(), line: n };
+  const block = { type: 'file_reference', path: path.trim(), line: n };
+  if (short_sha?.trim()) block.short_sha = short_sha.trim();
+  if (change === 'added' || change === 'removed') block.change = change;
+  return block;
 }
 
-/** Flatten user content blocks to plain text for Cursor `agent.send`. */
+/** Plain text for copy buttons and simple display. */
 export function expandUserContentForAgent(content) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -36,17 +42,20 @@ export function normalizeUserContentBlocks(content) {
 }
 
 /** Build user content from a diff-line composer draft (`@path:line` plus optional note). */
-export function contentBlocksFromLineDraft(text, { path, line }) {
-  const ref = createFileReferenceBlock(path, line);
-  const refText = fileReferenceAgentText(ref);
+export function contentBlocksFromLineDraft(text, ref) {
+  const block = createFileReferenceBlock(ref.path, ref.line, {
+    short_sha: ref.short_sha,
+    change: ref.change,
+  });
+  const refText = fileReferenceAgentText(block);
   const trimmed = (text ?? '').trim();
-  if (!trimmed || trimmed === refText) return [ref];
+  if (!trimmed || trimmed === refText) return [block];
   let rest = trimmed;
   if (trimmed.startsWith(refText)) {
     rest = trimmed.slice(refText.length).replace(/^\s+/, '');
   }
-  if (!rest) return [ref];
-  return [ref, { type: 'text', text: rest }];
+  if (!rest) return [block];
+  return [block, { type: 'text', text: rest }];
 }
 
 export function normalizeUserMessageForAgentSdk(parsed) {
@@ -60,5 +69,27 @@ export function normalizeUserMessageForAgentSdk(parsed) {
       ...parsed.message,
       content: normalizeUserContentBlocks(content),
     },
+  };
+}
+
+const USER_BLOCK_TYPES = new Set(['text', 'file_reference']);
+
+/** Collapse legacy SDK user content arrays for storage (string or block list). */
+export function normalizeLegacyUserContentBlocks(legacyContent) {
+  if (!Array.isArray(legacyContent)) return null;
+  if (legacyContent.some((b) => b.type === 'tool_result')) {
+    return { legacy_tool_result_carrier: true };
+  }
+  const hasFileRef = legacyContent.some((b) => b.type === 'file_reference');
+  if (!hasFileRef) {
+    return {
+      content: legacyContent
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n\n'),
+    };
+  }
+  return {
+    content: legacyContent.filter((b) => USER_BLOCK_TYPES.has(b.type)),
   };
 }

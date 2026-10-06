@@ -158,9 +158,19 @@ export type AnyToolResult = ToolResultByKind[ToolCallKind];
 
 // ─── Message payloads ────────────────────────────────────────────────────────
 
+export type FileReferenceBlock = {
+  type: 'file_reference';
+  path: string;
+  line: number;
+  short_sha?: string;
+  change?: 'added' | 'removed';
+};
+
+export type UserContentBlock = { type: 'text'; text: string } | FileReferenceBlock;
+
 export type UserMessagePayload = {
   type: 'user';
-  content: string;
+  content: string | UserContentBlock[];
   /** `baguette` = typed in the UI; `mcp` = injected by an MCP tool; absent = provider echo. */
   source?: 'baguette' | 'mcp';
   title?: string;

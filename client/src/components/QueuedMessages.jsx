@@ -4,9 +4,11 @@ import { resolveTurnModel } from '@baguette/shared/turn-model.js';
 import { messageModelLabel } from '../utils/messageModelLabel.js';
 import {
   queuedMessageHasAttachments,
+  readQueuedMessageBlocks,
   readQueuedMessageText,
   rebuildQueuedMessageJson,
 } from '../utils/queuedMessagePayload.js';
+import UserMessageContent from './chat/UserMessageContent.tsx';
 
 function formatSendAt(sendAt) {
   if (!sendAt) return null;
@@ -27,7 +29,9 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   const [editText, setEditText] = useState('');
 
   const text = readQueuedMessageText(item.message_json);
+  const blocks = readQueuedMessageBlocks(item.message_json);
   const hasFiles = queuedMessageHasAttachments(item.message_json);
+  const showBlockPreview = blocks.some((b) => b?.type === 'file_reference');
   const isScheduled = item.kind === 'scheduled';
   const sendAtLabel = isScheduled ? formatSendAt(item.send_at) : null;
   const { model, modelParams } = resolveTurnModel(item, session);
@@ -92,9 +96,19 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
         </div>
       ) : (
         <div className="flex items-start gap-2">
-          <p className="flex-1 text-sm text-secondary line-clamp-2 break-words min-w-0 whitespace-pre-wrap">
-            {text || <span className="text-faint italic">No text</span>}
-          </p>
+          <div className="flex-1 min-w-0 line-clamp-3">
+            {showBlockPreview ? (
+              <UserMessageContent
+                content={blocks}
+                markdown={false}
+                textClassName="text-sm text-secondary whitespace-pre-wrap break-words"
+              />
+            ) : (
+              <p className="text-sm text-secondary break-words whitespace-pre-wrap">
+                {text || <span className="text-faint italic">No text</span>}
+              </p>
+            )}
+          </div>
           <div className="flex gap-0.5 shrink-0 -mt-0.5">
             <button
               type="button"

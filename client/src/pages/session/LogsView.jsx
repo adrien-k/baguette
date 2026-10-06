@@ -16,6 +16,9 @@ import { useStickToBottomScroll } from '../../hooks/useStickToBottomScroll.js';
 import StickToBottomScrollArea from '../../components/StickToBottomScrollArea.jsx';
 import { logToolDisplayName, logToolCallSummary } from '@baguette/shared/log-tool-label.js';
 import { isBaguetteUserMessage, isMcpUserMessage } from '@baguette/shared/turn-model.js';
+import UserMessageContent, {
+  userMessagePlainText,
+} from '../../components/chat/UserMessageContent.tsx';
 
 function formatLegacyMcpToolDisplayName(name, input) {
   return logToolDisplayName(name, input ?? {});
@@ -92,16 +95,12 @@ function getMessageSummary(msg) {
   const { type } = msg;
 
   if (type === 'user') {
-    if (typeof msg.content === 'string') return msg.content.slice(0, 140);
-    const content = msg.message?.content;
-    if (typeof content === 'string') return content.slice(0, 140);
-    if (Array.isArray(content)) {
-      const allToolResults = content.every((b) => b.type === 'tool_result');
-      if (allToolResults) return `Tool results (${content.length})`;
-      const textBlock = content.find((b) => b.type === 'text');
-      if (textBlock) return textBlock.text.slice(0, 140);
-      return `${content.length} block(s)`;
+    const legacy = msg.message?.content;
+    if (Array.isArray(legacy) && legacy.every((b) => b.type === 'tool_result')) {
+      return `Tool results (${legacy.length})`;
     }
+    const plain = userMessagePlainText(msg);
+    if (plain) return plain.slice(0, 140);
     return '';
   }
 
@@ -333,25 +332,21 @@ function MessageDetail({ msg }) {
     );
   }
 
-  if (type === 'user' && typeof msg.content === 'string') {
-    return (
-      <div className="text-secondary text-xs whitespace-pre-wrap leading-relaxed">
-        {msg.content}
-      </div>
-    );
-  }
-
   if (type === 'user' && Array.isArray(message?.content)) {
+    const hasToolResults = message.content.some((b) => b.type === 'tool_result');
+    if (!hasToolResults) {
+      return (
+        <UserMessageContent
+          content={msg.content}
+          message={message}
+          markdown={false}
+          textClassName="text-secondary text-xs whitespace-pre-wrap leading-relaxed"
+        />
+      );
+    }
     return (
       <div className="space-y-1.5">
         {message.content.map((block, i) => {
-          if (block.type === 'text') {
-            return (
-              <div key={i} className="text-secondary text-xs whitespace-pre-wrap leading-relaxed">
-                {block.text}
-              </div>
-            );
-          }
           if (block.type === 'tool_result') {
             const resultText =
               typeof block.content === 'string'
@@ -381,11 +376,14 @@ function MessageDetail({ msg }) {
     );
   }
 
-  if (type === 'user' && typeof message?.content === 'string') {
+  if (type === 'user') {
     return (
-      <div className="text-secondary text-xs whitespace-pre-wrap leading-relaxed">
-        {message.content}
-      </div>
+      <UserMessageContent
+        content={msg.content}
+        message={message}
+        markdown={false}
+        textClassName="text-secondary text-xs whitespace-pre-wrap leading-relaxed"
+      />
     );
   }
 

@@ -36,6 +36,11 @@ function contentBlocks(payload) {
   return [];
 }
 
+/** Content blocks for display (text, file_reference, attachments, …). */
+export function readQueuedMessageBlocks(messageJson) {
+  return contentBlocks(parsePayload(messageJson));
+}
+
 /** Plain text a queued message shows, and the edit form seeds itself from. */
 export function readQueuedMessageText(messageJson) {
   return contentBlocks(parsePayload(messageJson))

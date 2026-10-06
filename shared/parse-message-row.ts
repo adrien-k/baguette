@@ -105,6 +105,16 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
         subtype: row.subtype ?? normalized.subtype ?? null,
       };
     }
+    if (Array.isArray(normalized.content)) {
+      return {
+        ...meta,
+        type: 'user',
+        content: normalized.content,
+        source: normalized.source,
+        title: normalized.title,
+        subtype: row.subtype ?? normalized.subtype ?? null,
+      };
+    }
   }
 
   if (payloadType === 'plan' || row.type === 'plan') {

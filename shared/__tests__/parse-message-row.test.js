@@ -80,6 +80,43 @@ describe('parseMessageRow', () => {
     expect(view.blocks[0].text).toBe('Hello');
   });
 
+  it('parses user rows with file_reference blocks', () => {
+    const view = parseMessageRow({
+      id: 6,
+      session_id: 2,
+      type: 'user',
+      subtype: null,
+      message_json: JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'file_reference',
+              path: 'lib/x.ts',
+              line: 3,
+              short_sha: 'abc1234',
+              change: 'removed',
+            },
+            { type: 'text', text: 'please check' },
+          ],
+        },
+      }),
+      ...baseRow,
+    });
+    expect(view.type).toBe('user');
+    expect(view.content).toEqual([
+      {
+        type: 'file_reference',
+        path: 'lib/x.ts',
+        line: 3,
+        short_sha: 'abc1234',
+        change: 'removed',
+      },
+      { type: 'text', text: 'please check' },
+    ]);
+  });
+
   it('hides tool-result carrier user rows', () => {
     const view = parseMessageRow({
       id: 5,
