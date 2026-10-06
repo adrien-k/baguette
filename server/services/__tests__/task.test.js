@@ -24,7 +24,7 @@ vi.mock('../port-utils.js', () => ({
   waitForPorts: vi.fn(async () => false),
 }));
 
-import { Task, DEFAULT_TTL_MS, HEARTBEAT_INTERVAL_MS } from '../task.js';
+import { Task, DEFAULT_TTL_MS, HEARTBEAT_INTERVAL_MS, BASE_TASK_TIMEOUT_MS } from '../task.js';
 import { TasksService } from '../feathers/tasks.service.js';
 import { isPortListening } from '../port-utils.js';
 import * as dockerSession from '../docker-session.js';
@@ -514,6 +514,31 @@ describe('Task heartbeat / TTL', () => {
 
     vi.advanceTimersByTime(1);
     expect(kill).toHaveBeenCalledWith({ reason: 'ttl' });
+  });
+
+  it('start() arms a 10-hour max runtime for panel tasks', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x' });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+    vi.spyOn(task, '_startProcess').mockResolvedValue(task);
+
+    task.start();
+    vi.advanceTimersByTime(BASE_TASK_TIMEOUT_MS - 1);
+    expect(kill).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(kill).toHaveBeenCalledWith({ reason: 'max_runtime' });
+  });
+
+  it('start() does not arm max runtime when ttl is set', () => {
+    vi.useFakeTimers();
+    const task = new Task({ id: 1, sessionId: 1, command: 'x', ttl: DEFAULT_TTL_MS });
+    const kill = vi.spyOn(task, 'kill').mockResolvedValue(true);
+    vi.spyOn(task, '_startProcess').mockResolvedValue(task);
+
+    task.start();
+    vi.advanceTimersByTime(BASE_TASK_TIMEOUT_MS + 1);
+    expect(kill).not.toHaveBeenCalled();
   });
 
   it('heartbeat() resets the idle TTL window', () => {

@@ -178,7 +178,7 @@ run: |
 
 Task lifetime is not configurable in `.baguette.yaml`. It depends on how the task was started:
 
-- **Tasks panel or Preview tab (manual start)** — run until they exit or are cancelled.
+- **Tasks panel or Preview tab (manual start)** — run until they exit, are cancelled, or hit a **10 hour** wall-clock cap.
 - **Preview link (dev proxy auto-start)** — the preview service task is stopped after **15 minutes** of inactivity.
 - **`depends-on` tasks** — stopped after **15 minutes** of inactivity while a parent task is running. Reused tasks keep whatever lifetime they were created with (for example, a postgres container started from the panel is not upgraded to idle TTL when preview reuses it).
 

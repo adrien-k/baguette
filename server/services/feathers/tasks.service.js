@@ -1,5 +1,5 @@
 import { NotFound, BadRequest } from '@feathersjs/errors';
-import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS } from '../task.js';
+import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS, BASE_TASK_TIMEOUT_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import {
@@ -50,6 +50,7 @@ export class TasksService {
     dependsOn,
     isRoot = false,
     ttl,
+    maxRuntimeMs,
     dockerContainer,
     dockerPortMappings,
     dockerEnvKeys,
@@ -88,6 +89,7 @@ export class TasksService {
       dependsOn,
       isRoot,
       ttl,
+      maxRuntimeMs,
       dockerContainer,
       dockerPortMappings,
       dockerEnvKeys,
@@ -269,6 +271,8 @@ export class TasksService {
       isDependencyCreate || ttlMs != null
         ? (ttlMs ?? (isDependencyCreate ? DEPENDS_ON_TTL_MS : DEFAULT_TTL_MS))
         : undefined;
+    const effectiveMaxRuntimeMs =
+      effectiveTtl != null ? null : (data.max_runtime_ms ?? BASE_TASK_TIMEOUT_MS);
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
@@ -387,6 +391,7 @@ export class TasksService {
           cwd,
           dependsOn: [],
           ttl: DEPENDS_ON_TTL_MS,
+          maxRuntimeMs: null,
           interpolateOpts,
         });
         dependsOn.push(initTask);
@@ -417,6 +422,7 @@ export class TasksService {
       dependsOn,
       isRoot: !isDependencyCreate,
       ttl: effectiveTtl,
+      maxRuntimeMs: effectiveMaxRuntimeMs,
       dockerContainer,
       dockerPortMappings: null,
       dockerEnvKeys: isDockerTask ? dockerEnvKeys : null,

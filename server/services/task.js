@@ -23,6 +23,8 @@ export const DEPENDS_ON_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 /** After SIGTERM, wait this long before escalating to SIGKILL. */
 export const KILL_GRACE_MS = 30_000;
+/** Wall-clock cap for panel / manual tasks (no idle TTL). */
+export const BASE_TASK_TIMEOUT_MS = 10 * 60 * 60 * 1000; // 10 hours
 
 function baguetteStatusLine(message) {
   return `\x1b[33m[baguette] ${message}\x1b[0m\n`;
@@ -111,6 +113,7 @@ export class Task {
   #process = null;
   #logBuffer = [];
   #idleTtlTimer = null;
+  #maxRuntimeTimer = null;
   #heartbeatTimer = null;
   constructor({
     id,
@@ -127,6 +130,8 @@ export class Task {
     isRoot = false,
     /** Idle TTL in ms; omit to disable idle shutdown. */
     ttl,
+    /** Wall-clock cap when `ttl` is omitted; null disables the cap. */
+    maxRuntimeMs,
     dockerContainer = null,
     dockerPortMappings = null,
     dockerEnvKeys = null,
@@ -148,7 +153,7 @@ export class Task {
     this.pid = null;
     this.status = 'waiting';
     this.exit_code = null;
-    /** Set by kill(): 'stopped' or 'ttl' (idle). null when it exited on its own. */
+    /** Set by kill(): 'stopped', 'ttl' (idle), or 'max_runtime'. null when it exited on its own. */
     this.kill_reason = null;
     this.created_at = new Date().toISOString();
     /** When status first became `running` (run timer starts here). */
@@ -168,6 +173,7 @@ export class Task {
     /** Set when depends_on tasks have all passed waitForReady (before _startProcess). */
     this._depsSatisfied = false;
     this._ttl = ttl != null ? ttl : null;
+    this._maxRuntimeMs = this._ttl != null ? null : (maxRuntimeMs ?? BASE_TASK_TIMEOUT_MS);
     this._shortId = shortId;
     this._dockerContainerRaw = dockerContainer;
     this._dockerPortMappings = Array.isArray(dockerPortMappings) ? dockerPortMappings : [];
@@ -214,6 +220,14 @@ export class Task {
       this.addLog('stdout', baguetteStatusLine('TTL expired, stopping task...'));
       this.kill({ reason: 'ttl' }).catch(() => {});
     }, this._ttl);
+  }
+
+  #armMaxRuntimeTimer() {
+    if (!this._maxRuntimeMs || isTaskTerminal(this.status)) return;
+    clearTimeout(this.#maxRuntimeTimer);
+    this.#maxRuntimeTimer = setTimeout(() => {
+      this.kill({ reason: 'max_runtime' }).catch(() => {});
+    }, this._maxRuntimeMs);
   }
 
   #heartbeatDeps() {
@@ -319,6 +333,7 @@ export class Task {
   start() {
     if (this._started) return this;
     this._started = true;
+    this.#armMaxRuntimeTimer();
     this.#startDepHeartbeatLoop();
 
     (async () => {
@@ -754,7 +769,7 @@ export class Task {
 
   /**
    * Send SIGTERM; escalate to SIGKILL after `graceMs` if still running; await until the child exits or `timeoutMs`.
-   * @param {{ timeoutMs?: number, graceMs?: number, reason?: 'stopped'|'ttl' }} opts - `reason` is recorded on the task so
+   * @param {{ timeoutMs?: number, graceMs?: number, reason?: 'stopped'|'ttl'|'max_runtime' }} opts - `reason` is recorded on the task so
    *   consumers can tell a deliberate stop from a crash (see DevProxy exit handling).
    * @returns {Promise<boolean>} true if a signal was sent, false if already exited/no process.
    */
@@ -777,6 +792,13 @@ export class Task {
       this.addLog(
         'stdout',
         baguetteStatusLine(`TTL expired (SIGTERM; force kill after ${graceSec}s if still running)`)
+      );
+    } else if (reason === 'max_runtime') {
+      this.addLog(
+        'stdout',
+        baguetteStatusLine(
+          `Max runtime reached (SIGTERM; force kill after ${graceSec}s if still running)`
+        )
       );
     }
     // Cancel before the child exists (still in init/depends_on) or if the child
@@ -844,6 +866,7 @@ export class Task {
     if (isTaskTerminal(this.status)) return;
     this.#releaseDependsOn({ reason: this.kill_reason });
     clearTimeout(this.#idleTtlTimer);
+    clearTimeout(this.#maxRuntimeTimer);
     this.#stopDepHeartbeatLoop();
     this.exit_code = exitCode;
     this.exited_at = new Date().toISOString();
@@ -885,6 +908,7 @@ export class Task {
       exited_at: this.exited_at,
       ports: this.ports,
       ttl_ms: this._ttl,
+      max_runtime_ms: this._maxRuntimeMs,
       is_docker: this.isDocker,
     };
   }

@@ -192,6 +192,8 @@ describe('Tasks service — task_key resolution', (hooks) => {
     const root = app.service('tasks').getTask(task.id);
     const postgres = root._dependsOn.find((d) => d.label === 'postgres');
     expect(root.toPublic().ttl_ms).toBeNull();
+    expect(root.toPublic().max_runtime_ms).toBe(10 * 60 * 60 * 1000);
     expect(postgres.toPublic().ttl_ms).toBe(5 * 60 * 1000);
+    expect(postgres.toPublic().max_runtime_ms).toBeNull();
   });
 });
