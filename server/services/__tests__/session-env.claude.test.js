@@ -7,6 +7,8 @@ import {
   normalizeAnthropicBaseUrl,
   buildClaudeEnvFromPlainUser,
   getClaudeEnv,
+  isAnthropicClaudeModelId,
+  applyClaudeAgentModelEnv,
 } from '../session-env.js';
 
 const HOST_API = 'host-api-key';
@@ -14,6 +16,38 @@ const HOST_AUTH = 'host-auth-token';
 const HOST_OAUTH = 'host-oauth-token';
 const HOST_BASE_URL = 'https://api.anthropic.com';
 const USER = { username: 'alice', github_id: 1 };
+
+describe('isAnthropicClaudeModelId', () => {
+  it('treats native Claude ids and CLI aliases as Anthropic', () => {
+    expect(isAnthropicClaudeModelId('claude-opus-5')).toBe(true);
+    expect(isAnthropicClaudeModelId('sonnet')).toBe(true);
+    expect(isAnthropicClaudeModelId('Haiku')).toBe(true);
+    expect(isAnthropicClaudeModelId(null)).toBe(true);
+    expect(isAnthropicClaudeModelId('')).toBe(true);
+  });
+
+  it('treats gateway third-party ids as non-Anthropic', () => {
+    expect(isAnthropicClaudeModelId('gpt-4o')).toBe(false);
+    expect(isAnthropicClaudeModelId('openai/gpt-4.1')).toBe(false);
+  });
+});
+
+describe('applyClaudeAgentModelEnv', () => {
+  it('sets default opus/sonnet env vars for non-Anthropic models', () => {
+    const base = { ANTHROPIC_API_KEY: 'k' };
+    const env = applyClaudeAgentModelEnv(base, 'gpt-4o');
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('gpt-4o');
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('gpt-4o');
+    expect(env.ANTHROPIC_API_KEY).toBe('k');
+  });
+
+  it('leaves env unchanged for Anthropic models', () => {
+    const base = { ANTHROPIC_API_KEY: 'k' };
+    expect(applyClaudeAgentModelEnv(base, 'claude-sonnet-4-5')).toBe(base);
+    expect(applyClaudeAgentModelEnv(base, 'opus')).toBe(base);
+    expect(applyClaudeAgentModelEnv(base, null)).toBe(base);
+  });
+});
 
 describe('normalizeAnthropicBaseUrl', () => {
   it('trims whitespace and trailing slashes', () => {

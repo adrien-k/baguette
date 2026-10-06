@@ -154,6 +154,36 @@ function applyAnthropicBaseUrl(env, configuredUrl) {
   return { ...env, ANTHROPIC_BASE_URL: normalized };
 }
 
+/** Claude Code built-in model aliases (not gateway/third-party ids). */
+const CLAUDE_BUILTIN_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku']);
+
+/**
+ * Whether `modelId` refers to an Anthropic Claude model (native id or CLI alias).
+ * Gateway-routed third-party models return false.
+ */
+export function isAnthropicClaudeModelId(modelId) {
+  if (modelId == null) return true;
+  const id = String(modelId).trim();
+  if (!id) return true;
+  if (id.startsWith('claude-')) return true;
+  if (CLAUDE_BUILTIN_MODEL_ALIASES.has(id.toLowerCase())) return true;
+  return false;
+}
+
+/**
+ * When Claude Code runs on a non-Anthropic model, map opus/sonnet defaults to that model
+ * so sub-agents and internal calls use the gateway route the user selected.
+ */
+export function applyClaudeAgentModelEnv(env, modelId) {
+  if (!modelId || isAnthropicClaudeModelId(modelId)) return env;
+  const resolved = String(modelId);
+  return {
+    ...env,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: resolved,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: resolved,
+  };
+}
+
 /**
  * Build Claude subprocess env from a pre-decrypted user row.
  * All fields on `user` must already be plaintext (fetched via Feather service with no provider).

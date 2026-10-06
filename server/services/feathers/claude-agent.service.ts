@@ -13,7 +13,7 @@ import logger from '../../logger.js';
 import { remoteHasNewCommits } from '../github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
-import { getClaudeEnv } from '../session-env.js';
+import { applyClaudeAgentModelEnv, getClaudeEnv } from '../session-env.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createMessageChannel } from '../message-channel.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
@@ -184,6 +184,7 @@ export class ClaudeAgentService {
     } = {}
   ): Promise<ClaudeSdkOptions> {
     const claudeEnv = await this.app.service('sessions').getClaudeEnv(sessionRow.id);
+    const resolvedModel = model !== undefined ? model : sessionRow.model;
     const cwd =
       resolveDataDirRelativePath(sessionRow.worktree_path) ||
       sessionRow.absolute_worktree_path ||
@@ -191,9 +192,9 @@ export class ClaudeAgentService {
     const resolvedMcp = mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app));
     return {
       cwd,
-      env: claudeEnv,
+      env: applyClaudeAgentModelEnv(claudeEnv, resolvedModel),
       resume: resume !== undefined ? resume || undefined : sessionRow.claude_session_id,
-      model: model !== undefined ? model : sessionRow.model,
+      model: resolvedModel,
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources,
       mcpServers: { baguette: resolvedMcp },
@@ -969,13 +970,17 @@ Task: ${initialPrompt}`;
     let label = '';
     let branchName = fallbackBranch;
 
-    const env = await getClaudeEnv(this.app, user?.id ?? 0, repo?.full_name ?? null);
+    const metadataModel = session?.model || 'haiku';
+    const env = applyClaudeAgentModelEnv(
+      await getClaudeEnv(this.app, user?.id ?? 0, repo?.full_name ?? null),
+      session?.model ?? null
+    );
     const q = query({
       prompt,
       // Generate the label/branch with the session's selected model so the metadata
       // matches the agent that will actually run the task. Sessions created without an
       // explicit model fall back to the cheap alias so provisioning stays fast.
-      options: { model: session?.model || 'haiku', env },
+      options: { model: metadataModel, env },
     });
     const consume = (async () => {
       for await (const message of q) {
