@@ -8,17 +8,30 @@ function toolUseNameIs(name, shortName) {
 }
 
 function nestedMcpToolName(block) {
-  return block.input?.toolName ?? block.input?.name ?? null;
+  return (
+    block.input?.toolName ?? block.input?.name ?? block.args?.toolName ?? block.args?.tool ?? null
+  );
 }
 
 function blockIsNamedMcpTool(block, shortName) {
-  if (block.type !== 'tool_use' || block._hidden) return false;
+  if (block._hidden) return false;
+  if (block.type === 'tool_call') {
+    const name = block.name;
+    if (toolUseNameIs(name, shortName)) return true;
+    if (name === 'mcp' && toolUseNameIs(nestedMcpToolName(block), shortName)) return true;
+    return false;
+  }
+  if (block.type !== 'tool_use') return false;
   if (toolUseNameIs(block.name, shortName)) return true;
   if (block.name === 'mcp' && toolUseNameIs(nestedMcpToolName(block), shortName)) return true;
   return false;
 }
 
 function blockIsLegacyPrUpsertBash(block) {
+  if (block.type === 'tool_call' && block.kind === 'bash') {
+    const cmd = block.args?.command;
+    return typeof cmd === 'string' && cmd.trimStart().startsWith('baguette-op pr-upsert');
+  }
   if (block.type !== 'tool_use' || block.name !== 'Bash') return false;
   const cmd = block.input?.command;
   return typeof cmd === 'string' && cmd.trimStart().startsWith('baguette-op pr-upsert');
@@ -33,14 +46,20 @@ function blockIsCreateIssue(block) {
   return blockIsNamedMcpTool(block, 'CreateIssue');
 }
 
-/** Assistant message whose visible tools include PrUpsert (MCP or legacy bash op). */
+function messageIsToolCallRow(msg) {
+  return msg?.type === 'tool_call';
+}
+
+/** Message whose visible tools include PrUpsert (MCP or legacy bash op). */
 export function messageContainsPrUpsert(msg) {
+  if (messageIsToolCallRow(msg)) return blockIsPrUpsert(msg);
   if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
   return msg.message.content.some(blockIsPrUpsert);
 }
 
-/** Assistant message whose visible tools include CreateIssue. */
+/** Message whose visible tools include CreateIssue. */
 export function messageContainsCreateIssue(msg) {
+  if (messageIsToolCallRow(msg)) return blockIsCreateIssue(msg);
   if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
   return msg.message.content.some(blockIsCreateIssue);
 }
@@ -56,6 +75,9 @@ export function isChatAnchorMessage(msg) {
   if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
     return msg.message.content.some((b) => b.type === 'text' && String(b.text ?? '').trim());
   }
+  if (msg.type === 'assistant' && Array.isArray(msg.blocks)) {
+    return msg.blocks.some((b) => b.type === 'text' && String(b.text ?? '').trim());
+  }
   return false;
 }
 
@@ -68,7 +90,8 @@ export function isChatGroupBoundary(msg) {
 export function isChatWorkMessage(msg) {
   if (!msg) return false;
   if (messageContainsHighlightedTool(msg)) return false;
-  if (msg.type === 'result') return true;
+  if (msg.type === 'result' || msg.type === 'turn_result') return true;
+  if (msg.type === 'tool_call') return true;
   if (msg.type === 'system') return msg.subtype !== 'prompt';
   if (msg.type === 'assistant') return !isChatAnchorMessage(msg);
   return false;
@@ -77,6 +100,10 @@ export function isChatWorkMessage(msg) {
 export function countToolCallsInMessages(messages) {
   let n = 0;
   for (const msg of messages) {
+    if (msg.type === 'tool_call') {
+      n += 1;
+      continue;
+    }
     if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) continue;
     for (const block of msg.message.content) {
       if (block.type === 'tool_use' && !block._hidden) n += 1;

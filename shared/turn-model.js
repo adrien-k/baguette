@@ -11,11 +11,17 @@ export function isBaguetteUserMessage(parsed) {
   return parsed?.type === 'user' && (parsed.source === 'baguette' || parsed.subtype === 'baguette');
 }
 
+/** User message injected via Baguette MCP (CreateSessionMessage, etc.). */
+export function isMcpUserMessage(parsed) {
+  return parsed?.type === 'user' && (parsed.source === 'mcp' || parsed.subtype === 'mcp');
+}
+
 /** User-typed chat message (not Baguette-injected, not a tool-result carrier). */
 export function isHumanUserMessage(parsed) {
   if (parsed?.type !== 'user') return false;
   if (parsed.legacy_tool_result_carrier) return false;
   if (isBaguetteUserMessage(parsed)) return false;
+  if (isMcpUserMessage(parsed)) return false;
   if (typeof parsed.content === 'string') return true;
   const content = parsed.message?.content;
   if (typeof content === 'string') return true;

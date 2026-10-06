@@ -2,55 +2,84 @@ import { useState } from 'react';
 import { messagesService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 
-function buildAnswerMessage(questions, answers) {
+export type AskUserQuestion = {
+  question: string;
+  options?: { label: string; description?: string }[];
+  multiSelect?: boolean;
+};
+
+type AnswerState = { selected: Set<string> | string | null; otherText: string };
+
+function buildAnswerMessage(questions: AskUserQuestion[], answers: AnswerState[]): string {
   return questions
     .map((q, i) => {
       const ans = answers[i];
-      let value;
+      let value: string;
       if (q.multiSelect) {
-        const parts = [...ans.selected].map((l) => (l === 'Other' ? ans.otherText || 'Other' : l));
+        const selected = ans.selected instanceof Set ? ans.selected : new Set<string>();
+        const parts = [...selected].map((l) => (l === 'Other' ? ans.otherText || 'Other' : l));
         value = parts.join(', ');
       } else {
-        value = ans.selected === 'Other' ? ans.otherText || 'Other' : (ans.selected ?? '');
+        value = ans.selected === 'Other' ? ans.otherText || 'Other' : (ans.selected as string);
       }
       return `**${q.question}**: ${value}`;
     })
     .join('\n');
 }
 
-function isAnswerComplete(questions, answers) {
+function isAnswerComplete(questions: AskUserQuestion[], answers: AnswerState[]): boolean {
   return questions.every((q, i) => {
     const ans = answers[i];
     if (q.multiSelect)
-      return ans.selected.size > 0 && (!ans.selected.has('Other') || ans.otherText.trim());
-    return ans.selected && (ans.selected !== 'Other' || ans.otherText.trim());
+      return (
+        ans.selected instanceof Set &&
+        ans.selected.size > 0 &&
+        (!ans.selected.has('Other') || ans.otherText.trim().length > 0)
+      );
+    return Boolean(ans.selected) && (ans.selected !== 'Other' || ans.otherText.trim().length > 0);
   });
 }
 
-export default function AskUserQuestionBlock({ block, sessionId, userReplied = false }) {
-  const questions = block.input?.questions ?? [];
+/**
+ * Inline question form for AskUserQuestion tool calls. Works for both typed tool_call rows
+ * (args.questions) and legacy tool_use blocks via the same plain `questions` prop.
+ */
+export default function AskUserQuestionBlock({
+  questions: questionsProp,
+  sessionId,
+  userReplied = false,
+}: {
+  questions?: AskUserQuestion[] | null;
+  sessionId?: number | null;
+  userReplied?: boolean;
+}) {
+  const questions = questionsProp ?? [];
   const hasResult = userReplied;
 
-  const [answers, setAnswers] = useState(() =>
-    questions.map((q) => ({ selected: q.multiSelect ? new Set() : null, otherText: '' }))
+  const [answers, setAnswers] = useState<AnswerState[]>(() =>
+    questions.map((q) => ({ selected: q.multiSelect ? new Set<string>() : null, otherText: '' }))
   );
   const [loading, setLoading] = useState(false);
 
-  const sendMsg = (text) =>
+  const sendMsg = (text: string) =>
     messagesService.create({
       session_id: sessionId,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
     });
 
-  const toggle = (i, label) => {
+  const toggle = (i: number, label: string) => {
     setAnswers((prev) => {
       const ans = prev[i];
       const q = questions[i];
-      let next;
+      let next: AnswerState;
       if (q.multiSelect) {
-        const s = new Set(ans.selected);
-        s.has(label) ? s.delete(label) : s.add(label);
+        const s = new Set(ans.selected instanceof Set ? ans.selected : []);
+        if (s.has(label)) {
+          s.delete(label);
+        } else {
+          s.add(label);
+        }
         next = { ...ans, selected: s };
       } else {
         next = { ...ans, selected: label };
@@ -66,7 +95,7 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
     });
   };
 
-  const submit = async (answersToUse = answers) => {
+  const submit = async (answersToUse: AnswerState[] = answers) => {
     if (!isAnswerComplete(questions, answersToUse)) return;
     setLoading(true);
     try {
@@ -95,7 +124,7 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
               <div className="space-y-1.5">
                 {allOptions.map((opt) => {
                   const selected = q.multiSelect
-                    ? ans.selected.has(opt.label)
+                    ? ans.selected instanceof Set && ans.selected.has(opt.label)
                     : ans.selected === opt.label;
                   return (
                     <button
@@ -116,7 +145,9 @@ export default function AskUserQuestionBlock({ block, sessionId, userReplied = f
                   );
                 })}
               </div>
-              {(q.multiSelect ? ans.selected.has('Other') : ans.selected === 'Other') &&
+              {(q.multiSelect
+                ? ans.selected instanceof Set && ans.selected.has('Other')
+                : ans.selected === 'Other') &&
                 !hasResult && (
                   <input
                     autoFocus

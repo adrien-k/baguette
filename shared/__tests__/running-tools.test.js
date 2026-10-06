@@ -3,41 +3,37 @@ import {
   collectRunningTools,
   collectRunningToolsForBottomBar,
   runningToolDisplay,
-  shouldHideRunningBashInFlow,
+  shouldHideRunningToolCallInFlow,
   runningBashToolIds,
 } from '../running-tools.js';
 
+function runningToolCall(id, name, args = {}) {
+  return {
+    type: 'tool_call',
+    id: 1,
+    call_id: id,
+    name,
+    kind: name === 'Bash' ? 'bash' : 'mcp',
+    status: 'running',
+    args,
+    result: null,
+    tool_status: 'running',
+    tool_started_at: '2026-01-01T00:00:00.000Z',
+    created_at: '2026-01-01T00:00:00.000Z',
+  };
+}
+
 describe('collectRunningTools', () => {
-  it('returns tools without stitched results', () => {
+  it('returns running tool_call rows without results', () => {
     const messages = [
+      runningToolCall('a', 'Read', { file_path: '/wt/src/a.js' }),
       {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: '/wt/src/a.js' } },
-            {
-              type: 'tool_use',
-              id: 'b',
-              name: 'Bash',
-              input: { command: 'pnpm test' },
-              result: 'ok',
-            },
-          ],
-        },
+        ...runningToolCall('b', 'Bash', { command: 'pnpm test' }),
+        result: { exit_code: 0, stdout: 'ok', stderr: '' },
+        tool_status: 'completed',
+        status: 'completed',
       },
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'c',
-              name: 'mcp__baguette__GitPush',
-              input: {},
-            },
-          ],
-        },
-      },
+      runningToolCall('c', 'mcp__baguette__GitPush', {}),
     ];
 
     const running = collectRunningTools(messages, { worktreePath: '/wt' });
@@ -47,72 +43,23 @@ describe('collectRunningTools', () => {
     ]);
   });
 
-  it('skips hidden tool_use blocks', () => {
+  it('dock lists every running Bash tool_call with startedAt', () => {
     const messages = [
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'tool_use', id: 't', name: 'TodoWrite', input: {}, _hidden: true }],
-        },
-      },
-    ];
-    expect(collectRunningTools(messages)).toEqual([]);
-  });
-
-  it('dock lists every running Bash block with startedAt', () => {
-    const messages = [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'go' },
-      },
-      {
-        type: 'assistant',
-        created_at: '2026-01-01T00:00:00.000Z',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'a.js' } },
-            { type: 'tool_use', id: 'bash1', name: 'Bash', input: { command: 'sleep 1' } },
-          ],
-        },
-      },
-      {
-        type: 'assistant',
-        created_at: '2026-01-01T00:00:10.000Z',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'bash2', name: 'Bash', input: { command: 'pnpm test' } },
-          ],
-        },
-      },
+      { type: 'user', content: 'go' },
+      runningToolCall('bash1', 'Bash', { command: 'sleep 1' }),
+      runningToolCall('bash2', 'Bash', { command: 'pnpm test' }),
     ];
     const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
     expect(dock).toHaveLength(2);
     expect(dock[0].id).toBe('bash1');
-    expect(dock[0].startedAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(dock[0].block.name).toBe('Bash');
+    expect(dock[0].message.name).toBe('Bash');
     expect(dock[1].id).toBe('bash2');
   });
 
   it('includes running RunProjectCommand in the dock', () => {
     const messages = [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'run tests' },
-      },
-      {
-        type: 'assistant',
-        created_at: '2026-01-01T00:00:00.000Z',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'run1',
-              name: 'mcp__baguette__RunProjectCommand',
-              input: { label: 'Run tests' },
-            },
-          ],
-        },
-      },
+      { type: 'user', content: 'run tests' },
+      runningToolCall('run1', 'mcp', { toolName: 'RunProjectCommand', label: 'Run tests' }),
     ];
     const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
     expect(dock).toHaveLength(1);
@@ -121,30 +68,10 @@ describe('collectRunningTools', () => {
 
   it('dock ignores orphaned running Bash from a previous cancelled turn', () => {
     const messages = [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'first try' },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'stale', name: 'Bash', input: { command: 'sleep 999' } },
-          ],
-        },
-      },
-      {
-        type: 'user',
-        message: { role: 'user', content: 'retry' },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'current', name: 'Bash', input: { command: 'pnpm test' } },
-          ],
-        },
-      },
+      { type: 'user', content: 'first try' },
+      runningToolCall('stale', 'Bash', { command: 'sleep 999' }),
+      { type: 'user', content: 'retry' },
+      runningToolCall('current', 'Bash', { command: 'pnpm test' }),
     ];
     const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
     expect(dock).toHaveLength(1);
@@ -153,28 +80,25 @@ describe('collectRunningTools', () => {
 
   it('dock is empty when the session turn is not active', () => {
     const messages = [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'go' },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'tool_use', id: 'bash1', name: 'Bash', input: { command: 'sleep' } }],
-        },
-      },
+      { type: 'user', content: 'go' },
+      runningToolCall('bash1', 'Bash', { command: 'sleep' }),
     ];
     expect(collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: false })).toEqual([]);
   });
 
-  it('hides pinned running Bash from the message list', () => {
-    const block = { type: 'tool_use', id: 'bash1', name: 'Bash', input: { command: 'sleep' } };
-    const ids = runningBashToolIds([{ id: 'bash1', block, startedAt: null }]);
-    expect(shouldHideRunningBashInFlow(block, ids)).toBe(true);
-    expect(shouldHideRunningBashInFlow({ ...block, result: 'done' }, ids)).toBe(false);
+  it('hides pinned running Bash tool_call from the message list', () => {
+    const msg = runningToolCall('bash1', 'Bash', { command: 'sleep' });
+    const ids = runningBashToolIds([{ id: 'bash1', message: msg, startedAt: null }]);
+    expect(shouldHideRunningToolCallInFlow(msg, ids)).toBe(true);
+    expect(
+      shouldHideRunningToolCallInFlow(
+        { ...msg, result: { exit_code: 0, stdout: '', stderr: '' }, tool_status: 'completed' },
+        ids
+      )
+    ).toBe(false);
   });
 
-  it('unwraps Cursor mcp meta-tool', () => {
+  it('unwraps Cursor mcp meta-tool for display', () => {
     const block = {
       type: 'tool_use',
       id: 'm1',

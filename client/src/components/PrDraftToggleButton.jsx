@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { NEUTRAL_BUTTON_CLASS } from '../utils/buttonStyles.js';
-import ChatQuickActionButton from './chat/ChatQuickActionButton.jsx';
+import ChatQuickActionButton from './chat/ChatQuickActionButton.tsx';
 
 export function canTogglePrDraftStatus(session) {
   if (!session?.pr_number) return false;

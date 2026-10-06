@@ -2,213 +2,82 @@ import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { sessionsService } from '../../../feathers.js';
-import { useFilterRoutes } from '../../../hooks/useFilterRoutes.js';
-import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../../utils/diffLineWrap.js';
-import MarkdownContent from '../../MarkdownContent.jsx';
-import { ansiToHtml } from '../../../utils/ansi.js';
-import { parseShellToolResult } from '../../../utils/shellToolResult.js';
-import { stripCdWorktreePrefix } from '../../../utils/paths.js';
-import { splitPreviewLines } from '../../../utils/chatContentPreview.js';
-import ToolRunElapsed from '../ToolRunElapsed.jsx';
+import { sessionsService } from '../../feathers.js';
+import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
+import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
+import MarkdownContent from '../MarkdownContent.jsx';
+import { ansiToHtml } from '../../utils/ansi.js';
+import { parseShellToolResult } from '../../utils/shellToolResult.js';
+import { splitPreviewLines } from '../../utils/chatContentPreview.js';
+import ToolRunElapsed from './ToolRunElapsed.tsx';
+import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
+import TerminalLogBlock, { TERMINAL_PRE_CLASS } from './TerminalLogBlock.tsx';
 
-const TERMINAL_PRE_CLASS =
-  'ansi-log font-mono text-xs whitespace-pre overflow-x-auto overflow-y-auto max-h-80 max-w-full rounded p-2';
-
-function TerminalLogBlock({ label, text, ansi = true }) {
-  if (text == null || text === '') return null;
-  const html = ansi ? ansiToHtml(text) : null;
-  return (
-    <div className="min-w-0 max-w-full">
-      {label ? <div className="text-faint font-medium mb-1">{label}</div> : null}
-      {html ? (
-        <pre className={TERMINAL_PRE_CLASS} dangerouslySetInnerHTML={{ __html: html }} />
-      ) : (
-        <pre className={TERMINAL_PRE_CLASS}>{text}</pre>
-      )}
-    </div>
-  );
-}
-
-// ─── Shared primitives (also used by ToolUseBlock for legacy baguette-op rendering) ───
-
-function hasToolInput(input) {
-  return input != null && typeof input === 'object' && Object.keys(input).length > 0;
-}
-
-function parseMcpJsonResult(result) {
-  if (result == null) return null;
-  if (typeof result === 'object') return result;
-  if (typeof result !== 'string' || !result.trim()) return null;
-  try {
-    return JSON.parse(result);
-  } catch {
-    return null;
-  }
-}
-
-const ISSUE_SEVERITY_CLASS = {
+const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   critical: 'bg-danger/15 text-danger border-danger/35',
   high: 'bg-warning/15 text-warning border-warning/35',
   medium: 'bg-brand/15 text-warning border-brand/35',
   low: 'bg-control/80 text-fg-muted border-strong/80',
 };
 
-function formatToolInput(input) {
-  return JSON.stringify(input, null, 2);
+/** Loose shape of parsed MCP JSON results consumed by the blocks below. */
+type McpResultData = {
+  issue?: { severity?: string; title?: string; id?: string | number };
+  ok?: boolean;
+  message?: string;
+  url?: string;
+  [key: string]: unknown;
+};
+
+/** Block-local view of a baguette/mcp tool call: plain data, no message-shape coupling. */
+export type McpBlockData = {
+  result?: unknown;
+  isError?: boolean;
+  input?: Record<string, unknown>;
+};
+
+export function parseMcpJsonResult(result: unknown): McpResultData | null {
+  if (result == null) return null;
+  if (typeof result === 'object') return result as McpResultData;
+  if (typeof result !== 'string' || !result.trim()) return null;
+  try {
+    return JSON.parse(result) as McpResultData;
+  } catch {
+    return null;
+  }
 }
 
-export function QuietToolBlock({ icon, label, detail, isError, result, input }) {
+export function CommandBlock({
+  label,
+  args,
+  result,
+  isError,
+  startedAt,
+}: {
+  label?: string;
+  args?: unknown;
+  result?: unknown;
+  isError?: boolean;
+  startedAt?: string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = result == null;
-  const showInput = hasToolInput(input);
-  const showExpandedBody = expanded && (showInput || result != null);
-
-  return (
-    <div
-      onClick={() => setExpanded((e) => !e)}
-      className="text-xs font-mono py-0.5 pl-1 cursor-pointer overflow-hidden"
-    >
-      <div className="flex items-center gap-1.5 text-faint">
-        <span>{icon ?? '↳'}</span>
-        <span className={isError ? 'text-red-700' : ''}>{label}</span>
-        {detail && <span className="truncate text-faint">{detail}</span>}
-        {isError && <span className="text-red-700 ml-0.5">[error]</span>}
-        {isRunning && !isError && (
-          <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
-        )}
-      </div>
-      {showExpandedBody && (
-        <div className="mt-1 pl-3 space-y-2">
-          {showInput && (
-            <div>
-              <div className="text-faint font-medium mb-0.5">Input</div>
-              <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-48">
-                {formatToolInput(input)}
-              </pre>
-            </div>
-          )}
-          {result != null && (
-            <div>
-              {showInput && <div className="text-faint font-medium mb-0.5">Result</div>}
-              <pre className="text-faint whitespace-pre-wrap overflow-auto max-h-48">
-                {typeof result === 'string' && !result.trim() && isError
-                  ? 'Tool call failed'
-                  : typeof result === 'string'
-                    ? result
-                    : JSON.stringify(result, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function BashToolBlock({ command, worktreePath, block, startedAt }) {
-  const [expanded, setExpanded] = useState(false);
-  const isRunning = block.result == null;
-  const { exitCode, stdout, stderr } = useMemo(() => {
-    const r = block.result;
-    if (r && typeof r === 'object' && 'exit_code' in r) {
-      return { exitCode: r.exit_code, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
-    }
-    return parseShellToolResult(block.result);
-  }, [block.result]);
-  const hasError = block.isError || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
-  const headerPreview =
-    stripCdWorktreePrefix(command, worktreePath)
-      ?.split('\n')
-      .find((l) => l.trim()) ?? '';
-
-  const commandAndStdout = useMemo(() => {
-    const parts = [];
-    if (command) parts.push(command);
-    if (stdout) parts.push(stdout);
-    if (parts.length === 0 && block.result != null && !stderr) {
-      parts.push(
-        typeof block.result === 'string' ? block.result : JSON.stringify(block.result, null, 2)
-      );
-    }
-    return parts.join('\n');
-  }, [command, stdout, stderr, block.result]);
-
-  return (
-    <div
-      className={`bg-inset/50 rounded-lg border overflow-hidden ${hasError ? 'border-danger/60' : 'border-line'}`}
-    >
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-accent text-xs font-mono shrink-0">Bash</span>
-          {hasError && (
-            <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger/40 px-1.5 py-0.5 rounded">
-              {exitCode != null && !Number.isNaN(exitCode) ? `exit ${exitCode}` : 'error'}
-            </span>
-          )}
-          {headerPreview && <code className="text-fg-muted text-xs truncate">{headerPreview}</code>}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {isRunning && startedAt ? <ToolRunElapsed startedAt={startedAt} /> : null}
-          {isRunning ? (
-            <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
-          ) : (
-            <ChevronDown
-              className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            />
-          )}
-        </div>
-      </button>
-      {expanded && (
-        <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
-          <TerminalLogBlock text={commandAndStdout} />
-          <TerminalLogBlock label="stderr" text={stderr} />
-          {!isRunning && (
-            <div className="flex items-baseline gap-2">
-              <span className="text-faint font-medium">Exit code</span>
-              <span
-                className={
-                  exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0
-                    ? 'text-danger font-mono'
-                    : 'text-success font-mono'
-                }
-              >
-                {exitCode != null && !Number.isNaN(exitCode) ? exitCode : '—'}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function CommandBlock({ baguetteOp, block, startedAt }) {
-  const [expanded, setExpanded] = useState(false);
-  const isRunning = block.result == null;
-  const { exitCode, stdout, stderr } = useMemo(
-    () => parseShellToolResult(block.result),
-    [block.result]
-  );
+  const { exitCode, stdout, stderr } = useMemo(() => parseShellToolResult(result), [result]);
   let ok = true;
-  if (typeof block.result === 'string') {
+  if (typeof result === 'string') {
     try {
-      ok = JSON.parse(block.result)?.ok ?? true;
+      ok = (JSON.parse(result) as { ok?: boolean } | null)?.ok ?? true;
     } catch {
       ok = true;
     }
-  } else if (block.result && typeof block.result === 'object') {
-    ok = block.result.ok ?? true;
+  } else if (result && typeof result === 'object') {
+    ok = (result as { ok?: boolean }).ok ?? true;
   }
 
   const hasError =
-    block.isError ||
-    ok === false ||
-    (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
+    isError || ok === false || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
+
+  const commandArgs: string[] = Array.isArray(args) ? (args as string[]) : [];
 
   return (
     <div
@@ -225,11 +94,9 @@ export function CommandBlock({ baguetteOp, block, startedAt }) {
               {typeof exitCode === 'number' ? `exit ${exitCode}` : 'error'}
             </span>
           )}
-          <span className="text-xs text-secondary truncate">
-            {baguetteOp.arg?.label || '(no label)'}
-          </span>
-          {Array.isArray(baguetteOp.arg?.args) && baguetteOp.arg.args.length > 0 && (
-            <code className="text-[10px] text-faint truncate">{baguetteOp.arg.args.join(' ')}</code>
+          <span className="text-xs text-secondary truncate">{label || '(no label)'}</span>
+          {commandArgs.length > 0 && (
+            <code className="text-[10px] text-faint truncate">{commandArgs.join(' ')}</code>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -247,13 +114,11 @@ export function CommandBlock({ baguetteOp, block, startedAt }) {
         <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
           <TerminalLogBlock label="stdout" text={stdout} />
           <TerminalLogBlock label="stderr" text={stderr} />
-          {!stdout && !stderr && block.result != null && (
+          {!stdout && !stderr && result != null && (
             <div>
               <div className="text-faint font-medium mb-1">stdout</div>
               <pre className={TERMINAL_PRE_CLASS}>
-                {typeof block.result === 'string'
-                  ? block.result
-                  : JSON.stringify(block.result, null, 2)}
+                {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>
           )}
@@ -277,7 +142,17 @@ export function CommandBlock({ baguetteOp, block, startedAt }) {
   );
 }
 
-export function PrUpsertBlock({ title, body, result, isError }) {
+export function PrUpsertBlock({
+  title,
+  body,
+  result,
+  isError,
+}: {
+  title?: string;
+  body?: string;
+  result?: unknown;
+  isError?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = result == null;
   const { preview: previewBody, remaining } = splitPreviewLines(body ?? '');
@@ -341,7 +216,7 @@ export function PrUpsertBlock({ title, body, result, isError }) {
             <div>
               <div className="font-medium mb-1 text-danger">Error</div>
               <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-red-950/30">
-                {result}
+                {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>
           )}
@@ -351,14 +226,14 @@ export function PrUpsertBlock({ title, body, result, isError }) {
   );
 }
 
-export function CreateIssueBlock({ block }) {
+export function CreateIssueBlock({ block }: { block: McpBlockData }) {
   const { short_id } = useParams();
   const { sessionUrl } = useFilterRoutes();
   const [searchParams] = useSearchParams();
   const mcpResult = parseMcpJsonResult(block.result);
   const issue = mcpResult?.issue;
-  const severity = issue?.severity ?? block.input?.severity;
-  const title = issue?.title ?? block.input?.title ?? '(no title)';
+  const severity = (issue?.severity ?? block.input?.severity) as string | undefined;
+  const title = (issue?.title ?? block.input?.title ?? '(no title)') as string;
   const issueId = issue?.id;
   const isRunning = block.result == null;
   const isError = Boolean(block.isError || mcpResult?.ok === false);
@@ -415,20 +290,34 @@ export function CreateIssueBlock({ block }) {
 
 // ─── ShowDiffBlock (private — only used by BaguetteMcpToolBlock) ──────────────
 
-function ShowDiffBlock({ path: filePath, sessionId }) {
+function ShowDiffBlock({
+  path: filePath,
+  sessionId,
+}: {
+  path: string;
+  sessionId?: number | string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const [diff, setDiff] = useState(null);
-  const [error, setError] = useState(null);
+  const [diff, setDiff] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId || !filePath) return;
-    sessionsService
+    // Custom service methods are registered at runtime and missing from feathers' types.
+    (
+      sessionsService as unknown as {
+        showDiff(args: {
+          id: number | string;
+          path: string;
+        }): Promise<{ error?: string; diff?: string }>;
+      }
+    )
       .showDiff({ id: sessionId, path: filePath })
-      .then((res) => {
+      .then((res: { error?: string; diff?: string }) => {
         if (res.error) setError(res.error);
         setDiff(res.diff ?? '');
       })
-      .catch((err) => {
+      .catch((err: { message?: string }) => {
         setError(err?.message ?? 'Failed to load diff');
         setDiff('');
       });
@@ -452,8 +341,9 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
   }
 
   const lines = (diff || '').split('\n');
-  const hunks = [];
-  let current = null;
+  type DiffHunk = { header: string; lines: string[] };
+  const hunks: DiffHunk[] = [];
+  let current: DiffHunk | null = null;
 
   for (const line of lines) {
     if (line.startsWith('@@')) {
@@ -467,8 +357,8 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
 
   const PREVIEW_LINES = 12;
   const allLines = hunks.flatMap((h) => [
-    { type: 'hunk', text: h.header },
-    ...h.lines.map((l) => ({ type: 'line', text: l })),
+    { type: 'hunk' as const, text: h.header },
+    ...h.lines.map((l) => ({ type: 'line' as const, text: l })),
   ]);
   const preview = allLines.slice(0, PREVIEW_LINES);
   const shown = expanded ? allLines : preview;
@@ -531,16 +421,22 @@ function ShowDiffBlock({ path: filePath, sessionId }) {
 
 // ─── UploadImageBlock ─────────────────────────────────────────────────────────
 
-function UploadImageBlock({ block, mcpResult }) {
+function UploadImageBlock({
+  block,
+  mcpResult,
+}: {
+  block: McpBlockData;
+  mcpResult: McpResultData | null;
+}) {
   const [open, setOpen] = useState(false);
-  const imageUrl = mcpResult?.url;
-  const altText = block.input?.altText ?? 'uploaded image';
+  const imageUrl = mcpResult?.url as string | undefined;
+  const altText = (block.input?.altText as string | undefined) ?? 'uploaded image';
 
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close();
     };
     window.addEventListener('keydown', onKey);
@@ -598,25 +494,33 @@ function UploadImageBlock({ block, mcpResult }) {
 
 // ─── ReadTaskOutputBlock ─────────────────────────────────────────────────────
 
-function ReadTaskOutputBlock({ block }) {
+function ReadTaskOutputBlock({ block }: { block: McpBlockData }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = block.result == null;
 
-  let parsed = null;
+  let parsed: Record<string, unknown> | null = null;
   try {
     parsed =
       block.result != null
         ? typeof block.result === 'string'
-          ? JSON.parse(block.result)
-          : block.result
+          ? (JSON.parse(block.result) as Record<string, unknown>)
+          : (block.result as Record<string, unknown>)
         : null;
   } catch {
     /* ignore */
   }
 
   const taskId = block.input?.taskId ?? parsed?.taskId;
+  const taskIdLabel = taskId != null ? `#${String(taskId)}` : null;
   const logsHtml = useMemo(() => {
-    const text = parsed?.log ?? (Array.isArray(parsed?.lines) ? parsed.lines.join('\n') : '');
+    const rawLog = parsed?.log;
+    const rawLines = parsed?.lines;
+    const text =
+      rawLog != null
+        ? String(rawLog)
+        : Array.isArray(rawLines)
+          ? (rawLines as string[]).join('\n')
+          : '';
     return text ? ansiToHtml(text) : '';
   }, [parsed]);
 
@@ -628,7 +532,7 @@ function ReadTaskOutputBlock({ block }) {
       <div className="flex items-center gap-1.5 text-faint">
         <span>↳</span>
         <span>ReadTaskOutput</span>
-        {taskId != null && <span className="truncate text-faint">#{taskId}</span>}
+        {taskIdLabel && <span className="truncate text-faint">{taskIdLabel}</span>}
         {isRunning && (
           <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
         )}
@@ -663,13 +567,30 @@ function ReadTaskOutputBlock({ block }) {
 }
 
 // ─── BaguetteMcpToolBlock ─────────────────────────────────────────────────────
+// Tool-name dispatch for Baguette MCP tool calls. Shared by the typed renderer
+// (`chat/ToolCallBlock`) and live-stream `chat/ToolUseBlock` (claude/cursor):
+// callers pass plain data (`tool`, `args`, `result`, `isError`) rather than a
+// specific message shape.
 
-export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedAt }) {
-  const toolShortName = block.name.replace('mcp__baguette__', '');
-  const mcpResult = parseMcpJsonResult(block.result);
+export default function BaguetteMcpToolBlock({
+  tool: toolShortName,
+  args = {},
+  result,
+  isError = false,
+  startedAt,
+  sessionId,
+}: {
+  tool: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+  isError?: boolean;
+  startedAt?: string | null;
+  sessionId?: number | string | null;
+}) {
+  const mcpResult = parseMcpJsonResult(result);
 
   if (toolShortName === 'CreateIssue') {
-    return <CreateIssueBlock block={block} />;
+    return <CreateIssueBlock block={{ result, isError, input: args }} />;
   }
 
   if (toolShortName === 'ShowDiff') {
@@ -678,11 +599,11 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
         <QuietToolBlock
           icon="⚙"
           label="ShowDiff"
-          detail={block.input?.path}
-          isError={block.isError}
-          input={block.input}
+          detail={args.path as string | undefined}
+          isError={isError}
+          input={args}
         />
-        <ShowDiffBlock path={block.input?.path ?? ''} sessionId={sessionId} />
+        <ShowDiffBlock path={(args.path as string | undefined) ?? ''} sessionId={sessionId} />
       </div>
     );
   }
@@ -690,10 +611,10 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
   if (toolShortName === 'PrUpsert') {
     return (
       <PrUpsertBlock
-        title={block.input?.title ?? '(no title)'}
-        body={block.input?.description ?? ''}
-        result={block.result}
-        isError={block.isError}
+        title={(args.title as string | undefined) ?? '(no title)'}
+        body={(args.description as string | undefined) ?? ''}
+        result={result}
+        isError={isError}
       />
     );
   }
@@ -703,17 +624,19 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
     const args = block.input?.args ?? [];
     return (
       <CommandBlock
-        baguetteOp={{ arg: { label, args } }}
-        block={block}
-        startedAt={runningStartedAt}
+        label={label}
+        args={args}
+        result={result}
+        isError={isError}
+        startedAt={startedAt}
       />
     );
   }
 
   if (toolShortName === 'PrComment') {
-    const body = block.input?.body ?? '';
-    const path = block.input?.path;
-    const line = block.input?.line;
+    const body = (args.body as string | undefined) ?? '';
+    const path = args.path;
+    const line = args.line;
     const preview = body.length > 60 ? body.slice(0, 57) + '…' : body;
     const detail = path && line ? `${path}:${line} — ${preview}` : preview;
     return (
@@ -721,17 +644,17 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
         icon="⚙"
         label={path && line ? 'PrComment (inline)' : 'PrComment'}
         detail={detail}
-        isError={block.isError}
-        result={block.result}
-        input={block.input}
+        isError={isError}
+        result={result}
+        input={args}
       />
     );
   }
 
   if (toolShortName === 'PrReview') {
-    const commentCount = block.input?.comments?.length ?? 0;
+    const commentCount = (args.comments as unknown[] | undefined)?.length ?? 0;
     const detail = [
-      block.input?.body?.slice(0, 60),
+      (args.body as string | undefined)?.slice(0, 60),
       commentCount > 0 ? `${commentCount} inline comment${commentCount > 1 ? 's' : ''}` : null,
     ]
       .filter(Boolean)
@@ -739,38 +662,38 @@ export default function BaguetteMcpToolBlock({ block, sessionId, runningStartedA
     return (
       <QuietToolBlock
         icon="⚙"
-        label={`PrReview:${block.input?.event ?? ''}`}
+        label={`PrReview:${args.event ?? ''}`}
         detail={detail}
-        isError={block.isError}
-        result={block.result}
-        input={block.input}
+        isError={isError}
+        result={result}
+        input={args}
       />
     );
   }
 
   if (toolShortName === 'ReadTaskOutput') {
-    return <ReadTaskOutputBlock block={block} />;
+    return <ReadTaskOutputBlock block={{ result, input: args }} />;
   }
 
   if (toolShortName === 'UploadImage') {
-    return <UploadImageBlock block={block} mcpResult={mcpResult} />;
+    return <UploadImageBlock block={{ result, isError, input: args }} mcpResult={mcpResult} />;
   }
 
   // Default quiet block: GitPush, GitPull, GitFetch, PrRead, PrComments, etc.
   const detail =
     toolShortName === 'GitFetch'
-      ? block.input?.branch
+      ? (args.branch as string | undefined)
       : toolShortName === 'PrWorkflowLogs'
-        ? `run ${block.input?.runId ?? ''}`
-        : (mcpResult?.message ?? undefined);
+        ? `run ${args.runId ?? ''}`
+        : (mcpResult?.message as string | undefined);
   return (
     <QuietToolBlock
       icon="⚙"
       label={toolShortName}
       detail={detail}
-      isError={block.isError}
-      result={block.result}
-      input={block.input}
+      isError={isError}
+      result={result}
+      input={args}
     />
   );
 }

@@ -170,6 +170,17 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   );
 }
 
+/**
+ * Queued & scheduled messages list.
+ *
+ * @param {object} props
+ * @param {Array<Record<string, unknown>>} props.queue
+ * @param {Record<string, unknown>|null} [props.session]
+ * @param {Array<{ id?: string, label?: string, name?: string }>} [props.models]
+ * @param {(id: number) => unknown} [props.onDelete]
+ * @param {(id: number) => unknown} [props.onSendNow]
+ * @param {(id: number, messageJson: string) => unknown} [props.onEdit]
+ */
 export default function QueuedMessages({
   queue,
   session,

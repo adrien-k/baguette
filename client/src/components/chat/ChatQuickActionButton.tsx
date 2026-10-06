@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import Tooltip from '../Tooltip.jsx';
 
 export const CHAT_ACTION_BUTTON_CLASS =
@@ -12,6 +14,14 @@ export default function ChatQuickActionButton({
   disabled = false,
   className = CHAT_ACTION_BUTTON_CLASS,
   children,
+}: {
+  icon?: LucideIcon;
+  label?: string;
+  tooltip?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  className?: string;
+  children?: ReactNode;
 }) {
   const button = (
     <button type="button" onClick={onClick} disabled={disabled} className={className}>

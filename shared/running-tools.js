@@ -26,10 +26,12 @@ function stripWorktreePath(filePath, worktreePath) {
 function normalizeBlock(block) {
   const effectiveName = CURSOR_TOOL_ALIAS[block.name] ?? block.name;
   if (block.name === 'mcp') {
-    const toolName = block.input?.toolName ?? 'mcp';
+    // Legacy Cursor meta-tool input nests under `args` ({toolName, args}); typed tool_call
+    // args are flat ({tool, ...fields}).
+    const toolName = block.input?.toolName ?? block.input?.tool ?? 'mcp';
     return {
       name: `mcp__baguette__${toolName}`,
-      input: block.input?.args ?? {},
+      input: block.input?.args ?? block.input ?? {},
     };
   }
   if (
@@ -146,6 +148,21 @@ export function runningToolDisplay(block, opts = {}) {
 }
 
 /**
+ * A typed `tool_call` view that is still in flight (no result yet, status not terminal).
+ * @param {object} msg - parsed ChatMessageView
+ */
+function isRunningToolCallView(msg) {
+  if (msg.type !== 'tool_call') return false;
+  if (msg.tool_status === 'completed' || msg.tool_status === 'error') return false;
+  return msg.result == null;
+}
+
+/** Stable dock/pinning id for a typed tool_call view. */
+function toolCallViewId(msg) {
+  return msg.call_id ?? `tool-${msg.id}`;
+}
+
+/**
  * @param {object[]} messages - reconciled session messages (visible in chat)
  * @param {{ worktreePath?: string }} [opts]
  * @returns {{ id: string; label: string; detail?: string }[]}
@@ -155,40 +172,30 @@ export function collectRunningTools(messages, opts = {}) {
   if (!Array.isArray(messages)) return out;
 
   for (const msg of messages) {
-    if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) continue;
-    for (const block of msg.message.content) {
-      if (block.type !== 'tool_use' || block._hidden) continue;
-      if (block.result != null) continue;
-      const { label, detail } = runningToolDisplay(block, opts);
-      out.push({ id: block.id ?? `${out.length}`, label, detail });
-    }
+    if (msg.type !== 'tool_call') continue;
+    if (!isRunningToolCallView(msg)) continue;
+    const { label, detail } = runningToolDisplay({ name: msg.name, input: msg.args ?? {} }, opts);
+    out.push({ id: toolCallViewId(msg), label, detail });
   }
 
   return out;
 }
 
-function isRunningRunProjectCommandBlock(block) {
-  if (block.type !== 'tool_use' || block._hidden) return false;
-  if (block.result != null) return false;
-  if (block.name === 'mcp__baguette__RunProjectCommand') return true;
-  if (block.name === 'mcp' && block.input?.toolName === 'RunProjectCommand') return true;
+/** Typed tool_call row pinned to the dock while running: Bash or RunProjectCommand. */
+function isPinnableRunningToolCallView(msg) {
+  if (!isRunningToolCallView(msg)) return false;
+  if (msg.kind === 'bash' || msg.name === 'Bash') return true;
+  if (msg.kind === 'mcp') {
+    const tool = msg.args?.tool ?? msg.args?.toolName;
+    return tool === 'RunProjectCommand';
+  }
   return false;
-}
-
-function isRunningBashToolBlock(block) {
-  if (block.type !== 'tool_use' || block._hidden) return false;
-  if (block.result != null) return false;
-  return block.name === 'Bash' || block.name === 'shell';
-}
-
-function isPinnableRunningToolBlock(block) {
-  return isRunningBashToolBlock(block) || isRunningRunProjectCommandBlock(block);
 }
 
 /**
  * Running Bash/shell and RunProjectCommand blocks pinned above the composer until done.
  * @param {{ worktreePath?: string; sessionTurnActive?: boolean }} [opts]
- * @returns {{ id: string; block: object; startedAt: string | null }[]}
+ * @returns {{ id: string; message: object; startedAt: string | null }[]}
  */
 export function collectRunningBashToolsForDock(messages, _chatDisplayItems, opts = {}) {
   const out = [];
@@ -199,15 +206,13 @@ export function collectRunningBashToolsForDock(messages, _chatDisplayItems, opts
   const turnMessages = messages.slice(turnStart);
 
   for (const msg of turnMessages) {
-    if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) continue;
-    for (const block of msg.message.content) {
-      if (!isPinnableRunningToolBlock(block)) continue;
-      out.push({
-        id: block.id ?? `dock-${out.length}`,
-        block,
-        startedAt: msg.created_at ?? null,
-      });
-    }
+    if (msg.type !== 'tool_call') continue;
+    if (!isPinnableRunningToolCallView(msg)) continue;
+    out.push({
+      id: toolCallViewId(msg),
+      message: msg,
+      startedAt: msg.tool_started_at ?? msg.created_at ?? null,
+    });
   }
 
   return out;
@@ -222,9 +227,15 @@ export function runningBashToolIds(dockItems) {
   return new Set((dockItems ?? []).map((item) => item.id));
 }
 
-export function shouldHideRunningBashInFlow(block, pinnedIds) {
+/**
+ * Hide a pinned running Bash / RunProjectCommand tool_call row from the flow while it
+ * shows in the dock.
+ * @param {object} msg - parsed ChatMessageView
+ * @param {Set<string>} pinnedIds
+ */
+export function shouldHideRunningToolCallInFlow(msg, pinnedIds) {
   if (!pinnedIds?.size) return false;
-  if (!isPinnableRunningToolBlock(block)) return false;
-  const id = block.id ?? null;
+  if (!isPinnableRunningToolCallView(msg)) return false;
+  const id = msg.call_id ?? null;
   return id != null && pinnedIds.has(id);
 }

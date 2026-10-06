@@ -1,6 +1,6 @@
 import { Upload } from 'lucide-react';
 import { canShowChatPushChangesBar } from '../SessionTools.jsx';
-import ChatQuickActionButton, { CHAT_ACTION_BUTTON_CLASS } from './ChatQuickActionButton.jsx';
+import ChatQuickActionButton, { CHAT_ACTION_BUTTON_CLASS } from './ChatQuickActionButton.tsx';
 
 /** Push control in the chat quick-action row when there are unpushed commits. */
 export default function ChatPushChangesButton({
@@ -10,6 +10,13 @@ export default function ChatPushChangesButton({
   pushing = false,
   commitsToPush = 0,
   className = CHAT_ACTION_BUTTON_CLASS,
+}: {
+  session?: Record<string, unknown> | null;
+  readonly?: boolean;
+  onPush?: () => void | Promise<void>;
+  pushing?: boolean;
+  commitsToPush?: number;
+  className?: string;
 }) {
   if (!canShowChatPushChangesBar(session, { readonly, onPush, commitsToPush })) {
     return null;

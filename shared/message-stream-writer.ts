@@ -6,25 +6,60 @@ import {
   mapClaudeTurnResult,
   planMarkdownFromToolInput,
 } from './session-message-mappers.js';
+import type {
+  AssistantBlock,
+  AssistantMessagePayload,
+  SessionMessagePayload,
+  SystemMessagePayload,
+  ToolCallPayload,
+  TurnResultPayload,
+} from './session-messages.ts';
 
 const PLAN_TOOL_NAMES = new Set(['ExitPlanMode', 'createPlan']);
 
 /** Throttle assistant row patches during streaming (UI still updates via `patched` events). */
 const ASSISTANT_PATCH_DEBOUNCE_MS = 250;
 
-/**
- * @typedef {{
- *   sessionId: number;
- *   turnId: number;
- *   createRow: (row: object) => Promise<{ id: number }>;
- *   patchRow: (id: number, patch: object) => Promise<void>;
- *   appendRaw?: (event: unknown) => Promise<void>;
- * }} WriterDeps
- */
+export type WriterDeps = {
+  sessionId: number;
+  turnId: number;
+  createRow: (row: Record<string, unknown>) => Promise<{ id: number }>;
+  patchRow: (id: number, patch: Record<string, unknown>) => Promise<void>;
+  appendRaw?: (event: unknown) => Promise<void>;
+};
+
+/** Minimal structural shape of Cursor SDK run-stream events consumed here. */
+export type CursorStreamEvent = {
+  type?: string;
+  status?: string;
+  name?: string;
+  call_id?: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+  text?: string;
+  message?: { content?: Array<{ type?: string; text?: string }> };
+};
+
+/** Minimal structural shape of Claude agent SDK messages consumed here. */
+export type ClaudeStreamEvent = {
+  type?: string;
+  subtype?: string;
+  status?: string;
+  isReplay?: boolean;
+  message?: unknown;
+  session_id?: string;
+};
+
+type PendingTool = { id: number; payload: ToolCallPayload };
 
 export class MessageStreamWriter {
-  /** @param {WriterDeps} deps */
-  constructor(deps) {
+  readonly deps: WriterDeps;
+  private pendingTools: Map<string, PendingTool>;
+  private assistantRowId: number | null;
+  private assistantPayload: AssistantMessagePayload;
+  private streamBufferKind: 'assistant' | 'thinking' | null;
+
+  constructor(deps: WriterDeps) {
     this.deps = deps;
     this.pendingTools = new Map();
     this.assistantRowId = null;
@@ -85,21 +120,21 @@ export class MessageStreamWriter {
     this.thinkingTokensRowId = id;
   }
 
-  async log(event) {
+  async log(event: unknown): Promise<void> {
     await this.deps.appendRaw?.(event);
   }
 
-  async persistPayload(payload) {
+  async persistPayload(payload: SessionMessagePayload): Promise<{ id: number }> {
     const row = dbRowFromPayload(this.deps.sessionId, this.deps.turnId, payload);
     const created = await this.deps.createRow(row);
     return created;
   }
 
-  async patchPayload(id, payload) {
+  async patchPayload(id: number, payload: SessionMessagePayload): Promise<void> {
     await this.deps.patchRow(id, dbPatchFromPayload(payload));
   }
 
-  async flushAssistant() {
+  async flushAssistant(): Promise<void> {
     if (!this.assistantRowId) return;
     this.clearAssistantPatchTimer();
     this._assistantPatchDirty = false;
@@ -109,7 +144,7 @@ export class MessageStreamWriter {
     this.streamBufferKind = null;
   }
 
-  async appendAssistantText(text) {
+  async appendAssistantText(text?: string | null): Promise<void> {
     if (!this.assistantRowId) {
       this.resetThinkingTokensRow();
       this.assistantPayload = {
@@ -121,14 +156,14 @@ export class MessageStreamWriter {
       this.streamBufferKind = 'assistant';
       return;
     }
-    const blocks = this.assistantPayload.blocks;
+    const blocks: AssistantBlock[] = this.assistantPayload.blocks;
     const existing = blocks.find((b) => b.type === 'text');
     if (existing) existing.text += text ?? '';
     else blocks.push({ type: 'text', text: text ?? '' });
     this.scheduleAssistantPatch();
   }
 
-  async appendThinking(text) {
+  async appendThinking(text?: string | null): Promise<void> {
     if (this.streamBufferKind !== 'thinking' || !this.assistantRowId) {
       await this.flushAssistant();
       this.resetThinkingTokensRow();
@@ -146,7 +181,7 @@ export class MessageStreamWriter {
     this.scheduleAssistantPatch();
   }
 
-  async startTool(callId, name, args) {
+  async startTool(callId: string, name: string, args: Record<string, unknown>): Promise<number> {
     await this.flushAssistant();
     const payload = buildToolCallStart(callId, name, args);
     const { id } = await this.persistPayload(payload);
@@ -154,15 +189,25 @@ export class MessageStreamWriter {
     return id;
   }
 
-  async completeTool(callId, { name, args, rawResult, isError, toolCallStatus }) {
+  async completeTool(
+    callId: string,
+    opts: {
+      name?: string;
+      args?: Record<string, unknown>;
+      rawResult?: unknown;
+      isError?: boolean;
+      toolCallStatus?: string;
+    }
+  ): Promise<void> {
     const pending = this.pendingTools.get(callId);
-    const base = pending?.payload ?? buildToolCallStart(callId, name ?? 'generic', args ?? {});
+    const base =
+      pending?.payload ?? buildToolCallStart(callId, opts.name ?? 'generic', opts.args ?? {});
     const completed = buildToolCallComplete(base, {
-      name,
-      args,
-      rawResult,
-      isError,
-      toolCallStatus,
+      name: opts.name,
+      args: opts.args,
+      rawResult: opts.rawResult,
+      isError: opts.isError,
+      toolCallStatus: opts.toolCallStatus,
     });
     if (pending?.id) {
       await this.patchPayload(pending.id, completed);
@@ -172,34 +217,37 @@ export class MessageStreamWriter {
     this.pendingTools.delete(callId);
   }
 
-  async persistSystem(payload) {
+  async persistSystem(payload: SystemMessagePayload): Promise<void> {
     await this.flushAssistant();
     this.resetThinkingTokensRow();
     await this.persistPayload(payload);
   }
 
-  async persistTurnResult(payload) {
+  async persistTurnResult(payload: TurnResultPayload): Promise<void> {
     await this.flushAssistant();
     this.resetThinkingTokensRow();
     await this.persistPayload(payload);
-  }
-
-  async persistPlan(markdown) {
-    await this.flushAssistant();
-    await this.persistPayload({
-      type: 'plan',
-      markdown: markdown ?? '',
-    });
-  }
-
-  isPlanToolName(name) {
-    return PLAN_TOOL_NAMES.has(name);
   }
 
   /**
-   * @param {object} sdkMsg - Cursor stream event
+   * Persist a plan tool call's markdown as a single typed plan row.
+   * Plan tools never produce tool_call rows, and the caller only invokes this
+   * once the SDK has delivered the complete plan.
    */
-  async handleCursorEvent(sdkMsg) {
+  async persistPlan(markdown?: string | null): Promise<void> {
+    await this.flushAssistant();
+    await this.persistPayload({ type: 'plan', markdown: markdown ?? '' });
+  }
+
+  isPlanToolName(name?: string): boolean {
+    return PLAN_TOOL_NAMES.has(name ?? '');
+  }
+
+  /**
+   * Map one Cursor run-stream event to typed creates/patches.
+   * @param sdkMsg - Cursor stream event
+   */
+  async handleCursorEvent(sdkMsg: CursorStreamEvent): Promise<void> {
     await this.log(sdkMsg);
 
     if (sdkMsg.type === 'system' && sdkMsg.subtype === 'thinking_tokens') {
@@ -223,18 +271,21 @@ export class MessageStreamWriter {
 
     if (sdkMsg.type === 'tool_call') {
       if (this.isPlanToolName(sdkMsg.name)) {
-        if (sdkMsg.status === 'running') {
+        // Cursor streams plan tool calls as repeated `running` events whose args.plan grows
+        // each time; buffer them and persist a single plan row from the completed event
+        // so one plan never fans out into multiple rows.
+        if (sdkMsg.status === 'completed') {
           await this.persistPlan(planMarkdownFromToolInput(sdkMsg.args ?? {}));
         }
         return;
       }
       if (sdkMsg.status === 'running') {
-        if (!this.pendingTools.has(sdkMsg.call_id)) {
-          await this.startTool(sdkMsg.call_id, sdkMsg.name, sdkMsg.args ?? {});
+        if (!this.pendingTools.has(sdkMsg.call_id ?? '')) {
+          await this.startTool(sdkMsg.call_id ?? '', sdkMsg.name ?? 'generic', sdkMsg.args ?? {});
         }
         return;
       }
-      await this.completeTool(sdkMsg.call_id, {
+      await this.completeTool(sdkMsg.call_id ?? '', {
         name: sdkMsg.name,
         args: sdkMsg.args,
         rawResult: sdkMsg.result,
@@ -254,9 +305,10 @@ export class MessageStreamWriter {
   }
 
   /**
-   * @param {object} message - Claude agent SDK message
+   * Map one Claude agent SDK message to typed creates/patches.
+   * @param message - Claude agent SDK message
    */
-  async handleClaudeEvent(message) {
+  async handleClaudeEvent(message: ClaudeStreamEvent): Promise<void> {
     if (message.isReplay) return;
     await this.log(message);
 
@@ -266,14 +318,20 @@ export class MessageStreamWriter {
     }
 
     if (message.type === 'user') {
-      const content = message.message?.content;
+      const content = (message.message as { content?: unknown } | undefined)?.content;
       if (!Array.isArray(content)) return;
       for (const block of content) {
-        if (block.type !== 'tool_result') continue;
-        if (!this.pendingTools.has(block.tool_use_id)) continue;
-        await this.completeTool(block.tool_use_id, {
-          rawResult: block.content,
-          isError: Boolean(block.is_error),
+        const b = block as {
+          type?: string;
+          tool_use_id?: string;
+          content?: unknown;
+          is_error?: boolean;
+        };
+        if (b.type !== 'tool_result') continue;
+        if (!b.tool_use_id || !this.pendingTools.has(b.tool_use_id)) continue;
+        await this.completeTool(b.tool_use_id, {
+          rawResult: b.content,
+          isError: Boolean(b.is_error),
         });
       }
       return;
@@ -304,12 +362,15 @@ export class MessageStreamWriter {
       await this.persistSystem({
         type: 'system',
         subtype: 'status',
-        status: message.status ?? message.message ?? '',
+        status:
+          (message as { status?: string }).status ??
+          (message as { message?: string }).message ??
+          '',
       });
     }
   }
 
-  async finish() {
+  async finish(): Promise<void> {
     await this.flushAssistantPatch();
     await this.flushAssistant();
     this.resetThinkingTokensRow();

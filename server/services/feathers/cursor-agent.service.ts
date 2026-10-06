@@ -1,4 +1,12 @@
 import { Agent, AgentBusyError } from '@cursor/sdk';
+import type {
+  AgentOptions,
+  ModelParameterValue,
+  Run,
+  SDKAgent,
+  SDKCustomTool,
+  SettingSource,
+} from '@cursor/sdk';
 import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -11,7 +19,10 @@ import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustm
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 import { processCursorRunStream } from '../cursor-sdk-turn.js';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
-import { resolveTurnModel } from '../../../shared/turn-model.js';
+import {
+  isHumanUserMessage as isHumanUserMessageShared,
+  resolveTurnModel,
+} from '../../../shared/turn-model.js';
 import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
@@ -23,46 +34,81 @@ import {
   parseUserRow,
   rejectTurnMismatch,
 } from '../agent-message-dispatch.js';
-import { createMessageStreamWriter } from '../message-writer-factory.js';
-import { isHumanUserMessage as isHumanUserMessageShared } from '../../../shared/turn-model.js';
+import { createMessageStreamWriter } from '../message-writer-factory.ts';
+import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
+import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
+import type {
+  AgentApp,
+  AgentSessionRow,
+  ChatTable,
+  DbLike,
+  MessageChannel,
+  MessageRowLike,
+  QueryBuilderLike,
+} from './agent-service-types.ts';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
-/**
- * The Cursor SDK has no systemPrompt option, so Baguette injects its prompt as an
- * always-apply `.mdc` rules file. Both modes use the same filename under the
- * session cursor-dir, in per-mode folders:
- *   <cursor-dir>/build/.cursor/rules/system-prompt.mdc  — session builder prompt
- *   <cursor-dir>/review/.cursor/rules/system-prompt.mdc — reviewer prompt
- * Agent setup only ever receives its own mode folder, so an agent loads exactly
- * one prompt even though both files exist side by side. Prompt files left behind
- * by older Baguette versions (cursor-dir root, global review bucket) are never
- * pointed at by agent setup, so they are simply left alone.
- */
 const SYSTEM_PROMPT_RULE_FILENAME = 'system-prompt.mdc';
 const PROMPT_RULE_MODES = ['build', 'review'];
 
-function extractUserText(parsed) {
-  if (typeof parsed.content === 'string') return parsed.content;
-  const content = parsed.message?.content;
+/** Per-turn token usage accumulator (see turn-usage.js). */
+type TurnUsage = Omit<ReturnType<typeof emptyTurnUsage>, 'model'> & {
+  model?: string | null;
+  raw_token_usage?: unknown;
+};
+
+/** Active Cursor run state for a session/chat key. */
+type CursorSessionState = {
+  isProcessing: boolean;
+  userId: number;
+  currentRun: Run | null;
+  abortController?: AbortController;
+  writer?: MessageStreamWriter | null;
+  turnId?: number | null;
+  channel?: MessageChannel;
+};
+
+type StreamOneRunOpts = {
+  activeKey?: string | number;
+  channel?: MessageChannel;
+  writer?: MessageStreamWriter | null;
+};
+
+type StreamOneRunResult = { finishedOk: boolean; hasBackgroundTask: boolean };
+
+function extractUserText(parsed: unknown): string {
+  const p = parsed as {
+    content?: unknown;
+    message?: { content?: unknown };
+  };
+  if (typeof p.content === 'string') return p.content;
+  const content = p.message?.content;
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return expandUserContentForAgent(content);
   return '';
 }
 
 export class CursorAgentService {
+  app!: AgentApp;
+  private _activeSessions: Map<string | number, CursorSessionState>;
+
   constructor() {
     this._activeSessions = new Map();
   }
 
-  setup(app) {
+  setup(app: AgentApp) {
     this.app = app;
   }
 
   async writeAlwaysApplyRule(
-    rulesRoot,
-    { filename = SYSTEM_PROMPT_RULE_FILENAME, description, body }
-  ) {
+    rulesRoot: string,
+    {
+      filename = SYSTEM_PROMPT_RULE_FILENAME,
+      description,
+      body,
+    }: { filename?: string; description: string; body: string }
+  ): Promise<string> {
     const rulesDir = join(rulesRoot, '.cursor', 'rules');
     await mkdir(rulesDir, { recursive: true });
     await writeFile(
@@ -78,26 +124,17 @@ ${body}`,
     return rulesRoot;
   }
 
-  /**
-   * Session cursor-dir root: sits alongside the session's working directory —
-   * `.../sessions/<id>/cursor-dir` for session worktrees, alongside the shared
-   * repos dir for global sessions. Sessions without a worktree path get no
-   * rules dir (writePromptRule returns null).
-   */
-  cursorDirForSession(session) {
+  cursorDirForSession(session: AgentSessionRow): string | null {
     const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
     if (!absoluteCwd) return null;
     return join(dirname(absoluteCwd), 'cursor-dir');
   }
 
-  /**
-   * Write the always-apply system prompt for one agent mode ('build' | 'review') and
-   * return the rules root to pass as that agent's `dirs` entry. Each agent setup
-   * only ever receives its own mode folder, so an agent loads exactly one prompt
-   * even though both files exist side by side. Returns null for sessions without
-   * a worktree path — no rules file is written for them.
-   */
-  async writePromptRule(session, mode, { description, body }) {
+  async writePromptRule(
+    session: AgentSessionRow,
+    mode: string,
+    { description, body }: { description: string; body: string }
+  ): Promise<string | null> {
     if (!PROMPT_RULE_MODES.includes(mode)) {
       throw new Error(`Unknown cursor prompt mode: ${mode}`);
     }
@@ -108,9 +145,9 @@ ${body}`,
     return rulesRoot;
   }
 
-  async resolveApiKey(session) {
+  async resolveApiKey(session: AgentSessionRow): Promise<string | undefined> {
     const user = await this.app.service('users').get(session.user_id, {});
-    let repoApiKey = null;
+    let repoApiKey: string | null = null;
     if (session.repo_id) {
       const userRepos = await this.app.service('user-repos').find({
         query: { repo_id: session.repo_id },
@@ -122,20 +159,34 @@ ${body}`,
     return repoApiKey || user.cursor_api_key || undefined;
   }
 
-  parseModelParams(modelParams) {
+  parseModelParams(modelParams: unknown): ModelParameterValue[] | null {
     if (!modelParams) return null;
-    if (typeof modelParams !== 'string') return modelParams;
+    if (typeof modelParams !== 'string') return modelParams as ModelParameterValue[];
     try {
-      return JSON.parse(modelParams);
+      return JSON.parse(modelParams) as ModelParameterValue[];
     } catch {
       return null;
     }
   }
 
   async buildAgentOptions(
-    session,
-    { customTools, settingSources = ['project'], dirs, model, modelParams, apiKey } = {}
-  ) {
+    session: AgentSessionRow,
+    {
+      customTools,
+      settingSources = ['project'],
+      dirs,
+      model,
+      modelParams,
+      apiKey,
+    }: {
+      customTools?: unknown;
+      settingSources?: string[];
+      dirs?: string[];
+      model?: string | null;
+      modelParams?: unknown;
+      apiKey?: string | undefined;
+    } = {}
+  ): Promise<AgentOptions> {
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
     const resolvedApiKey = apiKey !== undefined ? apiKey : await this.resolveApiKey(session);
     const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
@@ -143,18 +194,18 @@ ${body}`,
       apiKey: resolvedApiKey,
       local: {
         cwd,
-        settingSources,
+        settingSources: settingSources as unknown as SettingSource[],
         dirs: dirs ?? [],
-        customTools: resolvedTools,
+        customTools: resolvedTools as unknown as Record<string, SDKCustomTool>,
         stateRoot: join(DATA_DIR, 'cursor-sdk-store'),
       },
-    };
+    } as AgentOptions;
     const modelId = model ?? null;
     if (modelId) {
       let params = this.parseModelParams(modelParams);
       try {
         const user = await this.app.service('users').get(session.user_id, {});
-        let repo = null;
+        let repo: Record<string, unknown> | null = null;
         if (session.repo_id) {
           const userRepos = await this.app.service('user-repos').find({
             query: { repo_id: session.repo_id },
@@ -168,12 +219,12 @@ ${body}`,
         params = resolveCursorAgentModelParams({
           models,
           modelId,
-          modelParams: params ?? modelParams,
+          modelParams: (params ?? modelParams) as string | ModelParameterValue[] | null | undefined,
           cursorModelPrefs: prefs,
         });
       } catch (err) {
         logger.warn(
-          { sessionId: session.id, modelId, err: err.message },
+          { sessionId: session.id, modelId, err: (err as Error).message },
           'cursor-agent: could not resolve model params from registry'
         );
       }
@@ -182,17 +233,19 @@ ${body}`,
     return agentOptions;
   }
 
-  async handleTableMessageCreated(row, table) {
+  async handleTableMessageCreated(row: MessageRowLike, table: ChatTable) {
     if (row.type !== 'user') return;
 
     const parsed = parseUserRow(row);
     if (!parsed || !isDispatchableUserMessage(parsed)) return;
 
     const sessionId = row.session_id;
-    const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
+    const session = (await (this.app.get('db') as DbLike)('sessions')
+      .where({ id: sessionId })
+      .first()) as AgentSessionRow | undefined;
     if (!session || session.archived_at) return;
 
-    const channel = table === 'session-review-messages' ? 'review' : 'chat';
+    const channel: MessageChannel = table === 'session-review-messages' ? 'review' : 'chat';
     const sdk = channel === 'review' ? session.review_agent_sdk : session.agent_sdk;
     if (sdk !== 'cursor') return;
 
@@ -225,25 +278,24 @@ ${body}`,
     }
 
     const turnModel = resolveTurnModel(row, session);
-    const meta = { turnId: row.turn_id, channel, activeKey };
+    const meta = { turnId: row.turn_id as number | null, channel, activeKey };
     attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel, meta), {
       userId: session.user_id,
       sessionId: session.id,
     }).catch((err) => {
-      logger.error({ sessionId, err: err.message }, 'cursor-agent turn failed');
+      logger.error({ sessionId, err: (err as Error).message }, 'cursor-agent turn failed');
     });
   }
 
   /** @deprecated use handleTableMessageCreated */
-  async onMessageCreated(message) {
+  async onMessageCreated(message: MessageRowLike) {
     return this.handleTableMessageCreated(message, 'messages');
   }
 
-  async _prepareGlobalRulesDir(session) {
+  async _prepareGlobalRulesDir(session: AgentSessionRow): Promise<string | null> {
     if (!session.worktree_path) return null;
     const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
     const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
-    // DB rows don't have absolute_worktree_path (added by the Feathers serializer), so inject it.
     const systemPrompt = await buildSystemPromptAppend(
       {
         ...session,
@@ -257,15 +309,15 @@ ${body}`,
     });
   }
 
-  async _getPluginDirs(session) {
+  async _getPluginDirs(session: AgentSessionRow): Promise<string[]> {
     if (!session.plugins) return [];
     try {
-      const pluginIds = JSON.parse(session.plugins);
+      const pluginIds: unknown = JSON.parse(session.plugins);
       if (!Array.isArray(pluginIds) || pluginIds.length === 0) return [];
-      const pluginRows = await this.app.get('db')('plugins').whereIn('id', pluginIds);
-      const dirs = [];
+      const pluginRows = await (this.app.get('db') as DbLike)('plugins').whereIn('id', pluginIds);
+      const dirs: string[] = [];
       for (const p of pluginRows) {
-        const pluginRoot = resolveDataDirRelativePath(p.local_path);
+        const pluginRoot = resolveDataDirRelativePath(p.local_path as string) ?? '';
         try {
           await access(join(pluginRoot, '.cursor', 'rules'));
           dirs.push(pluginRoot);
@@ -279,9 +331,20 @@ ${body}`,
     }
   }
 
-  async createOrResumeAgent(session, { agentOptions, resumeAgentId, persistAgentId }) {
+  async createOrResumeAgent(
+    session: AgentSessionRow,
+    {
+      agentOptions,
+      resumeAgentId,
+      persistAgentId,
+    }: {
+      agentOptions: AgentOptions;
+      resumeAgentId?: string | null;
+      persistAgentId?: (agentId: string) => Promise<unknown> | unknown;
+    }
+  ): Promise<SDKAgent> {
     const sessionId = session.id;
-    let agent;
+    let agent: SDKAgent | undefined;
     if (resumeAgentId) {
       logger.info(
         { sessionId, storedAgentId: resumeAgentId },
@@ -291,7 +354,7 @@ ${body}`,
         agent = await Agent.resume(resumeAgentId, agentOptions);
       } catch (err) {
         logger.warn(
-          { sessionId, storedAgentId: resumeAgentId, err: err.message },
+          { sessionId, storedAgentId: resumeAgentId, err: (err as Error).message },
           'cursor-agent: resume failed, will create fresh agent'
         );
       }
@@ -304,30 +367,38 @@ ${body}`,
     return agent;
   }
 
-  async _sessionAgentOptions(session, turnModel = {}) {
+  async _sessionAgentOptions(
+    session: AgentSessionRow,
+    turnModel: { model?: string | null; modelParams?: unknown } = {}
+  ) {
     const user = await this.app.service('users').get(session.user_id, {});
     const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
     const pluginDirs = await this._getPluginDirs(session);
-    const dirs = [...(baguetteRulesDir ? [baguetteRulesDir] : []), ...pluginDirs];
     return this.buildAgentOptions(session, {
-      dirs,
+      dirs: [baguetteRulesDir, ...pluginDirs].filter((d): d is string => Boolean(d)),
       model: turnModel.model ?? session.model ?? user.cursor_model ?? null,
       modelParams: turnModel.modelParams ?? session.model_params,
     });
   }
 
-  async _sendWithBusyRetry(agent, session, userText, sendOptions = {}) {
+  async _sendWithBusyRetry(
+    agent: SDKAgent,
+    session: AgentSessionRow,
+    userText: string,
+    sendOptions: Record<string, unknown> = {}
+  ): Promise<Run> {
     try {
-      return await agent.send(userText, sendOptions);
+      return await agent.send(userText, sendOptions as never);
     } catch (err) {
       const isActiveRunError =
-        err instanceof AgentBusyError || err?.message?.includes('already has active run');
+        err instanceof AgentBusyError ||
+        (err as Error)?.message?.includes('already has active run');
       if (!isActiveRunError) throw err;
       const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
       const { items } = await Agent.listRuns(agent.agentId, { cwd });
       const stale = items.find((r) => r.status === 'running');
       if (stale) await stale.cancel();
-      return agent.send(userText, sendOptions);
+      return agent.send(userText, sendOptions as never);
     }
   }
 
@@ -339,26 +410,40 @@ ${body}`,
     session,
     userText,
     agentOptions,
+    writer,
     resumeAgentId,
     persistAgentId,
-    persistMessage,
-    patchMessage,
     persistStatus,
     onStatus,
     onUsage,
     sendOptions = {},
     activeKey,
     abortController,
-  }) {
+  }: {
+    session: AgentSessionRow;
+    userText: string;
+    agentOptions: AgentOptions;
+    /** Stream writer used to persist typed messages for this turn. */
+    writer: MessageStreamWriter;
+    resumeAgentId?: string | null;
+    persistAgentId?: (agentId: string) => Promise<unknown> | unknown;
+    persistStatus?: (text: string) => Promise<void>;
+    onStatus?: (sdkMsg: unknown) => Promise<{ break: boolean; finishedOk?: boolean } | void>;
+    onUsage?: (sdkMsg: unknown) => void;
+    sendOptions?: Record<string, unknown>;
+    activeKey?: string | number;
+    abortController?: AbortController;
+  }): Promise<{ outcome: 'completed' | 'failed' | 'stopped'; agent?: SDKAgent; run?: Run }> {
     const key = activeKey ?? session.id;
-    const sessionState = {
+    const controller = abortController ?? new AbortController();
+    const sessionState: CursorSessionState = {
       isProcessing: true,
       userId: session.user_id,
       currentRun: null,
-      abortController: abortController ?? new AbortController(),
+      abortController: controller,
     };
     this._activeSessions.set(key, sessionState);
-    let outcome = 'failed';
+    let outcome: 'completed' | 'failed' | 'stopped' = 'failed';
     try {
       const agent = await this.createOrResumeAgent(session, {
         agentOptions,
@@ -368,25 +453,27 @@ ${body}`,
       const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
       sessionState.currentRun = run;
       const { finishedOk } = await processCursorRunStream(run, {
-        persistMessage,
-        patchMessage,
+        writer,
         onUsage,
         onStatus,
-        abortSignal: sessionState.abortController.signal,
+        abortSignal: controller.signal,
       });
       outcome = finishedOk ? 'completed' : 'failed';
       return { outcome, agent, run };
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        logger.error({ sessionId: session.id, err: err.message }, 'Cursor session stream error');
+      if ((err as Error).name !== 'AbortError') {
+        logger.error(
+          { sessionId: session.id, err: (err as Error).message },
+          'Cursor session stream error'
+        );
         try {
-          await persistStatus?.(err.message);
+          await persistStatus?.((err as Error).message);
         } catch {
           // ignore secondary errors
         }
         this.app.service('sessions').emit('app:error', {
           sessionId: session.id,
-          message: err.message,
+          message: (err as Error).message,
           user_id: session.user_id,
         });
         outcome = 'failed';
@@ -399,32 +486,32 @@ ${body}`,
     }
   }
 
-  async stopTurn(activeKey) {
+  async stopTurn(activeKey: string | number): Promise<void> {
     const session = this._activeSessions.get(activeKey);
-    if (session) {
-      try {
-        session.abortController?.abort();
-        await session.currentRun?.cancel();
-      } catch {
-        // ignore cancellation errors
-      }
+    if (!session) return;
+    try {
+      session.abortController?.abort();
+      await session.currentRun?.cancel();
+    } catch {
+      // ignore cancellation errors
     }
     this._activeSessions.delete(activeKey);
   }
 
-  async _runTurn(session, parsed, turnModel = {}, meta = {}) {
+  async _runTurn(
+    session: AgentSessionRow,
+    parsed: unknown,
+    turnModel: { model?: string | null; modelParams?: unknown } = {},
+    meta: { turnId?: number | null; channel?: MessageChannel; activeKey?: string | number } = {}
+  ): Promise<void> {
     const sessionId = session.id;
     const userId = session.user_id;
-    const channel = meta.channel ?? 'chat';
+    const channel: MessageChannel = meta.channel ?? 'chat';
     const activeKey = meta.activeKey ?? sessionId;
     const turnId = meta.turnId ?? null;
     let turnFinishedOk = false;
-    // The user stopped the turn (sessions.stop); don't auto-dispatch queued messages.
-    let userStopped = false;
-    // The turn ended without finishing cleanly (follow-up/wake-up run died silently);
-    // the session was settled out of a non-terminal status and queued messages can go.
-    let turnEndedUnexpectedly = false;
-    const db = this.app.get('db');
+
+    const db = this.app.get('db') as DbLike;
     if (turnId != null) {
       const activeField =
         channel === 'review' ? { active_review_turn_id: turnId } : { active_chat_turn_id: turnId };
@@ -442,17 +529,16 @@ ${body}`,
           })
         : null;
 
-    const sessionState = {
+    const sessionState: CursorSessionState = {
       isProcessing: true,
       userId,
       currentRun: null,
-      abortController: new AbortController(),
       writer,
       turnId,
       channel,
     };
     this._activeSessions.set(activeKey, sessionState);
-    const turnUsage = emptyTurnUsage();
+    const turnUsage = emptyTurnUsage() as TurnUsage;
     try {
       if (channel !== 'review') {
         await this.app
@@ -487,7 +573,7 @@ ${body}`,
         },
       });
       const userText = extractUserText(parsed);
-      const sendOptions = {};
+      const sendOptions: Record<string, unknown> = {};
       if (session.plan_mode) {
         sendOptions.mode = 'plan';
       }
@@ -505,7 +591,7 @@ ${body}`,
 
       if (mainFinished) {
         let allDone = true;
-        let lastCompletedRunId = run.id;
+        let lastCompletedRunId: string = run.id;
 
         // If a background task was spawned, poll for the agent-scheduled follow-up run.
         if (hasBackgroundTask) {
@@ -549,74 +635,59 @@ ${body}`,
               .service('sessions')
               .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
           }
-        } else if (!userStopped) {
-          // A follow-up or wake-up run ended without a terminal status (e.g. the SDK
-          // stream died silently), so the session may still be marked 'running' or
-          // 'running' with nothing left to run. Settle it so new messages dispatch
-          // instead of queueing forever, and let onTurnComplete drain the queue below.
-          // A 'stopped' row (a user stop racing the send failure) is left alone.
-          const current = await db('sessions').where({ id: sessionId }).first();
-          const status = current?.status;
-          if (status === 'running') {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-            await this._persistStatusMessage(
-              sessionId,
-              userId,
-              'The turn ended unexpectedly.'
-            ).catch(() => {});
-          }
-          if (status !== 'stopped') turnEndedUnexpectedly = true;
         }
       }
 
       if (turnFinishedOk && channel !== 'review') {
         await this._recordTurnUsage(session, agent, turnUsage, { turnModel }).catch((err) =>
-          logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to record turn usage')
+          logger.warn(
+            { sessionId, err: (err as Error).message },
+            'cursor-agent: failed to record turn usage'
+          )
         );
       }
     } catch (err) {
-      if (err.name !== 'AbortError') {
+      if ((err as Error).name !== 'AbortError') {
         handleAppError(this.app, err, { userId, sessionId });
-        logger.error({ sessionId, err: err.message }, 'Cursor session stream error');
+        logger.error({ sessionId, err: (err as Error).message }, 'Cursor session stream error');
         try {
           if (channel === 'review') {
             await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
               sdk: 'cursor',
             });
-            await this.app.service('session-review')._persistStatus(session, err.message);
+            await this.app
+              .service('session-review')
+              ._persistStatus(session, (err as Error).message);
           } else {
             await this.app
               .service('sessions')
               .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-            await this._persistStatusMessage(sessionId, userId, err.message);
+            await this._persistStatusMessage(sessionId, userId, (err as Error).message);
           }
         } catch {
           // ignore secondary errors
         }
         this.app
           .service('sessions')
-          .emit('app:error', { sessionId, message: err.message, user_id: userId });
+          .emit('app:error', { sessionId, message: (err as Error).message, user_id: userId });
       }
     } finally {
       const clearField =
         channel === 'review' ? { active_review_turn_id: null } : { active_chat_turn_id: null };
-      await db('sessions')
-        .where({ id: sessionId })
-        .update(clearField)
-        .catch(() => {});
+      await (db('sessions').where({ id: sessionId }).update(clearField) as QueryBuilderLike).catch(
+        () => {}
+      );
       this._activeSessions.delete(activeKey);
     }
 
-    // Agent is fully disposed — safe to start the next queued message as a fresh turn.
-    // Runs on clean completion and on the unexpected-end recovery path (never after a
-    // user stop), so queued messages don't sit forever when a run dies silently.
-    if ((turnFinishedOk || turnEndedUnexpectedly) && channel !== 'review') {
+    if (turnFinishedOk && channel !== 'review') {
       try {
         await this.app.service('sessions').onTurnComplete(sessionId);
       } catch (err) {
-        logger.warn({ sessionId, err: err.message }, 'cursor-agent: failed to send queued message');
+        logger.warn(
+          { sessionId, err: (err as Error).message },
+          'cursor-agent: failed to send queued message'
+        );
       }
     }
   }
@@ -626,10 +697,16 @@ ${body}`,
    * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message.
    * FINISHED is left for the caller to handle (so follow-up runs can be chained first).
    */
-  async _streamOneRun(session, run, turnUsage = emptyTurnUsage(), turnModel = {}, streamOpts = {}) {
+  async _streamOneRun(
+    session: AgentSessionRow,
+    run: Run,
+    turnUsage: TurnUsage = emptyTurnUsage() as TurnUsage,
+    turnModel: { model?: string | null; modelParams?: unknown } = {},
+    streamOpts: StreamOneRunOpts = {}
+  ): Promise<StreamOneRunResult> {
     const sessionId = session.id;
     const userId = session.user_id;
-    const channel = streamOpts.channel ?? 'chat';
+    const channel: MessageChannel = streamOpts.channel ?? 'chat';
     const activeKey = streamOpts.activeKey ?? session.id;
     const sessionState = this._activeSessions.get(activeKey);
     const writer =
@@ -645,11 +722,16 @@ ${body}`,
 
     return processCursorRunStream(run, {
       writer,
-      onUsage: (sdkMsg) => {
+      onUsage: (sdkMsg: { usage?: unknown }) => {
         addTokenUsage(turnUsage, sdkMsg.usage);
         turnUsage.model = run.model?.id ?? turnModel.model ?? session.model ?? turnUsage.model;
       },
-      onStatus: async (sdkMsg) => {
+      onStatus: async (sdkMsg: {
+        status?: string;
+        message?: string;
+        agent_id?: string;
+        run_id?: string;
+      }) => {
         const { status } = sdkMsg;
         if (status === 'FINISHED') {
           return { break: true, finishedOk: true };
@@ -665,7 +747,7 @@ ${body}`,
             },
             'cursor-agent received terminal status'
           );
-          let statusMsg;
+          let statusMsg: string;
           if (status === 'EXPIRED') {
             statusMsg =
               'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
@@ -695,7 +777,11 @@ ${body}`,
    * Polls Agent.listRuns for a follow-up run created by a background task.
    * Returns the run if found within the timeout, null otherwise.
    */
-  async _findFollowUpRun(session, agent, completedRunId) {
+  async _findFollowUpRun(
+    session: AgentSessionRow,
+    agent: SDKAgent,
+    completedRunId: string
+  ): Promise<Run | null> {
     const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
     const POLLS = 8;
     const DELAY_MS = 2000;
@@ -708,7 +794,7 @@ ${body}`,
         if (followUp) return followUp;
       } catch (err) {
         logger.warn(
-          { sessionId: session.id, err: err.message },
+          { sessionId: session.id, err: (err as Error).message },
           'cursor-agent: error checking for follow-up run'
         );
         return null;
@@ -728,12 +814,22 @@ ${body}`,
    *
    * `kind: 'review'` tags reviewer usage separately from session-chat turns.
    */
-  async recordTurnUsage(session, agent, turnUsage, options = {}) {
+  async recordTurnUsage(
+    session: AgentSessionRow,
+    agent: SDKAgent,
+    turnUsage: TurnUsage,
+    options: { kind?: string; turnModel?: { model?: string | null } } = {}
+  ): Promise<void> {
     return this._recordTurnUsage(session, agent, turnUsage, options);
   }
 
-  async _recordTurnUsage(session, agent, turnUsage, { kind, turnModel } = {}) {
-    const db = this.app.get('db');
+  async _recordTurnUsage(
+    session: AgentSessionRow,
+    _agent: SDKAgent,
+    turnUsage: TurnUsage,
+    { kind, turnModel }: { kind?: string; turnModel?: { model?: string | null } } = {}
+  ): Promise<void> {
+    const db = this.app.get('db') as DbLike;
     const sessionId = session.id;
     const userId = session.user_id;
 
@@ -771,7 +867,7 @@ ${body}`,
       .where({ id: sessionId })
       .select('total_cost_usd')
       .first();
-    const prevSessionCost = parseFloat(currentSession?.total_cost_usd ?? 0);
+    const prevSessionCost = parseFloat(String(currentSession?.total_cost_usd ?? 0));
     await this.app
       .service('sessions')
       .patch(
@@ -782,17 +878,21 @@ ${body}`,
   }
 
   /** Per-turn USD from token counts when the model is in our pricing table; else 0. */
-  _turnCostUsd(session, turnUsage, { kind, turnModel } = {}) {
+  _turnCostUsd(
+    session: AgentSessionRow,
+    turnUsage: TurnUsage,
+    { kind, turnModel }: { kind?: string; turnModel?: { model?: string | null } } = {}
+  ): number {
     return estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
   }
 
-  async _persistMessage(sessionId, userId, message) {
+  async _persistMessage(sessionId: number, userId: number, message: Record<string, unknown>) {
     return await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: message.type,
-        subtype: message.subtype ?? null,
-        uuid: message.uuid ?? null,
+        subtype: (message.subtype as string | undefined) ?? null,
+        uuid: (message.uuid as string | undefined) ?? null,
         message_json: JSON.stringify(message),
         total_cost_usd: null,
       },
@@ -800,8 +900,8 @@ ${body}`,
     );
   }
 
-  async _persistStatusMessage(sessionId, userId, statusText) {
-    const payload = { type: 'system', subtype: 'status', status: statusText };
+  async _persistStatusMessage(sessionId: number, userId: number, statusText: string) {
+    const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
     await this.app.service('messages').create(
       {
         session_id: sessionId,
@@ -813,19 +913,19 @@ ${body}`,
     );
   }
 
-  async stopSession(sessionId) {
+  async stopSession(sessionId: number) {
     await this.stopTurn(sessionId);
   }
 
-  getActiveSession(sessionId) {
+  getActiveSession(sessionId: string | number): CursorSessionState | null {
     return this._activeSessions.get(sessionId) ?? null;
   }
 
-  async get(id) {
+  async get(id: number) {
     return this.getActiveSession(id);
   }
 
-  async deleteAgent(session) {
+  async deleteAgent(session: AgentSessionRow | null | undefined): Promise<void> {
     if (!session?.cursor_agent_id) return;
     const sessionId = session.id;
     const cwd = resolveDataDirRelativePath(session.worktree_path) || DATA_DIR;
@@ -844,7 +944,12 @@ ${body}`,
     }
   }
 
-  async generateSessionMetadata(initialPrompt, shortId = '', user, repo = null) {
+  async generateSessionMetadata(
+    initialPrompt: string,
+    shortId = '',
+    user: { id?: number } | null = null,
+    repo: { id?: number | null } | null = null
+  ): Promise<{ label: string; branchName: string }> {
     const fallbackBranch = `task-${shortId}`;
     const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
 - "label": very short label (max 50 chars) summarizing the task
@@ -857,7 +962,7 @@ Task: ${initialPrompt}`;
 
     const fullUser = user?.id ? await this.app.service('users').get(user.id, {}) : null;
 
-    let repoApiKey = null;
+    let repoApiKey: string | null = null;
     if (repo?.id && user?.id) {
       const userRepos = await this.app.service('user-repos').find({
         query: { repo_id: repo.id },
@@ -872,23 +977,26 @@ Task: ${initialPrompt}`;
       apiKey,
       model: { id: CURSOR_CHEAP_MODEL_ID },
       local: { settingSources: [] },
-    });
+    } as AgentOptions);
 
     const run = await agent.send(prompt);
     let collectedText = '';
 
     for await (const sdkMsg of run.stream()) {
       if (sdkMsg.type === 'assistant') {
-        for (const block of sdkMsg.message.content) {
-          if (block.type === 'text') collectedText += block.text;
+        const content = (
+          sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
+        ).message?.content;
+        for (const block of content ?? []) {
+          if (block.type === 'text') collectedText += block.text ?? '';
         }
       }
       if (
         sdkMsg.type === 'status' &&
-        (sdkMsg.status === 'FINISHED' ||
-          sdkMsg.status === 'ERROR' ||
-          sdkMsg.status === 'CANCELLED' ||
-          sdkMsg.status === 'EXPIRED')
+        (sdkMsg as { status?: string }).status &&
+        ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
+          (sdkMsg as { status?: string }).status as string
+        )
       ) {
         break;
       }
@@ -901,7 +1009,7 @@ Task: ${initialPrompt}`;
           .replace(/^```(?:json)?\n?/, '')
           .replace(/\n?```$/, '')
           .trim();
-        const parsed = JSON.parse(jsonText);
+        const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
         label = (parsed.label || '').slice(0, 80);
         branchName = (parsed.branch || fallbackBranch)
           .replace(/[^a-z0-9-]/g, '-')
@@ -916,7 +1024,7 @@ Task: ${initialPrompt}`;
   }
 }
 
-export function registerCursorAgentService(app, path = 'cursor-agent') {
+export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent') {
   const service = new CursorAgentService();
   service.setup(app);
   app.use(path, service, {

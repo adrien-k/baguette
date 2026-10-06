@@ -13,7 +13,7 @@ import { parseCursorRawTokenUsage } from '../../shared/cursor-token-adjustment.j
  *
  * @param {Record<string, unknown>} turnUsage token fields + optional `model`
  * @param {Record<string, unknown>} session sessions row (model / review_model / *_params)
- * @param {{ kind?: string|null, turnModel?: { model?: string, modelParams?: string } }} [options]
+ * @param {{ kind?: string|null, turnModel?: { model?: string|null, modelParams?: unknown } }} [options]
  * @returns {number}
  */
 export function estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel } = {}) {

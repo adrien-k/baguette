@@ -6,15 +6,15 @@ import { toastError } from '../../utils/toastError.jsx';
 import { useGetReviewMessages } from '../../hooks/useGetReviewMessages.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import ChatMessagesViewport from '../../components/ChatMessagesViewport.jsx';
-import ChatMessage from '../../components/ChatMessage.jsx';
-import ChatWorkSummary from '../../components/chat/ChatWorkSummary.jsx';
+import ChatMessage from '../../components/ChatMessage.tsx';
+import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import {
   collectRunningBashToolsForDock,
   runningBashToolIds,
 } from '@baguette/shared/running-tools.js';
-import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
-import { parseMessageRow } from '@baguette/shared/parse-message-row.js';
+import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.tsx';
+import { parseMessageRow } from '@baguette/shared/parse-message-row.ts';
 
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);

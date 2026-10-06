@@ -2,7 +2,25 @@ import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { messageModelLabel } from '../../utils/messageModelLabel.js';
 
-export default function BaguetteBlock({ message, models = [], session }) {
+/**
+ * A `user` message Baguette wrote on the session's behalf — typed rows carry a
+ * flat `content` string.
+ */
+export default function BaguetteBlock({
+  message,
+  models = [],
+  session,
+}: {
+  message: {
+    title?: string | null;
+    content?: string;
+    created_at?: string | null;
+    model?: string | null;
+    model_params?: unknown;
+  };
+  models?: { id?: string; label?: string; name?: string }[];
+  session?: { model?: string | null; model_params?: unknown } | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const title = message.title || 'Baguette';
   const turnModelLabel = messageModelLabel({
@@ -10,10 +28,7 @@ export default function BaguetteBlock({ message, models = [], session }) {
     modelParams: message.model_params ?? session?.model_params,
     models,
   });
-  const content =
-    typeof message.message?.content === 'string'
-      ? message.message.content
-      : JSON.stringify(message.message?.content);
+  const content = typeof message.content === 'string' ? message.content : '';
 
   return (
     <div className="ml-4 sm:ml-8 bg-soft-accent/20 rounded-lg border border-brand/40 overflow-hidden">

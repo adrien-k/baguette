@@ -80,7 +80,7 @@ import ReviewInProgressBadge, { isReviewInProgress } from '../components/ReviewI
 import { SessionLoopBadge, SessionLoopIcon } from '../components/SessionLoopIndicator.jsx';
 import { BANNER_DANGER } from '../utils/ui.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
-import { parseMessageRow } from '@baguette/shared/parse-message-row.js';
+import { parseMessageRow } from '@baguette/shared/parse-message-row.ts';
 
 const SIDE_PANEL_WIDTH_DEFAULT = 360;
 const SIDE_PANEL_WIDTH_MIN = 240;
@@ -102,38 +102,47 @@ function clampSidePanelWidth(width, viewportWidth, { sessionsSidebarOpen }) {
   return Math.round(Math.min(max, Math.max(SIDE_PANEL_WIDTH_MIN, width)));
 }
 
-/** Chat display enrichments (TodoWrite collapse, sub-agent activity). Typed rows need no tool-result stitch. */
+/** Chat display enrichments (TodoWrite collapse, sub-agent activity). */
 function enrichChatMessages(messages) {
-  // Find the last TodoWrite block reference so we can hide all previous ones
+  let lastTodoWriteKey = null;
   let lastTodoWriteBlock = null;
   for (const msg of messages) {
-    if (msg.type !== 'assistant' || !msg.message?.content) continue;
-    for (const b of msg.message.content) {
-      if (b.type === 'tool_use' && b.name === 'TodoWrite') lastTodoWriteBlock = b;
+    if (msg.type === 'tool_call' && (msg.name === 'TodoWrite' || msg.kind === 'todo')) {
+      lastTodoWriteKey = msg.call_id ?? `tool-${msg.id}`;
+    }
+    if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
+      for (const b of msg.message.content) {
+        if (b.type === 'tool_use' && b.name === 'TodoWrite') lastTodoWriteBlock = b;
+      }
     }
   }
-  const withHiddenTodos = !lastTodoWriteBlock
-    ? messages
-    : messages.map((msg) => {
-        if (msg.type !== 'assistant' || !msg.message?.content) return msg;
-        if (
-          !msg.message.content.some(
-            (b) => b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock
+  const withHiddenTodos =
+    !lastTodoWriteBlock && !lastTodoWriteKey
+      ? messages
+      : messages.map((msg) => {
+          if (msg.type === 'tool_call' && msg.name === 'TodoWrite' && lastTodoWriteKey) {
+            const key = msg.call_id ?? `tool-${msg.id}`;
+            if (key !== lastTodoWriteKey) return { ...msg, _hidden: true };
+          }
+          if (msg.type !== 'assistant' || !msg.message?.content) return msg;
+          if (
+            !msg.message.content.some(
+              (b) => b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock
+            )
           )
-        )
-          return msg;
-        return {
-          ...msg,
-          message: {
-            ...msg.message,
-            content: msg.message.content.map((b) => {
-              if (b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock)
-                return { ...b, _hidden: true };
-              return b;
-            }),
-          },
-        };
-      });
+            return msg;
+          return {
+            ...msg,
+            message: {
+              ...msg.message,
+              content: msg.message.content.map((b) => {
+                if (b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock)
+                  return { ...b, _hidden: true };
+                return b;
+              }),
+            },
+          };
+        });
 
   // Collect sub-agent activity lines per Task/Agent tool_use_id
   const taskActivities = new Map(); // tool_use_id -> string[]
@@ -170,6 +179,8 @@ function enrichChatMessages(messages) {
 
   return withHiddenTodos
     .filter((msg) => {
+      if (msg.type === 'tool_result_carrier') return false;
+      if (msg._hidden) return false;
       // Remove sub-agent messages from the main chat view
       if (msg.type === 'assistant' && msg.parent_tool_use_id) return false;
       if (msg.type === 'system' && SUB_AGENT_SYSTEM_SUBTYPES.has(msg.subtype)) return false;

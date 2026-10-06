@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { MessageStreamWriter } from '../message-stream-writer.js';
+import { MessageStreamWriter } from '../message-stream-writer.ts';
 
 describe('MessageStreamWriter', () => {
   afterEach(() => {
@@ -20,7 +20,7 @@ describe('MessageStreamWriter', () => {
     expect(appendRaw).toHaveBeenCalledWith({ type: 'test', value: 1 });
   });
 
-  it('persists ExitPlanMode as a plan row instead of tool_call', async () => {
+  it('persists ExitPlanMode as a single plan row instead of tool_call', async () => {
     const createRow = vi.fn().mockResolvedValue({ id: 10 });
     const writer = new MessageStreamWriter({
       sessionId: 1,
@@ -92,6 +92,52 @@ describe('MessageStreamWriter', () => {
       estimated_tokens_delta: 4,
     });
     expect(patch.subtype).toBe('thinking_tokens');
+  });
+
+  it('buffers repeated createPlan running events into one plan row', async () => {
+    const plan = '**Context:** the README needs a second joke.\n\n**Changes**\n\nEdit README.md.';
+    const createRow = vi.fn().mockResolvedValue({ id: 11 });
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 3,
+      createRow,
+      patchRow: vi.fn(),
+    });
+
+    await writer.handleCursorEvent({
+      type: 'tool_call',
+      call_id: 'call_plan',
+      name: 'createPlan',
+      status: 'running',
+      args: { plan: '' },
+    });
+    await writer.handleCursorEvent({
+      type: 'tool_call',
+      call_id: 'call_plan',
+      name: 'createPlan',
+      status: 'running',
+      args: { plan: '**Context:** the README needs' },
+    });
+    await writer.handleCursorEvent({
+      type: 'tool_call',
+      call_id: 'call_plan',
+      name: 'createPlan',
+      status: 'running',
+      args: { plan: '**Context:** the README needs a second joke.' },
+    });
+    await writer.handleCursorEvent({
+      type: 'tool_call',
+      call_id: 'call_plan',
+      name: 'createPlan',
+      status: 'completed',
+      args: { plan },
+      result: { status: 'success', value: {} },
+    });
+
+    expect(createRow).toHaveBeenCalledTimes(1);
+    expect(createRow.mock.calls[0][0].type).toBe('plan');
+    const payload = JSON.parse(createRow.mock.calls[0][0].message_json);
+    expect(payload).toEqual({ type: 'plan', markdown: plan });
   });
 
   it('debounces assistant text patches while streaming', async () => {

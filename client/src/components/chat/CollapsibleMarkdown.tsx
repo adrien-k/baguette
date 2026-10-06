@@ -4,7 +4,19 @@ import { CHAT_CONTENT_PREVIEW_LINES, splitPreviewLines } from '../../utils/chatC
 
 const TOGGLE_CLASS = 'mt-1 text-[11px] text-faint hover:text-secondary transition-colors';
 
-function MoreLinesControl({ remaining, onExpand, onCollapse, expanded, simpleToggle = false }) {
+function MoreLinesControl({
+  remaining,
+  onExpand,
+  onCollapse,
+  expanded,
+  simpleToggle = false,
+}: {
+  remaining: number;
+  onExpand: () => void;
+  onCollapse: () => void;
+  expanded: boolean;
+  simpleToggle?: boolean;
+}) {
   if (remaining <= 0) return null;
   if (simpleToggle) {
     return (
@@ -43,6 +55,11 @@ export default function CollapsibleMarkdown({
   previewLines = CHAT_CONTENT_PREVIEW_LINES,
   hardBreaks = false,
   simpleToggle = false,
+}: {
+  children?: string | null;
+  previewLines?: number;
+  hardBreaks?: boolean;
+  simpleToggle?: boolean;
 }) {
   const text = children ?? '';
   const [expanded, setExpanded] = useState(false);

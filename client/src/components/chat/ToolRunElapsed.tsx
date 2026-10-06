@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatTaskDuration } from '../../utils/dates.js';
 
-function useNowTick(intervalMs = 1000) {
+function useNowTick(intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), intervalMs);
@@ -14,6 +14,9 @@ function useNowTick(intervalMs = 1000) {
 export default function ToolRunElapsed({
   startedAt,
   className = 'text-faint text-xs font-mono shrink-0',
+}: {
+  startedAt?: string | number | null;
+  className?: string;
 }) {
   const now = useNowTick(1000);
   if (!startedAt) return null;

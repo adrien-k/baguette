@@ -13,7 +13,7 @@ import { registerSessionIssuesService } from '../feathers/session-issues.service
 import { registerSessionReviewMessagesService } from '../feathers/session-review-messages.service.js';
 import { registerSessionReviewService } from '../feathers/session-review.service.js';
 import { gitRevParseShort } from '../github.js';
-import { registerClaudeAgentService } from '../feathers/claude-agent.service.js';
+import { registerClaudeAgentService } from '../feathers/claude-agent.service.ts';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
   const tool = (name, description, inputSchema, handler) => ({

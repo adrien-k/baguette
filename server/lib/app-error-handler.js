@@ -18,7 +18,7 @@ function notifyGitHubBadCredentials(app, userId) {
 /**
  * Handle known app-level errors (emit SSE events, etc.). Returns true when recognized.
  *
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {{ service(name: string): any }} app
  * @param {unknown} err
  * @param {{ userId?: number, sessionId?: number }} [context]
  */
@@ -43,6 +43,10 @@ function normalizeError(err) {
 /**
  * Attach handleAppError to a promise (agent turns and other fire-and-forget work).
  * Rejects with the original error after handling.
+ *
+ * @param {{ service(name: string): any }} app
+ * @param {Promise<unknown>} promise
+ * @param {{ userId?: number, sessionId?: number }} [context]
  */
 export function attachAppErrorHandler(app, promise, context = {}) {
   return promise.catch((err) => {

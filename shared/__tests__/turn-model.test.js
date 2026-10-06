@@ -3,6 +3,7 @@ import {
   attachSessionTurnModelFields,
   findLastTurnStartIndex,
   isHumanUserMessage,
+  isMcpUserMessage,
   resolveTurnModel,
   turnModelCreateFields,
 } from '../turn-model.js';
@@ -88,6 +89,14 @@ describe('attachSessionTurnModelFields', () => {
     attachSessionTurnModelFields(data, session);
     expect(data.model).toBe('sonnet');
     expect(data.model_params).toBe('[{"id":"fast","value":"false"}]');
+  });
+});
+
+describe('isMcpUserMessage', () => {
+  it('is not treated as a human user message', () => {
+    const mcp = { type: 'user', source: 'mcp', content: 'ping' };
+    expect(isMcpUserMessage(mcp)).toBe(true);
+    expect(isHumanUserMessage(mcp)).toBe(false);
   });
 });
 

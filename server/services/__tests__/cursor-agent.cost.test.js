@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
-import { CursorAgentService } from '../feathers/cursor-agent.service.js';
+import { CursorAgentService } from '../feathers/cursor-agent.service.ts';
 import { emptyTurnUsage } from '../turn-usage.js';
 
 vi.mock('../../logger.js', () => ({

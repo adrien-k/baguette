@@ -146,7 +146,7 @@ describe('baguette session MCP tools', () => {
     expect(out.message_id).toBeTruthy();
     const row = await db('session_messages').where({ id: out.message_id }).first();
     const parsed = JSON.parse(row.message_json);
-    expect(parsed.message.content).toBe('ping');
+    expect(parsed.content).toBe('ping');
     expect(parsed.source).toBe('mcp');
     expect(row.subtype).toBe('mcp');
   });
@@ -161,7 +161,7 @@ describe('baguette session MCP tools', () => {
     expect(out.queued_message_id).toBeTruthy();
     const queued = await db('queued_messages').where({ id: out.queued_message_id }).first();
     expect(queued.kind).toBe('scheduled');
-    expect(JSON.parse(queued.message_json).message.content).toBe('later');
+    expect(JSON.parse(queued.message_json).content).toBe('later');
   });
 
   it('CreateSessionMessage rejects another session for repo agents', async () => {

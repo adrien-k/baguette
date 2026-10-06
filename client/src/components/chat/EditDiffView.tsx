@@ -1,9 +1,19 @@
 import { diffLines } from 'diff';
 import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 
-function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
+function EditDiffPreview({
+  oldString,
+  newString,
+  maxLines = 7,
+  onExpand,
+}: {
+  oldString?: string;
+  newString?: string;
+  maxLines?: number;
+  onExpand?: () => void;
+}) {
   const parts = diffLines(oldString ?? '', newString ?? '');
-  const lines = [];
+  const lines: { prefix: string; cls: string; line: string }[] = [];
   for (const part of parts) {
     if (part.added || part.removed) {
       const prefix = part.added ? '+' : '-';
@@ -45,9 +55,17 @@ function EditDiffPreview({ oldString, newString, maxLines = 7, onExpand }) {
   );
 }
 
-function DiffStringView({ diffString, maxLines, onExpand }) {
+function DiffStringView({
+  diffString,
+  maxLines,
+  onExpand,
+}: {
+  diffString?: string | null;
+  maxLines?: number;
+  onExpand?: () => void;
+}) {
   const lines = (diffString || '').split('\n');
-  const displayLines = [];
+  const displayLines: { cls: string; text: string }[] = [];
   for (const line of lines) {
     if (line.startsWith('---') || line.startsWith('+++')) continue;
     const ch = line[0];
@@ -95,6 +113,13 @@ export default function EditDiffView({
   collapsed = false,
   onExpand,
   label = 'Changes',
+}: {
+  oldString?: string | null;
+  newString?: string | null;
+  cursorDiff?: { diffString?: string | null } | null;
+  collapsed?: boolean;
+  onExpand?: () => void;
+  label?: string;
 }) {
   const useCursorDiff = cursorDiff?.diffString != null && oldString == null;
 

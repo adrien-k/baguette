@@ -4,10 +4,19 @@ import { messagesService, sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
-export default function PlanReviewBlock({ markdown, sessionId, userReplied = false }) {
+export default function PlanReviewBlock({
+  markdown,
+  sessionId,
+  userReplied = false,
+}: {
+  markdown?: string | null;
+  sessionId?: number | null;
+  userReplied?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
 
   const handleRun = async () => {
+    if (sessionId == null) return;
     setLoading(true);
     try {
       await sessionsService.patch(sessionId, { plan_mode: false });

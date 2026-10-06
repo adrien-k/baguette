@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { processCursorRunStream } from '../cursor-sdk-turn.js';
-import { MessageStreamWriter } from '../../../shared/message-stream-writer.js';
+import { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 
 function mockRun(events) {
   return {
@@ -116,6 +116,66 @@ describe('processCursorRunStream', () => {
     expect(rows.some((m) => m.type === 'user')).toBe(false);
   });
 
+  it('does not let repeated createPlan deltas hold the stream open or fan out rows', async () => {
+    const plan = '**Context:** plan body.\n\n**Changes**\n\nEdit README.md.';
+    const { writer, rows } = mockWriter();
+    const { finishedOk } = await processCursorRunStream(
+      mockRun([
+        // Same shape the cursor SDK emits: cumulative running deltas, one completion.
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'call_plan',
+          name: 'createPlan',
+          args: { plan: '' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'call_plan',
+          name: 'createPlan',
+          args: { plan: '**Context:** plan body.' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'call_plan',
+          name: 'createPlan',
+          args: { plan: '**Context:** plan body.\n\n**Changes**' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        {
+          type: 'tool_call',
+          status: 'completed',
+          call_id: 'call_plan',
+          name: 'createPlan',
+          args: { plan },
+          result: { status: 'success', value: {} },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        { type: 'status', status: 'FINISHED' },
+      ]),
+      {
+        writer,
+        onStatus: async (sdkMsg) => {
+          if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
+        },
+      }
+    );
+
+    // FINISHED must break the loop (no leaked pending tools), and the plan is a single row.
+    expect(finishedOk).toBe(true);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].type).toBe('plan');
+    expect(rows[0].markdown).toBe(plan);
+  });
+
   it('treats FINISHED as success when the stream ends before a pending tool completes', async () => {
     const { writer, rows } = mockWriter();
     const { finishedOk } = await processCursorRunStream(
@@ -142,5 +202,73 @@ describe('processCursorRunStream', () => {
     expect(finishedOk).toBe(true);
     const tool = rows.find((m) => m.type === 'tool_call');
     expect(tool.status).toBe('cancelled');
+  });
+
+  it('does not fail the turn when the SDK abandons an in-flight tool call', async () => {
+    // Real-world shape: a parallel `read` fires before createPlan and the SDK never
+    // emits its completed event — the stream ends right after FINISHED.
+    const plan = '**Context:** plan body.';
+    const { writer, rows } = mockWriter();
+    const { finishedOk } = await processCursorRunStream(
+      mockRun([
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'call_read',
+          name: 'read',
+          args: { path: 'README.md' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        {
+          type: 'tool_call',
+          status: 'running',
+          call_id: 'call_plan',
+          name: 'createPlan',
+          args: { plan: '' },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        {
+          type: 'tool_call',
+          status: 'completed',
+          call_id: 'call_plan',
+          name: 'createPlan',
+          args: { plan },
+          result: { status: 'success', value: {} },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+        { type: 'status', status: 'FINISHED' },
+      ]),
+      {
+        writer,
+        onStatus: async (sdkMsg) => {
+          if (sdkMsg.status === 'FINISHED') return { break: true, finishedOk: true };
+        },
+      }
+    );
+
+    expect(finishedOk).toBe(true);
+    const tool = rows.find((m) => m.type === 'tool_call');
+    expect(tool.status).toBe('cancelled');
+    const planRow = rows.find((m) => m.type === 'plan');
+    expect(planRow.markdown).toBe(plan);
+  });
+
+  it('keeps a terminal error verdict even when no tools are pending', async () => {
+    const { writer, rows } = mockWriter();
+    const { finishedOk } = await processCursorRunStream(
+      mockRun([{ type: 'status', status: 'ERROR', message: 'boom' }]),
+      {
+        writer,
+        onStatus: async (sdkMsg) => {
+          if (sdkMsg.status === 'ERROR') return { break: true, finishedOk: false };
+        },
+      }
+    );
+
+    expect(finishedOk).toBe(false);
+    expect(rows).toHaveLength(0);
   });
 });

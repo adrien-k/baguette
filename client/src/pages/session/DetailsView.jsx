@@ -5,7 +5,7 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
-import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.jsx';
+import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.tsx';
 import TextInput from '../../components/TextInput.jsx';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';

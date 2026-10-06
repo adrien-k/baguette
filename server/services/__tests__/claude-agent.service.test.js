@@ -55,7 +55,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { loadBaguetteConfig } from '../baguette-config.js';
 
 import { REPOS_DIR } from '../../config.js';
-import { ClaudeAgentService } from '../feathers/claude-agent.service.js';
+import { ClaudeAgentService } from '../feathers/claude-agent.service.ts';
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 

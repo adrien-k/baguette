@@ -22,26 +22,26 @@ import {
 } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
-import ChatMessage from '../../components/ChatMessage.jsx';
-import ChatWorkSummary from '../../components/chat/ChatWorkSummary.jsx';
+import ChatMessage from '../../components/ChatMessage.tsx';
+import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import {
   collectRunningBashToolsForDock,
   runningBashToolIds,
 } from '@baguette/shared/running-tools.js';
-import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.jsx';
-import ChatCostSummary from '../../components/chat/ChatCostSummary.jsx';
-import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.jsx';
+import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.tsx';
+import ChatCostSummary from '../../components/chat/ChatCostSummary.tsx';
+import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.tsx';
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
-} from '../../components/chat/ChatQuickActionButton.jsx';
+} from '../../components/chat/ChatQuickActionButton.tsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
 import PrDraftToggleButton, {
   canTogglePrDraftStatus,
 } from '../../components/PrDraftToggleButton.jsx';
-import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.jsx';
+import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';

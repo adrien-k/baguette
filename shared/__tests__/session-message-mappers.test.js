@@ -3,6 +3,7 @@ import {
   mapBashToolResult,
   buildToolCallStart,
   buildToolCallComplete,
+  normalizeUserPayloadForStorage,
 } from '../session-message-mappers.js';
 
 describe('session-message-mappers', () => {
@@ -25,6 +26,20 @@ describe('session-message-mappers', () => {
     const start = buildToolCallStart('id-2', 'Read', { path: '/tmp/x' });
     expect(start.status).toBe('running');
     expect(start.result).toBeNull();
+  });
+
+  it('normalizes legacy MCP user envelope to flat content', () => {
+    const out = normalizeUserPayloadForStorage({
+      type: 'user',
+      source: 'mcp',
+      message: { role: 'user', content: 'scheduled ping' },
+    });
+    expect(out).toEqual({
+      type: 'user',
+      source: 'mcp',
+      subtype: 'mcp',
+      content: 'scheduled ping',
+    });
   });
 
   it('supports cancelled tool completion', () => {

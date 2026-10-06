@@ -8,7 +8,16 @@ import {
 } from '../../utils/usageSeries.js';
 
 /** Collapsible session cost at the bottom of the chat transcript when the agent is idle. */
-export default function ChatCostSummary({ usage, loading = false }) {
+export default function ChatCostSummary({
+  usage,
+  loading = false,
+}: {
+  usage?: {
+    breakdown?: { kind?: string; model?: string; cost_usd?: number | string }[];
+    totals?: { cost_usd?: number | null } | null;
+  } | null;
+  loading?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const lines = listSessionCostLines(usage?.breakdown);
   const totalCost =
@@ -39,7 +48,9 @@ export default function ChatCostSummary({ usage, loading = false }) {
               key={`${row.kind}-${row.model}`}
               className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0 text-fg-muted"
             >
-              <span className="shrink-0">{KIND_LABELS[row.kind] ?? row.kind}</span>
+              <span className="shrink-0">
+                {(KIND_LABELS as Record<string, string>)[row.kind] ?? row.kind}
+              </span>
               <span className="text-line" aria-hidden>
                 ·
               </span>

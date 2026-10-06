@@ -1,15 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Bot, CheckSquare2, ChevronDown, Loader2, Square } from 'lucide-react';
 import ExitPlanModeBlock from '../ExitPlanModeBlock.jsx';
-import AskUserQuestionBlock from '../AskUserQuestionBlock.jsx';
+import AskUserQuestionBlock from '../AskUserQuestionBlock.tsx';
 import { stripWorktreePath } from '../../../utils/paths.js';
-import EditDiffView from '../EditDiffView.jsx';
-import BaguetteMcpToolBlock, {
-  QuietToolBlock,
-  PrUpsertBlock,
-  CommandBlock,
-  BashToolBlock,
-} from '../claude/BaguetteMcpToolBlock.jsx';
+import EditDiffView from '../EditDiffView.tsx';
+import BaguetteMcpToolBlock, { PrUpsertBlock, CommandBlock } from '../BaguetteMcpToolBlock.tsx';
+import QuietToolBlock from '../QuietToolBlock.tsx';
+import BashToolBlock from '../BashToolBlock.tsx';
 import CursorMcpToolBlock from './CursorMcpToolBlock.jsx';
 
 const QUIET_TOOLS = new Set(['Glob', 'Read', 'Grep']);

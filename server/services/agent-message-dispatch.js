@@ -1,6 +1,6 @@
 import { isBaguetteUserMessage, isHumanUserMessage } from '../../shared/turn-model.js';
 import { normalizeUserPayloadForStorage } from '../../shared/session-message-mappers.js';
-import { persistTypedMessage } from './message-writer-factory.js';
+import { persistTypedMessage } from './message-writer-factory.ts';
 
 /**
  * @param {object} row - DB message row
@@ -36,7 +36,8 @@ export async function dispatchCreatedMessageToAgents(app, row, table) {
 
 /**
  * Shared turn-id validation and reject system message.
- * @param {import('@feathersjs/feathers').Application} app
+ *
+ * @param {import('./feathers/agent-service-types.ts').AgentApp} app
  */
 export async function rejectTurnMismatch(app, { session, row, channel, activeTurnId, userId }) {
   const text =

@@ -79,7 +79,8 @@ export function buildMcpUserMessageJson(text) {
   return JSON.stringify({
     type: 'user',
     source: 'mcp',
-    message: { role: 'user', content: text },
+    subtype: 'mcp',
+    content: text,
   });
 }
 

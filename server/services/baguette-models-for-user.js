@@ -93,6 +93,11 @@ export async function listModelsForUser(user, repo = null) {
   };
 }
 
+/**
+ * @param {object} user
+ * @param {'cursor'|'claude'} agentSdk
+ * @param {Record<string, unknown> | null | undefined} [repo]
+ */
 export async function loadModelsForSdk(user, agentSdk, repo = null) {
   const keys = resolveAgentSdkKeys(user, repo);
   if (agentSdk === 'cursor') {

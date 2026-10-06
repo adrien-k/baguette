@@ -21,6 +21,10 @@ export function canShowSessionPushTool(session, { readonly, onPush } = {}) {
 }
 
 /** Push CTA above the chat composer when local commits are not on the remote yet. */
+/**
+ * @param {Record<string, unknown>|null} [session]
+ * @param {{ readonly?: boolean, onPush?: () => unknown, commitsToPush?: number }} [options]
+ */
 export function canShowChatPushChangesBar(session, { readonly, onPush, commitsToPush = 0 } = {}) {
   if (commitsToPush <= 0) return false;
   return canShowSessionPushTool(session, { readonly, onPush });

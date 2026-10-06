@@ -1,4 +1,14 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  type CanUseTool,
+  type Options as ClaudeSdkOptions,
+  type PermissionMode,
+  type PermissionResult,
+  type Query,
+  type SDKMessage,
+  type SDKUserMessage,
+  type SettingSource,
+} from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
 import { remoteHasNewCommits } from '../github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
@@ -18,42 +28,131 @@ import {
   parseUserRow,
   rejectTurnMismatch,
 } from '../agent-message-dispatch.js';
-import { createMessageStreamWriter } from '../message-writer-factory.js';
+import { createMessageStreamWriter } from '../message-writer-factory.ts';
+import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
+import type { SystemMessagePayload, UserMessagePayload } from '../../../shared/session-messages.ts';
+import type {
+  AgentApp,
+  AgentSessionRow,
+  ChatTable,
+  DbLike,
+  MessageChannel,
+  MessageRowLike,
+} from './agent-service-types.ts';
 
-function isHumanUserMessage(message) {
-  if (message.type !== 'user') return false;
-  if (typeof message.content === 'string') return true;
-  const content = message.message?.content;
+type TurnOutcome = 'completed' | 'failed' | 'stopped';
+
+/** Push/end handle feeding user messages into an open SDK query. */
+type ChannelHandle = {
+  push(message: SDKUserMessage): void;
+  end(): void;
+};
+
+/** Mutable state for one open SDK query (chat or review channel). */
+type ClaudeAgentState = {
+  sessionId: number;
+  userId: number;
+  channel: ChannelHandle;
+  queryInstance: Query;
+  abortController: AbortController;
+  repoFullName?: string | null;
+  branch?: string | null;
+  absoluteWorktreePath?: string | null;
+  repoId?: number | null;
+  token?: string | null;
+  sessionSettings?: { permissionMode: PermissionMode };
+  claudeSessionId?: string | null;
+  streamWriter?: MessageStreamWriter | null;
+  turnChannel?: MessageChannel;
+  activeKey?: string | number;
+};
+
+type RunTurnOpts = {
+  sessionId: number;
+  userId: number;
+  prompt?: unknown;
+  queryOptions?: ClaudeSdkOptions;
+  persistMessage?: (message: SDKMessage) => Promise<void>;
+  persistStatus?: (text: string) => Promise<void>;
+  onInitSessionId?: (id: string) => Promise<void>;
+  onResult?: (message: SDKMessage) => Promise<void>;
+  onStreamError?: (err: Error) => Promise<void>;
+  trackBackgroundTasks?: boolean;
+  activeKey?: string | number;
+  extraState?: Partial<ClaudeAgentState>;
+  connectionClosedHint?: string;
+};
+
+type ConsumeQueryOpts = {
+  streamWriter?: MessageStreamWriter | null;
+  persistMessage?: (message: SDKMessage) => Promise<void>;
+  persistStatus?: (text: string) => Promise<void>;
+  onInitSessionId?: (id: string) => Promise<void>;
+  onResult?: (message: SDKMessage) => Promise<void>;
+  onStreamError?: (err: Error) => Promise<void>;
+  onBackgroundAutoResume?: () => Promise<void>;
+  trackBackgroundTasks?: boolean;
+  activeKey?: string | number;
+  connectionClosedHint?: string;
+};
+
+type StartAgentLoopOpts = {
+  model?: string | null;
+  channel?: MessageChannel;
+  activeKey?: string | number;
+  writer?: MessageStreamWriter | null;
+};
+
+type SessionOrId = number | string | { id: number };
+
+function isHumanUserMessage(message: unknown): boolean {
+  const msg = message as {
+    type?: string;
+    content?: unknown;
+    message?: { content?: unknown };
+  };
+  if (msg.type !== 'user') return false;
+  if (typeof msg.content === 'string') return true;
+  const content = msg.message?.content;
   if (typeof content === 'string') return true;
-  if (Array.isArray(content)) return !content.some((b) => b.type === 'tool_result');
+  if (Array.isArray(content))
+    return !content.some((b) => (b as { type?: string }).type === 'tool_result');
   return false;
 }
 
-function commandsToAllowedTools(commands) {
+function commandsToAllowedTools(commands: string[]): string[] {
   return commands.map((cmd) => `Bash(${cmd}*)`);
 }
 
 /** Hard cap on session metadata (label/branch) generation — provisioning must not stall on CLI API retries. */
 const METADATA_TIMEOUT_MS = 30_000;
 
-function claudeSdkPermissionMode(sessionRow) {
+function claudeSdkPermissionMode(sessionRow: AgentSessionRow): 'plan' | 'acceptEdits' {
   return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
 }
 
-function toSdkUserMessage(prompt) {
-  if (prompt && typeof prompt === 'object') return prompt;
-  return { type: 'user', message: { role: 'user', content: prompt ?? '' } };
+function toSdkUserMessage(prompt: unknown): SDKUserMessage {
+  if (prompt && typeof prompt === 'object') return prompt as SDKUserMessage;
+  return {
+    type: 'user',
+    message: { role: 'user', content: (prompt as string) ?? '' },
+    parent_tool_use_id: null,
+  };
 }
 
 // ─── ClaudeAgentService class ─────────────────────────────────────────────────
 
 export class ClaudeAgentService {
+  app!: AgentApp;
+  private _activeSessions: Map<string | number, ClaudeAgentState>;
+  private _resumePromises: Map<string | number, Promise<ClaudeAgentState>>;
+
   constructor() {
     this._activeSessions = new Map();
     this._resumePromises = new Map();
   }
 
-  setup(app, _path) {
+  setup(app: AgentApp, _path?: string) {
     this.app = app;
   }
 
@@ -61,7 +160,7 @@ export class ClaudeAgentService {
    * SDK query options for a Claude turn. Callers override MCP, prompt, tools, resume, etc.
    */
   async buildQueryOptions(
-    sessionRow,
+    sessionRow: AgentSessionRow,
     {
       systemPrompt,
       mcpServer,
@@ -72,8 +171,18 @@ export class ClaudeAgentService {
       model,
       canUseTool,
       plugins,
+    }: {
+      systemPrompt?: string;
+      mcpServer?: ClaudeSdkOptions['mcpServers'];
+      allowedTools?: string[];
+      permissionMode?: PermissionMode;
+      settingSources?: SettingSource[];
+      resume?: string | boolean;
+      model?: string | null;
+      canUseTool?: CanUseTool;
+      plugins?: ClaudeSdkOptions['plugins'];
     } = {}
-  ) {
+  ): Promise<ClaudeSdkOptions> {
     const claudeEnv = await this.app.service('sessions').getClaudeEnv(sessionRow.id);
     const cwd =
       resolveDataDirRelativePath(sessionRow.worktree_path) ||
@@ -97,24 +206,31 @@ export class ClaudeAgentService {
       ...(canUseTool ? { canUseTool } : {}),
       ...(allowedTools?.length ? { allowedTools } : {}),
       ...(plugins?.length ? { plugins } : {}),
-    };
+    } as ClaudeSdkOptions;
   }
 
-  async _buildSessionQueryOptions(sessionRow, { canUseTool, allowedTools, model } = {}) {
-    let pluginRows = [];
+  async _buildSessionQueryOptions(
+    sessionRow: AgentSessionRow,
+    {
+      canUseTool,
+      allowedTools,
+      model,
+    }: { canUseTool?: CanUseTool; allowedTools?: string[]; model?: string | null } = {}
+  ): Promise<ClaudeSdkOptions> {
+    let pluginRows: Array<Record<string, unknown>> = [];
     if (sessionRow.plugins) {
       try {
-        const pluginIds = JSON.parse(sessionRow.plugins);
+        const pluginIds: unknown = JSON.parse(sessionRow.plugins);
         if (Array.isArray(pluginIds) && pluginIds.length > 0) {
-          pluginRows = await this.app.get('db')('plugins').whereIn('id', pluginIds);
+          pluginRows = await (this.app.get('db') as DbLike)('plugins').whereIn('id', pluginIds);
         }
       } catch {
         // malformed plugins JSON — ignore
       }
     }
     const plugins = (pluginRows || []).map((p) => ({
-      type: 'local',
-      path: resolveDataDirRelativePath(p.local_path),
+      type: 'local' as const,
+      path: resolveDataDirRelativePath(p.local_path as string) ?? '',
     }));
     const agentPrompt = await getEffectiveAgentPrompt(
       this.app,
@@ -132,14 +248,26 @@ export class ClaudeAgentService {
     });
   }
 
-  _openQuery({ sessionId, userId, queryOptions, extraState = {}, activeKey }) {
-    const channel = createMessageChannel();
+  _openQuery({
+    sessionId,
+    userId,
+    queryOptions,
+    extraState = {},
+    activeKey,
+  }: {
+    sessionId: number;
+    userId: number;
+    queryOptions: ClaudeSdkOptions;
+    extraState?: Partial<ClaudeAgentState>;
+    activeKey?: string | number;
+  }): ClaudeAgentState {
+    const channel = createMessageChannel() as unknown as ChannelHandle;
     const abortController = new AbortController();
     const queryInstance = query({
-      prompt: channel,
+      prompt: channel as unknown as AsyncIterable<SDKUserMessage>,
       options: { ...queryOptions, abortController },
     });
-    const state = {
+    const state: ClaudeAgentState = {
       sessionId,
       userId,
       channel,
@@ -155,49 +283,35 @@ export class ClaudeAgentService {
    * Run one Claude query turn: open the SDK, push a prompt, consume the stream, dispose.
    * Used by session chat (via _startAgentLoop) and session review.
    */
-  async runTurn({
-    sessionId,
-    userId,
-    prompt,
-    queryOptions,
-    persistMessage,
-    persistStatus,
-    onInitSessionId,
-    onResult,
-    onStreamError,
-    trackBackgroundTasks = false,
-    activeKey,
-    extraState,
-    connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
-  }) {
-    const key = activeKey ?? sessionId;
+  async runTurn(opts: RunTurnOpts): Promise<{ turnComplete: boolean; outcome: TurnOutcome }> {
+    const key = opts.activeKey ?? opts.sessionId;
     const state = this._openQuery({
-      sessionId,
-      userId,
-      queryOptions,
-      extraState,
+      sessionId: opts.sessionId,
+      userId: opts.userId,
+      queryOptions: opts.queryOptions ?? {},
+      extraState: opts.extraState,
       activeKey: key,
     });
-    if (prompt != null) {
-      state.channel.push(toSdkUserMessage(prompt));
+    if (opts.prompt != null) {
+      state.channel.push(toSdkUserMessage(opts.prompt));
     }
     return await this._consumeQuery(state, {
-      persistMessage,
-      persistStatus,
-      onInitSessionId,
-      onResult,
-      onStreamError,
-      trackBackgroundTasks,
+      persistMessage: opts.persistMessage,
+      persistStatus: opts.persistStatus,
+      onInitSessionId: opts.onInitSessionId,
+      onResult: opts.onResult,
+      onStreamError: opts.onStreamError,
+      trackBackgroundTasks: opts.trackBackgroundTasks,
       activeKey: key,
-      connectionClosedHint,
+      connectionClosedHint: opts.connectionClosedHint,
     });
   }
 
-  async stopTurn(activeKey) {
+  async stopTurn(activeKey: string | number): Promise<void> {
     await this._disposeActiveSession(activeKey);
   }
 
-  async handleTableMessageCreated(row, table) {
+  async handleTableMessageCreated(row: MessageRowLike, table: ChatTable): Promise<void> {
     if (row.type !== 'user') return;
 
     const parsedStorage = parseUserRow(row);
@@ -207,7 +321,7 @@ export class ClaudeAgentService {
     const session = await this.app.service('sessions').get(sessionId);
     if (!session || session.archived_at) return;
 
-    const channel = table === 'session-review-messages' ? 'review' : 'chat';
+    const channel: MessageChannel = table === 'session-review-messages' ? 'review' : 'chat';
     const sdk = channel === 'review' ? session.review_agent_sdk : session.agent_sdk;
     if (sdk !== 'claude') return;
 
@@ -221,16 +335,23 @@ export class ClaudeAgentService {
     const activeTurnId =
       channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
 
-    let forSdk = parsedStorage;
-    if (isBaguetteUserMessage(parsedStorage) && typeof parsedStorage.content === 'string') {
+    let forSdk: Record<string, unknown> = parsedStorage as Record<string, unknown>;
+    if (
+      isBaguetteUserMessage(parsedStorage) &&
+      typeof (parsedStorage as UserMessagePayload).content === 'string'
+    ) {
+      const baguette = parsedStorage as UserMessagePayload;
       forSdk = {
         type: 'user',
         source: 'baguette',
-        title: parsedStorage.title,
-        message: { role: 'user', content: parsedStorage.content },
+        title: baguette.title,
+        message: { role: 'user', content: baguette.content },
       };
-    } else if (typeof parsedStorage.content === 'string') {
-      forSdk = { type: 'user', message: { role: 'user', content: parsedStorage.content } };
+    } else if (typeof (parsedStorage as { content?: unknown }).content === 'string') {
+      forSdk = {
+        type: 'user',
+        message: { role: 'user', content: (parsedStorage as { content: string }).content },
+      };
     }
     const parsed = normalizeUserMessageForAgentSdk(forSdk);
 
@@ -249,7 +370,7 @@ export class ClaudeAgentService {
       return;
     }
 
-    const db = this.app.get('db');
+    const db = this.app.get('db') as DbLike;
     if (row.turn_id != null) {
       const activeField =
         channel === 'review'
@@ -270,11 +391,18 @@ export class ClaudeAgentService {
           })
         : null;
 
-    let agentSession;
+    let agentSession: ClaudeAgentState;
     const resumeId =
       channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
     if (resumeId) {
-      agentSession = await this.ensureActiveSession(session, { model, channel, activeKey, writer });
+      const resumed = await this.ensureActiveSession(session, {
+        model,
+        channel,
+        activeKey,
+        writer,
+      });
+      if (!resumed) return;
+      agentSession = resumed;
     } else {
       agentSession = await this.createAgentSession(session, {
         model,
@@ -288,11 +416,14 @@ export class ClaudeAgentService {
   }
 
   /** @deprecated use handleTableMessageCreated */
-  async onMessageCreated(message) {
+  async onMessageCreated(message: MessageRowLike): Promise<void> {
     return this.handleTableMessageCreated(message, 'messages');
   }
 
-  async createAgentSession(session, { model, channel, activeKey, writer } = {}) {
+  async createAgentSession(
+    session: AgentSessionRow,
+    { model, channel = 'chat', activeKey, writer }: StartAgentLoopOpts = {}
+  ): Promise<ClaudeAgentState> {
     const sessionState = await this._startAgentLoop(session, {
       model,
       channel,
@@ -307,8 +438,8 @@ export class ClaudeAgentService {
     return sessionState;
   }
 
-  /** @param {number | { id: number }} sessionOrId */
-  getActiveSession(sessionOrId) {
+  /** @param sessionOrId - session row or session id */
+  getActiveSession(sessionOrId: SessionOrId): ClaudeAgentState | undefined {
     const id =
       typeof sessionOrId === 'object' && sessionOrId !== null ? sessionOrId.id : sessionOrId;
     return this._activeSessions.get(id);
@@ -336,7 +467,7 @@ export class ClaudeAgentService {
    * promises may still reject with {@link SDK_QUERY_CLOSED_MESSAGE}; those are treated as benign in
    * `process.on('unhandledRejection')` in `server/index.js`.
    */
-  async _closeQueryInstanceSafe(sessionId, queryInstance) {
+  async _closeQueryInstanceSafe(sessionId: number, queryInstance: Query): Promise<void> {
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -344,11 +475,14 @@ export class ClaudeAgentService {
     try {
       queryInstance.close();
     } catch (err) {
-      logger.warn({ sessionId, err: err.message }, 'claude-agent session dispose cleanup');
+      logger.warn(
+        { sessionId, err: (err as Error).message },
+        'claude-agent session dispose cleanup'
+      );
     }
   }
 
-  async _disposeActiveSession(activeKey) {
+  async _disposeActiveSession(activeKey: string | number): Promise<void> {
     const session = this._activeSessions.get(activeKey);
     if (!session) return;
     if (session.streamWriter) {
@@ -367,7 +501,7 @@ export class ClaudeAgentService {
       session.abortController.abort();
     } catch (err) {
       logger.warn(
-        { sessionId: session.sessionId, err: err.message },
+        { sessionId: session.sessionId, err: (err as Error).message },
         'claude-agent session dispose cleanup'
       );
     }
@@ -375,8 +509,8 @@ export class ClaudeAgentService {
     await this._closeQueryInstanceSafe(session.sessionId, session.queryInstance);
   }
 
-  async _persistSessionStatusMessage(sessionId, userId, statusText) {
-    const payload = {
+  async _persistSessionStatusMessage(sessionId: number, userId: number, statusText: string) {
+    const payload: SystemMessagePayload = {
       type: 'system',
       subtype: 'status',
       status: statusText,
@@ -393,14 +527,14 @@ export class ClaudeAgentService {
   }
 
   createCanUseTool() {
-    return async (toolName, input) => {
+    return async (toolName: string, input: Record<string, unknown>): Promise<PermissionResult> => {
       if (toolName === 'ExitPlanMode') {
         return {
           behavior: 'allow',
           updatedInput: input,
           message:
             'Plan saved for user review in chat. The turn can complete; the user will message when ready to execute or refine.',
-        };
+        } as PermissionResult;
       }
 
       if (toolName === 'AskUserQuestion') {
@@ -413,10 +547,13 @@ export class ClaudeAgentService {
     };
   }
 
-  async injectBaguetteMessage(sessionState, { title, content }) {
+  async injectBaguetteMessage(
+    sessionState: ClaudeAgentState,
+    { title, content }: { title: string; content: string }
+  ) {
     const { sessionId } = sessionState;
     const app = this.app;
-    const payload = {
+    const payload: UserMessagePayload & { subtype: string } = {
       type: 'user',
       source: 'baguette',
       title,
@@ -437,16 +574,19 @@ export class ClaudeAgentService {
    * channel, query instance, session state, and kicks off the
    * message-processing loop.
    */
-  async _startAgentLoop(sessionRow, { model, channel = 'chat', activeKey, writer } = {}) {
+  async _startAgentLoop(
+    sessionRow: AgentSessionRow,
+    { model, channel = 'chat', activeKey, writer }: StartAgentLoopOpts = {}
+  ): Promise<ClaudeAgentState> {
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
     const sessionSettings = {
       permissionMode: claudeSdkPermissionMode(sessionRow),
     };
     const canUseTool = this.createCanUseTool();
-    const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser(user));
+    const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser());
     const resolvedActiveKey = activeKey ?? sessionId;
-    let queryOptions;
+    let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
       const extras = this.app.service('session-review').peekTurnExtras(sessionId) ?? {};
       const resumeId = sessionRow.review_claude_session_id;
@@ -486,14 +626,17 @@ export class ClaudeAgentService {
     attachAppErrorHandler(this.app, this.processMessages(sessionState), {
       userId: sessionRow.user_id,
       sessionId,
-    }).catch((err) => {
+    }).catch((err: Error) => {
       logger.error({ sessionId }, err.message);
     });
 
     return sessionState;
   }
 
-  async resumeSession(session, { model, channel, activeKey, writer } = {}) {
+  async resumeSession(
+    session: AgentSessionRow,
+    { model, channel, activeKey, writer }: StartAgentLoopOpts = {}
+  ): Promise<ClaudeAgentState> {
     const resumeId =
       channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
     if (!resumeId) throw new Error('No Claude session to resume');
@@ -513,11 +656,15 @@ export class ClaudeAgentService {
     return sessionState;
   }
 
-  async ensureActiveSession(sessionOrId, { model, channel, activeKey, writer } = {}) {
-    const sessionRow =
+  async ensureActiveSession(
+    sessionOrId: SessionOrId,
+    { model, channel, activeKey, writer }: StartAgentLoopOpts = {}
+  ): Promise<ClaudeAgentState | null> {
+    const sessionRow: AgentSessionRow | undefined =
       typeof sessionOrId === 'object' && sessionOrId !== null
-        ? sessionOrId
-        : await this.app.get('db')('sessions').where({ id: sessionOrId }).first();
+        ? (sessionOrId as AgentSessionRow)
+        : ((await (this.app.get('db') as DbLike)('sessions').where({ id: sessionOrId }).first()) as
+            AgentSessionRow | undefined);
     if (!sessionRow) return null;
 
     const sessionId = sessionRow.id;
@@ -537,12 +684,12 @@ export class ClaudeAgentService {
       this._resumePromises.set(key, promise);
     }
 
-    return this._resumePromises.get(key);
+    return this._resumePromises.get(key) ?? null;
   }
 
-  async processMessages(sessionState) {
+  async processMessages(sessionState: ClaudeAgentState): Promise<void> {
     const { sessionId, userId } = sessionState;
-    const db = this.app.get('db');
+    const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
     const { turnComplete, streamFailed, outcome } = await this._consumeQuery(sessionState, {
@@ -566,8 +713,11 @@ export class ClaudeAgentService {
       },
       onResult: async (message) => {
         if (!isReview) return; // Chat status is patched once after the stream ends below.
-        const ok = message.subtype === 'success' && !message.is_error;
-        const session = await db('sessions').where({ id: sessionId }).first();
+        const result = message as SDKMessage & { subtype?: string; is_error?: boolean };
+        const ok = result.subtype === 'success' && !result.is_error;
+        const session = (await db('sessions').where({ id: sessionId }).first()) as
+          AgentSessionRow | undefined;
+        if (!session) return;
         await this.app
           .service('sessions')
           .recordClaudeUsage(session, message, {
@@ -583,7 +733,9 @@ export class ClaudeAgentService {
       },
       onStreamError: async () => {
         if (!isReview) return; // Chat status is patched once after the stream ends below.
-        const session = await db('sessions').where({ id: sessionId }).first();
+        const session = (await db('sessions').where({ id: sessionId }).first()) as
+          AgentSessionRow | undefined;
+        if (!session) return;
         await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
           sdk: 'claude',
         });
@@ -609,17 +761,16 @@ export class ClaudeAgentService {
       try {
         await this.app.service('sessions').onTurnComplete(sessionId);
       } catch (err) {
-        logger.warn({ sessionId, err: err.message }, 'Failed to send queued message');
+        logger.warn({ sessionId, err: (err as Error).message }, 'Failed to send queued message');
       }
     }
   }
 
   /**
    * Consume an open Claude query until the turn ends (result, abort, or stream error).
-   * @returns {Promise<{ turnComplete: boolean, streamFailed: boolean, outcome: 'completed' | 'failed' | 'stopped' }>}
    */
   async _consumeQuery(
-    sessionState,
+    sessionState: ClaudeAgentState,
     {
       streamWriter,
       persistMessage,
@@ -631,40 +782,44 @@ export class ClaudeAgentService {
       trackBackgroundTasks = false,
       activeKey,
       connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
-    }
-  ) {
+    }: ConsumeQueryOpts
+  ): Promise<{ turnComplete: boolean; streamFailed: boolean; outcome: TurnOutcome }> {
     const { queryInstance, sessionId, userId } = sessionState;
     const key = activeKey ?? sessionId;
-    let pendingBackgroundTaskIds = new Set();
+    const pendingBackgroundTaskIds = new Set<string>();
     let awaitingAutoResume = false;
     let turnComplete = false;
     let streamFailed = false;
-    let outcome = 'failed';
+    let outcome: TurnOutcome = 'failed';
 
     try {
       for await (const message of queryInstance) {
-        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-          await onInitSessionId?.(message.session_id);
+        const msg = message as SDKMessage & {
+          subtype?: string;
+          session_id?: string;
+          isReplay?: boolean;
+          ambient?: boolean;
+          task_id?: string;
+          status?: string;
+          is_error?: boolean;
+        };
+        if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+          await onInitSessionId?.(msg.session_id);
         }
 
-        if (message.isReplay) continue;
-        if (isHumanUserMessage(message)) continue;
+        if (msg.isReplay) continue;
+        if (isHumanUserMessage(msg)) continue;
 
         if (trackBackgroundTasks) {
-          if (message.type === 'system' && message.subtype === 'task_started' && !message.ambient) {
-            pendingBackgroundTaskIds.add(message.task_id);
+          if (msg.type === 'system' && msg.subtype === 'task_started' && !msg.ambient) {
+            pendingBackgroundTaskIds.add(msg.task_id as string);
           }
-          if (
-            message.type === 'system' &&
-            message.subtype === 'task_notification' &&
-            !message.ambient
-          ) {
+          if (msg.type === 'system' && msg.subtype === 'task_notification' && !msg.ambient) {
+            const taskStatus = (msg as { status?: string }).status;
             const isTerminal =
-              message.status === 'completed' ||
-              message.status === 'failed' ||
-              message.status === 'error';
+              taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'error';
             if (isTerminal) {
-              pendingBackgroundTaskIds.delete(message.task_id);
+              pendingBackgroundTaskIds.delete(msg.task_id as string);
               if (turnComplete && pendingBackgroundTaskIds.size === 0) {
                 awaitingAutoResume = true;
                 await onBackgroundAutoResume?.();
@@ -674,17 +829,17 @@ export class ClaudeAgentService {
         }
 
         if (streamWriter) {
-          await streamWriter.handleClaudeEvent(message);
+          await streamWriter.handleClaudeEvent(msg);
         } else {
-          await persistMessage(message);
+          await persistMessage?.(msg);
         }
 
-        if (message.type === 'result') {
+        if (msg.type === 'result') {
           turnComplete = true;
           awaitingAutoResume = false;
-          const ok = message.subtype === 'success' && !message.is_error;
+          const ok = msg.subtype === 'success' && !msg.is_error;
           outcome = ok ? 'completed' : 'failed';
-          await onResult?.(message);
+          await onResult?.(msg);
         }
 
         if (turnComplete && pendingBackgroundTaskIds.size === 0 && !awaitingAutoResume) {
@@ -692,21 +847,23 @@ export class ClaudeAgentService {
         }
       }
     } catch (err) {
-      if (err.name !== 'AbortError') {
+      if ((err as Error).name !== 'AbortError') {
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId }, 'Session stream error');
         logger.error(err, 'Session stream error');
         const userFacing =
-          err.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : err.message;
+          (err as Error).message === SDK_QUERY_CLOSED_MESSAGE
+            ? connectionClosedHint
+            : (err as Error).message;
         try {
           await persistStatus?.(userFacing);
         } catch (persistErr) {
           logger.warn(
-            { sessionId, err: persistErr.message },
+            { sessionId, err: (persistErr as Error).message },
             'Failed to persist session error status'
           );
         }
-        await onStreamError?.(err);
+        await onStreamError?.(err as Error);
         this.app
           .service('sessions')
           .emit('app:error', { sessionId, message: userFacing, user_id: userId });
@@ -719,28 +876,38 @@ export class ClaudeAgentService {
       try {
         await this._disposeActiveSession(key);
       } catch (disposeErr) {
-        logger.warn({ sessionId, err: disposeErr?.message }, 'claude-agent dispose failed');
+        logger.warn(
+          { sessionId, err: (disposeErr as Error)?.message },
+          'claude-agent dispose failed'
+        );
       }
     }
 
     return { turnComplete, streamFailed, outcome };
   }
 
-  async sendMessage(sessionId, content) {
-    const db = this.app.get('db');
+  async sendMessage(sessionId: number, content: string): Promise<void> {
+    const session = await this.ensureActiveSession(sessionId);
+    const db = this.app.get('db') as DbLike;
     const sessionRow = await db('sessions').where({ id: sessionId }).first();
     if (!sessionRow) throw new Error('Session not found');
 
-    const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path);
+    await this.app
+      .service('sessions')
+      .patch(sessionId, { status: 'running' }, { user: { id: session?.userId } });
+    await this.app.service('sessions').onTurnStart(sessionId);
+
+    const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path as string);
     const user = await this.app.service('users').get(sessionRow.user_id, {});
-    const token = getGithubToken(user);
+    const token = session?.token ?? getGithubToken(user);
+    const repoFullName = (session?.repoFullName ?? sessionRow.repo_full_name) as string;
     if (sessionRow.remote_branch && absoluteWorktreePath && token) {
       try {
         const hasNew = await remoteHasNewCommits(
           absoluteWorktreePath,
-          sessionRow.remote_branch,
+          sessionRow.remote_branch as string,
           token,
-          sessionRow.repo_full_name
+          repoFullName
         );
         if (hasNew) {
           await this.injectBaguetteMessage(
@@ -766,9 +933,11 @@ export class ClaudeAgentService {
       },
       { user: { id: sessionRow.user_id } }
     );
+
+    session?.channel.push(toSdkUserMessage(content));
   }
 
-  syncSessionSettingsFromPatch(sessionId, sessionRow) {
+  syncSessionSettingsFromPatch(sessionId: number, sessionRow: AgentSessionRow): void {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
     const effectiveMode = claudeSdkPermissionMode(sessionRow);
@@ -776,14 +945,19 @@ export class ClaudeAgentService {
       session.sessionSettings.permissionMode = effectiveMode;
     }
     session.queryInstance.setPermissionMode(effectiveMode);
-    session.queryInstance.setModel(sessionRow.model);
+    session.queryInstance.setModel(sessionRow.model ?? undefined);
   }
 
-  async stopSession(sessionId) {
+  async stopSession(sessionId: number): Promise<void> {
     await this._disposeActiveSession(sessionId);
   }
 
-  async generateSessionMetadata(initialPrompt, shortId = '', user, repo = null) {
+  async generateSessionMetadata(
+    initialPrompt: string,
+    shortId = '',
+    user: { id: number } | null,
+    repo: { full_name?: string | null } | null = null
+  ): Promise<{ label: string; branchName: string }> {
     const fallbackBranch = `task-${shortId}`;
     const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
 - "label": very short label (max 50 chars) summarizing the task
@@ -794,21 +968,26 @@ Task: ${initialPrompt}`;
     let label = '';
     let branchName = fallbackBranch;
 
-    const env = await getClaudeEnv(this.app, user.id, repo?.full_name ?? null);
+    const env = await getClaudeEnv(this.app, user?.id ?? 0, repo?.full_name ?? null);
     const q = query({
       prompt,
       options: { model: 'haiku', env },
     });
     const consume = (async () => {
       for await (const message of q) {
-        if (message.type === 'result' && message.subtype === 'success' && !message.is_error) {
-          const text = (message.result || '').trim();
+        const msg = message as SDKMessage & {
+          subtype?: string;
+          is_error?: boolean;
+          result?: string;
+        };
+        if (msg.type === 'result' && msg.subtype === 'success' && !msg.is_error) {
+          const text = (msg.result || '').trim();
           try {
             const jsonText = text
               .replace(/^```(?:json)?\n?/, '')
               .replace(/\n?```$/, '')
               .trim();
-            const parsed = JSON.parse(jsonText);
+            const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
             label = (parsed.label || '').slice(0, 80);
             branchName = (parsed.branch || fallbackBranch)
               .replace(/[^a-z0-9-]/g, '-')
@@ -824,11 +1003,11 @@ Task: ${initialPrompt}`;
     // The CLI retries failed API calls up to 10 times with exponential backoff; a bad
     // credential or model can stall metadata for minutes. Provisioning must not wait on
     // that — fail fast and let the caller fall back to the default label/branch.
-    let timer;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         consume,
-        new Promise((_, reject) => {
+        new Promise<void>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error('Metadata generation timed out')),
             METADATA_TIMEOUT_MS
@@ -848,22 +1027,27 @@ Task: ${initialPrompt}`;
     return { label, branchName };
   }
 
-  async persistMessage(sessionState, message) {
+  async persistMessage(sessionState: ClaudeAgentState, message: SDKMessage): Promise<void> {
     const { sessionId, userId } = sessionState;
     const app = this.app;
+    const msg = message as SDKMessage & {
+      subtype?: string;
+      uuid?: string;
+      total_cost_usd?: number | null;
+    };
 
-    if (message.type === 'system' && message.subtype === 'thinking_tokens') {
+    if (msg.type === 'system' && msg.subtype === 'thinking_tokens') {
       return;
     }
 
     await app.service('messages').create(
       {
         session_id: sessionId,
-        type: message.type,
-        subtype: message.subtype ?? null,
-        uuid: message.uuid ?? null,
-        message_json: JSON.stringify(message),
-        total_cost_usd: message.type === 'result' ? (message.total_cost_usd ?? null) : null,
+        type: msg.type,
+        subtype: msg.subtype ?? null,
+        uuid: msg.uuid ?? null,
+        message_json: JSON.stringify(msg),
+        total_cost_usd: msg.type === 'result' ? (msg.total_cost_usd ?? null) : null,
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -871,12 +1055,12 @@ Task: ${initialPrompt}`;
 
   // Required by @feathersjs/express to recognise this as a Feathers service
   // rather than Express middleware.
-  async get(id) {
+  async get(id: number) {
     return this.getActiveSession(id) ?? null;
   }
 }
 
-export function registerClaudeAgentService(app, path = 'claude-agent') {
+export function registerClaudeAgentService(app: AgentApp, path = 'claude-agent') {
   const service = new ClaudeAgentService();
   app.use(path, service, {
     methods: [

@@ -56,6 +56,18 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(prUpsert)).toBe(false);
   });
 
+  it('treats typed tool_call PrUpsert as a group boundary', () => {
+    const prUpsert = {
+      type: 'tool_call',
+      name: 'mcp__baguette__PrUpsert',
+      id: 1,
+      call_id: 'pr',
+    };
+    expect(messageContainsPrUpsert(prUpsert)).toBe(true);
+    expect(isChatGroupBoundary(prUpsert)).toBe(true);
+    expect(isChatWorkMessage(prUpsert)).toBe(false);
+  });
+
   it('treats CreateIssue tool messages as group boundaries', () => {
     const createIssue = {
       type: 'assistant',

@@ -182,7 +182,46 @@ export function mapToolResultForKind(kind, rawResult, opts = {}) {
     return { ...base, summary: content || null };
   }
 
-  if (kind === 'mcp' || kind === 'generic') {
+  if (kind === 'mcp') {
+    const claude = formatClaudeToolResult(rawResult, { isError: opts.isError });
+    if (claude.content) {
+      const base = claude.isError ? genericError(claude.content) : genericOk();
+      let data = null;
+      const content = claude.content;
+      if (typeof content === 'string' && content.trim().startsWith('{')) {
+        try {
+          data = JSON.parse(content);
+        } catch {
+          data = null;
+        }
+      } else if (content && typeof content === 'object') {
+        data = content;
+      }
+      return {
+        ...base,
+        content: claude.content,
+        data: data && typeof data === 'object' ? data : null,
+      };
+    }
+    const { content, isError } = formatCursorToolCallResult(rawResult, {
+      toolCallStatus: opts.toolCallStatus,
+      isErrorHint: opts.isError,
+    });
+    if (isError) return genericError(content);
+    let data = null;
+    if (typeof content === 'string' && content.trim().startsWith('{')) {
+      try {
+        data = JSON.parse(content);
+      } catch {
+        data = null;
+      }
+    } else if (content && typeof content === 'object') {
+      data = content;
+    }
+    return { ...genericOk(), data: data && typeof data === 'object' ? data : null };
+  }
+
+  if (kind === 'generic') {
     const claude = formatClaudeToolResult(rawResult, { isError: opts.isError });
     if (claude.content) {
       const base = claude.isError ? genericError(claude.content) : genericOk();
@@ -289,6 +328,7 @@ export function mapToolArgs(kind, name, input = {}) {
  * @param {string} name
  * @param {Record<string, unknown>} args
  * @param {string} startedAt
+ * @returns {import('./session-messages.ts').ToolCallPayload}
  */
 export function buildToolCallStart(callId, name, args, startedAt = new Date().toISOString()) {
   const canonical = canonicalToolName(name);
@@ -309,6 +349,7 @@ export function buildToolCallStart(callId, name, args, startedAt = new Date().to
 /**
  * @param {import('./session-messages.ts').ToolCallPayload} prev
  * @param {object} opts
+ * @returns {import('./session-messages.ts').ToolCallPayload}
  */
 export function buildToolCallComplete(
   prev,
@@ -335,8 +376,22 @@ export function buildToolCallComplete(
  * @param {object} parsed
  */
 export function normalizeUserPayloadForStorage(parsed) {
+  if (parsed?.type === 'user' && (parsed.source === 'mcp' || parsed.subtype === 'mcp')) {
+    if (typeof parsed.content === 'string') {
+      return { type: 'user', source: 'mcp', content: parsed.content, subtype: 'mcp' };
+    }
+    const legacyContent = parsed.message?.content;
+    let content = '';
+    if (typeof legacyContent === 'string') content = legacyContent;
+    else if (Array.isArray(legacyContent)) {
+      content = legacyContent
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n\n');
+    }
+    return { type: 'user', source: 'mcp', content, subtype: 'mcp' };
+  }
   if (parsed?.type === 'user' && typeof parsed.content === 'string') return parsed;
-  if (parsed?.type === 'user' && parsed.source === 'mcp') return parsed;
   if (parsed?.type !== 'user') return parsed;
 
   const legacyContent = parsed.message?.content;
@@ -367,6 +422,7 @@ export function normalizeUserPayloadForStorage(parsed) {
 /**
  * Claude SDK `result` → turn_result payload.
  * @param {object} message
+ * @returns {import('./session-messages.ts').TurnResultPayload}
  */
 export function mapClaudeTurnResult(message) {
   const ok = message.subtype === 'success' && !message.is_error;
@@ -379,10 +435,9 @@ export function mapClaudeTurnResult(message) {
 }
 
 /**
- * Assistant SDK message → typed assistant payload.
- * @param {object} sdkMsg
+ * Extract plan markdown from an ExitPlanMode / createPlan tool input.
+ * @param {Record<string, unknown> | null | undefined} input
  */
-/** @param {Record<string, unknown> | null | undefined} input */
 export function planMarkdownFromToolInput(input) {
   if (!input || typeof input !== 'object') return '';
   for (const key of ['plan', 'planContent', 'description', 'content', 'text', 'summary']) {
@@ -395,6 +450,11 @@ export function planMarkdownFromToolInput(input) {
   return '';
 }
 
+/**
+ * Assistant SDK message → typed assistant payload.
+ * @param {object} sdkMsg
+ * @returns {{ blocks: import('./session-messages.ts').AssistantBlock[], toolUses: Array<{ id: string, name: string, input?: Record<string, unknown> }> }}
+ */
 export function mapClaudeAssistantPayload(sdkMsg) {
   const blocks = [];
   const toolUses = [];

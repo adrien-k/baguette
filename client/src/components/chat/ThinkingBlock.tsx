@@ -1,7 +1,13 @@
 import { useState } from 'react';
 
-export default function ThinkingBlock({ block, isLatestMessage }) {
-  const [forceExpanded, setForceExpanded] = useState(null);
+export default function ThinkingBlock({
+  block,
+  isLatestMessage,
+}: {
+  block: { thinking?: string | null };
+  isLatestMessage?: boolean;
+}) {
+  const [forceExpanded, setForceExpanded] = useState<boolean | null>(null);
   const expanded = forceExpanded !== null ? forceExpanded : isLatestMessage;
 
   return (

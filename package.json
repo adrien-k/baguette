@@ -12,6 +12,7 @@
     "start": "NODE_ENV=production node server/index.js",
     "migrate": "knex migrate:latest --knexfile knexfile.js",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
@@ -22,7 +23,7 @@
     "prepare": "husky || true"
   },
   "lint-staged": {
-    "*.{js,jsx}": "eslint --fix",
+    "*.{js,jsx,ts,tsx}": "eslint --fix",
     "*": "prettier --write --ignore-unknown"
   },
   "dependencies": {
@@ -50,6 +51,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "concurrently": "latest",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
@@ -59,6 +63,8 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.5.1",
     "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
     "vitest": "^4.1.10",
     "zod": "^4.4.3"
   }

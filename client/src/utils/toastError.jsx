@@ -42,7 +42,7 @@ function ErrorToast({ t, label, detail }) {
 /**
  * Show an error toast with an optional collapsible details section.
  * @param {string} label - Human-readable action label, e.g. "Failed to delete session"
- * @param {Error|null} [err] - The caught error; its message is shown in the collapsible detail
+ * @param {unknown} [err] - The caught error; its `message` is shown in the collapsible detail
  */
 export function toastError(label, err) {
   const detail = err?.message && err.message !== label ? err.message : null;

@@ -1,4 +1,4 @@
-import BaguetteMcpToolBlock from '../claude/BaguetteMcpToolBlock.jsx';
+import BaguetteMcpToolBlock from '../BaguetteMcpToolBlock.tsx';
 import { formatCursorToolCallResult } from '@baguette/shared/cursor-tool-call-result.js';
 
 /**

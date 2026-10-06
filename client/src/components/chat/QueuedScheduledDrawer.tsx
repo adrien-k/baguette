@@ -2,7 +2,10 @@ import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import QueuedMessages from '../QueuedMessages.jsx';
 import TiedLoopMessages from '../TiedLoopMessages.jsx';
 
-function drawerSummary(queue, tiedLoops) {
+function drawerSummary(
+  queue: Record<string, unknown>[],
+  tiedLoops: Record<string, unknown>[]
+): string {
   const scheduled = queue.filter((q) => q.kind === 'scheduled').length;
   const queued = queue.length - scheduled;
   const parts = [];
@@ -27,6 +30,18 @@ export default function QueuedScheduledDrawer({
   onTiedLoopDelete,
   expanded,
   onExpandedChange,
+}: {
+  queue: Record<string, unknown>[];
+  tiedLoops: Record<string, unknown>[];
+  session?: Record<string, unknown> | null;
+  models?: { id?: string; label?: string; name?: string }[];
+  onDelete?: (id: number) => unknown;
+  onSendNow?: (id: number) => unknown;
+  onEdit?: (id: number, messageJson: string) => unknown;
+  loopEditUrl?: string;
+  onTiedLoopDelete?: (id: number) => unknown;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const count = queue.length + tiedLoops.length;
   if (count === 0) return null;

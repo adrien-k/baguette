@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { formatTaskDuration } from '../../utils/dates.js';
-import ChatMessage from '../ChatMessage.jsx';
+import ChatMessage from '../ChatMessage.tsx';
+import type { ChatMessageView } from '@baguette/shared/session-messages.ts';
 
 export default function ChatWorkSummary({
   messages,
@@ -14,6 +15,17 @@ export default function ChatWorkSummary({
   agentName,
   models,
   pinnedRunningBashIds,
+}: {
+  messages: ChatMessageView[];
+  indices: number[];
+  callCount: number;
+  durationMs?: number | null;
+  displayMessages: ChatMessageView[];
+  worktreePath?: string | null;
+  sessionId?: number | null;
+  agentName?: string;
+  models?: { id?: string; label?: string; name?: string }[];
+  pinnedRunningBashIds?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const duration = formatTaskDuration(durationMs);

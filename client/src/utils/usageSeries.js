@@ -81,6 +81,10 @@ export function summarizeCostByModel(breakdown) {
 }
 
 /** Session usage rows with positive cost, one entry per model and activity kind. */
+/**
+ * @param {Array<{ kind?: string, model?: string, cost_usd?: number|string }>} [breakdown]
+ * @returns {Array<{ kind: string, model: string, cost_usd: number }>}
+ */
 export function listSessionCostLines(breakdown) {
   if (!breakdown?.length) return [];
   return breakdown
