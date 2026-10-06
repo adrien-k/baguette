@@ -1,10 +1,12 @@
 <% require "dotenv"; Dotenv.load(".kamal/.env") if File.exist?(".kamal/.env") %>
+<% remote_registry = ENV["DOCKER_REGISTRY_USERNAME"].to_s.strip != "" %>
+<% docker_image = ENV.fetch("DOCKER_IMAGE", "adrien-k/baguette") %>
 
 # Name of your application. Used to uniquely configure containers.
 service: baguette
 
 # Name of the container image.
-image: smpl-ee/baguette
+image: <%= docker_image %>
 
 volumes:
   - /home/<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>/baguette_storage:/data
@@ -40,15 +42,28 @@ proxy:
     - www.<%= ENV.fetch('DOMAIN') %>
     - "*.<%= ENV.fetch('DOMAIN') %>"
 
+<% if remote_registry %>
+# Push/pull via Docker Hub (or another registry) — set DOCKER_REGISTRY_USERNAME and DOCKER_REGISTRY_PASSWORD.
+registry:
+<% if ENV["DOCKER_REGISTRY_SERVER"].to_s.strip != "" %>
+  server: <%= ENV["DOCKER_REGISTRY_SERVER"] %>
+<% end %>
+  username: <%= ENV.fetch("DOCKER_REGISTRY_USERNAME") %>
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+<% else %>
 # Use a local registry on the deploy server — no credentials needed.
 # Kamal automatically starts the registry and pushes the image to it.
 registry:
   server: localhost:5555
+<% end %>
 
 builder:
   arch:
     - amd64
+<% unless remote_registry %>
   remote: ssh://<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>@<%= ENV.fetch('DEPLOY_SERVER') %>
+<% end %>
   args:
     GIT_SHA: <%= ENV.fetch('GITHUB_SHA', `git rev-parse HEAD`.strip) %>
 <% if ENV['GITHUB_ACTIONS'] == 'true' %>
@@ -59,7 +74,7 @@ builder:
   cache:
     type: registry
     options: mode=max
-    image: baguette-build-cache
+    image: <%= remote_registry ? "#{docker_image}-build-cache" : "baguette-build-cache" %>
 <% end %>
 
 # Inject ENV variables into containers (secrets come from .env).

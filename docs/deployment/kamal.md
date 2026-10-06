@@ -105,6 +105,17 @@ All configuration is driven by the following variables:
 | `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)                                                           |
 | `ENCRYPTION_KEY`            | At least 32 random characters — used for cookie signing and secret encryption (generate with `openssl rand -hex 32`) |
 
+**Optional — Docker Hub (or GHCR) instead of the local registry on the server**
+
+When `DOCKER_REGISTRY_USERNAME` is set, Kamal pushes and pulls from that registry (build runs on your machine or on the GitHub runner, not via SSH on the deploy server). Omit these to keep the default `localhost:5555` registry on the VPS.
+
+| Variable                   | Description                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `DOCKER_IMAGE`             | Image name (default: `smpl-ee/baguette`), e.g. `your-user/baguette` on Docker Hub                |
+| `DOCKER_REGISTRY_USERNAME` | Registry username (Docker Hub user or org)                                                       |
+| `DOCKER_REGISTRY_PASSWORD` | Registry password or access token (secret in GitHub Actions; in `.kamal/.env` for local deploys) |
+| `DOCKER_REGISTRY_SERVER`   | Registry host (optional; omit for Docker Hub, use `ghcr.io` for GitHub Container Registry)       |
+
 ### 5.1. Deploy with Kamal
 
 Deploy directly from your local machine. You'll need Ruby installed.
@@ -139,14 +150,17 @@ The included workflow (`.github/workflows/deploy.yml`) runs only on manual **wor
    | `DOMAIN`        | Your domain (e.g. `baguette.example.com`)            |
    | `DEPLOY_USER`   | SSH user on the server (optional, default: `ubuntu`) |
 
+   Optional for Docker Hub / remote registry (see table above): `DOCKER_IMAGE`, `DOCKER_REGISTRY_USERNAME`, `DOCKER_REGISTRY_SERVER`.
+
    **Secrets** (encrypted, "Secrets" tab):
 
-   | Secret                      | Value                                                           |
-   | --------------------------- | --------------------------------------------------------------- |
-   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server        |
-   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub App client ID                                       |
-   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub App client secret                                   |
-   | `AUTH_GITHUB_APP_SLUG`      | Your GitHub App slug (the `<slug>` in `github.com/apps/<slug>`) |
-   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)       |
+   | Secret                      | Value                                                                 |
+   | --------------------------- | --------------------------------------------------------------------- |
+   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server              |
+   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub App client ID                                             |
+   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub App client secret                                         |
+   | `AUTH_GITHUB_APP_SLUG`      | Your GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)       |
+   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)             |
+   | `DOCKER_REGISTRY_PASSWORD`  | Docker Hub token or registry password (only if using remote registry) |
 
 3. In GitHub, open **Actions → Deploy → Run workflow**, choose the environment, and run the workflow.

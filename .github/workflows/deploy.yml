@@ -54,6 +54,10 @@ jobs:
           DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
+          DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+          DOCKER_REGISTRY_SERVER: ${{ vars.DOCKER_REGISTRY_SERVER }}
+          DOCKER_REGISTRY_USERNAME: ${{ vars.DOCKER_REGISTRY_USERNAME }}
+          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
         run: kamal build push
 
       - name: Deploy with Kamal
@@ -65,4 +69,8 @@ jobs:
           DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
+          DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+          DOCKER_REGISTRY_SERVER: ${{ vars.DOCKER_REGISTRY_SERVER }}
+          DOCKER_REGISTRY_USERNAME: ${{ vars.DOCKER_REGISTRY_USERNAME }}
+          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
         run: kamal deploy --skip-push
