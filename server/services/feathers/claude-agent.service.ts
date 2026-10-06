@@ -956,7 +956,8 @@ export class ClaudeAgentService {
     initialPrompt: string,
     shortId = '',
     user: { id: number } | null,
-    repo: { full_name?: string | null } | null = null
+    repo: { full_name?: string | null } | null = null,
+    session: Pick<AgentSessionRow, 'model'> | null = null
   ): Promise<{ label: string; branchName: string }> {
     const fallbackBranch = `task-${shortId}`;
     const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
@@ -971,7 +972,10 @@ Task: ${initialPrompt}`;
     const env = await getClaudeEnv(this.app, user?.id ?? 0, repo?.full_name ?? null);
     const q = query({
       prompt,
-      options: { model: 'haiku', env },
+      // Generate the label/branch with the session's selected model so the metadata
+      // matches the agent that will actually run the task. Sessions created without an
+      // explicit model fall back to the cheap alias so provisioning stays fast.
+      options: { model: session?.model || 'haiku', env },
     });
     const consume = (async () => {
       for await (const message of q) {

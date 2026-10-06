@@ -800,4 +800,53 @@ describe('ClaudeAgentService', (hooks) => {
       expect(channel.push).not.toHaveBeenCalled();
     });
   });
+
+  // ── 7. Metadata generation ─────────────────────────────────────────────────
+
+  describe('generateSessionMetadata', () => {
+    const SUCCESS_RESULT = {
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: '{"label":"Fix login redirect","branch":"fix-login-redirect-abc12"}',
+    };
+
+    function makeService() {
+      return Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+    }
+
+    it('generates the label and branch with the session’s selected model', async () => {
+      query.mockImplementation(() => makeAsyncIterable([SUCCESS_RESULT]));
+
+      const service = makeService();
+      const result = await service.generateSessionMetadata(
+        'Fix the bug',
+        'abc12',
+        { id: 1 },
+        null,
+        { model: 'claude-opus-5' }
+      );
+
+      expect(result).toEqual({
+        label: 'Fix login redirect',
+        branchName: 'fix-login-redirect-abc12',
+      });
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query.mock.calls[0][0].options.model).toBe('claude-opus-5');
+    });
+
+    it('falls back to the cheap alias when the session has no selected model', async () => {
+      query.mockImplementation(() => makeAsyncIterable([SUCCESS_RESULT]));
+
+      const service = makeService();
+      await service.generateSessionMetadata('Fix the bug', 'abc12', { id: 1 }, null, {
+        model: null,
+      });
+
+      expect(query.mock.calls[0][0].options.model).toBe('haiku');
+    });
+  });
 });

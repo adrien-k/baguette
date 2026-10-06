@@ -1665,6 +1665,20 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(generateSessionMetadata).toHaveBeenCalled();
     });
 
+    it('passes the session so metadata generation uses its selected model', async () => {
+      const session = await app
+        .service('sessions')
+        .create(
+          sessionData({ model: 'claude-opus-5', initial_prompt: 'Fix the bug' }),
+          params({ id: userId1 })
+        );
+
+      expect(generateSessionMetadata).toHaveBeenCalled();
+      const forwarded = generateSessionMetadata.mock.calls[0].at(-1);
+      expect(forwarded.id).toBe(session.id);
+      expect(forwarded.model).toBe('claude-opus-5');
+    });
+
     it('create_new_branch=false allows a second session on a branch already in use', async () => {
       await db('sessions').where({ id: sessId1 }).update({
         local_branch: 'feature/taken-a1b2c3',

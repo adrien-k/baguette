@@ -1409,7 +1409,13 @@ async function provisionGlobalSession(app, session, params) {
       const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
       const result = await app
         .service(agentService)
-        .generateSessionMetadata(session.initial_prompt, session.short_id, params.user, null);
+        .generateSessionMetadata(
+          session.initial_prompt,
+          session.short_id,
+          params.user,
+          null,
+          session
+        );
       if (result.label) patch.label = result.label;
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
@@ -1498,7 +1504,7 @@ async function provisionSessionEnvironment(app, session, params) {
         const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
         const result = await app
           .service(agentService)
-          .generateSessionMetadata(session.initial_prompt, shortId, user, repo);
+          .generateSessionMetadata(session.initial_prompt, shortId, user, repo, session);
         if (result.label) patch.label = result.label;
         if (!requestedBranchName && !session.remote_branch) {
           remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;

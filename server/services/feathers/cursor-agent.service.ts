@@ -948,7 +948,8 @@ ${body}`,
     initialPrompt: string,
     shortId = '',
     user: { id?: number } | null = null,
-    repo: { id?: number | null } | null = null
+    repo: { id?: number | null } | null = null,
+    session: Pick<AgentSessionRow, 'model' | 'model_params'> | null = null
   ): Promise<{ label: string; branchName: string }> {
     const fallbackBranch = `task-${shortId}`;
     const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
@@ -973,9 +974,14 @@ Task: ${initialPrompt}`;
     }
 
     const apiKey = repoApiKey || fullUser?.cursor_api_key || undefined;
+    // Generate the label/branch with the session's selected model (and its variant params)
+    // so the metadata matches the agent that will actually run the task. Sessions created
+    // without an explicit model fall back to a cheap one so provisioning stays fast.
+    const modelId = session?.model || CURSOR_CHEAP_MODEL_ID;
+    const modelParams = this.parseModelParams(session?.model_params);
     const agent = await Agent.create({
       apiKey,
-      model: { id: CURSOR_CHEAP_MODEL_ID },
+      model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
       local: { settingSources: [] },
     } as AgentOptions);
 
