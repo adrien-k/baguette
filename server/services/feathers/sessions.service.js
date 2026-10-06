@@ -37,7 +37,9 @@ import {
   splitPrBody,
   buildPrBody,
   buildSessionFooter,
+  resolveRestoreWorktreeBranches,
 } from '../github.js';
+import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
@@ -494,8 +496,9 @@ export class SessionsService extends KnexService {
           )
         );
     }
+    await trimSessionMessagesForArchive(db, sessionId);
     if (!isGlobalSession(session)) {
-      await removeWorktree(session, repo);
+      await removeWorktree(session, repo, { keepLocalBranch: true });
     }
     this.app.service('tasks').deleteSessionTasks(sessionId);
     if (session?.short_id) {
@@ -1107,10 +1110,8 @@ export class SessionsService extends KnexService {
       const token = getGithubToken(user);
       if (!token) throw new BadRequest('No GitHub token configured');
 
-      const branch = session.remote_branch || session.local_branch;
-      if (!branch) throw new BadRequest('Session has no branch to restore to');
-      const localBranch =
-        session.local_branch || uniqueLocalBranch(branch, session.short_id) || branch;
+      const { branch, localBranch } = await resolveRestoreWorktreeBranches(repo.bare_path, session);
+      if (!branch || !localBranch) throw new BadRequest('Session has no branch to restore to');
 
       const { worktreePath: absoluteWorktreePath } = await createWorktree(
         repo,

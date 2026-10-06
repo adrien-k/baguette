@@ -517,6 +517,40 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(row.worktree_path).toBeNull();
     });
 
+    it('trims messages to user and assistant only when archiving', async () => {
+      await db('session_messages').insert([
+        {
+          session_id: sessId,
+          type: 'user',
+          message_json: JSON.stringify({ type: 'user', content: 'hi' }),
+        },
+        {
+          session_id: sessId,
+          type: 'assistant',
+          message_json: JSON.stringify({ type: 'assistant', blocks: [] }),
+        },
+        {
+          session_id: sessId,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({ type: 'system', subtype: 'status' }),
+        },
+        {
+          session_id: sessId,
+          type: 'tool_call',
+          message_json: JSON.stringify({ type: 'tool_call', id: 'x' }),
+        },
+      ]);
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      const types = await db('session_messages')
+        .where({ session_id: sessId })
+        .orderBy('id', 'asc')
+        .pluck('type');
+      expect(types).toEqual(['user', 'assistant']);
+    });
+
     it('deletes a strong loop when the session is archived', async () => {
       const repo = await db('repos').first();
       await db('loops').insert({
@@ -628,7 +662,8 @@ describe('Sessions service - custom methods', (hooks) => {
 
       expect(removeWorktree).toHaveBeenCalledWith(
         expect.objectContaining({ id: sessId, short_id: 'deadbeef', worktree_path: null }),
-        expect.objectContaining({ full_name: 'test/repo' })
+        expect.objectContaining({ full_name: 'test/repo' }),
+        { keepLocalBranch: true }
       );
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();

@@ -191,6 +191,25 @@ describe('createWorktree', () => {
     expect(files).toContain('update.txt');
   });
 
+  it('keeps a unique local branch when keepLocalBranch is set', async () => {
+    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const localBranch = `${BRANCH}-keep`;
+    await createWorktree(repo, BRANCH, 'wt-keep-1', FAKE_TOKEN, { localBranch });
+
+    await removeWorktree(
+      {
+        short_id: 'wt-keep-1',
+        local_branch: localBranch,
+        remote_branch: BRANCH,
+      },
+      repo,
+      { keepLocalBranch: true }
+    );
+
+    const { stdout: after } = await git(barePath, 'branch', '--list', localBranch);
+    expect(after.trim()).toContain(localBranch);
+  });
+
   it('deletes a unique local branch after removing the worktree', async () => {
     const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
     const localBranch = `${BRANCH}-archive`;

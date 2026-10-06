@@ -454,20 +454,30 @@ export async function tryDeleteUniqueLocalBranch(barePath, session) {
   }
 }
 
-export async function removeWorktree(session, repo) {
+/**
+ * @param {{ keepLocalBranch?: boolean }} [options]
+ *   When archiving, pass `keepLocalBranch: true` so restore can recreate the worktree from the
+ *   session-specific local ref.
+ */
+export async function removeWorktree(session, repo, options = {}) {
+  const keepLocalBranch = !!options.keepLocalBranch;
   // Global sessions use the shared REPOS_DIR as cwd — never delete it.
   if (session?.is_global) return;
   const absoluteWorktreePath = resolveSessionWorktreePath(session, repo);
-  const deleteUnique = () => tryDeleteUniqueLocalBranch(repo?.bare_path, session);
+  const maybeDeleteUnique = async () => {
+    if (!keepLocalBranch) {
+      await tryDeleteUniqueLocalBranch(repo?.bare_path, session);
+    }
+  };
   if (!absoluteWorktreePath) {
-    await deleteUnique();
+    await maybeDeleteUnique();
     return;
   }
   if (path.resolve(absoluteWorktreePath) === path.resolve(REPOS_DIR)) return;
   try {
     await fs.promises.access(absoluteWorktreePath);
   } catch {
-    await deleteUnique();
+    await maybeDeleteUnique();
     return;
   }
 
@@ -485,14 +495,37 @@ export async function removeWorktree(session, repo) {
       if (isNewStructure) {
         await fs.promises.rm(cleanupPath, { recursive: true, force: true });
       }
-      await deleteUnique();
+      await maybeDeleteUnique();
       return;
     } catch {
       /* fall through to rm below */
     }
   }
   await fs.promises.rm(cleanupPath, { recursive: true, force: true });
-  await deleteUnique();
+  await maybeDeleteUnique();
+}
+
+/** Prefer the archived session's unique local ref when it still exists in the bare repo. */
+export async function resolveRestoreWorktreeBranches(barePath, session) {
+  const remoteBranch = session.remote_branch;
+  const localBranch = session.local_branch;
+  if (localBranch && localBranch !== remoteBranch && barePath) {
+    try {
+      await execFileAsync('git', ['rev-parse', '--verify', `refs/heads/${localBranch}`], {
+        cwd: barePath,
+        stdio: 'pipe',
+      });
+      return { branch: localBranch, localBranch };
+    } catch {
+      /* fall through */
+    }
+  }
+  const branch = remoteBranch || localBranch;
+  if (!branch) {
+    return { branch: null, localBranch: null };
+  }
+  const resolvedLocal = localBranch || uniqueLocalBranch(branch, session.short_id) || branch;
+  return { branch, localBranch: resolvedLocal };
 }
 
 /**
