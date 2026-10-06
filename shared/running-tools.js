@@ -62,8 +62,8 @@ export function runningToolDisplay(block, opts = {}) {
 
   if (name.startsWith('mcp__baguette__')) {
     const short = name.replace('mcp__baguette__', '');
-    if (short === 'RunProjectCommand') {
-      const label = input.label ?? 'RunProjectCommand';
+    if (short === 'RunTask') {
+      const label = input.label ?? short;
       const args = input.args;
       const detail = Array.isArray(args) && args.length > 0 ? args.join(' ') : undefined;
       return { label, detail };
@@ -93,6 +93,13 @@ export function runningToolDisplay(block, opts = {}) {
     }
     if (short === 'ShowDiff') {
       return { label: short, detail: input.path };
+    }
+    if (short === 'AwaitDetachedTask') {
+      const taskId = input.taskId;
+      return {
+        label: 'AwaitDetachedTask',
+        detail: taskId != null ? `task ${taskId}` : undefined,
+      };
     }
     return { label: short };
   }
@@ -181,19 +188,19 @@ export function collectRunningTools(messages, opts = {}) {
   return out;
 }
 
-/** Typed tool_call row pinned to the dock while running: Bash or RunProjectCommand. */
+/** Typed tool_call row pinned to the dock while running: Bash, RunTask, or AwaitDetachedTask. */
 function isPinnableRunningToolCallView(msg) {
   if (!isRunningToolCallView(msg)) return false;
   if (msg.kind === 'bash' || msg.name === 'Bash') return true;
   if (msg.kind === 'mcp') {
     const tool = msg.args?.tool ?? msg.args?.toolName;
-    return tool === 'RunProjectCommand';
+    return tool === 'RunTask' || tool === 'AwaitDetachedTask';
   }
   return false;
 }
 
 /**
- * Running Bash/shell and RunProjectCommand blocks pinned above the composer until done.
+ * Running Bash/shell, RunTask, and AwaitDetachedTask blocks pinned above the composer until done.
  * @param {{ worktreePath?: string; sessionTurnActive?: boolean }} [opts]
  * @returns {{ id: string; message: object; startedAt: string | null }[]}
  */
@@ -228,7 +235,7 @@ export function runningBashToolIds(dockItems) {
 }
 
 /**
- * Hide a pinned running Bash / RunProjectCommand tool_call row from the flow while it
+ * Hide a pinned running Bash / RunTask / AwaitDetachedTask tool_call row from the flow while it
  * shows in the dock.
  * @param {object} msg - parsed ChatMessageView
  * @param {Set<string>} pinnedIds

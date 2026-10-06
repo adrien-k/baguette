@@ -131,7 +131,7 @@ Each task in `session.tasks` supports:
 - **ports**: (optional, **command tasks only**) env var names that Baguette assigns free **host** ports to before launching — use for dev servers and other processes the preview proxy must reach. **Do not** add `ports` to docker tasks (Postgres, Redis, etc.).
 - **depends-on**: (optional) list of task keys that must be ready before this task starts. Command tasks that use a docker database must list `depends-on: [postgres]` (or your DB task key).
 - **env**: (optional) per-task environment variables, merged on top of `session.env`. Put **`DATABASE_URL` and other docker connection URLs here** (not in `session.env`), using `${{ baguette.tasks.<docker-task>.container_hostname }}` (and optionally `${{ baguette.tasks.<docker-task>.container_image }}`) and the **container’s normal listen port** (e.g. `:5432`, `:6379`) — not dynamic `${{ baguette.tasks.<docker-task>.PG_PORT }}` placeholders. Also supports `${{ baguette.secrets.X }}`, `${{ baguette.session.public_uri }}`, `${{ baguette.services.<name>.public_uri }}`, and `${{ baguette.tasks.<command-task-key>.<PORT_NAME> }}` for **command** tasks that declare `ports`.
-- **internal**: (optional) when `true`, the task is omitted from session task buttons and `ListProjectCommands` (it remains available for `depends-on`, `services` references, and `RunProjectCommand` by label).
+- **internal**: (optional) when `true`, the task is omitted from session task buttons and `ListProjectCommands` (it remains available for `depends-on`, `services` references, and `RunTask` by label).
 
 ```yaml
 tasks:

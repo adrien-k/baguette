@@ -7,7 +7,7 @@ export type RunningToolDockItem = {
   startedAt?: string | null;
 };
 
-/** Running Bash and RunProjectCommand tool_call rows pinned above the composer until done. */
+/** Running Bash, RunTask, and AwaitDetachedTask tool_call rows pinned above the composer until done. */
 export default function ChatRunningBashDock({
   items,
   worktreePath,

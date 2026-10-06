@@ -89,6 +89,51 @@ const DEFAULT_SESSION = {
 const SESSION_HEADER = '*Posted by baguette - Claude, session test:*\n\n';
 const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 
+/** Minimal in-memory task for AwaitDetachedTask (mirrors Task.onLog / onExit). */
+function makeAwaitableTask({
+  id = 42,
+  session_id = 1,
+  label = 'Run tests',
+  exitCode = 0,
+  stdout = '',
+  stderr = '',
+  alreadyExited = false,
+} = {}) {
+  const logBuffer = [];
+  if (stdout) logBuffer.push({ stream: 'stdout', data: stdout });
+  if (stderr) logBuffer.push({ stream: 'stderr', data: stderr });
+  let status = alreadyExited ? 'exited' : 'running';
+  let exit_code = alreadyExited ? exitCode : null;
+  const exitListeners = [];
+
+  return {
+    id,
+    session_id,
+    label,
+    status,
+    exit_code,
+    onLog(fn) {
+      for (const entry of logBuffer) fn(id, entry.stream, entry.data);
+      return () => {};
+    },
+    onExit(fn) {
+      if (status === 'exited' || status === 'stopped') {
+        fn(id, exit_code);
+        return () => {};
+      }
+      exitListeners.push(fn);
+      if (!alreadyExited) {
+        setImmediate(() => {
+          status = 'exited';
+          exit_code = exitCode;
+          for (const listener of exitListeners) listener(id, exitCode);
+        });
+      }
+      return () => {};
+    },
+  };
+}
+
 /** Simulates a task that calls onLog/onExit callbacks asynchronously. */
 function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   return vi.fn().mockImplementation((data) => {
@@ -202,6 +247,8 @@ describe('global sessions', () => {
     expect(names).not.toContain('PrRead');
     expect(names).not.toContain('ConfigRepoPrompt');
     expect(names).not.toContain('ListProjectCommands');
+    expect(names).not.toContain('RunTask');
+    expect(names).not.toContain('AwaitDetachedTask');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('ListIssues');
@@ -623,11 +670,11 @@ describe('ListProjectCommands', () => {
   });
 });
 
-describe('RunProjectCommand', () => {
+describe('RunTask', () => {
   it('returns ok: false when config is missing', async () => {
     loadBaguetteConfig.mockResolvedValue(null);
     const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(false);
   });
 
@@ -636,7 +683,7 @@ describe('RunProjectCommand', () => {
       session: { commands: [{ label: 'Build', run: 'npm run build' }] },
     });
     const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Unknown' }));
+    const result = parseResult(await callTool(tools, 'RunTask', { label: 'Unknown' }));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/Unknown/);
   });
@@ -644,7 +691,7 @@ describe('RunProjectCommand', () => {
   it('returns ok: false when config has a parse error', async () => {
     loadBaguetteConfig.mockResolvedValue({ error: 'bad YAML' });
     const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(false);
   });
 
@@ -657,7 +704,7 @@ describe('RunProjectCommand', () => {
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
     const result = parseResult(
-      await callTool(tools, 'RunProjectCommand', { label: 'Run tests', detach: true })
+      await callTool(tools, 'RunTask', { label: 'Run tests', detach: true })
     );
     expect(result.ok).toBe(true);
     expect(result.taskId).toBe(99);
@@ -678,7 +725,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests', detach: true });
+    await callTool(tools, 'RunTask', { label: 'Run tests', detach: true });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.not.objectContaining({ onLog: expect.anything(), onExit: expect.anything() }),
       expect.anything()
@@ -693,7 +740,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: 'all tests passed\n' }) }
     );
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
     expect(result.stdoutLines).toEqual(['all tests passed']);
@@ -712,7 +759,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 1, stderr: 'Test failed\n' }) }
     );
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(1);
     expect(result.stderrLines).toEqual(['Test failed']);
@@ -727,7 +774,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0, stdout: huge }) }
     );
-    const result = parseResult(await callTool(tools, 'RunProjectCommand', { label: 'Run tests' }));
+    const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
     const joined = result.stdoutLines.join('\n');
     expect(joined).toBe(huge.replace(/\n$/, ''));
@@ -745,7 +792,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests', args: ['src/foo.test.js'] });
+    await callTool(tools, 'RunTask', { label: 'Run tests', args: ['src/foo.test.js'] });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests', args: ['src/foo.test.js'] }),
       expect.anything()
@@ -760,7 +807,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', {
+    await callTool(tools, 'RunTask', {
       label: 'Run tests',
       args: ['--reporter', 'verbose', 'src/foo.test.js'],
     });
@@ -781,7 +828,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    await callTool(tools, 'RunTask', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ task_key: 'Run tests', args: [] }),
       expect.anything()
@@ -800,7 +847,7 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', {
+    await callTool(tools, 'RunTask', {
       label: 'Run tests',
       env: { MY_VAR: 'hello', ANOTHER: 'world' },
     });
@@ -818,11 +865,54 @@ describe('RunProjectCommand', () => {
       {},
       { tasksCreate: makeTaskCreate({ exitCode: 0 }) }
     );
-    await callTool(tools, 'RunProjectCommand', { label: 'Run tests' });
+    await callTool(tools, 'RunTask', { label: 'Run tests' });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.not.objectContaining({ extra_env: expect.anything() }),
       expect.anything()
     );
+  });
+});
+
+describe('AwaitDetachedTask', () => {
+  it('returns ok: false when task is not found', async () => {
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(null) });
+    const result = parseResult(await callTool(tools, 'AwaitDetachedTask', { taskId: 42 }));
+    expect(result.ok).toBe(false);
+  });
+
+  it('returns ok: false when task belongs to another session', async () => {
+    const task = makeAwaitableTask({ session_id: 999 });
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const result = parseResult(await callTool(tools, 'AwaitDetachedTask', { taskId: 42 }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/does not belong/);
+  });
+
+  it('waits for exit and returns stdout/stderr lines', async () => {
+    const task = makeAwaitableTask({
+      stdout: 'all tests passed\n',
+      stderr: 'warn\n',
+      exitCode: 0,
+    });
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const result = parseResult(await callTool(tools, 'AwaitDetachedTask', { taskId: 42 }));
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdoutLines).toEqual(['all tests passed']);
+    expect(result.stderrLines).toEqual(['warn']);
+  });
+
+  it('resolves immediately when task already exited', async () => {
+    const task = makeAwaitableTask({
+      stdout: 'done\n',
+      exitCode: 2,
+      alreadyExited: true,
+    });
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const result = parseResult(await callTool(tools, 'AwaitDetachedTask', { taskId: 42 }));
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(2);
+    expect(result.stdoutLines).toEqual(['done']);
   });
 });
 

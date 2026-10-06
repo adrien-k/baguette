@@ -56,10 +56,10 @@ describe('collectRunningTools', () => {
     expect(dock[1].id).toBe('bash2');
   });
 
-  it('includes running RunProjectCommand in the dock', () => {
+  it('includes running RunTask in the dock', () => {
     const messages = [
       { type: 'user', content: 'run tests' },
-      runningToolCall('run1', 'mcp', { toolName: 'RunProjectCommand', label: 'Run tests' }),
+      runningToolCall('run1', 'mcp', { toolName: 'RunTask', label: 'Run tests' }),
     ];
     const dock = collectRunningToolsForBottomBar(messages, [], { sessionTurnActive: true });
     expect(dock).toHaveLength(1);
@@ -104,7 +104,7 @@ describe('collectRunningTools', () => {
       id: 'm1',
       name: 'mcp',
       input: {
-        toolName: 'RunProjectCommand',
+        toolName: 'RunTask',
         args: { label: 'Run tests', args: ['--grep', 'foo'] },
       },
     };

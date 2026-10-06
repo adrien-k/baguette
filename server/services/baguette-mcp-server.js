@@ -68,6 +68,28 @@ function streamToLines(text) {
   return lines;
 }
 
+/** Wait for a baguette Task to exit and return stdout/stderr as line arrays. */
+function waitForTaskLines(task) {
+  let stdout = '';
+  let stderr = '';
+  return new Promise((resolve) => {
+    const unsubLog = task.onLog((_id, stream, data) => {
+      if (stream === 'stdout') stdout += data;
+      else stderr += data;
+    });
+    task.onExit((_id, exitCode) => {
+      unsubLog();
+      resolve(
+        ok({
+          exitCode,
+          stdoutLines: streamToLines(stdout),
+          stderrLines: streamToLines(stderr),
+        })
+      );
+    });
+  });
+}
+
 /** Slack apps with a usable bot token, via the admin CRUD service (internal = decrypted). */
 async function loadConfiguredSlackApps(app) {
   const service = app.service?.('admin/slack');
@@ -854,9 +876,9 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     },
 
     {
-      name: 'RunProjectCommand',
+      name: 'RunTask',
       description:
-        'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline. detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, stop with KillTask. Do not use Shell background mode or background subagents.',
+        'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline. detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, await completion with AwaitDetachedTask, stop with KillTask. Before ending your turn, usually AwaitDetachedTask or KillTask any detached tasks you started (except dev servers you intend to keep). Do not use Shell background mode or background subagents.',
       schema: {
         label: z.string().describe('Task key exactly as returned by ListProjectCommands'),
         args: z
@@ -873,12 +895,12 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
           .boolean()
           .optional()
           .describe(
-            'If true, run as a detached baguette task and return taskId immediately (use ReadTaskOutput/TaskStatus). Default false: wait for exit and return output inline.'
+            'If true, run as a detached baguette task and return taskId immediately (use ReadTaskOutput/TaskStatus or AwaitDetachedTask). Default false: wait for exit and return output inline.'
           ),
       },
       handler: async ({ label, args = [], env: extraEnv, detach = false }) => {
         if (isGlobalSession(session)) {
-          return fail('RunProjectCommand requires a repo session with a .baguette.yaml worktree');
+          return fail('RunTask requires a repo session with a .baguette.yaml worktree');
         }
         let tasks;
         try {
@@ -939,6 +961,25 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
       },
     },
 
+    {
+      name: 'AwaitDetachedTask',
+      description:
+        'Block until a detached baguette task (from RunTask with detach: true) exits, then return exitCode/stdoutLines/stderrLines like an inline RunTask. Use when you started a task detached and need its final output without polling ReadTaskOutput. Prefer calling this before ending your turn when a detached build or command must finish.',
+      schema: {
+        taskId: z
+          .number()
+          .int()
+          .describe('Task ID from RunTask (detach: true) or ListRunningTasks'),
+      },
+      handler: async ({ taskId }) => {
+        const task = app.service('tasks').getTask(taskId);
+        if (!task) return fail(`Task ${taskId} not found`);
+        if (task.session_id !== session.id)
+          return fail(`Task ${taskId} does not belong to this session`);
+        return waitForTaskLines(task);
+      },
+    },
+
     // ── Task lifecycle ──────────────────────────────────────────────────────
 
     {
@@ -960,9 +1001,9 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
     {
       name: 'TaskStatus',
       description:
-        'Get the status of a baguette task by its ID, including whether each assigned port is currently listening. Useful for checking if a dev server is ready after starting it with RunProjectCommand (detach: true).',
+        'Get the status of a baguette task by its ID, including whether each assigned port is currently listening. Useful for checking if a dev server is ready after starting it with RunTask (detach: true).',
       schema: {
-        taskId: z.number().int().describe('Task ID from RunProjectCommand or ListRunningTasks'),
+        taskId: z.number().int().describe('Task ID from RunTask or ListRunningTasks'),
       },
       handler: async ({ taskId }) => {
         const task = app.service('tasks').getTask(taskId);
@@ -988,7 +1029,8 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
     {
       name: 'KillTask',
-      description: 'Kill a running baguette task by its ID.',
+      description:
+        'Kill a running baguette task by its ID. Use before ending your turn to stop detached tasks you no longer need (when not awaiting their output).',
       schema: { taskId: z.number().int().describe('Task ID from ListRunningTasks') },
       handler: async ({ taskId }) => {
         const task = app.service('tasks').getTask(taskId);
