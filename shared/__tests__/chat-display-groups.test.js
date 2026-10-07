@@ -5,7 +5,6 @@ import {
   isChatAnchorMessage,
   isChatGroupBoundary,
   isChatWorkMessage,
-  messageContainsCreateIssue,
   messageContainsPrUpsert,
 } from '../chat-display-groups.js';
 
@@ -68,19 +67,7 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(prUpsert)).toBe(false);
   });
 
-  it('treats CreateIssue tool messages as group boundaries', () => {
-    const createIssue = {
-      type: 'assistant',
-      message: {
-        content: [{ type: 'tool_use', name: 'mcp__baguette__CreateIssue', id: 'iss' }],
-      },
-    };
-    expect(messageContainsCreateIssue(createIssue)).toBe(true);
-    expect(isChatGroupBoundary(createIssue)).toBe(true);
-    expect(isChatWorkMessage(createIssue)).toBe(false);
-  });
-
-  it('treats Cursor mcp meta-tool CreateIssue as a group boundary', () => {
+  it('treats CreateIssue as a regular work tool (not a group boundary)', () => {
     const createIssue = {
       type: 'assistant',
       message: {
@@ -94,9 +81,8 @@ describe('chat display grouping', () => {
         ],
       },
     };
-    expect(messageContainsCreateIssue(createIssue)).toBe(true);
-    expect(isChatGroupBoundary(createIssue)).toBe(true);
-    expect(isChatWorkMessage(createIssue)).toBe(false);
+    expect(isChatGroupBoundary(createIssue)).toBe(false);
+    expect(isChatWorkMessage(createIssue)).toBe(true);
   });
 
   it('does not collapse Cursor PrUpsert into a surrounding Worked group', () => {
@@ -166,7 +152,7 @@ describe('chat display grouping', () => {
     expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS);
   });
 
-  it('splits work at PrUpsert so only the segment after the last boundary collapses', () => {
+  it('splits work at the last PrUpsert only', () => {
     const fewTools = [{ type: 'tool_use', name: 'Read', id: 'r1' }];
     const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
       type: 'tool_use',
@@ -187,6 +173,35 @@ describe('chat display grouping', () => {
     const kinds = grouped.map((g) => g.kind);
     expect(kinds).toEqual(['message', 'work', 'message', 'message', 'message']);
     expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS);
+  });
+
+  it('collapses earlier PrUpsert into Worked; only the last stays visible', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'mcp__baguette__PrUpsert', id: 'pr1' }],
+        },
+      },
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'mcp', id: 'pr2', input: { toolName: 'PrUpsert' } }],
+        },
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 1);
+    expect(grouped[2].message.message.content[0].input.toolName).toBe('PrUpsert');
   });
 
   it('does not collapse trailing work without a following anchor', () => {

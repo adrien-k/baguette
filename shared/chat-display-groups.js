@@ -42,10 +42,6 @@ function blockIsPrUpsert(block) {
   return blockIsNamedMcpTool(block, 'PrUpsert') || blockIsLegacyPrUpsertBash(block);
 }
 
-function blockIsCreateIssue(block) {
-  return blockIsNamedMcpTool(block, 'CreateIssue');
-}
-
 function messageIsToolCallRow(msg) {
   return msg?.type === 'tool_call';
 }
@@ -57,15 +53,26 @@ export function messageContainsPrUpsert(msg) {
   return msg.message.content.some(blockIsPrUpsert);
 }
 
-/** Message whose visible tools include CreateIssue. */
-export function messageContainsCreateIssue(msg) {
-  if (messageIsToolCallRow(msg)) return blockIsCreateIssue(msg);
-  if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
-  return msg.message.content.some(blockIsCreateIssue);
+/** Index of the last message containing PrUpsert, or -1 if none. */
+export function findLastPrUpsertMessageIndex(messages) {
+  let last = -1;
+  for (let i = 0; i < messages.length; i++) {
+    if (messageContainsPrUpsert(messages[i])) last = i;
+  }
+  return last;
 }
 
-function messageContainsHighlightedTool(msg) {
-  return messageContainsPrUpsert(msg) || messageContainsCreateIssue(msg);
+function prUpsertIsDisplayBoundary(msg, context) {
+  if (!messageContainsPrUpsert(msg)) return false;
+  if (!context) return true;
+  const { messages, index, lastPrUpsertIndex } = context;
+  const last =
+    lastPrUpsertIndex !== undefined
+      ? lastPrUpsertIndex
+      : messages
+        ? findLastPrUpsertMessageIndex(messages)
+        : -1;
+  return index === last;
 }
 
 /** User or assistant message with visible text — boundaries of a chat turn. */
@@ -81,15 +88,18 @@ export function isChatAnchorMessage(msg) {
   return false;
 }
 
-/** User/assistant text, PrUpsert, or CreateIssue — splits work runs and enables collapse after the group. */
-export function isChatGroupBoundary(msg) {
-  return isChatAnchorMessage(msg) || messageContainsHighlightedTool(msg);
+/**
+ * User/assistant text or the last PrUpsert — splits work runs and enables collapse.
+ * @param {object} [context] When grouping, pass `{ messages, index }` so only the last PrUpsert is a boundary.
+ */
+export function isChatGroupBoundary(msg, context) {
+  return isChatAnchorMessage(msg) || prUpsertIsDisplayBoundary(msg, context);
 }
 
 /** Tool-only assistant turns plus system/result noise between group boundaries. */
-export function isChatWorkMessage(msg) {
+export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
-  if (messageContainsHighlightedTool(msg)) return false;
+  if (prUpsertIsDisplayBoundary(msg, context)) return false;
   if (msg.type === 'result' || msg.type === 'turn_result') return true;
   if (msg.type === 'tool_call') return true;
   if (msg.type === 'system') return msg.subtype !== 'prompt';
@@ -129,21 +139,29 @@ export function workSpanDurationMs(messages) {
  * >}
  */
 export function groupChatDisplayMessages(messages) {
+  const lastPrUpsertIndex = findLastPrUpsertMessageIndex(messages);
+  const groupContext = (index) => ({
+    messages,
+    index,
+    lastPrUpsertIndex,
+  });
   const items = [];
   let i = 0;
   while (i < messages.length) {
     const msg = messages[i];
-    if (!isChatWorkMessage(msg)) {
+    if (!isChatWorkMessage(msg, groupContext(i))) {
       items.push({ kind: 'message', message: msg, index: i });
       i += 1;
       continue;
     }
     let j = i;
-    while (j < messages.length && isChatWorkMessage(messages[j])) j += 1;
+    while (j < messages.length && isChatWorkMessage(messages[j], groupContext(j))) j += 1;
     const run = messages.slice(i, j);
     const indices = run.map((_, k) => i + k);
     const callCount = countToolCallsInMessages(run);
-    const hasFutureBoundary = messages.slice(j).some(isChatGroupBoundary);
+    const hasFutureBoundary = messages
+      .slice(j)
+      .some((m, k) => isChatGroupBoundary(m, groupContext(j + k)));
     if (hasFutureBoundary && callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS) {
       items.push({
         kind: 'work',
