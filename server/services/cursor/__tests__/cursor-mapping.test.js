@@ -88,6 +88,32 @@ describe('mapCursorEvent', () => {
     expect(mapCursorEvent(asCursor({ type: 'usage' }))).toBeNull();
     expect(mapCursorEvent(asCursor({ type: 'status', status: 'FINISHED' }))).toBeNull();
   });
+
+  it('emits tool_progress for a running Task with conversationSteps', () => {
+    const ops = mapCursorEvent(
+      asCursor({
+        type: 'tool_call',
+        status: 'running',
+        call_id: 'sub-1',
+        name: 'task',
+        args: { description: 'Explore' },
+        result: {
+          status: 'success',
+          value: {
+            conversationSteps: [{ assistantMessage: { text: 'Scanning repo.' } }],
+          },
+        },
+      })
+    );
+    expect(ops).toEqual([
+      { op: 'tool_start', call_id: 'sub-1', name: 'Task', input: { description: 'Explore' } },
+      {
+        op: 'tool_progress',
+        call_id: 'sub-1',
+        raw: { conversationSteps: [{ assistantMessage: { text: 'Scanning repo.' } }] },
+      },
+    ]);
+  });
 });
 
 describe('unwrapCursorResult', () => {

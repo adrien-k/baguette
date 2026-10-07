@@ -116,7 +116,12 @@ export type ToolResultByKind = {
   grep: ToolResultBase;
   edit: ToolResultBase & { diff: string | null };
   todo: ToolResultBase;
-  task: ToolResultBase & { summary: string | null };
+  task: ToolResultBase & {
+    summary: string | null;
+    /** Normalised subagent transcript (Cursor Task `conversationSteps`). */
+    steps?: import('./cursor-task-conversation.ts').TaskConversationStep[];
+    step_count?: number;
+  };
   ask_user: ToolResultBase;
   exit_plan: ToolResultBase;
   mcp: ToolResultBase & {
@@ -268,6 +273,12 @@ export type MessageOp =
       raw: unknown;
       is_error?: boolean;
       status?: string;
+    }
+  | {
+      op: 'tool_progress';
+      call_id: string;
+      /** Raw Cursor Task payload (may include `conversationSteps`). */
+      raw: unknown;
     }
   | { op: 'plan'; markdown: string }
   | { op: 'system'; payload: SystemMessagePayload }

@@ -16,6 +16,7 @@ import type {
 
 /** Throttle assistant row patches during streaming (UI still updates via `patched` events). */
 const ASSISTANT_PATCH_DEBOUNCE_MS = 250;
+const TOOL_PROGRESS_PATCH_DEBOUNCE_MS = 250;
 
 /**
  * Per-provider builders for tool-call payloads. Each provider owns its own
@@ -43,6 +44,8 @@ export type ToolCallBuilders = {
       endedAt?: string;
     }
   ) => ToolCallPayload;
+  /** Cursor Task tools may stream `conversationSteps` while still running. */
+  buildToolCallProgress?: (prev: ToolCallPayload, rawResult: unknown) => ToolCallPayload | null;
 };
 
 export type WriterDeps = {
@@ -77,6 +80,8 @@ export class MessageStreamWriter {
   private thinkingTokensRowId: number | null;
   private _assistantPatchTimer: ReturnType<typeof setTimeout> | null;
   private _assistantPatchDirty: boolean;
+  private _toolProgressTimer: ReturnType<typeof setTimeout> | null;
+  private _toolProgressDirty: Set<string>;
 
   constructor(deps: WriterDeps) {
     this.deps = deps;
@@ -88,6 +93,34 @@ export class MessageStreamWriter {
     this.thinkingTokensRowId = null;
     this._assistantPatchTimer = null;
     this._assistantPatchDirty = false;
+    this._toolProgressTimer = null;
+    this._toolProgressDirty = new Set();
+  }
+
+  clearToolProgressTimer() {
+    if (this._toolProgressTimer != null) {
+      clearTimeout(this._toolProgressTimer);
+      this._toolProgressTimer = null;
+    }
+  }
+
+  scheduleToolProgressPatch(callId: string) {
+    this._toolProgressDirty.add(callId);
+    if (this._toolProgressTimer != null) return;
+    this._toolProgressTimer = setTimeout(() => {
+      this._toolProgressTimer = null;
+      void this.flushToolProgressPatches();
+    }, TOOL_PROGRESS_PATCH_DEBOUNCE_MS);
+  }
+
+  async flushToolProgressPatches(): Promise<void> {
+    this.clearToolProgressTimer();
+    const ids = [...this._toolProgressDirty];
+    this._toolProgressDirty.clear();
+    for (const callId of ids) {
+      const pending = this.pendingTools.get(callId);
+      if (pending?.payload) await this.patchPayload(pending.id, pending.payload);
+    }
   }
 
   clearAssistantPatchTimer() {
@@ -253,6 +286,17 @@ export class MessageStreamWriter {
     this.pendingTools.delete(callId);
   }
 
+  async progressTool(callId: string, rawResult: unknown): Promise<void> {
+    const pending = this.pendingTools.get(callId);
+    if (!pending) return;
+    const build = this.deps.builders.buildToolCallProgress;
+    if (!build) return;
+    const next = build(pending.payload, rawResult);
+    if (!next) return;
+    pending.payload = next;
+    this.scheduleToolProgressPatch(callId);
+  }
+
   /**
    * Persist a system payload.
    *
@@ -348,6 +392,7 @@ export class MessageStreamWriter {
           break;
         }
         case 'tool_result':
+          await this.flushToolProgressPatches();
           await this.completeTool(op.call_id, {
             name: op.name,
             args: op.input,
@@ -355,6 +400,9 @@ export class MessageStreamWriter {
             isError: op.is_error,
             toolCallStatus: op.status,
           });
+          break;
+        case 'tool_progress':
+          await this.progressTool(op.call_id, op.raw);
           break;
         case 'plan':
           await this.persistPlan(op.markdown);
@@ -378,6 +426,7 @@ export class MessageStreamWriter {
    */
   async finish(): Promise<void> {
     await this.flushAssistantPatch();
+    await this.flushToolProgressPatches();
     await this.flushAssistant();
     this.resetThinkingTokensRow();
     for (const [callId, pending] of this.pendingTools) {

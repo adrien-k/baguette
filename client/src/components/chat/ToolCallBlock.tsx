@@ -1,5 +1,14 @@
-import { useState } from 'react';
-import { Bot, ChevronDown, CheckSquare2, Loader2, Square } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  Bot,
+  ChevronDown,
+  CheckSquare2,
+  Loader2,
+  Square,
+  Wrench,
+  MessageSquare,
+} from 'lucide-react';
+import type { TaskConversationStep } from '@baguette/shared/cursor-task-conversation.ts';
 import type {
   GenericToolResult,
   ToolCallKind,
@@ -70,17 +79,61 @@ function TodoBlock({ todos }: { todos?: unknown }) {
   );
 }
 
+function TaskStepIcon({ step }: { step: TaskConversationStep }) {
+  if (step.kind === 'tool') {
+    return step.status === 'running' ? (
+      <Loader2 className="w-3 h-3 shrink-0 text-accent animate-spin" />
+    ) : (
+      <Wrench className="w-3 h-3 shrink-0 text-faint" />
+    );
+  }
+  if (step.kind === 'assistant') {
+    return <MessageSquare className="w-3 h-3 shrink-0 text-faint" />;
+  }
+  return <Bot className="w-3 h-3 shrink-0 text-faint" />;
+}
+
+function TaskConversationStepsList({ steps }: { steps: TaskConversationStep[] }) {
+  if (steps.length === 0) return null;
+  return (
+    <ul className="space-y-1 max-h-56 overflow-y-auto">
+      {steps.map((step, i) => (
+        <li key={i} className="flex items-start gap-1.5 text-xs text-fg-muted">
+          <TaskStepIcon step={step} />
+          <span className="min-w-0 break-words">{step.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function TaskToolBlock({ message }: { message: CallOfKind<'task'> }) {
   const [expanded, setExpanded] = useState(false);
   const result = message.result;
-  const isRunning = result == null;
+  const isRunning = message.status === 'running';
   const description = message.args.description || 'Task';
   const subagentType = message.args.subagent_type;
   const summary = result?.summary;
+  const steps = result?.steps ?? [];
+  const stepCount = result?.step_count ?? steps.length;
+  const toolCount = steps.filter((s) => s.kind === 'tool').length;
+  const hasTimeline = steps.length > 0;
+
+  useEffect(() => {
+    if (isRunning && hasTimeline) setExpanded(true);
+  }, [isRunning, hasTimeline, stepCount]);
+
+  const progressLabel =
+    stepCount > 0
+      ? toolCount > 0
+        ? `${stepCount} steps · ${toolCount} tools`
+        : `${stepCount} steps`
+      : null;
 
   return (
     <div className="bg-inset/50 rounded-lg border border-line overflow-hidden">
       <button
+        type="button"
         onClick={() => setExpanded((e) => !e)}
         className="w-full flex items-center gap-2 px-3 sm:px-4 py-2 text-left text-xs text-fg-muted hover:bg-control/50 transition-colors"
       >
@@ -89,6 +142,9 @@ function TaskToolBlock({ message }: { message: CallOfKind<'task'> }) {
           {description}
           {subagentType ? ` (${subagentType})` : ''}
         </span>
+        {progressLabel ? (
+          <span className="text-faint shrink-0 tabular-nums">{progressLabel}</span>
+        ) : null}
         {isRunning ? (
           <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         ) : (
@@ -97,12 +153,22 @@ function TaskToolBlock({ message }: { message: CallOfKind<'task'> }) {
           />
         )}
       </button>
-      {expanded && summary != null && (
-        <div className="border-t border-line/60 px-3 sm:px-4 py-2 text-xs">
-          <div className="text-faint font-medium mb-1">Result</div>
-          <pre className="whitespace-pre-wrap overflow-auto max-h-48 text-fg-muted bg-page/50 rounded p-2">
-            {summary}
-          </pre>
+      {expanded && (hasTimeline || summary != null) && (
+        <div className="border-t border-line/60 px-3 sm:px-4 py-2 text-xs space-y-2">
+          {hasTimeline ? (
+            <div>
+              <div className="text-faint font-medium mb-1">Subagent activity</div>
+              <TaskConversationStepsList steps={steps} />
+            </div>
+          ) : null}
+          {summary != null && summary.trim() !== '' && (
+            <div>
+              <div className="text-faint font-medium mb-1">Summary</div>
+              <pre className="whitespace-pre-wrap overflow-auto max-h-48 text-fg-muted bg-page/50 rounded p-2">
+                {summary}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>

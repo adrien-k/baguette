@@ -9,6 +9,7 @@ import {
   mapCursorEvent,
   cursorBuildToolCallStart,
   cursorBuildToolCallComplete,
+  cursorBuildToolCallProgress,
 } from '../../server/services/cursor/cursor-mapping.ts';
 
 const claudeBuilders = {
@@ -18,6 +19,7 @@ const claudeBuilders = {
 const cursorBuilders = {
   buildToolCallStart: cursorBuildToolCallStart,
   buildToolCallComplete: cursorBuildToolCallComplete,
+  buildToolCallProgress: cursorBuildToolCallProgress,
 };
 
 describe('MessageStreamWriter', () => {
@@ -176,6 +178,35 @@ describe('MessageStreamWriter', () => {
     expect(createRow.mock.calls[0][0].type).toBe('plan');
     const payload = JSON.parse(createRow.mock.calls[0][0].message_json);
     expect(payload).toEqual({ type: 'plan', markdown: plan });
+  });
+
+  it('patches a running Task row on tool_progress', async () => {
+    vi.useFakeTimers();
+    const createRow = vi.fn().mockResolvedValue({ id: 40 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+      builders: cursorBuilders,
+    });
+
+    await writer.apply([
+      { op: 'tool_start', call_id: 'sub', name: 'Task', input: { description: 'Work' } },
+      {
+        op: 'tool_progress',
+        call_id: 'sub',
+        raw: { conversationSteps: [{ assistantMessage: { text: 'Step one.' } }] },
+      },
+    ]);
+    expect(patchRow).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
+    expect(patchRow).toHaveBeenCalledTimes(1);
+    const patched = JSON.parse(patchRow.mock.calls[0][1].message_json);
+    expect(patched.status).toBe('running');
+    expect(patched.result.step_count).toBe(1);
+    expect(patched.result.steps[0].kind).toBe('assistant');
   });
 
   it('debounces assistant text patches while streaming', async () => {

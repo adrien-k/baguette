@@ -4,7 +4,11 @@ import { dbRowFromPayload, dbPatchFromPayload } from '../../shared/message-db-ro
 import { agentEventLogPath, appendAgentEvent } from './agent-event-log.js';
 import type { SessionMessagePayload, SessionMessageRow } from '../../shared/session-messages.ts';
 import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from './claude/claude-mapping.ts';
-import { cursorBuildToolCallComplete, cursorBuildToolCallStart } from './cursor/cursor-mapping.ts';
+import {
+  cursorBuildToolCallComplete,
+  cursorBuildToolCallProgress,
+  cursorBuildToolCallStart,
+} from './cursor/cursor-mapping.ts';
 import { piBuildToolCallComplete, piBuildToolCallStart } from './pi/pi-mapping.ts';
 import { createClaudeTaskTracker } from '../../shared/claude-task-tracker.js';
 
@@ -73,6 +77,7 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
       ? {
           buildToolCallStart: cursorBuildToolCallStart,
           buildToolCallComplete: cursorBuildToolCallComplete,
+          buildToolCallProgress: cursorBuildToolCallProgress,
         }
       : opts.agentType === 'pi'
         ? {

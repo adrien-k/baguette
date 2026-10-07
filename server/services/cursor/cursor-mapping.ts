@@ -23,6 +23,7 @@ import type {
   SDKUserMessageEvent,
 } from '@cursor/sdk';
 import { planMarkdownFromToolInput } from '../../../shared/plan-markdown.ts';
+import { cursorTaskProgressFromRaw } from '../../../shared/cursor-task-conversation.ts';
 import type {
   AnyToolResult,
   MessageOp,
@@ -85,6 +86,22 @@ function mapAssistantContent(msg: SDKAssistantMessage): MessageOp[] | null {
   return ops.length > 0 ? ops : null;
 }
 
+function cursorSubagentTypeLabel(value: unknown): string | null {
+  if (typeof value === 'string') return value || null;
+  if (isDict(value) && typeof value.kind === 'string') {
+    return value.kind === 'unspecified' ? null : value.kind;
+  }
+  return null;
+}
+
+function cursorTaskToolProgressOps(callId: string, result: unknown): MessageOp[] {
+  if (result == null) return [];
+  const raw = unwrapCursorResult(result);
+  const { step_count } = cursorTaskProgressFromRaw(raw);
+  if (step_count === 0) return [];
+  return [{ op: 'tool_progress', call_id: callId, raw }];
+}
+
 function mapToolUse(msg: SDKToolUseMessage): MessageOp[] | null {
   // Cursor reports the whole lifecycle on one event via `status`.
   const canonical = canonicalizeCursorToolName(msg.name);
@@ -92,7 +109,13 @@ function mapToolUse(msg: SDKToolUseMessage): MessageOp[] | null {
     // Plan tools stream `running` repeatedly as args grow; the completed
     // event carries the final text, so we only start the row then.
     if (isCursorPlanTool(msg.name)) return null;
-    return [{ op: 'tool_start', call_id: msg.call_id, name: canonical, input: asInput(msg.args) }];
+    const ops: MessageOp[] = [
+      { op: 'tool_start', call_id: msg.call_id, name: canonical, input: asInput(msg.args) },
+    ];
+    if (cursorToolKindFromName(msg.name) === 'task') {
+      ops.push(...cursorTaskToolProgressOps(msg.call_id, msg.result));
+    }
+    return ops;
   }
 
   if (isCursorPlanTool(msg.name)) {
@@ -307,7 +330,7 @@ export function mapCursorToolArgs<K extends ToolCallKind>(
     case 'task':
       return {
         description: str(inp.description),
-        subagent_type: strOrNull(inp.subagent_type ?? inp.subagentType),
+        subagent_type: cursorSubagentTypeLabel(inp.subagent_type ?? inp.subagentType),
       } as ToolArgsByKind[K];
     case 'ask_user':
       return { questions: (inp.questions as Dict[]) ?? [] } as ToolArgsByKind[K];
@@ -494,11 +517,14 @@ export function mapCursorToolResult(
 
   if (kind === 'task') {
     const { content, isError: contentIsError } = cursorResultToText(rawResult, isError);
-    const summary = content || null;
+    const progress = cursorTaskProgressFromRaw(rawResult);
+    const summary = (progress.summary ?? content) || null;
     return {
       status: contentIsError ? 'error' : 'ok',
       error_message: contentIsError ? content || 'Tool call failed' : null,
       summary,
+      steps: progress.steps,
+      step_count: progress.step_count,
     } as AnyToolResult;
   }
 
@@ -568,6 +594,28 @@ export function cursorBuildToolCallStart(
  * `cancelled`), so a run that reports `error` lands as such even if
  * `isError` was not set.
  */
+/** Patch a running Task row with the latest `conversationSteps` from Cursor. */
+export function cursorBuildToolCallProgress(
+  prev: ToolCallPayload,
+  rawResult: unknown
+): ToolCallPayload | null {
+  if (prev.kind !== 'task') return null;
+  const progress = cursorTaskProgressFromRaw(rawResult);
+  if (progress.step_count === 0) return null;
+  return {
+    ...prev,
+    status: 'running',
+    ended_at: null,
+    result: {
+      status: 'ok',
+      error_message: null,
+      summary: progress.summary,
+      steps: progress.steps,
+      step_count: progress.step_count,
+    },
+  } as ToolCallPayload;
+}
+
 export function cursorBuildToolCallComplete(
   prev: ToolCallPayload,
   {
