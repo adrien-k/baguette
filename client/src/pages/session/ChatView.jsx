@@ -46,6 +46,8 @@ import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.t
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
+import UnpushedCommitsWarningModal from '../../components/UnpushedCommitsWarningModal.jsx';
+import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
@@ -129,7 +131,16 @@ export default function ChatView({
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
-  const [showMergeModal, setShowMergeModal] = useState(false);
+  const {
+    checkingUnpushed: checkingUnpushedForMerge,
+    showMergeModal,
+    setShowMergeModal,
+    showUnpushedWarning: showMergeUnpushedWarning,
+    unpushedCount: mergeUnpushedCount,
+    openMergeFlow,
+    confirmMergeDespiteUnpushed,
+    cancelUnpushedWarning: cancelMergeUnpushedWarning,
+  } = useMergePrEntry(session);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
   const [restoring, setRestoring] = useState(false);
@@ -644,7 +655,8 @@ export default function ChatView({
                       icon={GitMerge}
                       label="Merge"
                       tooltip="Merge the pull request into the base branch."
-                      onClick={() => setShowMergeModal(true)}
+                      onClick={openMergeFlow}
+                      disabled={checkingUnpushedForMerge}
                       className={CHAT_ACTION_BUTTON_CLASS}
                     />
                     <ChatQuickActionButton
@@ -837,6 +849,14 @@ export default function ChatView({
           onCancel={closeRegularlyModal}
           saving={creatingLoop}
           defaultName={input.trim().split('\n')[0].slice(0, 60)}
+        />
+      )}
+      {showMergeUnpushedWarning && (
+        <UnpushedCommitsWarningModal
+          variant="merge"
+          commitsToPush={mergeUnpushedCount}
+          onConfirm={confirmMergeDespiteUnpushed}
+          onCancel={cancelMergeUnpushedWarning}
         />
       )}
       {showMergeModal && (

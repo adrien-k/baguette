@@ -41,7 +41,12 @@ describe('mapPiEvent', () => {
   });
 
   it('builds typed tool_call payloads for the message writer', () => {
-    const start = piBuildToolCallStart('call-1', 'bash', { command: 'pwd' }, '2026-01-01T00:00:00Z');
+    const start = piBuildToolCallStart(
+      'call-1',
+      'bash',
+      { command: 'pwd' },
+      '2026-01-01T00:00:00Z'
+    );
     expect(start.type).toBe('tool_call');
     expect(start.id).toBe('call-1');
     expect(start.name).toBe('Bash');

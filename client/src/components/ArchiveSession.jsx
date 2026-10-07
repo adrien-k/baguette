@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Archive, Loader2 } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
-import { isGlobalSession } from '@baguette/shared/session-scope.js';
-import ArchiveUnpushedWarningModal from './ArchiveUnpushedWarningModal.jsx';
+import { fetchSessionCommitsToPush } from '../utils/sessionCommitsToPush.js';
+import UnpushedCommitsWarningModal from './UnpushedCommitsWarningModal.jsx';
 
 export default function ArchiveSession({ session, onArchive }) {
   const [archiving, setArchiving] = useState(false);
@@ -27,19 +27,13 @@ export default function ArchiveSession({ session, onArchive }) {
     }
   };
 
-  const resolveCommitsToPush = async () => {
-    if (isGlobalSession(session)) return 0;
-    const status = await sessionsService.sessionGitStatus(session.id);
-    return status.commitsToPush ?? 0;
-  };
-
   const handleClick = async (e) => {
     e.stopPropagation();
     if (blocked) return;
 
     setChecking(true);
     try {
-      const commitsToPush = await resolveCommitsToPush();
+      const commitsToPush = await fetchSessionCommitsToPush(session);
       if (commitsToPush > 0) {
         setUnpushedCount(commitsToPush);
         setShowUnpushedWarning(true);
@@ -77,7 +71,8 @@ export default function ArchiveSession({ session, onArchive }) {
       </button>
 
       {showUnpushedWarning && (
-        <ArchiveUnpushedWarningModal
+        <UnpushedCommitsWarningModal
+          variant="archive"
           commitsToPush={unpushedCount}
           loading={archiving}
           onConfirm={performArchive}

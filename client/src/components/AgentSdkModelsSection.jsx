@@ -31,7 +31,8 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
       return apiFetch(url, refresh ? { method: 'POST' } : undefined)
         .then((d) => setModels(d.models || []))
         .catch((err) => {
-          if (refresh) toastError(`Failed to refresh ${formatAgentSdkDisplayName(sdk)} models`, err);
+          if (refresh)
+            toastError(`Failed to refresh ${formatAgentSdkDisplayName(sdk)} models`, err);
           else setModels([]);
         })
         .finally(() => {

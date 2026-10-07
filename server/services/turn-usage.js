@@ -83,9 +83,7 @@ export function addPiTokenUsage(acc, usage, model) {
   acc.cache_read_tokens += cacheRead;
   acc.cache_write_tokens += cacheWrite;
   acc.reasoning_tokens += reasoning;
-  const total =
-    Number(usage.totalTokens) ||
-    input + output + cacheRead + cacheWrite;
+  const total = Number(usage.totalTokens) || input + output + cacheRead + cacheWrite;
   acc.total_tokens += total;
   if (model) acc.model = String(model);
   return acc;

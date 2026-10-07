@@ -14,6 +14,8 @@ import toast from 'react-hot-toast';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
+import UnpushedCommitsWarningModal from '../../components/UnpushedCommitsWarningModal.jsx';
+import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastFeathersError } from '../../utils/toastError.jsx';
@@ -411,7 +413,16 @@ export default function DiffView({
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
-  const [showMergeModal, setShowMergeModal] = useState(false);
+  const {
+    checkingUnpushed: checkingUnpushedForMerge,
+    showMergeModal,
+    setShowMergeModal,
+    showUnpushedWarning: showMergeUnpushedWarning,
+    unpushedCount: mergeUnpushedCount,
+    openMergeFlow,
+    confirmMergeDespiteUnpushed,
+    cancelUnpushedWarning: cancelMergeUnpushedWarning,
+  } = useMergePrEntry(session);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
   const [viewMode, setViewMode] = useState('inline');
@@ -689,7 +700,11 @@ export default function DiffView({
             <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
             {!readonly && <PrDraftToggleButton session={session} />}
             {!isMerged && canMerge && !readonly && (
-              <button onClick={() => setShowMergeModal(true)} className={SECONDARY_BUTTON_CLASS}>
+              <button
+                onClick={openMergeFlow}
+                disabled={checkingUnpushedForMerge}
+                className={SECONDARY_BUTTON_CLASS}
+              >
                 <GitMerge className="w-3.5 h-3.5" />
                 Merge PR
               </button>
@@ -698,6 +713,14 @@ export default function DiffView({
         </div>
       )}
 
+      {showMergeUnpushedWarning && (
+        <UnpushedCommitsWarningModal
+          variant="merge"
+          commitsToPush={mergeUnpushedCount}
+          onConfirm={confirmMergeDespiteUnpushed}
+          onCancel={cancelMergeUnpushedWarning}
+        />
+      )}
       {showMergeModal && (
         <MergeConfirmModal
           prNumber={session.pr_number}

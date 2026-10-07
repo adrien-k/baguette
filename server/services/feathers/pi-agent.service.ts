@@ -502,10 +502,7 @@ export class PiAgentService {
             patchSessionCost: true,
           })
           .catch((err: Error) =>
-            logger.warn(
-              { sessionId, err: err.message },
-              'pi-agent: failed to record turn usage'
-            )
+            logger.warn({ sessionId, err: err.message }, 'pi-agent: failed to record turn usage')
           );
       } else if (outcome === 'failed' && channel === 'review') {
         await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {

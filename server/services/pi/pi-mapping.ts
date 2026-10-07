@@ -5,10 +5,7 @@ import type {
   ToolCallKind,
   ToolCallPayload,
 } from '../../../shared/message-types.ts';
-import {
-  mapCursorToolArgs,
-  mapCursorToolResult,
-} from '../cursor/cursor-mapping.ts';
+import { mapCursorToolArgs, mapCursorToolResult } from '../cursor/cursor-mapping.ts';
 
 const PI_TOOL_ALIAS: Record<string, string> = {
   bash: 'Bash',

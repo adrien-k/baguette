@@ -57,7 +57,10 @@ export async function claudeTiedSessionLoopCompaction(
       userParams
     );
   } catch (err) {
-    await app.service('queued-messages').remove(queued.id, userParams).catch(() => {});
+    await app
+      .service('queued-messages')
+      .remove(queued.id, userParams)
+      .catch(() => {});
     throw err;
   }
 }

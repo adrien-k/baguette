@@ -104,7 +104,10 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
                     : rawArgs;
                 const completeArgs =
                   input != null && hasNonemptyToolInput(input) ? input : undefined;
-                const completed = claudeBuildToolCallComplete(prev, { ...opts, args: completeArgs });
+                const completed = claudeBuildToolCallComplete(prev, {
+                  ...opts,
+                  args: completeArgs,
+                });
                 if (isTaskCreate) {
                   taskTracker.registerTaskFromCreateResult(opts.rawResult, rawArgs);
                 }
