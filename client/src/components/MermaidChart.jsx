@@ -16,6 +16,9 @@ export default function MermaidChart({ chart }) {
     setFailed(false);
     mermaid.initialize({
       startOnLoad: false,
+      // Without this, parse failures inject a "Syntax error in text" diagram under
+      // document.body before render() rejects — our catch + MermaidFallback never remove it.
+      suppressErrorRendering: true,
       theme: colorScheme === 'light' ? 'default' : 'dark',
     });
     mermaid
