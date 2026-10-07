@@ -46,6 +46,14 @@ import type {
   TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
 import { claudeTiedSessionLoopCompaction } from './loop-compaction.ts';
+import {
+  CLAUDE_AGENT_SDK_KEY,
+  CLAUDE_AGENT_SDK_LABEL,
+  CLAUDE_AGENT_SERVICE_PATH,
+  isClaudeAgentSdkEnabled,
+  listClaudeAgentModels,
+} from '../agent-sdk/claude-agent-sdk.js';
+import { registerAgentSdk } from './agent-sdks.service.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
 
@@ -1045,6 +1053,19 @@ Task: ${initialPrompt}`;
     return { label, branchName };
   }
 
+  async isInterruptedSessionResumable(
+    session: AgentSessionRow,
+    { channel = 'chat' }: { channel?: MessageChannel } = {}
+  ): Promise<boolean> {
+    return channel === 'review'
+      ? Boolean(session.review_claude_session_id)
+      : Boolean(session.claude_session_id);
+  }
+
+  usesCompactionBeforeLoopRepeat(): boolean {
+    return true;
+  }
+
   async persistMessage(sessionState: ClaudeAgentState, message: SDKMessage): Promise<void> {
     const { sessionId, userId } = sessionState;
     const app = this.app;
@@ -1093,9 +1114,20 @@ Task: ${initialPrompt}`;
   async get(id: number) {
     return this.getActiveSession(id) ?? null;
   }
+
+  async isEnabled(ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null }) {
+    return isClaudeAgentSdkEnabled(ctx);
+  }
+
+  async listModels(
+    ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null },
+    { refresh = false }: { refresh?: boolean } = {}
+  ) {
+    return listClaudeAgentModels(ctx, { refresh });
+  }
 }
 
-export function registerClaudeAgentService(app: AgentApp, path = 'claude-agent') {
+export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SERVICE_PATH) {
   const service = new ClaudeAgentService();
   service.setup(app);
   app.use(path, service, {
@@ -1110,6 +1142,16 @@ export function registerClaudeAgentService(app: AgentApp, path = 'claude-agent')
       'buildQueryOptions',
       'syncSessionSettingsFromPatch',
       'prepareTiedSessionLoopCompaction',
+      'handleMessageCreated',
+      'isEnabled',
+      'listModels',
+      'generateSessionMetadata',
+      'isInterruptedSessionResumable',
     ],
+  });
+  registerAgentSdk(app, {
+    key: CLAUDE_AGENT_SDK_KEY,
+    label: CLAUDE_AGENT_SDK_LABEL,
+    servicePath: path,
   });
 }

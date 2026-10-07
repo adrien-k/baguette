@@ -98,3 +98,6 @@ export const sessionIssuesService = createService('session-issues');
 export const sessionReviewService = createService('session-review', {
   customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
 });
+export const agentSdksService = createService('agent-sdks', {
+  customMethods: ['models'],
+});

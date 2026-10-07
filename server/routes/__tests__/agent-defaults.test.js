@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { feathers } from '@feathersjs/feathers';
 import express from '@feathersjs/express';
 import { createTestDb } from '../../test-utils/db.js';
+import { registerAgentSdksService } from '../../services/feathers/agent-sdks.service.js';
 
 vi.mock('../../config.js', () => ({}));
 
@@ -41,8 +43,53 @@ beforeEach(async () => {
     username: 'alice',
     anthropic_api_key_encrypted: 'enc-ant',
   });
+  await db('repos').insert({
+    id: 10,
+    full_name: 'alice/repo',
+    stripped_name: 'alice-repo',
+    repo_path: '/tmp/alice-repo.git',
+  });
+  await db('user_repos').insert({ user_id: USER, repo_id: 10 });
+
+  const feathersApp = feathers();
+  registerAgentSdksService(feathersApp);
+  feathersApp.use(
+    'claude-agent',
+    {
+      async isEnabled({ user }) {
+        return Boolean(user?.anthropic_api_key);
+      },
+      async listModels() {
+        return [{ id: 'sonnet', display_name: 'Sonnet' }];
+      },
+    },
+    { methods: ['isEnabled', 'listModels'] }
+  );
+  feathersApp.use(
+    'cursor-agent',
+    {
+      async isEnabled({ user, repo }) {
+        return Boolean(user?.cursor_api_key || repo?.cursor_api_key);
+      },
+      async listModels() {
+        return [];
+      },
+    },
+    { methods: ['isEnabled', 'listModels'] }
+  );
+  feathersApp.service('agent-sdks').register({
+    key: 'claude',
+    label: 'Claude',
+    service_path: 'claude-agent',
+  });
+  feathersApp.service('agent-sdks').register({
+    key: 'cursor',
+    label: 'Cursor',
+    service_path: 'cursor-agent',
+  });
 
   const app = express();
+  app.service = (path) => feathersApp.service(path);
   app.use(express.json());
   app.use(
     createSettingsRoutes((req, res, next) => {
@@ -57,6 +104,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  if (!server) return;
   await new Promise((resolve) => server.close(resolve));
 });
 
@@ -77,7 +125,12 @@ describe('agent-defaults settings routes', () => {
     const putRes = await fetch(`${baseUrl}/api/settings/agent-defaults`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_sdk: 'claude', model: 'sonnet', model_params: null }),
+      body: JSON.stringify({
+        agent_sdk: 'claude',
+        model: 'sonnet',
+        model_params: null,
+        repo_id: 10,
+      }),
     });
     const putBody = await putRes.json();
     expect(putRes.status).toBe(200);
@@ -96,7 +149,12 @@ describe('agent-defaults settings routes', () => {
     const res = await fetch(`${baseUrl}/api/settings/agent-defaults`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_sdk: 'cursor', model: null, model_params: null }),
+      body: JSON.stringify({
+        agent_sdk: 'cursor',
+        model: null,
+        model_params: null,
+        repo_id: 10,
+      }),
     });
     const body = await res.json();
     expect(res.status).toBe(400);

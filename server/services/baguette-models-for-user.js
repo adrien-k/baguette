@@ -1,8 +1,5 @@
+import { BadRequest } from '@feathersjs/errors';
 import db from '../db.js';
-import { resolveAgentSdkKeys } from '../../shared/agent-sdk-credentials.js';
-import { listClaudeModels, resolveClaudeGatewayConfig } from './claude-gateway-models.js';
-import { listCursorModels } from './cursor-models.js';
-import { listPiModelsForUser } from './pi-models.js';
 import { parseCursorModelPrefsJson } from './agent-preferences.js';
 
 function parseSessionModelId(modelField) {
@@ -33,65 +30,43 @@ export async function getModelUsageCounts(userId) {
 }
 
 /**
- * Claude models for the user (gateway list when a base URL is configured, otherwise the
- * SDK's built-in list).
+ * Models available to the user (SDKs without credentials omitted), with session usage counts.
+ * Account or repo-level keys apply for the given repository.
+ *
+ * @param {object} user
+ * @param {object} repo
+ * @param {import('@feathersjs/feathers').Application} app
  */
-function listClaudeModelsForUser(user, repo) {
-  return listClaudeModels(resolveClaudeGatewayConfig(user, repo));
-}
-
-/**
- * Models available to the user (SDKs without an API key are omitted), with session usage counts.
- * When `repo` is set, account or repo-level keys apply (same rules as the session builder).
- */
-export async function listModelsForUser(user, repo = null) {
-  const keys = resolveAgentSdkKeys(user, repo);
+export async function listModelsForUser(user, repo, app) {
+  if (repo?.id == null) {
+    throw new BadRequest('repo_id is required');
+  }
   const usage = await getModelUsageCounts(user.id);
   const prefs = parseCursorModelPrefsJson(user.agent_preferences);
   const entries = [];
+  const ctx = { user, repo };
+  const enabled = await app.service('agent-sdks').listEnabled(ctx);
 
-  if (keys.anthropic_api_key || keys.anthropic_auth_token) {
-    const models = await listClaudeModelsForUser(user, repo);
+  for (const { key } of enabled) {
+    const models = await app.service('agent-sdks').listModelsForSdk(key, ctx);
+    if (!models?.length) continue;
     for (const m of models) {
-      const sessionCount = usage.get(`claude:${m.id}`) ?? 0;
-      entries.push({
-        sdk: 'claude',
+      const sessionCount = usage.get(`${key}:${m.id}`) ?? 0;
+      const entry = {
+        sdk: key,
         id: m.id,
         display_name: m.display_name ?? m.id,
         session_count: sessionCount,
-      });
-    }
-  }
-
-  if (keys.cursor_api_key) {
-    const models = await listCursorModels(keys.cursor_api_key);
-    for (const m of models) {
-      const sessionCount = usage.get(`cursor:${m.id}`) ?? 0;
-      entries.push({
-        sdk: 'cursor',
-        id: m.id,
-        display_name: m.display_name ?? m.id,
-        session_count: sessionCount,
-        variants: (m.variants ?? []).map((v, index) => ({
+      };
+      if (m.variants?.length) {
+        entry.variants = m.variants.map((v, index) => ({
           index,
           display_name: v.display_name,
           is_default: Boolean(v.is_default),
           params: v.params ?? [],
-        })),
-      });
-    }
-  }
-
-  if (keys.pi_api_key) {
-    const models = await listPiModelsForUser(user, repo);
-    for (const m of models) {
-      const sessionCount = usage.get(`pi:${m.id}`) ?? 0;
-      entries.push({
-        sdk: 'pi',
-        id: m.id,
-        display_name: m.display_name ?? m.id,
-        session_count: sessionCount,
-      });
+        }));
+      }
+      entries.push(entry);
     }
   }
 
@@ -109,19 +84,14 @@ export async function listModelsForUser(user, repo = null) {
 
 /**
  * @param {object} user
- * @param {'cursor'|'claude'|'pi'} agentSdk
- * @param {Record<string, unknown> | null | undefined} [repo]
+ * @param {string} agentSdk
+ * @param {Record<string, unknown>} repo
+ * @param {import('@feathersjs/feathers').Application} app
  */
-export async function loadModelsForSdk(user, agentSdk, repo = null) {
-  const keys = resolveAgentSdkKeys(user, repo);
-  if (agentSdk === 'cursor') {
-    if (!keys.cursor_api_key) return [];
-    return listCursorModels(keys.cursor_api_key);
+export async function loadModelsForSdk(user, agentSdk, repo, app) {
+  if (repo?.id == null) {
+    throw new BadRequest('repo_id is required');
   }
-  if (agentSdk === 'pi') {
-    if (!keys.pi_api_key) return [];
-    return listPiModelsForUser(user, repo);
-  }
-  if (!keys.anthropic_api_key && !keys.anthropic_auth_token) return [];
-  return listClaudeModelsForUser(user, repo);
+  const models = await app.service('agent-sdks').listModelsForSdk(agentSdk, { user, repo });
+  return models ?? [];
 }

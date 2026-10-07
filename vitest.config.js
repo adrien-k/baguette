@@ -13,7 +13,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: false,
-    exclude: ['**/node_modules/**', '**/.data/**'],
+    exclude: ['**/node_modules/**', '**/.data/**', 'e2e/**'],
     setupFiles: ['./server/test-utils/setup.js'],
   },
 });

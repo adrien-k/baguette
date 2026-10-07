@@ -1,4 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { feathers } from '@feathersjs/feathers';
+import { registerAgentSdksService } from '../feathers/agent-sdks.service.js';
+import { isClaudeAgentSdkEnabled, listClaudeAgentModels } from '../agent-sdk/claude-agent-sdk.js';
+
+const { dbProxy } = vi.hoisted(() => {
+  const chain = () => {
+    const rows = [];
+    const promise = Promise.resolve(rows);
+    const query = {
+      where: () => query,
+      whereNull: () => query,
+      select: () => query,
+    };
+    return Object.assign(query, {
+      then: promise.then.bind(promise),
+      catch: promise.catch.bind(promise),
+    });
+  };
+  return { dbProxy: Object.assign(() => chain(), {}) };
+});
 
 vi.mock('../../db.js', () => ({ default: dbProxy }));
 vi.mock('../../lib/cache.js', () => ({
@@ -14,21 +34,6 @@ vi.mock('../cursor-models.js', () => ({
   listCursorModels: vi.fn(async () => []),
 }));
 
-const chain = () => {
-  const rows = [];
-  const promise = Promise.resolve(rows);
-  const query = {
-    where: () => query,
-    whereNull: () => query,
-    select: () => query,
-  };
-  return Object.assign(query, {
-    then: promise.then.bind(promise),
-    catch: promise.catch.bind(promise),
-  });
-};
-const dbProxy = Object.assign(() => chain(), {});
-
 const { listModelsForUser, loadModelsForSdk } = await import('../baguette-models-for-user.js');
 const { listModels } = await import('../anthropic-models.js');
 
@@ -40,6 +45,31 @@ const USER = {
   anthropic_base_url: null,
 };
 
+const REPO = { id: 1 };
+
+function makeApp() {
+  const app = feathers();
+  registerAgentSdksService(app);
+  app.use(
+    'claude-agent',
+    {
+      async isEnabled(ctx) {
+        return isClaudeAgentSdkEnabled(ctx);
+      },
+      async listModels(ctx, opts) {
+        return listClaudeAgentModels(ctx, opts);
+      },
+    },
+    { methods: ['isEnabled', 'listModels'] }
+  );
+  app.service('agent-sdks').register({
+    key: 'claude',
+    label: 'Claude',
+    service_path: 'claude-agent',
+  });
+  return app;
+}
+
 beforeEach(() => {
   listModels.mockClear();
 });
@@ -50,7 +80,7 @@ describe('listModelsForUser / loadModelsForSdk with a configured gateway', () =>
   });
 
   it('uses the built-in SDK list when no base URL is configured', async () => {
-    const result = await listModelsForUser(USER);
+    const result = await listModelsForUser(USER, REPO, makeApp());
     expect(result.models.map((m) => m.id)).toEqual(['claude-sonnet-4-5']);
   });
 
@@ -65,9 +95,10 @@ describe('listModelsForUser / loadModelsForSdk with a configured gateway', () =>
       )
     );
     const user = { ...USER, anthropic_base_url: 'https://opencode.ai/zen/go' };
-    const result = await listModelsForUser(user);
+    const app = makeApp();
+    const result = await listModelsForUser(user, REPO, app);
     expect(result.models.map((m) => m.id)).toEqual(['kimi-k3', 'glm-5.3']);
-    const sdkModels = await loadModelsForSdk(user, 'claude');
+    const sdkModels = await loadModelsForSdk(user, 'claude', REPO, app);
     expect(sdkModels.map((m) => m.id)).toEqual(['kimi-k3', 'glm-5.3']);
   });
 
@@ -77,8 +108,11 @@ describe('listModelsForUser / loadModelsForSdk with a configured gateway', () =>
       vi.fn(async () => new Response('nope', { status: 401 }))
     );
     const user = { ...USER, anthropic_base_url: 'https://opencode.ai/zen/go' };
-    await expect(listModelsForUser(user)).rejects.toThrow('Gateway model list failed');
-    await expect(loadModelsForSdk(user, 'claude')).rejects.toThrow('Gateway model list failed');
+    const app = makeApp();
+    await expect(listModelsForUser(user, REPO, app)).rejects.toThrow('Gateway model list failed');
+    await expect(loadModelsForSdk(user, 'claude', REPO, app)).rejects.toThrow(
+      'Gateway model list failed'
+    );
   });
 
   it('lets a repo base URL override the account', async () => {
@@ -89,8 +123,8 @@ describe('listModelsForUser / loadModelsForSdk with a configured gateway', () =>
           new Response(JSON.stringify({ data: [{ id: 'repo-gw-model' }] }), { status: 200 })
       )
     );
-    const repo = { anthropic_base_url: 'https://repo-gw.example.com' };
-    const result = await listModelsForUser(USER, repo);
+    const repo = { id: 2, anthropic_base_url: 'https://repo-gw.example.com' };
+    const result = await listModelsForUser(USER, repo, makeApp());
     expect(result.models.map((m) => m.id)).toEqual(['repo-gw-model']);
   });
 });

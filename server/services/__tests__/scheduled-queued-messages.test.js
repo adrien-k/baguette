@@ -7,6 +7,7 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
+import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -35,11 +36,9 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
-  app.use(
-    'claude-agent',
-    { onMessageCreated: vi.fn().mockResolvedValue(undefined) },
-    { methods: ['onMessageCreated'] }
-  );
+  useClaudeAgentStub(app, { onMessageCreated: vi.fn().mockResolvedValue(undefined) }, [
+    'onMessageCreated',
+  ]);
   registerQueuedMessagesService(app);
   registerMessagesService(app);
   return app;

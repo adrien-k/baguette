@@ -12,6 +12,8 @@ import {
   claudeTiedSessionLoopCompaction,
   directPromptTiedSessionLoopCompaction,
 } from '../feathers/loop-compaction.ts';
+import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
+import { registerAgentSdk } from '../feathers/agent-sdks.service.js';
 
 const sessionsCreate = vi.fn(async (data) => ({ id: 77, ...data }));
 const usersGet = vi.fn(async (id) => ({ id, access_token: 'gh-token' }));
@@ -36,27 +38,37 @@ function makeApp(db) {
     { create: queuedCreate, remove: queuedRemove },
     { methods: ['create', 'remove'] }
   );
+  mountAgentSdks(app);
   app.use(
     'claude-agent',
     {
       prepareTiedSessionLoopCompaction: (args) => claudeTiedSessionLoopCompaction(app, args),
+      isEnabled: async () => true,
+      listModels: async () => [],
     },
-    { methods: ['prepareTiedSessionLoopCompaction'] }
+    { methods: ['prepareTiedSessionLoopCompaction', 'isEnabled', 'listModels'] }
   );
+  registerAgentSdk(app, { key: 'claude', label: 'Claude', servicePath: 'claude-agent' });
   app.use(
     'cursor-agent',
     {
       prepareTiedSessionLoopCompaction: (args) => directPromptTiedSessionLoopCompaction(app, args),
+      isEnabled: async () => true,
+      listModels: async () => [],
     },
-    { methods: ['prepareTiedSessionLoopCompaction'] }
+    { methods: ['prepareTiedSessionLoopCompaction', 'isEnabled', 'listModels'] }
   );
+  registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
   app.use(
     'pi-agent',
     {
       prepareTiedSessionLoopCompaction: (args) => directPromptTiedSessionLoopCompaction(app, args),
+      isEnabled: async () => true,
+      listModels: async () => [],
     },
-    { methods: ['prepareTiedSessionLoopCompaction'] }
+    { methods: ['prepareTiedSessionLoopCompaction', 'isEnabled', 'listModels'] }
   );
+  registerAgentSdk(app, { key: 'pi', label: 'Pi', servicePath: 'pi-agent' });
   registerLoopsService(app);
   return app;
 }

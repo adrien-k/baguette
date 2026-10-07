@@ -29,19 +29,15 @@ import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
-import { useCurrentUser } from '../context/CurrentUserContext.jsx';
-import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
-import { defaultModelForSdk, paramsJsonForModelChange } from '../utils/models.js';
 import toast from 'react-hot-toast';
-import { toastFeathersError } from '../utils/toastError.jsx';
-import { apiFetch } from '../api.js';
+import { toastError, toastFeathersError } from '../utils/toastError.jsx';
+import { fetchAgentSdkModels } from '../utils/fetchAgentSdkModels.js';
+import { useAvailableAgentSdks } from '../hooks/useAvailableAgentSdks.js';
 import { sessionsService, tasksService } from '../feathers.js';
 import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
 } from '@baguette/shared/session-unread.js';
-import { applyTodoWriteCollapse } from '@baguette/shared/todo-write-display.js';
-import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
@@ -59,6 +55,7 @@ import PushConfirmModal from '../components/PushConfirmModal.jsx';
 import SwitchAgentSdkConfirmModal from '../components/SwitchAgentSdkConfirmModal.jsx';
 import TaskConfirmModal from '../components/TaskConfirmModal.jsx';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../utils/models.js';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
@@ -112,36 +109,45 @@ function clampSidePanelWidth(width, viewportWidth, { sessionsSidebarOpen }) {
 
 /** Chat display enrichments (TodoWrite collapse, sub-agent activity). */
 function enrichChatMessages(messages) {
+  let lastTodoWriteKey = null;
   let lastTodoWriteBlock = null;
   for (const msg of messages) {
+    if (msg.type === 'tool_call' && (msg.name === 'TodoWrite' || msg.kind === 'todo')) {
+      lastTodoWriteKey = msg.call_id ?? `tool-${msg.id}`;
+    }
     if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
       for (const b of msg.message.content) {
         if (b.type === 'tool_use' && b.name === 'TodoWrite') lastTodoWriteBlock = b;
       }
     }
   }
-
-  const withHiddenTodos = applyTodoWriteCollapse(messages).map((msg) => {
-    if (msg.type !== 'assistant' || !msg.message?.content) return msg;
-    if (
-      !msg.message.content.some(
-        (b) => b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock
-      )
-    ) {
-      return msg;
-    }
-    return {
-      ...msg,
-      message: {
-        ...msg.message,
-        content: msg.message.content.map((b) => {
-          if (b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock)
-            return { ...b, _hidden: true };
-          return b;
-        }),
-      },
-    };
-  });
+  const withHiddenTodos =
+    !lastTodoWriteBlock && !lastTodoWriteKey
+      ? messages
+      : messages.map((msg) => {
+          if (msg.type === 'tool_call' && msg.name === 'TodoWrite' && lastTodoWriteKey) {
+            const key = msg.call_id ?? `tool-${msg.id}`;
+            if (key !== lastTodoWriteKey) return { ...msg, _hidden: true };
+          }
+          if (msg.type !== 'assistant' || !msg.message?.content) return msg;
+          if (
+            !msg.message.content.some(
+              (b) => b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock
+            )
+          )
+            return msg;
+          return {
+            ...msg,
+            message: {
+              ...msg.message,
+              content: msg.message.content.map((b) => {
+                if (b.type === 'tool_use' && b.name === 'TodoWrite' && b !== lastTodoWriteBlock)
+                  return { ...b, _hidden: true };
+                return b;
+              }),
+            },
+          };
+        });
 
   // Collect sub-agent activity lines per Task/Agent tool_use_id
   const taskActivities = new Map(); // tool_use_id -> string[]
@@ -413,6 +419,7 @@ export default function Session() {
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
+  const { keys: availableSdkKeys } = useAvailableAgentSdks(gitSession?.repo_id);
   const {
     commits: branchCommits,
     loading: branchCommitsLoading,
@@ -430,8 +437,6 @@ export default function Session() {
     diffFile: sessionDiffActiveFile,
     loading: sessionDiffLoading,
     error: sessionDiffError,
-    stale: sessionDiffStale,
-    hasFetched: sessionDiffHasFetched,
     refresh: refreshSessionDiff,
   } = useSessionDiff(
     gitSession,
@@ -467,11 +472,13 @@ export default function Session() {
   const [showBaguetteConfigModal, setShowBaguetteConfigModal] = useState(false);
   const [error, setError] = useState(null);
   const showReviewerSidePanelTab = useMemo(() => {
-    if (!sessionId || isNewSessionRoute || isGlobalSessionsRoute) return false;
     const s = session ?? sessionFromHook;
-    if (s && isGlobalSession(s)) return false;
-    return true;
-  }, [sessionId, isNewSessionRoute, isGlobalSessionsRoute, session, sessionFromHook]);
+    if (!sessionId || isGlobalSession(s ?? {})) return false;
+    const status = s?.review_status;
+    return (
+      status === 'running' || status === 'completed' || status === 'failed' || status === 'stopped'
+    );
+  }, [sessionId, session, sessionFromHook]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -588,11 +595,14 @@ export default function Session() {
   const { commitsToPush, refreshCommitsToPush } = useSessionCommitsToPush(gitSession);
 
   useEffect(() => {
-    if (!session) return;
-    apiFetch(settingsModelsUrl(session.agent_sdk))
-      .then((d) => setModels(d.models || []))
+    const repoId = session?.repo_id;
+    if (!repoId) return;
+    const sdk = session.agent_sdk || availableSdkKeys[0];
+    if (!sdk) return;
+    fetchAgentSdkModels(sdk, repoId)
+      .then((list) => setModels(list))
       .catch(() => {});
-  }, [session?.agent_sdk]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session?.agent_sdk, session?.repo_id, availableSdkKeys]);
   useEffect(() => {
     const onAppError = (msg) => {
       const text = msg.message || 'Something went wrong';
@@ -618,7 +628,7 @@ export default function Session() {
   useEffect(() => {
     if (isNewSessionRoute || !short_id || sessionLoading || sessionFromHook) return;
     if (!sessionLoadError || isFeathersNotFound(sessionLoadError)) return;
-    toastFeathersError('Failed to load session', sessionLoadError);
+    toastError('Failed to load session', sessionLoadError);
     navigate(homeUrl);
   }, [
     isNewSessionRoute,
@@ -664,15 +674,6 @@ export default function Session() {
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
   }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
 
-  const { currentUser: userSettings } = useCurrentUser();
-  const sdkRepo = useMemo(
-    () => repos.find((r) => r.id === session?.repo_id),
-    [repos, session?.repo_id]
-  );
-  const availableSdks = useMemo(
-    () => (userSettings ? availableAgentSdks(userSettings, sdkRepo) : []),
-    [userSettings, sdkRepo]
-  );
   const [pendingAgentSdk, setPendingAgentSdk] = useState(null);
   const [switchingAgentSdk, setSwitchingAgentSdk] = useState(false);
 
@@ -727,18 +728,18 @@ export default function Session() {
   const handleTaskStart = (taskKey) => {
     tasksService
       .create({ session_id: session?.id, task_key: taskKey })
-      .catch((err) => toastFeathersError('Failed to start task', err));
+      .catch((err) => toastError('Failed to start task', err));
   };
 
   // Ad-hoc command typed by the user — the only case where the client supplies a command.
   const handleCommandRun = (command) => {
     tasksService
       .create({ session_id: session?.id, command })
-      .catch((err) => toastFeathersError('Failed to run command', err));
+      .catch((err) => toastError('Failed to run command', err));
   };
 
   const handleTaskKill = (taskId) => {
-    tasksService.kill(taskId).catch((err) => toastFeathersError('Failed to kill task', err));
+    tasksService.kill(taskId).catch((err) => toastError('Failed to kill task', err));
   };
 
   const runConfiguredTask = (taskKey, { closeTaskLogModal = false } = {}) => {
@@ -770,7 +771,7 @@ export default function Session() {
   };
 
   const handleTaskDelete = (taskId) => {
-    tasksService.remove(taskId).catch((err) => toastFeathersError('Failed to delete task', err));
+    tasksService.remove(taskId).catch((err) => toastError('Failed to delete task', err));
   };
 
   const handleViewTaskLogs = (taskId) => {
@@ -781,7 +782,7 @@ export default function Session() {
     if (!session?.id) return;
     sessionsService
       .patch(session.id, { auto_push: enabled })
-      .catch((err) => toastFeathersError('Failed to update auto-push setting', err));
+      .catch((err) => toastError('Failed to update auto-push setting', err));
   };
 
   const handlePush = () => {
@@ -800,9 +801,9 @@ export default function Session() {
       toast.success('Pushed successfully');
     } catch (err) {
       if (err.data?.conflict) {
-        toastFeathersError('Push failed — use Git Sync to resolve conflicts first', err);
+        toastError('Push failed — use Git Sync to resolve conflicts first', err);
       } else {
-        toastFeathersError('Push failed', err);
+        toastError('Push failed', err);
       }
     } finally {
       setPushing(false);
@@ -1569,11 +1570,8 @@ export default function Session() {
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
-                onAutoPushChange={handleAutoPushChange}
                 onSdkChange={handleAgentSdkChangeRequest}
-                availableSdks={availableSdks}
-                userSettings={userSettings}
-                sdkRepo={sdkRepo}
+                onAutoPushChange={handleAutoPushChange}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
                 commitsToPush={commitsToPush}
@@ -1605,8 +1603,6 @@ export default function Session() {
                 diff={sessionDiff}
                 diffLoading={sessionDiffLoading}
                 diffError={sessionDiffError}
-                diffStale={sessionDiffStale}
-                diffHasFetched={sessionDiffHasFetched}
                 onRefreshDiff={refreshSessionDiff}
                 fileByFile={sessionDiffFileByFile}
                 changedFiles={diffFiles}
@@ -1618,9 +1614,6 @@ export default function Session() {
                 models={models}
                 onModelChange={handleModelChange}
                 onSdkChange={handleAgentSdkChangeRequest}
-                availableSdks={availableSdks}
-                userSettings={userSettings}
-                sdkRepo={sdkRepo}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
               />
@@ -1710,7 +1703,6 @@ export default function Session() {
         )}
       </div>
 
-      {/* Task Log Modal */}
       {pendingAgentSdk && session && (
         <SwitchAgentSdkConfirmModal
           fromSdk={session.agent_sdk || 'claude'}

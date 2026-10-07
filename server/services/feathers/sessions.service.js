@@ -5,7 +5,6 @@ import fs from 'fs/promises';
 import { NotFound, BadRequest } from '@feathersjs/errors';
 import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
-import { agentFeathersPath } from '../../../shared/agent-feathers-path.js';
 import {
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -51,6 +50,13 @@ import {
   resolveRepoPath,
   resolveDataDirRelativePath,
 } from '../../config.js';
+import {
+  agentSdkContextForSession,
+  agentServicePathForSdk,
+  getAgentServiceForSession,
+  resolveAgentSdkKey,
+} from '../agent-sdk/default-agent-sdk.js';
+import { requireRepoAccessForUser, userRowForAgentSdk } from '../agent-sdk/agent-context.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
 import {
@@ -238,12 +244,11 @@ export class SessionsService extends KnexService {
     const session = await this.app.get('db')('sessions').where({ id: partial.id }).first();
     if (!session) return false;
     const userParams = { user: { id: session.user_id } };
-    const resumable =
-      session.agent_sdk === 'cursor'
-        ? !!session.cursor_agent_id
-        : session.agent_sdk === 'pi'
-          ? !!session.pi_session_id
-          : !!session.claude_session_id;
+    const ctx = await agentSdkContextForSession(this.app, session);
+    const agentServicePath = await agentServicePathForSdk(this.app, session.agent_sdk, ctx);
+    const resumable = await this.app
+      .service(agentServicePath)
+      .isInterruptedSessionResumable(session);
 
     if (!resumable) {
       // Nothing was ever persisted on the agent side, so there is no transcript to pick up —
@@ -269,9 +274,9 @@ export class SessionsService extends KnexService {
         },
         userParams
       );
-      const agentService = this.app.service(agentFeathersPath(session.agent_sdk));
-      if (agentService?.handleMessageCreated) {
-        await agentService.handleMessageCreated(created);
+      const resumeAgent = await getAgentServiceForSession(this.app, session);
+      if (resumeAgent?.handleMessageCreated) {
+        await resumeAgent.handleMessageCreated(created);
       }
     } catch (err) {
       // The dispatch above flips the session back to `running`; leaving it there would show a
@@ -566,8 +571,9 @@ export class SessionsService extends KnexService {
     }
   }
 
-  _stopAgentSession(session) {
-    return this.app.service(agentFeathersPath(session.agent_sdk)).stopSession(session.id);
+  async _stopAgentSession(session) {
+    const agent = await getAgentServiceForSession(this.app, session);
+    return agent.stopSession(session.id);
   }
 
   async _stopReviewer(session) {
@@ -1564,15 +1570,14 @@ async function provisionGlobalSession(app, session, params) {
   };
   if (hasInitialPrompt(session.initial_prompt)) {
     try {
-      const result = await app
-        .service(agentFeathersPath(session.agent_sdk))
-        .generateSessionMetadata(
-          session.initial_prompt,
-          session.short_id,
-          params.user,
-          null,
-          session
-        );
+      const metadataAgent = await getAgentServiceForSession(app, session);
+      const result = await metadataAgent.generateSessionMetadata(
+        session.initial_prompt,
+        session.short_id,
+        params.user,
+        null,
+        session
+      );
       if (result.label) patch.label = result.label;
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
@@ -1658,9 +1663,14 @@ async function provisionSessionEnvironment(app, session, params) {
       session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
     if (hasInitialPrompt(session.initial_prompt)) {
       try {
-        const result = await app
-          .service(agentFeathersPath(session.agent_sdk))
-          .generateSessionMetadata(session.initial_prompt, shortId, user, repo, session);
+        const metadataAgent = await getAgentServiceForSession(app, session);
+        const result = await metadataAgent.generateSessionMetadata(
+          session.initial_prompt,
+          shortId,
+          user,
+          repo,
+          session
+        );
         if (result.label) patch.label = result.label;
         if (!requestedBranchName && !session.remote_branch) {
           remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
@@ -1862,12 +1872,17 @@ async function addHasWebserver(context) {
 }
 
 async function syncSessionSettingsAfterPatch(context) {
-  if (context.id != null && context.result) {
-    // Only sync settings for Claude sessions (Cursor SDK handles model/mode per-send)
-    if (context.result.agent_sdk !== 'cursor') {
-      await context.app
-        .service('claude-agent')
-        .syncSessionSettingsFromPatch(context.id, context.result);
+  if (context.id != null && context.result?.agent_sdk) {
+    try {
+      const agent = await getAgentServiceForSession(context.app, context.result);
+      if (typeof agent.syncSessionSettingsFromPatch === 'function') {
+        await agent.syncSessionSettingsFromPatch(context.id, context.result);
+      }
+    } catch (err) {
+      logger.warn(
+        { sessionId: context.id, err: err.message },
+        'syncSessionSettingsAfterPatch: agent service unavailable'
+      );
     }
   }
   return context;
@@ -1934,9 +1949,24 @@ async function resetBuilderAgentIdsOnSdkChange(context) {
 }
 
 /** Reviewer starts from the session's SDK/model; later edits write review_* only. */
-function seedReviewModelFromSession(context) {
+async function seedReviewModelFromSession(context) {
   if (context.data.review_agent_sdk === undefined) {
-    context.data.review_agent_sdk = context.data.agent_sdk || 'claude';
+    const sessionSdk = context.data.agent_sdk;
+    if (sessionSdk) {
+      context.data.review_agent_sdk = sessionSdk;
+    } else {
+      const userId = context.params.user?.id;
+      if (userId && context.app) {
+        const db = context.app.get('db');
+        const user = userRowForAgentSdk(await db('users').where({ id: userId }).first());
+        let repo = null;
+        if (context.data.repo_id != null) {
+          repo = await requireRepoAccessForUser(context.data.repo_id, userId);
+        }
+        const key = await resolveAgentSdkKey(context.app, null, { user, repo });
+        if (key) context.data.review_agent_sdk = key;
+      }
+    }
   }
   if (context.data.review_model === undefined) {
     context.data.review_model = context.data.model ?? null;

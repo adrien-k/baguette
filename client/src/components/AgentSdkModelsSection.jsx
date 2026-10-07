@@ -1,38 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import {
-  settingsModelsRefreshUrl,
-  settingsModelsUrl,
-} from '@baguette/shared/settings-models-url.js';
-import { apiFetch } from '../api.js';
 import { toastError } from '../utils/toastError.jsx';
-import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { fetchAgentSdkModels } from '../utils/fetchAgentSdkModels.js';
 
 /**
- * Lists cached agent models for Settings → Agent with refresh.
+ * Lists cached agent models for Settings → Agent (Claude or Cursor) with refresh.
+ * Models are always loaded for a specific repository (repo-level + account keys).
  */
-export default function AgentSdkModelsSection({ sdk, credentialConfigured = true }) {
+export default function AgentSdkModelsSection({ sdk, repoId }) {
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const needsCredential = sdk === 'cursor' || sdk === 'pi';
-
   const loadModels = useCallback(
     (refresh = false) => {
-      if (needsCredential && !credentialConfigured) {
+      if (!repoId) {
         setModels([]);
         setLoading(false);
         return Promise.resolve();
       }
-      const url = refresh ? settingsModelsRefreshUrl(sdk) : settingsModelsUrl(sdk);
       if (refresh) setRefreshing(true);
       else setLoading(true);
-      return apiFetch(url, refresh ? { method: 'POST' } : undefined)
-        .then((d) => setModels(d.models || []))
+      return fetchAgentSdkModels(sdk, repoId, { refresh })
+        .then((list) => setModels(list))
         .catch((err) => {
           if (refresh)
-            toastError(`Failed to refresh ${formatAgentSdkDisplayName(sdk)} models`, err);
+            toastError(`Failed to refresh ${sdk === 'cursor' ? 'Cursor' : 'Claude'} models`, err);
           else setModels([]);
         })
         .finally(() => {
@@ -40,18 +33,17 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
           setRefreshing(false);
         });
     },
-    [sdk, credentialConfigured, needsCredential]
+    [sdk, repoId]
   );
 
   useEffect(() => {
     loadModels(false);
   }, [loadModels]);
 
-  if (needsCredential && !credentialConfigured) {
-    const sdkName = formatAgentSdkDisplayName(sdk);
+  if (!repoId) {
     return (
       <p className="text-xs text-faint">
-        Save a {sdkName} API key above to load and refresh available models.
+        Select a repository scope (not &quot;All my repos&quot;) to load models for that repo.
       </p>
     );
   }
@@ -81,9 +73,9 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
               <span className="text-heading">{m.display_name}</span>
               {m.description ? (
                 <span className="block text-xs text-faint mt-0.5">{m.description}</span>
-              ) : m.id ? (
-                <span className="block text-xs text-faint mt-0.5 font-mono">{m.id}</span>
-              ) : null}
+              ) : (
+                <span className="block text-xs text-faint font-mono mt-0.5">{m.id}</span>
+              )}
             </li>
           ))}
         </ul>

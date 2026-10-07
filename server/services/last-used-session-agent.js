@@ -22,7 +22,7 @@ export async function getLastUsedSessionAgent(db, userId) {
     .first();
   if (!row) return null;
   return {
-    agent_sdk: row.agent_sdk || 'claude',
+    agent_sdk: row.agent_sdk ?? null,
     model: parseSessionModelId(row.model),
     model_params: coerceModelParams(row.model_params),
   };

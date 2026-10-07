@@ -15,6 +15,9 @@ config:
     tasks:
       run-tests:
         run: pnpm test
+      run-e2e:
+        run: bash .baguette/scripts/run-e2e.sh
+        ports: [E2E_PORT]
       lint:
         run: pnpm run lint
       migrate-dev-environment:

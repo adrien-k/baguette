@@ -7,28 +7,28 @@ export function createListModelsTool(ctx) {
   return {
     name: 'ListModels',
     description:
-      'List agent models grouped by SDK (claude, cursor, pi), including session usage counts. Only SDKs with a configured API key (account or, when repo_id is set, repository) are included. Prefer models with higher session_count.',
+      'List agent models grouped by SDK, including session usage counts. Requires repo_id — credentials use repository keys with account fallback. Prefer models with higher session_count.',
     schema: {
       repo_id: z
         .number()
         .int()
-        .optional()
-        .describe(
-          'Optional repository id — include repo-level API keys when listing models for CreateSession'
-        ),
+        .describe('Repository id — models and credentials are resolved per repository'),
     },
     handler: async ({ repo_id }) => {
       try {
-        const fullUser = await app.service('users').get(userId, {});
-        let repo = null;
-        if (repo_id != null) {
-          const access = await requireRepoAccess(repo_id);
-          if (!access) {
-            return fail(`Repository ${repo_id} not found or not linked to your account.`);
-          }
-          repo = await loadRepoWithKeys(repo_id);
+        if (repo_id == null) {
+          return fail('repo_id is required');
         }
-        const result = await listModelsForUser(fullUser, repo);
+        const fullUser = await app.service('users').get(userId, {});
+        const access = await requireRepoAccess(repo_id);
+        if (!access) {
+          return fail(`Repository ${repo_id} not found or not linked to your account.`);
+        }
+        const repo = (await loadRepoWithKeys(repo_id)) ?? {
+          id: access.id,
+          full_name: access.full_name,
+        };
+        const result = await listModelsForUser(fullUser, repo, app);
         return ok(result);
       } catch (err) {
         return fail(err.message);

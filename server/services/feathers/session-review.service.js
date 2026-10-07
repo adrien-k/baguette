@@ -15,6 +15,11 @@ import { gitCommitCountSince } from '../github.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { markSessionReviewedAtHead } from '../session-branch-commits.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
+import {
+  agentSdkContextForSession,
+  agentServicePathForSdk,
+  resolveAgentSdkKey,
+} from '../agent-sdk/default-agent-sdk.js';
 
 const BAGUETTE_REVIEW_START_TITLE = 'Start review';
 const BAGUETTE_REVIEW_START_CONTENT = 'Begin the code review following your system instructions.';
@@ -61,17 +66,6 @@ const REVIEWER_ALLOWED_TOOLS = [
 
 export function reviewTurnKey(sessionId) {
   return `review:${sessionId}`;
-}
-
-function reviewSdk(session) {
-  return session.review_agent_sdk || session.agent_sdk || 'claude';
-}
-
-function reviewSdkFromRequest(session, data = {}) {
-  if (data.agent_sdk != null && String(data.agent_sdk).trim() !== '') {
-    return String(data.agent_sdk).trim();
-  }
-  return reviewSdk(session);
 }
 
 function reviewTurnModel(session, data = {}) {
@@ -142,6 +136,17 @@ export class SessionReviewService {
 
   peekTurnExtras(sessionId) {
     return this._turnExtras.get(sessionId) ?? null;
+  }
+
+  async resolveReviewSdk(session, data = {}) {
+    const ctx = await agentSdkContextForSession(this.app, session);
+    const explicit =
+      data.agent_sdk != null && String(data.agent_sdk).trim() !== ''
+        ? String(data.agent_sdk).trim()
+        : session.review_agent_sdk || session.agent_sdk;
+    const key = await resolveAgentSdkKey(this.app, explicit, ctx);
+    if (!key) throw new BadRequest('No agent SDK is available for this session');
+    return key;
   }
 
   async buildClaudeQueryOptions(session, { model, continuation = false, extraPrompt } = {}) {
@@ -242,7 +247,7 @@ export class SessionReviewService {
     this._claimReviewTurn(session.id);
 
     try {
-      const agentSdk = reviewSdkFromRequest(session, data);
+      const agentSdk = await this.resolveReviewSdk(session, data);
       const { model, modelParams } = reviewTurnModel(session, data);
 
       await this.app.service('sessions').patch(
@@ -332,7 +337,20 @@ export class SessionReviewService {
     this._claimReviewTurn(session.id);
 
     try {
-      const agentSdk = reviewSdkFromRequest(session, data);
+      const hasThread = await this.app
+        .service('messages')
+        .find({
+          query: { session_id: session.id, agent_type: 'reviewer', $limit: 1 },
+          paginate: false,
+          provider: undefined,
+          user: { id: session.user_id },
+        })
+        .then((rows) => (Array.isArray(rows) ? rows[0] : rows?.data?.[0]));
+      if (!hasThread) {
+        throw new BadRequest('Start a review before sending follow-up messages');
+      }
+
+      const agentSdk = await this.resolveReviewSdk(session, data);
       const { model, modelParams } = reviewTurnModel(session, data);
       this._turnExtras.set(session.id, { continuation: true });
 
@@ -571,13 +589,12 @@ export class SessionReviewService {
       await this._patchReviewStatus(session, 'failed');
       return false;
     }
-    const sdk = reviewSdk(session);
-    const resumable =
-      sdk === 'cursor'
-        ? !!session.review_cursor_agent_id
-        : sdk === 'pi'
-          ? !!session.review_pi_session_id
-          : !!session.review_claude_session_id;
+    const sdk = await this.resolveReviewSdk(session);
+    const ctx = await agentSdkContextForSession(this.app, session);
+    const agentService = await agentServicePathForSdk(this.app, sdk, ctx);
+    const resumable = await this.app
+      .service(agentService)
+      .isInterruptedSessionResumable(session, { channel: 'review' });
     if (!resumable) {
       await this._persistStatus(session, 'Server restarted — review could not be resumed');
       await this._patchReviewStatus(session, 'failed');

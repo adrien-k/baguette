@@ -69,6 +69,34 @@ describe('CreateSession MCP agent defaults', () => {
         if (name === 'sessions') {
           return { create: createSpy };
         }
+        if (name === 'agent-sdks') {
+          return {
+            listEnabled: async ({ user: u }) => {
+              const sdks = [];
+              if (u?.anthropic_api_key || u?.anthropic_auth_token) {
+                sdks.push({ key: 'claude', label: 'Claude' });
+              }
+              if (u?.cursor_api_key) {
+                sdks.push({ key: 'cursor', label: 'Cursor' });
+              }
+              return sdks;
+            },
+            isEnabled: async (sdk, { user: u }) => {
+              if (sdk === 'claude') return Boolean(u?.anthropic_api_key || u?.anthropic_auth_token);
+              if (sdk === 'cursor') return Boolean(u?.cursor_api_key);
+              return false;
+            },
+            listModelsForSdk: async (sdk) => {
+              if (sdk === 'claude') {
+                return [{ id: 'sonnet', display_name: 'Sonnet' }];
+              }
+              if (sdk === 'cursor') {
+                return listCursorModels();
+              }
+              return [];
+            },
+          };
+        }
         throw new Error(`unexpected service ${name}`);
       },
     };

@@ -4,6 +4,11 @@ dist/
 client/node_modules/
 client/dist/
 .data/
+.data-e2e/
+.data-e2e-test/
+test-results/
+playwright-report/
+e2e/screenshots/
 .DS_Store
 config/credentials/
 .kamal/.env

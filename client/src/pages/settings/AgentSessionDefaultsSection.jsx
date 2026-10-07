@@ -1,24 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { AGENT_SDK_IDS, availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
-import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { fetchAgentSdkModels } from '../../utils/fetchAgentSdkModels.js';
 import { LAST_USED_AGENT_SDK } from '@baguette/shared/agent-session-defaults.js';
-import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
+import { useAvailableAgentSdks } from '../../hooks/useAvailableAgentSdks.js';
 import SearchableSelect from '../../components/SearchableSelect';
 import AgentSdkIcon from '../../components/svg/AgentSdkIcon.jsx';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
+import { useRepoContext } from '../../context/RepoContext.jsx';
 
-const SDK_OPTIONS = [
-  { value: LAST_USED_AGENT_SDK, label: 'Last used agent' },
-  ...AGENT_SDK_IDS.map((value) => ({ value, label: formatAgentSdkDisplayName(value) })),
-];
-
-export default function AgentSessionDefaultsSection({ settings }) {
+export default function AgentSessionDefaultsSection() {
+  const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
+  const [modelRepoId, setModelRepoId] = useState('');
   const [agentSdk, setAgentSdk] = useState(LAST_USED_AGENT_SDK);
   const [model, setModel] = useState('');
   const [modelParamsJson, setModelParamsJson] = useState(null);
@@ -31,12 +28,27 @@ export default function AgentSessionDefaultsSection({ settings }) {
 
   const isLastUsedMode = agentSdk === LAST_USED_AGENT_SDK;
 
-  const availableSdks = useMemo(
-    () => (settings ? availableAgentSdks(settings, null) : []),
-    [settings]
+  const {
+    sdks: availableSdks,
+    keys: availableSdkKeys,
+    loading: availableSdksLoading,
+  } = useAvailableAgentSdks(modelRepoId);
+
+  useEffect(() => {
+    if (modelRepoId || !repos.length) return;
+    setModelRepoId(String(repos[0].id));
+  }, [repos, modelRepoId]);
+
+  const modelRepoOptions = useMemo(
+    () => repos.map((r) => ({ value: String(r.id), label: r.full_name })),
+    [repos]
   );
 
   const loadDefaults = useCallback(() => {
+    if (availableSdksLoading) {
+      setDefaultsReady(false);
+      return Promise.resolve();
+    }
     setDefaultsReady(false);
     return apiFetch('/api/settings/agent-defaults')
       .then((d) => {
@@ -45,7 +57,7 @@ export default function AgentSessionDefaultsSection({ settings }) {
           setModel('');
           setModelParamsJson(null);
         } else {
-          const sdk = availableSdks.includes(d.agent_sdk) ? d.agent_sdk : LAST_USED_AGENT_SDK;
+          const sdk = availableSdkKeys.includes(d.agent_sdk) ? d.agent_sdk : LAST_USED_AGENT_SDK;
           setAgentSdk(sdk);
           setModel(d.model && sdk !== LAST_USED_AGENT_SDK ? d.model : '');
           setModelParamsJson(d.model_params?.length ? JSON.stringify(d.model_params) : null);
@@ -54,27 +66,28 @@ export default function AgentSessionDefaultsSection({ settings }) {
       })
       .catch((err) => toastError('Failed to load session defaults', err))
       .finally(() => setDefaultsReady(true));
-  }, [availableSdks]);
+  }, [availableSdkKeys, availableSdksLoading]);
 
   useEffect(() => {
     loadDefaults();
   }, [loadDefaults]);
 
   const loadModels = useCallback(() => {
-    if (isLastUsedMode || !agentSdk) {
+    if (!modelRepoId) {
       setModels([]);
       return Promise.resolve();
     }
-    if (!availableSdks.includes(agentSdk)) {
+    const sdkForModels = isLastUsedMode ? availableSdkKeys[0] : agentSdk;
+    if (!sdkForModels || !availableSdkKeys.includes(sdkForModels)) {
       setModels([]);
       return Promise.resolve();
     }
     setLoadingModels(true);
-    return apiFetch(settingsModelsUrl(agentSdk))
-      .then((d) => setModels(d.models || []))
+    return fetchAgentSdkModels(sdkForModels, modelRepoId)
+      .then((list) => setModels(list))
       .catch(() => setModels([]))
       .finally(() => setLoadingModels(false));
-  }, [agentSdk, availableSdks, isLastUsedMode]);
+  }, [agentSdk, availableSdkKeys, isLastUsedMode, modelRepoId]);
 
   useEffect(() => {
     loadModels();
@@ -130,6 +143,7 @@ export default function AgentSessionDefaultsSection({ settings }) {
           model: agentSdk && model ? model : null,
           model_params:
             agentSdk === 'cursor' && model && model_params?.length ? model_params : null,
+          repo_id: modelRepoId ? Number(modelRepoId) : null,
         };
       }
       await apiFetch('/api/settings/agent-defaults', {
@@ -146,9 +160,10 @@ export default function AgentSessionDefaultsSection({ settings }) {
     }
   };
 
-  const sdkSelectOptions = SDK_OPTIONS.filter(
-    (o) => o.value === LAST_USED_AGENT_SDK || availableSdks.includes(o.value)
-  );
+  const sdkSelectOptions = [
+    { value: LAST_USED_AGENT_SDK, label: 'Last used agent' },
+    ...availableSdks.map((s) => ({ value: s.key, label: s.label })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -182,6 +197,21 @@ export default function AgentSessionDefaultsSection({ settings }) {
       {!isLastUsedMode && agentSdk && (
         <div>
           <label className="block text-sm font-medium text-secondary mb-1">
+            Preview repository
+          </label>
+          <SearchableSelect
+            value={modelRepoId}
+            onChange={setModelRepoId}
+            options={modelRepoOptions}
+            getOptionValue={(o) => o.value}
+            getOptionLabel={(o) => o.label}
+            placeholder="Select a repository"
+            disabled={!modelRepoOptions.length}
+          />
+          <p className="mt-1 mb-3 text-xs text-faint">
+            Models are loaded per repository (repo keys override account keys).
+          </p>
+          <label className="block text-sm font-medium text-secondary mb-1">
             Model &amp; params
           </label>
           {loadingModels ? (
@@ -196,8 +226,7 @@ export default function AgentSessionDefaultsSection({ settings }) {
               onCursorModelPrefChange={setCursorModelPref}
               onModelChange={handleModelChange}
               availableSdks={availableSdks}
-              userSettings={settings}
-              disabled={!models.length}
+              disabled={!models.length || !modelRepoId}
             />
           )}
         </div>

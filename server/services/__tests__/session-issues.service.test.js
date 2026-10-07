@@ -4,6 +4,7 @@ import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
+import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
 const db = createTestDb({ beforeEach, afterEach });
 const params = (user) => ({ provider: 'rest', user });
@@ -12,13 +13,13 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
-  app.use(
-    'claude-agent',
+  useClaudeAgentStub(
+    app,
     {
       onMessageCreated: async () => {},
       syncSessionSettingsFromPatch: () => {},
     },
-    { methods: ['onMessageCreated', 'syncSessionSettingsFromPatch'] }
+    ['onMessageCreated', 'syncSessionSettingsFromPatch']
   );
   registerMessagesService(app);
   registerSessionIssuesService(app);

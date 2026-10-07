@@ -18,6 +18,7 @@ vi.mock('../github.js', async (importOriginal) => {
 });
 
 import { registerUsersService } from '../feathers/users.service.js';
+import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
 
 const db = createTestDb({ beforeEach, afterEach });
 
@@ -27,6 +28,24 @@ const unauthParams = { provider: 'rest' };
 function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
+  mountAgentSdks(app);
+  app.use(
+    'claude-agent',
+    {
+      async isEnabled() {
+        return true;
+      },
+      async listModels() {
+        return [];
+      },
+    },
+    { methods: ['isEnabled', 'listModels'] }
+  );
+  app.service('agent-sdks').register({
+    key: 'claude',
+    label: 'Claude',
+    service_path: 'claude-agent',
+  });
   registerUsersService(app);
   return app;
 }
@@ -425,7 +444,7 @@ describe('Users service - defaultAgent', () => {
     });
   });
 
-  it('falls back to claude when there is no session yet', async () => {
+  it('falls back to the first enabled SDK when there is no session yet', async () => {
     const result = await app.service('users').defaultAgent({}, params(user1));
     expect(result).toEqual({
       agent_sdk: 'claude',

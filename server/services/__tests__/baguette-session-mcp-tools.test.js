@@ -10,6 +10,7 @@ import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { TasksService } from '../feathers/tasks.service.js';
 import { buildBaguetteSessionMcpTools } from '../baguette-session-mcp-tools.js';
+import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -80,13 +81,13 @@ describe('baguette session MCP tools', () => {
       },
     });
     registerSessionsService(app);
-    app.use(
-      'claude-agent',
+    useClaudeAgentStub(
+      app,
       {
         onMessageCreated: vi.fn().mockResolvedValue(undefined),
         syncSessionSettingsFromPatch: vi.fn(),
       },
-      { methods: ['onMessageCreated', 'syncSessionSettingsFromPatch'] }
+      ['onMessageCreated', 'syncSessionSettingsFromPatch']
     );
     registerQueuedMessagesService(app);
     registerMessagesService(app);

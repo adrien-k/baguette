@@ -1,5 +1,4 @@
 import { BadRequest } from '@feathersjs/errors';
-import { availableAgentSdks } from '../../shared/agent-sdk-credentials.js';
 import {
   isLastUsedAgentDefaults,
   mergeAgentSessionDefaults,
@@ -12,6 +11,8 @@ import {
   paramValueOptionsFromVariants,
 } from '../../shared/model-variants.js';
 import { loadModelsForSdk } from './baguette-models-for-user.js';
+import { requireRepoAccessForUser, userRowForAgentSdk } from './agent-sdk/agent-context.js';
+import { firstEnabledAgentSdkKey } from './agent-sdk/default-agent-sdk.js';
 
 export {
   coerceModelParams,
@@ -38,7 +39,7 @@ function validateModelParamsForVariants(variants, modelParams) {
   }
 }
 
-export async function validateAgentSessionDefaults(user, input) {
+export async function validateAgentSessionDefaults(user, input, { userId, repoId, app } = {}) {
   const defaults = parseAgentSessionDefaultsJson(input);
 
   if (!defaults.agent_sdk && !defaults.model && !defaults.model_params) {
@@ -57,18 +58,32 @@ export async function validateAgentSessionDefaults(user, input) {
     throw new BadRequest('model is required when model_params is set');
   }
 
+  let repo = null;
+  if (defaults.agent_sdk || defaults.model) {
+    if (repoId == null || repoId === '') {
+      throw new BadRequest('repo_id is required');
+    }
+    if (userId == null) {
+      throw new BadRequest('userId is required for agent defaults validation');
+    }
+    repo = await requireRepoAccessForUser(Number(repoId), userId);
+    if (!repo) {
+      throw new BadRequest('Repository not found or not linked to your account');
+    }
+  }
+
   if (defaults.agent_sdk) {
-    const allowed = availableAgentSdks(user, null);
-    if (!allowed.includes(defaults.agent_sdk)) {
+    const enabled = await app.service('agent-sdks').isEnabled(defaults.agent_sdk, { user, repo });
+    if (!enabled) {
       throw new BadRequest(
-        `No API key configured for agent_sdk "${defaults.agent_sdk}". Add keys in Settings → Agent.`
+        `Agent SDK "${defaults.agent_sdk}" is not available for this repository. Add keys in Settings → Agent or repository settings.`
       );
     }
   }
 
   if (defaults.model) {
     const sdk = defaults.agent_sdk;
-    const models = await loadModelsForSdk(user, sdk, null);
+    const models = await loadModelsForSdk(user, sdk, repo, app);
     if (!models.some((m) => m.id === defaults.model)) {
       throw new BadRequest(`Unknown ${sdk} model "${defaults.model}". Refresh models in Settings.`);
     }
@@ -94,7 +109,7 @@ export function normalizeAgentDefaultsPatch(existingRaw, patch) {
  * @returns {Promise<{ agent_sdk: string, model: string | null, model_params: Array | null,
  *   source: 'defaults' | 'last_used' }>}
  */
-export async function resolveDefaultAgent(db, userId) {
+export async function resolveDefaultAgent(db, userId, app) {
   const defaults = parseAgentSessionDefaultsJson(
     userId == null ? null : (await db('users').where({ id: userId }).first())?.agent_defaults
   );
@@ -107,8 +122,11 @@ export async function resolveDefaultAgent(db, userId) {
     };
   }
   const lastUsed = await getLastUsedSessionAgent(db, userId);
+  const userRow = userId == null ? null : await db('users').where({ id: userId }).first();
+  const user = userRowForAgentSdk(userRow);
+  const defaultSdk = user && app ? await firstEnabledAgentSdkKey(app, { user, repo: null }) : null;
   return {
-    agent_sdk: lastUsed?.agent_sdk ?? 'claude',
+    agent_sdk: lastUsed?.agent_sdk ?? defaultSdk,
     model: lastUsed?.model ?? null,
     model_params: lastUsed?.model_params ?? null,
     source: 'last_used',

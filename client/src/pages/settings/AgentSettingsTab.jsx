@@ -159,7 +159,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
           title="Session default agent"
           description="Default is last used agent (most recent session). Or pin Claude/Cursor with model and params. MCP explicit parameters always override."
         >
-          <AgentSessionDefaultsSection settings={settings} />
+          <AgentSessionDefaultsSection />
         </SettingsSection>
 
         <SettingsSection
@@ -189,7 +189,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
             perRepoHint
             onChange={(patch, hasChanges) => setClaudeChange({ patch, hasChanges })}
           />
-          <AgentSdkModelsSection sdk="claude" />
+          <AgentSdkModelsSection sdk="claude" repoId={claudeRepoId ? Number(claudeRepoId) : null} />
           <SettingsSaveRow
             saving={claudeSaving}
             saved={claudeSaved}
@@ -230,9 +230,9 @@ export default function AgentSettingsTab({ settings, onSave }) {
             />
           </div>
           <AgentSdkModelsSection
-            key={`cursor-models-${cursorRepoId || 'all'}-${cursorMasked ? '1' : '0'}`}
+            key={`cursor-models-${cursorRepoId || 'all'}`}
             sdk="cursor"
-            credentialConfigured={Boolean(cursorMasked)}
+            repoId={cursorRepoId ? Number(cursorRepoId) : null}
           />
           <SettingsSaveRow
             saving={cursorSaving}

@@ -30,14 +30,14 @@ export type MessageWriterOpts = {
   channel: 'chat' | 'review';
   worktreePath?: string | null;
   /** Which provider is producing this turn's stream. */
-  agentType: 'claude' | 'cursor' | 'pi';
+  agentType: 'claude' | 'cursor' | 'pi' | 'mock';
   model: string;
   modelParams?: unknown;
 };
 
 function messageIdentityFromChannel(
   channel: 'chat' | 'review',
-  agentSdk: 'claude' | 'cursor' | 'pi',
+  agentSdk: 'claude' | 'cursor' | 'pi' | 'mock',
   model: string,
   modelParams?: unknown
 ) {
@@ -79,42 +79,49 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
             buildToolCallStart: piBuildToolCallStart,
             buildToolCallComplete: piBuildToolCallComplete,
           }
-        : (() => {
-            const taskTracker = createClaudeTaskTracker();
-            return {
-              buildToolCallStart: (
-                callId: string,
-                name: string,
-                args: Record<string, unknown>,
-                startedAt?: string
-              ) => {
-                const input = args.taskId != null ? taskTracker.enrichTaskUpdateInput(args) : args;
-                return claudeBuildToolCallStart(callId, name, input, startedAt);
-              },
-              buildToolCallComplete: (prev, opts) => {
-                const rawArgs = opts.args;
-                const isTaskUpdate = rawArgs != null && rawArgs.taskId != null;
-                const isTaskCreate =
-                  rawArgs != null &&
-                  !isTaskUpdate &&
-                  (typeof rawArgs.subject === 'string' || typeof rawArgs.description === 'string');
-                const input =
-                  rawArgs != null && isTaskUpdate
-                    ? taskTracker.enrichTaskUpdateInput(rawArgs)
-                    : rawArgs;
-                const completeArgs =
-                  input != null && hasNonemptyToolInput(input) ? input : undefined;
-                const completed = claudeBuildToolCallComplete(prev, {
-                  ...opts,
-                  args: completeArgs,
-                });
-                if (isTaskCreate) {
-                  taskTracker.registerTaskFromCreateResult(opts.rawResult, rawArgs);
-                }
-                return completed;
-              },
-            };
-          })();
+        : opts.agentType === 'mock'
+          ? {
+              buildToolCallStart: claudeBuildToolCallStart,
+              buildToolCallComplete: claudeBuildToolCallComplete,
+            }
+          : (() => {
+              const taskTracker = createClaudeTaskTracker();
+              return {
+                buildToolCallStart: (
+                  callId: string,
+                  name: string,
+                  args: Record<string, unknown>,
+                  startedAt?: string
+                ) => {
+                  const input =
+                    args.taskId != null ? taskTracker.enrichTaskUpdateInput(args) : args;
+                  return claudeBuildToolCallStart(callId, name, input, startedAt);
+                },
+                buildToolCallComplete: (prev, opts) => {
+                  const rawArgs = opts.args;
+                  const isTaskUpdate = rawArgs != null && rawArgs.taskId != null;
+                  const isTaskCreate =
+                    rawArgs != null &&
+                    !isTaskUpdate &&
+                    (typeof rawArgs.subject === 'string' ||
+                      typeof rawArgs.description === 'string');
+                  const input =
+                    rawArgs != null && isTaskUpdate
+                      ? taskTracker.enrichTaskUpdateInput(rawArgs)
+                      : rawArgs;
+                  const completeArgs =
+                    input != null && hasNonemptyToolInput(input) ? input : undefined;
+                  const completed = claudeBuildToolCallComplete(prev, {
+                    ...opts,
+                    args: completeArgs,
+                  });
+                  if (isTaskCreate) {
+                    taskTracker.registerTaskFromCreateResult(opts.rawResult, rawArgs);
+                  }
+                  return completed;
+                },
+              };
+            })();
 
   return new MessageStreamWriter({
     sessionId: opts.sessionId,
@@ -138,7 +145,7 @@ export type TypedMessageOpts = {
   userId: number;
   turnId?: number | null;
   channel: 'chat' | 'review';
-  agentSdk?: 'claude' | 'cursor' | 'pi';
+  agentSdk?: 'claude' | 'cursor' | 'pi' | 'mock';
   model: string;
   modelParams?: unknown;
 };

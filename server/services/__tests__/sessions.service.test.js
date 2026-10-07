@@ -17,6 +17,8 @@ import { createTestDb, testSessionAgentDefaults } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
+import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
+import { registerAgentSdk } from '../feathers/agent-sdks.service.js';
 import {
   createWorktree,
   getOpenPR,
@@ -98,6 +100,18 @@ const findRunningTask = vi.fn().mockReturnValue(null);
 const tasksCreate = vi.fn(async (data) => ({ id: 42, ...data }));
 const getTask = vi.fn().mockReturnValue(null);
 
+function claudeInterruptedResumable(session, { channel = 'chat' } = {}) {
+  return channel === 'review'
+    ? Boolean(session.review_claude_session_id)
+    : Boolean(session.claude_session_id);
+}
+
+function cursorInterruptedResumable(session, { channel = 'chat' } = {}) {
+  return channel === 'review'
+    ? Boolean(session.review_cursor_agent_id)
+    : Boolean(session.cursor_agent_id);
+}
+
 function wireAgentMessageListeners(app) {
   app.service('messages').on('created', async (row) => {
     if (row.type !== 'user') return;
@@ -131,6 +145,7 @@ function makeApp(db) {
     },
     { methods: ['deleteSessionTasks', 'create', 'find'] }
   );
+  mountAgentSdks(app);
   app.use(
     'claude-agent',
     {
@@ -138,6 +153,9 @@ function makeApp(db) {
       handleMessageCreated: claudeHandleMessageCreated,
       syncSessionSettingsFromPatch,
       generateSessionMetadata,
+      isInterruptedSessionResumable: claudeInterruptedResumable,
+      isEnabled: async () => true,
+      listModels: async () => [],
     },
     {
       methods: [
@@ -145,6 +163,9 @@ function makeApp(db) {
         'handleMessageCreated',
         'syncSessionSettingsFromPatch',
         'generateSessionMetadata',
+        'isInterruptedSessionResumable',
+        'isEnabled',
+        'listModels',
       ],
     }
   );
@@ -154,11 +175,23 @@ function makeApp(db) {
       stopSession,
       generateSessionMetadata,
       handleMessageCreated: cursorHandleMessageCreated,
+      isInterruptedSessionResumable: cursorInterruptedResumable,
+      isEnabled: async () => true,
+      listModels: async () => [],
     },
     {
-      methods: ['stopSession', 'generateSessionMetadata', 'handleMessageCreated'],
+      methods: [
+        'stopSession',
+        'generateSessionMetadata',
+        'handleMessageCreated',
+        'isInterruptedSessionResumable',
+        'isEnabled',
+        'listModels',
+      ],
     }
   );
+  registerAgentSdk(app, { key: 'claude', label: 'Claude', servicePath: 'claude-agent' });
+  registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
   app.use(
     'session-review',

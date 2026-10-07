@@ -1,16 +1,13 @@
 import { Router } from 'express';
 import { getGithubToken } from '../services/agent-settings.js';
 import { githubFetch } from '../services/github-api.js';
-import { listCursorModels, refreshCursorModels } from '../services/cursor-models.js';
 import { decrypt } from '../lib/encrypt.js';
 import { asyncHandler } from '../lib/app-error-handler.js';
 import db from '../db.js';
 import { normalizeAnthropicBaseUrl } from '../services/session-env.js';
 import { buildClaudeTestEnv, runClaudeConnectivityTest } from '../services/claude-connectivity.js';
 import { runCursorConnectivityTest } from '../services/cursor-connectivity.js';
-import { listPiModels, listPiModelsForUser } from '../services/pi-models.js';
 import { resolvePiEffectiveForTest, runPiConnectivityTest } from '../services/pi-connectivity.js';
-import { listClaudeModels } from '../services/claude-gateway-models.js';
 import {
   loadFullSessionPromptTemplate,
   loadFullReviewPromptTemplate,
@@ -25,7 +22,6 @@ import {
   validateAgentSessionDefaults,
   withLastUsedFlag,
 } from '../services/agent-session-defaults.js';
-
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function userRowForAgentValidation(userRow) {
@@ -71,50 +67,8 @@ function usageQuery(
   return q;
 }
 
-/**
- * Claude models for the signed-in user (account level): the models exposed by the configured
- * gateway when a base URL is set, otherwise the SDK's built-in list. Throws on gateway
- * failure — callers decide how to surface the error.
- */
-async function listClaudeModelsForRequest(req, { refresh = false } = {}) {
-  const userRow = await db('users').where({ id: req.user.id }).first();
-  const config = {
-    apiKey: userRow?.anthropic_api_key_encrypted
-      ? decrypt(userRow.anthropic_api_key_encrypted)
-      : null,
-    authToken: userRow?.anthropic_auth_token_encrypted
-      ? decrypt(userRow.anthropic_auth_token_encrypted)
-      : null,
-    baseUrl: userRow?.anthropic_base_url ?? null,
-  };
-  return listClaudeModels(config, { refresh });
-}
-
 export default function createSettingsRoutes(requireAuth) {
   const router = Router();
-
-  router.get(
-    '/api/settings/models',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      if (req.query.sdk === 'cursor') {
-        const userRow = await db('users').where({ id: req.user.id }).first();
-        const apiKey = userRow?.cursor_api_key_encrypted
-          ? decrypt(userRow.cursor_api_key_encrypted)
-          : null;
-        const models = await listCursorModels(apiKey);
-        return res.json({ models });
-      }
-      if (req.query.sdk === 'pi') {
-        const userRow = await db('users').where({ id: req.user.id }).first();
-        const user = userRowForAgentValidation(userRow);
-        const models = await listPiModelsForUser(user, null);
-        return res.json({ models });
-      }
-      const models = await listClaudeModelsForRequest(req);
-      res.json({ models });
-    })
-  );
 
   router.get(
     '/api/settings/prompt-templates',
@@ -144,35 +98,14 @@ export default function createSettingsRoutes(requireAuth) {
       const userRow = await db('users').where({ id: req.user.id }).first();
       if (!userRow) return res.status(404).json({ error: 'User not found' });
       const userForValidation = userRowForAgentValidation(userRow);
-      const validated = await validateAgentSessionDefaults(userForValidation, req.body ?? {});
+      const validated = await validateAgentSessionDefaults(userForValidation, req.body ?? {}, {
+        userId: req.user.id,
+        repoId: req.body?.repo_id,
+        app: req.app,
+      });
       const stored = stringifyAgentSessionDefaults(validated);
       await db('users').where({ id: req.user.id }).update({ agent_defaults: stored });
       res.json(withLastUsedFlag(stored));
-    })
-  );
-
-  router.post(
-    '/api/settings/models/refresh',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      if (req.query.sdk === 'cursor') {
-        const userRow = await db('users').where({ id: req.user.id }).first();
-        const apiKey = userRow?.cursor_api_key_encrypted
-          ? decrypt(userRow.cursor_api_key_encrypted)
-          : null;
-        const models = await refreshCursorModels(apiKey);
-        return res.json({ models });
-      }
-      if (req.query.sdk === 'pi') {
-        const userRow = await db('users').where({ id: req.user.id }).first();
-        const user = userRowForAgentValidation(userRow);
-        const { apiKey, envVar } = resolvePiEffectiveForTest(user, null, {});
-        if (!apiKey) return res.json({ models: [] });
-        const models = await listPiModels(apiKey, envVar, { refresh: true });
-        return res.json({ models });
-      }
-      const models = await listClaudeModelsForRequest(req, { refresh: true });
-      res.json({ models });
     })
   );
 

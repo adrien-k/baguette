@@ -17,6 +17,7 @@ export type AgentApp = {
   service(path: string): any;
   use(path: string, service: unknown, opts?: { methods?: string[] }): void;
   emit(event: string, data: unknown): void;
+  services?: Record<string, unknown>;
 };
 
 type QueryBuilderMethods = {

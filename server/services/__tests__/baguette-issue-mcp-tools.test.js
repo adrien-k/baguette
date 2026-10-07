@@ -9,6 +9,7 @@ import {
   buildReviewerIssueMcpTools,
   buildSessionAgentIssueMcpTools,
 } from '../baguette-issue-mcp-tools.js';
+import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
 const db = createTestDb({ beforeEach, afterEach });
 
@@ -35,10 +36,10 @@ beforeEach(async () => {
   app = feathers();
   app.set('db', db);
   registerSessionsService(app);
-  app.use(
-    'claude-agent',
+  useClaudeAgentStub(
+    app,
     { onMessageCreated: async () => {}, syncSessionSettingsFromPatch: () => {} },
-    { methods: ['onMessageCreated', 'syncSessionSettingsFromPatch'] }
+    ['onMessageCreated', 'syncSessionSettingsFromPatch']
   );
   registerMessagesService(app);
   registerSessionIssuesService(app);

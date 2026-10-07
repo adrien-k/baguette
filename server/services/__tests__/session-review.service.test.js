@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createTestDb } from '../../test-utils/db.js';
+import { encrypt } from '../../lib/encrypt.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
@@ -14,6 +15,8 @@ import { registerSessionReviewService } from '../feathers/session-review.service
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { gitRevParseShort } from '../github.js';
 import { registerClaudeAgentService } from '../feathers/claude-agent.service.ts';
+import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
+import { registerAgentSdk } from '../feathers/agent-sdks.service.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
   const tool = (name, description, inputSchema, handler) => ({
@@ -69,10 +72,13 @@ function makeApp(db) {
   app.use('users', { get: async (id) => ({ id, access_token: 'tok' }) }, { methods: ['get'] });
   registerMessagesService(app);
   registerQueuedMessagesService(app);
+  mountAgentSdks(app);
   registerClaudeAgentService(app);
   app.use(
     'cursor-agent',
     {
+      isEnabled: async () => true,
+      listModels: async () => [],
       handleMessageCreated: async (row) => {
         if (row.type !== 'user' || row.agent_sdk !== 'cursor') return;
         const session = await db('sessions').where({ id: row.session_id }).first();
@@ -97,18 +103,26 @@ function makeApp(db) {
         'runTurn',
         'buildAgentOptions',
         'writePromptRule',
+        'isEnabled',
+        'listModels',
       ],
     }
   );
+  registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
   app.use(
     'pi-agent',
     {
       handleMessageCreated: async () => {},
       stopTurn: async () => {},
       buildAgentOptions: async () => ({}),
+      isEnabled: async () => true,
+      listModels: async () => [],
     },
-    { methods: ['handleMessageCreated', 'stopTurn', 'buildAgentOptions'] }
+    {
+      methods: ['handleMessageCreated', 'stopTurn', 'buildAgentOptions', 'isEnabled', 'listModels'],
+    }
   );
+  registerAgentSdk(app, { key: 'pi', label: 'Pi', servicePath: 'pi-agent' });
   wireAgentMessageListeners(app);
   registerSessionIssuesService(app);
   registerSessionReviewService(app);
@@ -138,7 +152,12 @@ let sessionId;
 beforeEach(async () => {
   query.mockReset();
   query.mockImplementation(() => makeQueryResult());
-  const [userId] = await db('users').insert({ github_id: 3, username: 'rev', approved: true });
+  const [userId] = await db('users').insert({
+    github_id: 3,
+    username: 'rev',
+    approved: true,
+    anthropic_api_key_encrypted: encrypt('sk-ant-test'),
+  });
   user = await db('users').where({ id: userId }).first();
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   [sessionId] = await db('sessions').insert({

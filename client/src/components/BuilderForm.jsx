@@ -6,11 +6,10 @@ import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
-import { apiFetch } from '../api.js';
 import { usersService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
-import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
-import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
+import { fetchAgentSdkModels } from '../utils/fetchAgentSdkModels.js';
+import { useAvailableAgentSdks } from '../hooks/useAvailableAgentSdks.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
@@ -139,7 +138,7 @@ export default function BuilderForm({
   const { currentUser: userSettings } = useCurrentUser();
   const [agentSdk, setAgentSdkRaw] = persistentState.useState(
     'agentSdk',
-    editingLoop?.agent_sdk ?? 'claude',
+    editingLoop?.agent_sdk ?? '',
     { persistWhen: hasPromptText }
   );
   const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '', {
@@ -190,22 +189,39 @@ export default function BuilderForm({
     [repos, repoFullName]
   );
 
-  const availableSdks = useMemo(
-    () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
-    [userSettings, selectedRepo]
-  );
-  const availableSdkKey = availableSdks.join(',');
+  const [modelRepoId, setModelRepoId] = persistentState.useState('modelRepoId', '', {
+    persistWhen: hasPromptText,
+  });
 
   useEffect(() => {
-    if (!availableSdks.length) return;
-    if (!availableSdks.includes(agentSdk)) setAgentSdk(availableSdks[0]);
+    if (!isGlobal || modelRepoId || !repos.length) return;
+    setModelRepoId(String(repos[0].id));
+  }, [isGlobal, modelRepoId, repos, setModelRepoId]);
+
+  const modelScopeRepo = useMemo(() => {
+    if (selectedRepo) return selectedRepo;
+    if (!isGlobal || !modelRepoId) return null;
+    return repos.find((r) => String(r.id) === String(modelRepoId)) ?? null;
+  }, [selectedRepo, isGlobal, modelRepoId, repos]);
+
+  const {
+    sdks: availableSdks,
+    keys: availableSdkKeys,
+    loading: availableSdksLoading,
+  } = useAvailableAgentSdks(modelScopeRepo?.id);
+  const availableSdkKey = availableSdkKeys.join(',');
+
+  useEffect(() => {
+    if (!availableSdkKeys.length) return;
+    if (!availableSdkKeys.includes(agentSdk)) setAgentSdk(availableSdkKeys[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setAgentSdk resets model state intentionally
-  }, [availableSdks, agentSdk]);
+  }, [availableSdkKeys, agentSdk]);
 
   // Seed SDK/model/params from the account default: the user's pinned defaults, else the agent
   // of their most recent session. Resolved server-side so it is independent of the selected repo
   // (All Sessions mode included) instead of filtering sessions by the current repo.
   useEffect(() => {
+    if (availableSdksLoading) return;
     if (editingLoop || sdkModelSeeded || userSettings == null) return;
     // A restored draft prompt means the persisted sdk/model/params were captured with it, so
     // keep them instead of re-seeding from agent defaults or the last session.
@@ -221,9 +237,9 @@ export default function BuilderForm({
         setSdkModelSeeded(true);
         if (!resolved) return;
         const sdk =
-          resolved.agent_sdk && availableSdks.includes(resolved.agent_sdk)
+          resolved.agent_sdk && availableSdkKeys.includes(resolved.agent_sdk)
             ? resolved.agent_sdk
-            : null;
+            : (availableSdkKeys[0] ?? null);
         applySdkAndModel(
           sdk,
           resolved.model || null,
@@ -239,7 +255,7 @@ export default function BuilderForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from the default agent
-  }, [editingLoop, sdkModelSeeded, userSettings, availableSdks]);
+  }, [editingLoop, sdkModelSeeded, userSettings, availableSdkKeys, availableSdksLoading]);
   const {
     branches,
     loading: loadingBranches,
@@ -268,11 +284,15 @@ export default function BuilderForm({
   }, [isGlobal, sessionStartMode]);
 
   const loadModels = (sdk) => {
-    return apiFetch(settingsModelsUrl(sdk))
-      .then((d) => {
+    if (!modelScopeRepo?.id) {
+      setModels([]);
+      return Promise.resolve();
+    }
+    return fetchAgentSdkModels(sdk, modelScopeRepo.id)
+      .then((list) => {
         // Drop a response for a previous SDK when the user switched mid-flight.
         if (modelsSdkRef.current !== sdk) return;
-        setModels(d.models || []);
+        setModels(list);
       })
       .catch(() => {
         if (modelsSdkRef.current !== sdk) return;
@@ -284,7 +304,7 @@ export default function BuilderForm({
   // then fetch the model list for that SDK — otherwise the persisted default model is resolved
   // against whichever SDK's list lands first and falls back to that list's first model.
   useEffect(() => {
-    if (!availableSdks.includes(agentSdk)) return;
+    if (!availableSdkKeys.includes(agentSdk)) return;
     if (!editingLoop && !sdkModelSeeded) return;
     if (modelsSdkRef.current !== agentSdk) {
       modelsSdkRef.current = agentSdk;
@@ -292,7 +312,7 @@ export default function BuilderForm({
     }
     loadModels(agentSdk);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSdk, availableSdkKey, sdkModelSeeded]);
+  }, [agentSdk, availableSdkKey, sdkModelSeeded, modelScopeRepo?.id]);
 
   // Validate/default model when models load after an SDK change. Models only load once
   // sdkModelSeeded is true (or when editing a loop), so a non-empty list implies seeding done.
@@ -319,13 +339,18 @@ export default function BuilderForm({
       .catch(() => {});
   }, []);
 
+  const modelRepoOptions = useMemo(
+    () => repos.map((r) => ({ value: String(r.id), label: r.full_name })),
+    [repos]
+  );
+
   const isLoop = mode === 'loop';
   // The branch-name field is the only other entry, and a loop never shows it.
   const hasMoreOptions = (!isGlobal && !isLoop) || availablePlugins.length > 0;
   const canSubmit =
     !loading &&
-    availableSdks.length > 0 &&
-    (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
+    availableSdkKeys.length > 0 &&
+    (isGlobal ? Boolean(modelScopeRepo?.id) : repos.length > 0 && repoFullName && branch) &&
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
 
   const clearForm = () => {
@@ -461,9 +486,9 @@ export default function BuilderForm({
       onChange={setInitialPrompt}
       onSubmit={handleComposerSubmit}
       placeholder={composerPlaceholder}
-      disabled={availableSdks.length === 0}
+      disabled={Boolean(modelScopeRepo) && !availableSdksLoading && availableSdkKeys.length === 0}
       sending={loading}
-      sdk={availableSdks.includes(agentSdk) ? agentSdk : (availableSdks[0] ?? agentSdk)}
+      sdk={availableSdkKeys.includes(agentSdk) ? agentSdk : (availableSdkKeys[0] ?? agentSdk)}
       model={model || null}
       params={modelParamsJson}
       autoPush={autoPush}
@@ -474,8 +499,6 @@ export default function BuilderForm({
       onAutoPushChange={setAutoPush}
       showAutoPushParam={!isGlobal && !isLoop}
       availableSdks={availableSdks}
-      userSettings={userSettings}
-      sdkRepo={selectedRepo}
       onSdkChange={setAgentSdk}
       canSend={canSubmit}
       submitDisabled={!canSubmit}
@@ -519,7 +542,7 @@ export default function BuilderForm({
 
   return (
     <div className="space-y-4">
-      {userSettings && availableSdks.length === 0 && (
+      {userSettings && !availableSdksLoading && availableSdkKeys.length === 0 && (
         <Alert variant="alert">
           Add a Claude or Cursor API key in <Link to="/settings?tab=agent">Settings → Agent</Link>{' '}
           to start a session.
@@ -563,6 +586,25 @@ export default function BuilderForm({
             ))}
           </div>
         )
+      )}
+
+      {isGlobal && repos.length > 0 && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-heading">
+            Repository for agent credentials
+          </label>
+          <SearchableSelect
+            value={modelRepoId}
+            onChange={setModelRepoId}
+            options={modelRepoOptions}
+            getOptionValue={(o) => o.value}
+            getOptionLabel={(o) => o.label}
+            placeholder="Choose repository…"
+          />
+          <p className="mt-1 text-xs text-faint">
+            Global sessions do not use git; models and API keys are still resolved per repository.
+          </p>
+        </div>
       )}
 
       {isLoop && (

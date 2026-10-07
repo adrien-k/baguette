@@ -44,9 +44,11 @@ describe('resolveCreateSessionAgentFields', () => {
     });
   });
 
-  it('falls back to claude when last-used mode has no prior session', () => {
-    expect(resolveCreateSessionAgentFields({}, parseAgentSessionDefaultsJson(null))).toEqual({
-      agent_sdk: 'claude',
+  it('falls back to defaultSdk when last-used mode has no prior session', () => {
+    expect(
+      resolveCreateSessionAgentFields({}, parseAgentSessionDefaultsJson(null), null, 'cursor')
+    ).toEqual({
+      agent_sdk: 'cursor',
       model: undefined,
       model_params: undefined,
       variant_index: undefined,

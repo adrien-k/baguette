@@ -6,7 +6,7 @@ import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-sche
 import logger from '../../logger.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
-import { agentServicePathForSdk } from './loop-compaction.ts';
+import { getAgentServiceForSession } from '../agent-sdk/default-agent-sdk.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -148,8 +148,8 @@ export class LoopsService extends KnexService {
     const turnModel = turnModelCreateFields(loop);
     const identity = sessionMessageIdentity(tied, 'builder', { ...loop, ...turnModel });
 
-    const agentPath = agentServicePathForSdk(tied.agent_sdk);
-    await this.app.service(agentPath).prepareTiedSessionLoopCompaction({
+    const agent = await getAgentServiceForSession(this.app, tied);
+    await agent.prepareTiedSessionLoopCompaction({
       sessionId: tied.id,
       promptMessageJson: promptMessage,
       identity,

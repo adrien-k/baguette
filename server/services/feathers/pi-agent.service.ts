@@ -45,6 +45,14 @@ import type {
   TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
+import {
+  PI_AGENT_SDK_KEY,
+  PI_AGENT_SDK_LABEL,
+  PI_AGENT_SERVICE_PATH,
+  isPiAgentSdkEnabled,
+  listPiAgentModels,
+} from '../agent-sdk/pi-agent-sdk.js';
+import { registerAgentSdk } from './agent-sdks.service.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
 const METADATA_TIMEOUT_MS = 30_000;
@@ -720,9 +728,29 @@ Task: ${initialPrompt}`;
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
     await directPromptTiedSessionLoopCompaction(this.app, args);
   }
+
+  async isInterruptedSessionResumable(
+    session: AgentSessionRow,
+    { channel = 'chat' }: { channel?: MessageChannel } = {}
+  ): Promise<boolean> {
+    return channel === 'review'
+      ? Boolean(session.review_pi_session_id)
+      : Boolean(session.pi_session_id);
+  }
+
+  async isEnabled(ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null }) {
+    return isPiAgentSdkEnabled(ctx);
+  }
+
+  async listModels(
+    ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null },
+    { refresh = false }: { refresh?: boolean } = {}
+  ) {
+    return listPiAgentModels(ctx, { refresh });
+  }
 }
 
-export function registerPiAgentService(app: AgentApp, path = 'pi-agent') {
+export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PATH) {
   const service = new PiAgentService();
   service.setup(app);
   app.use(path, service, {
@@ -733,6 +761,14 @@ export function registerPiAgentService(app: AgentApp, path = 'pi-agent') {
       'buildAgentOptions',
       'generateSessionMetadata',
       'prepareTiedSessionLoopCompaction',
+      'isInterruptedSessionResumable',
+      'isEnabled',
+      'listModels',
     ],
+  });
+  registerAgentSdk(app, {
+    key: PI_AGENT_SDK_KEY,
+    label: PI_AGENT_SDK_LABEL,
+    servicePath: path,
   });
 }

@@ -17,11 +17,6 @@ import {
 } from '../utils/models.js';
 import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
 import { hasAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
-import {
-  AGENT_SDK_IDS,
-  agentSdkCredentialTooltip,
-  hasAgentSdkCredential,
-} from '@baguette/shared/agent-sdk-credentials.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
@@ -141,8 +136,6 @@ export default function SessionModelSelect({
   onAutoPushChange,
   showAutoPushParam = false,
   availableSdks,
-  userSettings,
-  sdkRepo,
   onSdkChange,
   disabled = false,
   className = '',
@@ -174,27 +167,12 @@ export default function SessionModelSelect({
     return opts;
   }, [models, selectedModelId]);
 
-  const sdkOptions = useMemo(() => {
-    if (userSettings != null) {
-      return AGENT_SDK_IDS.map((sdk) => {
-        const configured = hasAgentSdkCredential(sdk, userSettings, sdkRepo);
-        return {
-          value: sdk,
-          label: formatAgentSdkDisplayName(sdk),
-          disabled: !configured,
-          title: configured ? undefined : agentSdkCredentialTooltip(sdk),
-        };
-      });
-    }
-    return (availableSdks ?? []).map((sdk) => ({
-      value: sdk,
-      label: formatAgentSdkDisplayName(sdk),
-    }));
-  }, [userSettings, sdkRepo, availableSdks]);
+  const sdkOptions = useMemo(
+    () => (availableSdks ?? []).map((sdk) => ({ value: sdk.key, label: sdk.label ?? sdk.key })),
+    [availableSdks]
+  );
 
-  const showSdkPicker =
-    onSdkChange &&
-    (userSettings != null ? true : Boolean(availableSdks && availableSdks.length > 0));
+  const showSdkPicker = Boolean(onSdkChange && availableSdks?.length);
   const isSmUp = useMediaQuery('(min-width: 640px)');
   const showAutoPush = showAutoPushParam && onAutoPushChange;
   const autoPushOn = !!autoPush;

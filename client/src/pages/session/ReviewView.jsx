@@ -7,29 +7,22 @@ import {
   sessionReviewService,
   sessionsService,
 } from '../../feathers.js';
-import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
 import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
-import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
-import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
-import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
+import { fetchAgentSdkModels } from '../../utils/fetchAgentSdkModels.js';
+import { useAvailableAgentSdks } from '../../hooks/useAvailableAgentSdks.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
-import {
-  builderMessageCreateFields,
-  reviewComposerAgentFields,
-} from '../../utils/messageCreateFields.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ReviewFollowUpModal from '../../components/ReviewFollowUpModal.jsx';
 import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
-import { useRepoContext } from '../../context/RepoContext.jsx';
-import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
@@ -91,7 +84,6 @@ export default function ReviewView({
   reviewerPanelActive = false,
   onOpenReviewer,
 }) {
-  const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
   const { currentUser: userSettings } = useCurrentUser();
@@ -114,16 +106,17 @@ export default function ReviewView({
   const [reviewUserMessage, setReviewUserMessage] = reviewPersist.useState('focus', '');
 
   const repoId = session?.repo_id;
-  const selectedRepo = useMemo(() => repos.find((r) => r.id === repoId), [repos, repoId]);
-  const availableSdks = useMemo(
-    () => (userSettings ? availableAgentSdks(userSettings, selectedRepo) : []),
-    [userSettings, selectedRepo]
-  );
+  const {
+    sdks: availableSdks,
+    keys: availableSdkKeys,
+    loading: availableSdksLoading,
+  } = useAvailableAgentSdks(repoId);
 
   const hasStoredReviewSdk = session?.review_agent_sdk != null && session.review_agent_sdk !== '';
+  const fallbackSdk = availableSdkKeys[0] ?? null;
   const reviewAgentSdk = hasStoredReviewSdk
     ? session.review_agent_sdk
-    : session?.agent_sdk || 'claude';
+    : session?.agent_sdk || fallbackSdk;
   const reviewModel = hasStoredReviewSdk
     ? session?.review_model || ''
     : session?.review_model || session?.model || '';
@@ -131,20 +124,14 @@ export default function ReviewView({
     ? (session?.review_model_params ?? null)
     : (session?.review_model_params ?? session?.model_params ?? null);
 
-  const reviewAgentFields = () =>
-    reviewComposerAgentFields({
-      agent_sdk: reviewAgentSdk,
-      model: reviewModel,
-      model_params: reviewModelParams,
-    });
-
   useEffect(() => {
     if (!session?.id || readonly) return;
     if (session.review_agent_sdk != null || session.review_model != null) return;
     if (session.model == null && session.model_params == null && !session.agent_sdk) return;
+    if (!fallbackSdk && !session.agent_sdk) return;
     sessionsService
       .patch(session.id, {
-        review_agent_sdk: session.agent_sdk || 'claude',
+        review_agent_sdk: session.agent_sdk || fallbackSdk,
         review_model: session.model || null,
         review_model_params: session.model_params ?? null,
       })
@@ -157,14 +144,16 @@ export default function ReviewView({
     session?.model_params,
     session?.agent_sdk,
     readonly,
+    fallbackSdk,
   ]);
 
   useEffect(() => {
     setModels([]);
-    apiFetch(settingsModelsUrl(reviewAgentSdk))
-      .then((d) => setModels(d.models || []))
+    if (!session?.repo_id || !reviewAgentSdk) return;
+    fetchAgentSdkModels(reviewAgentSdk, session.repo_id)
+      .then((list) => setModels(list))
       .catch(() => setModels([]));
-  }, [reviewAgentSdk]);
+  }, [reviewAgentSdk, session?.repo_id]);
 
   const opened = issues.filter((i) => i.status === 'opened');
   const activeIssues = useMemo(() => issues.filter((i) => i.status !== 'ignored'), [issues]);
@@ -180,7 +169,8 @@ export default function ReviewView({
     reviewStatus === 'completed' ||
     reviewStatus === 'failed' ||
     reviewStatus === 'stopped';
-  const hasSdkKey = !userSettings || availableSdks.includes(reviewAgentSdk);
+  const hasSdkKey =
+    availableSdksLoading || !userSettings || availableSdkKeys.includes(reviewAgentSdk);
   const showStartForm = !hasReviewThread && !starting;
   const showFollowUpPanel = hasReviewThread || isRunning;
   const hasReview = hasReviewThread || isRunning;
@@ -257,7 +247,6 @@ export default function ReviewView({
       session_id: session.id,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
-      ...builderMessageCreateFields(session),
     });
   };
 
@@ -337,7 +326,6 @@ export default function ReviewView({
       await sessionReviewService.start({
         session_id: session.id,
         user_message: reviewUserMessage.trim(),
-        ...reviewAgentFields(),
       });
     } catch (err) {
       toastError('Failed to start review', err);
@@ -350,10 +338,7 @@ export default function ReviewView({
     if (!session?.id || reviewingNewCommits || isRunning) return;
     setReviewingNewCommits(true);
     try {
-      await sessionReviewService.reviewNewCommits({
-        session_id: session.id,
-        ...reviewAgentFields(),
-      });
+      await sessionReviewService.reviewNewCommits({ session_id: session.id });
     } catch (err) {
       toastError('Failed to review latest changes', err);
     } finally {
@@ -362,22 +347,15 @@ export default function ReviewView({
   };
 
   const handleSendReviewFollowUp = async (message) => {
-    if (!session?.id || sendingReviewFollowUp) return;
+    if (!session?.id || sendingReviewFollowUp || isRunning) return;
     const trimmed = typeof message === 'string' ? message.trim() : '';
     if (!trimmed) return;
     setSendingReviewFollowUp(true);
     try {
-      await sessionReviewService.send({
-        session_id: session.id,
-        message: trimmed,
-        ...reviewAgentFields(),
-      });
+      await sessionReviewService.send({ session_id: session.id, message: trimmed });
       setShowFollowUpModal(false);
     } catch (err) {
-      toastError(
-        isRunning ? 'Failed to queue follow-up message' : 'Failed to send follow-up message',
-        err
-      );
+      toastError('Failed to send follow-up message', err);
     } finally {
       setSendingReviewFollowUp(false);
     }
@@ -412,7 +390,6 @@ export default function ReviewView({
     if (!session?.id || readonly) return;
     try {
       await sessionsService.patch(session.id, {
-        review_agent_sdk: reviewAgentSdk,
         review_model: modelId,
         review_model_params: modelParamsJson ?? null,
       });
@@ -422,8 +399,7 @@ export default function ReviewView({
   };
 
   const handleReviewSdkChange = async (sdk) => {
-    if (!session?.id || readonly || !sdk) return;
-    if (session.review_agent_sdk === sdk) return;
+    if (!session?.id || readonly || !sdk || sdk === reviewAgentSdk) return;
     try {
       await sessionsService.patch(session.id, {
         review_agent_sdk: sdk,
@@ -463,8 +439,6 @@ export default function ReviewView({
         onCursorModelPrefChange={setCursorModelPref}
         onModelChange={handleReviewModelChange}
         availableSdks={availableSdks}
-        userSettings={userSettings}
-        sdkRepo={selectedRepo}
         onSdkChange={handleReviewSdkChange}
         disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
         className={REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS}
@@ -474,26 +448,24 @@ export default function ReviewView({
   );
 
   const runningReviewStatus = isRunning && (
-    <div className={`${REVIEW_CONTROLS_ROW_CLASS} w-full`}>
-      <div className="flex w-full flex-col gap-3 min-w-0 @min-[36rem]:flex-row @min-[36rem]:items-center @min-[36rem]:gap-2">
-        <div className="flex w-full items-center justify-center gap-2 min-w-0 @min-[36rem]:w-auto @min-[36rem]:flex-1 @min-[36rem]:justify-start">
-          {!readonly && (
-            <button
-              type="button"
-              onClick={handleStop}
-              disabled={stopping}
-              title="Stop"
-              className={COMPOSER_STOP_BUTTON_CLASS}
-            >
-              <Square className="w-3.5 h-3.5 fill-current" />
-            </button>
-          )}
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-            <span className="absolute inset-0 rounded-full bg-brand/15 motion-safe:animate-pulse" />
-            <Bot className="relative h-4 w-4 text-accent motion-safe:animate-pulse" aria-hidden />
-          </div>
-          <p className="text-sm font-medium text-heading whitespace-nowrap">Review in progress</p>
+    <div className={REVIEW_CONTROLS_ROW_CLASS}>
+      <div className="flex w-full items-center justify-center gap-2 min-w-0 @min-[36rem]:w-auto @min-[36rem]:flex-1 @min-[36rem]:justify-start">
+        {!readonly && (
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={stopping}
+            title="Stop"
+            className={COMPOSER_STOP_BUTTON_CLASS}
+          >
+            <Square className="w-3.5 h-3.5 fill-current" />
+          </button>
+        )}
+        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-brand/15 motion-safe:animate-pulse" />
+          <Bot className="relative h-4 w-4 text-accent motion-safe:animate-pulse" aria-hidden />
         </div>
+        <p className="text-sm font-medium text-heading whitespace-nowrap">Review in progress</p>
       </div>
       {showReviewerPanelLink && <ReviewerPanelLink onClick={onOpenReviewer} />}
     </div>
@@ -506,7 +478,7 @@ export default function ReviewView({
           <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6 space-y-4`}>
             {userSettings && !hasSdkKey && (
               <Alert variant="alert">
-                Add a {formatAgentSdkDisplayName(reviewAgentSdk)} API key in{' '}
+                Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
                 <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
               </Alert>
             )}
@@ -539,8 +511,6 @@ export default function ReviewView({
                 onCursorModelPrefChange={setCursorModelPref}
                 onModelChange={handleReviewModelChange}
                 availableSdks={availableSdks}
-                userSettings={userSettings}
-                sdkRepo={selectedRepo}
                 onSdkChange={handleReviewSdkChange}
                 canSend={canStartReview}
                 submitLabel="Start review"
@@ -556,7 +526,7 @@ export default function ReviewView({
             <div className="@container w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
-                  Add a {formatAgentSdkDisplayName(reviewAgentSdk)} API key in{' '}
+                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
                   <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
                 </Alert>
               )}
@@ -643,7 +613,6 @@ export default function ReviewView({
       {showFollowUpModal && (
         <ReviewFollowUpModal
           submitting={sendingReviewFollowUp}
-          submitLabel={isRunning ? 'Queue' : 'Send'}
           onCancel={() => {
             if (!sendingReviewFollowUp) setShowFollowUpModal(false);
           }}

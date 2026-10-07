@@ -42,6 +42,14 @@ import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
+import {
+  CURSOR_AGENT_SDK_KEY,
+  CURSOR_AGENT_SDK_LABEL,
+  CURSOR_AGENT_SERVICE_PATH,
+  isCursorAgentSdkEnabled,
+  listCursorAgentModels,
+} from '../agent-sdk/cursor-agent-sdk.js';
+import { registerAgentSdk } from './agent-sdks.service.js';
 import type {
   AgentApp,
   AgentSessionRow,
@@ -246,30 +254,32 @@ ${body}`,
     const modelId = model ?? null;
     if (modelId) {
       let params = this.parseModelParams(modelParams);
-      try {
-        const user = await this.app.service('users').get(session.user_id, {});
-        let repo: Record<string, unknown> | null = null;
-        if (session.repo_id) {
+      if (session.repo_id) {
+        try {
+          const user = await this.app.service('users').get(session.user_id, {});
           const userRepos = await this.app.service('user-repos').find({
             query: { repo_id: session.repo_id },
             user: { id: session.user_id },
             paginate: false,
           });
-          repo = userRepos?.[0] ?? null;
+          const repo = userRepos?.[0] ?? null;
+          if (repo) {
+            const models = await loadModelsForSdk(user, 'cursor', repo, this.app);
+            const prefs = parseCursorModelPrefsJson(user.agent_preferences);
+            params = resolveCursorAgentModelParams({
+              models,
+              modelId,
+              modelParams: (params ?? modelParams) as
+                string | ModelParameterValue[] | null | undefined,
+              cursorModelPrefs: prefs,
+            });
+          }
+        } catch (err) {
+          logger.warn(
+            { sessionId: session.id, modelId, err: (err as Error).message },
+            'cursor-agent: could not resolve model params from registry'
+          );
         }
-        const models = await loadModelsForSdk(user, 'cursor', repo);
-        const prefs = parseCursorModelPrefsJson(user.agent_preferences);
-        params = resolveCursorAgentModelParams({
-          models,
-          modelId,
-          modelParams: (params ?? modelParams) as string | ModelParameterValue[] | null | undefined,
-          cursorModelPrefs: prefs,
-        });
-      } catch (err) {
-        logger.warn(
-          { sessionId: session.id, modelId, err: (err as Error).message },
-          'cursor-agent: could not resolve model params from registry'
-        );
       }
       agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
     }
@@ -1063,9 +1073,33 @@ Task: ${initialPrompt}`;
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
     await directPromptTiedSessionLoopCompaction(this.app, args);
   }
+
+  async isInterruptedSessionResumable(
+    session: AgentSessionRow,
+    { channel = 'chat' }: { channel?: MessageChannel } = {}
+  ): Promise<boolean> {
+    return channel === 'review'
+      ? Boolean(session.review_cursor_agent_id)
+      : Boolean(session.cursor_agent_id);
+  }
+
+  usesCompactionBeforeLoopRepeat(): boolean {
+    return false;
+  }
+
+  async isEnabled(ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null }) {
+    return isCursorAgentSdkEnabled(ctx);
+  }
+
+  async listModels(
+    ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null },
+    { refresh = false }: { refresh?: boolean } = {}
+  ) {
+    return listCursorAgentModels(ctx, { refresh });
+  }
 }
 
-export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent') {
+export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SERVICE_PATH) {
   const service = new CursorAgentService();
   service.setup(app);
   app.use(path, service, {
@@ -1081,6 +1115,14 @@ export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent')
       'openSessionStore',
       'disposeSessionStore',
       'prepareTiedSessionLoopCompaction',
+      'isInterruptedSessionResumable',
+      'isEnabled',
+      'listModels',
     ],
+  });
+  registerAgentSdk(app, {
+    key: CURSOR_AGENT_SDK_KEY,
+    label: CURSOR_AGENT_SDK_LABEL,
+    servicePath: path,
   });
 }

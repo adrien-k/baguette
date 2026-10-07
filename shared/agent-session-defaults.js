@@ -1,5 +1,3 @@
-export const AGENT_SDK_DEFAULT_VALUES = ['claude', 'cursor', 'pi'];
-
 export const EMPTY_AGENT_SESSION_DEFAULTS = {
   agent_sdk: null,
   model: null,
@@ -23,8 +21,9 @@ export function withLastUsedFlag(defaults) {
 }
 
 function coerceSdk(value) {
-  if (value === 'claude' || value === 'cursor' || value === 'pi') return value;
-  return null;
+  if (value == null || value === '' || value === LAST_USED_AGENT_SDK) return null;
+  if (typeof value !== 'string') return null;
+  return value;
 }
 
 /** @returns {Array<{ id: string, value: string }> | null} */
@@ -39,18 +38,15 @@ export function coerceModelParams(value) {
   }
   if (!Array.isArray(value) || value.length === 0) return null;
   const out = [];
-  for (const row of value) {
-    if (!row || typeof row !== 'object') continue;
-    const id = row.id != null ? String(row.id).trim() : '';
-    const val = row.value != null ? String(row.value) : '';
-    if (!id) continue;
-    out.push({ id, value: val });
+  for (const item of value) {
+    if (!item || typeof item.id !== 'string' || typeof item.value !== 'string') return null;
+    out.push({ id: item.id, value: item.value });
   }
-  return out.length ? out : null;
+  return out;
 }
 
 export function parseAgentSessionDefaultsJson(raw) {
-  if (!raw) return { ...EMPTY_AGENT_SESSION_DEFAULTS };
+  if (raw == null || raw === '') return { ...EMPTY_AGENT_SESSION_DEFAULTS };
   let parsed = raw;
   if (typeof raw === 'string') {
     try {
@@ -59,37 +55,23 @@ export function parseAgentSessionDefaultsJson(raw) {
       return { ...EMPTY_AGENT_SESSION_DEFAULTS };
     }
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ...EMPTY_AGENT_SESSION_DEFAULTS };
-  }
-  const model =
-    parsed.model == null || parsed.model === '' ? null : String(parsed.model).trim() || null;
-  let model_params = coerceModelParams(parsed.model_params);
-  if (!model_params && parsed.variant_index != null && model) {
-    // Legacy stored variant_index only — params resolved at session create time when possible.
-    model_params = null;
-  }
+  if (!parsed || typeof parsed !== 'object') return { ...EMPTY_AGENT_SESSION_DEFAULTS };
   return {
     agent_sdk: coerceSdk(parsed.agent_sdk),
-    model,
-    model_params,
+    model: parsed.model ?? null,
+    model_params: coerceModelParams(parsed.model_params),
   };
 }
 
 export function stringifyAgentSessionDefaults(defaults) {
-  return JSON.stringify(parseAgentSessionDefaultsJson(defaults));
+  return JSON.stringify(defaults);
 }
 
-/** Partial patch for stored defaults (undefined = leave unchanged). */
-export function mergeAgentSessionDefaults(existing, patch) {
-  const base = parseAgentSessionDefaultsJson(existing);
-  if (!patch || typeof patch !== 'object') return base;
-  const out = { ...base };
+export function mergeAgentSessionDefaults(existingRaw, patch) {
+  const existing = parseAgentSessionDefaultsJson(existingRaw);
+  const out = { ...existing };
   if (patch.agent_sdk !== undefined) out.agent_sdk = coerceSdk(patch.agent_sdk);
-  if (patch.model !== undefined) {
-    out.model =
-      patch.model == null || patch.model === '' ? null : String(patch.model).trim() || null;
-  }
+  if (patch.model !== undefined) out.model = patch.model || null;
   if (patch.model_params !== undefined) {
     out.model_params = coerceModelParams(patch.model_params);
   }
@@ -101,7 +83,12 @@ export function mergeAgentSessionDefaults(existing, patch) {
  * When defaults are in last-used mode, pass `lastUsed` from the user's latest session.
  * Explicit values (including `undefined` meaning omitted) win over defaults.
  */
-export function resolveCreateSessionAgentFields(explicit, storedDefaults, lastUsed = null) {
+export function resolveCreateSessionAgentFields(
+  explicit,
+  storedDefaults,
+  lastUsed = null,
+  defaultSdk = null
+) {
   const defaults = parseAgentSessionDefaultsJson(storedDefaults);
   const useLastUsed = isLastUsedAgentDefaults(defaults);
   const fixed = !useLastUsed;
@@ -113,7 +100,7 @@ export function resolveCreateSessionAgentFields(explicit, storedDefaults, lastUs
         ? defaults.agent_sdk
         : useLastUsed && lastUsed?.agent_sdk
           ? lastUsed.agent_sdk
-          : 'claude';
+          : defaultSdk;
 
   let model =
     explicit.model !== undefined && explicit.model !== null && explicit.model !== ''

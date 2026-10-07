@@ -12,6 +12,9 @@ const APP_PORT = process.env.PORT || 3000;
 const VITE_PORT = parseInt(process.env.VITE_PORT) || 5173;
 
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_ENABLE_MOCK_AGENT': JSON.stringify(process.env.ENABLE_MOCK_AGENT ?? ''),
+  },
   resolve: {
     alias: {
       '@baguette/shared': path.resolve(repoRoot, 'shared'),

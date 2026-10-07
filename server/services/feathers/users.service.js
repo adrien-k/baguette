@@ -20,6 +20,10 @@ import { validatePiApiKeyEnvVarPatch } from './validate-pi-patch.js';
  * and custom approve/reject methods.
  */
 class UsersService extends KnexService {
+  setup(app) {
+    this.app = app;
+  }
+
   async approve(id, _params) {
     const db = this.options.Model;
     await db('users').where({ id }).update({ approved: true });
@@ -65,7 +69,7 @@ class UsersService extends KnexService {
   async defaultAgent(_data, params) {
     const db = this.options.Model;
     if (!params.user?.id) throw new NotAuthenticated('Not authenticated');
-    return resolveDefaultAgent(db, params.user.id);
+    return resolveDefaultAgent(db, params.user.id, this.app);
   }
 }
 
