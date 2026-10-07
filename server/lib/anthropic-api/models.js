@@ -1,4 +1,4 @@
-import { createAnthropicApiClient } from './client.js';
+import { anthropicApiRequest } from './client.js';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
@@ -10,9 +10,8 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 export async function listAnthropicApiModels(config, options = {}) {
   const limit = options.limit ?? 100;
   const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
-  const client = createAnthropicApiClient(config);
-  const { data, error, response } = await client.GET('/v1/models', {
-    params: { query: { limit } },
+  const { data, error, response } = await anthropicApiRequest(config, 'GET', '/v1/models', {
+    query: { limit },
     signal,
   });
   if (error || !response?.ok) {
@@ -43,8 +42,7 @@ export async function listAnthropicApiModels(config, options = {}) {
  * @param {{ model: string, signal?: AbortSignal }} body
  */
 export async function probeAnthropicMessages(config, { model, signal }) {
-  const client = createAnthropicApiClient(config);
-  return client.POST('/v1/messages', {
+  return anthropicApiRequest(config, 'POST', '/v1/messages', {
     body: {
       model,
       max_tokens: 1,
