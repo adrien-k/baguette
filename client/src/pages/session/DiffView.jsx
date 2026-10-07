@@ -14,7 +14,6 @@ import toast from 'react-hot-toast';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
-import UnpushedCommitsWarningModal from '../../components/UnpushedCommitsWarningModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
@@ -421,11 +420,8 @@ export default function DiffView({
     checkingUnpushed: checkingUnpushedForMerge,
     showMergeModal,
     setShowMergeModal,
-    showUnpushedWarning: showMergeUnpushedWarning,
     unpushedCount: mergeUnpushedCount,
     openMergeFlow,
-    confirmMergeDespiteUnpushed,
-    cancelUnpushedWarning: cancelMergeUnpushedWarning,
   } = useMergePrEntry(session);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
@@ -721,17 +717,10 @@ export default function DiffView({
         </div>
       )}
 
-      {showMergeUnpushedWarning && (
-        <UnpushedCommitsWarningModal
-          variant="merge"
-          commitsToPush={mergeUnpushedCount}
-          onConfirm={confirmMergeDespiteUnpushed}
-          onCancel={cancelMergeUnpushedWarning}
-        />
-      )}
       {showMergeModal && (
         <MergeConfirmModal
           prNumber={session.pr_number}
+          commitsToPush={mergeUnpushedCount}
           onConfirm={handleMerge}
           onCancel={() => {
             setShowMergeModal(false);

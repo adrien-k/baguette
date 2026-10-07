@@ -46,7 +46,6 @@ import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.t
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
-import UnpushedCommitsWarningModal from '../../components/UnpushedCommitsWarningModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
@@ -139,11 +138,8 @@ export default function ChatView({
     checkingUnpushed: checkingUnpushedForMerge,
     showMergeModal,
     setShowMergeModal,
-    showUnpushedWarning: showMergeUnpushedWarning,
     unpushedCount: mergeUnpushedCount,
     openMergeFlow,
-    confirmMergeDespiteUnpushed,
-    cancelUnpushedWarning: cancelMergeUnpushedWarning,
   } = useMergePrEntry(session);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
@@ -859,17 +855,10 @@ export default function ChatView({
           defaultName={input.trim().split('\n')[0].slice(0, 60)}
         />
       )}
-      {showMergeUnpushedWarning && (
-        <UnpushedCommitsWarningModal
-          variant="merge"
-          commitsToPush={mergeUnpushedCount}
-          onConfirm={confirmMergeDespiteUnpushed}
-          onCancel={cancelMergeUnpushedWarning}
-        />
-      )}
       {showMergeModal && (
         <MergeConfirmModal
           prNumber={session?.pr_number}
+          commitsToPush={mergeUnpushedCount}
           onConfirm={handleMerge}
           onCancel={() => {
             setShowMergeModal(false);

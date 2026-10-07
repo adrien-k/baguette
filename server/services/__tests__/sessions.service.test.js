@@ -24,6 +24,7 @@ import {
   mergePR,
   markPRDraft,
   markPRReady,
+  closePR,
   removeWorktree,
 } from '../github.js';
 
@@ -67,6 +68,7 @@ vi.mock('../github.js', async (importOriginal) => {
     mergePR: vi.fn().mockResolvedValue(undefined),
     markPRReady: vi.fn().mockResolvedValue(undefined),
     markPRDraft: vi.fn().mockResolvedValue(undefined),
+    closePR: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -495,6 +497,44 @@ describe('Sessions service - custom methods', (hooks) => {
   // ── remove ─────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
+    it('closes a draft PR on GitHub when close_pr is set', async () => {
+      await db('sessions').where({ id: sessId }).update({
+        pr_number: 42,
+        pr_status: 'draft',
+        pr_url: 'https://github.com/test/repo/pull/42',
+      });
+      closePR.mockClear();
+
+      await app.service('sessions').remove(sessId, {
+        ...params({ id: userId }),
+        query: { close_pr: true },
+      });
+
+      expect(closePR).toHaveBeenCalledWith('test-token', 'test/repo', 42);
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.pr_status).toBe('closed');
+      expect(row.archived_at).toBeTruthy();
+    });
+
+    it('rejects close_pr when the session PR is not a draft', async () => {
+      await db('sessions').where({ id: sessId }).update({
+        pr_number: 42,
+        pr_status: 'open',
+        pr_url: 'https://github.com/test/repo/pull/42',
+      });
+
+      await expect(
+        app.service('sessions').remove(sessId, {
+          ...params({ id: userId }),
+          query: { close_pr: true },
+        })
+      ).rejects.toThrow(/draft pull requests/);
+
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.archived_at).toBeFalsy();
+      expect(closePR).not.toHaveBeenCalled();
+    });
+
     it('stops agent, archives session, returns the session row', async () => {
       const result = await app.service('sessions').remove(sessId, params({ id: userId }));
 

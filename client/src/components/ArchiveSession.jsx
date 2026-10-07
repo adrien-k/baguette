@@ -3,23 +3,25 @@ import { Archive, Loader2 } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { fetchSessionCommitsToPush } from '../utils/sessionCommitsToPush.js';
-import UnpushedCommitsWarningModal from './UnpushedCommitsWarningModal.jsx';
+import ArchiveConfirmModal from './ArchiveConfirmModal.jsx';
 
 export default function ArchiveSession({ session, onArchive }) {
   const [archiving, setArchiving] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [showUnpushedWarning, setShowUnpushedWarning] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [unpushedCount, setUnpushedCount] = useState(0);
 
   const isProvisioning = session.status === 'provisioning';
   const isArchiving = session.status === 'archiving';
   const blocked = archiving || checking || isArchiving || isProvisioning;
+  const hasDraftPr = session.pr_status === 'draft' && session.pr_number;
 
-  const performArchive = async () => {
+  const performArchive = async ({ closePr = false } = {}) => {
     setArchiving(true);
     try {
-      await sessionsService.remove(session.id);
-      setShowUnpushedWarning(false);
+      const query = closePr ? { close_pr: true } : {};
+      await sessionsService.remove(session.id, { query });
+      setShowConfirm(false);
       onArchive?.();
     } catch (err) {
       toastError('Failed to archive session', err);
@@ -34,9 +36,9 @@ export default function ArchiveSession({ session, onArchive }) {
     setChecking(true);
     try {
       const commitsToPush = await fetchSessionCommitsToPush(session);
-      if (commitsToPush > 0) {
+      if (commitsToPush > 0 || hasDraftPr) {
         setUnpushedCount(commitsToPush);
-        setShowUnpushedWarning(true);
+        setShowConfirm(true);
         return;
       }
       await performArchive();
@@ -70,15 +72,15 @@ export default function ArchiveSession({ session, onArchive }) {
         )}
       </button>
 
-      {showUnpushedWarning && (
-        <UnpushedCommitsWarningModal
-          variant="archive"
+      {showConfirm && (
+        <ArchiveConfirmModal
+          prNumber={hasDraftPr ? session.pr_number : null}
           commitsToPush={unpushedCount}
           loading={archiving}
           onConfirm={performArchive}
           onCancel={() => {
             if (archiving) return;
-            setShowUnpushedWarning(false);
+            setShowConfirm(false);
           }}
         />
       )}

@@ -1117,6 +1117,22 @@ export async function markPRReady(token, repoFullName, prNumber) {
 /**
  * Converts an open PR to draft via the GitHub GraphQL API.
  */
+/**
+ * Closes an open or draft pull request via the GitHub API.
+ */
+export async function closePR(token, repoFullName, prNumber) {
+  const res = await githubFetch(`https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`, {
+    method: 'PATCH',
+    token,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: 'closed' }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || 'Failed to close PR');
+  }
+}
+
 export async function markPRDraft(token, repoFullName, prNumber) {
   const node_id = await fetchPullRequestNodeId(token, repoFullName, prNumber);
   await runPullRequestGraphqlMutation(

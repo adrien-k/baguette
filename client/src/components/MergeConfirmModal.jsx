@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import Modal, { ModalActions, ModalHeader } from './Modal.jsx';
+import UnpushedCommitsWarning from './UnpushedCommitsWarning.jsx';
 import { GHOST_BUTTON_CLASS } from '../utils/buttonStyles.js';
 import { TEXT_ACCENT, TEXT_DANGER, TEXT_FAINT, TEXT_MUTED, TEXT_SECONDARY } from '../utils/ui.js';
 
 export default function MergeConfirmModal({
   prNumber,
+  commitsToPush = 0,
   onConfirm,
   onCancel,
   loading,
@@ -13,6 +15,7 @@ export default function MergeConfirmModal({
   onFixConflicts,
 }) {
   const [archiveSession, setArchiveSession] = useState(true);
+  const hasUnpushed = commitsToPush > 0;
 
   const handleConfirm = () => {
     onConfirm({ archive: archiveSession });
@@ -20,7 +23,7 @@ export default function MergeConfirmModal({
 
   return (
     <Modal>
-      <ModalHeader title="Merge Pull Request" onClose={onCancel} />
+      <ModalHeader title="Merge Pull Request" onClose={onCancel} disabled={loading} />
       {error ? (
         <div className="mb-4">
           <div className={`flex items-start gap-2 ${TEXT_DANGER} text-sm mb-3`}>
@@ -39,6 +42,11 @@ export default function MergeConfirmModal({
         </div>
       ) : (
         <>
+          <UnpushedCommitsWarning
+            commitsToPush={commitsToPush}
+            consequence="The pull request will not include those commits until you push. Merging now may leave work off the branch that gets merged."
+            hint="Push from the session header or ask the agent to push before merging if these changes should be part of the PR."
+          />
           <p className={`${TEXT_MUTED} text-sm mb-1`}>
             Merge PR <span className={`${TEXT_ACCENT} font-medium`}>#{prNumber}</span> into the base
             branch?
@@ -74,7 +82,7 @@ export default function MergeConfirmModal({
             {loading && (
               <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             )}
-            Merge
+            {hasUnpushed ? 'Merge anyway' : 'Merge'}
           </button>
         )}
       </ModalActions>

@@ -27,6 +27,7 @@ import {
   mergePR,
   markPRReady,
   markPRDraft,
+  closePR,
   getPRStatus,
   upsertPR,
   createWorktree,
@@ -440,6 +441,8 @@ export class SessionsService extends KnexService {
 
     this._archivePendingSessionIds.add(id);
     try {
+      await this._maybeCloseDraftPrOnArchive(session, params);
+
       if (session.status !== ARCHIVING_STATUS) {
         session = await this.app
           .service('sessions')
@@ -457,6 +460,25 @@ export class SessionsService extends KnexService {
     } finally {
       this._archivePendingSessionIds.delete(id);
     }
+  }
+
+  async _maybeCloseDraftPrOnArchive(session, params) {
+    if (!queryFlagEnabled(params?.query?.close_pr)) return;
+    if (!session.pr_number) throw new BadRequest('No pull request to close');
+    if (session.pr_status !== 'draft') {
+      throw new BadRequest('Only draft pull requests can be closed when archiving');
+    }
+    const user = await this.app.service('users').get(session.user_id, {});
+    const token = getGithubToken(user);
+    if (!token) throw new BadRequest('No GitHub token configured');
+    await closePR(token, session.repo_full_name, session.pr_number);
+    await this.app
+      .service('sessions')
+      .patch(
+        session.id,
+        { pr_status: 'closed' },
+        { provider: undefined, user: { id: session.user_id } }
+      );
   }
 
   async _runCleanupAndFinalize(session) {

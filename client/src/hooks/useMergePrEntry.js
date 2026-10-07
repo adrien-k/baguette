@@ -8,7 +8,6 @@ import { toastError } from '../utils/toastError.jsx';
 export function useMergePrEntry(session) {
   const [checkingUnpushed, setCheckingUnpushed] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
-  const [showUnpushedWarning, setShowUnpushedWarning] = useState(false);
   const [unpushedCount, setUnpushedCount] = useState(0);
 
   const openMergeFlow = useCallback(async () => {
@@ -16,11 +15,7 @@ export function useMergePrEntry(session) {
     setCheckingUnpushed(true);
     try {
       const commitsToPush = await fetchSessionCommitsToPush(session);
-      if (commitsToPush > 0) {
-        setUnpushedCount(commitsToPush);
-        setShowUnpushedWarning(true);
-        return;
-      }
+      setUnpushedCount(commitsToPush);
       setShowMergeModal(true);
     } catch (err) {
       toastError('Failed to check git status', err);
@@ -29,28 +24,16 @@ export function useMergePrEntry(session) {
     }
   }, [session]);
 
-  const confirmMergeDespiteUnpushed = useCallback(() => {
-    setShowUnpushedWarning(false);
-    setShowMergeModal(true);
-  }, []);
-
   const closeMergeModal = useCallback(() => {
     setShowMergeModal(false);
-  }, []);
-
-  const cancelUnpushedWarning = useCallback(() => {
-    setShowUnpushedWarning(false);
   }, []);
 
   return {
     checkingUnpushed,
     showMergeModal,
     setShowMergeModal,
-    showUnpushedWarning,
     unpushedCount,
     openMergeFlow,
-    confirmMergeDespiteUnpushed,
     closeMergeModal,
-    cancelUnpushedWarning,
   };
 }
