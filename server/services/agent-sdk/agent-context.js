@@ -24,6 +24,8 @@ export function userRowForAgentSdk(userRow) {
     cursor_api_key: userRow.cursor_api_key_encrypted
       ? decrypt(userRow.cursor_api_key_encrypted)
       : null,
+    pi_api_key: userRow.pi_api_key_encrypted ? decrypt(userRow.pi_api_key_encrypted) : null,
+    pi_api_key_env_var: userRow.pi_api_key_env_var ?? null,
     agent_preferences: userRow.agent_preferences ?? null,
   };
 }
