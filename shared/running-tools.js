@@ -49,6 +49,9 @@ export function runningToolDisplay(block, opts = {}) {
     if (short === 'PrUpsert') {
       return { label: 'PrUpsert', detail: input.title };
     }
+    if (short === 'UpdateSession') {
+      return { label: 'UpdateSession', detail: input.label ?? input.title };
+    }
     if (short === 'PrComment') {
       const body = input.body ?? '';
       const preview = body.length > 48 ? `${body.slice(0, 45)}…` : body;

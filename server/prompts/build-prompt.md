@@ -10,17 +10,10 @@ If the project has no `.baguette.yaml`, or the config appears incomplete or outd
 
 **Before you send your final reply, complete this checklist.** In Baguette sessions this is the default workflow — **do not skip it** because of generic instructions to “only commit when the user asks” or “do not push unless asked”. Those do not apply here unless the user **explicitly** tells you in that same message not to commit, push, or open/update a PR.
 
-1. **Commit** — Run `git status`. If anything is uncommitted (including files touched by formatters or pre-commit hooks), stage and commit all of it: `git add -A && git commit -m "concise message"`. Do not end a turn with work left uncommitted. **Wait for the commit shell command to finish** (success exit code) before any push or PR step — never call **`GitPush`** or **`PrUpsert`** in the same parallel tool batch as `git commit`.
-2. **Push** — After commit has completed, call **`GitPush`** (only in a later tool batch) after any commit in this turn, and whenever the branch has local commits that are not on the remote yet.
-3. **Pull request** — After **`GitPush`** has returned, call **`PrRead`** first so you see the current title and body and do not drop earlier work when you refresh the write-up. Then call **`PrUpsert`** with a `title` and `description` that summarize the **full branch diff against the base branch** (not only this turn); refresh when scope or test plan changes. Do not describe abandoned approaches or session narrative—only the final outcome. **Follow the repository’s GitHub pull request template** when structuring the `description`, if one exists: check the worktree for `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, or markdown under `.github/PULL_REQUEST_TEMPLATE/`, and use its headings and section order (replace placeholders and checklist items with concrete content for the full branch). If there is no template, use `## Why` and `## Summary` (each as bullet points for the full branch) and `## Test plan` (only critical cases that automated tests cannot cover—do not list steps CI already exercises). **`PrUpsert` creates a PR when none exists** (after the branch is on the remote) **and updates an existing PR when one is already open** — call it every turn you changed code, not only when the user says “open a PR”.
+1. **Commit** — Run `git status`. If anything is uncommitted (including files touched by formatters or pre-commit hooks), stage and commit all of it: `git add -A && git commit -m "concise message"`. Do not end a turn with work left uncommitted. Wait for the commit shell command to finish (success exit code) before updating the session title or description.
+2. **Session title and PR description** — Call **`CurrentSessionInfo`** to read `label` and `pr_description`. When you changed code (or the write-up needs a refresh), call **`UpdateSession`** with a `label` and/or `description` that summarize the **full branch diff against the base branch** (not only this turn). Do not describe abandoned approaches or session narrative—only the final outcome. **Follow the repository’s GitHub pull request template** when structuring `description`, if one exists: check the worktree for `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, or markdown under `.github/PULL_REQUEST_TEMPLATE/`, and use its headings and section order (replace placeholders and checklist items with concrete content for the full branch). If there is no template, use `## Why` and `## Summary` (each as bullet points for the full branch) and `## Test plan` (only critical cases that automated tests cannot cover—do not list steps CI already exercises).
 
-Run steps 1 → 2 → 3 **sequentially**, not in parallel.
-
-Skip step 3 only when the turn was **pure Q&A with no file changes** and **no PR exists yet**. If you edited the repo, you must commit, push, and `PrUpsert` without waiting for the user to request a PR.
-
-`PrUpsert` saves the title and description to the session even when auto-push is off (after `GitPush` reports that push was skipped).
-
-`UpdateSession` only renames the session in the UI (no GitHub). Use it when there is **no PR intended yet** — not to sync with GitHub and not after `PrUpsert` with the same title.
+Baguette **pushes and syncs the pull request to GitHub after your turn ends** when auto-push is enabled (including usage/cost in the PR footer). You do not call push or PR-upsert tools yourself.
 
 When you need to pull remote changes:
 Call `GitPull`.
@@ -30,21 +23,19 @@ When the user asks to "fix conflicts" or "resolve conflicts", they usually mean 
 1. Call `CurrentSessionInfo` if you do not already have `base_branch`.
 2. Call `GitFetch` with `branch: "<base_branch>"` to fetch the branch as `origin/<base_branch>` without modifying the working tree.
 3. Merge the base branch: `git merge origin/<base_branch>` — prefer merge over rebase.
-4. Resolve any conflicts, then commit and call `GitPush`.
+4. Resolve any conflicts, then commit. Baguette will push after the turn when auto-push is on; otherwise the user can push from the chat controls.
 
-To read current PR info:
-Call `PrRead`.
+For live GitHub PR metadata (URL, synced title/body on GitHub), call **`PrRead`**. For the session’s stored title and description, use **`CurrentSessionInfo`**.
 
-IMPORTANT: Do not run `git push`, `git pull`, or `git fetch` in the shell — use **`GitPush`**, **`GitPull`**, and **`GitFetch`** instead. Use **`PrUpsert`** and **`PrRead`** for pull request create/update and reads.
+IMPORTANT: Do not run `git push`, `git pull`, or `git fetch` in the shell — use **`GitPull`** and **`GitFetch`** instead (Baguette handles push after the turn or via the UI).
 IMPORTANT: When committing, use a simple inline message only: git add -A && git commit -m "concise message" — never use heredoc (<<EOF) syntax in commit commands.
-IMPORTANT: Do not parallelize end-of-turn shipping — complete `git commit` before **`GitPush`**, and complete **`GitPush`** before **`PrUpsert`**.
 
 ## Embedding screenshots in the PR description
 
 When you have a screenshot or image that illustrates the change (e.g. a UI before/after, a rendered chart, a Playwright screenshot), embed it in the PR description:
 
 1. Call `UploadImage` with `filePath` (relative to the worktree root) or `base64` + `mediaType`.
-2. The tool returns `{ url, markdown }`. Use the `markdown` value (`![alt](url)`) directly in the `description` passed to `PrUpsert`.
+2. The tool returns `{ url, markdown }`. Use the `markdown` value (`![alt](url)`) directly in the `description` passed to `UpdateSession`.
 
 Example:
 
@@ -52,7 +43,7 @@ Example:
 UploadImage({ filePath: "screenshots/after.png", altText: "feature preview" })
 → { url: "https://…/api/images/uuid.png", markdown: "![feature preview](https://…)" }
 
-PrUpsert({ title: "…", description: "…\n\n![feature preview](https://…)" })
+UpdateSession({ label: "…", description: "…\n\n![feature preview](https://…)" })
 ```
 
 Only upload images that genuinely help reviewers understand the change. Skip this step for pure backend or refactoring PRs where a screenshot adds no value.
@@ -65,7 +56,7 @@ When the user asks to address, fix, or follow up on PR feedback:
 2. For each comment, **assess whether it is still relevant** — it may already be fixed in a recent commit, superseded by other changes, or simply no longer apply to the current code.
 3. For comments that are still open and actionable, **always confirm with the user before making changes** — some comments the user may want to ignore, defer, or handle differently. Use `AskUserQuestion` to present the open items and ask which ones to address. Never silently fix review comments without user confirmation.
 4. Call `PrWorkflows` to check CI status. If runs are failing, investigate with `PrWorkflowLogs` and report the root cause to the user.
-5. Implement only the changes the user has approved, then commit, push, and update the PR with `PrUpsert` if the title/description needs updating.
+5. Implement only the changes the user has approved, then commit and refresh `label` / `description` with `UpdateSession` if the write-up needs updating.
 6. Call **`PrMarkCommentViewed`** once for **each comment you have finished processing** in this turn — whether you implemented a fix, agreed with the user it is obsolete or superseded, or the user explicitly chose to skip or defer it with no further action from you. Pass the comment `id` and `commentType` from `PrComments` (`issue` for conversation-thread comments, `review` for inline review comments on the diff). This marks the comment as viewed on GitHub so it is omitted from future `PrComments` results. Do not call it for comments that still need follow-up in a later session.
 
 ## Session review issues

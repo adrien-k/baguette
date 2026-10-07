@@ -40,6 +40,7 @@ export function buildCurrentSessionInfo(sessionRow, { readOnlySession = false } 
     session_id: sessionRow.id,
     short_id: sessionRow.short_id ?? null,
     label: sessionRow.label ?? null,
+    pr_description: sessionRow.pr_description ?? null,
     repo_full_name: sessionRow.repo_full_name ?? null,
     base_branch: baseBranch,
     remote_branch: remoteBranch,
@@ -62,7 +63,7 @@ export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
   return {
     name: 'CurrentSessionInfo',
     description:
-      'Get the current session label, session_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Call at the start of a turn; work only inside session_path and cd or set shell working_directory there when needed. Use PrRead for pull request title, URL, and description.',
+      'Get the current session label, pr_description, session_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Call at the start of a turn; work only inside session_path and cd or set shell working_directory there when needed. Use **`UpdateSession`** to change label and description; use **`PrRead`** when you need the live GitHub PR URL or synced title/body.',
     schema: {},
     handler: async () => {
       const session = await getSessionRow();

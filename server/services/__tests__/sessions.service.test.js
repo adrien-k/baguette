@@ -14,7 +14,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { createTestDb, testSessionAgentDefaults } from '../../test-utils/db.js';
-import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerSessionsService, resolveSessionFromData } from '../feathers/sessions.service.js';
+import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
@@ -1587,6 +1588,19 @@ describe('Sessions service - find, get, create', (hooks) => {
       });
     });
 
+    it('resolveSessionFromData keeps preset resolvedSession without calling get', async () => {
+      const get = vi.fn();
+      const session = { id: 42 };
+      const context = {
+        data: {},
+        params: { user: { id: 1 }, resolvedSession: session },
+        service: { get },
+      };
+      await resolveSessionFromData(context);
+      expect(get).not.toHaveBeenCalled();
+      expect(context.params.resolvedSession).toBe(session);
+    });
+
     it('emits turn:complete when onTurnComplete runs', async () => {
       const handler = vi.fn();
       app.service('sessions').on('turn:complete', handler);
@@ -1604,6 +1618,52 @@ describe('Sessions service - find, get, create', (hooks) => {
         session_id: created.id,
         user_id: userId1,
       });
+    });
+
+    it('runs auto-push before flushing queued turns and emits turn:complete last', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const sessionsSvc = app.service('sessions');
+      const order = [];
+      vi.spyOn(sessionsSvc, 'maybeAutoPushAfterTurn').mockImplementation(async () => {
+        order.push('auto-push');
+      });
+      vi.spyOn(sessionsSvc, 'flushNextQueuedTurn').mockImplementation(async () => {
+        order.push('flush');
+      });
+
+      const turnEvents = [];
+      sessionsSvc.on('turn:complete', () => turnEvents.push('turn:complete'));
+
+      await sessionsSvc.onTurnComplete(created.id);
+
+      expect(order).toEqual(['auto-push', 'flush']);
+      expect(turnEvents).toEqual(['turn:complete']);
+    });
+
+    it('skips auto-push when auto_push is off', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-auto-push-off',
+        auto_push: 0,
+        status: 'completed',
+        label: 'No push',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 3,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
     });
 
     it('does not flush queued messages when onTurnComplete runs on a stopped session', async () => {

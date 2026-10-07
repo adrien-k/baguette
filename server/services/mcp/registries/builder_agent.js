@@ -1,11 +1,9 @@
 import { createSessionAgentContext } from '../lib/session-agent-context.js';
 import { createIssueHandlers } from '../lib/issue-handlers.js';
 import { createGitPullTool } from '../tools/git-pull.js';
-import { createGitPushTool } from '../tools/git-push.js';
 import { createGitFetchTool } from '../tools/git-fetch.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
 import { createUpdateSessionTool } from '../tools/update-session.js';
-import { createPrUpsertTool } from '../tools/pr-upsert.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
 import { createPrMarkCommentViewedTool } from '../tools/pr-mark-comment-viewed.js';
 import { createPrCommentTool } from '../tools/pr-comment.js';
@@ -39,11 +37,9 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
   const tools = [
     ...buildBuilderIssueTools(session, app),
     createGitPullTool(ctx),
-    createGitPushTool(ctx),
     createGitFetchTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),
     createUpdateSessionTool(ctx),
-    createPrUpsertTool(ctx),
     createPrCommentsTool(ctx),
     createPrMarkCommentViewedTool(ctx),
     createPrCommentTool(ctx),

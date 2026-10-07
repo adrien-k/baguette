@@ -1022,78 +1022,97 @@ export class SessionsService extends KnexService {
     const session = params.resolvedSession;
     if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
     if (!session?.session_path) throw new BadRequest('Session has no worktree');
-    const cwd = resolveDataDirRelativePath(session.session_path);
-    const user = await this.app.service('users').get(session.user_id, {});
-    const token = getGithubToken(user);
-    if (!token) throw new BadRequest('No GitHub token configured');
-    const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
-    const branch = data?.branch || session.remote_branch || session.local_branch || null;
-    let pushedBranch;
+    const pushEvent = { session_id: session.id, user_id: session.user_id };
+    this.emit('push:start', pushEvent);
+    let pushOk = false;
+    let pushFailure = null;
     try {
-      const result = await gitPush(cwd, token, {
-        branch,
-        force: forceMode === 'lease',
-        forceOverwrite: forceMode === 'force',
-      });
-      pushedBranch = result.branch;
-      await this.app
-        .service('sessions')
-        .patch(
-          session.id,
-          { remote_branch: pushedBranch },
-          { provider: undefined, user: { id: session.user_id } }
-        );
-    } catch (err) {
-      if (err.rejected) {
-        const conflict = new BadRequest('Push failed due to a conflict');
-        conflict.data = { conflict: true };
-        throw conflict;
-      }
-      throw err;
-    }
-    if (session.label || session.pr_description != null) {
-      const head = pushedBranch || session.remote_branch || session.local_branch;
-      let userPrefix = '';
-      if (session.pr_number) {
-        try {
-          const existingPr = await getOpenPRByNumber(
-            token,
-            session.repo_full_name,
-            session.pr_number
-          );
-          userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
-        } catch {
-          // non-fatal — proceed without user prefix
-        }
-      }
-      const baguetteConfig = session.session_path
-        ? await loadBaguetteConfig(resolveDataDirRelativePath(session.session_path))
-        : null;
-      const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
-      const usageLines = await loadSessionFooterUsageLines(this.app.get('db'), session);
-      const pr = await upsertPR(token, {
-        repoFullName: session.repo_full_name,
-        prNumber: session.pr_number,
-        title: session.label || session.repo_full_name,
-        body: buildPrBody(
-          userPrefix,
-          session.pr_description ?? '',
-          buildSessionFooter(session, { previewUrl, usageLines })
-        ),
-        head: session.pr_number ? undefined : head,
-        baseBranch: session.base_branch,
-      });
-      if (!session.pr_number) {
+      const cwd = resolveDataDirRelativePath(session.session_path);
+      const user = await this.app.service('users').get(session.user_id, {});
+      const token = getGithubToken(user);
+      if (!token) throw new BadRequest('No GitHub token configured');
+      const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
+      const branch = data?.branch || session.remote_branch || session.local_branch || null;
+      let pushedBranch;
+      try {
+        const result = await gitPush(cwd, token, {
+          branch,
+          force: forceMode === 'lease',
+          forceOverwrite: forceMode === 'force',
+        });
+        pushedBranch = result.branch;
         await this.app
           .service('sessions')
           .patch(
             session.id,
-            { pr_url: pr.url, pr_number: pr.number, pr_status: 'open' },
+            { remote_branch: pushedBranch },
             { provider: undefined, user: { id: session.user_id } }
           );
+      } catch (err) {
+        if (err.rejected) {
+          const conflict = new BadRequest('Push failed due to a conflict');
+          conflict.data = { conflict: true };
+          throw conflict;
+        }
+        throw err;
       }
+      if (session.label || session.pr_description != null || session.pr_number) {
+        const head = pushedBranch || session.remote_branch || session.local_branch;
+        let userPrefix = '';
+        if (session.pr_number) {
+          try {
+            const existingPr = await getOpenPRByNumber(
+              token,
+              session.repo_full_name,
+              session.pr_number
+            );
+            userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+          } catch {
+            // non-fatal — proceed without user prefix
+          }
+        }
+        const baguetteConfig = session.session_path
+          ? await loadBaguetteConfig(resolveDataDirRelativePath(session.session_path))
+          : null;
+        const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
+        const usageLines = await loadSessionFooterUsageLines(this.app.get('db'), session);
+        const pr = await upsertPR(token, {
+          repoFullName: session.repo_full_name,
+          prNumber: session.pr_number,
+          title: session.label || session.repo_full_name,
+          body: buildPrBody(
+            userPrefix,
+            session.pr_description ?? '',
+            buildSessionFooter(session, { previewUrl, usageLines })
+          ),
+          head: session.pr_number ? undefined : head,
+          baseBranch: session.base_branch,
+        });
+        if (!session.pr_number) {
+          await this.app
+            .service('sessions')
+            .patch(
+              session.id,
+              { pr_url: pr.url, pr_number: pr.number, pr_status: 'open' },
+              { provider: undefined, user: { id: session.user_id } }
+            );
+        }
+      }
+      pushOk = true;
+      return { ok: true };
+    } catch (err) {
+      pushFailure = err;
+      throw err;
+    } finally {
+      this.emit('push:complete', {
+        ...pushEvent,
+        ok: pushOk,
+        ...(pushFailure && {
+          message: pushFailure.message,
+          conflict: Boolean(pushFailure.data?.conflict),
+        }),
+      });
     }
-    return { ok: true };
   }
 
   async getPrDetails(data, params) {
@@ -1408,7 +1427,54 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (session?.status === 'stopped') return;
+
+    const fresh = await db('sessions').where({ id: sessionId }).first();
+    if (fresh) {
+      try {
+        await this.maybeAutoPushAfterTurn(fresh);
+      } catch (err) {
+        logger.warn(
+          { sessionId, err: err?.message },
+          'sessions: auto-push after turn failed unexpectedly'
+        );
+      }
+    }
+
     await this.flushNextQueuedTurn(sessionId, 'builder');
+
+    const after = await db('sessions').where({ id: sessionId }).first();
+    if (after) {
+      this.emit('turn:complete', { session_id: sessionId, user_id: after.user_id });
+    }
+  }
+
+  /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
+  async maybeAutoPushAfterTurn(session) {
+    if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
+    const user = await this.app.service('users').get(session.user_id, {});
+    if (!getGithubToken(user)) return;
+
+    let shouldSync = Boolean(session.pr_number || session.label || session.pr_description != null);
+    try {
+      const { commitsToPush } = await computeSessionGitStatus(session);
+      shouldSync = shouldSync || commitsToPush > 0;
+    } catch (err) {
+      logger.warn(
+        { sessionId: session.id, err: err?.message },
+        'sessions: could not read git status for auto-push'
+      );
+      return;
+    }
+    if (!shouldSync) return;
+
+    await this.push(
+      { id: session.id },
+      {
+        provider: undefined,
+        user: { id: session.user_id },
+        resolvedSession: session,
+      }
+    );
   }
 
   /** Flush the oldest queued turn message for this session and agent_type. */
@@ -1421,7 +1487,6 @@ export class SessionsService extends KnexService {
           .where({ id: sessionId })
           .update({ active_chat_turn_id: null })
           .catch(() => {});
-        this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
       }
     }
     const queued = await db('queued_messages')
@@ -1820,8 +1885,14 @@ async function scheduleSessionProvisioning(context) {
 }
 
 export async function resolveSessionFromData(context) {
+  if (context.params.resolvedSession) {
+    return context;
+  }
   // context.data may be a plain session ID or an object with an `id` field
   const sessionId = context.data?.id ?? context.data;
+  if (sessionId == null || typeof sessionId === 'object') {
+    throw new BadRequest('Session id is required');
+  }
   const session = await context.service.get(sessionId, { user: context.params.user });
   context.params.resolvedSession = session;
   return context;
@@ -1980,7 +2051,14 @@ export function registerSessionsService(app, path = 'sessions') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new SessionsService(options), {
-    events: ['app:error', 'push:request', 'turn:start', 'turn:complete'],
+    events: [
+      'app:error',
+      'push:request',
+      'push:start',
+      'push:complete',
+      'turn:start',
+      'turn:complete',
+    ],
     methods: [
       'find',
       'get',

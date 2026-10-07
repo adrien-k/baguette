@@ -69,6 +69,9 @@ import {
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { isPortListening } from '../port-utils.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
+import { createSessionAgentContext } from '../mcp/lib/session-agent-context.js';
+import { createGitPushTool } from '../mcp/tools/git-push.js';
+import { createPrUpsertTool } from '../mcp/tools/pr-upsert.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -236,6 +239,17 @@ async function buildServer(sessionOverrides = {}, appOpts = {}) {
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
 
+function buildStandaloneGitPrTools(sessionOverrides = {}, appOpts = {}) {
+  const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
+  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
+    sessionRow,
+    appOpts
+  );
+  const ctx = createSessionAgentContext(sessionRow, app);
+  const tools = [createGitPushTool(ctx), createPrUpsertTool(ctx)];
+  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+}
+
 function callTool(tools, name, args = {}) {
   const t = tools.find((t) => t.name === name);
   if (!t) throw new Error(`Tool '${name}' not found`);
@@ -250,6 +264,16 @@ function parseResult(res) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('builder MCP tool registry', () => {
+  it('omits GitPush and PrUpsert for repo sessions', async () => {
+    const { tools } = await buildServer();
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('GitPush');
+    expect(names).not.toContain('PrUpsert');
+    expect(names).toContain('UpdateSession');
+  });
 });
 
 describe('global sessions', () => {
@@ -424,7 +448,7 @@ describe('GitPush', () => {
       rejected: true,
     });
     gitPush.mockRejectedValue(err);
-    const { tools } = await buildServer();
+    const { tools } = buildStandaloneGitPrTools();
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/conflict/i);
@@ -432,7 +456,7 @@ describe('GitPush', () => {
 
   it('patches session with branch name on success', async () => {
     gitPush.mockResolvedValue({ ok: true, branch: 'feature-branch' });
-    const { tools, mockPatch } = await buildServer({
+    const { tools, mockPatch } = buildStandaloneGitPrTools({
       remote_branch: 'feature-branch',
       local_branch: 'feature-branch-test',
     });
@@ -453,7 +477,7 @@ describe('GitPush', () => {
   });
 
   it('skips push and returns ok message when auto_push is disabled', async () => {
-    const { tools, mockPatch } = await buildServer({ auto_push: 0 });
+    const { tools, mockPatch } = buildStandaloneGitPrTools({ auto_push: 0 });
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(true);
     expect(typeof result.message).toBe('string');
@@ -463,11 +487,20 @@ describe('GitPush', () => {
 });
 
 describe('UpdateSession', () => {
-  it('patches session label only', async () => {
+  it('patches session label and pr_description', async () => {
     const { tools, mockPatch } = await buildServer();
-    const result = parseResult(await callTool(tools, 'UpdateSession', { label: 'New label' }));
+    const result = parseResult(
+      await callTool(tools, 'UpdateSession', {
+        label: 'New label',
+        description: 'Body',
+      })
+    );
     expect(result.ok).toBe(true);
-    expect(mockPatch).toHaveBeenCalledWith(1, { label: 'New label' }, INTERNAL_PATCH_PARAMS);
+    expect(mockPatch).toHaveBeenCalledWith(
+      1,
+      { label: 'New label', pr_description: 'Body' },
+      INTERNAL_PATCH_PARAMS
+    );
   });
 });
 
@@ -477,7 +510,7 @@ describe('PrUpsert', () => {
       cb(null, { stdout: 'feature-branch\n', stderr: '' })
     );
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/1', number: 1 });
-    const { tools, mockPatch } = await buildServer({ pr_number: null });
+    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: null });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'My PR', description: 'Details' })
     );
@@ -509,7 +542,7 @@ describe('PrUpsert', () => {
   it('updates existing PR without HEAD lookup; patches label and description', async () => {
     getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body: '' });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools, mockPatch } = await buildServer({ pr_number: 5 });
+    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: 5 });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'Updated body' })
     );
@@ -533,7 +566,7 @@ describe('PrUpsert', () => {
     const existingBody = `My reviewer notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld baguette content`;
     getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body: existingBody });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = await buildServer({ pr_number: 5 });
+    const { tools } = buildStandaloneGitPrTools({ pr_number: 5 });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'New baguette content' })
     );
@@ -552,7 +585,7 @@ describe('PrUpsert', () => {
       body: `Notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld\n\n<!-- baguette-footer -->\n\n_claude / \`old\` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0_`,
     });
     upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = await buildServer(
+    const { tools } = buildStandaloneGitPrTools(
       {
         pr_number: 5,
         agent_sdk: 'cursor',
@@ -600,7 +633,7 @@ describe('PrUpsert', () => {
       base_ref: 'main',
       draft: false,
     });
-    const { tools, mockPatch } = await buildServer({ pr_number: null });
+    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: null });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'New title', description: 'Body' })
     );
@@ -625,7 +658,7 @@ describe('PrUpsert', () => {
   });
 
   it('persists label and description but skips GitHub when auto_push is disabled', async () => {
-    const { tools, mockPatch } = await buildServer({ pr_number: null, auto_push: 0 });
+    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: null, auto_push: 0 });
     const result = parseResult(
       await callTool(tools, 'PrUpsert', { title: 'My PR', description: 'Details' })
     );

@@ -97,6 +97,16 @@ export function registerFeathersServices(app, sseManager) {
       sseManager.send(data.user_id, { service: 'sessions', event: 'turn:complete', data });
   });
 
+  app.service('sessions').on('push:start', (data) => {
+    if (data?.user_id)
+      sseManager.send(data.user_id, { service: 'sessions', event: 'push:start', data });
+  });
+
+  app.service('sessions').on('push:complete', (data) => {
+    if (data?.user_id)
+      sseManager.send(data.user_id, { service: 'sessions', event: 'push:complete', data });
+  });
+
   app.service('users').on('github:bad-credentials', (data) => {
     if (data?.user_id)
       sseManager.send(data.user_id, {

@@ -106,7 +106,8 @@ describe('tool registration', () => {
   it('hides SlackPostMessage when no Slack app is configured', async () => {
     const names = (await buildTools({ slackApps: [] })).map((t) => t.name);
     expect(names).not.toContain('SlackPostMessage');
-    expect(names).toContain('PrUpsert');
+    expect(names).not.toContain('PrUpsert');
+    expect(names).toContain('UpdateSession');
   });
 
   it('exposes SlackPostMessage once an app is configured', async () => {

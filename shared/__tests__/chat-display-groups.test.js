@@ -55,6 +55,25 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(prUpsert)).toBe(false);
   });
 
+  it('treats UpdateSession as a group boundary', () => {
+    const updateSession = {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mcp',
+            id: 'upd',
+            input: { toolName: 'UpdateSession', args: { label: 't', description: 'd' } },
+          },
+        ],
+      },
+    };
+    expect(messageContainsPrUpsert(updateSession)).toBe(true);
+    expect(isChatGroupBoundary(updateSession)).toBe(true);
+    expect(isChatWorkMessage(updateSession)).toBe(false);
+  });
+
   it('treats typed tool_call PrUpsert as a group boundary', () => {
     const prUpsert = {
       type: 'tool_call',

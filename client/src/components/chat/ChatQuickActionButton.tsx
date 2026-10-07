@@ -13,6 +13,7 @@ export default function ChatQuickActionButton({
   onClick,
   disabled = false,
   className = CHAT_ACTION_BUTTON_CLASS,
+  iconClassName,
   children,
 }: {
   icon?: LucideIcon;
@@ -21,11 +22,17 @@ export default function ChatQuickActionButton({
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
+  iconClassName?: string;
   children?: ReactNode;
 }) {
   const button = (
     <button type="button" onClick={onClick} disabled={disabled} className={className}>
-      {Icon ? <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden /> : null}
+      {Icon ? (
+        <Icon
+          className={`w-3.5 h-3.5 shrink-0${iconClassName ? ` ${iconClassName}` : ''}`}
+          aria-hidden
+        />
+      ) : null}
       {label}
       {children}
     </button>

@@ -6,7 +6,7 @@
 
 # Session context
 
-Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns the worktree path, **`base_branch`**, **`remote_branch`**, **`local_branch`**, label, and working-directory rules for this session. For pull request title, URL, and description, call **`PrRead`**.
+Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns the worktree path, **`base_branch`**, **`remote_branch`**, **`local_branch`**, **`label`**, **`pr_description`**, and working-directory rules for this session. For pull request title, URL, and description on GitHub, call **`PrRead`**.
 
 When someone refers to a session’s branch by name (for example “the `feature/foo` session”), they often mean the shared **`remote_branch`** (PR/push head), not the unique **`local_branch`** checked out in a single worktree. Several sessions can share one `remote_branch` with different `local_branch` values. To find those sessions and read each one’s `local_branch`, call **`SearchSessions`** with `remote_branch` set to that name.
 
@@ -17,7 +17,7 @@ After **`CurrentSessionInfo`**, treat `session_path` as the repo root. Before gi
 
 The session shell does **not** include the GitHub CLI (`gh`). Do not run `gh pr …`, `gh api …`, or other `gh` commands — they are not installed and will fail.
 
-For GitHub and pull-request work, use Baguette MCP tools instead (for example `PrRead`, `PrUpsert`, `PrComments`, `PrWorkflows`, `PrWorkflowLogs`, `ListGithubPrs`, `GitPush`, `GitPull`, `GitFetch`). Local `git` in the worktree is fine for status, diff, commit, and merge; authenticated remotes and the GitHub API go through MCP.
+For GitHub and pull-request work, use Baguette MCP tools instead (for example `PrRead`, `PrComments`, `PrWorkflows`, `PrWorkflowLogs`, `ListGithubPrs`, `GitPull`, `GitFetch`). Local `git` in the worktree is fine for status, diff, commit, and merge; authenticated remotes and the GitHub API go through MCP. Baguette pushes and syncs the PR after each turn when auto-push is enabled.
 
 When spawning sub-agents (via the Agent tool), you MUST pass along the working directory instruction: tell them the `session_path` from `CurrentSessionInfo`, that they must `cd` there (or set shell `working_directory`) before repo/git commands if not already in it, and that they must follow the same `working_directory_restrictions`.
 

@@ -37,9 +37,13 @@ function blockIsLegacyPrUpsertBash(block) {
   return typeof cmd === 'string' && cmd.trimStart().startsWith('baguette-op pr-upsert');
 }
 
-/** MCP PrUpsert as Claude `mcp__…__PrUpsert`, Cursor `mcp` meta-tool, or legacy bash op. */
+/** MCP PrUpsert / UpdateSession, Cursor `mcp` meta-tool, or legacy bash pr-upsert op. */
 function blockIsPrUpsert(block) {
-  return blockIsNamedMcpTool(block, 'PrUpsert') || blockIsLegacyPrUpsertBash(block);
+  return (
+    blockIsNamedMcpTool(block, 'PrUpsert') ||
+    blockIsNamedMcpTool(block, 'UpdateSession') ||
+    blockIsLegacyPrUpsertBash(block)
+  );
 }
 
 function messageIsToolCallRow(msg) {

@@ -492,6 +492,16 @@ export class PiAgentService {
 
       turnFinishedOk = outcome === 'completed';
       if (turnFinishedOk) {
+        await this.app
+          .service('sessions')
+          .recordPiUsage(session, turnUsage ?? emptyTurnUsage(), {
+            kind: channel === 'review' ? 'review' : undefined,
+            turnModel,
+            patchSessionCost: true,
+          })
+          .catch((err: Error) =>
+            logger.warn({ sessionId, err: err.message }, 'pi-agent: failed to record turn usage')
+          );
         if (channel === 'review') {
           await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
             sdk: 'pi',
@@ -503,16 +513,6 @@ export class PiAgentService {
             .service('sessions')
             .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
         }
-        await this.app
-          .service('sessions')
-          .recordPiUsage(session, turnUsage ?? emptyTurnUsage(), {
-            kind: channel === 'review' ? 'review' : undefined,
-            turnModel,
-            patchSessionCost: true,
-          })
-          .catch((err: Error) =>
-            logger.warn({ sessionId, err: err.message }, 'pi-agent: failed to record turn usage')
-          );
       } else if (outcome === 'failed' && channel === 'review') {
         await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
           sdk: 'pi',

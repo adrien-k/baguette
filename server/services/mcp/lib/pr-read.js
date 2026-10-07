@@ -18,7 +18,7 @@ export async function readPrForSession(app, session) {
   };
   if (!result.pr_url) {
     result.message =
-      'No pull request exists yet. Push changes from that session worktree, then create one with PrUpsert.';
+      'No pull request exists yet. Commit your changes, set label and description with UpdateSession, and push from the UI or enable auto-push.';
     return result;
   }
   const user = await app.service('users').get(session.user_id, {});

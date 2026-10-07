@@ -25,6 +25,18 @@ export function useSessionCommitsToPush(session) {
   useInvalidateOnSessionTurnComplete(sessionId, invalidate);
 
   useEffect(() => {
+    if (sessionId == null) return;
+    const onPushComplete = (payload) => {
+      if (String(payload?.session_id) !== String(sessionId)) return;
+      invalidate();
+    };
+    sessionsService.on('push:complete', onPushComplete);
+    return () => {
+      sessionsService.off('push:complete', onPushComplete);
+    };
+  }, [sessionId, invalidate]);
+
+  useEffect(() => {
     if (skip) {
       setCommitsToPush(0);
       return;

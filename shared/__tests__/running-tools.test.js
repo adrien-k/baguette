@@ -24,6 +24,15 @@ function runningToolCall(id, name, args = {}) {
 }
 
 describe('collectRunningTools', () => {
+  it('shows UpdateSession label in running tool chip', () => {
+    const { label, detail } = runningToolDisplay({
+      name: 'mcp__baguette__UpdateSession',
+      input: { label: 'My PR title' },
+    });
+    expect(label).toBe('UpdateSession');
+    expect(detail).toBe('My PR title');
+  });
+
   it('returns running tool_call rows without results', () => {
     const messages = [
       runningToolCall('a', 'Read', { file_path: '/wt/src/a.js' }),

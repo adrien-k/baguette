@@ -671,21 +671,6 @@ ${body}`,
 
       if (allFinishedOk) {
         turnFinishedOk = true;
-        if (channel === 'review') {
-          await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
-            sdk: 'cursor',
-            turnUsage,
-            agent,
-            turnModel,
-          });
-        } else {
-          await this.app
-            .service('sessions')
-            .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
-        }
-      }
-
-      if (turnFinishedOk) {
         await this.app
           .service('sessions')
           .recordCursorUsage(session, turnUsage, {
@@ -699,6 +684,18 @@ ${body}`,
               'cursor-agent: failed to record turn usage'
             )
           );
+        if (channel === 'review') {
+          await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
+            sdk: 'cursor',
+            turnUsage,
+            agent,
+            turnModel,
+          });
+        } else {
+          await this.app
+            .service('sessions')
+            .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+        }
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {

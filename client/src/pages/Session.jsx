@@ -44,6 +44,7 @@ import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
 import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
+import { useSessionPushInProgress } from '../hooks/useSessionPushInProgress.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import { useSessionDiff } from '../hooks/useSessionDiff.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
@@ -463,7 +464,7 @@ export default function Session() {
   }, [sessionDiffFileByFile, sessionDiffLoading, pendingSidebarDiffFile]);
   const [models, setModels] = useState([]);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
-  const [pushing, setPushing] = useState(false);
+  const { pushing, beginLocalPush, endLocalPush } = useSessionPushInProgress(gitSession?.id);
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
@@ -790,11 +791,16 @@ export default function Session() {
     setShowPushModal(true);
   };
 
+  const handleChatPush = () => {
+    if (!session?.id || pushing) return;
+    void handlePushConfirmed();
+  };
+
   const handlePushConfirmed = async ({ forceMode, branch } = {}) => {
     if (!session?.id || pushing) return;
     setShowPushModal(false);
     setPushRequest(null);
-    setPushing(true);
+    beginLocalPush();
     try {
       await sessionsService.push({ id: session.id, forceMode, branch });
       await refreshCommitsToPush();
@@ -806,7 +812,7 @@ export default function Session() {
         toastError('Push failed', err);
       }
     } finally {
-      setPushing(false);
+      endLocalPush();
     }
   };
 
@@ -1575,7 +1581,7 @@ export default function Session() {
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
                 commitsToPush={commitsToPush}
-                onPush={handlePush}
+                onPush={handleChatPush}
                 pushing={pushing}
               />
             )}

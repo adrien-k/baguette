@@ -10,9 +10,7 @@ export function createPrCommentsTool(ctx) {
     handler: async () => {
       const session = await getSession();
       if (!session?.pr_number) {
-        return fail(
-          'No pull request associated with this session. Create one first with PrUpsert.'
-        );
+        return fail('No pull request associated with this session');
       }
       const result = await getPRComments(
         await getToken(),
