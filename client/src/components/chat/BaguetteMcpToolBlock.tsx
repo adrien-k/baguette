@@ -7,11 +7,16 @@ import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
-import { parseShellToolResult } from '../../utils/shellToolResult.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
-import ToolRunElapsed from './ToolRunElapsed.tsx';
 import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
-import TerminalLogBlock, { TERMINAL_PRE_CLASS } from './TerminalLogBlock.tsx';
+import BashToolBlock from './BashToolBlock.tsx';
+
+function formatRunTaskCommand(label: string, runArgs?: unknown) {
+  const parts = Array.isArray(runArgs)
+    ? runArgs.filter((a): a is string => typeof a === 'string')
+    : [];
+  return parts.length > 0 ? `${label} ${parts.join(' ')}` : label;
+}
 
 const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   critical: 'bg-danger/15 text-danger border-danger/35',
@@ -45,101 +50,6 @@ export function parseMcpJsonResult(result: unknown): McpResultData | null {
   } catch {
     return null;
   }
-}
-
-export function CommandBlock({
-  label,
-  args,
-  result,
-  isError,
-  startedAt,
-}: {
-  label?: string;
-  args?: unknown;
-  result?: unknown;
-  isError?: boolean;
-  startedAt?: string | null;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const isRunning = result == null;
-  const { exitCode, stdout, stderr } = useMemo(() => parseShellToolResult(result), [result]);
-  let ok = true;
-  if (typeof result === 'string') {
-    try {
-      ok = (JSON.parse(result) as { ok?: boolean } | null)?.ok ?? true;
-    } catch {
-      ok = true;
-    }
-  } else if (result && typeof result === 'object') {
-    ok = (result as { ok?: boolean }).ok ?? true;
-  }
-
-  const hasError =
-    isError || ok === false || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
-
-  const commandArgs: string[] = Array.isArray(args) ? (args as string[]) : [];
-
-  return (
-    <div
-      className={`bg-inset/50 rounded-lg border overflow-hidden ${hasError ? 'border-danger/60' : 'border-line'}`}
-    >
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-accent text-xs font-mono shrink-0">command</span>
-          {hasError && (
-            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
-              {typeof exitCode === 'number' ? `exit ${exitCode}` : 'error'}
-            </span>
-          )}
-          <span className="text-xs text-secondary truncate">{label || '(no label)'}</span>
-          {commandArgs.length > 0 && (
-            <code className="text-[10px] text-faint truncate">{commandArgs.join(' ')}</code>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {isRunning ? <ToolRunElapsed startedAt={startedAt} /> : null}
-          {isRunning ? (
-            <div className="w-3.5 h-3.5 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
-          ) : (
-            <ChevronDown
-              className={`w-4 h-4 text-faint shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            />
-          )}
-        </div>
-      </button>
-      {expanded && (
-        <div className="px-3 sm:px-4 py-3 border-t border-line text-xs space-y-3">
-          <TerminalLogBlock label="stdout" text={stdout} />
-          <TerminalLogBlock label="stderr" text={stderr} />
-          {!stdout && !stderr && result != null && (
-            <div>
-              <div className="text-faint font-medium mb-1">stdout</div>
-              <pre className={TERMINAL_PRE_CLASS}>
-                {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
-              </pre>
-            </div>
-          )}
-          {!isRunning && (
-            <div className="flex items-baseline gap-2">
-              <span className="text-faint font-medium">Exit code</span>
-              <span
-                className={
-                  exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0
-                    ? 'text-danger font-mono'
-                    : 'text-success font-mono'
-                }
-              >
-                {exitCode != null && !Number.isNaN(exitCode) ? exitCode : '—'}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function PrUpsertBlock({
@@ -623,9 +533,9 @@ export default function BaguetteMcpToolBlock({
     const label = (args.label as string | undefined) ?? 'RunTask';
     const runArgs = (args.args as unknown[]) ?? [];
     return (
-      <CommandBlock
-        label={label}
-        args={runArgs}
+      <BashToolBlock
+        badgeLabel="RunTask"
+        command={formatRunTaskCommand(label, runArgs)}
         result={result}
         isError={isError}
         startedAt={startedAt}
@@ -636,7 +546,15 @@ export default function BaguetteMcpToolBlock({
   if (toolShortName === 'AwaitDetachedTask') {
     const taskId = args.taskId;
     const label = taskId != null ? `Await task #${taskId}` : 'AwaitDetachedTask';
-    return <CommandBlock label={label} result={result} isError={isError} startedAt={startedAt} />;
+    return (
+      <BashToolBlock
+        badgeLabel="AwaitDetachedTask"
+        command={label}
+        result={result}
+        isError={isError}
+        startedAt={startedAt}
+      />
+    );
   }
 
   if (toolShortName === 'PrComment') {

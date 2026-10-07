@@ -18,6 +18,7 @@ export default function BashToolBlock({
   result,
   isError,
   startedAt,
+  badgeLabel = 'Bash',
 }: {
   command?: string | null;
   args?: Record<string, unknown> | null;
@@ -25,6 +26,7 @@ export default function BashToolBlock({
   result?: unknown;
   isError?: boolean;
   startedAt?: string | null;
+  badgeLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const resolvedCommand = command?.trim() ? command : resolveBashCommand(args ?? undefined);
@@ -70,7 +72,7 @@ export default function BashToolBlock({
         className="w-full flex items-center justify-between px-3 sm:px-4 py-2 text-left hover:bg-control/50 transition-colors gap-2"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-accent text-xs font-mono shrink-0">Bash</span>
+          <span className="text-accent text-xs font-mono shrink-0">{badgeLabel}</span>
           {hasError && (
             <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger/40 px-1.5 py-0.5 rounded">
               {exitCode != null && !Number.isNaN(exitCode) ? `exit ${exitCode}` : 'error'}

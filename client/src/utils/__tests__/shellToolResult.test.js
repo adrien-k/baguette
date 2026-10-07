@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseShellToolResult } from '../shellToolResult.js';
+import { parseShellToolResult, unwrapShellToolPayload } from '../shellToolResult.js';
 
 describe('parseShellToolResult', () => {
   it('treats plain strings as stdout', () => {
@@ -41,5 +41,41 @@ describe('parseShellToolResult', () => {
       stdout: '',
       stderr: 'failed',
     });
+  });
+
+  it('unwraps MCP content blocks with nested text', () => {
+    const mcpData = {
+      content: [
+        {
+          text: {
+            text: JSON.stringify({
+              ok: true,
+              exitCode: 0,
+              stdoutLines: ['done'],
+              stderrLines: ['$ pnpm test'],
+            }),
+          },
+        },
+      ],
+      isError: false,
+    };
+    expect(parseShellToolResult(mcpData)).toEqual({
+      exitCode: 0,
+      stdout: 'done',
+      stderr: '$ pnpm test',
+    });
+  });
+
+  it('unwraps typed mcp tool result data field', () => {
+    const payload = unwrapShellToolPayload({
+      status: 'ok',
+      content: JSON.stringify({
+        content: [{ text: { text: '{"exitCode":2,"stdoutLines":["x"],"stderrLines":[]}' } }],
+      }),
+      data: {
+        content: [{ text: { text: '{"exitCode":2,"stdoutLines":["x"],"stderrLines":[]}' } }],
+      },
+    });
+    expect(payload).toEqual({ exitCode: 2, stdoutLines: ['x'], stderrLines: [] });
   });
 });

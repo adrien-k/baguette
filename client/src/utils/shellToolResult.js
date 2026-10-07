@@ -1,4 +1,85 @@
 /**
+ * Join MCP `content` blocks (Cursor nested `{ text: { text } }` or `{ type: 'text', text }`).
+ * @param {unknown} obj
+ * @returns {string | null}
+ */
+function extractMcpTextContent(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const content = obj.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return null;
+  const parts = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    const textField = block.text;
+    if (typeof textField === 'string') parts.push(textField);
+    else if (textField && typeof textField === 'object' && typeof textField.text === 'string') {
+      parts.push(textField.text);
+    }
+  }
+  return parts.length ? parts.join('\n\n') : null;
+}
+
+/**
+ * Peel MCP wrappers and JSON-string layers until we reach a shell payload or plain text.
+ * @param {unknown} result
+ * @param {number} [depth]
+ * @returns {unknown}
+ */
+export function unwrapShellToolPayload(result, depth = 0) {
+  if (depth > 6 || result === undefined || result === null) return result;
+
+  let parsed = result;
+  if (typeof result === 'string') {
+    if (!result.trim()) return result;
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return result;
+    }
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return parsed;
+
+  const hasShellFields =
+    parsed.exitCode != null ||
+    parsed.exit_code != null ||
+    Array.isArray(parsed.stdoutLines) ||
+    parsed.stdout != null ||
+    parsed.stderr != null ||
+    Array.isArray(parsed.stderrLines);
+  if (hasShellFields) return parsed;
+
+  const mcpText = extractMcpTextContent(parsed);
+  if (mcpText) {
+    const trimmed = mcpText.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return unwrapShellToolPayload(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return mcpText;
+      }
+    }
+    return mcpText;
+  }
+
+  if (parsed.data != null && parsed.data !== parsed) {
+    const inner = unwrapShellToolPayload(parsed.data, depth + 1);
+    if (inner !== parsed.data) return inner;
+  }
+
+  if (typeof parsed.content === 'string' && parsed.content.trim().startsWith('{')) {
+    try {
+      return unwrapShellToolPayload(JSON.parse(parsed.content), depth + 1);
+    } catch {
+      /* keep parsed */
+    }
+  }
+
+  return parsed;
+}
+
+/**
  * Normalize Bash / shell tool results from Claude (plain text or JSON) and Cursor SDK payloads.
  * @returns {{ exitCode: number | null; stdout: string; stderr: string }}
  */
@@ -11,13 +92,15 @@ export function parseShellToolResult(result) {
     return { exitCode, stdout, stderr };
   }
 
-  let parsed = result;
-  if (typeof result === 'string') {
-    if (result === '') return { exitCode, stdout, stderr };
+  const unwrapped = unwrapShellToolPayload(result);
+
+  let parsed = unwrapped;
+  if (typeof unwrapped === 'string') {
+    if (unwrapped === '') return { exitCode, stdout, stderr };
     try {
-      parsed = JSON.parse(result);
+      parsed = JSON.parse(unwrapped);
     } catch {
-      return { exitCode, stdout: result, stderr: '' };
+      return { exitCode, stdout: unwrapped, stderr: '' };
     }
   }
 
