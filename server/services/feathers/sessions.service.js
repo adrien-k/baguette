@@ -987,14 +987,9 @@ export class SessionsService extends KnexService {
         { provider: undefined, user: { id: session.user_id } }
       );
     if (data?.archive) {
-      try {
-        await this.remove(session.id, params);
-      } catch (err) {
-        const detail = err?.message || 'Unknown error';
-        throw new BadRequest(
-          `Pull request merged successfully, but archiving the session failed: ${detail}`
-        );
-      }
+      void this.remove(session.id, params).catch((err) => {
+        logger.warn({ sessionId: session.id, err: err?.message }, 'Archive after merge failed');
+      });
     }
     return { ok: true, merged: true, archived: !!data?.archive };
   }

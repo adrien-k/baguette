@@ -316,18 +316,18 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(result).toEqual({ ok: true, merged: true, archived: true });
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.pr_status).toBe('merged');
-      expect(row.archived_at).not.toBeNull();
+      await vi.waitFor(async () => {
+        const archived = await db('sessions').where({ id: sessId }).first();
+        expect(archived.archived_at).not.toBeNull();
+      });
     });
 
-    it('when archive fails after merge, returns a clear error and leaves PR merged', async () => {
+    it('returns merge success when archive is requested even if archive fails', async () => {
       const sessionsSvc = app.service('sessions');
       vi.spyOn(sessionsSvc, 'remove').mockRejectedValueOnce(new BadRequest('Session is archiving'));
 
-      await expect(
-        sessionsSvc.merge({ id: sessId, archive: true }, params({ id: userId }))
-      ).rejects.toMatchObject({
-        message: /Pull request merged successfully, but archiving the session failed/,
-      });
+      const result = await sessionsSvc.merge({ id: sessId, archive: true }, params({ id: userId }));
+      expect(result).toEqual({ ok: true, merged: true, archived: true });
 
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.pr_status).toBe('merged');

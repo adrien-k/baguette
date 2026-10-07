@@ -458,7 +458,7 @@ export default function DiffView({
     try {
       await sessionsService.merge({ id: session.id, archive });
       setShowMergeModal(false);
-      toast.success(archive ? 'PR merged and session archived' : 'PR merged successfully');
+      toast.success(archive ? 'PR merged; archiving session' : 'PR merged successfully');
     } catch (err) {
       toastFeathersError(mergeFailureToastLabel(err), err);
       setMergeError(err.message || mergeFailureToastLabel(err));
