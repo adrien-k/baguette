@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: Anthropic-compatible API (subset)
+  version: '2023-06-01'
+servers:
+  - url: https://api.anthropic.com
+paths:
+  /v1/models:
+    get:
+      operationId: listModels
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Model list page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        display_name:
+                          type: string
+  /v1/messages:
+    post:
+      operationId: createMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, max_tokens, messages]
+              properties:
+                model:
+                  type: string
+                max_tokens:
+                  type: integer
+                messages:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Message response
+          content:
+            application/json:
+              schema:
+                type: object

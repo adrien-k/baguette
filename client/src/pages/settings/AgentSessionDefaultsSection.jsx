@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../api.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
+import { AGENT_SDK_IDS, availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { LAST_USED_AGENT_SDK } from '@baguette/shared/agent-session-defaults.js';
+import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
 import SearchableSelect from '../../components/SearchableSelect';
 import AgentSdkIcon from '../../components/svg/AgentSdkIcon.jsx';
 import SessionModelSelect from '../../components/SessionModelSelect.jsx';
@@ -12,8 +14,7 @@ import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 
 const SDK_OPTIONS = [
   { value: LAST_USED_AGENT_SDK, label: 'Last used agent' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'cursor', label: 'Cursor' },
+  ...AGENT_SDK_IDS.map((value) => ({ value, label: formatAgentSdkDisplayName(value) })),
 ];
 
 export default function AgentSessionDefaultsSection({ settings }) {
@@ -68,9 +69,8 @@ export default function AgentSessionDefaultsSection({ settings }) {
       setModels([]);
       return Promise.resolve();
     }
-    const url = agentSdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
     setLoadingModels(true);
-    return apiFetch(url)
+    return apiFetch(settingsModelsUrl(agentSdk))
       .then((d) => setModels(d.models || []))
       .catch(() => setModels([]))
       .finally(() => setLoadingModels(false));

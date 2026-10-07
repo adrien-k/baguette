@@ -117,6 +117,26 @@ describe('parseMessageRow', () => {
     ]);
   });
 
+  it('parses legacy Pi tool rows stored as system type', () => {
+    const view = parseMessageRow({
+      id: 1647,
+      session_id: 29,
+      type: 'system',
+      subtype: null,
+      message_json: JSON.stringify({
+        kind: 'mcp',
+        name: 'CurrentSessionInfo',
+        args: {},
+        result: { content: [{ type: 'text', text: 'ok' }] },
+        status: 'completed',
+      }),
+      ...baseRow,
+    });
+    expect(view.type).toBe('tool_call');
+    expect(view.name).toBe('CurrentSessionInfo');
+    expect(view.status).toBe('completed');
+  });
+
   it('hides tool-result carrier user rows', () => {
     const view = parseMessageRow({
       id: 5,

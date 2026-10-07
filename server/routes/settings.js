@@ -8,6 +8,8 @@ import db from '../db.js';
 import { normalizeAnthropicBaseUrl } from '../services/session-env.js';
 import { buildClaudeTestEnv, runClaudeConnectivityTest } from '../services/claude-connectivity.js';
 import { runCursorConnectivityTest } from '../services/cursor-connectivity.js';
+import { listPiModels, listPiModelsForUser } from '../services/pi-models.js';
+import { resolvePiEffectiveForTest, runPiConnectivityTest } from '../services/pi-connectivity.js';
 import { listClaudeModels } from '../services/claude-gateway-models.js';
 import {
   loadFullSessionPromptTemplate,
@@ -40,6 +42,8 @@ function userRowForAgentValidation(userRow) {
     cursor_api_key: userRow.cursor_api_key_encrypted
       ? decrypt(userRow.cursor_api_key_encrypted)
       : null,
+    pi_api_key: userRow.pi_api_key_encrypted ? decrypt(userRow.pi_api_key_encrypted) : null,
+    pi_api_key_env_var: userRow.pi_api_key_env_var ?? null,
   };
 }
 const DEFAULT_USAGE_DAYS = 30;
@@ -101,6 +105,12 @@ export default function createSettingsRoutes(requireAuth) {
         const models = await listCursorModels(apiKey);
         return res.json({ models });
       }
+      if (req.query.sdk === 'pi') {
+        const userRow = await db('users').where({ id: req.user.id }).first();
+        const user = userRowForAgentValidation(userRow);
+        const models = await listPiModelsForUser(user, null);
+        return res.json({ models });
+      }
       const models = await listClaudeModelsForRequest(req);
       res.json({ models });
     })
@@ -151,6 +161,14 @@ export default function createSettingsRoutes(requireAuth) {
           ? decrypt(userRow.cursor_api_key_encrypted)
           : null;
         const models = await refreshCursorModels(apiKey);
+        return res.json({ models });
+      }
+      if (req.query.sdk === 'pi') {
+        const userRow = await db('users').where({ id: req.user.id }).first();
+        const user = userRowForAgentValidation(userRow);
+        const { apiKey, envVar } = resolvePiEffectiveForTest(user, null, {});
+        if (!apiKey) return res.json({ models: [] });
+        const models = await listPiModels(apiKey, envVar, { refresh: true });
         return res.json({ models });
       }
       const models = await listClaudeModelsForRequest(req, { refresh: true });
@@ -251,6 +269,38 @@ export default function createSettingsRoutes(requireAuth) {
 
       const result = await runCursorConnectivityTest({ apiKey });
       result.effective = { cursor_api_key_configured: Boolean(apiKey) };
+      res.json(result);
+    })
+  );
+
+  router.post(
+    '/api/settings/pi/test',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const userRow = await db('users').where({ id: req.user.id }).first();
+      if (!userRow) return res.status(404).json({ error: 'User not found' });
+
+      const data = req.body ?? {};
+      let repoRowData = null;
+      if (data.repo_id != null && data.repo_id !== '') {
+        repoRowData = await repoRow(data.repo_id, req.user.id);
+        if (!repoRowData) return res.status(400).json({ error: 'Repository not linked' });
+      }
+
+      const userPlain = userRowForAgentValidation(userRow);
+      const repoPlain = repoRowData
+        ? {
+            pi_api_key: decryptIfSet(repoRowData.pi_api_key_encrypted),
+            pi_api_key_env_var: repoRowData.pi_api_key_env_var ?? null,
+          }
+        : null;
+
+      const effective = resolvePiEffectiveForTest(userPlain, repoPlain, {
+        pi_api_key: data.pi_api_key,
+        pi_api_key_env_var: data.pi_api_key_env_var,
+      });
+
+      const result = await runPiConnectivityTest(userRow, effective);
       res.json(result);
     })
   );

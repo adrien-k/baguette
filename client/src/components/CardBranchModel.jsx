@@ -1,8 +1,9 @@
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { parseModelField } from '../utils/models.js';
 
 /** Source → target branch plus SDK/model, aligned under the card title. */
 export default function CardBranchModel({ isGlobal, baseBranch, targetBranch, agentSdk, model }) {
-  const sdk = agentSdk === 'cursor' ? 'Cursor' : 'Claude';
+  const sdk = formatAgentSdkDisplayName(agentSdk);
   const modelLabel = model ? parseModelField(model) : null;
   const showBranches = !isGlobal && (baseBranch || targetBranch);
 

@@ -1,4 +1,4 @@
-export const AGENT_SDK_DEFAULT_VALUES = ['claude', 'cursor'];
+export const AGENT_SDK_DEFAULT_VALUES = ['claude', 'cursor', 'pi'];
 
 export const EMPTY_AGENT_SESSION_DEFAULTS = {
   agent_sdk: null,
@@ -23,7 +23,7 @@ export function withLastUsedFlag(defaults) {
 }
 
 function coerceSdk(value) {
-  if (value === 'claude' || value === 'cursor') return value;
+  if (value === 'claude' || value === 'cursor' || value === 'pi') return value;
   return null;
 }
 

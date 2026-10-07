@@ -49,7 +49,9 @@ import type {
   MessageChannel,
   MessageRowLike,
   QueryBuilderLike,
+  TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
+import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -1057,6 +1059,10 @@ Task: ${initialPrompt}`;
 
     return { label, branchName };
   }
+
+  async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
+    await directPromptTiedSessionLoopCompaction(this.app, args);
+  }
 }
 
 export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent') {
@@ -1074,6 +1080,7 @@ export function registerCursorAgentService(app: AgentApp, path = 'cursor-agent')
       'generateSessionMetadata',
       'openSessionStore',
       'disposeSessionStore',
+      'prepareTiedSessionLoopCompaction',
     ],
   });
 }

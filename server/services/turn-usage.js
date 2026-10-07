@@ -64,6 +64,34 @@ export function addTokenUsage(acc, usage) {
 }
 
 /**
+ * Add one Pi `turn_end` / assistant message usage block. Each LLM round in a turn
+ * emits its own usage; sums across the turn (unlike Cursor stream cumulative deltas).
+ *
+ * @param {ReturnType<typeof emptyTurnUsage>} acc
+ * @param {Record<string, unknown>|null|undefined} usage
+ * @param {string|null|undefined} model
+ */
+export function addPiTokenUsage(acc, usage, model) {
+  if (!usage) return acc;
+  const input = Number(usage.input) || 0;
+  const output = Number(usage.output) || 0;
+  const cacheRead = Number(usage.cacheRead) || 0;
+  const cacheWrite = Number(usage.cacheWrite) || 0;
+  const reasoning = Number(usage.reasoning) || 0;
+  acc.input_tokens += input;
+  acc.output_tokens += output;
+  acc.cache_read_tokens += cacheRead;
+  acc.cache_write_tokens += cacheWrite;
+  acc.reasoning_tokens += reasoning;
+  const total =
+    Number(usage.totalTokens) ||
+    input + output + cacheRead + cacheWrite;
+  acc.total_tokens += total;
+  if (model) acc.model = String(model);
+  return acc;
+}
+
+/**
  * Difference two cumulative `modelUsage` snapshots from the Claude SDK into this
  * turn's tokens. `model` is whichever model did the most token work this turn —
  * a turn can touch several (subagents, compaction), and the row holds one.

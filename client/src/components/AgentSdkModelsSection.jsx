@@ -1,36 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import {
+  settingsModelsRefreshUrl,
+  settingsModelsUrl,
+} from '@baguette/shared/settings-models-url.js';
 import { apiFetch } from '../api.js';
 import { toastError } from '../utils/toastError.jsx';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 
 /**
- * Lists cached agent models for Settings → Agent (Claude or Cursor) with refresh.
+ * Lists cached agent models for Settings → Agent with refresh.
  */
 export default function AgentSdkModelsSection({ sdk, credentialConfigured = true }) {
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const needsCredential = sdk === 'cursor' || sdk === 'pi';
+
   const loadModels = useCallback(
     (refresh = false) => {
-      if (sdk === 'cursor' && !credentialConfigured) {
+      if (needsCredential && !credentialConfigured) {
         setModels([]);
         setLoading(false);
         return Promise.resolve();
       }
-      const getUrl = sdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
-      const refreshUrl =
-        sdk === 'cursor'
-          ? '/api/settings/models/refresh?sdk=cursor'
-          : '/api/settings/models/refresh';
-      const url = refresh ? refreshUrl : getUrl;
+      const url = refresh ? settingsModelsRefreshUrl(sdk) : settingsModelsUrl(sdk);
       if (refresh) setRefreshing(true);
       else setLoading(true);
       return apiFetch(url, refresh ? { method: 'POST' } : undefined)
         .then((d) => setModels(d.models || []))
         .catch((err) => {
-          if (refresh)
-            toastError(`Failed to refresh ${sdk === 'cursor' ? 'Cursor' : 'Claude'} models`, err);
+          if (refresh) toastError(`Failed to refresh ${formatAgentSdkDisplayName(sdk)} models`, err);
           else setModels([]);
         })
         .finally(() => {
@@ -38,17 +39,18 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
           setRefreshing(false);
         });
     },
-    [sdk, credentialConfigured]
+    [sdk, credentialConfigured, needsCredential]
   );
 
   useEffect(() => {
     loadModels(false);
   }, [loadModels]);
 
-  if (sdk === 'cursor' && !credentialConfigured) {
+  if (needsCredential && !credentialConfigured) {
+    const sdkName = formatAgentSdkDisplayName(sdk);
     return (
       <p className="text-xs text-faint">
-        Save a Cursor API key above to load and refresh available models.
+        Save a {sdkName} API key above to load and refresh available models.
       </p>
     );
   }
@@ -78,9 +80,9 @@ export default function AgentSdkModelsSection({ sdk, credentialConfigured = true
               <span className="text-heading">{m.display_name}</span>
               {m.description ? (
                 <span className="block text-xs text-faint mt-0.5">{m.description}</span>
-              ) : (
-                <span className="block text-xs text-faint font-mono mt-0.5">{m.id}</span>
-              )}
+              ) : m.id ? (
+                <span className="block text-xs text-faint mt-0.5 font-mono">{m.id}</span>
+              ) : null}
             </li>
           ))}
         </ul>

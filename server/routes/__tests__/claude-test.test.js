@@ -79,10 +79,45 @@ afterEach(async () => {
 
 const REAL_FETCH = globalThis.fetch.bind(globalThis);
 
+function fetchUrl(input) {
+  if (typeof input === 'string') return input;
+  if (input instanceof Request) return input.url;
+  return String(input);
+}
+
+function fetchInit(input, init = {}) {
+  if (input instanceof Request) {
+    const headers = {};
+    input.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    return {
+      method: input.method,
+      headers,
+      body: input.body,
+      ...init,
+    };
+  }
+  return init;
+}
+
+function headerValue(headers, name) {
+  if (!headers) return undefined;
+  if (headers instanceof Headers) return headers.get(name);
+  const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === name.toLowerCase());
+  return entry?.[1];
+}
+
 function mockFetch(responses) {
   const calls = [];
-  const fn = vi.fn(async (url, init = {}) => {
-    calls.push({ url: String(url), init });
+  const fn = vi.fn(async (input, init = {}) => {
+    const url = fetchUrl(input);
+    let mergedInit = fetchInit(input, init);
+    if (input instanceof Request) {
+      const text = await input.clone().text();
+      if (text) mergedInit = { ...mergedInit, body: text };
+    }
+    calls.push({ url, init: mergedInit });
     const next = responses.shift();
     if (!next) throw new Error('unexpected extra fetch');
     if (next.__network_error) {
@@ -90,7 +125,7 @@ function mockFetch(responses) {
       err.cause = { code: 'ECONNREFUSED' };
       throw err;
     }
-    return typeof next === 'function' ? next({ url: String(url), init }) : next;
+    return typeof next === 'function' ? next({ url, init: mergedInit }) : next;
   });
   vi.stubGlobal('fetch', fn);
   return calls;
@@ -123,7 +158,7 @@ describe('POST /api/settings/claude/test', () => {
     expect(body.effective.anthropic_api_key_configured).toBe(true);
     expect(body.effective.anthropic_auth_token_configured).toBe(false);
     expect(calls[0].url).toBe('https://api.anthropic.com/v1/models?limit=100');
-    expect(calls[0].init.headers['x-api-key']).toBe('sk-ant-api03-saved');
+    expect(headerValue(calls[0].init.headers, 'x-api-key')).toBe('sk-ant-api03-saved');
     const byId = Object.fromEntries(body.checks.map((c) => [c.id, c]));
     expect(byId.connectivity.ok).toBe(true);
     expect(byId.auth.ok).toBe(true);
@@ -134,15 +169,15 @@ describe('POST /api/settings/claude/test', () => {
   it('uses Authorization: Bearer when an auth token is configured', async () => {
     const calls = mockFetch([jsonRes(200, { data: [{ id: 'gw-model' }] })]);
     await post({ anthropic_auth_token: 'typed-token' });
-    expect(calls[0].init.headers.Authorization).toBe('Bearer typed-token');
-    expect(calls[0].init.headers['x-api-key']).toBeUndefined();
+    expect(headerValue(calls[0].init.headers, 'Authorization')).toBe('Bearer typed-token');
+    expect(headerValue(calls[0].init.headers, 'x-api-key')).toBeUndefined();
   });
 
   it('falls back to the repo auth token for the requested repo scope', async () => {
     const repoId = (await db('repos').where({ full_name: 'alice/myrepo' }).first()).id;
     const calls = mockFetch([jsonRes(200, { data: [{ id: 'gw-model' }] })]);
     await post({ repo_id: repoId });
-    expect(calls[0].init.headers.Authorization).toBe('Bearer repo-token');
+    expect(headerValue(calls[0].init.headers, 'Authorization')).toBe('Bearer repo-token');
   });
 
   it('flags auth failures with the API error message', async () => {

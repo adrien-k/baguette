@@ -2,6 +2,8 @@ export {
   buildBaguetteToolList,
   buildBaguetteMcpServer,
   buildCursorCustomTools,
+  buildPiCustomTools,
+  buildReviewerPiCustomTools,
   buildReviewerMcpServer,
   buildReviewerCursorCustomTools,
 } from './server.js';

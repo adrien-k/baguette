@@ -1,4 +1,4 @@
-import { describeCursorModelPricing } from '@baguette/shared/cursor-model-pricing.js';
+import { describeAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
 import Tooltip from './Tooltip.jsx';
 import { usageModelLabel } from '../utils/usageSeries.js';
 
@@ -21,7 +21,7 @@ function PricingTooltipContent({ pricing }) {
 /** Model name on the Usage page; shows list prices on hover when known. */
 export default function UsageModelLabel({ model, className = '', title }) {
   const label = usageModelLabel(model);
-  const pricing = model ? describeCursorModelPricing(model) : null;
+  const pricing = model ? describeAgentModelPricing(model) : null;
   const fallbackTitle = title ?? (model || undefined);
 
   const inner = (

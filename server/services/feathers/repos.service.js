@@ -73,6 +73,8 @@ class ReposService extends KnexService {
         'user_repos.anthropic_auth_token_encrypted',
         'user_repos.anthropic_base_url',
         'user_repos.cursor_api_key_encrypted',
+        'user_repos.pi_api_key_encrypted',
+        'user_repos.pi_api_key_env_var',
         'user_repos.agent_prompt',
         'user_repos.review_prompt',
         'user_repos.show_in_all_sessions'
@@ -495,6 +497,7 @@ export const reposHooks = {
         anthropic_api_key: 'anthropic_api_key_encrypted',
         anthropic_auth_token: 'anthropic_auth_token_encrypted',
         cursor_api_key: 'cursor_api_key_encrypted',
+        pi_api_key: 'pi_api_key_encrypted',
       }),
     ],
   },

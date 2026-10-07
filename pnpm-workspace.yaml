@@ -1,5 +1,8 @@
 allowBuilds:
+  '@google/genai': true
   better-sqlite3: true
+  esbuild: true
+  protobufjs: true
 minimumReleaseAgeExclude:
   - '@cursor/sdk-darwin-arm64@1.0.30'
   - '@cursor/sdk-darwin-x64@1.0.30'

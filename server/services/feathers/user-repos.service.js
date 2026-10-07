@@ -2,12 +2,15 @@ import { KnexService } from '@feathersjs/knex';
 import { NotFound } from '@feathersjs/errors';
 import { requireUser, scopeByUser, encryptFields, decryptFields, only } from './hooks.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
+import { validatePiApiKeyEnvVarPatch } from './validate-pi-patch.js';
 
 const WRITABLE_USER_REPO_FIELDS = [
   'anthropic_api_key',
   'anthropic_auth_token',
   'anthropic_base_url',
   'cursor_api_key',
+  'pi_api_key',
+  'pi_api_key_env_var',
   'agent_prompt',
   'review_prompt',
   'show_in_all_sessions',
@@ -17,6 +20,7 @@ const USER_REPO_SECRETS = {
   anthropic_api_key: 'anthropic_api_key_encrypted',
   anthropic_auth_token: 'anthropic_auth_token_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
+  pi_api_key: 'pi_api_key_encrypted',
 };
 
 class UserReposService extends KnexService {}
@@ -50,6 +54,7 @@ export const userReposHooks = {
       requireOwnUserRepo,
       only(WRITABLE_USER_REPO_FIELDS),
       normalizeAnthropicBaseUrlPatch,
+      validatePiApiKeyEnvVarPatch,
       encryptFields(USER_REPO_SECRETS),
     ],
   },

@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { PlugZap, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
 import { apiFetch } from '../api.js';
 import { toastError } from '../utils/toastError.jsx';
-
-const LABELS = { claude: 'Claude', cursor: 'Cursor' };
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 
 /**
  * "Test connection" button for an agent's credentials (Settings → Agent).
@@ -26,7 +25,7 @@ export default function AgentTestButton({ sdk = 'claude', repoId = null, fields 
       });
       setResult(res);
     } catch (err) {
-      toastError(`${LABELS[sdk] ?? sdk} connection test failed`, err);
+      toastError(`${formatAgentSdkDisplayName(sdk)} connection test failed`, err);
     } finally {
       setTesting(false);
     }

@@ -100,6 +100,15 @@ function makeApp(db) {
       ],
     }
   );
+  app.use(
+    'pi-agent',
+    {
+      handleMessageCreated: async () => {},
+      stopTurn: async () => {},
+      buildAgentOptions: async () => ({}),
+    },
+    { methods: ['handleMessageCreated', 'stopTurn', 'buildAgentOptions'] }
+  );
   wireAgentMessageListeners(app);
   registerSessionIssuesService(app);
   registerSessionReviewService(app);

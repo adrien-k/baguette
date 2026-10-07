@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import { NotFound, BadRequest } from '@feathersjs/errors';
 import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
+import { agentFeathersPath } from '../../../shared/agent-feathers-path.js';
 import {
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -232,7 +233,11 @@ export class SessionsService extends KnexService {
     if (!session) return false;
     const userParams = { user: { id: session.user_id } };
     const resumable =
-      session.agent_sdk === 'cursor' ? !!session.cursor_agent_id : !!session.claude_session_id;
+      session.agent_sdk === 'cursor'
+        ? !!session.cursor_agent_id
+        : session.agent_sdk === 'pi'
+          ? !!session.pi_session_id
+          : !!session.claude_session_id;
 
     if (!resumable) {
       // Nothing was ever persisted on the agent side, so there is no transcript to pick up —
@@ -258,8 +263,7 @@ export class SessionsService extends KnexService {
         },
         userParams
       );
-      const agentSdk = session.agent_sdk === 'cursor' ? 'cursor' : 'claude';
-      const agentService = this.app.service(`${agentSdk}-agent`);
+      const agentService = this.app.service(agentFeathersPath(session.agent_sdk));
       if (agentService?.handleMessageCreated) {
         await agentService.handleMessageCreated(created);
       }
@@ -536,8 +540,7 @@ export class SessionsService extends KnexService {
   }
 
   _stopAgentSession(session) {
-    const service = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
-    return this.app.service(service).stopSession(session.id);
+    return this.app.service(agentFeathersPath(session.agent_sdk)).stopSession(session.id);
   }
 
   async _stopReviewer(session) {
@@ -1311,6 +1314,53 @@ export class SessionsService extends KnexService {
     return costUsd;
   }
 
+  /**
+   * One Pi turn: token totals from `turn_end` events, USD from the shared agent pricing table.
+   * @param {Record<string, unknown>} turnUsage
+   * @returns {Promise<number>}
+   */
+  async recordPiUsage(session, turnUsage, { kind, turnModel, patchSessionCost } = {}) {
+    if (!session || !turnUsage) return 0;
+
+    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
+
+    if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
+
+    const db = this.app.get('db');
+    await db('usage').insert({
+      session_id: session.id,
+      user_id: session.user_id,
+      repo_full_name: session.repo_full_name,
+      cost_usd: Math.max(costUsd, 0),
+      agent_sdk: 'pi',
+      kind: kind ?? null,
+      input_tokens: turnUsage.input_tokens,
+      output_tokens: turnUsage.output_tokens,
+      cache_read_tokens: turnUsage.cache_read_tokens,
+      cache_write_tokens: turnUsage.cache_write_tokens,
+      reasoning_tokens: turnUsage.reasoning_tokens,
+      total_tokens: turnUsage.total_tokens,
+      model:
+        turnUsage.model ??
+        turnModel?.model ??
+        (kind === 'review' ? session.review_model : null) ??
+        session.model ??
+        null,
+    });
+
+    if (!patchSessionCost || costUsd <= 0) return costUsd;
+
+    const latest = await db('sessions').where({ id: session.id }).first();
+    await this.app
+      .service('sessions')
+      .patch(
+        session.id,
+        { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUsd },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+    return costUsd;
+  }
+
   resetClaudeUsageTotals(totalsKey) {
     this._lastResultTotals.delete(totalsKey);
   }
@@ -1484,9 +1534,8 @@ async function provisionGlobalSession(app, session, params) {
   };
   if (hasInitialPrompt(session.initial_prompt)) {
     try {
-      const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
       const result = await app
-        .service(agentService)
+        .service(agentFeathersPath(session.agent_sdk))
         .generateSessionMetadata(
           session.initial_prompt,
           session.short_id,
@@ -1579,9 +1628,8 @@ async function provisionSessionEnvironment(app, session, params) {
       session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
     if (hasInitialPrompt(session.initial_prompt)) {
       try {
-        const agentService = session.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
         const result = await app
-          .service(agentService)
+          .service(agentFeathersPath(session.agent_sdk))
           .generateSessionMetadata(session.initial_prompt, shortId, user, repo, session);
         if (result.label) patch.label = result.label;
         if (!requestedBranchName && !session.remote_branch) {

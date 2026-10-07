@@ -49,26 +49,52 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
   const base = { ...row, ...payload, id: row.id } as Record<string, unknown>;
   const meta = base as unknown as MessageViewMeta;
 
-  if (payloadType === 'tool_call' || row.type === 'tool_call') {
+  const legacyToolCallPayload =
+    payloadType !== 'tool_call' &&
+    row.type !== 'tool_call' &&
+    typeof payload.kind === 'string' &&
+    typeof payload.name === 'string' &&
+    (payload.status === 'running' ||
+      payload.status === 'completed' ||
+      payload.status === 'error' ||
+      payload.status === 'cancelled');
+
+  if (payloadType === 'tool_call' || row.type === 'tool_call' || legacyToolCallPayload) {
     // `message_json` is untrusted JSON: `kind` is re-derived from the payload
     // rather than validated against the union, so this is a boundary cast.
-    const call = payload as unknown as ToolCallPayload;
+    const call = payload as unknown as ToolCallPayload & {
+      call_id?: string;
+      tool_started_at?: string;
+      tool_ended_at?: string | null;
+    };
     const kind =
       call.kind === 'generic' && isBashToolName(call.name) ? ('bash' as const) : call.kind;
+    const startedAt =
+      call.started_at ??
+      call.tool_started_at ??
+      (typeof row.tool_started_at === 'string' ? row.tool_started_at : undefined);
+    const endedAt =
+      call.ended_at ??
+      call.tool_ended_at ??
+      (typeof row.tool_ended_at === 'string' ? row.tool_ended_at : null);
     return {
       ...meta,
       type: 'tool_call',
       kind,
       name: call.name,
       status: call.status,
-      started_at: call.started_at,
-      ended_at: call.ended_at ?? null,
+      started_at: startedAt,
+      ended_at: endedAt ?? null,
       result: call.result ?? null,
       args: call.args ?? {},
-      call_id: (typeof call.id === 'string' ? call.id : null) ?? row.tool_call_id ?? null,
+      call_id:
+        (typeof call.id === 'string' ? call.id : null) ??
+        (typeof call.call_id === 'string' ? call.call_id : null) ??
+        row.tool_call_id ??
+        null,
       tool_status: row.tool_status ?? call.status,
-      tool_started_at: row.tool_started_at ?? call.started_at,
-      tool_ended_at: row.tool_ended_at ?? call.ended_at ?? null,
+      tool_started_at: row.tool_started_at ?? startedAt,
+      tool_ended_at: row.tool_ended_at ?? endedAt ?? null,
     } as ChatMessageView;
   }
 

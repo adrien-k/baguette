@@ -11,7 +11,8 @@ import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { CARD_MUTED_CLASS, TEXT_HEADING, TEXT_PRIMARY } from '../../utils/ui.js';
-import { formatTokens, formatUsd, KIND_LABELS, SDK_LABELS } from '../../utils/usageSeries.js';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { formatTokens, formatUsd, KIND_LABELS } from '../../utils/usageSeries.js';
 
 const SECTION_HEADING_CLASS = 'text-xs font-medium uppercase tracking-wide text-faint';
 
@@ -285,7 +286,7 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
                             {row.model}
                           </span>
                           <span className="text-faint">
-                            {SDK_LABELS[row.agent_sdk] ?? row.agent_sdk}
+                            {formatAgentSdkDisplayName(row.agent_sdk)}
                           </span>
                         </td>
                         <td className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">

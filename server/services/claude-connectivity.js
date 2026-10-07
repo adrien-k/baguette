@@ -1,3 +1,4 @@
+import { listAnthropicApiModels, probeAnthropicMessages } from '../lib/anthropic-api/models.js';
 import { buildClaudeEnvFromPlainUser, normalizeAnthropicBaseUrl } from './session-env.js';
 
 export const CLAUDE_TEST_TIMEOUT_MS = 20_000;
@@ -45,18 +46,17 @@ export async function runClaudeConnectivityTest(env, { baseUrl } = {}) {
 
   let modelsRes = null;
   let modelsParsed = null;
+  let modelsList = null;
+  const apiKey = env.ANTHROPIC_API_KEY || null;
+  const authToken = env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN || null;
+  const apiConfig = { baseUrl: base, apiKey, authToken };
   try {
-    modelsRes = await fetch(`${base}/v1/models?limit=100`, {
-      method: 'GET',
-      headers: claudeTestHeaders(env),
+    modelsList = await listAnthropicApiModels(apiConfig, {
+      limit: 100,
       signal: AbortSignal.timeout(CLAUDE_TEST_TIMEOUT_MS),
     });
-    const text = await modelsRes.text();
-    try {
-      modelsParsed = JSON.parse(text);
-    } catch {
-      /* non-JSON response (proxy error page etc.) */
-    }
+    modelsRes = { ok: true, status: 200, statusText: 'OK' };
+    modelsParsed = { data: modelsList.map((m) => ({ id: m.id, display_name: m.display_name })) };
   } catch (err) {
     if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
       return {
@@ -72,7 +72,18 @@ export async function runClaudeConnectivityTest(env, { baseUrl } = {}) {
         ],
       };
     }
-    modelsRes = null;
+    if (typeof err?.status === 'number') {
+      modelsRes = { ok: false, status: err.status, statusText: 'Error' };
+      const apiErr = err.apiError;
+      modelsParsed =
+        apiErr && typeof apiErr === 'object' && 'error' in apiErr
+          ? apiErr
+          : { error: { message: err.message } };
+    } else {
+      modelsRes = null;
+      modelsParsed = null;
+    }
+    modelsList = null;
   }
 
   const modelsReached = Boolean(modelsRes);
@@ -86,22 +97,12 @@ export async function runClaudeConnectivityTest(env, { baseUrl } = {}) {
   let messagesErrorDetail = null;
   if (needMessagesProbe) {
     try {
-      messagesRes = await fetch(`${base}/v1/messages`, {
-        method: 'POST',
-        headers: claudeTestHeaders(env),
-        body: JSON.stringify({
-          model: CLAUDE_MESSAGES_PROBE_MODEL,
-          max_tokens: 1,
-          messages: [{ role: 'user', content: 'ping' }],
-        }),
+      const probe = await probeAnthropicMessages(apiConfig, {
+        model: CLAUDE_MESSAGES_PROBE_MODEL,
         signal: AbortSignal.timeout(CLAUDE_TEST_TIMEOUT_MS),
       });
-      const text = await messagesRes.text();
-      try {
-        messagesParsed = JSON.parse(text);
-      } catch {
-        /* non-JSON response */
-      }
+      messagesRes = probe.response;
+      messagesParsed = probe.data ?? probe.error;
     } catch (err) {
       messagesErrorDetail =
         err?.name === 'TimeoutError' || err?.name === 'AbortError'

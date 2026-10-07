@@ -1,7 +1,6 @@
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { variantLabel } from '@baguette/shared/model-variants.js';
 import { parseModelField } from './models.js';
-
-const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
 
 /** Short label for a user message's model + optional Cursor variant. */
 export function messageModelLabel({ model, modelParams, models }) {
@@ -25,7 +24,7 @@ export function messageModelLabel({ model, modelParams, models }) {
 
 /** Light subtitle for a review issue: SDK · model · variant. */
 export function issueAgentSubtitle({ agent_sdk, model, model_params, models }) {
-  const sdkLabel = agent_sdk ? (SDK_LABELS[agent_sdk] ?? agent_sdk) : null;
+  const sdkLabel = agent_sdk ? formatAgentSdkDisplayName(agent_sdk) : null;
   const modelLabel = messageModelLabel({ model, modelParams: model_params, models });
   const parts = [sdkLabel, modelLabel].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;

@@ -5,7 +5,11 @@ import { getAllowedCommandsFromUser } from '../agent-settings.js';
 import { buildReviewSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveReviewPrompt } from '../effective-user-prompts.js';
 import { combinePromptExtensions } from '../../../shared/agent-prompts.js';
-import { buildReviewerMcpServer, buildReviewerCursorCustomTools } from '../baguette-mcp-server.js';
+import {
+  buildReviewerMcpServer,
+  buildReviewerCursorCustomTools,
+  buildReviewerPiCustomTools,
+} from '../baguette-mcp-server.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { gitCommitCountSince } from '../github.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
@@ -155,6 +159,19 @@ export class SessionReviewService {
     });
   }
 
+  async buildPiReviewAgentOptions(session, { model, continuation = false, extraPrompt } = {}) {
+    const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
+    const turnAgent = reviewTurnAgentMetadata('pi', { model });
+    const piAgent = this.app.service('pi-agent');
+    return await piAgent.buildAgentOptions(session, {
+      model: model || session.review_model || session.model,
+      channel: 'review',
+      customTools: buildReviewerPiCustomTools(session, this.app, turnAgent),
+      storedPiSessionId: continuation ? session.review_pi_session_id : null,
+      appendSystemPrompt: systemPrompt ? [systemPrompt] : [],
+    });
+  }
+
   async buildCursorReviewAgentOptions(
     session,
     { model, modelParams, continuation = false, extraPrompt } = {}
@@ -237,6 +254,7 @@ export class SessionReviewService {
           review_model_params: modelParams ?? null,
           review_claude_session_id: null,
           review_cursor_agent_id: null,
+          review_pi_session_id: null,
           review_initial_prompt: reviewInitialPromptFromStartData(data),
         },
         { user: { id: session.user_id } }
@@ -387,6 +405,7 @@ export class SessionReviewService {
       {
         review_claude_session_id: null,
         review_cursor_agent_id: null,
+        review_pi_session_id: null,
         review_status: null,
         last_reviewed_commit_sha: null,
         review_initial_prompt: null,
@@ -515,6 +534,9 @@ export class SessionReviewService {
     const key = reviewTurnKey(sessionId);
     await this.app.service('claude-agent').stopTurn(key);
     await this.app.service('cursor-agent').stopTurn(key);
+    if ('pi-agent' in this.app.services) {
+      await this.app.service('pi-agent').stopTurn(key);
+    }
   }
 
   async resumeInterrupted() {
@@ -551,7 +573,11 @@ export class SessionReviewService {
     }
     const sdk = reviewSdk(session);
     const resumable =
-      sdk === 'cursor' ? !!session.review_cursor_agent_id : !!session.review_claude_session_id;
+      sdk === 'cursor'
+        ? !!session.review_cursor_agent_id
+        : sdk === 'pi'
+          ? !!session.review_pi_session_id
+          : !!session.review_claude_session_id;
     if (!resumable) {
       await this._persistStatus(session, 'Server restarted — review could not be resumed');
       await this._patchReviewStatus(session, 'failed');

@@ -43,7 +43,9 @@ import type {
   DbLike,
   MessageChannel,
   MessageRowLike,
+  TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
+import { claudeTiedSessionLoopCompaction } from './loop-compaction.ts';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
 
@@ -1082,6 +1084,10 @@ Task: ${initialPrompt}`;
     );
   }
 
+  async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
+    await claudeTiedSessionLoopCompaction(this.app, args);
+  }
+
   // Required by @feathersjs/express to recognise this as a Feathers service
   // rather than Express middleware.
   async get(id: number) {
@@ -1103,6 +1109,7 @@ export function registerClaudeAgentService(app: AgentApp, path = 'claude-agent')
       'runTurn',
       'buildQueryOptions',
       'syncSessionSettingsFromPatch',
+      'prepareTiedSessionLoopCompaction',
     ],
   });
 }

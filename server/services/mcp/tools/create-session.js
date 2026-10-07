@@ -36,7 +36,7 @@ export function createCreateSessionTool(ctx) {
         .describe('Start a global session in the shared repos folder (no git/PR tools)'),
       initial_prompt: z.string().describe('Initial user prompt for the agent'),
       agent_sdk: z
-        .enum(['claude', 'cursor'])
+        .enum(['claude', 'cursor', 'pi'])
         .optional()
         .describe('Agent SDK (default: Settings → Agent, else claude)'),
       model: z
@@ -136,6 +136,11 @@ export function createCreateSessionTool(ctx) {
         const models = await loadModelsForSdk(fullUser, 'claude', repoWithKeys);
         if (!models.some((m) => m.id === model)) {
           return fail(`Unknown claude model "${model}". Call ListModels first.`);
+        }
+      } else if (agent_sdk === 'pi' && model) {
+        const models = await loadModelsForSdk(fullUser, 'pi', repoWithKeys);
+        if (!models.some((m) => m.id === model)) {
+          return fail(`Unknown pi model "${model}". Call ListModels first.`);
         }
       }
 

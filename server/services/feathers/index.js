@@ -8,6 +8,7 @@ import { registerReposService } from './repos.service.js';
 import { registerUserReposService } from './user-repos.service.js';
 import { registerClaudeAgentService } from './claude-agent.service.ts';
 import { registerCursorAgentService } from './cursor-agent.service.ts';
+import { registerPiAgentService } from './pi-agent.service.ts';
 import { registerPluginsService } from './plugins.service.js';
 import { registerSlackService } from './slack.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
@@ -26,6 +27,7 @@ export function registerFeathersServices(app, sseManager) {
   registerQueuedMessagesService(app);
   registerClaudeAgentService(app);
   registerCursorAgentService(app);
+  registerPiAgentService(app);
   registerTasksService(app);
   registerSecretsService(app);
   registerUsersService(app);

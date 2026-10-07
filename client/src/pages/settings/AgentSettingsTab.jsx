@@ -9,6 +9,8 @@ import AgentSessionDefaultsSection from './AgentSessionDefaultsSection.jsx';
 import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
 import AgentTestButton from '../../components/AgentTestButton.jsx';
 import ClaudeAuthFields from '../../components/ClaudeAuthFields.jsx';
+import PiAuthFields from '../../components/PiAuthFields.jsx';
+import { effectivePiApiKeyEnvVar } from '@baguette/shared/pi-api-key-env-vars.js';
 import {
   SettingsSection,
   SettingsTabHeader,
@@ -22,9 +24,11 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
   const [claudeRepoId, setClaudeRepoId] = useState('');
   const [cursorRepoId, setCursorRepoId] = useState('');
+  const [piRepoId, setPiRepoId] = useState('');
 
   // Claude field state lives inside ClaudeAuthFields; it reports the pending patch here.
   const [claudeChange, setClaudeChange] = useState({ patch: {}, hasChanges: false });
+  const [piChange, setPiChange] = useState({ patch: {}, hasChanges: false });
   const [cursorApiKey, setCursorApiKey] = useState(null);
   const [cursorApiKeyDirty, setCursorApiKeyDirty] = useState(false);
 
@@ -32,6 +36,8 @@ export default function AgentSettingsTab({ settings, onSave }) {
   const [claudeSaved, setClaudeSaved] = useState(false);
   const [cursorSaving, setCursorSaving] = useState(false);
   const [cursorSaved, setCursorSaved] = useState(false);
+  const [piSaving, setPiSaving] = useState(false);
+  const [piSaved, setPiSaved] = useState(false);
 
   const repoById = useCallback((id) => repos.find((r) => String(r.id) === String(id)), [repos]);
 
@@ -70,6 +76,30 @@ export default function AgentSettingsTab({ settings, onSave }) {
       toastError('Failed to save Claude settings', err);
     } finally {
       setClaudeSaving(false);
+    }
+  };
+
+  const handleSavePi = async () => {
+    if (!user?.id) return;
+    const { patch: piPatch, hasChanges } = piChange;
+    if (!hasChanges || !Object.keys(piPatch).length) return;
+    setPiSaving(true);
+    setPiSaved(false);
+    try {
+      if (!piRepoId) {
+        const updated = await usersService.patch(user.id, piPatch);
+        onSave(updated);
+      } else {
+        const r = repoById(piRepoId);
+        if (!r?.user_repo_id) throw new Error('Repository not linked');
+        await userReposService.patch(r.user_repo_id, piPatch);
+        await refetchRepos();
+      }
+      flashSaved(setPiSaved);
+    } catch (err) {
+      toastError('Failed to save Pi settings', err);
+    } finally {
+      setPiSaving(false);
     }
   };
 
@@ -112,12 +142,15 @@ export default function AgentSettingsTab({ settings, onSave }) {
   const cursorMasked = cursorRepoId
     ? repoById(cursorRepoId)?.cursor_api_key
     : settings?.cursor_api_key;
+  const piScopeRepo = piRepoId ? repoById(piRepoId) : null;
+  const piMasked = piScopeRepo?.pi_api_key ?? settings?.pi_api_key ?? null;
+  const piSavedEnvVar = effectivePiApiKeyEnvVar(settings ?? {}, piScopeRepo);
 
   return (
     <div>
       <SettingsTabHeader title="Agent">
-        Session default agent and Cursor model preferences (account-wide), then Claude and Cursor
-        credentials scoped to all my repos or a single repository. System prompts live under
+        Session default agent and Cursor model preferences (account-wide), then Claude, Cursor, and
+        Pi credentials scoped to all my repos or a single repository. System prompts live under
         Prompts.
       </SettingsTabHeader>
 
@@ -206,6 +239,38 @@ export default function AgentSettingsTab({ settings, onSave }) {
             saved={cursorSaved}
             onSave={handleSaveCursor}
             disabled={!cursorApiKeyDirty}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Pi"
+          headerAside={
+            <RepoScopeAside
+              id="pi-repo-scope"
+              value={piRepoId}
+              onChange={setPiRepoId}
+              repos={repos}
+            />
+          }
+        >
+          <PiAuthFields
+            key={`pi-auth-${piRepoId || 'all'}`}
+            maskedApiKey={piMasked}
+            savedEnvVar={piSavedEnvVar}
+            repoId={piRepoId || null}
+            perRepoHint
+            onChange={(patch, hasChanges) => setPiChange({ patch, hasChanges })}
+          />
+          <AgentSdkModelsSection
+            key={`pi-models-${piRepoId || 'all'}-${piMasked ? '1' : '0'}`}
+            sdk="pi"
+            credentialConfigured={Boolean(piMasked)}
+          />
+          <SettingsSaveRow
+            saving={piSaving}
+            saved={piSaved}
+            onSave={handleSavePi}
+            disabled={!piChange.hasChanges}
           />
         </SettingsSection>
       </div>

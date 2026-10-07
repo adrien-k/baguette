@@ -7,7 +7,7 @@ export function createListModelsTool(ctx) {
   return {
     name: 'ListModels',
     description:
-      'List agent models grouped by SDK (claude, cursor), including session usage counts. Only SDKs with a configured API key (account or, when repo_id is set, repository) are included. Prefer models with higher session_count.',
+      'List agent models grouped by SDK (claude, cursor, pi), including session usage counts. Only SDKs with a configured API key (account or, when repo_id is set, repository) are included. Prefer models with higher session_count.',
     schema: {
       repo_id: z
         .number()

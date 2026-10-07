@@ -19,7 +19,7 @@ export const loopPatchSchema = {
   auto_push: z.boolean().optional(),
   plan_mode: z.boolean().optional(),
   single_session: z.boolean().optional(),
-  agent_sdk: z.enum(['claude', 'cursor']).optional(),
+  agent_sdk: z.enum(['claude', 'cursor', 'pi']).optional(),
   model: z.string().optional(),
   model_params: z.string().optional(),
   plugins: z.array(z.string()).optional(),

@@ -1,6 +1,7 @@
 import { getGithubToken } from '../../agent-settings.js';
 import { resolveDataDirRelativePath } from '../../../config.js';
 import { fail } from './result.js';
+import { formatAgentSdkDisplayName } from '../../../../shared/agent-sdk-display.js';
 
 /**
  * Context shared by repo-session MCP tools (git, PR, tasks, config, etc.).
@@ -23,9 +24,9 @@ export function createSessionAgentContext(session, app, { slackApps = [] } = {})
     return getGithubToken(user);
   };
 
-  /** "Claude claude-opus-5" — the agent identity shown wherever baguette posts on a user's behalf. */
+  /** e.g. "Pi glm-5.3-flash" — agent identity wherever Baguette posts on a user's behalf. */
   const describeAgent = (s) => {
-    const agentName = s?.agent_sdk === 'cursor' ? 'Cursor' : 'Claude';
+    const agentName = formatAgentSdkDisplayName(s?.agent_sdk);
     const modelId = (() => {
       const m = s?.model;
       if (!m) return null;

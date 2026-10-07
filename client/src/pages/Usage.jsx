@@ -8,9 +8,10 @@ import ActiveAgentsSection from '../components/ActiveAgentsSection.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from '../components/RepoDropdown.jsx';
 import { chipOptionClassName } from '../components/LightChipDropdown.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
+import { AGENT_MODEL_PRICING_DOC_URL } from '@baguette/shared/agent-model-pricing.js';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import {
   KIND_LABELS,
-  SDK_LABELS,
   USAGE_DAY_OPTIONS,
   aggregateUsage,
   formatTokens,
@@ -122,6 +123,16 @@ export default function Usage() {
           <h1 className="text-xl sm:text-2xl font-bold text-fg">Usage</h1>
           <p className="text-sm text-fg-muted mt-1 max-w-2xl">
             Token activity across your sessions. Click a day on the timeline to zoom the table.
+            Cursor and Pi costs are estimated from{' '}
+            <a
+              href={AGENT_MODEL_PRICING_DOC_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              public model list prices
+            </a>{' '}
+            (see <code className="text-xs">shared/agent-model-pricing.js</code> in the repo).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -152,6 +163,9 @@ export default function Usage() {
           </FilterChip>
           <FilterChip active={sdk === 'cursor'} onClick={() => setFilter({ sdk: 'cursor' })}>
             Cursor
+          </FilterChip>
+          <FilterChip active={sdk === 'pi'} onClick={() => setFilter({ sdk: 'pi' })}>
+            Pi
           </FilterChip>
         </div>
         <div className="flex items-center gap-1.5">
@@ -195,7 +209,7 @@ export default function Usage() {
           value={loading ? '…' : showCost ? formatUsd(totals.cost_usd) : '—'}
           hint={
             showCost
-              ? 'Claude billed; Cursor estimated from pricing table'
+              ? 'Claude billed; Cursor & Pi estimated from agent pricing table'
               : 'No billed cost in this range'
           }
         />
@@ -286,7 +300,7 @@ export default function Usage() {
                         </td>
                       )}
                       <td className="px-3 py-2.5 text-fg-muted">
-                        {SDK_LABELS[row.agent_sdk] ?? row.agent_sdk}
+                        {formatAgentSdkDisplayName(row.agent_sdk)}
                       </td>
                       <td className="px-3 py-2.5 text-fg-muted">
                         {KIND_LABELS[row.kind] ?? row.kind}

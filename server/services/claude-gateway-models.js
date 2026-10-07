@@ -1,4 +1,6 @@
 import * as cache from '../lib/cache.js';
+import { listAnthropicApiModels } from '../lib/anthropic-api/models.js';
+import { anthropicApiAuthHeaders } from '../lib/anthropic-api/client.js';
 import { listModels, modelsCacheKey } from './anthropic-models.js';
 import { normalizeAnthropicBaseUrl } from './session-env.js';
 
@@ -9,10 +11,7 @@ const GATEWAY_MODELS_CACHE_TTL = 60 * 60; // 1 hour
  * Bearer for auth-token credentials, x-api-key for Console API keys.
  */
 export function gatewayAuthHeaders({ apiKey, authToken } = {}) {
-  const headers = { 'anthropic-version': '2023-06-01' };
-  if (authToken) headers.Authorization = `Bearer ${authToken}`;
-  else if (apiKey) headers['x-api-key'] = apiKey;
-  return headers;
+  return anthropicApiAuthHeaders({ apiKey, authToken });
 }
 
 /** Effective Claude gateway config (repo overrides account) from plaintext rows. */
@@ -53,25 +52,14 @@ export async function listGatewayModels(config, { refresh = false } = {}) {
   if (!base) throw new Error('Gateway model discovery requires a Claude API base URL');
   const cacheKey = modelsCacheKey(base);
   if (refresh) await cache.clear(cacheKey);
-  return cache.fetch(cacheKey, GATEWAY_MODELS_CACHE_TTL, async () => {
-    const res = await fetch(`${base}/v1/models?limit=100`, {
-      headers: gatewayAuthHeaders(config),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Gateway model list failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
-    }
-    const json = await res.json();
-    const data = Array.isArray(json?.data) ? json.data : [];
-    const models = data
-      .map((m) => ({
-        id: m.id ?? m.name,
-        display_name: m.display_name ?? m.name ?? m.id,
-        description: null,
-      }))
-      .filter((m) => typeof m.id === 'string' && m.id);
-    if (!models.length) throw new Error('Gateway returned no models');
-    return models;
-  });
+  return cache.fetch(cacheKey, GATEWAY_MODELS_CACHE_TTL, async () =>
+    listAnthropicApiModels(
+      {
+        baseUrl: base,
+        apiKey: config.apiKey,
+        authToken: config.authToken,
+      },
+      { limit: 100 }
+    )
+  );
 }

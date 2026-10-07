@@ -60,6 +60,8 @@ export type AgentSessionRow = {
   review_claude_session_id?: string | null;
   cursor_agent_id?: string | null;
   review_cursor_agent_id?: string | null;
+  pi_session_id?: string | null;
+  review_pi_session_id?: string | null;
   active_chat_turn_id?: number | null;
   active_review_turn_id?: number | null;
   cursor_api_key?: string | null;
@@ -72,3 +74,15 @@ export type MessageRowLike = SessionMessageRow & {
   /** Cursor steering flag (queued flushes mark rows forced into the active turn). */
   force?: boolean;
 };
+
+export type TiedSessionLoopCompactionArgs = {
+  sessionId: number;
+  promptMessageJson: string;
+  identity: Record<string, unknown>;
+  userParams: { user: { id: number } };
+};
+
+/** Agent service hook: start a tied-session loop iteration (compact or re-prompt). */
+export interface AgentLoopCompactionService {
+  prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void>;
+}

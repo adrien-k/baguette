@@ -16,12 +16,13 @@ import {
   resolveVariantForStoredParams,
 } from '../utils/models.js';
 import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
-import { hasCursorModelPricing } from '@baguette/shared/cursor-model-pricing.js';
+import { hasAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
 import {
   AGENT_SDK_IDS,
   agentSdkCredentialTooltip,
   hasAgentSdkCredential,
 } from '@baguette/shared/agent-sdk-credentials.js';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
 function parseModelParams(params) {
@@ -37,15 +38,13 @@ function parseModelParams(params) {
   return null;
 }
 
-const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
-
 const AUTO_PUSH_TOOLTIP =
   'Disable auto-push to avoid pushing every agent commit and spare CI cycles.';
 
 function AgentSubmenu({ options, value, onChange, disabled = false }) {
   const [open, setOpen] = useState(false);
   const current = options.find((o) => o.value === value);
-  const currentLabel = current?.label ?? SDK_LABELS[value] ?? value ?? 'Agent';
+  const currentLabel = current?.label ?? (value ? formatAgentSdkDisplayName(value) : 'Agent');
 
   return (
     <div className="relative border-b border-strong">
@@ -149,6 +148,8 @@ export default function SessionModelSelect({
   className = '',
 }) {
   const isCursor = sdk === 'cursor';
+  const isPi = sdk === 'pi';
+  const usesAgentPricingTable = isCursor || isPi;
   const selectedModelId = model || null;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
   const variants = useMemo(() => selectedModelObj?.variants ?? [], [selectedModelObj]);
@@ -162,7 +163,8 @@ export default function SessionModelSelect({
     selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
 
   const pricingKnown =
-    !isCursor || (selectedModelId && hasCursorModelPricing(selectedModelId, currentParams));
+    !usesAgentPricingTable ||
+    (selectedModelId && hasAgentModelPricing(selectedModelId, currentParams));
 
   const modelOptions = useMemo(() => {
     const opts = models.map((m) => ({ value: m.id, label: m.display_name }));
@@ -178,7 +180,7 @@ export default function SessionModelSelect({
         const configured = hasAgentSdkCredential(sdk, userSettings, sdkRepo);
         return {
           value: sdk,
-          label: SDK_LABELS[sdk] ?? sdk,
+          label: formatAgentSdkDisplayName(sdk),
           disabled: !configured,
           title: configured ? undefined : agentSdkCredentialTooltip(sdk),
         };
@@ -186,7 +188,7 @@ export default function SessionModelSelect({
     }
     return (availableSdks ?? []).map((sdk) => ({
       value: sdk,
-      label: SDK_LABELS[sdk] ?? sdk,
+      label: formatAgentSdkDisplayName(sdk),
     }));
   }, [userSettings, sdkRepo, availableSdks]);
 
@@ -334,10 +336,10 @@ export default function SessionModelSelect({
           </Tooltip>
         )}
       </div>
-      {isCursor && selectedModelId && !pricingKnown && (
+      {usesAgentPricingTable && selectedModelId && !pricingKnown && (
         <p
           className="pointer-events-none absolute left-0 right-0 top-full z-10 truncate text-[11px] leading-tight text-accent/85"
-          title="This model is not in Baguette's Cursor pricing table, so token usage will not be converted to an estimated cost."
+          title="This model is not in Baguette's agent model pricing table, so token usage will not be converted to an estimated cost."
         >
           No pricing data for this model — session cost will not be estimated.
         </p>

@@ -13,6 +13,7 @@ import { resolveDefaultAgent, withLastUsedFlag } from '../../services/agent-sess
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
+import { validatePiApiKeyEnvVarPatch } from './validate-pi-patch.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -140,6 +141,7 @@ const encryptUserSecrets = encryptFields({
   anthropic_api_key: 'anthropic_api_key_encrypted',
   anthropic_auth_token: 'anthropic_auth_token_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
+  pi_api_key: 'pi_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
 });
 
@@ -149,6 +151,7 @@ const decryptUserSecrets = decryptFields({
   anthropic_api_key: 'anthropic_api_key_encrypted',
   anthropic_auth_token: 'anthropic_auth_token_encrypted',
   cursor_api_key: 'cursor_api_key_encrypted',
+  pi_api_key: 'pi_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
 });
 
@@ -175,6 +178,7 @@ export const usersHooks = {
       normalizeAnthropicBaseUrlPatch,
       normalizeClaudeFieldsPatch,
       normalizeCursorModelPrefsPatch,
+      validatePiApiKeyEnvVarPatch,
       encryptUserSecrets,
     ],
     patch: [
@@ -183,6 +187,7 @@ export const usersHooks = {
       normalizeAnthropicBaseUrlPatch,
       normalizeClaudeFieldsPatch,
       normalizeCursorModelPrefsPatch,
+      validatePiApiKeyEnvVarPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,
     ],

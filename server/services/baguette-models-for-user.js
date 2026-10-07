@@ -2,6 +2,7 @@ import db from '../db.js';
 import { resolveAgentSdkKeys } from '../../shared/agent-sdk-credentials.js';
 import { listClaudeModels, resolveClaudeGatewayConfig } from './claude-gateway-models.js';
 import { listCursorModels } from './cursor-models.js';
+import { listPiModelsForUser } from './pi-models.js';
 import { parseCursorModelPrefsJson } from './agent-preferences.js';
 
 function parseSessionModelId(modelField) {
@@ -81,6 +82,19 @@ export async function listModelsForUser(user, repo = null) {
     }
   }
 
+  if (keys.pi_api_key) {
+    const models = await listPiModelsForUser(user, repo);
+    for (const m of models) {
+      const sessionCount = usage.get(`pi:${m.id}`) ?? 0;
+      entries.push({
+        sdk: 'pi',
+        id: m.id,
+        display_name: m.display_name ?? m.id,
+        session_count: sessionCount,
+      });
+    }
+  }
+
   entries.sort((a, b) => b.session_count - a.session_count);
 
   return {
@@ -89,13 +103,13 @@ export async function listModelsForUser(user, repo = null) {
     hint:
       entries.length > 0
         ? 'Models are sorted by how often you have used them in sessions (highest first). Prefer models with higher session_count when unsure.'
-        : 'No models available — add an Anthropic or Cursor API key in Settings → Agent, or per-repository keys in repository settings.',
+        : 'No models available — add an Anthropic, Cursor, or Pi API key in Settings → Agent, or per-repository keys in repository settings.',
   };
 }
 
 /**
  * @param {object} user
- * @param {'cursor'|'claude'} agentSdk
+ * @param {'cursor'|'claude'|'pi'} agentSdk
  * @param {Record<string, unknown> | null | undefined} [repo]
  */
 export async function loadModelsForSdk(user, agentSdk, repo = null) {
@@ -103,6 +117,10 @@ export async function loadModelsForSdk(user, agentSdk, repo = null) {
   if (agentSdk === 'cursor') {
     if (!keys.cursor_api_key) return [];
     return listCursorModels(keys.cursor_api_key);
+  }
+  if (agentSdk === 'pi') {
+    if (!keys.pi_api_key) return [];
+    return listPiModelsForUser(user, repo);
   }
   if (!keys.anthropic_api_key && !keys.anthropic_auth_token) return [];
   return listClaudeModelsForUser(user, repo);

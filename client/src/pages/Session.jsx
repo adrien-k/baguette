@@ -38,6 +38,7 @@ import {
   sessionNeedsLastViewedUpdate,
 } from '@baguette/shared/session-unread.js';
 import { applyTodoWriteCollapse } from '@baguette/shared/todo-write-display.js';
+import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
@@ -581,9 +582,7 @@ export default function Session() {
 
   useEffect(() => {
     if (!session) return;
-    const url =
-      session.agent_sdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
-    apiFetch(url)
+    apiFetch(settingsModelsUrl(session.agent_sdk))
       .then((d) => setModels(d.models || []))
       .catch(() => {});
   }, [session?.agent_sdk]); // eslint-disable-line react-hooks/exhaustive-deps

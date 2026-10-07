@@ -15,6 +15,8 @@ import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import {
   builderMessageCreateFields,
@@ -159,9 +161,7 @@ export default function ReviewView({
 
   useEffect(() => {
     setModels([]);
-    const url =
-      reviewAgentSdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
-    apiFetch(url)
+    apiFetch(settingsModelsUrl(reviewAgentSdk))
       .then((d) => setModels(d.models || []))
       .catch(() => setModels([]));
   }, [reviewAgentSdk]);
@@ -506,7 +506,7 @@ export default function ReviewView({
           <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6 space-y-4`}>
             {userSettings && !hasSdkKey && (
               <Alert variant="alert">
-                Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                Add a {formatAgentSdkDisplayName(reviewAgentSdk)} API key in{' '}
                 <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
               </Alert>
             )}
@@ -556,7 +556,7 @@ export default function ReviewView({
             <div className="@container w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
-                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                  Add a {formatAgentSdkDisplayName(reviewAgentSdk)} API key in{' '}
                   <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
                 </Alert>
               )}

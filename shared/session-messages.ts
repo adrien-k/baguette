@@ -46,7 +46,7 @@ export type SessionMessageRow = {
   model?: string | null;
   model_params?: unknown;
   agent_type?: 'builder' | 'reviewer';
-  agent_sdk?: 'claude' | 'cursor' | null;
+  agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
   /** Raw SDK columns that survive on legacy rows (uuid, parent_tool_use_id, …). */
   [key: string]: unknown;
 };
@@ -66,7 +66,7 @@ export type MessageViewMeta = {
   tool_started_at?: string | null;
   tool_ended_at?: string | null;
   agent_type?: 'builder' | 'reviewer';
-  agent_sdk?: 'claude' | 'cursor' | null;
+  agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
 };
 
 /** Typed tool_call row view: the payload plus row meta (call_id lands here too). */

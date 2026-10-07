@@ -4,8 +4,9 @@
  * along whichever dimension is being shown, and into a coarser table.
  *
  * The graph defaults to tokens (reported by both SDKs). It can also plot `cost_usd`
- * when the user toggles to spend; Cursor rows get estimated cost from the pricing table.
+ * when the user toggles to spend; Cursor and Pi rows use estimated cost from the agent pricing table.
  */
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { repoDisplayName } from './repoDisplayName.js';
 
 /** The plotted metric. Rows written before the token columns existed count as 0. */
@@ -49,7 +50,6 @@ export function usageKindOf(row) {
 }
 
 export const KIND_LABELS = { session: 'Chat', review: 'Review' };
-export const SDK_LABELS = { claude: 'Claude', cursor: 'Cursor' };
 
 export function usageRepoLabel(fullName) {
   if (!fullName || fullName === '__global__') return 'Global';
@@ -206,7 +206,7 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
       }
       return `Other (${otherRepoCount} ${otherRepoCount === 1 ? 'repo' : 'repos'})`;
     }
-    if (dimension === 'sdk') return SDK_LABELS[key] ?? key;
+    if (dimension === 'sdk') return formatAgentSdkDisplayName(key);
     if (dimension === 'kind') return KIND_LABELS[key] ?? key;
     if (dimension === 'model') return usageModelLabel(key);
     return usageRepoLabel(key);

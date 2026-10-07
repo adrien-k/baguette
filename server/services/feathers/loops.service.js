@@ -6,6 +6,7 @@ import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-sche
 import logger from '../../logger.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
+import { agentServicePathForSdk } from './loop-compaction.ts';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -147,53 +148,13 @@ export class LoopsService extends KnexService {
     const turnModel = turnModelCreateFields(loop);
     const identity = sessionMessageIdentity(tied, 'builder', { ...loop, ...turnModel });
 
-    // Cursor has no compaction command, so its sessions just get the prompt again.
-    if (tied.agent_sdk === 'cursor') {
-      await this.app
-        .service('messages')
-        .create(
-          { session_id: tied.id, type: 'user', message_json: promptMessage, ...identity },
-          userParams
-        );
-      return { sessionId: tied.id };
-    }
-
-    // Queue the prompt before starting compaction, not after: `onTurnComplete` fires as soon as
-    // the compaction turn ends, and a fast (or failed) compaction would otherwise finish first
-    // and leave the prompt sitting in the queue until some unrelated turn released it.
-    const queued = await this.app
-      .service('queued-messages')
-      .create(
-        { session_id: tied.id, message_json: promptMessage, kind: 'turn', ...identity },
-        userParams
-      );
-    try {
-      await this.app.service('messages').create(
-        {
-          session_id: tied.id,
-          type: 'user',
-          subtype: 'baguette',
-          // `source: 'baguette'` makes the chat collapse this into a Baguette block rather than
-          // showing it as something the user typed.
-          message_json: JSON.stringify({
-            type: 'user',
-            source: 'baguette',
-            message: { role: 'user', content: '/compact' },
-            title: 'Loop run — compacting the conversation',
-          }),
-          ...identity,
-        },
-        userParams
-      );
-    } catch (err) {
-      // Nothing will release the queued prompt, so take it back out rather than let it surprise
-      // the user during their next turn.
-      await this.app
-        .service('queued-messages')
-        .remove(queued.id, userParams)
-        .catch(() => {});
-      throw err;
-    }
+    const agentPath = agentServicePathForSdk(tied.agent_sdk);
+    await this.app.service(agentPath).prepareTiedSessionLoopCompaction({
+      sessionId: tied.id,
+      promptMessageJson: promptMessage,
+      identity,
+      userParams,
+    });
     return { sessionId: tied.id };
   }
 }

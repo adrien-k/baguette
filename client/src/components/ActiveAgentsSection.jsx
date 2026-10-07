@@ -4,7 +4,8 @@ import { Bot } from 'lucide-react';
 import { useActiveAgents } from '../hooks/useActiveAgents.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { parseModelField } from '../utils/models.js';
-import { SDK_LABELS, usageRepoLabel } from '../utils/usageSeries.js';
+import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { usageRepoLabel } from '../utils/usageSeries.js';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
 
 const KIND_LABELS = { chat: 'Chat', review: 'Review' };
@@ -64,7 +65,7 @@ export default function ActiveAgentsSection({ id = 'active-agents' }) {
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs shrink-0 sm:justify-end sm:text-right">
                     <span className="text-fg-muted">{KIND_LABELS[agent.kind] ?? agent.kind}</span>
                     <span className="text-faint">
-                      {SDK_LABELS[agent.agent_sdk] ?? agent.agent_sdk ?? '—'}
+                      {agent.agent_sdk ? formatAgentSdkDisplayName(agent.agent_sdk) : '—'}
                     </span>
                     <span
                       className="text-fg-muted font-mono truncate max-w-[14rem] sm:max-w-md"

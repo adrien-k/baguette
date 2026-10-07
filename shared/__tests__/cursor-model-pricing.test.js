@@ -3,9 +3,12 @@ import {
   describeCursorModelPricing,
   estimateCursorTurnCostUsd,
   estimateCostUsdFromRates,
+  hasAgentModelPricing,
   hasCursorModelPricing,
+  lookupAgentModelPricing,
   lookupCursorModelPricing,
-} from '../cursor-model-pricing.js';
+  normalizeModelIdForPricing,
+} from '../agent-model-pricing.js';
 
 describe('cursor-model-pricing', () => {
   it('matches composer 2.5 fast vs non-fast', () => {
@@ -56,6 +59,11 @@ describe('cursor-model-pricing', () => {
       cacheRead: 0.26,
       output: 4.4,
     });
+    expect(lookupAgentModelPricing('glm-5.3-flash', [])).toEqual(
+      lookupCursorModelPricing('glm-5p3-flash', [])
+    );
+    expect(normalizeModelIdForPricing('glm-5.3-flash')).toBe('glm-5p3-flash');
+    expect(hasAgentModelPricing('glm-5.3-flash', [])).toBe(true);
     expect(lookupCursorModelPricing('glm-5p3-flash', [])).toEqual({
       input: 0.15,
       cacheWrite: null,

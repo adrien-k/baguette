@@ -1,7 +1,8 @@
 # Agent message mapping
 
-Baguette runs sessions against two SDKs — **Claude** (`@anthropic-ai/claude-agent-sdk`)
-and **Cursor** (`@cursor/sdk`). Each emits a different raw event stream with its own
+Baguette runs sessions against three SDKs — **Claude** (`@anthropic-ai/claude-agent-sdk`),
+**Cursor** (`@cursor/sdk`), and **Pi** (`@earendil-works/pi-coding-agent`). Each emits a
+different raw event stream with its own
 vocabulary, envelope shapes, and tool names. Everything in the chat, the dock, the
 diff viewer, the running-tool badges, and the agent-status footer reads from a
 single canonical typed vocabulary (`ToolCallKind`, `ToolCallPayload`, `MessageOp`).
@@ -11,9 +12,9 @@ The mapping from raw SDK events to that vocabulary is the focus of this page.
 
 ```mermaid
 flowchart LR
-  SDK["Raw SDK event<br/>(Claude or Cursor)"] -->
-  Loop["Stream turn<br/>claude-sdk-turn.ts / cursor-sdk-turn.ts"] -->
-  Mapper["mapClaudeMessage / mapCursorEvent<br/>(per-provider MessageOp)"] -->
+  SDK["Raw SDK event<br/>(Claude, Cursor, or Pi)"] -->
+  Loop["Stream turn<br/>*-sdk-turn.ts"] -->
+  Mapper["mapClaudeMessage / mapCursorEvent / mapPiEvent<br/>(per-provider MessageOp)"] -->
   Writer["MessageStreamWriter.apply(op)<br/>(provider-agnostic)"] -->
   Builder["builders.buildToolCallStart / Complete<br/>(per-provider, injected)"] -->
   Row["Typed tool_call row<br/>kind + canonical name + args + result"]
@@ -35,9 +36,10 @@ Owns the SDK-specific event source.
   place, alongside its Cursor counterpart.
 - **`cursor/cursor-sdk-turn.ts`** — `processCursorRunStream`. Same shape, for the
   Cursor SDK.
+- **`pi/pi-sdk-turn.ts`** — `processPiSessionStream`. Same shape, for the Pi coding agent.
 
 These files import the SDK types directly (`@anthropic-ai/claude-agent-sdk`,
-`@cursor/sdk`). Nothing else under `server/services/` does.
+`@cursor/sdk`, `@earendil-works/pi-coding-agent`). Nothing else under `server/services/` does.
 
 ### Event → `MessageOp` mapping — `server/services/{claude,cursor}/*.mapping.ts`
 
@@ -45,6 +47,7 @@ Translates one raw SDK event into one or more provider-neutral operations.
 
 - **`claude-mapping.ts` → `mapClaudeMessage(sdkMsg): MessageOp[]`**
 - **`cursor-mapping.ts` → `mapCursorEvent(sdkMsg): MessageOp[]`**
+- **`pi-mapping.ts` → `mapPiEvent(sdkMsg): MessageOp[]`**
 
 `MessageOp` is the discriminated union in `shared/message-types.ts`. Variants
 include `assistant_text`, `tool_start`, `tool_result`, `thinking_tokens`,

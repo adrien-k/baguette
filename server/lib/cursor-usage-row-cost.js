@@ -1,12 +1,12 @@
 import {
-  estimateCursorTurnCostUsd,
+  estimateAgentTurnCostUsd,
   parseModelParamsJson,
-} from '../../shared/cursor-model-pricing.js';
+} from '../../shared/agent-model-pricing.js';
 import { parseCursorRawTokenUsage } from '../../shared/cursor-token-adjustment.js';
 
 /**
- * USD estimate for a Cursor `usage` row (or live turn tokens) using session model snapshots.
- * Mirrors `sessions.recordCursorUsage` / pricing recompute so recomputes match new turns.
+ * USD estimate for a Cursor/Pi `usage` row (or live turn tokens) using session model snapshots.
+ * Mirrors `sessions.recordCursorUsage` / `recordPiUsage` so recomputes match new turns.
  *
  * `input_tokens` on the row is already derived from `raw_token_usage` for Cursor; see
  * `shared/cursor-token-adjustment.js`.
@@ -28,7 +28,7 @@ export function estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel
   const paramsJson =
     turnModel?.model != null && turnModel.model !== '' ? turnModel.modelParams : sessionParamsJson;
 
-  const priced = estimateCursorTurnCostUsd(turnUsage, modelId, parseModelParamsJson(paramsJson));
+  const priced = estimateAgentTurnCostUsd(turnUsage, modelId, parseModelParamsJson(paramsJson));
   return priced ?? 0;
 }
 

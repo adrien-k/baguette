@@ -8,6 +8,10 @@ import { feathers } from '@feathersjs/feathers';
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerLoopsService } from '../feathers/loops.service.js';
+import {
+  claudeTiedSessionLoopCompaction,
+  directPromptTiedSessionLoopCompaction,
+} from '../feathers/loop-compaction.ts';
 
 const sessionsCreate = vi.fn(async (data) => ({ id: 77, ...data }));
 const usersGet = vi.fn(async (id) => ({ id, access_token: 'gh-token' }));
@@ -31,6 +35,27 @@ function makeApp(db) {
     'queued-messages',
     { create: queuedCreate, remove: queuedRemove },
     { methods: ['create', 'remove'] }
+  );
+  app.use(
+    'claude-agent',
+    {
+      prepareTiedSessionLoopCompaction: (args) => claudeTiedSessionLoopCompaction(app, args),
+    },
+    { methods: ['prepareTiedSessionLoopCompaction'] }
+  );
+  app.use(
+    'cursor-agent',
+    {
+      prepareTiedSessionLoopCompaction: (args) => directPromptTiedSessionLoopCompaction(app, args),
+    },
+    { methods: ['prepareTiedSessionLoopCompaction'] }
+  );
+  app.use(
+    'pi-agent',
+    {
+      prepareTiedSessionLoopCompaction: (args) => directPromptTiedSessionLoopCompaction(app, args),
+    },
+    { methods: ['prepareTiedSessionLoopCompaction'] }
   );
   registerLoopsService(app);
   return app;
@@ -528,6 +553,18 @@ describe('Loops service', (hooks) => {
     it('sends only the prompt for a cursor session, which has no compaction', async () => {
       const sessionId = await seedSession({ agent_sdk: 'cursor' });
       const loop = await makeDueSingleSessionLoop({ agent_sdk: 'cursor' });
+      await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+
+      await app.service('loops').runDue();
+
+      expect(queuedCreate).not.toHaveBeenCalled();
+      expect(messagesCreate).toHaveBeenCalledOnce();
+      expect(sentContent(messagesCreate)).toBe('Check the dependencies');
+    });
+
+    it('sends only the prompt for a pi session (no /compact)', async () => {
+      const sessionId = await seedSession({ agent_sdk: 'pi' });
+      const loop = await makeDueSingleSessionLoop({ agent_sdk: 'pi' });
       await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
 
       await app.service('loops').runDue();

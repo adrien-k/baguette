@@ -10,6 +10,7 @@ import { apiFetch } from '../api.js';
 import { usersService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
+import { settingsModelsUrl } from '@baguette/shared/settings-models-url.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
@@ -267,8 +268,7 @@ export default function BuilderForm({
   }, [isGlobal, sessionStartMode]);
 
   const loadModels = (sdk) => {
-    const getUrl = sdk === 'cursor' ? '/api/settings/models?sdk=cursor' : '/api/settings/models';
-    return apiFetch(getUrl)
+    return apiFetch(settingsModelsUrl(sdk))
       .then((d) => {
         // Drop a response for a previous SDK when the user switched mid-flight.
         if (modelsSdkRef.current !== sdk) return;
