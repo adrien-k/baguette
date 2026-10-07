@@ -37,7 +37,7 @@ beforeEach(async () => {
   const [repoId] = await db('repos').insert({
     full_name: 'alice/myrepo',
     stripped_name: 'alice-myrepo',
-    bare_path: '/nonexistent',
+    repo_path: '/nonexistent',
   });
   repo = await db('repos').where({ id: repoId }).first();
 
@@ -140,7 +140,7 @@ describe('UserRepos service - patch (encrypt + mask)', () => {
     const [repo2Id] = await db('repos').insert({
       full_name: 'alice/other',
       stripped_name: 'alice-other',
-      bare_path: '/nonexistent2',
+      repo_path: '/nonexistent2',
     });
     await db('user_repos').insert({ user_id: user1.id, repo_id: repo2Id });
 

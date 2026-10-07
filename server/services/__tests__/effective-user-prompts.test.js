@@ -24,7 +24,7 @@ describe('effective-user-prompts', () => {
     const [rid] = await db('repos').insert({
       full_name: 'o/r',
       stripped_name: 'o-r',
-      bare_path: '/tmp/r',
+      repo_path: '/tmp/r',
     });
     repoId = rid;
     await db('user_repos').insert({

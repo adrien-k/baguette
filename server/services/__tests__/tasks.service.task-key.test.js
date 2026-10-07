@@ -52,7 +52,7 @@ describe('Tasks service — task_key resolution', (hooks) => {
     await db('users').insert({ github_id: 1001, username: 'alice', approved: true });
     userId = (await db('users').where({ username: 'alice' }).first()).id;
 
-    await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+    await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     const repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
 
     [sessionId] = await db('sessions').insert({

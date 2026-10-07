@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { REPOS_DIR, resolveDataDirRelativePath } from '../config.js';
+import { REPOS_DIR, resolveRepoPath, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
 import {
   buildLogRangeHeader,
@@ -212,11 +212,11 @@ export function clearBranchesCache(scope) {
  * Ensures a bare clone of the repo exists on disk. If already cloned, returns
  * the barePath immediately. Otherwise clones from GitHub. Returns the barePath.
  *
- * @param {object} repo - { full_name, stripped_name, bare_path? }
+ * @param {object} repo - { full_name, stripped_name, repo_path? }
  * @param {string} token
  */
 export async function ensureBareClone(repo, token) {
-  const barePath = repo.bare_path || barePathForStripped(repo.stripped_name);
+  const barePath = resolveRepoPath(repo) ?? barePathForStripped(repo.stripped_name);
 
   try {
     await fs.promises.access(barePath);
@@ -246,7 +246,7 @@ export async function ensureBareClone(repo, token) {
 
 /**
  * Initialize a brand-new local git repo with an empty initial commit.
- * Returns the repo path (same convention as bare_path).
+ * Returns the repo path (same convention as repo_path).
  */
 export async function initLocalRepo(strippedName) {
   const repoPath = barePathForStripped(strippedName);
@@ -334,7 +334,10 @@ async function isLinkedWorktree(worktreePath) {
 /** @param {{ baseBranch?: string, detach?: boolean, localBranch?: string }} [opts] — `detach` defaults to true (false checks out `branch` in the new worktree). `localBranch` creates a unique local ref instead of checking out `branch`. */
 export async function createWorktree(repo, branch, worktreeId, token, opts = {}) {
   const { baseBranch, detach = true, localBranch = null } = opts;
-  const barePath = repo.bare_path;
+  const barePath = resolveRepoPath(repo);
+  if (!barePath) {
+    throw new Error(`Repository "${repo?.full_name ?? repo?.stripped_name}" has no repo_path`);
+  }
   const worktreePath = path.join(REPOS_DIR, repo.stripped_name, 'sessions', worktreeId, 'worktree');
   await fs.promises.mkdir(path.dirname(worktreePath), { recursive: true });
 
@@ -466,7 +469,7 @@ export async function removeWorktree(session, repo, options = {}) {
   const absoluteWorktreePath = resolveSessionWorktreePath(session, repo);
   const maybeDeleteUnique = async () => {
     if (!keepLocalBranch) {
-      await tryDeleteUniqueLocalBranch(repo?.bare_path, session);
+      await tryDeleteUniqueLocalBranch(resolveRepoPath(repo), session);
     }
   };
   if (!absoluteWorktreePath) {
@@ -485,11 +488,12 @@ export async function removeWorktree(session, repo, options = {}) {
   const isNewStructure = path.basename(absoluteWorktreePath) === 'worktree';
   const cleanupPath = isNewStructure ? path.dirname(absoluteWorktreePath) : absoluteWorktreePath;
 
-  if (repo?.bare_path) {
+  const barePath = resolveRepoPath(repo);
+  if (barePath) {
     try {
-      await fs.promises.access(repo.bare_path);
+      await fs.promises.access(barePath);
       await execFileAsync('git', ['worktree', 'remove', '--force', absoluteWorktreePath], {
-        cwd: repo.bare_path,
+        cwd: barePath,
         stdio: 'pipe',
       });
       if (isNewStructure) {

@@ -13,7 +13,7 @@ describe('trimSessionMessagesForArchive', () => {
     const [repoId] = await db('repos').insert({
       full_name: 'org/repo',
       stripped_name: 'org/repo',
-      bare_path: '/tmp/bare',
+      repo_path: '/tmp/bare',
     });
     [sessionId] = await db('sessions').insert({
       user_id: user.id,

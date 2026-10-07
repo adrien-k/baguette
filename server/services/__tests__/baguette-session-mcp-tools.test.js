@@ -39,7 +39,7 @@ describe('baguette session MCP tools', () => {
 
   beforeEach(async () => {
     [userId] = await db('users').insert({ github_id: 99, username: 'mcp', approved: true });
-    const [repoId] = await db('repos').insert({ full_name: 'o/r', bare_path: '/tmp/r' });
+    const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
     await db('user_repos').insert({ user_id: userId, repo_id: repoId });
     [sessionId] = await db('sessions').insert({
       user_id: userId,

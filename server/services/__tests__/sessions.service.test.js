@@ -176,7 +176,7 @@ async function seedUserAndSession(db, { github_id, username, shortId, worktreePa
   const user = await db('users').where({ username }).first();
 
   await db('repos')
-    .insert({ full_name: 'test/repo', bare_path: '/tmp/repo' })
+    .insert({ full_name: 'test/repo', repo_path: '/tmp/repo' })
     .onConflict('full_name')
     .ignore();
   const repo = await db('repos').where({ full_name: 'test/repo' }).first();
@@ -777,7 +777,7 @@ describe('Sessions service - custom methods', (hooks) => {
     it('does nothing when the repo has no sessions', async () => {
       const [repoId] = await db('repos').insert({
         full_name: 'empty/repo',
-        bare_path: '/tmp/empty',
+        repo_path: '/tmp/empty',
       });
 
       await expect(app.service('sessions').removeByRepoId(repoId)).resolves.toBeUndefined();
@@ -957,7 +957,7 @@ describe('Sessions service - find, get, create', (hooks) => {
     userId1 = (await db('users').where({ username: 'alice' }).first()).id;
     userId2 = (await db('users').where({ username: 'bob' }).first()).id;
 
-    await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+    await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
 
     [sessId1] = await db('sessions').insert({
@@ -1190,7 +1190,7 @@ describe('Sessions service - find, get, create', (hooks) => {
     it('hides opted-out repos on all_sessions and keeps the same filter on later pages', async () => {
       const [hiddenRepoId] = await db('repos').insert({
         full_name: 'test/hidden',
-        bare_path: '/tmp/hidden',
+        repo_path: '/tmp/hidden',
       });
       await db('user_repos').insert([
         { user_id: userId1, repo_id: repoId, show_in_all_sessions: 1 },
@@ -1975,7 +1975,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
 
     await db('users').insert({ github_id: 2001, username: 'alice', approved: true });
     userId = (await db('users').where({ username: 'alice' }).first()).id;
-    await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+    await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
 
     app = makeApp(db);

@@ -95,6 +95,28 @@ describe('getAvailableTasks', () => {
     expect(tasks.noop).toBeUndefined();
   });
 
+  it('preserves confirm: true on tasks', () => {
+    const tasks = getAvailableTasks({
+      session: {
+        tasks: {
+          'dev-data:persist': { run: './save.sh', confirm: true },
+        },
+      },
+    });
+    expect(tasks['dev-data:persist'].confirm).toBe(true);
+  });
+
+  it('preserves description on tasks', () => {
+    const tasks = getAvailableTasks({
+      session: {
+        tasks: {
+          seed: { run: 'pnpm seed', description: 'Load fixtures' },
+        },
+      },
+    });
+    expect(tasks.seed.description).toBe('Load fixtures');
+  });
+
   it('preserves internal: true on tasks', () => {
     const tasks = getAvailableTasks({
       session: {
@@ -372,6 +394,28 @@ describe('getAvailableTasks', () => {
 });
 
 describe('getAvailableCommands', () => {
+  it('includes confirm on listed commands', () => {
+    const commands = getAvailableCommands({
+      session: {
+        tasks: {
+          'dev-data:persist': {
+            run: './save.sh',
+            confirm: true,
+            description: 'Overwrite shared dev data',
+          },
+        },
+      },
+    });
+    expect(commands).toEqual([
+      {
+        label: 'dev-data:persist',
+        run: './save.sh',
+        confirm: true,
+        description: 'Overwrite shared dev data',
+      },
+    ]);
+  });
+
   it('omits tasks with internal: true', () => {
     const commands = getAvailableCommands({
       session: {

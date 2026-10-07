@@ -140,7 +140,7 @@ beforeEach(async () => {
   query.mockImplementation(() => makeQueryResult());
   const [userId] = await db('users').insert({ github_id: 3, username: 'rev', approved: true });
   user = await db('users').where({ id: userId }).first();
-  const [repoId] = await db('repos').insert({ full_name: 'o/r', bare_path: '/tmp/r' });
+  const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   [sessionId] = await db('sessions').insert({
     user_id: user.id,
     repo_id: repoId,

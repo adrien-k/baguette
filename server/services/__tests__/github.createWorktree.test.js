@@ -31,7 +31,17 @@ vi.mock('../../config.js', () => ({
   REPOS_DIR: TEST_REPOS_DIR,
   resolveDataDirRelativePath: (subpath) => {
     if (subpath == null || subpath === '') return subpath;
+    if (path.isAbsolute(subpath)) return subpath;
     return `${TEST_REPOS_DIR}/${subpath}`;
+  },
+  resolveRepoPath: (repo) => {
+    if (!repo) return undefined;
+    const stored = repo.repo_path;
+    if (stored == null || stored === '') {
+      return repo.stripped_name ? `${TEST_REPOS_DIR}/repos/${repo.stripped_name}/main` : undefined;
+    }
+    if (path.isAbsolute(stored)) return stored;
+    return `${TEST_REPOS_DIR}/${stored}`;
   },
 }));
 
@@ -108,7 +118,7 @@ describe('createWorktree', () => {
   });
 
   it('allows creating a second session worktree for a branch already checked out in another worktree', async () => {
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
 
     // Session 1: continueExistingBranch-style — checks out BRANCH non-detached.
     // After this, refs/heads/BRANCH is owned by session-1's worktree.
@@ -122,7 +132,7 @@ describe('createWorktree', () => {
   });
 
   it('creates two unique local branches tracking the same start branch', async () => {
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
 
     const first = await createWorktree(repo, BRANCH, 'wt-local-1', FAKE_TOKEN, {
       localBranch: `${BRANCH}-aaaa`,
@@ -149,7 +159,7 @@ describe('createWorktree', () => {
       stdio: 'pipe',
     });
 
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
     const { worktreePath } = await createWorktree(
       repo,
       UNPUBLISHED,
@@ -179,7 +189,7 @@ describe('createWorktree', () => {
     const { stdout: remoteHead } = await git(remotePath, 'rev-parse', BRANCH);
     const expectedSha = remoteHead.trim();
 
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
     const { worktreePath } = await createWorktree(repo, BRANCH, 'session-latest', FAKE_TOKEN);
 
     // The local branch ref in the bare repo should be updated to the latest remote commit
@@ -192,7 +202,7 @@ describe('createWorktree', () => {
   });
 
   it('keeps a unique local branch when keepLocalBranch is set', async () => {
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
     const localBranch = `${BRANCH}-keep`;
     await createWorktree(repo, BRANCH, 'wt-keep-1', FAKE_TOKEN, { localBranch });
 
@@ -211,7 +221,7 @@ describe('createWorktree', () => {
   });
 
   it('deletes a unique local branch after removing the worktree', async () => {
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
     const localBranch = `${BRANCH}-archive`;
     await createWorktree(repo, BRANCH, 'wt-archive-1', FAKE_TOKEN, { localBranch });
 
@@ -234,7 +244,7 @@ describe('createWorktree', () => {
   });
 
   it('does not delete local_branch when it matches remote_branch', async () => {
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
     // session-1 from an earlier test may still have BRANCH checked out in its worktree.
     await removeWorktree(
       { short_id: 'session-1', local_branch: BRANCH, remote_branch: BRANCH },
@@ -256,7 +266,7 @@ describe('createWorktree', () => {
   });
 
   it('does not fail archive when the unique local branch is already gone', async () => {
-    const repo = { bare_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
     await expect(
       removeWorktree(
         {

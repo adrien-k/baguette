@@ -12,6 +12,8 @@ All persistent data lives under a single data directory, configurable via **`DAT
 
 `<stripped_name>` is derived from the repo's full name (e.g. `owner/repo-name` → `owner-repo-name`, alphanumeric and dashes only) and stored on the repo record so paths stay stable.
 
+`repos.repo_path` in SQLite is stored **relative to `DATA_DIR`** (e.g. `repos/owner-repo-name/main`). The server resolves it at runtime; legacy absolute paths still work until migrated.
+
 ## Git worktree strategy
 
 Repositories are cloned once as bare repos under `<DATA_DIR>/repos/<stripped_name>/main/`. Each session gets a git worktree under `.../sessions/<session_short_id>/`, sharing the object store to save disk space and fetch time. Before creating a worktree, the server runs `git fetch origin` to ensure it starts from the latest remote branch. When all sessions for a repo are closed, the bare clone is removed.

@@ -47,3 +47,20 @@ export function configCommandButtonLabel(cmd, inNamespace) {
   const { localName } = parseTaskNamespace(name);
   return localName || name;
 }
+
+/** Tooltip for configured task buttons — description when set, otherwise the command. */
+export function configCommandTooltip(cmd) {
+  const desc = (cmd.description || '').trim();
+  if (desc) return desc;
+  if (cmd.run) return cmd.run;
+  if (cmd.type === 'docker' && cmd.image) return cmd.image;
+  return '';
+}
+
+export function taskConfirmStateFromCommand(cmd, taskKey) {
+  return {
+    taskKey,
+    description: (cmd.description || '').trim() || null,
+    runPreview: cmd.run || (cmd.type === 'docker' ? cmd.image : null),
+  };
+}

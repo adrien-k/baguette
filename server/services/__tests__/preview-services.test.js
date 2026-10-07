@@ -121,4 +121,42 @@ describe('preview-services', () => {
     );
     expect(defs[0].description).toBe('Web UI');
   });
+
+  it('falls back to the linked task description when the service has none', () => {
+    const defs = getPreviewServiceDefinitions(
+      {
+        session: {
+          tasks: {
+            dev: {
+              run: 'vite',
+              ports: ['PORT'],
+              description: 'Vite dev server',
+            },
+          },
+        },
+        services: {
+          app: { task: 'dev', expose: 'PORT' },
+        },
+      },
+      'abc'
+    );
+    expect(defs[0].description).toBe('Vite dev server');
+  });
+
+  it('prefers an explicit service description over the task description', () => {
+    const defs = getPreviewServiceDefinitions(
+      {
+        session: {
+          tasks: {
+            dev: { run: 'vite', ports: ['PORT'], description: 'Task blurb' },
+          },
+        },
+        services: {
+          app: { task: 'dev', expose: 'PORT', description: 'Service blurb' },
+        },
+      },
+      'abc'
+    );
+    expect(defs[0].description).toBe('Service blurb');
+  });
 });

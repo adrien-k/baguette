@@ -76,7 +76,7 @@ Each entry maps a service name to a `session.tasks` key and the port env var use
 
 - **task**: reference a task key from `session.tasks` (that task's `run` and `ports` start the preview process).
 - **expose**: which port env var from the task's `ports` list is proxied publicly (required).
-- **description**: optional short text on the session Preview tab.
+- **description**: optional short text on the session Preview tab; if omitted, the linked task's **description** is used when set.
 - **scheme**: optional custom URL scheme for deep links (e.g. `exp://` on an Expo service).
 
 Each service is proxied at `session-<id>-<name>.<domain>`. With multiple services, a portal at `session-<id>.<domain>` lists them all.
@@ -132,6 +132,8 @@ Each task in `session.tasks` supports:
 - **depends-on**: (optional) list of task keys that must be ready before this task starts. Command tasks that use a docker database must list `depends-on: [postgres]` (or your DB task key).
 - **env**: (optional) per-task environment variables, merged on top of `session.env`. Put **`DATABASE_URL` and other docker connection URLs here** (not in `session.env`), using `${{ baguette.tasks.<docker-task>.container_hostname }}` (and optionally `${{ baguette.tasks.<docker-task>.container_image }}`) and the **container’s normal listen port** (e.g. `:5432`, `:6379`) — not dynamic `${{ baguette.tasks.<docker-task>.PG_PORT }}` placeholders. Also supports `${{ baguette.secrets.X }}`, `${{ baguette.session.public_uri }}`, `${{ baguette.services.<name>.public_uri }}`, and `${{ baguette.tasks.<command-task-key>.<PORT_NAME> }}` for **command** tasks that declare `ports`.
 - **internal**: (optional) when `true`, the task is omitted from session task buttons and `ListProjectCommands` (it remains available for `depends-on`, `services` references, and `RunTask` by label).
+- **confirm**: (optional) when `true`, the session UI shows a confirmation modal before starting the task from task buttons (agents using `RunTask` are not prompted).
+- **description**: (optional) short human-readable blurb shown in the task button tooltip and in the confirm modal when `confirm` is set.
 
 ```yaml
 tasks:

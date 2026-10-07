@@ -49,7 +49,7 @@ beforeEach(async () => {
   const [repoId] = await db('repos').insert({
     full_name: 'alice/myrepo',
     stripped_name: 'alice-myrepo',
-    bare_path: '/nonexistent',
+    repo_path: '/nonexistent',
   });
   await db('user_repos').insert({
     user_id: USER,

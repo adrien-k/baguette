@@ -116,7 +116,7 @@ describe('Repos service - find', () => {
   it('returns registered repos with session_count and exists_on_fs', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/foo',
-      bare_path: '/nonexistent/path',
+      repo_path: '/nonexistent/path',
       stripped_name: 'alice-foo',
     });
     await linkAliceToRepo(repoId);
@@ -132,7 +132,7 @@ describe('Repos service - find', () => {
   it('counts only non-deleted sessions', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/foo',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-foo',
     });
     await linkAliceToRepo(repoId);
@@ -174,13 +174,13 @@ describe('Repos service - find', () => {
   it('excludes soft-deleted repos', async () => {
     const [activeId] = await db('repos').insert({
       full_name: 'alice/active',
-      bare_path: '/p1',
+      repo_path: '/p1',
       stripped_name: 'alice-active',
     });
     await linkAliceToRepo(activeId);
     await db('repos').insert({
       full_name: 'alice/gone',
-      bare_path: '/p2',
+      repo_path: '/p2',
       stripped_name: 'alice-gone',
       deleted_at: new Date().toISOString(),
     });
@@ -193,12 +193,12 @@ describe('Repos service - find', () => {
   it('orders repos by full_name', async () => {
     const [zorgId] = await db('repos').insert({
       full_name: 'zorg/repo',
-      bare_path: '/p1',
+      repo_path: '/p1',
       stripped_name: 'zorg-repo',
     });
     const [alphaId] = await db('repos').insert({
       full_name: 'alpha/repo',
-      bare_path: '/p2',
+      repo_path: '/p2',
       stripped_name: 'alpha-repo',
     });
     await linkAliceToRepo(zorgId);
@@ -217,7 +217,7 @@ describe('Repos service - find', () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/nokey',
       stripped_name: 'alice-nokey',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
     });
     await linkAliceToRepo(repoId);
     const result = await app.service('repos').find(params(regularUser));
@@ -231,7 +231,7 @@ describe('Repos service - find', () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/withkey',
       stripped_name: 'alice-withkey',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
     });
     await db('user_repos').insert({
       user_id: regularUser.id,
@@ -251,7 +251,7 @@ describe('Repos service - find', () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/withkey2',
       stripped_name: 'alice-withkey2',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
     });
     await db('user_repos').insert({
       user_id: regularUser.id,
@@ -457,7 +457,7 @@ describe('Repos service - create', () => {
   it('revives a soft-deleted repo when recreating with the same full_name', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/myrepo',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-myrepo',
       deleted_at: new Date().toISOString(),
     });
@@ -498,7 +498,7 @@ describe('Repos service - remove', () => {
   it('admin soft-deletes a repo with no sessions', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/old',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-old',
     });
 
@@ -513,7 +513,7 @@ describe('Repos service - remove', () => {
   it('delegates session cleanup to sessions service before soft-deleting the repo', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/old',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-old',
     });
 
@@ -534,7 +534,7 @@ describe('Repos service - remove', () => {
   it('any authenticated user can remove a repo', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/old',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-old',
     });
     const result = await app.service('repos').remove(repoId, params(regularUser));
@@ -546,7 +546,7 @@ describe('Repos service - remove', () => {
   it('unauthenticated remove is rejected', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/old',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-old',
     });
     await expect(app.service('repos').remove(repoId, unauthParams)).rejects.toThrow(
@@ -563,7 +563,7 @@ describe('Repos service - soft-delete lifecycle', () => {
   it('delegates session cleanup to sessions service and soft-deletes the repo', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/proj',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-proj',
     });
 
@@ -579,7 +579,7 @@ describe('Repos service - soft-delete lifecycle', () => {
   it('reviving a soft-deleted repo does not touch sessions', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/revival',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-revival',
     });
 
@@ -601,7 +601,7 @@ describe('Repos service - get', () => {
   it('any authenticated user can get a repo by id', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/project',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-project',
     });
 
@@ -625,24 +625,24 @@ describe('Repos service - patch', () => {
   it('any authenticated user can patch a repo', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/project',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-project',
     });
 
     const result = await app
       .service('repos')
-      .patch(repoId, { bare_path: '/updated' }, params(regularUser));
-    expect(result.bare_path).toBe('/updated');
+      .patch(repoId, { repo_path: '/updated' }, params(regularUser));
+    expect(result.repo_path).toBe('/updated');
   });
 
   it('unauthenticated patch is rejected', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/project',
-      bare_path: '/nonexistent',
+      repo_path: '/nonexistent',
       stripped_name: 'alice-project',
     });
     await expect(
-      app.service('repos').patch(repoId, { bare_path: '/updated' }, unauthParams)
+      app.service('repos').patch(repoId, { repo_path: '/updated' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
   });
 });

@@ -57,6 +57,8 @@ import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
 import PushConfirmModal from '../components/PushConfirmModal.jsx';
 import SwitchAgentSdkConfirmModal from '../components/SwitchAgentSdkConfirmModal.jsx';
+import TaskConfirmModal from '../components/TaskConfirmModal.jsx';
+import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
@@ -460,6 +462,7 @@ export default function Session() {
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
+  const [pendingTaskConfirm, setPendingTaskConfirm] = useState(null);
   const configCommands = useSessionConfigCommands(gitSession);
   const [showBaguetteConfigModal, setShowBaguetteConfigModal] = useState(false);
   const [error, setError] = useState(null);
@@ -738,16 +741,30 @@ export default function Session() {
     tasksService.kill(taskId).catch((err) => toastFeathersError('Failed to kill task', err));
   };
 
+  const runConfiguredTask = (taskKey, { closeTaskLogModal = false } = {}) => {
+    tasksService
+      .create({ session_id: session?.id, task_key: taskKey })
+      .catch((err) => toastFeathersError('Failed to start task', err));
+    if (closeTaskLogModal) setActiveTaskModal(null);
+  };
+
   const handleTaskRetry = (taskId) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
-    // Re-resolve a configured task from its name so it picks up any .baguette.yaml edit;
-    // ad-hoc commands have no name and are replayed as-is.
+    if (task.task_key) {
+      const cmd = configCommands.find((c) => c.label === task.task_key);
+      if (cmd?.confirm) {
+        setPendingTaskConfirm({
+          ...taskConfirmStateFromCommand(cmd, task.task_key),
+          closeTaskLogModal: true,
+        });
+        return;
+      }
+      runConfiguredTask(task.task_key, { closeTaskLogModal: true });
+      return;
+    }
     tasksService
-      .create({
-        session_id: session?.id,
-        ...(task.task_key ? { task_key: task.task_key } : { command: task.command }),
-      })
+      .create({ session_id: session?.id, command: task.command })
       .catch((err) => toastFeathersError('Failed to start task', err));
     setActiveTaskModal(null);
   };
@@ -1701,6 +1718,20 @@ export default function Session() {
           loading={switchingAgentSdk}
           onConfirm={handleAgentSdkSwitchConfirm}
           onCancel={handleAgentSdkSwitchCancel}
+        />
+      )}
+      {pendingTaskConfirm && (
+        <TaskConfirmModal
+          taskLabel={pendingTaskConfirm.taskKey}
+          description={pendingTaskConfirm.description}
+          runPreview={pendingTaskConfirm.runPreview}
+          onCancel={() => setPendingTaskConfirm(null)}
+          onConfirm={() => {
+            runConfiguredTask(pendingTaskConfirm.taskKey, {
+              closeTaskLogModal: pendingTaskConfirm.closeTaskLogModal,
+            });
+            setPendingTaskConfirm(null);
+          }}
         />
       )}
       {showPushModal && (

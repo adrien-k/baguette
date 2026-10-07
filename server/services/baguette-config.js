@@ -384,6 +384,7 @@ export function getAvailableTasks(baguetteConfig) {
   if (userTasks && typeof userTasks === 'object' && !Array.isArray(userTasks)) {
     for (const [key, val] of Object.entries(userTasks)) {
       if (!val || typeof val !== 'object') continue;
+      const description = normalizeServiceDescription(val.description);
       if (val.type === 'docker') {
         if (!val.container || typeof val.container !== 'object') continue;
         tasks[key] = {
@@ -392,6 +393,8 @@ export function getAvailableTasks(baguetteConfig) {
           ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
           ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
           ...(val.internal === true ? { internal: true } : {}),
+          ...(val.confirm === true ? { confirm: true } : {}),
+          ...(description ? { description } : {}),
         };
         continue;
       }
@@ -405,6 +408,8 @@ export function getAvailableTasks(baguetteConfig) {
         ...(val['depends-on'] ? { depends_on: val['depends-on'] } : {}),
         ...(val.env && typeof val.env === 'object' ? { env: val.env } : {}),
         ...(val.internal === true ? { internal: true } : {}),
+        ...(val.confirm === true ? { confirm: true } : {}),
+        ...(description ? { description } : {}),
       };
     }
   } else if (Array.isArray(userCommands)) {
@@ -426,7 +431,7 @@ export function getAvailableTasks(baguetteConfig) {
 /**
  * Build the full list of available commands from a baguette config.
  * Backward-compatible wrapper around getAvailableTasks().
- * Returns an array of { label, run, ports? }.
+ * Returns an array of { label, run, ports?, description?, confirm? }.
  */
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
@@ -440,12 +445,16 @@ export function getAvailableCommands(baguetteConfig) {
           image: t.container?.image,
           ...(t.container?.build ? { build: t.container.build } : {}),
           ...(t.ports?.length ? { ports: t.ports } : {}),
+          ...(t.confirm ? { confirm: true } : {}),
+          ...(t.description ? { description: t.description } : {}),
         };
       }
       return {
         label: key,
         run: t.run,
         ...(t.ports?.length ? { ports: t.ports } : {}),
+        ...(t.confirm ? { confirm: true } : {}),
+        ...(t.description ? { description: t.description } : {}),
       };
     });
 }
@@ -487,13 +496,16 @@ export function resolveServicesConfig(baguetteConfig) {
     if (!taskDef) {
       throw new Error(`services.${name}.task "${svcDef.task}" not found in session.tasks`);
     }
+    const description =
+      normalizeServiceDescription(svcDef.description) ??
+      normalizeServiceDescription(taskDef.description);
     result.push({
       name,
       command: taskDef.run,
       ports: taskDef.ports || [],
       expose: svcDef.expose,
       taskKey: svcDef.task,
-      description: normalizeServiceDescription(svcDef.description),
+      description,
     });
   }
 

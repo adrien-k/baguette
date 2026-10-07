@@ -45,7 +45,12 @@ import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
-import { DEFAULT_PAGINATE, DATA_DIR, resolveDataDirRelativePath } from '../../config.js';
+import {
+  DEFAULT_PAGINATE,
+  DATA_DIR,
+  resolveRepoPath,
+  resolveDataDirRelativePath,
+} from '../../config.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
 import {
@@ -1132,7 +1137,10 @@ export class SessionsService extends KnexService {
       const token = getGithubToken(user);
       if (!token) throw new BadRequest('No GitHub token configured');
 
-      const { branch, localBranch } = await resolveRestoreWorktreeBranches(repo.bare_path, session);
+      const { branch, localBranch } = await resolveRestoreWorktreeBranches(
+        resolveRepoPath(repo),
+        session
+      );
       if (!branch || !localBranch) throw new BadRequest('Session has no branch to restore to');
 
       const { worktreePath: absoluteWorktreePath } = await createWorktree(

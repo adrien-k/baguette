@@ -87,7 +87,7 @@ describe('Loops service', (hooks) => {
     ]);
     aliceId = (await db('users').where({ username: 'alice' }).first()).id;
     bobId = (await db('users').where({ username: 'bob' }).first()).id;
-    await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+    await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
 
     app = makeApp(db);
     await app.setup();

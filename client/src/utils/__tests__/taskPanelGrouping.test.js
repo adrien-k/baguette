@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   configCommandButtonLabel,
+  configCommandTooltip,
   groupConfigCommandsForPanel,
   parseTaskNamespace,
 } from '../taskPanelGrouping.js';
@@ -53,5 +54,14 @@ describe('configCommandButtonLabel', () => {
   it('shortens labels inside a namespace subgroup', () => {
     expect(configCommandButtonLabel({ label: 'docker:postgres' }, true)).toBe('postgres');
     expect(configCommandButtonLabel({ label: 'run-tests' }, false)).toBe('run-tests');
+  });
+});
+
+describe('configCommandTooltip', () => {
+  it('prefers description over run', () => {
+    expect(configCommandTooltip({ description: 'Save shared DB', run: 'pnpm save' })).toBe(
+      'Save shared DB'
+    );
+    expect(configCommandTooltip({ run: 'pnpm test' })).toBe('pnpm test');
   });
 });

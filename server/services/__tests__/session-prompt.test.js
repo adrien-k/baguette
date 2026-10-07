@@ -35,7 +35,7 @@ async function seedSession(fields = {}) {
   const user = await db('users').where({ username: 'alice' }).first();
 
   await db('repos')
-    .insert({ full_name: 'test/repo', bare_path: '/tmp/repo' })
+    .insert({ full_name: 'test/repo', repo_path: '/tmp/repo' })
     .onConflict('full_name')
     .ignore();
   const repo = await db('repos').where({ full_name: 'test/repo' }).first();

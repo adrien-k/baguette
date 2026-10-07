@@ -21,6 +21,10 @@ config:
         run: pnpm run migrate
       dev-data:load:
         run: .baguette/scripts/dev-data-load.sh
+      dev-data:persist:
+        run: .baguette/scripts/dev-data-persist.sh
+        confirm: true
+        description: Overwrite shared dev-data-dir with this session’s entire .data directory. repos.repo_path in the DB is relative to DATA_DIR so it survives load/persist across worktrees.
       dev-server:
         # Starts Express (on $PORT) + Vite dev server (on $VITE_PORT) concurrently.
         # Vite proxies /api, /auth, /socket.io to Express.

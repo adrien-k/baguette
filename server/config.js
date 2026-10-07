@@ -103,6 +103,42 @@ export function resolveDataDirRelativePath(relativePath) {
     : path.join(DATA_DIR, relativePath);
 }
 
+/** SQLite form for a bare clone: `repos/<stripped>/main` (posix slashes, relative to DATA_DIR). */
+export function storedRepoPath(strippedName) {
+  return `repos/${strippedName}/main`;
+}
+
+/** Resolve `repos.repo_path` for filesystem/git use. */
+export function resolveRepoPath(repo) {
+  if (!repo) return undefined;
+  const stored = repo.repo_path;
+  if (stored == null || stored === '') {
+    return repo.stripped_name
+      ? resolveDataDirRelativePath(storedRepoPath(repo.stripped_name))
+      : undefined;
+  }
+  return resolveDataDirRelativePath(stored);
+}
+
+/** Normalize an on-disk bare clone path before writing `repos.repo_path`. */
+export function normalizeRepoPathForStorage(absoluteOrRelativePath, strippedName) {
+  const canonical = storedRepoPath(strippedName);
+  if (!absoluteOrRelativePath) return canonical;
+  const stored = String(absoluteOrRelativePath);
+  if (!path.isAbsolute(stored)) {
+    return stored.replace(/\\/g, '/');
+  }
+  const rel = path.relative(DATA_DIR, stored);
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+    return rel.split(path.sep).join('/');
+  }
+  const posix = stored.replace(/\\/g, '/');
+  if (posix.endsWith(`/${canonical}`)) return canonical;
+  const match = posix.match(/\/repos\/[^/]+\/main$/);
+  if (match) return match[0].slice(1);
+  return canonical;
+}
+
 export const REPOS_DIR = resolveDataDirRelativePath('repos');
 fs.mkdirSync(REPOS_DIR, { recursive: true });
 export const CACHE_DIR = resolveDataDirRelativePath('cache');

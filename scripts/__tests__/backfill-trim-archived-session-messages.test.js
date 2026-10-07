@@ -16,7 +16,7 @@ async function seedSession({ archived = false, shortId }) {
   }
   let repo = await db('repos').where({ full_name: 'o/r' }).first();
   if (!repo) {
-    const [repoId] = await db('repos').insert({ full_name: 'o/r', bare_path: '/tmp/r' });
+    const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
     repo = { id: repoId };
   }
   const [sessionId] = await db('sessions').insert({

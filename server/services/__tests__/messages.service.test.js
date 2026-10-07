@@ -67,7 +67,7 @@ beforeEach(async () => {
   userId = alice.id;
   otherUserId = bob.id;
 
-  await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+  await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
   const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
   [sessionId] = await db('sessions').insert({

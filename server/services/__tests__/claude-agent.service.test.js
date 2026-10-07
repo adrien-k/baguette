@@ -163,7 +163,7 @@ const BASE_USER = { id: 1, github_id: 1, username: 'test' };
 const BASE_REPO = {
   id: 7,
   full_name: 'owner/repo',
-  bare_path: '/data/repos/owner-repo',
+  repo_path: '/data/repos/owner-repo',
   stripped_name: 'owner-repo',
 };
 

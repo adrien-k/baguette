@@ -18,7 +18,7 @@ async function seedSession(shortId) {
     username: 't',
     approved: true,
   });
-  const [repoId] = await db('repos').insert({ full_name: 'o/r', bare_path: '/tmp/r' });
+  const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   const [sessionId] = await db('sessions').insert({
     user_id: userId,
     repo_id: repoId,

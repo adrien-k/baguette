@@ -25,7 +25,7 @@ import {
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { requireUser, decryptFields } from './hooks.js';
 import { getGithubToken } from '../agent-settings.js';
-import { REPOS_DIR } from '../../config.js';
+import { REPOS_DIR, normalizeRepoPathForStorage, resolveRepoPath } from '../../config.js';
 
 /** True for local repos: absolute path (imported) or plain name with no "/" (brand-new). */
 const isLocalRepo = (fullName) => fullName.startsWith('/') || !fullName.includes('/');
@@ -65,7 +65,7 @@ class ReposService extends KnexService {
         'repos.id',
         'repos.full_name',
         'repos.stripped_name',
-        'repos.bare_path',
+        'repos.repo_path',
         'repos.default_branch',
         'repos.created_at',
         'user_repos.id as user_repo_id',
@@ -97,9 +97,9 @@ class ReposService extends KnexService {
 
     const existsOnFs = await Promise.all(
       repos.map((r) =>
-        r.bare_path
+        resolveRepoPath(r)
           ? fs.promises
-              .access(r.bare_path)
+              .access(resolveRepoPath(r))
               .then(() => true)
               .catch(() => false)
           : Promise.resolve(false)
@@ -123,7 +123,7 @@ class ReposService extends KnexService {
         'repos.id',
         'repos.full_name',
         'repos.stripped_name',
-        'repos.bare_path',
+        'repos.repo_path',
         'repos.default_branch',
         'repos.created_at'
       )
@@ -145,9 +145,9 @@ class ReposService extends KnexService {
 
     const existsOnFs = await Promise.all(
       repos.map((r) =>
-        r.bare_path
+        resolveRepoPath(r)
           ? fs.promises
-              .access(r.bare_path)
+              .access(resolveRepoPath(r))
               .then(() => true)
               .catch(() => false)
           : Promise.resolve(false)
@@ -189,7 +189,7 @@ class ReposService extends KnexService {
 
     const ghUser = await this._loadUserForGithub(params);
     const barePath = await ensureBareClone(
-      { full_name: fullName, stripped_name: strippedName, bare_path: repo?.bare_path },
+      { full_name: fullName, stripped_name: strippedName, repo_path: repo?.repo_path },
       getGithubToken(ghUser)
     );
 
@@ -204,10 +204,11 @@ class ReposService extends KnexService {
       defaultBranch = 'main';
     }
 
+    const barePathStored = normalizeRepoPathForStorage(barePath, strippedName);
     const now = new Date().toISOString();
     if (repo) {
       const updates = {
-        bare_path: barePath,
+        repo_path: barePathStored,
         stripped_name: strippedName,
         default_branch: defaultBranch,
         last_fetched_at: now,
@@ -220,13 +221,14 @@ class ReposService extends KnexService {
         .insert({
           full_name: fullName,
           stripped_name: strippedName,
-          bare_path: barePath,
+          repo_path: barePathStored,
           default_branch: defaultBranch,
           last_fetched_at: now,
         })
         .returning('*');
     }
 
+    const barePathResolved = resolveRepoPath(repo);
     let hasBaguetteConfig = false;
 
     const tmpId = `_check_${Date.now()}`;
@@ -234,7 +236,7 @@ class ReposService extends KnexService {
     try {
       await fs.promises.mkdir(path.dirname(tmpWorktree), { recursive: true });
       await execFileAsync('git', ['worktree', 'add', '--detach', tmpWorktree, defaultBranch], {
-        cwd: repo.bare_path,
+        cwd: barePathResolved,
         stdio: 'pipe',
       });
 
@@ -244,7 +246,7 @@ class ReposService extends KnexService {
       }
 
       await execFileAsync('git', ['worktree', 'remove', '--force', tmpWorktree], {
-        cwd: repo.bare_path,
+        cwd: barePathResolved,
         stdio: 'pipe',
       });
     } catch {
@@ -370,12 +372,13 @@ class ReposService extends KnexService {
     if (isLocalRepo(fullName)) {
       const db = this.options.Model;
       const repo = await db('repos').where({ full_name: fullName }).whereNull('deleted_at').first();
-      if (repo?.bare_path) {
+      const barePath = resolveRepoPath(repo);
+      if (barePath) {
         const { stdout } = await execFileAsync(
           'git',
           ['branch', '--list', '--format=%(refname:short)'],
           {
-            cwd: repo.bare_path,
+            cwd: barePath,
             stdio: 'pipe',
           }
         );
@@ -436,10 +439,11 @@ class ReposService extends KnexService {
       defaultBranch = 'main';
     }
 
+    const barePathStored = normalizeRepoPathForStorage(repoPath, strippedName);
     const now = new Date().toISOString();
     if (repo) {
       const updates = {
-        bare_path: repoPath,
+        repo_path: barePathStored,
         stripped_name: strippedName,
         default_branch: defaultBranch,
         last_fetched_at: now,
@@ -452,26 +456,27 @@ class ReposService extends KnexService {
         .insert({
           full_name: fullName,
           stripped_name: strippedName,
-          bare_path: repoPath,
+          repo_path: barePathStored,
           default_branch: defaultBranch,
           last_fetched_at: now,
         })
         .returning('*');
     }
 
+    const barePathResolved = resolveRepoPath(repo);
     let hasBaguetteConfig = false;
     const tmpId = `_check_${Date.now()}`;
     const tmpWorktree = path.join(REPOS_DIR, repo.stripped_name, 'sessions', tmpId);
     try {
       await fs.promises.mkdir(path.dirname(tmpWorktree), { recursive: true });
       await execFileAsync('git', ['worktree', 'add', '--detach', tmpWorktree, defaultBranch], {
-        cwd: repo.bare_path,
+        cwd: barePathResolved,
         stdio: 'pipe',
       });
       const config = await loadBaguetteConfig(tmpWorktree);
       if (config) hasBaguetteConfig = true;
       await execFileAsync('git', ['worktree', 'remove', '--force', tmpWorktree], {
-        cwd: repo.bare_path,
+        cwd: barePathResolved,
         stdio: 'pipe',
       });
     } catch {

@@ -77,7 +77,7 @@ describe('CreateSession MCP agent defaults', () => {
       id: 1,
       full_name: 'acme/repo',
       stripped_name: 'acme-repo',
-      bare_path: '/tmp/acme-repo.git',
+      repo_path: '/tmp/acme-repo.git',
       default_branch: 'main',
     });
     await db('user_repos').insert({ user_id: user.id, repo_id: 1 });

@@ -42,7 +42,7 @@ describe('Tasks service — in-memory', (hooks) => {
     userId1 = u1.id;
     userId2 = u2.id;
 
-    await db('repos').insert({ full_name: 'test/repo', bare_path: '/tmp/repo' });
+    await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     const repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
 
     [sessionId1] = await db('sessions').insert({

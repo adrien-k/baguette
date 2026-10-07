@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import TaskConfirmModal from './TaskConfirmModal.jsx';
 import { RotateCw, Square, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/dates.js';
 import { useTaskRunDuration } from '../hooks/useTaskRunDuration.js';
@@ -8,7 +9,9 @@ import StartButton from './StartButton.jsx';
 import TaskDockerIcon from './TaskDockerIcon.jsx';
 import {
   configCommandButtonLabel,
+  configCommandTooltip,
   groupConfigCommandsForPanel,
+  taskConfirmStateFromCommand,
 } from '../utils/taskPanelGrouping.js';
 import { INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import {
@@ -46,6 +49,21 @@ export default function TaskPanel({
   readonly,
 }) {
   const [command, setCommand] = useState('');
+  const [pendingConfirm, setPendingConfirm] = useState(null);
+
+  const configCommandByLabel = useCallback(
+    (label) => configCommands.find((c) => c.label === label),
+    [configCommands]
+  );
+
+  const requestStartTask = (taskKey) => {
+    const cmd = configCommandByLabel(taskKey);
+    if (cmd?.confirm) {
+      setPendingConfirm(taskConfirmStateFromCommand(cmd, taskKey));
+      return;
+    }
+    onStartTask(taskKey);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -155,8 +173,8 @@ export default function TaskPanel({
               <StartButton
                 key={cmd.label}
                 compact
-                onClick={() => onStartTask(cmd.label)}
-                title={cmd.run}
+                onClick={() => requestStartTask(cmd.label)}
+                title={configCommandTooltip(cmd)}
               >
                 {configCommandButtonLabel(cmd, true)}
               </StartButton>
@@ -170,8 +188,8 @@ export default function TaskPanel({
             <StartButton
               key={cmd.label}
               compact
-              onClick={() => onStartTask(cmd.label)}
-              title={cmd.run}
+              onClick={() => requestStartTask(cmd.label)}
+              title={configCommandTooltip(cmd)}
             >
               {cmd.label}
             </StartButton>
@@ -182,63 +200,77 @@ export default function TaskPanel({
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {showBaguetteConfigLink && onViewBaguetteConfig && (
-        <div className="shrink-0 px-3 py-2 border-b border-line bg-page/40">
-          <button
-            type="button"
-            onClick={onViewBaguetteConfig}
-            className={`${INLINE_SECONDARY_LINK_CLASS} text-left`}
-          >
-            View baguette config
-          </button>
-        </div>
-      )}
-      {!readonly && configCommands.length > 0 && (
-        <div className="shrink-0">{renderStartButtons()}</div>
-      )}
-
-      <div className="flex-1 min-h-0 overflow-auto">
-        {tasks.length === 0 && (
-          <div className="flex flex-col items-center py-10 gap-2 opacity-40">
-            <BaguetteIcon className="w-7 h-7" />
-            <p className="text-faint text-xs">No tasks yet</p>
-          </div>
-        )}
-        {activeTasks.length > 0 && (
-          <>
-            <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
-              Running
-            </div>
-            {activeTasks.map(renderTask)}
-          </>
-        )}
-        {finishedTasks.length > 0 && (
-          <>
-            <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
-              Finished
-            </div>
-            {finishedTasks.map(renderTask)}
-          </>
-        )}
-      </div>
-
-      {!readonly && (
-        <form onSubmit={handleSubmit} className="shrink-0 border-t border-line bg-page p-3">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="Run a command..."
-              className="flex-1 min-w-0 bg-control border border-strong rounded-md px-3 py-2 text-sm text-fg placeholder-faint focus:outline-none focus:ring-2 focus:ring-track/40 font-mono"
-            />
-            <button type="submit" className={`${NEUTRAL_BUTTON_CLASS} shrink-0`}>
-              Run
+    <>
+      <div className="flex flex-col h-full min-h-0">
+        {showBaguetteConfigLink && onViewBaguetteConfig && (
+          <div className="shrink-0 px-3 py-2 border-b border-line bg-page/40">
+            <button
+              type="button"
+              onClick={onViewBaguetteConfig}
+              className={`${INLINE_SECONDARY_LINK_CLASS} text-left`}
+            >
+              View baguette config
             </button>
           </div>
-        </form>
+        )}
+        {!readonly && configCommands.length > 0 && (
+          <div className="shrink-0">{renderStartButtons()}</div>
+        )}
+
+        <div className="flex-1 min-h-0 overflow-auto">
+          {tasks.length === 0 && (
+            <div className="flex flex-col items-center py-10 gap-2 opacity-40">
+              <BaguetteIcon className="w-7 h-7" />
+              <p className="text-faint text-xs">No tasks yet</p>
+            </div>
+          )}
+          {activeTasks.length > 0 && (
+            <>
+              <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
+                Running
+              </div>
+              {activeTasks.map(renderTask)}
+            </>
+          )}
+          {finishedTasks.length > 0 && (
+            <>
+              <div className="px-3 py-1.5 text-[10px] font-medium text-faint uppercase tracking-wider border-b border-line bg-nav">
+                Finished
+              </div>
+              {finishedTasks.map(renderTask)}
+            </>
+          )}
+        </div>
+
+        {!readonly && (
+          <form onSubmit={handleSubmit} className="shrink-0 border-t border-line bg-page p-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="Run a command..."
+                className="flex-1 min-w-0 bg-control border border-strong rounded-md px-3 py-2 text-sm text-fg placeholder-faint focus:outline-none focus:ring-2 focus:ring-track/40 font-mono"
+              />
+              <button type="submit" className={`${NEUTRAL_BUTTON_CLASS} shrink-0`}>
+                Run
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+      {pendingConfirm && (
+        <TaskConfirmModal
+          taskLabel={pendingConfirm.taskKey}
+          description={pendingConfirm.description}
+          runPreview={pendingConfirm.runPreview}
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => {
+            onStartTask(pendingConfirm.taskKey);
+            setPendingConfirm(null);
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }
