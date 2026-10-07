@@ -3,10 +3,10 @@ import { basename, dirname, join } from 'node:path';
 import { DATA_DIR, resolveDataDirRelativePath } from '../config.js';
 
 /**
- * @param {{ sessionId: number; worktreePath?: string | null; channel: 'chat' | 'review'; turnId: number }} opts
+ * @param {{ sessionId: number; sessionPath?: string | null; channel: 'chat' | 'review'; turnId: number }} opts
  */
-export function agentEventLogPath({ sessionId, worktreePath, channel, turnId }) {
-  const absolute = worktreePath ? resolveDataDirRelativePath(worktreePath) : null;
+export function agentEventLogPath({ sessionId, sessionPath, channel, turnId }) {
+  const absolute = sessionPath ? resolveDataDirRelativePath(sessionPath) : null;
   const sessionDir =
     absolute && basename(absolute) === 'worktree'
       ? dirname(absolute)

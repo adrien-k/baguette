@@ -169,7 +169,7 @@ beforeEach(async () => {
     base_branch: 'main',
     local_branch: 'feat/x',
     status: 'stopped',
-    worktree_path: '/tmp/wt',
+    session_path: '/tmp/wt',
     agent_sdk: 'claude',
     model: 'sonnet',
   });
@@ -542,7 +542,7 @@ describe('session-review service', () => {
       return gen;
     });
     const wt = await initGitWorktree();
-    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await db('sessions').where({ id: sessionId }).update({ session_path: wt });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'pass' }, params(user));
@@ -564,7 +564,7 @@ describe('session-review service', () => {
 
   it('send updates last_reviewed_commit_sha after new commits', async () => {
     const wt = await initGitWorktree();
-    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await db('sessions').where({ id: sessionId }).update({ session_path: wt });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'first' }, params(user));
@@ -620,7 +620,7 @@ describe('session-review service', () => {
 
   it('reviewNewCommits persists a baguette-labelled user message', async () => {
     const wt = await initGitWorktree();
-    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await db('sessions').where({ id: sessionId }).update({ session_path: wt });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'first' }, params(user));
@@ -648,7 +648,7 @@ describe('session-review service', () => {
 
   it('reviewNewCommits appends user_message to the review prompt', async () => {
     const wt = await initGitWorktree();
-    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await db('sessions').where({ id: sessionId }).update({ session_path: wt });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'first' }, params(user));
@@ -680,7 +680,7 @@ describe('session-review service', () => {
 
   it('reviewNewCommits allows a follow-up with no new commits', async () => {
     const wt = await initGitWorktree();
-    await db('sessions').where({ id: sessionId }).update({ worktree_path: wt });
+    await db('sessions').where({ id: sessionId }).update({ session_path: wt });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'first' }, params(user));
@@ -723,9 +723,7 @@ describe('session-review service', () => {
       return gen;
     });
     const wt = await initGitWorktree();
-    await db('sessions')
-      .where({ id: sessionId })
-      .update({ worktree_path: wt, base_branch: 'main' });
+    await db('sessions').where({ id: sessionId }).update({ session_path: wt, base_branch: 'main' });
     await app
       .service('session-review')
       .start({ session_id: sessionId, user_message: 'first' }, params(user));

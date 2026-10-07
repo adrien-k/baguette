@@ -14,14 +14,14 @@ import TerminalLogBlock from './TerminalLogBlock.tsx';
 export default function BashToolBlock({
   command,
   args,
-  worktreePath,
+  sessionPath,
   result,
   isError,
   startedAt,
 }: {
   command?: string | null;
   args?: Record<string, unknown> | null;
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   result?: unknown;
   isError?: boolean;
   startedAt?: string | null;
@@ -46,7 +46,7 @@ export default function BashToolBlock({
   }, [result]);
   const hasError = isError || (exitCode != null && !Number.isNaN(exitCode) && exitCode !== 0);
   const headerPreview =
-    stripCdWorktreePrefix(resolvedCommand, worktreePath)
+    stripCdWorktreePrefix(resolvedCommand, sessionPath)
       ?.split('\n')
       .find((l: string) => l.trim()) ?? '';
 

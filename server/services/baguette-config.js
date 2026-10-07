@@ -27,12 +27,12 @@ export class BaguetteConfigError extends Error {
 }
 
 /**
- * @param {string|null|undefined} worktreePath - Absolute path, or path relative to DATA_DIR (as stored on sessions).
+ * @param {string|null|undefined} sessionPath - Absolute path, or path relative to DATA_DIR (as stored on sessions).
  */
-export async function loadBaguetteConfig(worktreePath) {
-  const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
-  if (!absoluteWorktreePath) return null;
-  const configPath = path.join(absoluteWorktreePath, CONFIG_FILENAME);
+export async function loadBaguetteConfig(sessionPath) {
+  const absoluteSessionPath = resolveDataDirRelativePath(sessionPath);
+  if (!absoluteSessionPath) return null;
+  const configPath = path.join(absoluteSessionPath, CONFIG_FILENAME);
   try {
     const raw = await fs.promises.readFile(configPath, 'utf8');
     const config = parseBaguetteConfigYaml(raw, CONFIG_FILENAME);
@@ -49,10 +49,10 @@ export async function loadBaguetteConfig(worktreePath) {
  * Raw `.baguette.yaml` text for display (not parsed).
  * @returns {Promise<{ yaml: string } | { missing: true } | { error: string }>}
  */
-export async function readBaguetteConfigRaw(worktreePath) {
-  const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
-  if (!absoluteWorktreePath) return { missing: true };
-  const configPath = path.join(absoluteWorktreePath, CONFIG_FILENAME);
+export async function readBaguetteConfigRaw(sessionPath) {
+  const absoluteSessionPath = resolveDataDirRelativePath(sessionPath);
+  if (!absoluteSessionPath) return { missing: true };
+  const configPath = path.join(absoluteSessionPath, CONFIG_FILENAME);
   try {
     const yaml = await fs.promises.readFile(configPath, 'utf8');
     return { yaml };
@@ -65,13 +65,13 @@ export async function readBaguetteConfigRaw(worktreePath) {
 
 /**
  * Repository-specific agent instructions from `.baguette/instructions.md`.
- * @param {string|null|undefined} worktreePath
+ * @param {string|null|undefined} sessionPath
  * @returns {Promise<string|null>}
  */
-export async function loadBaguetteInstructions(worktreePath) {
-  const absoluteWorktreePath = resolveDataDirRelativePath(worktreePath);
-  if (!absoluteWorktreePath) return null;
-  const instructionsPath = path.join(absoluteWorktreePath, INSTRUCTIONS_REL_PATH);
+export async function loadBaguetteInstructions(sessionPath) {
+  const absoluteSessionPath = resolveDataDirRelativePath(sessionPath);
+  if (!absoluteSessionPath) return null;
+  const instructionsPath = path.join(absoluteSessionPath, INSTRUCTIONS_REL_PATH);
   try {
     const text = await fs.promises.readFile(instructionsPath, 'utf8');
     const trimmed = text.trim();

@@ -37,10 +37,10 @@ describe('cursor always-apply prompt rules', () => {
     fs.rmSync(baseDir, { recursive: true, force: true });
   });
 
-  // worktree_path must end in "worktree" so the cursor-dir resolves alongside it.
+  // session_path must end in "worktree" so the cursor-dir resolves alongside it.
   const fakeSession = (id) => ({
     id,
-    worktree_path: path.join(baseDir, `session-${id}`, 'worktree'),
+    session_path: path.join(baseDir, `session-${id}`, 'worktree'),
   });
   const cursorDirFor = (id) => path.join(baseDir, `session-${id}`, 'cursor-dir');
   const rulesDir = (root) => path.join(root, '.cursor', 'rules');
@@ -83,7 +83,7 @@ describe('cursor always-apply prompt rules', () => {
     it('sits the cursor-dir alongside any working directory, not just worktrees', async () => {
       // Global sessions work in the shared repos dir — no "worktree" basename.
       const reposDir = path.join(baseDir, 'repos');
-      const session = { id: 20, worktree_path: reposDir };
+      const session = { id: 20, session_path: reposDir };
 
       const root = await service.writePromptRule(session, 'build', {
         description: BUILD_DESCRIPTION,
@@ -95,7 +95,7 @@ describe('cursor always-apply prompt rules', () => {
     });
 
     it('returns null and writes nothing for sessions without a worktree path', async () => {
-      const session = { id: 21, worktree_path: null };
+      const session = { id: 21, session_path: null };
 
       const root = await service.writePromptRule(session, 'build', {
         description: BUILD_DESCRIPTION,

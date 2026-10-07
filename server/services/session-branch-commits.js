@@ -13,8 +13,8 @@ function patchUser(session) {
 /** After a successful review turn: mark current HEAD (short sha) as last reviewed. */
 export async function markSessionReviewedAtHead(app, sessionId) {
   const session = await loadSession(app, sessionId);
-  if (!session || isGlobalSession(session) || !session.worktree_path) return;
-  const cwd = resolveDataDirRelativePath(session.worktree_path);
+  if (!session || isGlobalSession(session) || !session.session_path) return;
+  const cwd = resolveDataDirRelativePath(session.session_path);
   const head = await gitRevParseShort(cwd, 'HEAD');
   if (!head) return;
   await app

@@ -7,7 +7,7 @@ import { ok, fail } from '../lib/result.js';
 const execFileAsync = promisify(execFile);
 
 export function createPrCommentTool(ctx) {
-  const { getSession, getToken, withSessionHeader, absoluteWorktreePath } = ctx;
+  const { getSession, getToken, withSessionHeader, absoluteSessionPath } = ctx;
   return {
     name: 'PrComment',
     description:
@@ -37,7 +37,7 @@ export function createPrCommentTool(ctx) {
       const bodyWithHeader = withSessionHeader(body, session);
       if (filePath && line) {
         const { stdout: commitId } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
-          cwd: absoluteWorktreePath,
+          cwd: absoluteSessionPath,
         });
         const comment = await createPRLineComment(
           token,

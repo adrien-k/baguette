@@ -33,7 +33,7 @@ export function createRunTaskTool(ctx) {
       }
       let tasks;
       try {
-        const cfg = await loadBaguetteConfig(session.worktree_path);
+        const cfg = await loadBaguetteConfig(session.session_path);
         if (cfg?.error) throw new Error(cfg.error);
         tasks = cfg ? getAvailableTasks(cfg) : null;
       } catch (err) {

@@ -31,7 +31,7 @@ beforeEach(async () => {
     initial_prompt: 't',
     base_branch: 'main',
     status: 'stopped',
-    worktree_path: '/tmp/wt',
+    session_path: '/tmp/wt',
   });
   app = feathers();
   app.set('db', db);

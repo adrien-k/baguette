@@ -70,7 +70,7 @@ export function createSessionAgentContext(session, app, { slackApps = [] } = {})
     sessionRef = { ...sessionRef, ...updated };
   };
 
-  const absoluteWorktreePath = resolveDataDirRelativePath(sessionRef.worktree_path) || '';
+  const absoluteSessionPath = resolveDataDirRelativePath(sessionRef.session_path) || '';
   const baseBranch = sessionRef.base_branch;
 
   return {
@@ -87,7 +87,7 @@ export function createSessionAgentContext(session, app, { slackApps = [] } = {})
     getRepo,
     requireGitHubRepo,
     patchSession,
-    absoluteWorktreePath,
+    absoluteSessionPath,
     baseBranch,
   };
 }

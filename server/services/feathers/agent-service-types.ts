@@ -48,8 +48,8 @@ export type AgentSessionRow = {
   repo_id?: number | null;
   repo_full_name?: string | null;
   base_branch?: string | null;
-  worktree_path?: string | null;
-  absolute_worktree_path?: string | null;
+  session_path?: string | null;
+  absolute_session_path?: string | null;
   plan_mode?: boolean | number | null;
   model?: string | null;
   model_params?: unknown;

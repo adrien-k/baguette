@@ -102,7 +102,7 @@ async function runMockTool(writer, abortSignal, { callId, name, args, rawResult,
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
 export async function runMockAgentTurn({ session, writer, abortSignal }) {
-  const cwd = resolveDataDirRelativePath(session.worktree_path);
+  const cwd = resolveDataDirRelativePath(session.session_path);
   if (!cwd) {
     throw new Error('Session worktree is not ready');
   }

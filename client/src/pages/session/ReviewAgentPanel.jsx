@@ -83,7 +83,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
   });
   const isRunning = session?.review_status === 'running';
   const runningBashDock = collectRunningBashToolsForDock(displayMessages, chatDisplayItems, {
-    worktreePath: session?.absolute_worktree_path,
+    sessionPath: session?.absolute_session_path,
     sessionTurnActive: isRunning,
   });
   const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
@@ -153,7 +153,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                   callCount={item.callCount}
                   durationMs={item.durationMs}
                   displayMessages={displayMessages}
-                  worktreePath={session.absolute_worktree_path}
+                  sessionPath={session.absolute_session_path}
                   sessionId={session.id}
                   agentName="Reviewer"
                   pinnedRunningBashIds={pinnedRunningBashIds}
@@ -163,7 +163,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
                   key={item.message.id ?? item.index}
                   message={item.message}
                   isLatestMessage={item.index === displayMessages.length - 1}
-                  worktreePath={session.absolute_worktree_path}
+                  sessionPath={session.absolute_session_path}
                   sessionId={session.id}
                   agentName="Reviewer"
                   messageIndex={item.index}
@@ -195,7 +195,7 @@ export default function ReviewAgentPanel({ session, readonly, sidePanelOpen = fa
             {runningBashDock.length > 0 && (
               <ChatRunningBashDock
                 items={runningBashDock}
-                worktreePath={session?.absolute_worktree_path}
+                sessionPath={session?.absolute_session_path}
                 sessionId={session?.id}
               />
             )}

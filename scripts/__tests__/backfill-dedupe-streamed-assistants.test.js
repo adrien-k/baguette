@@ -28,7 +28,7 @@ async function seedSession(shortId) {
     base_branch: 'main',
     local_branch: 'feat',
     status: 'stopped',
-    worktree_path: '/tmp/wt',
+    session_path: '/tmp/wt',
     agent_sdk: 'cursor',
     model: 'sonnet',
   });

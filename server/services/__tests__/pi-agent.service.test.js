@@ -70,7 +70,7 @@ function makeApp(overrides = {}) {
               user_id: 2,
               agent_sdk: 'pi',
               model: 'claude-haiku-4-5',
-              worktree_path: 'sessions/wt',
+              session_path: 'sessions/wt',
               status: 'idle',
               ...overrides.session,
             }),
@@ -121,7 +121,7 @@ describe('PiAgentService', () => {
   it('createOrResumePiSession calls createAgentSession and returns session', async () => {
     const service = new PiAgentService();
     service.app = makeApp();
-    const session = { id: 1, user_id: 2, worktree_path: 'sessions/wt', model: 'm' };
+    const session = { id: 1, user_id: 2, session_path: 'sessions/wt', model: 'm' };
     const agentOptions = {
       cwd: '/tmp',
       modelRuntime: {},
@@ -158,7 +158,7 @@ describe('PiAgentService', () => {
     service._activeSessions.set(1, outerState);
     const writer = { close: vi.fn() };
     await service.runTurn({
-      session: { id: 1, user_id: 2, worktree_path: 'sessions/wt', model: 'm' },
+      session: { id: 1, user_id: 2, session_path: 'sessions/wt', model: 'm' },
       userText: 'hello',
       agentOptions: { cwd: '/tmp', modelRuntime: {}, customTools: [] },
       writer,
@@ -175,7 +175,7 @@ describe('PiAgentService', () => {
     service.app = makeApp();
     const writer = { close: vi.fn() };
     await service.runTurn({
-      session: { id: 1, user_id: 2, worktree_path: 'sessions/wt', model: 'm' },
+      session: { id: 1, user_id: 2, session_path: 'sessions/wt', model: 'm' },
       userText: 'hello',
       agentOptions: { cwd: '/tmp', modelRuntime: {}, customTools: [] },
       writer,

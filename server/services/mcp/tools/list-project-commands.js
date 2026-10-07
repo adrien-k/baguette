@@ -15,7 +15,7 @@ export function createListProjectCommandsTool(ctx) {
     handler: async () => {
       let cfg;
       try {
-        cfg = await loadBaguetteConfig(session.worktree_path);
+        cfg = await loadBaguetteConfig(session.session_path);
         if (cfg?.error) throw new Error(cfg.error);
       } catch (err) {
         return fail(err.message);

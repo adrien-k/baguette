@@ -303,8 +303,8 @@ export class TasksService {
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
     // Load config once for command resolution, init and deps lookups
-    const baguetteConfig = session.worktree_path
-      ? await loadBaguetteConfig(session.worktree_path)
+    const baguetteConfig = session.session_path
+      ? await loadBaguetteConfig(session.session_path)
       : null;
     if (baguetteConfig?.error) throw new BadRequest(baguetteConfig.error);
     let taskDefs;
@@ -358,7 +358,7 @@ export class TasksService {
     const interpolatedCommand = await this.app
       .service('sessions')
       .getInterpolatedCommand(session.id, appendTaskArgs(resolvedCommand, args));
-    const cwd = session.absolute_worktree_path ?? resolveDataDirRelativePath(session.worktree_path);
+    const cwd = session.absolute_session_path ?? resolveDataDirRelativePath(session.session_path);
 
     const dependsOn = [];
 
@@ -393,12 +393,7 @@ export class TasksService {
     };
 
     // Run session.init before yaml depends-on (install-only; DB setup belongs on tasks with depends-on).
-    if (
-      !skipInit &&
-      !session.initialized &&
-      session.worktree_path &&
-      task_key !== 'baguette:init'
-    ) {
+    if (!skipInit && !session.initialized && session.session_path && task_key !== 'baguette:init') {
       // Mark initialized eagerly to prevent double-init on concurrent task starts.
       await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
       const initDef = taskDefs['baguette:init'];

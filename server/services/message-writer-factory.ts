@@ -28,7 +28,7 @@ export type MessageWriterOpts = {
   userId: number;
   turnId: number;
   channel: 'chat' | 'review';
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   /** Which provider is producing this turn's stream. */
   agentType: 'claude' | 'cursor' | 'pi' | 'mock';
   model: string;
@@ -63,7 +63,7 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
   );
   const logPath = agentEventLogPath({
     sessionId: opts.sessionId,
-    worktreePath: opts.worktreePath,
+    sessionPath: opts.sessionPath,
     channel: opts.channel,
     turnId: opts.turnId,
   });

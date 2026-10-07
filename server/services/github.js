@@ -434,7 +434,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
 
 /** Resolve the on-disk worktree path from the DB row, or from repo + short_id when still provisioning. */
 export function resolveSessionWorktreePath(session, repo) {
-  const fromDb = resolveDataDirRelativePath(session?.worktree_path);
+  const fromDb = resolveDataDirRelativePath(session?.session_path);
   if (fromDb) return fromDb;
   const stripped = repo?.stripped_name || (repo?.full_name ? toStrippedName(repo.full_name) : null);
   if (session?.short_id && stripped) {

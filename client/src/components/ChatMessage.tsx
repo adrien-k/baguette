@@ -14,7 +14,7 @@ import { messageModelLabel } from '../utils/messageModelLabel.js';
 export type ChatMessageProps = {
   message: ChatMessageView;
   isLatestMessage?: boolean;
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   sessionId?: number | null;
   agentName?: string;
   messageIndex: number | null;
@@ -133,7 +133,7 @@ function SystemMessage({ message }: { message: TypedMessageView & { type: 'syste
 function TypedMessage({
   message,
   isLatestMessage,
-  worktreePath,
+  sessionPath,
   sessionId,
   agentName = 'Agent',
   models,
@@ -158,7 +158,7 @@ function TypedMessage({
       return (
         <ToolCallBlock
           message={message}
-          worktreePath={worktreePath}
+          sessionPath={sessionPath}
           sessionId={sessionId ?? undefined}
           session={session}
           userReplied={userReplied}

@@ -207,7 +207,7 @@ describe('baguette session MCP tools', () => {
       user_id: userId,
       is_global: true,
       repo_full_name: '',
-      worktree_path: 'repos',
+      session_path: 'repos',
       base_branch: '',
       short_id: 'glob01',
       label: 'Global',

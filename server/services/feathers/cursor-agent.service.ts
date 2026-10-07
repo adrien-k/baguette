@@ -175,7 +175,7 @@ ${body}`,
   }
 
   cursorDirForSession(session: AgentSessionRow): string | null {
-    const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
+    const absoluteCwd = resolveDataDirRelativePath(session.session_path);
     if (!absoluteCwd) return null;
     return join(dirname(absoluteCwd), 'cursor-dir');
   }
@@ -237,7 +237,7 @@ ${body}`,
       apiKey?: string | undefined;
     } = {}
   ): Promise<AgentOptions> {
-    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const cwd = resolveDataDirRelativePath(session.session_path) || '';
     const resolvedApiKey = apiKey !== undefined ? apiKey : await this.resolveApiKey(session);
     const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
     const store = await this.openSessionStore(session);
@@ -314,7 +314,7 @@ ${body}`,
 
     if (channel === 'chat') {
       if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.worktree_path) return;
+      if (session.repo_full_name && !session.session_path) return;
     }
 
     const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
@@ -351,13 +351,13 @@ ${body}`,
   }
 
   async _prepareGlobalRulesDir(session: AgentSessionRow): Promise<string | null> {
-    if (!session.worktree_path) return null;
-    const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
+    if (!session.session_path) return null;
+    const absoluteCwd = resolveDataDirRelativePath(session.session_path);
     const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
     const systemPrompt = await buildSystemPromptAppend(
       {
         ...session,
-        absolute_worktree_path: absoluteCwd,
+        absolute_session_path: absoluteCwd,
       },
       { agentPrompt }
     );
@@ -445,7 +445,7 @@ ${body}`,
     userText: string,
     sendOptions: Record<string, unknown> = {}
   ): Promise<Run> {
-    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const cwd = resolveDataDirRelativePath(session.session_path) || '';
     const store = await this.openSessionStore(session);
     try {
       return await agent.send(userText, sendOptions as never);
@@ -597,7 +597,7 @@ ${body}`,
             userId,
             turnId,
             channel,
-            worktreePath: session.worktree_path,
+            sessionPath: session.session_path,
             agentType: 'cursor',
             model: turnModel.model ?? session.model ?? '',
             modelParams: turnModel.modelParams,
@@ -776,7 +776,7 @@ ${body}`,
         userId: session.user_id,
         turnId: sessionState?.turnId ?? 1,
         channel: sessionState?.channel ?? 'chat',
-        worktreePath: session.worktree_path,
+        sessionPath: session.session_path,
         agentType: 'cursor',
         model: turnModel.model ?? session.model ?? '',
         modelParams: turnModel.modelParams,
@@ -885,7 +885,7 @@ ${body}`,
     agent: SDKAgent,
     completedRunId: string
   ): Promise<Run | null> {
-    const cwd = resolveDataDirRelativePath(session.worktree_path) || '';
+    const cwd = resolveDataDirRelativePath(session.session_path) || '';
     const store = await this.openSessionStore(session);
     const INTERVAL_MS = 2000;
     const MAX_IDLE_POLLS = 30;
@@ -1009,7 +1009,7 @@ Task: ${initialPrompt}`;
     const homeSession = {
       short_id: shortId,
       repo_full_name: repoFullName,
-      worktree_path: null,
+      session_path: null,
     } as AgentSessionRow;
 
     let collectedText = '';

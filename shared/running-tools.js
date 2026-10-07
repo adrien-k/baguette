@@ -5,9 +5,9 @@
 import { findLastTurnStartIndex } from './turn-model.js';
 import { isBashToolName, resolveBashCommand } from './resolve-bash-command.js';
 
-function stripWorktreePath(filePath, worktreePath) {
-  if (!filePath || !worktreePath) return filePath;
-  const root = worktreePath.endsWith('/') ? worktreePath.slice(0, -1) : worktreePath;
+function stripWorktreePath(filePath, sessionPath) {
+  if (!filePath || !sessionPath) return filePath;
+  const root = sessionPath.endsWith('/') ? sessionPath.slice(0, -1) : sessionPath;
   if (filePath === root || filePath.startsWith(`${root}/`)) {
     return filePath === root ? '.' : `.${filePath.slice(root.length)}`;
   }
@@ -31,11 +31,11 @@ function normalizeBlock(block) {
 
 /**
  * @param {object} block - tool_use content block (possibly with result stitched)
- * @param {{ worktreePath?: string }} [opts]
+ * @param {{ sessionPath?: string }} [opts]
  * @returns {{ label: string; detail?: string }}
  */
 export function runningToolDisplay(block, opts = {}) {
-  const { worktreePath } = opts;
+  const { sessionPath } = opts;
   const { name, kind, input } = normalizeBlock(block);
 
   if (name.startsWith('mcp__baguette__')) {
@@ -106,7 +106,7 @@ export function runningToolDisplay(block, opts = {}) {
     const path = input.file_path ?? input.path;
     return {
       label: name,
-      detail: path ? stripWorktreePath(path, worktreePath) : undefined,
+      detail: path ? stripWorktreePath(path, sessionPath) : undefined,
     };
   }
 
@@ -116,7 +116,7 @@ export function runningToolDisplay(block, opts = {}) {
 
   if (name === 'Grep' || name === 'semSearch') {
     const pattern = input.pattern ?? input.query;
-    const path = input.path ? stripWorktreePath(input.path, worktreePath) : null;
+    const path = input.path ? stripWorktreePath(input.path, sessionPath) : null;
     const detail = [pattern, path].filter(Boolean).join(' ') || undefined;
     return { label: name === 'semSearch' ? 'Grep' : name, detail };
   }
@@ -149,7 +149,7 @@ function toolCallViewId(msg) {
 
 /**
  * @param {object[]} messages - reconciled session messages (visible in chat)
- * @param {{ worktreePath?: string }} [opts]
+ * @param {{ sessionPath?: string }} [opts]
  * @returns {{ id: string; label: string; detail?: string }[]}
  */
 export function collectRunningTools(messages, opts = {}) {
@@ -182,7 +182,7 @@ function isPinnableRunningToolCallView(msg) {
 
 /**
  * Running Bash/shell, RunTask, and AwaitDetachedTask blocks pinned above the composer until done.
- * @param {{ worktreePath?: string; sessionTurnActive?: boolean }} [opts]
+ * @param {{ sessionPath?: string; sessionTurnActive?: boolean }} [opts]
  * @returns {{ id: string; message: object; startedAt: string | null }[]}
  */
 export function collectRunningBashToolsForDock(messages, _chatDisplayItems, opts = {}) {

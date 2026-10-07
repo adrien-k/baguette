@@ -10,7 +10,7 @@ export default function ChatWorkSummary({
   callCount,
   durationMs,
   displayMessages,
-  worktreePath,
+  sessionPath,
   sessionId,
   agentName,
   models,
@@ -21,7 +21,7 @@ export default function ChatWorkSummary({
   callCount: number;
   durationMs?: number | null;
   displayMessages: ChatMessageView[];
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   sessionId?: number | null;
   agentName?: string;
   models?: { id?: string; label?: string; name?: string }[];
@@ -58,7 +58,7 @@ export default function ChatWorkSummary({
                 key={indices[i]}
                 message={msg}
                 isLatestMessage={index === displayMessages.length - 1}
-                worktreePath={worktreePath}
+                sessionPath={sessionPath}
                 sessionId={sessionId}
                 agentName={agentName}
                 messageIndex={index}

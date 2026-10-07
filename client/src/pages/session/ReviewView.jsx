@@ -317,7 +317,7 @@ export default function ReviewView({
   );
 
   const canStartReview =
-    !readonly && !isRunning && !starting && hasSdkKey && Boolean(session?.worktree_path);
+    !readonly && !isRunning && !starting && hasSdkKey && Boolean(session?.session_path);
 
   const handleStart = async () => {
     if (!session?.id || starting || !canStartReview) return;

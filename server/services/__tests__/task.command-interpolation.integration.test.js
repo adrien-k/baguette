@@ -41,8 +41,8 @@ function buildMockApp(service) {
   const sessionRow = {
     id: 1,
     user_id: 1,
-    worktree_path: 'repos/test/worktree',
-    absolute_worktree_path: '/tmp',
+    session_path: 'repos/test/worktree',
+    absolute_session_path: '/tmp',
     initialized: true,
     archived_at: null,
     short_id: 'tst',

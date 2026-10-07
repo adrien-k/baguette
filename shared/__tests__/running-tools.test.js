@@ -36,7 +36,7 @@ describe('collectRunningTools', () => {
       runningToolCall('c', 'mcp__baguette__GitPush', {}),
     ];
 
-    const running = collectRunningTools(messages, { worktreePath: '/wt' });
+    const running = collectRunningTools(messages, { sessionPath: '/wt' });
     expect(running).toEqual([
       { id: 'a', label: 'Read', detail: './src/a.js' },
       { id: 'c', label: 'GitPush', detail: undefined },

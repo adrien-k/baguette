@@ -111,10 +111,10 @@ function TaskToolBlock({ message }: { message: CallOfKind<'task'> }) {
 
 function EditWriteToolBlock({
   message,
-  worktreePath,
+  sessionPath,
 }: {
   message: CallOfKind<'edit'> | CallOfKind<'write'>;
-  worktreePath?: string | null;
+  sessionPath?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isWrite = message.kind === 'write';
@@ -122,7 +122,7 @@ function EditWriteToolBlock({
   const isRunning = result == null;
   const isError = message.status === 'error';
   const filePath = message.args.path
-    ? stripWorktreePath(String(message.args.path), worktreePath)
+    ? stripWorktreePath(String(message.args.path), sessionPath)
     : null;
 
   const oldString = isWrite ? '' : (message.args.old_string ?? null);
@@ -201,13 +201,13 @@ function EditWriteToolBlock({
 
 export default function ToolCallBlock({
   message,
-  worktreePath,
+  sessionPath,
   sessionId,
   session,
   userReplied = false,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   sessionId?: number;
   session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
@@ -217,7 +217,7 @@ export default function ToolCallBlock({
   return (
     <ToolCallSwitch
       message={message}
-      worktreePath={worktreePath}
+      sessionPath={sessionPath}
       sessionId={sessionId}
       session={session}
       userReplied={userReplied}
@@ -231,13 +231,13 @@ export default function ToolCallBlock({
  */
 function ToolCallSwitch({
   message,
-  worktreePath,
+  sessionPath,
   sessionId,
   session,
   userReplied,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   sessionId?: number;
   session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
@@ -256,7 +256,7 @@ function ToolCallSwitch({
         <BashToolBlock
           command={bashCommand}
           args={message.args as Record<string, unknown>}
-          worktreePath={worktreePath}
+          sessionPath={sessionPath}
           result={message.result}
           isError={isError}
           startedAt={startedAt}
@@ -264,7 +264,7 @@ function ToolCallSwitch({
       );
     case 'edit':
     case 'write':
-      return <EditWriteToolBlock message={message} worktreePath={worktreePath} />;
+      return <EditWriteToolBlock message={message} sessionPath={sessionPath} />;
     case 'todo':
       return <TodoBlock todos={message.args.todos} />;
     case 'task':
@@ -308,25 +308,25 @@ function ToolCallSwitch({
           <BashToolBlock
             command={bashCommand}
             args={message.args as Record<string, unknown>}
-            worktreePath={worktreePath}
+            sessionPath={sessionPath}
             result={message.result}
             isError={isError}
             startedAt={startedAt}
           />
         );
       }
-      return <QuietCallBlock message={message} worktreePath={worktreePath} isError={isError} />;
+      return <QuietCallBlock message={message} sessionPath={sessionPath} isError={isError} />;
   }
 }
 
 /** read / delete / glob / grep / generic — quiet one-line rows. */
 function QuietCallBlock({
   message,
-  worktreePath,
+  sessionPath,
   isError,
 }: {
   message: QuietCall;
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   isError: boolean;
 }) {
   const quietResult = message.result as GenericToolResult | null;
@@ -343,14 +343,14 @@ function QuietCallBlock({
     detail =
       [
         message.args.pattern,
-        message.args.path ? stripWorktreePath(message.args.path, worktreePath) : null,
+        message.args.path ? stripWorktreePath(message.args.path, sessionPath) : null,
       ]
         .filter(Boolean)
         .join(' ') || undefined;
   } else if (message.kind === 'generic') {
     detail = message.args.detail ?? undefined;
   } else {
-    detail = message.args.path ? stripWorktreePath(message.args.path, worktreePath) : undefined;
+    detail = message.args.path ? stripWorktreePath(message.args.path, sessionPath) : undefined;
   }
 
   const label =

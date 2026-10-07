@@ -83,7 +83,7 @@ const DEFAULT_SESSION = {
   local_branch: null,
   repo_full_name: 'owner/repo',
   base_branch: 'main',
-  worktree_path: '/tmp/wt',
+  session_path: '/tmp/wt',
   auto_push: 1,
 };
 const SESSION_HEADER = '*Posted by baguette - Agent, session test:*\n\n';
@@ -284,7 +284,7 @@ describe('CurrentSessionInfo', () => {
     });
     const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
     expect(result.ok).toBe(true);
-    expect(result.worktree_path).toBe('/tmp/wt');
+    expect(result.session_path).toBe('/tmp/wt');
     expect(result.base_branch).toBe('develop');
     expect(result.remote_branch).toBe('feat/x-remote');
     expect(result.git_diff_against_base).toBe('git diff origin/develop...HEAD');
@@ -399,7 +399,7 @@ describe('GitPull', () => {
     expect(gitPull).not.toHaveBeenCalled();
   });
 
-  it('calls gitPull with worktreePath, remoteBranch, token and returns result', async () => {
+  it('calls gitPull with sessionPath, remoteBranch, token and returns result', async () => {
     gitPull.mockResolvedValue({ message: 'Already up to date.' });
     const { tools } = await buildServer({ remote_branch: 'feature-branch' });
     const result = parseResult(await callTool(tools, 'GitPull'));

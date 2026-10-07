@@ -13,9 +13,9 @@ describe('cursor-session-paths', () => {
       'abc123',
       'worktree'
     );
-    const sessionDir = cursorSessionDataDir({ worktree_path: worktree });
+    const sessionDir = cursorSessionDataDir({ session_path: worktree });
     expect(sessionDir).toBe(path.join(REPOS_DIR, toStrippedName('org/repo'), 'sessions', 'abc123'));
-    expect(cursorSdkStateRoot({ worktree_path: worktree })).toBe(
+    expect(cursorSdkStateRoot({ session_path: worktree })).toBe(
       path.join(sessionDir, 'cursor-sdk-store')
     );
   });

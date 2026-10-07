@@ -18,5 +18,5 @@ export function piSessionsDir(session) {
 }
 
 export function piWorktreeCwd(session) {
-  return resolveDataDirRelativePath(session?.worktree_path) || process.cwd();
+  return resolveDataDirRelativePath(session?.session_path) || process.cwd();
 }

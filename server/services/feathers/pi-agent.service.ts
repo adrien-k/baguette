@@ -117,13 +117,13 @@ export class PiAgentService {
   }
 
   async _buildAppendSystemPrompt(session: AgentSessionRow): Promise<string[]> {
-    if (!session.worktree_path) return [];
-    const absoluteCwd = resolveDataDirRelativePath(session.worktree_path);
+    if (!session.session_path) return [];
+    const absoluteCwd = resolveDataDirRelativePath(session.session_path);
     const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
     const systemPrompt = await buildSystemPromptAppend(
       {
         ...session,
-        absolute_worktree_path: absoluteCwd,
+        absolute_session_path: absoluteCwd,
       },
       { agentPrompt }
     );
@@ -256,7 +256,7 @@ export class PiAgentService {
 
     if (channel === 'chat') {
       if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.worktree_path) return;
+      if (session.repo_full_name && !session.session_path) return;
     }
 
     const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
@@ -416,7 +416,7 @@ export class PiAgentService {
             userId,
             turnId,
             channel,
-            worktreePath: session.worktree_path,
+            sessionPath: session.session_path,
             agentType: 'pi',
             model: turnModel.model ?? session.model ?? '',
             modelParams: turnModel.modelParams,

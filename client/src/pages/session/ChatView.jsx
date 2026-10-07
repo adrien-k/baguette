@@ -261,7 +261,7 @@ export default function ChatView({
   );
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
-    worktreePath: session?.absolute_worktree_path,
+    sessionPath: session?.absolute_session_path,
     sessionTurnActive: isRunning,
   });
   const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
@@ -579,7 +579,7 @@ export default function ChatView({
                     callCount={item.callCount}
                     durationMs={item.durationMs}
                     displayMessages={displayMessages}
-                    worktreePath={session.absolute_worktree_path}
+                    sessionPath={session.absolute_session_path}
                     sessionId={session.id}
                     agentName={agentDisplayName}
                     models={models}
@@ -590,7 +590,7 @@ export default function ChatView({
                     key={item.index}
                     message={item.message}
                     isLatestMessage={item.index === displayMessages.length - 1}
-                    worktreePath={session.absolute_worktree_path}
+                    sessionPath={session.absolute_session_path}
                     sessionId={session.id}
                     agentName={agentDisplayName}
                     messageIndex={item.index}
@@ -724,7 +724,7 @@ export default function ChatView({
               {runningBashDock.length > 0 && (
                 <ChatRunningBashDock
                   items={runningBashDock}
-                  worktreePath={session?.absolute_worktree_path}
+                  sessionPath={session?.absolute_session_path}
                   sessionId={session?.id}
                 />
               )}

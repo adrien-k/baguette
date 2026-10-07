@@ -26,7 +26,7 @@ describe('DevserverHandler.allowUser', () => {
     const session = {
       user_id: 1,
       short_id: 'abc',
-      worktree_path: '/wt',
+      session_path: '/wt',
       is_preview_users_public: false,
     };
     const h = handlerForSession(session);
@@ -38,7 +38,7 @@ describe('DevserverHandler.allowUser', () => {
     const session = {
       user_id: 1,
       short_id: 'abc',
-      worktree_path: '/wt',
+      session_path: '/wt',
       is_preview_users_public: true,
       is_preview_public: false,
     };
@@ -48,7 +48,7 @@ describe('DevserverHandler.allowUser', () => {
   });
 
   it('allows any signed-in user when is_preview_users_public is unset (default)', async () => {
-    const session = { user_id: 1, short_id: 'abc', worktree_path: '/wt', is_preview_public: false };
+    const session = { user_id: 1, short_id: 'abc', session_path: '/wt', is_preview_public: false };
     const h = handlerForSession(session);
     vi.spyOn(h, '_hasPreviewConfig').mockResolvedValue(true);
     await expect(h.allowUser(99, res)).resolves.toBe(true);
@@ -76,7 +76,7 @@ describe('DevserverHandler.allowUser', () => {
     const session = {
       user_id: 1,
       short_id: 'abc',
-      worktree_path: '/wt',
+      session_path: '/wt',
       is_preview_public: true,
       archived_at: '2026-01-01T00:00:00.000Z',
     };
@@ -93,7 +93,7 @@ describe('DevserverHandler.allowUser', () => {
     const session = {
       user_id: 1,
       short_id: 'abc',
-      worktree_path: '/wt',
+      session_path: '/wt',
       is_preview_users_public: false,
       is_preview_public: false,
     };
@@ -107,7 +107,7 @@ describe('DevserverHandler.allowUser', () => {
 describe('DevserverHandler.render', () => {
   it('redirects the portal host to the lone service subdomain', async () => {
     process.env.PUBLIC_API_URL = 'https://app.example.com';
-    const session = { id: 1, user_id: 1, short_id: 'abc', worktree_path: '/wt' };
+    const session = { id: 1, user_id: 1, short_id: 'abc', session_path: '/wt' };
     const app = {
       get: () => () => ({
         where: () => ({ first: () => Promise.resolve(session) }),
@@ -132,7 +132,7 @@ describe('DevserverHandler.render', () => {
 describe('DevserverHandler.buildTask', () => {
   it('passes ttl_ms for dev-proxy auto-start on preview link', async () => {
     const create = vi.fn(async (data) => ({ id: 99, ...data }));
-    const session = { id: 5, user_id: 2, short_id: 'abc', worktree_path: '/wt' };
+    const session = { id: 5, user_id: 2, short_id: 'abc', session_path: '/wt' };
     const app = {
       get: () => () => ({
         where: () => ({ first: () => Promise.resolve(session) }),

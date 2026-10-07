@@ -98,8 +98,8 @@ describe('buildSystemPromptAppend', () => {
   });
 
   it('appends user agent_prompt to the base prompt block', async () => {
-    const session = await seedSession({ base_branch: 'main', worktree_path: '/tmp/wt' });
-    session.absolute_worktree_path = '/tmp/wt';
+    const session = await seedSession({ base_branch: 'main', session_path: '/tmp/wt' });
+    session.absolute_session_path = '/tmp/wt';
     const result = await buildSystemPromptAppend(session, {
       agentPrompt: 'Always add unit tests.',
     });
@@ -110,7 +110,7 @@ describe('buildSystemPromptAppend', () => {
 
   it('includes .baguette/instructions.md in additional instructions', async () => {
     loadBaguetteInstructions.mockResolvedValueOnce('Prefer pnpm.');
-    const session = await seedSession({ worktree_path: '/tmp/wt' });
+    const session = await seedSession({ session_path: '/tmp/wt' });
     const result = await buildSystemPromptAppend(session, { agentPrompt: 'Ship small PRs.' });
     expect(result).toContain('Prefer pnpm.');
     expect(result).toContain('Ship small PRs.');
@@ -137,9 +137,9 @@ describe('buildSystemPromptAppend', () => {
   it('uses the light global prompt for is_global sessions', async () => {
     const session = await seedSession({
       is_global: true,
-      worktree_path: 'repos',
+      session_path: 'repos',
     });
-    session.absolute_worktree_path = '/data/repos';
+    session.absolute_session_path = '/data/repos';
     const result = await buildSystemPromptAppend(session);
     expect(result).toContain('global session');
     expect(result).toContain('CurrentSessionInfo');
@@ -156,7 +156,7 @@ describe('buildReviewSystemPromptAppend', () => {
       base_branch: 'main',
       local_branch: 'feat/review',
     });
-    session.absolute_worktree_path = '/tmp/wt';
+    session.absolute_session_path = '/tmp/wt';
     const result = await buildReviewSystemPromptAppend(session, 'Watch for SQL injection.');
     expect(result).toContain('CurrentSessionInfo');
     expect(result).toContain('all changes in this worktree');

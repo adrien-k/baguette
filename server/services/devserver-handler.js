@@ -40,7 +40,7 @@ export class DevserverHandler {
 
   async _getConfig() {
     this._configPromise ??= this.getSession().then((s) =>
-      s ? loadBaguetteConfig(s.worktree_path) : null
+      s ? loadBaguetteConfig(s.session_path) : null
     );
     return this._configPromise;
   }

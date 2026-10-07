@@ -47,7 +47,7 @@ beforeEach(async () => {
     initial_prompt: 't',
     short_id: 'reviss',
     status: 'stopped',
-    worktree_path: '/tmp/wt',
+    session_path: '/tmp/wt',
   });
   app = makeApp(db);
   await app.setup();

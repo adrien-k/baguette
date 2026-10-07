@@ -204,7 +204,7 @@ function makeApp(db) {
   return app;
 }
 
-async function seedUserAndSession(db, { github_id, username, shortId, worktreePath = null } = {}) {
+async function seedUserAndSession(db, { github_id, username, shortId, sessionPath = null } = {}) {
   await db('users').insert({ github_id, username, approved: true });
   const user = await db('users').where({ username }).first();
 
@@ -222,7 +222,7 @@ async function seedUserAndSession(db, { github_id, username, shortId, worktreePa
     initial_prompt: `Task for ${username}`,
     short_id: shortId,
     status: 'active',
-    worktree_path: worktreePath,
+    session_path: sessionPath,
     ...testSessionAgentDefaults,
   });
 
@@ -250,7 +250,7 @@ describe('Sessions service - custom methods', (hooks) => {
       github_id: 1001,
       username: 'alice',
       shortId: 'abc123',
-      worktreePath: '/tmp/wt',
+      sessionPath: '/tmp/wt',
     });
     userId = result.user.id;
     sessId = result.sessId;
@@ -402,7 +402,7 @@ describe('Sessions service - custom methods', (hooks) => {
       });
     });
 
-    it('returns empty commands when session has no worktree_path', async () => {
+    it('returns empty commands when session has no session_path', async () => {
       const [sessId2] = await db('sessions').insert({
         user_id: userId,
         repo_full_name: 'test/repo',
@@ -410,7 +410,7 @@ describe('Sessions service - custom methods', (hooks) => {
         initial_prompt: 'no wt',
         short_id: 'nowt11',
         status: 'active',
-        worktree_path: null,
+        session_path: null,
       });
 
       const result = await app.service('sessions').commands(sessId2, params({ id: userId }));
@@ -450,7 +450,7 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(result).toEqual({ yaml: 'session:\n  init: npm ci\n', missing: false });
     });
 
-    it('returns missing when session has no worktree_path', async () => {
+    it('returns missing when session has no session_path', async () => {
       const [sessId2] = await db('sessions').insert({
         user_id: userId,
         repo_full_name: 'test/repo',
@@ -458,7 +458,7 @@ describe('Sessions service - custom methods', (hooks) => {
         initial_prompt: 'no wt',
         short_id: 'nowt12',
         status: 'active',
-        worktree_path: null,
+        session_path: null,
       });
 
       const result = await app.service('sessions').baguetteYaml(sessId2, params({ id: userId }));
@@ -584,7 +584,7 @@ describe('Sessions service - custom methods', (hooks) => {
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();
       expect(row.status).toBe('archived');
-      expect(row.worktree_path).toBeNull();
+      expect(row.session_path).toBeNull();
     });
 
     it('trims messages to user and assistant only when archiving', async () => {
@@ -721,9 +721,9 @@ describe('Sessions service - custom methods', (hooks) => {
       expect(removeWorktree).not.toHaveBeenCalled();
     });
 
-    it('removes worktree by short_id when worktree_path is not set yet', async () => {
+    it('removes worktree by short_id when session_path is not set yet', async () => {
       await db('sessions').where({ id: sessId }).update({
-        worktree_path: null,
+        session_path: null,
         short_id: 'deadbeef',
         status: 'stopped',
       });
@@ -731,7 +731,7 @@ describe('Sessions service - custom methods', (hooks) => {
       await app.service('sessions').remove(sessId, params({ id: userId }));
 
       expect(removeWorktree).toHaveBeenCalledWith(
-        expect.objectContaining({ id: sessId, short_id: 'deadbeef', worktree_path: null }),
+        expect.objectContaining({ id: sessId, short_id: 'deadbeef', session_path: null }),
         expect.objectContaining({ full_name: 'test/repo' }),
         { keepLocalBranch: true }
       );
@@ -784,7 +784,7 @@ describe('Sessions service - custom methods', (hooks) => {
         initial_prompt: 'second task',
         short_id: 'xyz789',
         status: 'stopped',
-        worktree_path: null,
+        session_path: null,
       });
 
       await app.service('sessions').removeByRepoId(repo.id);
@@ -829,7 +829,7 @@ describe('Sessions service - custom methods', (hooks) => {
         initial_prompt: 'bob task',
         short_id: 'bob123',
         status: 'stopped',
-        worktree_path: null,
+        session_path: null,
       });
 
       await app.service('sessions').removeByRepoId(repo.id);
@@ -852,7 +852,7 @@ describe('Sessions service - custom methods', (hooks) => {
         initial_prompt: 'bob task',
         short_id: 'bob123',
         status: 'stopped',
-        worktree_path: null,
+        session_path: null,
       });
 
       await app.service('sessions').removeByRepoId(repo.id, { user: { id: userId } });
@@ -873,7 +873,7 @@ describe('Sessions service - custom methods', (hooks) => {
         initial_prompt: 'bob task',
         short_id: 'bob456',
         status: 'stopped',
-        worktree_path: null,
+        session_path: null,
       });
 
       await app.service('sessions').remove(otherSessId, { user: { id: userId } });
@@ -932,7 +932,7 @@ describe('Repos service - unlink', (hooks) => {
       initial_prompt: 'bob task',
       short_id: 'bob123',
       status: 'stopped',
-      worktree_path: null,
+      session_path: null,
     });
 
     app = makeApp(db);
@@ -1381,8 +1381,8 @@ describe('Sessions service - find, get, create', (hooks) => {
 
   describe('preview_url', () => {
     beforeEach(async () => {
-      // sessId1 already has worktree_path=null; give it one for preview tests
-      await db('sessions').where({ id: sessId1 }).update({ worktree_path: '/tmp/wt-preview' });
+      // sessId1 already has session_path=null; give it one for preview tests
+      await db('sessions').where({ id: sessId1 }).update({ session_path: '/tmp/wt-preview' });
     });
 
     it('is set when baguette config has a services block', async () => {
@@ -1413,8 +1413,8 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(session.preview_url).toBeFalsy();
     });
 
-    it('is false when session has no worktree_path', async () => {
-      await db('sessions').where({ id: sessId2 }).update({ worktree_path: null });
+    it('is false when session has no session_path', async () => {
+      await db('sessions').where({ id: sessId2 }).update({ session_path: null });
       loadBaguetteConfig.mockResolvedValue({ session: { tasks: { test: { run: 'npm test' } } } });
 
       const session = await app.service('sessions').get(sessId2, params({ id: userId2 }));
@@ -1822,7 +1822,7 @@ describe('Sessions service - find, get, create', (hooks) => {
 
       expect(session.is_global).toBe(true);
       expect(session.codeserver_url).toBeNull();
-      expect(session.worktree_path).toBe('repos');
+      expect(session.session_path).toBe('repos');
       expect(session.repo_id).toBeNull();
       expect(session.auto_push).toBeFalsy();
       expect(createWorktree).not.toHaveBeenCalled();
@@ -1847,7 +1847,7 @@ describe('Sessions service - find, get, create', (hooks) => {
       await db('sessions').where({ id: sessId1 }).update({
         local_branch: 'feature/taken-a1b2c3',
         remote_branch: 'feature/taken',
-        worktree_path: '/tmp/wt-taken',
+        session_path: '/tmp/wt-taken',
       });
 
       const session = await app.service('sessions').create(
@@ -1887,7 +1887,7 @@ describe('Sessions service - find, get, create', (hooks) => {
 
       const failed = await db('sessions').where({ remote_branch: 'feature/retry' }).first();
       expect(failed.status).toBe('failed');
-      expect(failed.worktree_path).toBeFalsy();
+      expect(failed.session_path).toBeFalsy();
       expect(removeWorktree).toHaveBeenCalled();
 
       const session = await app.service('sessions').create(
@@ -1919,13 +1919,13 @@ describe('Sessions service - find, get, create', (hooks) => {
           });
 
         expect(session.status).toBe('provisioning');
-        expect(session.worktree_path).toBeFalsy();
+        expect(session.session_path).toBeFalsy();
 
         resolveWorktree();
         await app.service('sessions')._awaitProvisioning(session.id);
 
         const row = await db('sessions').where({ id: session.id }).first();
-        expect(row.worktree_path).toBeTruthy();
+        expect(row.session_path).toBeTruthy();
         expect(row.status).toBe('stopped');
       } finally {
         resolveWorktree?.();
@@ -2113,7 +2113,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
   });
 
   it('marks sessions still provisioning as failed and wipes any partial worktree', async () => {
-    const sessId = await seedSession({ status: 'provisioning', worktree_path: null });
+    const sessId = await seedSession({ status: 'provisioning', session_path: null });
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
@@ -2123,7 +2123,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
   });
 
   it('finishes sessions left in archiving and sets archived_at', async () => {
-    const sessId = await seedSession({ status: 'archiving', worktree_path: '/tmp/wt' });
+    const sessId = await seedSession({ status: 'archiving', session_path: '/tmp/wt' });
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
@@ -2138,7 +2138,7 @@ describe('Sessions service - restartInterruptedSessions', (hooks) => {
     const sessId = await seedSession({
       status: 'archiving',
       archived_at: new Date().toISOString(),
-      worktree_path: null,
+      session_path: null,
     });
 
     await app.service('sessions').restartInterruptedSessions();

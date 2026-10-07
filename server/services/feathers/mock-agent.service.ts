@@ -77,7 +77,7 @@ export class MockAgentService {
 
     if (channel === 'chat') {
       if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.worktree_path) return;
+      if (session.repo_full_name && !session.session_path) return;
     }
 
     const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
@@ -141,7 +141,7 @@ export class MockAgentService {
             userId,
             turnId,
             channel,
-            worktreePath: session.worktree_path,
+            sessionPath: session.session_path,
             agentType: 'mock',
             model,
             modelParams: turnModel.modelParams,

@@ -51,9 +51,9 @@ export class CodeServerHandler {
 }
 
 /** Returns the VS Code web URL for a session folder on the shared code-server. */
-export function getCodeserverUrl(absoluteWorktreePath) {
+export function getCodeserverUrl(absoluteSessionPath) {
   const url = new URL(PUBLIC_API_URL);
   url.hostname = codeHostname;
-  url.searchParams.set('folder', absoluteWorktreePath);
+  url.searchParams.set('folder', absoluteSessionPath);
   return url.toString();
 }

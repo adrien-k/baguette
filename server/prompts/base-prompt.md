@@ -10,7 +10,7 @@ Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need p
 
 When someone refers to a session’s branch by name (for example “the `feature/foo` session”), they often mean the shared **`remote_branch`** (PR/push head), not the unique **`local_branch`** checked out in a single worktree. Several sessions can share one `remote_branch` with different `local_branch` values. To find those sessions and read each one’s `local_branch`, call **`SearchSessions`** with `remote_branch` set to that name.
 
-After **`CurrentSessionInfo`**, treat `worktree_path` as the repo root. Before git or other repo-local shell commands, confirm your cwd matches `worktree_path` (e.g. compare `pwd`); if it does not, `cd` to `worktree_path` or pass it as the shell tool's `working_directory`.
+After **`CurrentSessionInfo`**, treat `session_path` as the repo root. Before git or other repo-local shell commands, confirm your cwd matches `session_path` (e.g. compare `pwd`); if it does not, `cd` to `session_path` or pass it as the shell tool's `working_directory`.
 **CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**
 
 # GitHub CLI
@@ -19,7 +19,7 @@ The session shell does **not** include the GitHub CLI (`gh`). Do not run `gh pr 
 
 For GitHub and pull-request work, use Baguette MCP tools instead (for example `PrRead`, `PrUpsert`, `PrComments`, `PrWorkflows`, `PrWorkflowLogs`, `ListGithubPrs`, `GitPush`, `GitPull`, `GitFetch`). Local `git` in the worktree is fine for status, diff, commit, and merge; authenticated remotes and the GitHub API go through MCP.
 
-When spawning sub-agents (via the Agent tool), you MUST pass along the working directory instruction: tell them the `worktree_path` from `CurrentSessionInfo`, that they must `cd` there (or set shell `working_directory`) before repo/git commands if not already in it, and that they must follow the same `working_directory_restrictions`.
+When spawning sub-agents (via the Agent tool), you MUST pass along the working directory instruction: tell them the `session_path` from `CurrentSessionInfo`, that they must `cd` there (or set shell `working_directory`) before repo/git commands if not already in it, and that they must follow the same `working_directory_restrictions`.
 
 # Git Diff
 

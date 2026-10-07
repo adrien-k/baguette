@@ -16,7 +16,7 @@ function loadSessionRow(session, app) {
 export function buildReviewerAgentTools(session, app, turnAgent = {}) {
   const h = createIssueHandlers(session, app, turnAgent);
   return [
-    createCurrentSessionInfoTool(loadSessionRow(session, app), { readOnlyWorktree: true }),
+    createCurrentSessionInfoTool(loadSessionRow(session, app), { readOnlySession: true }),
     createCreateIssueTool(h),
     ...buildSessionIssueReadTools(session, app),
     createUpdateIssueTool(h),

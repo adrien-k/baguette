@@ -6,7 +6,7 @@ import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurn
 function shouldSkipConfigCommands(session) {
   if (!session?.id) return true;
   if (isGlobalSession(session)) return true;
-  if (!session.worktree_path) return true;
+  if (!session.session_path) return true;
   return session.status === 'archiving' || session.status === 'archived';
 }
 

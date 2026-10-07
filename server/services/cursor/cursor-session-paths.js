@@ -6,7 +6,7 @@ import { toStrippedName } from '../github.js';
  * On-disk session folder (`.../sessions/<short_id>/`), sibling to `worktree` and `cursor-dir`.
  */
 export function cursorSessionDataDir(session) {
-  const fromDb = resolveDataDirRelativePath(session?.worktree_path);
+  const fromDb = resolveDataDirRelativePath(session?.session_path);
   if (fromDb) {
     if (path.basename(fromDb) === 'worktree') return path.dirname(fromDb);
     return path.join(path.dirname(fromDb), 'session-data');
@@ -27,7 +27,7 @@ export function cursorSdkStateRoot(session) {
 
 /** Workspace path used to scope {@link SqliteLocalAgentStore} for a session. */
 export function cursorWorkspaceRef(session) {
-  const cwd = resolveDataDirRelativePath(session?.worktree_path);
+  const cwd = resolveDataDirRelativePath(session?.session_path);
   if (cwd) return cwd;
   const sessionDir = cursorSessionDataDir(session);
   if (sessionDir) return path.join(sessionDir, 'worktree');

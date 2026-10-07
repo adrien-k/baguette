@@ -65,7 +65,7 @@ beforeEach(async () => {
     status: 'stopped',
     agent_sdk: 'mock',
     model: MOCK_STANDARD_MODEL_ID,
-    worktree_path: WORKTREE_REL,
+    session_path: WORKTREE_REL,
   });
 
   app = makeApp(db);

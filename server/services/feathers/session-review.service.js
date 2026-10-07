@@ -224,7 +224,7 @@ export class SessionReviewService {
     if (isGlobalSession(session)) {
       throw new BadRequest('Reviews are only available on repository sessions');
     }
-    if (!session.worktree_path) {
+    if (!session.session_path) {
       throw new BadRequest('Session worktree is not ready');
     }
   }
@@ -386,7 +386,7 @@ export class SessionReviewService {
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
     await this._assertCanReview(session);
     const marker = session.last_reviewed_commit_sha;
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    const cwd = resolveDataDirRelativePath(session.session_path);
     let message = marker
       ? newCommitsReviewText(marker, await gitCommitCountSince(cwd, marker))
       : latestChangesFromBaseText(session.base_branch);
@@ -584,7 +584,7 @@ export class SessionReviewService {
   }
 
   async _resumeInterruptedReview(session) {
-    if (isGlobalSession(session) || !session.worktree_path) {
+    if (isGlobalSession(session) || !session.session_path) {
       await this._persistStatus(session, 'Server restarted — review could not be resumed');
       await this._patchReviewStatus(session, 'failed');
       return false;

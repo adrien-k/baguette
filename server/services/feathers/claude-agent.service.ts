@@ -72,7 +72,7 @@ type ClaudeAgentState = {
   abortController: AbortController;
   repoFullName?: string | null;
   branch?: string | null;
-  absoluteWorktreePath?: string | null;
+  absoluteSessionPath?: string | null;
   repoId?: number | null;
   token?: string | null;
   sessionSettings?: { permissionMode: PermissionMode };
@@ -195,9 +195,7 @@ export class ClaudeAgentService {
     const claudeEnv = await this.app.service('sessions').getClaudeEnv(sessionRow.id);
     const resolvedModel = model !== undefined ? model : sessionRow.model;
     const cwd =
-      resolveDataDirRelativePath(sessionRow.worktree_path) ||
-      sessionRow.absolute_worktree_path ||
-      '';
+      resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
     const resolvedMcp = mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app));
     return {
       cwd,
@@ -347,7 +345,7 @@ export class ClaudeAgentService {
 
     if (channel === 'chat') {
       if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.worktree_path) return;
+      if (session.repo_full_name && !session.session_path) return;
     }
 
     const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
@@ -415,7 +413,7 @@ export class ClaudeAgentService {
             userId: session.user_id,
             turnId: row.turn_id,
             channel,
-            worktreePath: session.worktree_path,
+            sessionPath: session.session_path,
             agentType: 'claude',
             model: model ?? session.model ?? '',
             modelParams,
@@ -645,7 +643,7 @@ export class ClaudeAgentService {
       });
     }
 
-    const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path) || '';
+    const absoluteSessionPath = resolveDataDirRelativePath(sessionRow.session_path) || '';
     const sessionState = this._openQuery({
       sessionId,
       userId: sessionRow.user_id,
@@ -653,7 +651,7 @@ export class ClaudeAgentService {
       extraState: {
         repoFullName: sessionRow.repo_full_name,
         branch: sessionRow.base_branch,
-        absoluteWorktreePath,
+        absoluteSessionPath,
         repoId: sessionRow.repo_id,
         token: getGithubToken(user),
         sessionSettings,
@@ -914,14 +912,14 @@ export class ClaudeAgentService {
       .patch(sessionId, { status: 'running' }, { user: { id: session?.userId } });
     await this.app.service('sessions').onTurnStart(sessionId);
 
-    const absoluteWorktreePath = resolveDataDirRelativePath(sessionRow.worktree_path as string);
+    const absoluteSessionPath = resolveDataDirRelativePath(sessionRow.session_path as string);
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const token = session?.token ?? getGithubToken(user);
     const repoFullName = (session?.repoFullName ?? sessionRow.repo_full_name) as string;
-    if (sessionRow.remote_branch && absoluteWorktreePath && token) {
+    if (sessionRow.remote_branch && absoluteSessionPath && token) {
       try {
         const hasNew = await remoteHasNewCommits(
-          absoluteWorktreePath,
+          absoluteSessionPath,
           sessionRow.remote_branch as string,
           token,
           repoFullName

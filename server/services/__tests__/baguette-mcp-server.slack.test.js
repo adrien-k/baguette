@@ -58,7 +58,7 @@ const SESSION = {
   repo_id: 3,
   repo_full_name: 'owner/repo',
   base_branch: 'main',
-  worktree_path: '/tmp/wt',
+  session_path: '/tmp/wt',
   agent_sdk: 'claude',
   model: 'claude-opus-5',
   auto_push: 1,

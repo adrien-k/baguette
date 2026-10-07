@@ -7,7 +7,7 @@ import { ok, fail } from '../lib/result.js';
 const execFileAsync = promisify(execFile);
 
 export function createPrReviewTool(ctx) {
-  const { getSession, getToken, withSessionHeader, absoluteWorktreePath } = ctx;
+  const { getSession, getToken, withSessionHeader, absoluteSessionPath } = ctx;
   return {
     name: 'PrReview',
     description:
@@ -46,7 +46,7 @@ export function createPrReviewTool(ctx) {
       let commitId = null;
       if (comments.length > 0) {
         const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
-          cwd: absoluteWorktreePath,
+          cwd: absoluteSessionPath,
         });
         commitId = stdout.trim();
       }

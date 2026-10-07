@@ -6,10 +6,10 @@ import { isGlobalSession } from '../../shared/session-scope.js';
  * @returns {Promise<{ commitsToPush: number, commitsSinceReview: number }>}
  */
 export async function computeSessionGitStatus(session) {
-  if (isGlobalSession(session) || !session?.worktree_path) {
+  if (isGlobalSession(session) || !session?.session_path) {
     return { commitsToPush: 0, commitsSinceReview: 0 };
   }
-  const cwd = resolveDataDirRelativePath(session.worktree_path);
+  const cwd = resolveDataDirRelativePath(session.session_path);
   const remoteBranch = session.remote_branch || session.local_branch;
   const commitsToPush = await gitCommitsToPush(cwd, remoteBranch);
   const sinceReview = session.last_reviewed_commit_sha;

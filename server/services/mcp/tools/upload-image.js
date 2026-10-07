@@ -6,7 +6,7 @@ import { IMAGES_DIR, PUBLIC_API_HOST } from '../../../config.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createUploadImageTool(ctx) {
-  const { absoluteWorktreePath } = ctx;
+  const { absoluteSessionPath } = ctx;
   return {
     name: 'UploadImage',
     description:
@@ -48,10 +48,10 @@ export function createUploadImageTool(ctx) {
       let ext;
 
       if (filePath) {
-        const absPath = path.resolve(absoluteWorktreePath, filePath);
+        const absPath = path.resolve(absoluteSessionPath, filePath);
         if (
-          !absPath.startsWith(absoluteWorktreePath + path.sep) &&
-          absPath !== absoluteWorktreePath
+          !absPath.startsWith(absoluteSessionPath + path.sep) &&
+          absPath !== absoluteSessionPath
         ) {
           return fail('filePath must be within the worktree');
         }

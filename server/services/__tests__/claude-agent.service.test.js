@@ -150,7 +150,7 @@ const BASE_SESSION_DATA = {
   agent_sdk: 'claude',
   model: 'sonnet',
   // Must follow REPOS_DIR/<stripped>/sessions/<id> so createCanUseTool can derive the repo dir
-  worktree_path: path.join(REPOS_DIR, 'owner-repo', 'sessions', 'test-session'),
+  session_path: path.join(REPOS_DIR, 'owner-repo', 'sessions', 'test-session'),
   repo_id: 7,
   remote_branch: null,
   claude_session_id: null,
@@ -215,7 +215,7 @@ describe('ClaudeAgentService', (hooks) => {
 
       // Session state returned
       expect(sessionState.sessionId).toBe(BASE_SESSION_ID);
-      expect(sessionState.absoluteWorktreePath).toBe(
+      expect(sessionState.absoluteSessionPath).toBe(
         path.join(REPOS_DIR, 'owner-repo', 'sessions', 'test-session')
       );
 

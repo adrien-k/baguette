@@ -492,8 +492,8 @@ export class SessionsService extends KnexService {
   }
 
   async _runCleanupAndFinalize(session) {
-    if (session.worktree_path) {
-      const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    if (session.session_path) {
+      const baguetteConfig = await loadBaguetteConfig(session.session_path);
       const cleanupCommand = getScriptBlock(baguetteConfig?.session?.cleanup);
       if (cleanupCommand) {
         try {
@@ -546,7 +546,7 @@ export class SessionsService extends KnexService {
     await db('sessions')
       .where({ id: sessionId })
       .whereNull('archived_at')
-      .update({ archived_at: archivedAt, worktree_path: null, status: ARCHIVED_STATUS });
+      .update({ archived_at: archivedAt, session_path: null, status: ARCHIVED_STATUS });
     const updated = await db('sessions').where({ id: sessionId }).first();
     this.emit('patched', updated);
   }
@@ -613,8 +613,8 @@ export class SessionsService extends KnexService {
 
   async commands(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) return { commands: [] };
-    const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    if (!session?.session_path || isGlobalSession(session)) return { commands: [] };
+    const baguetteConfig = await loadBaguetteConfig(session.session_path);
     if (baguetteConfig?.error) throw new BadRequest(baguetteConfig.error);
     try {
       return { commands: getAvailableCommands(baguetteConfig) };
@@ -626,10 +626,10 @@ export class SessionsService extends KnexService {
 
   async baguetteYaml(_data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) {
+    if (!session?.session_path || isGlobalSession(session)) {
       return { yaml: null, missing: true };
     }
-    const result = await readBaguetteConfigRaw(session.worktree_path);
+    const result = await readBaguetteConfigRaw(session.session_path);
     if (result.missing) return { yaml: null, missing: true };
     if (result.error) throw new BadRequest(result.error);
     return { yaml: result.yaml, missing: false };
@@ -637,8 +637,8 @@ export class SessionsService extends KnexService {
 
   async previewStatus(_data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) return { services: [] };
-    const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    if (!session?.session_path) return { services: [] };
+    const baguetteConfig = await loadBaguetteConfig(session.session_path);
     const definitions = getPreviewServiceDefinitions(baguetteConfig, session.short_id);
     if (!definitions?.length) return { services: [] };
 
@@ -725,8 +725,8 @@ export class SessionsService extends KnexService {
 
   async startPreviewService(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path) throw new BadRequest('Session has no worktree');
-    const baguetteConfig = await loadBaguetteConfig(session.worktree_path);
+    if (!session?.session_path) throw new BadRequest('Session has no worktree');
+    const baguetteConfig = await loadBaguetteConfig(session.session_path);
     const services = resolveServicesConfig(baguetteConfig);
     if (!services?.length) {
       throw new BadRequest('No preview services are configured for this session');
@@ -771,8 +771,8 @@ export class SessionsService extends KnexService {
 
   async diff(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) return { diff: '' };
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    if (!session?.session_path || isGlobalSession(session)) return { diff: '' };
+    const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
@@ -820,10 +820,10 @@ export class SessionsService extends KnexService {
 
   async changedFiles(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) {
+    if (!session?.session_path || isGlobalSession(session)) {
       return { files: [], commit: null };
     }
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    const cwd = resolveDataDirRelativePath(session.session_path);
     const commitSha =
       data && typeof data === 'object' && data.commit && data.commit !== 'all'
         ? String(data.commit)
@@ -917,10 +917,10 @@ export class SessionsService extends KnexService {
 
   async branchCommits(_data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) {
+    if (!session?.session_path || isGlobalSession(session)) {
       return { commits: [] };
     }
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
@@ -940,10 +940,10 @@ export class SessionsService extends KnexService {
 
   async shas(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) {
+    if (!session?.session_path || isGlobalSession(session)) {
       return { localSha: null, remoteSha: null };
     }
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
@@ -957,8 +957,8 @@ export class SessionsService extends KnexService {
 
   async showDiff(data, params) {
     const session = params.resolvedSession;
-    if (!session?.worktree_path || isGlobalSession(session)) return { path: data.path, diff: '' };
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    if (!session?.session_path || isGlobalSession(session)) return { path: data.path, diff: '' };
+    const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const diff = await gitDiff(cwd, session.base_branch, {
         filePath: data.path,
@@ -1026,8 +1026,8 @@ export class SessionsService extends KnexService {
   async push(data, params) {
     const session = params.resolvedSession;
     if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
-    if (!session?.worktree_path) throw new BadRequest('Session has no worktree');
-    const cwd = resolveDataDirRelativePath(session.worktree_path);
+    if (!session?.session_path) throw new BadRequest('Session has no worktree');
+    const cwd = resolveDataDirRelativePath(session.session_path);
     const user = await this.app.service('users').get(session.user_id, {});
     const token = getGithubToken(user);
     if (!token) throw new BadRequest('No GitHub token configured');
@@ -1071,8 +1071,8 @@ export class SessionsService extends KnexService {
           // non-fatal — proceed without user prefix
         }
       }
-      const baguetteConfig = session.worktree_path
-        ? await loadBaguetteConfig(resolveDataDirRelativePath(session.worktree_path))
+      const baguetteConfig = session.session_path
+        ? await loadBaguetteConfig(resolveDataDirRelativePath(session.session_path))
         : null;
       const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
       const usageLines = await loadSessionFooterUsageLines(this.app.get('db'), session);
@@ -1120,8 +1120,8 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
 
     // Check if worktree still exists
-    const resolvedPath = session.worktree_path
-      ? resolveDataDirRelativePath(session.worktree_path)
+    const resolvedPath = session.session_path
+      ? resolveDataDirRelativePath(session.session_path)
       : null;
     const worktreeExists = resolvedPath
       ? await fs
@@ -1133,7 +1133,7 @@ export class SessionsService extends KnexService {
     const dbUpdate = { archived_at: null, status: 'stopped' };
 
     if (isGlobalSession(session)) {
-      dbUpdate.worktree_path = 'repos';
+      dbUpdate.session_path = 'repos';
     } else if (!worktreeExists) {
       const repo = session.repo_id
         ? await db('repos').where({ id: session.repo_id }).first()
@@ -1158,7 +1158,7 @@ export class SessionsService extends KnexService {
       );
       dbUpdate.local_branch = localBranch;
       await configureWorktreeGitIdentity(absoluteWorktreePath, user);
-      dbUpdate.worktree_path = path.relative(DATA_DIR, absoluteWorktreePath);
+      dbUpdate.session_path = path.relative(DATA_DIR, absoluteWorktreePath);
     }
 
     await db('sessions').where({ id: session.id }).update(dbUpdate);
@@ -1564,7 +1564,7 @@ function taskBranchForShortId(branchPrefix, shortId) {
 async function provisionGlobalSession(app, session, params) {
   const userParams = { provider: undefined, user: params.user };
   const patch = {
-    worktree_path: 'repos',
+    session_path: 'repos',
     auto_push: false,
     is_global: true,
   };
@@ -1629,7 +1629,7 @@ async function provisionSessionEnvironment(app, session, params) {
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
     patch = {
-      worktree_path: path.relative(DATA_DIR, absoluteWorktreePath),
+      session_path: path.relative(DATA_DIR, absoluteWorktreePath),
       local_branch: localBranch,
       remote_branch: workingBranch,
     };
@@ -1655,7 +1655,7 @@ async function provisionSessionEnvironment(app, session, params) {
       token
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
-    patch.worktree_path = path.relative(DATA_DIR, absoluteWorktreePath);
+    patch.session_path = path.relative(DATA_DIR, absoluteWorktreePath);
 
     const branchPrefix = user?.branch_prefix ?? '';
     const fallbackBranch = taskBranchForShortId(branchPrefix, shortId);
@@ -1770,7 +1770,7 @@ async function failSessionProvisioning(app, sessionId, user, err) {
   try {
     await app
       .service('sessions')
-      .patch(sessionId, { status: 'failed', worktree_path: null }, userParams);
+      .patch(sessionId, { status: 'failed', session_path: null }, userParams);
   } catch (patchErr) {
     logger.error(
       { err: patchErr, sessionId },
@@ -1834,17 +1834,17 @@ export async function resolveSessionFromData(context) {
 
 async function withHasWebserver(session) {
   if (!session) return session;
-  const resolvedPath = resolveDataDirRelativePath(session.worktree_path);
-  const absoluteWorktreePath = resolvedPath
+  const resolvedPath = resolveDataDirRelativePath(session.session_path);
+  const absoluteSessionPath = resolvedPath
     ? await fs.realpath(resolvedPath).catch(() => resolvedPath)
     : resolvedPath;
-  const config = session.worktree_path ? await loadBaguetteConfig(session.worktree_path) : null;
+  const config = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
   const hasPreview = sessionHasPreviewConfig(config);
   const previewServices =
     hasPreview && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
   return {
     ...session,
-    absolute_worktree_path: absoluteWorktreePath ?? null,
+    absolute_session_path: absoluteSessionPath ?? null,
     preview_url: hasPreview && getSessionPreviewUrl(session, config),
     preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
@@ -1852,8 +1852,8 @@ async function withHasWebserver(session) {
     is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
     is_global: Boolean(session.is_global),
     codeserver_url:
-      absoluteWorktreePath && !isGlobalSession(session)
-        ? getCodeserverUrl(absoluteWorktreePath)
+      absoluteSessionPath && !isGlobalSession(session)
+        ? getCodeserverUrl(absoluteSessionPath)
         : null,
   };
 }

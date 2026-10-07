@@ -24,7 +24,7 @@ export function createPrUpsertTool(ctx) {
     getToken,
     requireGitHubRepo,
     patchSession,
-    absoluteWorktreePath,
+    absoluteSessionPath,
     baseBranch,
   } = ctx;
   return {
@@ -67,7 +67,7 @@ export function createPrUpsertTool(ctx) {
       if (!effectivePrNumber) {
         if (!head) {
           const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-            cwd: absoluteWorktreePath,
+            cwd: absoluteSessionPath,
           });
           head = stdout.trim();
         }
@@ -111,8 +111,8 @@ export function createPrUpsertTool(ctx) {
       }
 
       const prSession = freshSession ?? session;
-      const baguetteConfig = absoluteWorktreePath
-        ? await loadBaguetteConfig(absoluteWorktreePath)
+      const baguetteConfig = absoluteSessionPath
+        ? await loadBaguetteConfig(absoluteSessionPath)
         : null;
       const previewUrl = getSessionPreviewUrl(prSession, baguetteConfig);
       const usageLines = await loadSessionFooterUsageLines(db, prSession);

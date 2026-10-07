@@ -10,7 +10,7 @@ export function createGitPushTool(ctx) {
     getToken,
     requireGitHubRepo,
     patchSession,
-    absoluteWorktreePath,
+    absoluteSessionPath,
   } = ctx;
   return {
     name: 'GitPush',
@@ -60,7 +60,7 @@ export function createGitPushTool(ctx) {
 
       let result;
       try {
-        result = await gitPush(absoluteWorktreePath, await getToken(), {
+        result = await gitPush(absoluteSessionPath, await getToken(), {
           force: force === 'lease',
           ...(sessionBranch ? { branch: sessionBranch } : {}),
         });

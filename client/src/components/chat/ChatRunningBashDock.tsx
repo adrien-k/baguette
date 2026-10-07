@@ -10,11 +10,11 @@ export type RunningToolDockItem = {
 /** Running Bash, RunTask, and AwaitDetachedTask tool_call rows pinned above the composer until done. */
 export default function ChatRunningBashDock({
   items,
-  worktreePath,
+  sessionPath,
   sessionId,
 }: {
   items?: RunningToolDockItem[];
-  worktreePath?: string | null;
+  sessionPath?: string | null;
   sessionId?: number | null;
 }) {
   if (!items?.length) return null;
@@ -30,7 +30,7 @@ export default function ChatRunningBashDock({
         <ToolCallBlock
           key={id}
           message={message}
-          worktreePath={worktreePath}
+          sessionPath={sessionPath}
           sessionId={sessionId ?? undefined}
         />
       ))}

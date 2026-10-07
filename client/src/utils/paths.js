@@ -1,9 +1,9 @@
 /**
  * Replace absolute worktree paths in arbitrary text (e.g. shell commands) with "." / "./".
  */
-export function stripWorktreeFromText(text, worktreePath) {
-  if (!text || !worktreePath) return text;
-  const root = worktreePath.endsWith('/') ? worktreePath.slice(0, -1) : worktreePath;
+export function stripWorktreeFromText(text, sessionPath) {
+  if (!text || !sessionPath) return text;
+  const root = sessionPath.endsWith('/') ? sessionPath.slice(0, -1) : sessionPath;
   let out = text.split(`${root}/`).join('./');
   out = out.split(root).join('.');
   return out;
@@ -12,9 +12,9 @@ export function stripWorktreeFromText(text, worktreePath) {
 /**
  * Remove a leading `cd <absolute worktree> &&` from a shell command (card summary only).
  */
-export function stripCdWorktreePrefix(command, worktreePath) {
-  if (!command || !worktreePath) return command;
-  const root = worktreePath.endsWith('/') ? worktreePath.slice(0, -1) : worktreePath;
+export function stripCdWorktreePrefix(command, sessionPath) {
+  if (!command || !sessionPath) return command;
+  const root = sessionPath.endsWith('/') ? sessionPath.slice(0, -1) : sessionPath;
   const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`^\\s*cd\\s+(?:${escaped}|['"]${escaped}['"])\\s*&&\\s*`);
   return command.replace(re, '');
@@ -23,11 +23,11 @@ export function stripCdWorktreePrefix(command, worktreePath) {
 /**
  * Strip the worktree path prefix from a file path, replacing it with "./".
  */
-export function stripWorktreePath(filePath, worktreePath) {
-  if (!filePath || !worktreePath) return filePath;
-  const root = worktreePath.endsWith('/') ? worktreePath.slice(0, -1) : worktreePath;
+export function stripWorktreePath(filePath, sessionPath) {
+  if (!filePath || !sessionPath) return filePath;
+  const root = sessionPath.endsWith('/') ? sessionPath.slice(0, -1) : sessionPath;
   if (filePath === root || filePath.startsWith(`${root}/`)) {
-    return stripWorktreeFromText(filePath, worktreePath);
+    return stripWorktreeFromText(filePath, sessionPath);
   }
   return filePath;
 }

@@ -63,7 +63,7 @@ describe('Tasks service — task_key resolution', (hooks) => {
       initial_prompt: 'p',
       short_id: 's1',
       status: 'active',
-      worktree_path: 'repos/test/worktree',
+      session_path: 'repos/test/worktree',
       initialized: true,
     });
 
