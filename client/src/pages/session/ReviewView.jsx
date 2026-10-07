@@ -24,6 +24,7 @@ import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
+import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
@@ -247,6 +248,7 @@ export default function ReviewView({
       session_id: session.id,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
+      ...builderMessageCreateFields(session),
     });
   };
 
