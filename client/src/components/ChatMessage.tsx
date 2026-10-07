@@ -177,7 +177,7 @@ function TypedMessage({
                     <span>{agentName}</span>
                     <CopyButton text={block.text} />
                   </div>
-                  <CollapsibleMarkdown>{block.text}</CollapsibleMarkdown>
+                  <CollapsibleMarkdown key={`${message.id}-${i}`}>{block.text}</CollapsibleMarkdown>
                 </div>
               );
             }

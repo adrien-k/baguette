@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { CHAT_CONTENT_PREVIEW_LINES, splitPreviewLines } from '../../utils/chatContentPreview.js';
 
@@ -65,10 +65,6 @@ export default function CollapsibleMarkdown({
   const [expanded, setExpanded] = useState(false);
   const { preview, remaining } = splitPreviewLines(text, previewLines);
   const showFull = expanded || remaining === 0;
-
-  useEffect(() => {
-    setExpanded(false);
-  }, [text]);
 
   return (
     <div>

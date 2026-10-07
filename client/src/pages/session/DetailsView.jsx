@@ -198,7 +198,11 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
 
           <div className={`text-sm ${TEXT_PRIMARY} min-w-0`}>
             {prDescription ? (
-              <CollapsibleMarkdown previewLines={12} simpleToggle>
+              <CollapsibleMarkdown
+                key={session.pr_number != null ? session.pr_number : `session-${session.id}`}
+                previewLines={12}
+                simpleToggle
+              >
                 {prDescription}
               </CollapsibleMarkdown>
             ) : (
