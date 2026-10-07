@@ -112,6 +112,10 @@ export default function ChatView({
   models,
   onModelChange,
   onAutoPushChange,
+  onSdkChange,
+  availableSdks,
+  userSettings,
+  sdkRepo,
   cursorModelPrefs,
   onCursorModelPrefChange,
   commitsToPush = 0,
@@ -785,6 +789,10 @@ export default function ChatView({
                     onCursorModelPrefChange={onCursorModelPrefChange}
                     onModelChange={handleComposerModelChange}
                     onAutoPushChange={onAutoPushChange}
+                    onSdkChange={readonly ? undefined : onSdkChange}
+                    availableSdks={availableSdks}
+                    userSettings={userSettings}
+                    sdkRepo={sdkRepo}
                     showAutoPushParam
                     textareaId="chat-input"
                     canSend={canSendDraft}

@@ -1880,6 +1880,29 @@ function normalizeModelFields(context) {
   return context;
 }
 
+/** Builder turns resume from provider ids; switching SDK must not reuse another SDK's thread. */
+async function resetBuilderAgentIdsOnSdkChange(context) {
+  if (context.method !== 'patch' || context.id == null) return context;
+  const nextSdk = context.data?.agent_sdk;
+  if (nextSdk == null || String(nextSdk).trim() === '') return context;
+
+  const db = context.app.get('db');
+  const userId = context.params.user?.id;
+  let query = db('sessions').where({ id: context.id });
+  if (userId != null) query = query.where({ user_id: userId });
+  const session = await query.first();
+  if (!session) return context;
+
+  const prevSdk = session.agent_sdk || 'claude';
+  const normalizedNext = String(nextSdk).trim();
+  if (normalizedNext === prevSdk) return context;
+
+  context.data.claude_session_id = null;
+  context.data.cursor_agent_id = null;
+  context.data.pi_session_id = null;
+  return context;
+}
+
 /** Reviewer starts from the session's SDK/model; later edits write review_* only. */
 function seedReviewModelFromSession(context) {
   if (context.data.review_agent_sdk === undefined) {
@@ -2002,7 +2025,7 @@ export const sessionsHooks = {
       normalizeModelFields,
       seedReviewModelFromSession,
     ],
-    patch: [requireOwnSession, normalizeModelFields],
+    patch: [requireOwnSession, resetBuilderAgentIdsOnSdkChange, normalizeModelFields],
     getSessionByShortId: [],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],

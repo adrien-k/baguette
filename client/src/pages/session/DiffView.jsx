@@ -410,6 +410,10 @@ export default function DiffView({
   readonly,
   models,
   onModelChange,
+  onSdkChange,
+  availableSdks,
+  userSettings,
+  sdkRepo,
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
@@ -509,6 +513,10 @@ export default function DiffView({
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
         onModelChange={onModelChange}
+        onSdkChange={readonly ? undefined : onSdkChange}
+        availableSdks={availableSdks}
+        userSettings={userSettings}
+        sdkRepo={sdkRepo}
         onClose={() => setLineComposer(null)}
       />
     ) : null;

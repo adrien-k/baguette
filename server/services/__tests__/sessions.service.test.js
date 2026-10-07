@@ -1413,6 +1413,26 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(updated.review_agent_sdk).toBe('cursor');
       expect(updated.review_model).toBe('composer');
     });
+
+    it('clears builder agent resume ids when agent_sdk changes', async () => {
+      await app.service('sessions').patch(
+        sessId1,
+        {
+          agent_sdk: 'claude',
+          claude_session_id: 'claude-thread-1',
+          cursor_agent_id: 'cursor-thread-1',
+        },
+        {}
+      );
+
+      const updated = await app
+        .service('sessions')
+        .patch(sessId1, { agent_sdk: 'cursor' }, params({ id: userId1 }));
+
+      expect(updated.agent_sdk).toBe('cursor');
+      expect(updated.claude_session_id).toBeNull();
+      expect(updated.cursor_agent_id).toBeNull();
+    });
   });
 
   // ── create ─────────────────────────────────────────────────────────────────

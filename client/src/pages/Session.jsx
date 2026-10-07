@@ -29,6 +29,9 @@ import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import { availableAgentSdks } from '@baguette/shared/agent-sdk-credentials.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../utils/models.js';
 import toast from 'react-hot-toast';
 import { toastFeathersError } from '../utils/toastError.jsx';
 import { apiFetch } from '../api.js';
@@ -53,6 +56,7 @@ import BaguetteConfigModal from '../components/BaguetteConfigModal.jsx';
 import ArchiveSession from '../components/ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from '../components/StopSession.jsx';
 import PushConfirmModal from '../components/PushConfirmModal.jsx';
+import SwitchAgentSdkConfirmModal from '../components/SwitchAgentSdkConfirmModal.jsx';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
@@ -657,6 +661,18 @@ export default function Session() {
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
   }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
 
+  const { currentUser: userSettings } = useCurrentUser();
+  const sdkRepo = useMemo(
+    () => repos.find((r) => r.id === session?.repo_id),
+    [repos, session?.repo_id]
+  );
+  const availableSdks = useMemo(
+    () => (userSettings ? availableAgentSdks(userSettings, sdkRepo) : []),
+    [userSettings, sdkRepo]
+  );
+  const [pendingAgentSdk, setPendingAgentSdk] = useState(null);
+  const [switchingAgentSdk, setSwitchingAgentSdk] = useState(false);
+
   const handleModelChange = (modelId, modelParams = null) => {
     if (!session?.id) return;
     const patch = { model: modelId };
@@ -665,6 +681,44 @@ export default function Session() {
       .patch(session.id, patch)
       .catch((err) => toastFeathersError('Failed to change model', err));
   };
+
+  const handleAgentSdkChangeRequest = (sdk) => {
+    if (!session?.id || session?.archived_at || session?.status === 'archiving') return;
+    if (!sdk || sdk === session.agent_sdk) return;
+    setPendingAgentSdk(sdk);
+  };
+
+  const handleAgentSdkSwitchCancel = () => {
+    if (switchingAgentSdk) return;
+    setPendingAgentSdk(null);
+  };
+
+  const handleAgentSdkSwitchConfirm = async () => {
+    if (!session?.id || !pendingAgentSdk || switchingAgentSdk) return;
+    setSwitchingAgentSdk(true);
+    try {
+      await sessionsService.patch(session.id, {
+        agent_sdk: pendingAgentSdk,
+        model: null,
+        model_params: null,
+      });
+      setPendingAgentSdk(null);
+    } catch (err) {
+      toastFeathersError('Failed to switch agent SDK', err);
+    } finally {
+      setSwitchingAgentSdk(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!session?.id || !models.length) return;
+    const current = session.model;
+    if (current && models.some((m) => m.id === current)) return;
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    handleModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once per sdk/model list
+  }, [session?.id, session?.agent_sdk, session?.model, models]);
 
   // Named .baguette.yaml task: the server resolves the command, ports and dependencies.
   const handleTaskStart = (taskKey) => {
@@ -1499,6 +1553,10 @@ export default function Session() {
                 models={models}
                 onModelChange={handleModelChange}
                 onAutoPushChange={handleAutoPushChange}
+                onSdkChange={handleAgentSdkChangeRequest}
+                availableSdks={availableSdks}
+                userSettings={userSettings}
+                sdkRepo={sdkRepo}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
                 commitsToPush={commitsToPush}
@@ -1542,6 +1600,10 @@ export default function Session() {
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
+                onSdkChange={handleAgentSdkChangeRequest}
+                availableSdks={availableSdks}
+                userSettings={userSettings}
+                sdkRepo={sdkRepo}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
               />
@@ -1632,6 +1694,15 @@ export default function Session() {
       </div>
 
       {/* Task Log Modal */}
+      {pendingAgentSdk && session && (
+        <SwitchAgentSdkConfirmModal
+          fromSdk={session.agent_sdk || 'claude'}
+          toSdk={pendingAgentSdk}
+          loading={switchingAgentSdk}
+          onConfirm={handleAgentSdkSwitchConfirm}
+          onCancel={handleAgentSdkSwitchCancel}
+        />
+      )}
       {showPushModal && (
         <PushConfirmModal
           sessionId={session?.id}

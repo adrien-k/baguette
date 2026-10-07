@@ -22,6 +22,10 @@ export default function DiffLineComposer({
   cursorModelPrefs,
   onCursorModelPrefChange,
   onModelChange,
+  onSdkChange,
+  availableSdks,
+  userSettings,
+  sdkRepo,
   onClose,
 }) {
   const [input, setInput] = useState('');
@@ -165,6 +169,10 @@ export default function DiffLineComposer({
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
         onModelChange={handleComposerModelChange}
+        onSdkChange={onSdkChange}
+        availableSdks={availableSdks}
+        userSettings={userSettings}
+        sdkRepo={sdkRepo}
         textareaId="diff-line-composer"
         autoFocus
         canSend={canSendDraft}
