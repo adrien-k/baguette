@@ -3,8 +3,8 @@
  *
  *   node scripts/2026100603_backfill-trim-archived-session-messages.js
  *
- * For each session with `archived_at` set, deletes every `session_messages` row whose
- * `type` is not `user` or `assistant` (same rules as {@link trimSessionMessagesForArchive}).
+ * For each session with `archived_at` set, applies the same rules as
+ * {@link trimSessionMessagesForArchive} (non-chat rows, thinking-only assistants, thinking blocks).
  * Idempotent — safe to re-run.
  */
 import { pathToFileURL } from 'node:url';

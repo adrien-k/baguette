@@ -82,4 +82,51 @@ describe('trimSessionMessagesForArchive', () => {
     expect(remaining.map((r) => r.type)).toEqual(['user', 'user', 'assistant', 'assistant']);
     expect(remaining[0].message_json).toContain('baguette');
   });
+
+  it('removes thinking-only assistant rows and strips thinking blocks from mixed rows', async () => {
+    await db('session_messages').insert([
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        type: 'assistant',
+        message_json: JSON.stringify({
+          type: 'assistant',
+          blocks: [{ type: 'thinking', thinking: 'ponder' }],
+        }),
+      },
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        type: 'assistant',
+        message_json: JSON.stringify({
+          type: 'assistant',
+          blocks: [
+            { type: 'thinking', thinking: 'hmm' },
+            { type: 'text', text: 'Hello' },
+          ],
+        }),
+      },
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        type: 'system',
+        subtype: 'thinking_tokens',
+        message_json: JSON.stringify({
+          type: 'system',
+          subtype: 'thinking_tokens',
+          thinking_tokens: 42,
+        }),
+      },
+    ]);
+
+    await trimSessionMessagesForArchive(db, sessionId);
+
+    const remaining = await db('session_messages')
+      .where({ session_id: sessionId })
+      .orderBy('id', 'asc');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].type).toBe('assistant');
+    const payload = JSON.parse(remaining[0].message_json);
+    expect(payload.blocks).toEqual([{ type: 'text', text: 'Hello' }]);
+  });
 });
