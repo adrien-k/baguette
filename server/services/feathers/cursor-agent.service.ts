@@ -29,6 +29,7 @@ import {
 } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
+import { testCursorCredentials } from '../agent-sdk-credential-test.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
 import { reviewTurnKey } from './session-review.service.js';
@@ -1072,6 +1073,18 @@ Task: ${initialPrompt}`;
 
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
     await directPromptTiedSessionLoopCompaction(this.app, args);
+  }
+
+  async testCredentials({
+    user,
+    repo = null,
+    payload = {},
+  }: {
+    user: Record<string, unknown>;
+    repo?: Record<string, unknown> | null;
+    payload?: Record<string, unknown>;
+  }) {
+    return testCursorCredentials(user, repo, payload);
   }
 
   async isInterruptedSessionResumable(

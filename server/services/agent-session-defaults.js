@@ -11,7 +11,7 @@ import {
   paramValueOptionsFromVariants,
 } from '../../shared/model-variants.js';
 import { loadModelsForSdk } from './baguette-models-for-user.js';
-import { requireRepoAccessForUser, userRowForAgentSdk } from './agent-sdk/agent-context.js';
+import { requireRepoAccessForUserDb, userRowForAgentSdk } from './agent-sdk/agent-context.js';
 import { firstEnabledAgentSdkKey } from './agent-sdk/default-agent-sdk.js';
 
 export {
@@ -66,7 +66,11 @@ export async function validateAgentSessionDefaults(user, input, { userId, repoId
     if (userId == null) {
       throw new BadRequest('userId is required for agent defaults validation');
     }
-    repo = await requireRepoAccessForUser(Number(repoId), userId);
+    const knex = app?.get?.('db');
+    if (!knex) {
+      throw new BadRequest('app db is required for agent defaults validation');
+    }
+    repo = await requireRepoAccessForUserDb(knex, Number(repoId), userId);
     if (!repo) {
       throw new BadRequest('Repository not found or not linked to your account');
     }

@@ -9,7 +9,12 @@ import {
   parseCursorModelPrefsJson,
   stringifyCursorModelPrefs,
 } from '../../services/agent-preferences.js';
-import { resolveDefaultAgent, withLastUsedFlag } from '../../services/agent-session-defaults.js';
+import {
+  resolveDefaultAgent,
+  stringifyAgentSessionDefaults,
+  validateAgentSessionDefaults,
+  withLastUsedFlag,
+} from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
@@ -118,6 +123,22 @@ async function normalizeCursorModelPrefsPatch(context) {
   return context;
 }
 
+async function normalizeAgentDefaultsOnPatch(context) {
+  if (context.data.agent_defaults === undefined) return context;
+  const userRow = await context.service.get(context.id, {
+    provider: undefined,
+    user: context.params.user,
+  });
+  const patch = context.data.agent_defaults;
+  const validated = await validateAgentSessionDefaults(userRow, patch, {
+    userId: context.id,
+    repoId: patch?.repo_id,
+    app: context.service.app,
+  });
+  context.data.agent_defaults = stringifyAgentSessionDefaults(validated);
+  return context;
+}
+
 function formatUserExternal(context) {
   if (!context.params.provider) return context;
   const process = (user) => {
@@ -191,6 +212,7 @@ export const usersHooks = {
       normalizeAnthropicBaseUrlPatch,
       normalizeClaudeFieldsPatch,
       normalizeCursorModelPrefsPatch,
+      normalizeAgentDefaultsOnPatch,
       validatePiApiKeyEnvVarPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,

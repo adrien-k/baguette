@@ -6,6 +6,9 @@ import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 
 const mockClearUserReposPickerCache = vi.fn();
+vi.mock('../anthropic-models.js', () => ({
+  listModels: vi.fn().mockResolvedValue([{ id: 'sonnet', display_name: 'Sonnet' }]),
+}));
 vi.mock('../github.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -36,7 +39,7 @@ function makeApp(dbRef) {
         return true;
       },
       async listModels() {
-        return [];
+        return [{ id: 'sonnet', display_name: 'Sonnet' }];
       },
     },
     { methods: ['isEnabled', 'listModels'] }
@@ -468,5 +471,72 @@ describe('Users service - defaultAgent', () => {
 
     const result = await app.service('users').defaultAgent({}, params(user1));
     expect(result.model).toBe('live-model');
+  });
+});
+
+describe('Users service - agent_defaults patch', () => {
+  it('returns empty defaults with use_last_used when unset', async () => {
+    const user = await app.service('users').get(user1.id, params(user1));
+    expect(user.agent_defaults).toEqual({
+      agent_sdk: null,
+      model: null,
+      model_params: null,
+      use_last_used: true,
+    });
+  });
+
+  it('validates SDK keys and persists agent defaults', async () => {
+    await app
+      .service('users')
+      .patch(user1.id, { anthropic_api_key: 'sk-ant-test123' }, params(user1));
+
+    const [repoId] = await db('repos').insert({
+      full_name: 'alice/defaults',
+      repo_path: '/tmp/alice-defaults',
+    });
+    await db('user_repos').insert({ user_id: user1.id, repo_id: repoId });
+
+    const updated = await app.service('users').patch(
+      user1.id,
+      {
+        agent_defaults: {
+          agent_sdk: 'claude',
+          model: 'sonnet',
+          model_params: null,
+          repo_id: repoId,
+        },
+      },
+      params(user1)
+    );
+
+    expect(updated.agent_defaults).toEqual({
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      model_params: null,
+      use_last_used: false,
+    });
+  });
+
+  it('rejects cursor defaults without a Cursor API key', async () => {
+    const [repoId] = await db('repos').insert({
+      full_name: 'alice/cursor-defaults',
+      repo_path: '/tmp/alice-cursor-defaults',
+    });
+    await db('user_repos').insert({ user_id: user1.id, repo_id: repoId });
+
+    await expect(
+      app.service('users').patch(
+        user1.id,
+        {
+          agent_defaults: {
+            agent_sdk: 'cursor',
+            model: null,
+            model_params: null,
+            repo_id: repoId,
+          },
+        },
+        params(user1)
+      )
+    ).rejects.toThrow(/cursor/i);
   });
 });

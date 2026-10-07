@@ -1,8 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  DEFAULT_PI_API_KEY_ENV_VAR,
-  PI_API_KEY_ENV_VARS,
-} from '@baguette/shared/pi-api-key-env-vars.js';
 import MaskedSecretInput from './MaskedSecretInput.jsx';
 import SearchableSelect from './SearchableSelect';
 import AgentTestButton from './AgentTestButton.jsx';
@@ -13,6 +9,7 @@ import AgentTestButton from './AgentTestButton.jsx';
 export default function PiAuthFields({
   maskedApiKey = null,
   savedEnvVar = '',
+  envVarOptions = [],
   repoId = null,
   perRepoHint = false,
   resetKey = 'default',
@@ -20,14 +17,15 @@ export default function PiAuthFields({
 }) {
   const envOptions = useMemo(
     () =>
-      PI_API_KEY_ENV_VARS.map((e) => ({
+      envVarOptions.map((e) => ({
         value: e.env,
         label: `${e.label} (${e.env})`,
       })),
-    []
+    [envVarOptions]
   );
 
-  const effectiveSaved = savedEnvVar?.trim() || DEFAULT_PI_API_KEY_ENV_VAR;
+  const fallbackEnv = envVarOptions[0]?.env ?? 'ANTHROPIC_API_KEY';
+  const effectiveSaved = savedEnvVar?.trim() || fallbackEnv;
   const [envVar, setEnvVar] = useState(effectiveSaved);
   const [envVarDirty, setEnvVarDirty] = useState(false);
   const [apiKey, setApiKey] = useState(null);

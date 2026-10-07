@@ -92,6 +92,8 @@ export async function loadModelsForSdk(user, agentSdk, repo, app) {
   if (repo?.id == null) {
     throw new BadRequest('repo_id is required');
   }
-  const models = await app.service('agent-sdks').listModelsForSdk(agentSdk, { user, repo });
+  const models = await app
+    .service('agent-sdks')
+    .listModelsForSdk(agentSdk, { user, repo }, { refresh: false });
   return models ?? [];
 }

@@ -23,6 +23,7 @@ import {
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createPiModelRuntime } from '../pi-models.js';
 import { resolvePiCredentials } from '../pi/pi-config.js';
+import { testPiCredentials } from '../agent-sdk-credential-test.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
@@ -727,6 +728,18 @@ Task: ${initialPrompt}`;
    */
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
     await directPromptTiedSessionLoopCompaction(this.app, args);
+  }
+
+  async testCredentials({
+    user,
+    repo = null,
+    payload = {},
+  }: {
+    user: Record<string, unknown>;
+    repo?: Record<string, unknown> | null;
+    payload?: Record<string, unknown>;
+  }) {
+    return testPiCredentials(user, repo, payload);
   }
 
   async isInterruptedSessionResumable(

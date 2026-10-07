@@ -30,6 +30,7 @@ import {
   channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
+import { testClaudeCredentials } from '../agent-sdk-credential-test.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import {
   processClaudeQueryStream,
@@ -1105,6 +1106,19 @@ Task: ${initialPrompt}`;
 
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
     await claudeTiedSessionLoopCompaction(this.app, args);
+  }
+
+  /** Settings connectivity test — not exposed on REST; called via agent-sdks.test. */
+  async testCredentials({
+    user,
+    repo = null,
+    payload = {},
+  }: {
+    user: Record<string, unknown>;
+    repo?: Record<string, unknown> | null;
+    payload?: Record<string, unknown>;
+  }) {
+    return testClaudeCredentials(user, repo, payload);
   }
 
   // Required by @feathersjs/express to recognise this as a Feathers service

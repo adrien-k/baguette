@@ -116,7 +116,8 @@ class AgentSdksService {
   async _context(params, { requireRepo = true } = {}) {
     const userId = params.user?.id;
     if (!userId) throw new BadRequest('Authentication required');
-    const user = await loadUserForAgentSdk(userId);
+    const knex = this.app.get('db');
+    const user = await loadUserForAgentSdk(userId, knex);
     if (!user) throw new NotFound('User not found');
 
     const repoIdRaw = params.query?.repo_id ?? params.query?.repoId;
@@ -126,7 +127,7 @@ class AgentSdksService {
     }
     const repoId = Number(repoIdRaw);
     if (!Number.isFinite(repoId)) throw new BadRequest('repo_id must be a number');
-    const repo = await requireRepoAccessForUser(repoId, userId);
+    const repo = await requireRepoAccessForUser(repoId, userId, knex);
     if (!repo) throw new NotFound('Repository not found or not linked to your account');
 
     return { user, repo };
@@ -156,6 +157,46 @@ class AgentSdksService {
     return { models };
   }
 
+  /**
+   * Connectivity test for agent credentials. Body: { sdk, repo_id?, ...field overrides }.
+   */
+  async test(data, params) {
+    const sdk = data?.sdk ?? data?.agent_sdk;
+    if (!sdk || typeof sdk !== 'string') {
+      throw new BadRequest('sdk is required');
+    }
+    if (!this._sdks.has(sdk)) {
+      throw new NotFound(`Unknown agent SDK "${sdk}"`);
+    }
+    const userId = params.user?.id;
+    if (!userId) throw new BadRequest('Authentication required');
+    const knex = this.app.get('db');
+    const user = await loadUserForAgentSdk(userId, knex);
+    if (!user) throw new NotFound('User not found');
+
+    let repo = null;
+    const repoIdRaw = data?.repo_id;
+    if (repoIdRaw != null && repoIdRaw !== '') {
+      const repoId = Number(repoIdRaw);
+      if (!Number.isFinite(repoId)) throw new BadRequest('repo_id must be a number');
+      repo = await requireRepoAccessForUser(repoId, userId, knex);
+      if (!repo) throw new NotFound('Repository not found or not linked to your account');
+    }
+
+    const meta = this._sdks.get(sdk);
+    const svc = this._sdkService(meta);
+    if (!svc || typeof svc.testCredentials !== 'function') {
+      throw new BadRequest(`Agent SDK "${sdk}" does not support credential tests`);
+    }
+
+    const payload = { ...data };
+    delete payload.sdk;
+    delete payload.agent_sdk;
+    delete payload.repo_id;
+
+    return svc.testCredentials({ user, repo, payload });
+  }
+
   async get() {
     return null;
   }
@@ -180,7 +221,7 @@ export function registerAgentSdksService(app, path = 'agent-sdks') {
   const service = new AgentSdksService();
   service.setup(app);
   app.use(path, service, {
-    methods: ['find', 'get', 'models'],
+    methods: ['find', 'get', 'models', 'test'],
   });
   app.service(path).hooks({
     before: {
@@ -188,6 +229,7 @@ export function registerAgentSdksService(app, path = 'agent-sdks') {
       find: [],
       get: [],
       models: [],
+      test: [],
     },
   });
 }

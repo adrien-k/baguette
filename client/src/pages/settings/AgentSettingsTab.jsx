@@ -10,13 +10,16 @@ import AgentSdkModelsSection from '../../components/AgentSdkModelsSection.jsx';
 import AgentTestButton from '../../components/AgentTestButton.jsx';
 import ClaudeAuthFields from '../../components/ClaudeAuthFields.jsx';
 import PiAuthFields from '../../components/PiAuthFields.jsx';
-import { effectivePiApiKeyEnvVar } from '@baguette/shared/pi-api-key-env-vars.js';
 import {
   SettingsSection,
   SettingsTabHeader,
   SettingsSaveRow,
 } from '../../components/SettingsSection.jsx';
 import { RepoScopeAside } from './repoScopeDropdown.jsx';
+import {
+  PI_API_KEY_ENV_VARS,
+  effectivePiApiKeyEnvVar,
+} from '@baguette/shared/pi-api-key-env-vars.js';
 
 export default function AgentSettingsTab({ settings, onSave }) {
   const { user } = useAuth();
@@ -144,7 +147,8 @@ export default function AgentSettingsTab({ settings, onSave }) {
     : settings?.cursor_api_key;
   const piScopeRepo = piRepoId ? repoById(piRepoId) : null;
   const piMasked = piScopeRepo?.pi_api_key ?? settings?.pi_api_key ?? null;
-  const piSavedEnvVar = effectivePiApiKeyEnvVar(settings ?? {}, piScopeRepo);
+  const piSavedEnvVar = effectivePiApiKeyEnvVar(settings ?? {}, piScopeRepo ?? null);
+  const piEnvVarOptions = PI_API_KEY_ENV_VARS;
 
   return (
     <div>
@@ -159,7 +163,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
           title="Session default agent"
           description="Default is last used agent (most recent session). Or pin Claude/Cursor with model and params. MCP explicit parameters always override."
         >
-          <AgentSessionDefaultsSection />
+          <AgentSessionDefaultsSection settings={settings} onSave={onSave} />
         </SettingsSection>
 
         <SettingsSection
@@ -257,6 +261,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
             key={`pi-auth-${piRepoId || 'all'}`}
             maskedApiKey={piMasked}
             savedEnvVar={piSavedEnvVar}
+            envVarOptions={piEnvVarOptions}
             repoId={piRepoId || null}
             perRepoHint
             onChange={(patch, hasChanges) => setPiChange({ patch, hasChanges })}

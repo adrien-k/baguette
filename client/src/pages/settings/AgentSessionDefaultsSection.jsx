@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { apiFetch } from '../../api.js';
+import { usersService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { fetchAgentSdkModels } from '../../utils/fetchAgentSdkModels.js';
 import { LAST_USED_AGENT_SDK } from '@baguette/shared/agent-session-defaults.js';
@@ -11,8 +11,10 @@ import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { useRepoContext } from '../../context/RepoContext.jsx';
+import { useAuth } from '../../hooks/useAuth.jsx';
 
-export default function AgentSessionDefaultsSection() {
+export default function AgentSessionDefaultsSection({ settings, onSave }) {
+  const { user } = useAuth();
   const { repos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const [modelRepoId, setModelRepoId] = useState('');
@@ -44,33 +46,32 @@ export default function AgentSessionDefaultsSection() {
     [repos]
   );
 
-  const loadDefaults = useCallback(() => {
-    if (availableSdksLoading) {
-      setDefaultsReady(false);
-      return Promise.resolve();
-    }
-    setDefaultsReady(false);
-    return apiFetch('/api/settings/agent-defaults')
-      .then((d) => {
-        if (d.use_last_used || !d.agent_sdk) {
-          setAgentSdk(LAST_USED_AGENT_SDK);
-          setModel('');
-          setModelParamsJson(null);
-        } else {
-          const sdk = availableSdkKeys.includes(d.agent_sdk) ? d.agent_sdk : LAST_USED_AGENT_SDK;
-          setAgentSdk(sdk);
-          setModel(d.model && sdk !== LAST_USED_AGENT_SDK ? d.model : '');
-          setModelParamsJson(d.model_params?.length ? JSON.stringify(d.model_params) : null);
-        }
-        setDirty(false);
-      })
-      .catch((err) => toastError('Failed to load session defaults', err))
-      .finally(() => setDefaultsReady(true));
-  }, [availableSdkKeys, availableSdksLoading]);
+  const applyDefaultsRecord = useCallback(
+    (d) => {
+      if (availableSdksLoading) {
+        setDefaultsReady(false);
+        return;
+      }
+      if (d.use_last_used || !d.agent_sdk) {
+        setAgentSdk(LAST_USED_AGENT_SDK);
+        setModel('');
+        setModelParamsJson(null);
+      } else {
+        const sdk = availableSdkKeys.includes(d.agent_sdk) ? d.agent_sdk : LAST_USED_AGENT_SDK;
+        setAgentSdk(sdk);
+        setModel(d.model && sdk !== LAST_USED_AGENT_SDK ? d.model : '');
+        setModelParamsJson(d.model_params?.length ? JSON.stringify(d.model_params) : null);
+      }
+      setDirty(false);
+      setDefaultsReady(true);
+    },
+    [availableSdkKeys, availableSdksLoading]
+  );
 
   useEffect(() => {
-    loadDefaults();
-  }, [loadDefaults]);
+    if (!settings?.agent_defaults) return;
+    applyDefaultsRecord(settings.agent_defaults);
+  }, [settings?.agent_defaults, applyDefaultsRecord]);
 
   const loadModels = useCallback(() => {
     if (!modelRepoId) {
@@ -123,12 +124,13 @@ export default function AgentSessionDefaultsSection() {
   };
 
   const handleSave = async () => {
+    if (!user?.id) return;
     setSaving(true);
     setSaved(false);
     try {
-      let body;
+      let agent_defaults;
       if (isLastUsedMode) {
-        body = { agent_sdk: null, model: null, model_params: null };
+        agent_defaults = { agent_sdk: null, model: null, model_params: null };
       } else {
         let model_params = null;
         if (agentSdk === 'cursor' && modelParamsJson) {
@@ -138,7 +140,7 @@ export default function AgentSessionDefaultsSection() {
             model_params = null;
           }
         }
-        body = {
+        agent_defaults = {
           agent_sdk: agentSdk || null,
           model: agentSdk && model ? model : null,
           model_params:
@@ -146,10 +148,8 @@ export default function AgentSessionDefaultsSection() {
           repo_id: modelRepoId ? Number(modelRepoId) : null,
         };
       }
-      await apiFetch('/api/settings/agent-defaults', {
-        method: 'PUT',
-        body: JSON.stringify(body),
-      });
+      const updated = await usersService.patch(user.id, { agent_defaults });
+      onSave?.(updated);
       setDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

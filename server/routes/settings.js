@@ -1,13 +1,8 @@
 import { Router } from 'express';
 import { getGithubToken } from '../services/agent-settings.js';
 import { githubFetch } from '../services/github-api.js';
-import { decrypt } from '../lib/encrypt.js';
 import { asyncHandler } from '../lib/app-error-handler.js';
 import db from '../db.js';
-import { normalizeAnthropicBaseUrl } from '../services/session-env.js';
-import { buildClaudeTestEnv, runClaudeConnectivityTest } from '../services/claude-connectivity.js';
-import { runCursorConnectivityTest } from '../services/cursor-connectivity.js';
-import { resolvePiEffectiveForTest, runPiConnectivityTest } from '../services/pi-connectivity.js';
 import {
   loadFullSessionPromptTemplate,
   loadFullReviewPromptTemplate,
@@ -17,31 +12,8 @@ import {
   getNavbarSystemInformation,
   getSystemInfo,
 } from '../services/system-information.js';
-import {
-  stringifyAgentSessionDefaults,
-  validateAgentSessionDefaults,
-  withLastUsedFlag,
-} from '../services/agent-session-defaults.js';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-function userRowForAgentValidation(userRow) {
-  if (!userRow) return null;
-  return {
-    id: userRow.id,
-    anthropic_api_key: userRow.anthropic_api_key_encrypted
-      ? decrypt(userRow.anthropic_api_key_encrypted)
-      : null,
-    anthropic_auth_token: userRow.anthropic_auth_token_encrypted
-      ? decrypt(userRow.anthropic_auth_token_encrypted)
-      : null,
-    anthropic_base_url: userRow.anthropic_base_url ?? null,
-    cursor_api_key: userRow.cursor_api_key_encrypted
-      ? decrypt(userRow.cursor_api_key_encrypted)
-      : null,
-    pi_api_key: userRow.pi_api_key_encrypted ? decrypt(userRow.pi_api_key_encrypted) : null,
-    pi_api_key_env_var: userRow.pi_api_key_env_var ?? null,
-  };
-}
 const DEFAULT_USAGE_DAYS = 30;
 
 function parseUsageDays(value) {
@@ -81,178 +53,6 @@ export default function createSettingsRoutes(requireAuth) {
       res.json({ session, review });
     })
   );
-
-  router.get(
-    '/api/settings/agent-defaults',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const userRow = await db('users').where({ id: req.user.id }).first();
-      res.json(withLastUsedFlag(userRow?.agent_defaults));
-    })
-  );
-
-  router.put(
-    '/api/settings/agent-defaults',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const userRow = await db('users').where({ id: req.user.id }).first();
-      if (!userRow) return res.status(404).json({ error: 'User not found' });
-      const userForValidation = userRowForAgentValidation(userRow);
-      const validated = await validateAgentSessionDefaults(userForValidation, req.body ?? {}, {
-        userId: req.user.id,
-        repoId: req.body?.repo_id,
-        app: req.app,
-      });
-      const stored = stringifyAgentSessionDefaults(validated);
-      await db('users').where({ id: req.user.id }).update({ agent_defaults: stored });
-      res.json(withLastUsedFlag(stored));
-    })
-  );
-
-  // --- Claude / Cursor connectivity tests ---
-
-  /**
-   * Test the Claude credential / gateway config for a repo scope.
-   * Body: { repo_id?: number, anthropic_api_key?: string, anthropic_auth_token?: string,
-   *         anthropic_base_url?: string }
-   * Unsent fields fall back to the effective (repo → account) saved config. Sent plaintext
-   * secrets are used as-is; sent non-secrets are normalized like on save.
-   *
-   * Returns { ok, base_url, effective, checks: [{ id, label, ok, detail }] }.
-   */
-  router.post(
-    '/api/settings/claude/test',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const userRow = await db('users').where({ id: req.user.id }).first();
-      if (!userRow) return res.status(404).json({ error: 'User not found' });
-
-      const data = req.body ?? {};
-      const userId = req.user.id;
-      let repoRowData = null;
-      if (data.repo_id != null && data.repo_id !== '') {
-        repoRowData = await repoRow(data.repo_id, userId);
-        if (!repoRowData) return res.status(400).json({ error: 'Repository not linked' });
-      }
-
-      /** Unsent field → effective saved config (repo overrides account); sent → as provided. */
-      const pick = (override, saved) => (override !== undefined ? override : saved);
-
-      const effective = {
-        anthropic_api_key:
-          pick(
-            data.anthropic_api_key,
-            decryptIfSet(repoRowData?.anthropic_api_key_encrypted) ||
-              decryptIfSet(userRow.anthropic_api_key_encrypted)
-          ) || null,
-        anthropic_auth_token:
-          pick(
-            data.anthropic_auth_token,
-            decryptIfSet(repoRowData?.anthropic_auth_token_encrypted) ||
-              decryptIfSet(userRow.anthropic_auth_token_encrypted)
-          ) || null,
-        anthropic_base_url: normalizeAnthropicBaseUrl(
-          pick(
-            data.anthropic_base_url,
-            firstNonEmpty(repoRowData?.anthropic_base_url, userRow.anthropic_base_url)
-          )
-        ),
-      };
-
-      const env = buildClaudeTestEnv(userRow, effective);
-      const result = await runClaudeConnectivityTest(env, {
-        baseUrl: effective.anthropic_base_url,
-      });
-      // Never echo secrets back — report only whether each is configured.
-      const { anthropic_api_key, anthropic_auth_token, ...nonSecrets } = effective;
-      result.effective = {
-        ...nonSecrets,
-        anthropic_api_key_configured: Boolean(anthropic_api_key),
-        anthropic_auth_token_configured: Boolean(anthropic_auth_token),
-      };
-      res.json(result);
-    })
-  );
-
-  /**
-   * Test the Cursor API key for a repo scope.
-   * Body: { repo_id?: number, cursor_api_key?: string } — unsent fields fall back to the
-   * effective (repo → account) saved config; sent plaintext keys are used as-is.
-   * Returns { ok, effective, checks: [{ id, label, ok, detail }] }.
-   */
-  router.post(
-    '/api/settings/cursor/test',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const userRow = await db('users').where({ id: req.user.id }).first();
-      if (!userRow) return res.status(404).json({ error: 'User not found' });
-
-      const data = req.body ?? {};
-      let repoRowData = null;
-      if (data.repo_id != null && data.repo_id !== '') {
-        repoRowData = await repoRow(data.repo_id, req.user.id);
-        if (!repoRowData) return res.status(400).json({ error: 'Repository not linked' });
-      }
-
-      const apiKey =
-        (data.cursor_api_key !== undefined
-          ? data.cursor_api_key
-          : decryptIfSet(repoRowData?.cursor_api_key_encrypted) ||
-            decryptIfSet(userRow.cursor_api_key_encrypted)) || null;
-
-      const result = await runCursorConnectivityTest({ apiKey });
-      result.effective = { cursor_api_key_configured: Boolean(apiKey) };
-      res.json(result);
-    })
-  );
-
-  router.post(
-    '/api/settings/pi/test',
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      const userRow = await db('users').where({ id: req.user.id }).first();
-      if (!userRow) return res.status(404).json({ error: 'User not found' });
-
-      const data = req.body ?? {};
-      let repoRowData = null;
-      if (data.repo_id != null && data.repo_id !== '') {
-        repoRowData = await repoRow(data.repo_id, req.user.id);
-        if (!repoRowData) return res.status(400).json({ error: 'Repository not linked' });
-      }
-
-      const userPlain = userRowForAgentValidation(userRow);
-      const repoPlain = repoRowData
-        ? {
-            pi_api_key: decryptIfSet(repoRowData.pi_api_key_encrypted),
-            pi_api_key_env_var: repoRowData.pi_api_key_env_var ?? null,
-          }
-        : null;
-
-      const effective = resolvePiEffectiveForTest(userPlain, repoPlain, {
-        pi_api_key: data.pi_api_key,
-        pi_api_key_env_var: data.pi_api_key_env_var,
-      });
-
-      const result = await runPiConnectivityTest(userRow, effective);
-      res.json(result);
-    })
-  );
-
-  function firstNonEmpty(...values) {
-    for (const value of values) {
-      if (value !== undefined && value !== null && value !== '') return value;
-    }
-    return null;
-  }
-
-  function decryptIfSet(ciphertext) {
-    return ciphertext ? decrypt(ciphertext) : null;
-  }
-
-  async function repoRow(repoId, userId) {
-    if (repoId == null || repoId === '') return null;
-    return db('user_repos').where({ user_id: userId, repo_id: repoId }).first();
-  }
 
   // --- Usage ---
 

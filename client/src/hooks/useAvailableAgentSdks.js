@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { reposService, usersService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { fetchAvailableAgentSdks } from '../utils/fetchAgentSdkModels.js';
 
@@ -11,26 +12,30 @@ export function useAvailableAgentSdks(repoId) {
   const [sdks, setSdks] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(() => {
     setLoading(true);
-    fetchAvailableAgentSdks(repoId)
-      .then((list) => {
-        if (!cancelled) setSdks(list);
-      })
+    return fetchAvailableAgentSdks(repoId)
+      .then((list) => setSdks(list))
       .catch((err) => {
-        if (!cancelled) {
-          setSdks([]);
-          toastError('Failed to load available agents', err);
-        }
+        setSdks([]);
+        toastError('Failed to load available agents', err);
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => setLoading(false));
   }, [repoId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const onCredentialsChange = () => load();
+    usersService.on('patched', onCredentialsChange);
+    reposService.on('patched', onCredentialsChange);
+    return () => {
+      usersService.off('patched', onCredentialsChange);
+      reposService.off('patched', onCredentialsChange);
+    };
+  }, [load]);
 
   const keys = useMemo(() => sdks.map((s) => s.key), [sdks]);
   return { sdks, keys, loading };

@@ -28,8 +28,8 @@ export function userRowForAgentSdk(userRow) {
   };
 }
 
-export async function loadUserForAgentSdk(userId) {
-  const row = await db('users').where({ id: userId }).first();
+export async function loadUserForAgentSdk(userId, knex = db) {
+  const row = await knex('users').where({ id: userId }).first();
   return userRowForAgentSdk(row);
 }
 
@@ -49,6 +49,8 @@ export function repoRowForAgentSdk(repoRow) {
     cursor_api_key: repoRow.cursor_api_key_encrypted
       ? decrypt(repoRow.cursor_api_key_encrypted)
       : null,
+    pi_api_key: repoRow.pi_api_key_encrypted ? decrypt(repoRow.pi_api_key_encrypted) : null,
+    pi_api_key_env_var: repoRow.pi_api_key_env_var ?? null,
   };
 }
 
@@ -58,13 +60,25 @@ export async function loadRepoWithKeysForAgent(repoId) {
   return repoRowForAgentSdk(repo);
 }
 
-export async function requireRepoAccessForUser(repoId, userId) {
-  return requireRepoAccessForUserDb(db, repoId, userId);
+export async function requireRepoAccessForUser(repoId, userId, knex = db) {
+  return requireRepoAccessForUserDb(knex, repoId, userId);
 }
 
 export async function requireRepoAccessForUserDb(knex, repoId, userId) {
   const link = await knex('user_repos').where({ user_id: userId, repo_id: repoId }).first();
   if (!link) return null;
   const repo = await knex('repos').where({ id: repoId }).first();
-  return repoRowForAgentSdk(repo);
+  if (!repo) return null;
+  const merged = {
+    ...repo,
+    anthropic_api_key_encrypted:
+      link.anthropic_api_key_encrypted ?? repo.anthropic_api_key_encrypted,
+    anthropic_auth_token_encrypted:
+      link.anthropic_auth_token_encrypted ?? repo.anthropic_auth_token_encrypted,
+    anthropic_base_url: link.anthropic_base_url ?? repo.anthropic_base_url,
+    cursor_api_key_encrypted: link.cursor_api_key_encrypted ?? repo.cursor_api_key_encrypted,
+    pi_api_key_encrypted: link.pi_api_key_encrypted ?? repo.pi_api_key_encrypted,
+    pi_api_key_env_var: link.pi_api_key_env_var ?? repo.pi_api_key_env_var,
+  };
+  return repoRowForAgentSdk(merged);
 }

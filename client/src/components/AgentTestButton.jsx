@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { PlugZap, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
-import { apiFetch } from '../api.js';
+import { agentSdksService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 
 /**
- * "Test connection" button for an agent's credentials (Settings → Agent).
- * Posts dirty form fields (falling back to the effective saved config server-side) to
- * `/api/settings/<sdk>/test` and shows a per-check pass/fail breakdown.
+ * "Test connection" for agent credentials (Settings → Agent).
+ * Posts dirty form fields via agent-sdks.test; unsent fields use effective saved config server-side.
  */
 export default function AgentTestButton({ sdk = 'claude', repoId = null, fields = {} }) {
   const [testing, setTesting] = useState(false);
@@ -17,12 +16,9 @@ export default function AgentTestButton({ sdk = 'claude', repoId = null, fields 
     setTesting(true);
     setResult(null);
     try {
-      const body = { ...fields };
+      const body = { sdk, ...fields };
       if (repoId) body.repo_id = repoId;
-      const res = await apiFetch(`/api/settings/${sdk}/test`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      const res = await agentSdksService.test(body);
       setResult(res);
     } catch (err) {
       toastError(`${formatAgentSdkDisplayName(sdk)} connection test failed`, err);
