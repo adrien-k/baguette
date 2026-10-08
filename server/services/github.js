@@ -72,12 +72,12 @@ export function toStrippedName(fullName) {
   );
 }
 
-/** Base directory for all repo data (worktrees, bare clone): `<REPOS_DIR>/<stripped>/` */
+/** Base directory for all repo data (worktrees, main clone): `<REPOS_DIR>/<stripped>/` */
 export function repoDirPath(strippedName) {
   return path.join(REPOS_DIR, strippedName);
 }
 
-function barePathForStripped(strippedName) {
+function mainRepoPathForStripped(strippedName) {
   return path.join(repoDirPath(strippedName), 'main');
 }
 
@@ -209,39 +209,39 @@ export function clearBranchesCache(scope) {
 }
 
 /**
- * Ensures a bare clone of the repo exists on disk. If already cloned, returns
- * the barePath immediately. Otherwise clones from GitHub. Returns the barePath.
+ * Ensures the main repo clone exists on disk (`repos/<stripped>/main`, full checkout).
+ * If already cloned, returns the path immediately. Otherwise clones from GitHub.
  *
  * @param {object} repo - { full_name, stripped_name, repo_path? }
  * @param {string} token
  */
-export async function ensureBareClone(repo, token) {
-  const barePath = resolveRepoPath(repo) ?? barePathForStripped(repo.stripped_name);
+export async function ensureMainClone(repo, token) {
+  const mainRepoPath = resolveRepoPath(repo) ?? mainRepoPathForStripped(repo.stripped_name);
 
   try {
-    await fs.promises.access(barePath);
-    return barePath;
+    await fs.promises.access(mainRepoPath);
+    return mainRepoPath;
   } catch {
     /* clone not present yet */
   }
 
-  await fs.promises.mkdir(path.dirname(barePath), { recursive: true });
+  await fs.promises.mkdir(path.dirname(mainRepoPath), { recursive: true });
   try {
-    await fs.promises.rm(barePath, { recursive: true, force: true });
+    await fs.promises.rm(mainRepoPath, { recursive: true, force: true });
   } catch {
     /* path may not exist */
   }
-  await gitWithToken(token, ['clone', repoUrl(repo.full_name), barePath], {
+  await gitWithToken(token, ['clone', repoUrl(repo.full_name), mainRepoPath], {
     stdio: 'pipe',
   });
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'fetch', '--all'], { cwd: barePath, stdio: 'pipe' });
+      await gitWithToken(token, ['lfs', 'fetch', '--all'], { cwd: mainRepoPath, stdio: 'pipe' });
     } catch {
       /* repo may not use LFS */
     }
   }
-  return barePath;
+  return mainRepoPath;
 }
 
 /**
@@ -249,7 +249,7 @@ export async function ensureBareClone(repo, token) {
  * Returns the repo path (same convention as repo_path).
  */
 export async function initLocalRepo(strippedName) {
-  const repoPath = barePathForStripped(strippedName);
+  const repoPath = mainRepoPathForStripped(strippedName);
   await fs.promises.mkdir(repoPath, { recursive: true });
   await execFileAsync('git', ['init', repoPath], { stdio: 'pipe' });
   await execFileAsync('git', ['-C', repoPath, 'commit', '--allow-empty', '-m', 'Initial commit'], {
@@ -270,7 +270,7 @@ export async function initLocalRepo(strippedName) {
  * Returns the repo path.
  */
 export async function ensureLocalClone(localPath, strippedName) {
-  const repoPath = barePathForStripped(strippedName);
+  const repoPath = mainRepoPathForStripped(strippedName);
   try {
     await fs.promises.access(repoPath);
     return repoPath;
@@ -334,8 +334,8 @@ async function isLinkedWorktree(worktreePath) {
 /** @param {{ baseBranch?: string, detach?: boolean, localBranch?: string }} [opts] — `detach` defaults to true (false checks out `branch` in the new worktree). `localBranch` creates a unique local ref instead of checking out `branch`. */
 export async function createWorktree(repo, branch, worktreeId, token, opts = {}) {
   const { baseBranch, detach = true, localBranch = null } = opts;
-  const barePath = resolveRepoPath(repo);
-  if (!barePath) {
+  const mainRepoPath = resolveRepoPath(repo);
+  if (!mainRepoPath) {
     throw new Error(`Repository "${repo?.full_name ?? repo?.stripped_name}" has no repo_path`);
   }
   const worktreePath = path.join(REPOS_DIR, repo.stripped_name, 'sessions', worktreeId, 'worktree');
@@ -348,7 +348,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   const tempRef = `refs/baguette-fetch/${worktreeId}`;
   try {
     await gitWithToken(token, ['fetch', 'origin', `+${branch}:${tempRef}`], {
-      cwd: barePath,
+      cwd: mainRepoPath,
       stdio: 'pipe',
     });
   } catch (err) {
@@ -356,14 +356,14 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
     // No origin or branch never pushed — use existing local branch ref as-is
   }
   // Sync the local branch ref to the fetched commit so new worktrees start from the latest
-  // remote commit rather than the stale commit from when the bare clone was created.
+  // remote commit rather than the stale commit from when the main clone was created.
   try {
     const { stdout } = await execFileAsync('git', ['rev-parse', tempRef], {
-      cwd: barePath,
+      cwd: mainRepoPath,
       stdio: 'pipe',
     });
     await execFileAsync('git', ['update-ref', `refs/heads/${branch}`, stdout.trim()], {
-      cwd: barePath,
+      cwd: mainRepoPath,
       stdio: 'pipe',
     });
   } catch {
@@ -371,7 +371,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   }
   // Clean up temp ref (best-effort)
   try {
-    await execFileAsync('git', ['update-ref', '-d', tempRef], { cwd: barePath, stdio: 'pipe' });
+    await execFileAsync('git', ['update-ref', '-d', tempRef], { cwd: mainRepoPath, stdio: 'pipe' });
   } catch {
     /* ignore */
   }
@@ -382,7 +382,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
       await gitWithToken(
         token,
         ['fetch', 'origin', `+${baseBranch}:refs/remotes/origin/${baseBranch}`],
-        { cwd: barePath, stdio: 'pipe' }
+        { cwd: mainRepoPath, stdio: 'pipe' }
       );
     } catch {
       /* local repo with no remote — skip */
@@ -392,7 +392,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   if (await lfsAvailable()) {
     try {
       await gitWithToken(token, ['lfs', 'fetch', 'origin', branch], {
-        cwd: barePath,
+        cwd: mainRepoPath,
         stdio: 'pipe',
       });
     } catch {
@@ -412,7 +412,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
         ? ['worktree', 'add', '--detach', worktreePath, branch]
         : ['worktree', 'add', worktreePath, branch];
     await execFileAsync('git', addArgs, {
-      cwd: barePath,
+      cwd: mainRepoPath,
       stdio: 'pipe',
     });
   }
@@ -443,13 +443,13 @@ export function resolveSessionWorktreePath(session, repo) {
   return null;
 }
 
-export async function tryDeleteUniqueLocalBranch(barePath, session) {
+export async function tryDeleteUniqueLocalBranch(mainRepoPath, session) {
   const localBranch = session?.local_branch;
   const remoteBranch = session?.remote_branch;
-  if (!barePath || !localBranch || !remoteBranch || localBranch === remoteBranch) return;
+  if (!mainRepoPath || !localBranch || !remoteBranch || localBranch === remoteBranch) return;
   try {
     await execFileAsync('git', ['branch', '-D', localBranch], {
-      cwd: barePath,
+      cwd: mainRepoPath,
       stdio: 'pipe',
     });
   } catch {
@@ -488,12 +488,12 @@ export async function removeWorktree(session, repo, options = {}) {
   const isNewStructure = path.basename(absoluteWorktreePath) === 'worktree';
   const cleanupPath = isNewStructure ? path.dirname(absoluteWorktreePath) : absoluteWorktreePath;
 
-  const barePath = resolveRepoPath(repo);
-  if (barePath) {
+  const mainRepoPath = resolveRepoPath(repo);
+  if (mainRepoPath) {
     try {
-      await fs.promises.access(barePath);
+      await fs.promises.access(mainRepoPath);
       await execFileAsync('git', ['worktree', 'remove', '--force', absoluteWorktreePath], {
-        cwd: barePath,
+        cwd: mainRepoPath,
         stdio: 'pipe',
       });
       if (isNewStructure) {
@@ -509,14 +509,14 @@ export async function removeWorktree(session, repo, options = {}) {
   await maybeDeleteUnique();
 }
 
-/** Prefer the archived session's unique local ref when it still exists in the bare repo. */
-export async function resolveRestoreWorktreeBranches(barePath, session) {
+/** Prefer the archived session's unique local ref when it still exists in the main repo clone. */
+export async function resolveRestoreWorktreeBranches(mainRepoPath, session) {
   const remoteBranch = session.remote_branch;
   const localBranch = session.local_branch;
-  if (localBranch && localBranch !== remoteBranch && barePath) {
+  if (localBranch && localBranch !== remoteBranch && mainRepoPath) {
     try {
       await execFileAsync('git', ['rev-parse', '--verify', `refs/heads/${localBranch}`], {
-        cwd: barePath,
+        cwd: mainRepoPath,
         stdio: 'pipe',
       });
       return { branch: localBranch, localBranch };

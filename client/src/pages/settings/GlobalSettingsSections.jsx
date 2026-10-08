@@ -231,7 +231,7 @@ export function AllRepositoriesSection() {
             will be permanently removed for all users.
           </p>
           <div className={`${BANNER_WARN} rounded-lg px-3 py-2 text-sm text-warning`}>
-            This will delete all sessions linked to this repo, their worktrees, and the bare clone.
+            This will delete all sessions linked to this repo, their worktrees, and the main clone.
             This cannot be undone.
           </div>
           <ModalActions className="flex justify-end gap-2 mt-4">

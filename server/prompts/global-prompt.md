@@ -19,7 +19,7 @@ Each linked repository is a subdirectory of `repos_path` (from `CurrentSessionIn
 ```
 <repos_path>/
   <stripped-repo-name>/
-    main/                          # bare (or local) git clone Baguette fetched
+    main/                          # main git clone Baguette fetched (or local repo)
     sessions/
       <session-short-id>/
         worktree/                  # that session's working copy

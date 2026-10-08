@@ -7,7 +7,7 @@ All persistent data lives under a single data directory, configurable via **`DAT
 | Path                                                            | Contents                                       |
 | --------------------------------------------------------------- | ---------------------------------------------- |
 | `<DATA_DIR>/baguette.sqlite3`                                   | SQLite database                                |
-| `<DATA_DIR>/repos/<stripped_name>/main/`                        | Bare clone for each repo (shared object store) |
+| `<DATA_DIR>/repos/<stripped_name>/main/`                        | Main git clone for each repo (worktree source) |
 | `<DATA_DIR>/repos/<stripped_name>/sessions/<session_short_id>/` | One worktree per session                       |
 
 `<stripped_name>` is derived from the repo's full name (e.g. `owner/repo-name` → `owner-repo-name`, alphanumeric and dashes only) and stored on the repo record so paths stay stable.
@@ -16,7 +16,7 @@ All persistent data lives under a single data directory, configurable via **`DAT
 
 ## Git worktree strategy
 
-Repositories are cloned once as bare repos under `<DATA_DIR>/repos/<stripped_name>/main/`. Each session gets a git worktree under `.../sessions/<session_short_id>/`, sharing the object store to save disk space and fetch time. Before creating a worktree, the server runs `git fetch origin` to ensure it starts from the latest remote branch. When all sessions for a repo are closed, the bare clone is removed.
+Each linked repository is cloned once as a normal (non-bare) checkout under `<DATA_DIR>/repos/<stripped_name>/main/`. Each session gets a git worktree under `.../sessions/<session_short_id>/`, sharing the main clone’s object store to save disk space and fetch time. Before creating a worktree, the server runs `git fetch origin` to ensure it starts from the latest remote branch. When all sessions for a repo are closed, the main clone is removed.
 
 ## Session config (`.baguette.yaml`)
 

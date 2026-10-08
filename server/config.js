@@ -103,7 +103,7 @@ export function resolveDataDirRelativePath(relativePath) {
     : path.join(DATA_DIR, relativePath);
 }
 
-/** SQLite form for a bare clone: `repos/<stripped>/main` (posix slashes, relative to DATA_DIR). */
+/** SQLite form for the main repo clone: `repos/<stripped>/main` (posix slashes, relative to DATA_DIR). */
 export function storedRepoPath(strippedName) {
   return `repos/${strippedName}/main`;
 }
@@ -120,7 +120,7 @@ export function resolveRepoPath(repo) {
   return resolveDataDirRelativePath(stored);
 }
 
-/** Normalize an on-disk bare clone path before writing `repos.repo_path`. */
+/** Normalize an on-disk main repo clone path before writing `repos.repo_path`. */
 export function normalizeRepoPathForStorage(absoluteOrRelativePath, strippedName) {
   const canonical = storedRepoPath(strippedName);
   if (!absoluteOrRelativePath) return canonical;

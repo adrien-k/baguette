@@ -4,7 +4,7 @@
  * - find: returns registered repos from DB with session_count and exists_on_fs
  * - findRemote: returns GitHub repos (mocked)
  * - branches: returns branches for a repo (mocked)
- * - create: registers a repo via ensureBareClone (mocked); revives soft-deleted repos
+ * - create: registers a repo via ensureMainClone (mocked); revives soft-deleted repos
  * - remove: soft-deletes a repo and its active sessions
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -36,7 +36,7 @@ vi.mock('../github.js', async (importOriginal) => {
     clearInstallationsCache: vi.fn(),
     clearBranchesCache: vi.fn(),
     listBranches: vi.fn(),
-    ensureBareClone: vi.fn(),
+    ensureMainClone: vi.fn(),
     toStrippedName: vi.fn(
       (name) =>
         name
@@ -57,7 +57,7 @@ import {
   clearInstallationsCache,
   clearBranchesCache,
   listBranches,
-  ensureBareClone,
+  ensureMainClone,
 } from '../github.js';
 
 const db = createTestDb({ beforeEach, afterEach });
@@ -398,16 +398,16 @@ describe('Repos service - branches', () => {
 });
 
 // ---------------------------------------------------------------------------
-// create — register a repo via ensureBareClone
+// create — register a repo via ensureMainClone
 // ---------------------------------------------------------------------------
 
 describe('Repos service - create', () => {
-  it('admin creates a repo via ensureBareClone and returns the result', async () => {
-    ensureBareClone.mockReturnValue('/repos/alice-new/main');
+  it('admin creates a repo via ensureMainClone and returns the result', async () => {
+    ensureMainClone.mockReturnValue('/repos/alice-new/main');
 
     const result = await app.service('repos').create({ fullName: 'alice/new' }, params(adminUser));
 
-    expect(ensureBareClone).toHaveBeenCalledWith(
+    expect(ensureMainClone).toHaveBeenCalledWith(
       expect.objectContaining({ full_name: 'alice/new', stripped_name: 'alice-new' }),
       'gh_token_admin'
     );
@@ -424,7 +424,7 @@ describe('Repos service - create', () => {
       deleted_at: new Date().toISOString(),
     });
 
-    ensureBareClone.mockReturnValue('/repos/alice-myrepo/main');
+    ensureMainClone.mockReturnValue('/repos/alice-myrepo/main');
 
     await app.service('repos').create({ fullName: 'alice/myrepo' }, params(adminUser));
 
@@ -433,11 +433,11 @@ describe('Repos service - create', () => {
   });
 
   it('any authenticated user can create a repo', async () => {
-    ensureBareClone.mockReturnValue('/repos/alice-new/main');
+    ensureMainClone.mockReturnValue('/repos/alice-new/main');
     const result = await app
       .service('repos')
       .create({ fullName: 'alice/new' }, params(regularUser));
-    expect(ensureBareClone).toHaveBeenCalledWith(
+    expect(ensureMainClone).toHaveBeenCalledWith(
       expect.objectContaining({ full_name: 'alice/new' }),
       'gh_token_user'
     );
@@ -448,7 +448,7 @@ describe('Repos service - create', () => {
     await expect(
       app.service('repos').create({ fullName: 'alice/new' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
-    expect(ensureBareClone).not.toHaveBeenCalled();
+    expect(ensureMainClone).not.toHaveBeenCalled();
   });
 });
 
@@ -549,7 +549,7 @@ describe('Repos service - soft-delete lifecycle', () => {
     expect(removeByRepoId).toHaveBeenCalledTimes(1);
 
     // Revive by recreating with same full_name
-    ensureBareClone.mockReturnValue('/repos/alice-revival/main');
+    ensureMainClone.mockReturnValue('/repos/alice-revival/main');
     await app.service('repos').create({ fullName: 'alice/revival' }, params(adminUser));
 
     // Repo is revived, removeByRepoId not called again

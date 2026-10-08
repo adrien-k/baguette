@@ -9,7 +9,7 @@
  *    another worktree had it checked out. The fix fetches to a session-unique temp ref instead.
  *
  * 2. Worktrees start from the latest remote commit:
- *    The bare clone's local branch ref can be stale (it was set at clone time and never updated
+ *    The main clone's local branch ref can be stale (it was set at clone time and never updated
  *    by subsequent remote pushes). The fix syncs refs/heads/<branch> via git update-ref after
  *    every fetch so new worktrees always start at the current remote HEAD.
  */
@@ -79,13 +79,13 @@ describe('createWorktree', () => {
   const BRANCH = 'feature-branch-a';
   // Local repos don't use HTTP auth, so any string works as the token
   const FAKE_TOKEN = 'fake-token';
-  let barePath;
+  let mainRepoPath;
 
   beforeAll(async () => {
     await fs.promises.mkdir(TEST_REPOS_DIR, { recursive: true });
 
     const remotePath = path.join(TEST_REPOS_DIR, 'remote.git');
-    barePath = path.join(TEST_REPOS_DIR, 'bare.git');
+    mainRepoPath = path.join(TEST_REPOS_DIR, 'main.git');
 
     // Bare "remote" repo — simulates GitHub
     await execAsync('git', ['init', '--bare', remotePath], { stdio: 'pipe' });
@@ -109,8 +109,8 @@ describe('createWorktree', () => {
     await git(workPath, 'commit', '-m', 'add feature');
     await git(workPath, 'push', 'origin', BRANCH);
 
-    // Baguette's bare clone of the remote
-    await execAsync('git', ['clone', '--bare', remotePath, barePath], { stdio: 'pipe' });
+    // Baguette's main repo clone (minimal --bare fixture for fast worktree tests)
+    await execAsync('git', ['clone', '--bare', remotePath, mainRepoPath], { stdio: 'pipe' });
   });
 
   afterAll(async () => {
@@ -118,7 +118,7 @@ describe('createWorktree', () => {
   });
 
   it('allows creating a second session worktree for a branch already checked out in another worktree', async () => {
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
 
     // Session 1: continueExistingBranch-style — checks out BRANCH non-detached.
     // After this, refs/heads/BRANCH is owned by session-1's worktree.
@@ -132,7 +132,7 @@ describe('createWorktree', () => {
   });
 
   it('creates two unique local branches tracking the same start branch', async () => {
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
 
     const first = await createWorktree(repo, BRANCH, 'wt-local-1', FAKE_TOKEN, {
       localBranch: `${BRANCH}-aaaa`,
@@ -155,11 +155,15 @@ describe('createWorktree', () => {
     await git(workPath, 'add', '.');
     await git(workPath, 'commit', '-m', 'local only');
     const { stdout: localHead } = await git(workPath, 'rev-parse', 'HEAD');
-    await execAsync('git', ['-C', barePath, 'fetch', workPath, `+${UNPUBLISHED}:${UNPUBLISHED}`], {
-      stdio: 'pipe',
-    });
+    await execAsync(
+      'git',
+      ['-C', mainRepoPath, 'fetch', workPath, `+${UNPUBLISHED}:${UNPUBLISHED}`],
+      {
+        stdio: 'pipe',
+      }
+    );
 
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
     const { worktreePath } = await createWorktree(
       repo,
       UNPUBLISHED,
@@ -167,19 +171,19 @@ describe('createWorktree', () => {
       FAKE_TOKEN
     );
 
-    const { stdout: bareHead } = await git(barePath, 'rev-parse', UNPUBLISHED);
-    expect(bareHead.trim()).toBe(localHead.trim());
+    const { stdout: mainHead } = await git(mainRepoPath, 'rev-parse', UNPUBLISHED);
+    expect(mainHead.trim()).toBe(localHead.trim());
     const files = await fs.promises.readdir(worktreePath);
     expect(files).toContain('local-only.txt');
   });
 
-  it('worktree starts from the latest remote commit, not the stale bare-clone ref', async () => {
+  it('worktree starts from the latest remote commit, not the stale main-clone ref', async () => {
     const workPath = path.join(TEST_REPOS_DIR, 'work');
     const remotePath = path.join(TEST_REPOS_DIR, 'remote.git');
 
     await git(workPath, 'checkout', BRANCH);
 
-    // Push a new commit to the remote AFTER the bare clone was created
+    // Push a new commit to the remote AFTER the main clone was created
     await fs.promises.writeFile(path.join(workPath, 'update.txt'), 'updated\n');
     await git(workPath, 'add', '.');
     await git(workPath, 'commit', '-m', 'post-clone update');
@@ -189,12 +193,12 @@ describe('createWorktree', () => {
     const { stdout: remoteHead } = await git(remotePath, 'rev-parse', BRANCH);
     const expectedSha = remoteHead.trim();
 
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
     const { worktreePath } = await createWorktree(repo, BRANCH, 'session-latest', FAKE_TOKEN);
 
-    // The local branch ref in the bare repo should be updated to the latest remote commit
-    const { stdout: bareHead } = await git(barePath, 'rev-parse', BRANCH);
-    expect(bareHead.trim()).toBe(expectedSha);
+    // The local branch ref in the main repo should be updated to the latest remote commit
+    const { stdout: mainHead } = await git(mainRepoPath, 'rev-parse', BRANCH);
+    expect(mainHead.trim()).toBe(expectedSha);
 
     // The worktree directory should contain files from the new commit
     const files = await fs.promises.readdir(worktreePath);
@@ -202,7 +206,7 @@ describe('createWorktree', () => {
   });
 
   it('keeps a unique local branch when keepLocalBranch is set', async () => {
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
     const localBranch = `${BRANCH}-keep`;
     await createWorktree(repo, BRANCH, 'wt-keep-1', FAKE_TOKEN, { localBranch });
 
@@ -216,16 +220,16 @@ describe('createWorktree', () => {
       { keepLocalBranch: true }
     );
 
-    const { stdout: after } = await git(barePath, 'branch', '--list', localBranch);
+    const { stdout: after } = await git(mainRepoPath, 'branch', '--list', localBranch);
     expect(after.trim()).toContain(localBranch);
   });
 
   it('deletes a unique local branch after removing the worktree', async () => {
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
     const localBranch = `${BRANCH}-archive`;
     await createWorktree(repo, BRANCH, 'wt-archive-1', FAKE_TOKEN, { localBranch });
 
-    const { stdout: before } = await git(barePath, 'branch', '--list', localBranch);
+    const { stdout: before } = await git(mainRepoPath, 'branch', '--list', localBranch);
     expect(before.trim()).toContain(localBranch);
 
     await removeWorktree(
@@ -237,14 +241,14 @@ describe('createWorktree', () => {
       repo
     );
 
-    const { stdout: after } = await git(barePath, 'branch', '--list', localBranch);
+    const { stdout: after } = await git(mainRepoPath, 'branch', '--list', localBranch);
     expect(after.trim()).toBe('');
-    const { stdout: shared } = await git(barePath, 'branch', '--list', BRANCH);
+    const { stdout: shared } = await git(mainRepoPath, 'branch', '--list', BRANCH);
     expect(shared.trim()).toContain(BRANCH);
   });
 
   it('does not delete local_branch when it matches remote_branch', async () => {
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
     // session-1 from an earlier test may still have BRANCH checked out in its worktree.
     await removeWorktree(
       { short_id: 'session-1', local_branch: BRANCH, remote_branch: BRANCH },
@@ -261,12 +265,12 @@ describe('createWorktree', () => {
       repo
     );
 
-    const { stdout: shared } = await git(barePath, 'branch', '--list', BRANCH);
+    const { stdout: shared } = await git(mainRepoPath, 'branch', '--list', BRANCH);
     expect(shared.trim()).toContain(BRANCH);
   });
 
   it('does not fail archive when the unique local branch is already gone', async () => {
-    const repo = { repo_path: barePath, stripped_name: 'test-org/test-repo' };
+    const repo = { repo_path: mainRepoPath, stripped_name: 'test-org/test-repo' };
     await expect(
       removeWorktree(
         {
