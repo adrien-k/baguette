@@ -1,4 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
+
+const FINE_POINTER_HOVER_QUERY = '(hover: hover) and (pointer: fine)';
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = (e) => setMatches(e.matches);
+    setMatches(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
+/** Comment buttons stay visible; desktop hides them until line hover. */
+const DIFF_LINE_COMMENT_BTN_VISIBILITY =
+  'opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/diffline:opacity-100';
 import {
   GitMerge,
   AlertCircle,
@@ -153,13 +173,21 @@ function lineRefFromRow(row, filePath) {
   return { path: filePath, line };
 }
 
-function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
+function DiffCodeRow({ rowClass, onOpenComposer, active, tapLineToComment, children }) {
   const canOpen = Boolean(onOpenComposer);
+  const openFromPointer = (e) => {
+    if (!tapLineToComment || !canOpen) return;
+    if (e.pointerType === 'mouse') return;
+    if (e.button !== 0) return;
+    if (e.target.closest('button')) return;
+    onOpenComposer();
+  };
   return (
     <div
       className={`group/diffline relative flex w-full min-w-0 items-start ${rowClass} ${
         active ? 'ring-1 ring-inset ring-brand/60' : ''
-      }`}
+      } ${tapLineToComment && canOpen ? 'cursor-pointer touch-manipulation' : ''}`}
+      onPointerUp={openFromPointer}
     >
       {canOpen && (
         <button
@@ -171,11 +199,14 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, children }) {
           title={LINE_HINT}
           aria-label={LINE_HINT}
           aria-expanded={active}
-          className={`z-10 mr-0.5 shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md border border-strong bg-control/95 text-secondary shadow-sm transition-opacity hover:bg-control-hover hover:text-fg hover:border-faint ${
-            active ? 'opacity-100' : 'opacity-0 group-hover/diffline:opacity-100'
+          className={`z-10 mr-0.5 shrink-0 inline-flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-9 [@media(pointer:coarse)]:h-9 rounded-md border border-strong bg-control/95 text-secondary shadow-sm transition-opacity hover:bg-control-hover hover:text-fg hover:border-faint touch-manipulation ${
+            active ? 'opacity-100' : DIFF_LINE_COMMENT_BTN_VISIBILITY
           }`}
         >
-          <MessageSquarePlus className="w-3.5 h-3.5" strokeWidth={2} />
+          <MessageSquarePlus
+            className="w-3.5 h-3.5 [@media(pointer:coarse)]:w-4 [@media(pointer:coarse)]:h-4"
+            strokeWidth={2}
+          />
         </button>
       )}
       {children}
@@ -191,7 +222,7 @@ function isLineActive(active, filePath, line, change) {
 
 const LINE_HINT = 'Comment on this line';
 
-function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) {
+function InlineDiff({ lines, filePath, onLineReference, activeLine, composer, tapLineToComment }) {
   const rows = buildInlineRows(lines);
   const sendRef = (row) => {
     const ref = lineRefFromRow(row, filePath);
@@ -215,7 +246,12 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
         let body;
         if (row.type === 'removed') {
           body = (
-            <DiffCodeRow rowClass={DIFF_REMOVED_ROW} onOpenComposer={openComposer} active={active}>
+            <DiffCodeRow
+              rowClass={DIFF_REMOVED_ROW}
+              onOpenComposer={openComposer}
+              active={active}
+              tapLineToComment={tapLineToComment}
+            >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}></span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
@@ -223,7 +259,12 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
           );
         } else if (row.type === 'added') {
           body = (
-            <DiffCodeRow rowClass={DIFF_ADDED_ROW} onOpenComposer={openComposer} active={active}>
+            <DiffCodeRow
+              rowClass={DIFF_ADDED_ROW}
+              onOpenComposer={openComposer}
+              active={active}
+              tapLineToComment={tapLineToComment}
+            >
               <span className={NUM_CLS}></span>
               <span className={NUM_CLS}>{row.newNum}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
@@ -231,7 +272,12 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
           );
         } else {
           body = (
-            <DiffCodeRow rowClass={DIFF_CONTEXT_ROW} onOpenComposer={openComposer} active={active}>
+            <DiffCodeRow
+              rowClass={DIFF_CONTEXT_ROW}
+              onOpenComposer={openComposer}
+              active={active}
+              tapLineToComment={tapLineToComment}
+            >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}>{row.newNum}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.content || ' '}</span>
@@ -249,7 +295,14 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer }) 
   );
 }
 
-function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer }) {
+function SideBySideDiff({
+  lines,
+  filePath,
+  onLineReference,
+  activeLine,
+  composer,
+  tapLineToComment,
+}) {
   const rows = buildSideBySideRows(lines);
   const sendRef = (line, change) => {
     if (line?.num) onLineReference?.({ path: filePath, line: line.num, change });
@@ -281,6 +334,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
                 rowClass={DIFF_REMOVED_ROW}
                 onOpenComposer={onLineReference ? () => sendRef(row.left, 'removed') : undefined}
                 active={leftActive}
+                tapLineToComment={tapLineToComment}
               >
                 <span className={NUM_CLS}>{row.left.num}</span>
                 <span className={DIFF_LINE_CONTENT_CLS}>{row.left.content || ' '}</span>
@@ -296,6 +350,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={onLineReference ? () => sendRef(row.left) : undefined}
               active={leftActive}
+              tapLineToComment={tapLineToComment}
             >
               <span className={NUM_CLS}>{row.left?.num}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.left?.content || ' '}</span>
@@ -308,6 +363,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
                 rowClass={DIFF_ADDED_ROW}
                 onOpenComposer={onLineReference ? () => sendRef(row.right, 'added') : undefined}
                 active={rightActive}
+                tapLineToComment={tapLineToComment}
               >
                 <span className={NUM_CLS}>{row.right.num}</span>
                 <span className={DIFF_LINE_CONTENT_CLS}>{row.right.content || ' '}</span>
@@ -323,6 +379,7 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={onLineReference ? () => sendRef(row.right) : undefined}
               active={rightActive}
+              tapLineToComment={tapLineToComment}
             >
               <span className={NUM_CLS}>{row.right?.num}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.right?.content || ' '}</span>
@@ -342,7 +399,15 @@ function SideBySideDiff({ lines, filePath, onLineReference, activeLine, composer
   );
 }
 
-function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, composer }) {
+function FileDiff({
+  file,
+  viewMode,
+  scrollId,
+  onLineReference,
+  activeLine,
+  composer,
+  tapLineToComment,
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const displayPath = diffFileDisplayPath(file);
   return (
@@ -369,6 +434,7 @@ function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, compo
               onLineReference={onLineReference}
               activeLine={activeLine}
               composer={composer}
+              tapLineToComment={tapLineToComment}
             />
           ) : (
             <SideBySideDiff
@@ -377,6 +443,7 @@ function FileDiff({ file, viewMode, scrollId, onLineReference, activeLine, compo
               onLineReference={onLineReference}
               activeLine={activeLine}
               composer={composer}
+              tapLineToComment={tapLineToComment}
             />
           )}
         </div>
@@ -425,6 +492,7 @@ export default function DiffView({
   const [mergeError, setMergeError] = useState(null);
   const [viewMode, setViewMode] = useState('inline');
   const [lineComposer, setLineComposer] = useState(null);
+  const finePointerHover = useMediaQuery(FINE_POINTER_HOVER_QUERY);
 
   const loading = diffLoading;
   const error = diffError;
@@ -477,6 +545,7 @@ export default function DiffView({
   }, [fileByFile, scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
+  const tapLineToComment = canComment && !finePointerHover;
   const enrichLineRef = (ref) => {
     const short_sha = selectedCommitMeta?.short_sha ?? branchHeadShortSha;
     return short_sha ? { ...ref, short_sha } : ref;
@@ -649,9 +718,20 @@ export default function DiffView({
                   {canComment && (
                     <span className="text-faint">
                       {' '}
-                      · hover a line and use{' '}
-                      <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to message
-                      the agent
+                      ·{' '}
+                      {finePointerHover ? (
+                        <>
+                          hover a line and use{' '}
+                          <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to
+                          message the agent
+                        </>
+                      ) : (
+                        <>
+                          tap a line or{' '}
+                          <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to
+                          message the agent
+                        </>
+                      )}
                     </span>
                   )}
                   {isSingleCommit && selectedCommitMeta && (
@@ -687,6 +767,7 @@ export default function DiffView({
                   onLineReference={canComment ? handleLineClick : undefined}
                   activeLine={lineComposer}
                   composer={lineComposerEl}
+                  tapLineToComment={tapLineToComment}
                 />
               ))}
             </div>
