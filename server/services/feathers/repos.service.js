@@ -27,8 +27,7 @@ import { requireUser } from './hooks.js';
 import { getGithubToken } from '../agent-settings.js';
 import { REPOS_DIR, normalizeRepoPathForStorage, resolveRepoPath } from '../../config.js';
 
-/** True for local repos: absolute path (imported) or plain name with no "/" (brand-new). */
-const isLocalRepo = (fullName) => fullName.startsWith('/') || !fullName.includes('/');
+import { gitHubOriginFromFullName, isLocalRepo } from '../../../shared/repo-origin.js';
 
 class ReposService extends KnexService {
   setup(app) {
@@ -67,6 +66,7 @@ class ReposService extends KnexService {
         'repos.stripped_name',
         'repos.repo_path',
         'repos.default_branch',
+        'repos.origin',
         'repos.created_at',
         'user_repos.id as user_repo_id',
         'user_repos.agent_prompt',
@@ -119,6 +119,7 @@ class ReposService extends KnexService {
         'repos.stripped_name',
         'repos.repo_path',
         'repos.default_branch',
+        'repos.origin',
         'repos.created_at'
       )
       .whereNull('repos.deleted_at')
@@ -181,6 +182,9 @@ class ReposService extends KnexService {
       }
     }
 
+    const origin = gitHubOriginFromFullName(fullName);
+    if (!origin) throw new Error(`Not a GitHub repository full name: ${fullName}`);
+
     const ghUser = await this._loadUserForGithub(params);
     const mainRepoPath = await ensureMainClone(
       { full_name: fullName, stripped_name: strippedName, repo_path: repo?.repo_path },
@@ -206,6 +210,7 @@ class ReposService extends KnexService {
         stripped_name: strippedName,
         default_branch: defaultBranch,
         last_fetched_at: now,
+        origin,
       };
       if (repo.deleted_at) updates.deleted_at = null;
       await db('repos').where({ id: repo.id }).update(updates);
@@ -218,6 +223,7 @@ class ReposService extends KnexService {
           repo_path: repoPathStored,
           default_branch: defaultBranch,
           last_fetched_at: now,
+          origin,
         })
         .returning('*');
     }
@@ -363,9 +369,9 @@ class ReposService extends KnexService {
   /** Fetch branches for a repo. Uses GitHub API for GitHub repos; reads local git refs for local repos. */
   async branches(data, params) {
     const fullName = data;
-    if (isLocalRepo(fullName)) {
-      const db = this.options.Model;
-      const repo = await db('repos').where({ full_name: fullName }).whereNull('deleted_at').first();
+    const db = this.options.Model;
+    const repo = await db('repos').where({ full_name: fullName }).whereNull('deleted_at').first();
+    if (isLocalRepo(repo ?? fullName)) {
       const mainRepoPath = resolveRepoPath(repo);
       if (mainRepoPath) {
         const { stdout } = await execFileAsync(
@@ -441,6 +447,7 @@ class ReposService extends KnexService {
         stripped_name: strippedName,
         default_branch: defaultBranch,
         last_fetched_at: now,
+        origin: null,
       };
       if (repo.deleted_at) updates.deleted_at = null;
       await db('repos').where({ id: repo.id }).update(updates);
@@ -453,6 +460,7 @@ class ReposService extends KnexService {
           repo_path: repoPathStored,
           default_branch: defaultBranch,
           last_fetched_at: now,
+          origin: null,
         })
         .returning('*');
     }

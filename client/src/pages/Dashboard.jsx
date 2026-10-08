@@ -15,6 +15,7 @@ import { useFilters } from '../context/FilterContext.jsx';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import NotFound from './NotFound.jsx';
 import { isFeathersNotFound } from '../utils/feathersErrors.js';
+import { autoPushEnabledForRepo } from '../utils/repoDisplayName.js';
 
 function FilterToggle({ icon: Icon, label, checked, onChange }) {
   return (
@@ -109,7 +110,11 @@ export default function Dashboard() {
           initial_prompt: initialPrompt,
           plan_mode: planMode,
           create_new_branch: createNewBranch ?? true,
-          auto_push: autoPush ?? true,
+          auto_push: autoPushEnabledForRepo(
+            repoFullName,
+            autoPush,
+            repos.find((r) => r.full_name === repoFullName)
+          ),
         };
     if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;

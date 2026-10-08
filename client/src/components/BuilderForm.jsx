@@ -21,6 +21,7 @@ import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
 import RepoPicker from './RepoPicker.jsx';
+import { autoPushEnabledForRepo, isLocalRepo } from '../utils/repoDisplayName.js';
 import { isMobile } from '../utils/isMobile.js';
 import {
   applyParamOverrides,
@@ -122,6 +123,8 @@ export default function BuilderForm({
   );
   const isGlobal = allowRepoChoice ? targetScope === GLOBAL_SCOPE : isGlobalProp;
   const repoFullName = allowRepoChoice ? (isGlobal ? null : targetScope) : repoFullNameProp;
+  const linkedRepo = repos.find((r) => r.full_name === repoFullName);
+  const localRepo = !isGlobal && Boolean(repoFullName) && isLocalRepo(linkedRepo ?? repoFullName);
   const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '', {
     persistWhen: hasPromptText,
   });
@@ -136,6 +139,9 @@ export default function BuilderForm({
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true, {
     persistWhen: hasPromptText,
   });
+  useEffect(() => {
+    if (localRepo) setAutoPush(false);
+  }, [localRepo, setAutoPush]);
   const { currentUser: userSettings } = useCurrentUser();
   const [agentConfigId, setAgentConfigIdRaw] = persistentState.useState(
     'agentConfigId',
@@ -343,7 +349,7 @@ export default function BuilderForm({
       modelParams: isCursor ? stringifyModelParams(finalParams) : undefined,
       createNewBranch,
       branchName: branchName || undefined,
-      autoPush,
+      autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
@@ -385,7 +391,7 @@ export default function BuilderForm({
       single_session: singleSession,
       // Every run needs its own branch pushed somewhere reviewable, so neither is optional.
       create_new_branch: true,
-      auto_push: true,
+      auto_push: autoPushEnabledForRepo(payload.repoFullName, payload.autoPush, linkedRepo),
       agent_config_id: payload.agentConfigId,
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
@@ -453,6 +459,7 @@ export default function BuilderForm({
       onCursorModelPrefChange={setCursorModelPref}
       onModelChange={handleComposerModelChange}
       onAutoPushChange={setAutoPush}
+      autoPushDisabled={localRepo}
       showAutoPushParam={!isGlobal && !isLoop}
       agentConfigOptions={agentConfigOptions}
       onAgentConfigChange={setAgentConfigId}

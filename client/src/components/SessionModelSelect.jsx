@@ -36,6 +36,7 @@ function parseModelParams(params) {
 
 const AUTO_PUSH_TOOLTIP =
   'Disable auto-push to avoid pushing every agent commit and spare CI cycles.';
+const AUTO_PUSH_LOCAL_TOOLTIP = 'Auto-push is not available for local repositories.';
 
 function AgentSubmenu({ options, value, onChange, disabled = false }) {
   const [open, setOpen] = useState(false);
@@ -140,6 +141,7 @@ export default function SessionModelSelect({
   onCursorModelPrefChange,
   onModelChange,
   onAutoPushChange,
+  autoPushDisabled = false,
   showAutoPushParam = false,
   agentConfigOptions,
   onAgentConfigChange,
@@ -209,13 +211,17 @@ export default function SessionModelSelect({
       label: formatParamLabel('auto-push'),
       currentValue: autoPushOn ? 'on' : 'off',
       valueLabel: autoPushOn ? 'on' : 'off',
+      disabled: autoPushDisabled,
       options: [
         { value: 'on', label: 'on' },
         { value: 'off', label: 'off' },
       ],
-      onSelect: (value) => onAutoPushChange(value === 'on'),
+      onSelect: (value) => {
+        if (autoPushDisabled) return;
+        onAutoPushChange(value === 'on');
+      },
     };
-  }, [showAutoPush, autoPushOn, onAutoPushChange]);
+  }, [showAutoPush, autoPushOn, autoPushDisabled, onAutoPushChange]);
 
   const cursorParamItems = useMemo(() => {
     const items = [];
@@ -343,13 +349,20 @@ export default function SessionModelSelect({
         </div>
 
         {showInlineAutoPush && (
-          <Tooltip content={AUTO_PUSH_TOOLTIP} wrap placement="top">
+          <Tooltip
+            content={autoPushDisabled ? AUTO_PUSH_LOCAL_TOOLTIP : AUTO_PUSH_TOOLTIP}
+            wrap
+            placement="top"
+          >
             <span className="inline-flex items-center p-1">
               <ParamToggleSwitch
                 checked={autoPushOn}
-                disabled={disabled}
+                disabled={disabled || autoPushDisabled}
                 ariaLabel="Auto-push"
-                onToggle={() => onAutoPushChange(!autoPushOn)}
+                onToggle={() => {
+                  if (autoPushDisabled) return;
+                  onAutoPushChange(!autoPushOn);
+                }}
               />
             </span>
           </Tooltip>

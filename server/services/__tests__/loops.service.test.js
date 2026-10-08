@@ -153,6 +153,15 @@ describe('Loops service', (hooks) => {
       expect(loop.auto_push).toBe(false);
     });
 
+    it('forces auto_push off for local repository loops', async () => {
+      await db('repos').insert({ full_name: 'local-loop', repo_path: '/tmp/local-loop' });
+      const loop = await app
+        .service('loops')
+        .create(loopData({ repo_full_name: 'local-loop', auto_push: true }), params(aliceId));
+
+      expect(loop.auto_push).toBe(false);
+    });
+
     it('ignores client-supplied bookkeeping fields', async () => {
       const loop = await app
         .service('loops')

@@ -87,6 +87,7 @@ import ReviewInProgressBadge, { isReviewInProgress } from '../components/ReviewI
 import { SessionLoopBadge, SessionLoopIcon } from '../components/SessionLoopIndicator.jsx';
 import { BANNER_DANGER } from '../utils/ui.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
+import { autoPushEnabledForRepo, isLocalRepo } from '../utils/repoDisplayName.js';
 import { parseMessageRow } from '@baguette/shared/parse-message-row.ts';
 
 const SIDE_PANEL_WIDTH_DEFAULT = 360;
@@ -785,8 +786,21 @@ export default function Session() {
     setActiveTaskModal(taskId);
   };
 
+  const linkedSessionRepo =
+    session?.repo_id != null || session?.repo_full_name
+      ? repos.find(
+          (r) =>
+            (session.repo_id != null && r.id === session.repo_id) ||
+            r.full_name === session.repo_full_name
+        )
+      : null;
+  const sessionIsLocalRepo = Boolean(
+    session?.repo_full_name && isLocalRepo(linkedSessionRepo ?? session.repo_full_name)
+  );
+  const sessionAutoPushOn = sessionIsLocalRepo ? false : !!session?.auto_push;
+
   const handleAutoPushChange = (enabled) => {
-    if (!session?.id) return;
+    if (!session?.id || sessionIsLocalRepo) return;
     sessionsService
       .patch(session.id, { auto_push: enabled })
       .catch((err) => toastError('Failed to update auto-push setting', err));
@@ -988,7 +1002,11 @@ export default function Session() {
           initial_prompt: initialPrompt,
           plan_mode: planMode,
           create_new_branch: createNewBranch ?? true,
-          auto_push: autoPush ?? true,
+          auto_push: autoPushEnabledForRepo(
+            repoFullName,
+            autoPush,
+            repos.find((r) => r.full_name === repoFullName)
+          ),
         };
     if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
@@ -1585,6 +1603,8 @@ export default function Session() {
                 onAgentConfigChange={handleAgentConfigChangeRequest}
                 agentConfigOptions={configOptions}
                 onAutoPushChange={handleAutoPushChange}
+                autoPushDisabled={sessionIsLocalRepo}
+                autoPush={sessionAutoPushOn}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
                 commitsToPush={commitsToPush}
@@ -1752,7 +1772,8 @@ export default function Session() {
           commitsToPush={commitsToPush}
           initialBranch={pushRequest?.branch || session?.remote_branch || session?.local_branch}
           initialForceMode={pushRequest?.forceMode || null}
-          autoPush={!!session?.auto_push}
+          autoPush={sessionAutoPushOn}
+          autoPushDisabled={sessionIsLocalRepo}
           onAutoPushChange={handleAutoPushChange}
           onConfirm={handlePushConfirmed}
           onCancel={() => {

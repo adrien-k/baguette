@@ -111,6 +111,8 @@ export default function ChatView({
   models,
   onModelChange,
   onAutoPushChange,
+  autoPushDisabled = false,
+  autoPush: autoPushProp,
   onAgentConfigChange,
   agentConfigOptions,
   cursorModelPrefs,
@@ -456,7 +458,7 @@ export default function ChatView({
             single_session: true,
             session_id: session.id,
             create_new_branch: !!session.create_new_branch,
-            auto_push: !!session.auto_push,
+            auto_push: autoPushDisabled ? false : !!session.auto_push,
           };
       if (session.agent_sdk) payload.agent_sdk = session.agent_sdk;
       if (composerModel) payload.model = composerModel;
@@ -781,12 +783,13 @@ export default function ChatView({
                     }
                     model={composerModel}
                     params={composerModelParams}
-                    autoPush={session?.auto_push}
+                    autoPush={autoPushProp ?? (autoPushDisabled ? false : !!session?.auto_push)}
                     models={models}
                     cursorModelPrefs={cursorModelPrefs}
                     onCursorModelPrefChange={onCursorModelPrefChange}
                     onModelChange={handleComposerModelChange}
                     onAutoPushChange={onAutoPushChange}
+                    autoPushDisabled={autoPushDisabled}
                     onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
                     agentConfigOptions={agentConfigOptions}
                     showAutoPushParam

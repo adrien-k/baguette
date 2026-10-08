@@ -72,6 +72,7 @@ import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createSessionAgentContext } from '../mcp/lib/session-agent-context.js';
 import { createGitPushTool } from '../mcp/tools/git-push.js';
 import { createPrUpsertTool } from '../mcp/tools/pr-upsert.js';
+import { gitHubOriginFromFullName } from '../../../shared/repo-origin.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -190,11 +191,15 @@ function makeApp(
     if (table === 'repos')
       return {
         where: () => ({
-          first: async () => ({
-            id: sessionSnapshot.repo_id ?? 7,
-            full_name: sessionSnapshot.repo_full_name ?? 'owner/repo',
-            default_branch: 'main',
-          }),
+          first: async () => {
+            const fullName = sessionSnapshot.repo_full_name ?? 'owner/repo';
+            return {
+              id: sessionSnapshot.repo_id ?? 7,
+              full_name: fullName,
+              default_branch: 'main',
+              origin: gitHubOriginFromFullName(fullName),
+            };
+          },
         }),
       };
     if (table === 'usage') return emptyUsageQuery();

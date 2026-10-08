@@ -13,6 +13,7 @@ import {
   validateLogByteRange,
 } from './mcp-pagination.js';
 import { githubFetch } from './github-api.js';
+import { gitHubOriginFromFullName } from '../../shared/repo-origin.js';
 
 export { configureWorktreeGitIdentity } from './git-identity.js';
 
@@ -58,7 +59,9 @@ async function lfsAvailable() {
 }
 
 function repoUrl(repoFullName) {
-  return `https://github.com/${repoFullName}.git`;
+  const url = gitHubOriginFromFullName(repoFullName);
+  if (!url) throw new Error(`Not a GitHub repository full name: ${repoFullName}`);
+  return url;
 }
 
 /** Alphanumeric and dashes only, for directory names. Stored on repo record. */

@@ -1980,6 +1980,32 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(generateSessionMetadata).toHaveBeenCalled();
     });
 
+    it('forces auto_push off for local repositories', async () => {
+      await db('repos').insert({ full_name: 'local-app', repo_path: '/tmp/local-app' });
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_full_name: 'local-app',
+          auto_push: true,
+        }),
+        params({ id: userId1 })
+      );
+
+      expect(session.auto_push).toBeFalsy();
+    });
+
+    it('rejects enabling auto_push on patch for local repository sessions', async () => {
+      await db('repos').insert({ full_name: 'local-patch', repo_path: '/tmp/local-patch' });
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_full_name: 'local-patch' }), params({ id: userId1 }));
+
+      const patched = await app
+        .service('sessions')
+        .patch(created.id, { auto_push: true }, params({ id: userId1 }));
+
+      expect(patched.auto_push).toBeFalsy();
+    });
+
     it('passes the session so metadata generation uses its selected model', async () => {
       const session = await app
         .service('sessions')

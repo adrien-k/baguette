@@ -23,6 +23,7 @@ export default function PushConfirmModal({
   initialBranch,
   initialForceMode,
   autoPush,
+  autoPushDisabled = false,
   onAutoPushChange,
   onConfirm,
   onCancel,
@@ -138,13 +139,20 @@ export default function PushConfirmModal({
             <div className="min-w-0">
               <p className={`text-sm ${TEXT_HEADING}`}>Auto-push</p>
               <p className={`text-xs ${TEXT_FAINT} leading-snug`}>
-                Automatically push after the agent commits
+                {autoPushDisabled
+                  ? 'Not available for local repositories'
+                  : 'Automatically push after the agent commits'}
               </p>
             </div>
             <Toggle
               checked={!!autoPush}
+              disabled={autoPushDisabled}
               onChange={onAutoPushChange}
-              title="Automatically push after the agent commits"
+              title={
+                autoPushDisabled
+                  ? 'Auto-push is not available for local repositories'
+                  : 'Automatically push after the agent commits'
+              }
             />
           </div>
         )}

@@ -8,6 +8,7 @@ import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import { getAgentServiceForSession } from '../agent-session-routing.js';
 import { loadOwnedAgentConfig, resolveAgentConfigIdForRepoSdk } from '../agent-config-resolver.js';
+import { isLocalRepo } from '../../../shared/repo-origin.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -305,6 +306,7 @@ async function resolveRepo(context) {
   const repo = await context.app.get('db')('repos').where({ full_name: fullName }).first();
   if (!repo) throw new NotFound(`Unknown repository "${fullName}"`);
   context.data.repo_id = repo.id;
+  context.params.resolvedRepo = repo;
   return context;
 }
 
@@ -364,6 +366,10 @@ function normalizeCreate(context) {
   data.enabled = data.enabled === undefined ? true : !!data.enabled;
   data.create_new_branch = data.create_new_branch === undefined ? true : !!data.create_new_branch;
   data.auto_push = data.auto_push === undefined ? true : !!data.auto_push;
+  const repo = context.params.resolvedRepo;
+  if (!data.is_global && isLocalRepo(repo ?? data.repo_full_name)) {
+    data.auto_push = false;
+  }
   data.plan_mode = !!data.plan_mode;
   data.single_session = !!data.single_session;
   if (data.session_id != null) {
@@ -391,6 +397,12 @@ async function requireOwnLoop(context) {
     .first();
   if (!loop) throw new NotFound('Loop not found');
   context.params.existingLoop = loop;
+  if (loop.repo_id) {
+    context.params.loopRepo = await context.app
+      .get('db')('repos')
+      .where({ id: loop.repo_id })
+      .first();
+  }
   delete context.params.knex;
   return context;
 }
@@ -421,6 +433,14 @@ function normalizePatch(context) {
     'single_session',
   ]) {
     if (field in data) data[field] = !!data[field];
+  }
+  const loopRepo = context.params.loopRepo;
+  if (
+    'auto_push' in data &&
+    !existing.is_global &&
+    isLocalRepo(loopRepo ?? existing.repo_full_name)
+  ) {
+    data.auto_push = false;
   }
   // Turning single-session off frees the loop from the session it was pinned to; turning it on
   // starts a new one on the next run rather than adopting whatever ran last.

@@ -1,3 +1,5 @@
+import { isLocalRepo as isLocalRepoShared } from '@baguette/shared/repo-origin.js';
+
 /** Display name for a repo full_name:
  *  - GitHub "owner/repo"    → "repo"
  *  - local path "/a/b/name" → "name"
@@ -10,9 +12,16 @@ export function repoDisplayName(fullName) {
   return fullName;
 }
 
-/** True for repos not hosted on GitHub (brand-new or imported from local path). */
-export function isLocalRepo(fullName) {
-  return !fullName || fullName.startsWith('/') || !fullName.includes('/');
+/** True when the repo has no GitHub origin (local-only). Accepts a repo row or `full_name` string. */
+export function isLocalRepo(fullNameOrRepo) {
+  return isLocalRepoShared(fullNameOrRepo);
+}
+
+/** Auto-push only applies to GitHub-hosted repositories with a remote. */
+export function autoPushEnabledForRepo(repoFullName, autoPush = true, repoRow = null) {
+  const row = repoRow ?? undefined;
+  if (isLocalRepo(row ?? repoFullName)) return false;
+  return autoPush;
 }
 
 /** Owner/org for a GitHub `owner/repo`, or `"Local"` for path/name-only repos. */

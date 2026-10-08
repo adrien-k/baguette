@@ -53,6 +53,7 @@ import {
 import { agentServicePathForSession, getAgentServiceForSession } from '../agent-session-routing.js';
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
+import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
 import {
@@ -1446,6 +1447,7 @@ export class SessionsService extends KnexService {
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
   async maybeAutoPushAfterTurn(session) {
     if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
+    if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
     if (!getGithubToken(user)) return;
 
@@ -1517,11 +1519,28 @@ async function requireOwnSession(context) {
   if (!userId) return context;
   const session = await db('sessions').where({ id, user_id: userId }).first();
   if (!session) throw new NotFound('Session not found');
+  context.params.ownSession = session;
   // Clear params.knex: scopeByUser set it to a SELECT builder which gets consumed
   // by _patch's UPDATE step, causing _findOrGet to return 0 rows. Ownership is
   // already verified above, so the plain id-based query in _patch is sufficient.
   delete context.params.knex;
   return context;
+}
+
+async function clampAutoPushForLocalRepo(context) {
+  if (!('auto_push' in context.data)) return context;
+  const session = context.params.ownSession;
+  if (!session) return context;
+  if (isGlobalSession(session) || (await sessionRepoIsLocal(context.app, session))) {
+    context.data.auto_push = false;
+  }
+  return context;
+}
+
+async function sessionRepoIsLocal(app, session) {
+  if (!session?.repo_id) return isLocalRepo(session?.repo_full_name);
+  const repo = await app.get('db')('repos').where({ id: session.repo_id }).first();
+  return isLocalRepo(repo ?? session.repo_full_name);
 }
 
 async function ensureShortId(context) {
@@ -1587,6 +1606,9 @@ async function validateSessionCreate(context) {
 
   context.data.repo_id = repo.id;
   context.data.status = PROVISIONING_STATUS;
+  if (isLocalRepo(repo)) {
+    context.data.auto_push = false;
+  }
 
   if (!createNewBranch) {
     const workingBranch = baseBranch;
@@ -2182,6 +2204,7 @@ export const sessionsHooks = {
     ],
     patch: [
       requireOwnSession,
+      clampAutoPushForLocalRepo,
       syncAgentConfigOnPatch,
       resetBuilderAgentIdsOnConfigChange,
       normalizeModelFields,

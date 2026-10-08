@@ -33,6 +33,7 @@ export default function AgentMessageComposer({
   onCursorModelPrefChange,
   onModelChange,
   onAutoPushChange,
+  autoPushDisabled = false,
   showAutoPushParam = false,
   agentConfigOptions,
   onAgentConfigChange,
@@ -128,6 +129,7 @@ export default function AgentMessageComposer({
           onCursorModelPrefChange={onCursorModelPrefChange}
           onModelChange={onModelChange}
           onAutoPushChange={onAutoPushChange}
+          autoPushDisabled={autoPushDisabled}
           showAutoPushParam={showAutoPushParam}
           agentConfigOptions={agentConfigOptions}
           onAgentConfigChange={onAgentConfigChange}

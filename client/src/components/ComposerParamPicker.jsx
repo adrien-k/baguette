@@ -263,7 +263,7 @@ export default function ComposerParamPicker({
                 <ParamRowLabel label={item.label} valueLabel={item.valueLabel} />
                 <ParamToggleSwitch
                   checked={toggleOn}
-                  disabled={disabled}
+                  disabled={disabled || item.disabled}
                   onToggle={() => item.onSelect(binaryParamToggledValue(item.currentValue))}
                 />
               </div>

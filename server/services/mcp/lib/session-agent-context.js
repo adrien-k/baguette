@@ -54,8 +54,7 @@ export function createSessionAgentContext(session, app, { slackApps = [] } = {})
 
   const requireGitHubRepo = async () => {
     const repo = await getRepo();
-    const fn = repo?.full_name;
-    if (fn && (fn.startsWith('/') || !fn.includes('/'))) {
+    if (!repo?.origin) {
       return fail(
         'This repository is not connected to GitHub. Push and PR features are unavailable.'
       );

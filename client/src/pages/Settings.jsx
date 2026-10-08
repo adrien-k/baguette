@@ -300,7 +300,7 @@ function RepositoriesTab({ settings, onSave }) {
                     <code className="text-sm text-fg font-medium">
                       {repoDisplayName(r.full_name)}
                     </code>
-                    {isLocalRepo(r.full_name) && (
+                    {isLocalRepo(r) && (
                       <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
                         local
                       </span>
