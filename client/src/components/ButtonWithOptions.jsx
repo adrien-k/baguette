@@ -1,3 +1,4 @@
+import { cloneElement, isValidElement } from 'react';
 import Tooltip from './Tooltip.jsx';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import {
@@ -31,9 +32,8 @@ export default function ButtonWithOptions({
   chevronClassName = SPLIT_CHEVRON_CLASS,
   groupClassName = SPLIT_GROUP_CLASS,
 }) {
-  const menuAddon =
-    options ??
-    (menuItems?.length || menuFooter ? (
+  const builtMenuAddon =
+    menuItems?.length || menuFooter ? (
       <ComposerPrimaryMenuAddon
         disabled={disabled}
         title={menuTitle}
@@ -41,7 +41,16 @@ export default function ButtonWithOptions({
         footer={menuFooter}
         className={chevronClassName}
       />
-    ) : null);
+    ) : null;
+
+  const menuAddon =
+    options != null
+      ? isValidElement(options)
+        ? cloneElement(options, {
+            disabled: disabled || Boolean(options.props.disabled),
+          })
+        : options
+      : builtMenuAddon;
 
   const hasMenu = Boolean(menuAddon);
   const primaryClass = joinClasses(
