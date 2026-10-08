@@ -1703,6 +1703,52 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(turnEvents).toEqual(['turn:complete']);
     });
 
+    it('does not auto-push when provisioning finishes before any builder turn', async () => {
+      const gitStatusSpy = vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 2,
+        commitsSinceReview: 0,
+      });
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+
+      await app
+        .service('sessions')
+        .create(
+          sessionData({ repo_id: repoId, initial_prompt: 'Start work' }),
+          params({ id: userId1 })
+        );
+
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+      gitStatusSpy.mockRestore();
+    });
+
+    it('does not flush queued turns after provision when an initial prompt was sent', async () => {
+      const sessionsSvc = app.service('sessions');
+      const flushSpy = vi.spyOn(sessionsSvc, 'flushNextQueuedTurn');
+
+      await sessionsSvc.create(
+        sessionData({ repo_id: repoId, initial_prompt: 'First turn prompt' }),
+        params({ id: userId1 })
+      );
+
+      expect(flushSpy).not.toHaveBeenCalled();
+      flushSpy.mockRestore();
+    });
+
+    it('flushes queued turns after provision when there is no initial prompt', async () => {
+      const sessionsSvc = app.service('sessions');
+      const flushSpy = vi.spyOn(sessionsSvc, 'flushNextQueuedTurn');
+
+      await sessionsSvc.create(
+        sessionData({ repo_id: repoId, initial_prompt: '' }),
+        params({ id: userId1 })
+      );
+
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+      expect(flushSpy).toHaveBeenCalledWith(expect.any(Number), 'builder');
+      flushSpy.mockRestore();
+    });
+
     it('skips auto-push when auto_push is off', async () => {
       const created = await app
         .service('sessions')
@@ -1817,21 +1863,6 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(session.is_global).toBe(true);
       expect(generateSessionMetadata).not.toHaveBeenCalled();
       expect(session.label).toBe(`New session (${session.short_id})`);
-    });
-
-    it('does not create a first message when skipFirstMessage is set', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
-
-      await app
-        .service('sessions')
-        .create(
-          sessionData({ repo_id: repoId, initial_prompt: 'Fixture session', status: 'stopped' }),
-          { ...params({ id: userId1 }), skipFirstMessage: true }
-        );
-
-      const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
-      expect(userMsgCall).toBeUndefined();
     });
 
     it('rejects when not authenticated', async () => {

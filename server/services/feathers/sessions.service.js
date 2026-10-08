@@ -1769,14 +1769,17 @@ async function finalizeSessionAfterProvision(app, session, params) {
     params: {
       user: params.user,
       initialFiles: params.initialFiles,
-      skipFirstMessage: params.skipFirstMessage,
     },
   };
   await persistSystemPrompt(promptContext);
+  const createdInitialPrompt = hasInitialPrompt(enriched.initial_prompt);
   await createFirstMessage(promptContext);
-  // Messages sent while the worktree was still being created were queued; flush
-  // the first one now that the session can actually run.
-  await app.service('sessions').onTurnComplete(session.id);
+  // When there is no initial prompt, messages sent during provisioning were queued;
+  // flush the oldest now that the worktree exists. If we already created the first
+  // user message from initial_prompt, wait for that turn to finish (onTurnComplete).
+  if (!createdInitialPrompt) {
+    await app.service('sessions').flushNextQueuedTurn(session.id, 'builder');
+  }
   const row = await app.get('db')('sessions').where({ id: session.id }).first();
   if (row?.status === PROVISIONING_STATUS) {
     await app
@@ -1844,7 +1847,6 @@ async function scheduleSessionProvisioning(context) {
     initialFiles: context.params.initialFiles,
     createNewBranch: context.params._createNewBranch ?? true,
     requestedBranchName: context.params._requestedBranchName,
-    skipFirstMessage: context.params.skipFirstMessage,
   };
 
   const run = async () => {
@@ -2268,10 +2270,9 @@ async function persistSystemPrompt(context) {
 }
 
 async function createFirstMessage(context) {
-  if (context.params.skipFirstMessage) return context;
   const session = context.result;
   const initialPrompt = session.initial_prompt;
-  if (!initialPrompt) return context;
+  if (!hasInitialPrompt(initialPrompt)) return context;
   const initialFiles = context.params.initialFiles;
   const content = initialFiles?.length
     ? [{ type: 'text', text: initialPrompt }, ...initialFiles]
@@ -2284,6 +2285,7 @@ async function createFirstMessage(context) {
     {
       session_id: session.id,
       type: 'user',
+      force: true,
       message_json: JSON.stringify(initialSdkMessage),
       ...sessionMessageIdentity(session, 'builder'),
     },
