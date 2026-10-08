@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
-import { packSessionMessagesForMcp } from '../../baguette-mcp-payload.js';
+import { packSessionMessagesForMcp, MCP_MESSAGES_PAGE_SIZE } from '../../baguette-mcp-payload.js';
 
 export function createGetSessionMessagesTool(ctx) {
   const { app, userId } = ctx;
   return {
     name: 'GetSessionMessages',
     description:
-      'List session messages (paginated). Response JSON is capped at 5000 bytes; oversized bodies are truncated with a hint to use GetSessionMessage. Pass afterMessage with the last id from the previous page.',
+      'List session messages (paginated, 50 per page). Thinking blocks are omitted from assistant messages. Pass afterMessage with the nextMessageId from the previous page to fetch the next page.',
     schema: {
       session_id: z.number().int().describe('Session numeric id'),
       types: z
@@ -35,8 +35,10 @@ export function createGetSessionMessagesTool(ctx) {
 
       if (afterMessage != null) query = query.where('id', '>', afterMessage);
 
-      const rows = await query.limit(200);
-      const packed = packSessionMessagesForMcp(rows, { afterMessage: afterMessage ?? null });
+      const rows = await query.limit(MCP_MESSAGES_PAGE_SIZE + 1);
+      const hasMoreRows = rows.length > MCP_MESSAGES_PAGE_SIZE;
+      const pageRows = hasMoreRows ? rows.slice(0, MCP_MESSAGES_PAGE_SIZE) : rows;
+      const packed = packSessionMessagesForMcp(pageRows, { hasMoreRows });
       return ok({ session_id, ...packed });
     },
   };

@@ -1,97 +1,58 @@
-import { sliceByteRange } from './mcp-pagination.js';
+/** Default number of messages per page for the GetSessionMessages MCP tool. */
+export const MCP_MESSAGES_PAGE_SIZE = 50;
 
-/** Max UTF-8 bytes for MCP tool JSON payloads listing session messages. */
-export const MCP_TOOL_PAYLOAD_MAX_BYTES = 5000;
-
-export function jsonUtf8ByteLength(value) {
-  return Buffer.byteLength(JSON.stringify(value), 'utf8');
-}
-
-const TRUNCATED_HINT =
-  'Message body was truncated in this list. Call GetSessionMessage with messageId (and optional startByte/endByte) to read the rest. Use afterMessage to fetch the next page.';
-
-function fitsPayload(messages, entry, afterMessage) {
-  return (
-    jsonUtf8ByteLength({ messages: [...messages, entry], afterMessage }) <=
-    MCP_TOOL_PAYLOAD_MAX_BYTES
-  );
-}
-
-function shrinkMessageEntry(messages, row, afterMessage) {
-  const full = row.message_json ?? '';
-  const totalBytes = Buffer.byteLength(full, 'utf8');
-  if (totalBytes === 0) {
-    const entry = {
-      id: row.id,
-      type: row.type,
-      subtype: row.subtype ?? null,
-      created_at: row.created_at,
-      message_json: '',
-      truncated: false,
-    };
-    return fitsPayload(messages, entry, afterMessage) ? entry : null;
+/**
+ * Strip thinking blocks from an assistant message payload.
+ * Returns { messageJson, thinkingOnly }: messageJson is the (possibly rewritten) JSON string
+ * and thinkingOnly is true when the row contained nothing but thinking blocks (drop it).
+ */
+function stripThinkingBlocks(messageJson) {
+  let payload;
+  try {
+    payload = JSON.parse(messageJson);
+  } catch {
+    return { messageJson, thinkingOnly: false };
   }
-
-  let end = Math.min(totalBytes - 1, MCP_TOOL_PAYLOAD_MAX_BYTES - 400);
-  while (end >= 0) {
-    const slice = sliceByteRange(full, { startByte: 0, endByte: end });
-    const entry = {
-      id: row.id,
-      type: row.type,
-      subtype: row.subtype ?? null,
-      created_at: row.created_at,
-      message_json: slice.log,
-      truncated: slice.endByte < totalBytes - 1,
-      totalBytes,
-      startByte: slice.startByte,
-      endByte: slice.endByte,
-      hint: TRUNCATED_HINT,
-    };
-    if (fitsPayload(messages, entry, afterMessage)) return entry;
-    end = Math.floor(end / 2) - 1;
+  if (payload?.type !== 'assistant' || !Array.isArray(payload.blocks)) {
+    return { messageJson, thinkingOnly: false };
   }
-  return null;
+  const kept = payload.blocks.filter((block) => block?.type !== 'thinking');
+  if (kept.length === payload.blocks.length) return { messageJson, thinkingOnly: false };
+  return {
+    messageJson: JSON.stringify({ ...payload, blocks: kept }),
+    thinkingOnly: kept.length === 0,
+  };
 }
 
 /**
- * Fit message rows into a JSON payload under maxBytes. Truncates the last message if needed.
+ * Build one page of session messages for the GetSessionMessages MCP tool.
+ * Thinking blocks are stripped from assistant rows; thinking-only rows are skipped entirely.
+ * The caller fetches up to one extra row to know whether more pages exist (hasMoreRows).
+ * Returns { messages, nextMessageId, hasMore }: nextMessageId is the id to pass as
+ * afterMessage on the next page, or null when there are no more rows.
  */
-export function packSessionMessagesForMcp(rows, { afterMessage = null } = {}) {
+export function packSessionMessagesForMcp(rows, { hasMoreRows = false } = {}) {
   const messages = [];
-  let truncated = false;
 
   for (const row of rows) {
-    const base = {
+    const { messageJson, thinkingOnly } = stripThinkingBlocks(row.message_json ?? '');
+    if (thinkingOnly) continue;
+
+    messages.push({
       id: row.id,
       type: row.type,
       subtype: row.subtype ?? null,
       created_at: row.created_at,
-      message_json: row.message_json,
-    };
-
-    if (fitsPayload(messages, base, afterMessage)) {
-      messages.push(base);
-      continue;
-    }
-
-    const shrunk = shrinkMessageEntry(messages, row, afterMessage);
-    if (shrunk) {
-      messages.push(shrunk);
-      truncated = true;
-      break;
-    }
-    truncated = true;
-    break;
+      message_json: messageJson,
+    });
   }
 
-  const lastId = messages.length ? messages[messages.length - 1].id : afterMessage;
-  const hasMore =
-    truncated || (messages.length > 0 && rows.some((r) => r.id > messages[messages.length - 1].id));
+  const lastRow = rows.length ? rows[rows.length - 1] : null;
+  const nextMessageId = hasMoreRows && lastRow ? lastRow.id : null;
 
   return {
     messages,
-    nextAfterMessage: lastId,
-    hasMore,
-    ...(truncated || hasMore ? { hint: TRUNCATED_HINT } : {}),
+    nextMessageId,
+    hasMore: nextMessageId != null,
   };
 }
