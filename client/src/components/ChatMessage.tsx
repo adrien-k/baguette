@@ -166,15 +166,26 @@ function TypedMessage({
       );
     }
 
-    case 'assistant':
+    case 'assistant': {
+      const firstTextBlockIndex = message.blocks.findIndex((b) => b.type === 'text');
       return (
         <div className="space-y-2">
           {message.blocks.map((block, i) => {
             if (block.type === 'text') {
               return (
                 <div key={i} className="group bg-nav rounded-lg p-3 sm:p-4 border border-line">
-                  <div className="text-xs text-info mb-1 font-medium flex items-center justify-between">
-                    <span>{agentName}</span>
+                  <div className="text-xs text-info mb-1 font-medium flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="shrink-0">{agentName}</span>
+                      {i === firstTextBlockIndex && message.created_at && (
+                        <span className="text-faint font-normal shrink-0">
+                          {new Date(message.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      )}
+                    </div>
                     <CopyButton text={block.text} />
                   </div>
                   <CollapsibleMarkdown key={`${message.id}-${i}`}>{block.text}</CollapsibleMarkdown>
@@ -188,6 +199,7 @@ function TypedMessage({
           })}
         </div>
       );
+    }
 
     case 'user':
       return <TypedUserMessage message={message} models={models} session={session} />;
