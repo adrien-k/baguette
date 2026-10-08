@@ -10,6 +10,8 @@ Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need p
 
 When someone refers to a session’s branch by name (for example “the `feature/foo` session”), they often mean the shared **`remote_branch`** (PR/push head), not the unique **`local_branch`** checked out in a single worktree. Several sessions can share one `remote_branch` with different `local_branch` values. To find those sessions and read each one’s `local_branch`, call **`SearchSessions`** with `remote_branch` set to that name.
 
+When the user asks for follow-up work in a **new session** that should stack on the current PR, call **`CreateSession`** (only if they explicitly want a new session) with **`branch`** set to this session’s **`remote_branch`** so the new session branches from that head and opens a stacked PR. Use **`create_new_branch: false`** only when they want another session on the **same** branch without a new PR.
+
 After **`CurrentSessionInfo`**, treat `session_path` as the repo root. Before git or other repo-local shell commands, confirm your cwd matches `session_path` (e.g. compare `pwd`); if it does not, `cd` to `session_path` or pass it as the shell tool's `working_directory`.
 **CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**
 

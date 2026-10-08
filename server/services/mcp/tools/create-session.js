@@ -8,6 +8,18 @@ import {
 } from '../../agent-config-resolver.js';
 import { ok, fail } from '../lib/result.js';
 
+/** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
+export function resolveCreateSessionBaseBranch(baseBranch, branch) {
+  if (baseBranch && branch && baseBranch !== branch) {
+    return { error: 'base_branch and branch must match when both are set.' };
+  }
+  const resolved = baseBranch ?? branch;
+  if (!resolved) {
+    return { error: 'base_branch or branch is required unless is_global is true.' };
+  }
+  return { base_branch: resolved };
+}
+
 export function createCreateSessionTool(ctx) {
   const { app, userId, userParams, requireRepoAccess, loadRepoWithKeys } = ctx;
   return {
@@ -15,6 +27,7 @@ export function createCreateSessionTool(ctx) {
     description:
       'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
       'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels with agent_config_id + model. ' +
+      'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
       'Omitted agent_config_id uses your saved agent defaults or your most recent session’s configuration when available. Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).',
     schema: {
       repo_id: z
@@ -25,7 +38,13 @@ export function createCreateSessionTool(ctx) {
       base_branch: z
         .string()
         .optional()
-        .describe('Base branch from ListBranches (omit when is_global)'),
+        .describe('Git branch to branch from (omit when is_global; alias: branch)'),
+      branch: z
+        .string()
+        .optional()
+        .describe(
+          'Same as base_branch — preferred for stacked PR follow-ups (parent session remote_branch from CurrentSessionInfo)'
+        ),
       is_global: z
         .boolean()
         .optional()
@@ -50,6 +69,7 @@ export function createCreateSessionTool(ctx) {
     handler: async ({
       repo_id,
       base_branch,
+      branch,
       is_global = false,
       initial_prompt,
       agent_config_id: agentConfigIdArg,
@@ -64,8 +84,13 @@ export function createCreateSessionTool(ctx) {
       if (!is_global && repo_id == null) {
         return fail('repo_id is required unless is_global is true');
       }
-      if (!is_global && !base_branch) {
-        return fail('base_branch is required unless is_global is true.');
+      let resolvedBaseBranch = base_branch;
+      if (!is_global) {
+        const branchResolution = resolveCreateSessionBaseBranch(base_branch, branch);
+        if (branchResolution.error) {
+          return fail(branchResolution.error);
+        }
+        resolvedBaseBranch = branchResolution.base_branch;
       }
 
       let fullUser;
@@ -153,7 +178,7 @@ export function createCreateSessionTool(ctx) {
         payload.is_global = true;
       } else {
         payload.repo_full_name = repoWithKeys.full_name;
-        payload.base_branch = base_branch;
+        payload.base_branch = resolvedBaseBranch;
         payload.create_new_branch = create_new_branch;
         payload.auto_push = auto_push;
       }

@@ -11,8 +11,21 @@ vi.mock('../cursor-models.js', () => ({
 }));
 
 import { buildBaguetteAccountToolList } from '../baguette-account-mcp-tools.js';
+import { resolveCreateSessionBaseBranch } from '../mcp/tools/create-session.js';
 
 const db = createTestDb({ beforeEach, afterEach });
+
+describe('resolveCreateSessionBaseBranch', () => {
+  it('accepts branch alone', () => {
+    expect(resolveCreateSessionBaseBranch(undefined, 'feature/parent')).toEqual({
+      base_branch: 'feature/parent',
+    });
+  });
+
+  it('rejects conflicting base_branch and branch', () => {
+    expect(resolveCreateSessionBaseBranch('main', 'feature/parent').error).toMatch(/must match/);
+  });
+});
 
 function parseMcpToolResult(result) {
   const text = result?.content?.[0]?.text;
@@ -159,6 +172,30 @@ describe('CreateSession MCP agent_config_id', () => {
     });
     expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({ agent_config_id: claudeConfigId }),
+      expect.any(Object)
+    );
+  });
+
+  it('maps branch to base_branch for stacked follow-up sessions', async () => {
+    await db('users')
+      .where({ id: user.id })
+      .update({
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+      });
+
+    const tools = buildBaguetteAccountToolList({ id: user.id }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    await createSession.handler({
+      repo_id: 1,
+      branch: 'feature/parent',
+      initial_prompt: 'follow-up',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        base_branch: 'feature/parent',
+        create_new_branch: true,
+      }),
       expect.any(Object)
     );
   });
