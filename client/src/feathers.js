@@ -88,7 +88,7 @@ export const queuedMessagesService = createService('queued-messages', {
 });
 export const loopsService = createService('loops');
 export const usersService = createService('users', {
-  customMethods: ['approve', 'reject', 'generateMcpToken', 'revokeMcpToken', 'defaultAgent'],
+  customMethods: ['approve', 'reject', 'generateMcpToken', 'revokeMcpToken'],
 });
 export const pluginsService = createService('admin/plugins', { customMethods: ['refresh'] });
 export const slackService = createService('admin/slack', {
@@ -98,6 +98,6 @@ export const sessionIssuesService = createService('session-issues');
 export const sessionReviewService = createService('session-review', {
   customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
 });
-export const agentSdksService = createService('agent-sdks', {
-  customMethods: ['models', 'test'],
+export const agentConfigsService = createService('agent-configs', {
+  customMethods: ['listModels', 'testConnectivity', 'lastUsed', 'removeWithReplacement'],
 });

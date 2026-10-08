@@ -111,10 +111,8 @@ export default function ChatView({
   models,
   onModelChange,
   onAutoPushChange,
-  onSdkChange,
-  availableSdks,
-  userSettings,
-  sdkRepo,
+  onAgentConfigChange,
+  agentConfigOptions,
   cursorModelPrefs,
   onCursorModelPrefChange,
   commitsToPush = 0,
@@ -776,7 +774,11 @@ export default function ChatView({
                     onSubmit={handleSend}
                     placeholder={`Message ${agentDisplayName}...`}
                     sending={sending}
-                    sdk={session?.agent_sdk}
+                    agentConfigKey={
+                      session?.agent_config_id != null
+                        ? String(session.agent_config_id)
+                        : session?.agent_sdk
+                    }
                     model={composerModel}
                     params={composerModelParams}
                     autoPush={session?.auto_push}
@@ -785,10 +787,8 @@ export default function ChatView({
                     onCursorModelPrefChange={onCursorModelPrefChange}
                     onModelChange={handleComposerModelChange}
                     onAutoPushChange={onAutoPushChange}
-                    onSdkChange={readonly ? undefined : onSdkChange}
-                    availableSdks={availableSdks}
-                    userSettings={userSettings}
-                    sdkRepo={sdkRepo}
+                    onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
+                    agentConfigOptions={agentConfigOptions}
                     showAutoPushParam
                     textareaId="chat-input"
                     canSend={canSendDraft}

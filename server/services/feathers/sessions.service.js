@@ -50,14 +50,10 @@ import {
   resolveRepoPath,
   resolveDataDirRelativePath,
 } from '../../config.js';
-import {
-  agentSdkContextForSession,
-  agentServicePathForSdk,
-  getAgentServiceForSession,
-  resolveAgentSdkKey,
-} from '../agent-sdk/default-agent-sdk.js';
-import { requireRepoAccessForUser, userRowForAgentSdk } from '../agent-sdk/agent-context.js';
+import { agentServicePathForSession, getAgentServiceForSession } from '../agent-session-routing.js';
+import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
+import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
 import {
   getPreviewServiceDefinitions,
@@ -244,8 +240,7 @@ export class SessionsService extends KnexService {
     const session = await this.app.get('db')('sessions').where({ id: partial.id }).first();
     if (!session) return false;
     const userParams = { user: { id: session.user_id } };
-    const ctx = await agentSdkContextForSession(this.app, session);
-    const agentServicePath = await agentServicePathForSdk(this.app, session.agent_sdk, ctx);
+    const agentServicePath = await agentServicePathForSession(this.app, session);
     const resumable = await this.app
       .service(agentServicePath)
       .isInterruptedSessionResumable(session);
@@ -272,7 +267,7 @@ export class SessionsService extends KnexService {
           }),
           ...sessionMessageIdentity(session, 'builder'),
         },
-        userParams
+        { ...userParams, _skipAgentDispatch: true }
       );
       const resumeAgent = await getAgentServiceForSession(this.app, session);
       if (resumeAgent?.handleMessageCreated) {
@@ -1974,6 +1969,11 @@ function serializePlugins(context) {
 }
 
 function normalizeModelFields(context) {
+  for (const key of ['model_params', 'review_model_params']) {
+    if (context.data[key] !== undefined) {
+      context.data[key] = stringifyModelParamsForStorage(context.data[key]);
+    }
+  }
   const { model } = context.data;
   if (!model) return context;
   // Handle legacy JSON-encoded cursor model field: {"id": "...", "params": [...]}
@@ -1982,7 +1982,7 @@ function normalizeModelFields(context) {
     if (parsed?.id) {
       context.data.model = parsed.id;
       if (parsed.params?.length) {
-        context.data.model_params = JSON.stringify(parsed.params);
+        context.data.model_params = stringifyModelParamsForStorage(parsed.params);
       }
     }
   } catch {
@@ -1991,11 +1991,29 @@ function normalizeModelFields(context) {
   return context;
 }
 
-/** Builder turns resume from provider ids; switching SDK must not reuse another SDK's thread. */
-async function resetBuilderAgentIdsOnSdkChange(context) {
+async function syncAgentConfigOnPatch(context) {
+  if (context.method !== 'patch' || !context.data) return context;
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const db = context.app.get('db');
+  if (context.data.agent_config_id != null && context.data.agent_config_id !== '') {
+    const config = await loadOwnedAgentConfig(db, Number(context.data.agent_config_id), userId);
+    context.data.agent_sdk = config.sdk;
+  }
+  if (context.data.review_agent_config_id != null && context.data.review_agent_config_id !== '') {
+    const config = await loadOwnedAgentConfig(
+      db,
+      Number(context.data.review_agent_config_id),
+      userId
+    );
+    context.data.review_agent_sdk = config.sdk;
+  }
+  return context;
+}
+
+/** Builder turns resume from provider ids; switching SDK must not reuse another provider's thread. */
+async function resetBuilderAgentIdsOnConfigChange(context) {
   if (context.method !== 'patch' || context.id == null) return context;
-  const nextSdk = context.data?.agent_sdk;
-  if (nextSdk == null || String(nextSdk).trim() === '') return context;
 
   const db = context.app.get('db');
   const userId = context.params.user?.id;
@@ -2004,10 +2022,15 @@ async function resetBuilderAgentIdsOnSdkChange(context) {
   const session = await query.first();
   if (!session) return context;
 
-  const prevSdk = session.agent_sdk || 'claude';
-  const normalizedNext = String(nextSdk).trim();
-  if (normalizedNext === prevSdk) return context;
+  const nextConfigId = context.data?.agent_config_id;
+  if (nextConfigId != null && nextConfigId !== '') {
+    if (Number(nextConfigId) === Number(session.agent_config_id)) return context;
+  }
 
+  const nextSdk = context.data?.agent_sdk;
+  if (nextSdk == null || String(nextSdk).trim() === '') return context;
+  const prevSdk = session.agent_sdk || 'claude';
+  if (String(nextSdk).trim() === prevSdk) return context;
   context.data.claude_session_id = null;
   context.data.cursor_agent_id = null;
   context.data.pi_session_id = null;
@@ -2016,23 +2039,19 @@ async function resetBuilderAgentIdsOnSdkChange(context) {
 
 /** Reviewer starts from the session's SDK/model; later edits write review_* only. */
 async function seedReviewModelFromSession(context) {
-  if (context.data.review_agent_sdk === undefined) {
+  if (context.data.review_agent_sdk === undefined && context.data.review_agent_config_id == null) {
     const sessionSdk = context.data.agent_sdk;
     if (sessionSdk) {
       context.data.review_agent_sdk = sessionSdk;
-    } else {
-      const userId = context.params.user?.id;
-      if (userId && context.app) {
-        const db = context.app.get('db');
-        const user = userRowForAgentSdk(await db('users').where({ id: userId }).first());
-        let repo = null;
-        if (context.data.repo_id != null) {
-          repo = await requireRepoAccessForUser(context.data.repo_id, userId);
-        }
-        const key = await resolveAgentSdkKey(context.app, null, { user, repo });
-        if (key) context.data.review_agent_sdk = key;
-      }
     }
+  }
+  if (
+    context.data.review_agent_config_id == null &&
+    context.data.agent_config_id != null &&
+    context.data.review_agent_sdk === undefined
+  ) {
+    context.data.review_agent_config_id = context.data.agent_config_id;
+    context.data.review_agent_sdk = context.data.agent_sdk;
   }
   if (context.data.review_model === undefined) {
     context.data.review_model = context.data.model ?? null;
@@ -2153,12 +2172,18 @@ export const sessionsHooks = {
       ensureShortId,
       seedLastActivityOnCreate,
       validateSessionCreate,
+      assertAgentConfigOnCreate,
       serializePlugins,
       extractInitialFiles,
       normalizeModelFields,
       seedReviewModelFromSession,
     ],
-    patch: [requireOwnSession, resetBuilderAgentIdsOnSdkChange, normalizeModelFields],
+    patch: [
+      requireOwnSession,
+      syncAgentConfigOnPatch,
+      resetBuilderAgentIdsOnConfigChange,
+      normalizeModelFields,
+    ],
     getSessionByShortId: [],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],

@@ -6,10 +6,11 @@ import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
-import { usersService, pluginsService } from '../feathers.js';
+import { agentConfigsService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
-import { fetchAgentSdkModels } from '../utils/fetchAgentSdkModels.js';
-import { useAvailableAgentSdks } from '../hooks/useAvailableAgentSdks.js';
+import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
+import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
+import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
@@ -136,9 +137,9 @@ export default function BuilderForm({
     persistWhen: hasPromptText,
   });
   const { currentUser: userSettings } = useCurrentUser();
-  const [agentSdk, setAgentSdkRaw] = persistentState.useState(
-    'agentSdk',
-    editingLoop?.agent_sdk ?? '',
+  const [agentConfigId, setAgentConfigIdRaw] = persistentState.useState(
+    'agentConfigId',
+    editingLoop?.agent_config_id ? String(editingLoop.agent_config_id) : '',
     { persistWhen: hasPromptText }
   );
   const [model, setModel] = persistentState.useState('model', editingLoop?.model ?? '', {
@@ -149,7 +150,6 @@ export default function BuilderForm({
     editingLoop?.model_params ?? null,
     { persistWhen: hasPromptText }
   );
-  const [models, setModels] = useState([]);
   const [selectedPlugins, setSelectedPlugins] = persistentState.useState(
     'plugins',
     editingLoop?.plugins ?? [],
@@ -165,63 +165,57 @@ export default function BuilderForm({
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
-  const modelsSdkRef = useRef(agentSdk);
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
   // another SDK's list.
   const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
+  const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const selectedConfig =
+    configOptions.find((c) => c.key === String(agentConfigId)) ?? configOptions[0] ?? null;
+  const agentSdk = selectedConfig?.sdk ?? '';
   const isCursor = agentSdk === 'cursor';
 
-  const applySdkAndModel = (nextSdk, modelId, paramsJson) => {
-    if (nextSdk) setAgentSdkRaw(nextSdk);
+  const applyConfigAndModel = (nextConfigId, modelId, paramsJson) => {
+    if (nextConfigId) setAgentConfigIdRaw(String(nextConfigId));
     if (modelId != null) setModel(modelId || '');
     setModelParamsJson(paramsJson ?? null);
   };
 
-  const setAgentSdk = (nextSdk) => {
-    setAgentSdkRaw(nextSdk);
-    setModel('');
-    setModelParamsJson(null);
+  const setAgentConfigId = (nextId) => {
+    setAgentConfigIdRaw(String(nextId));
+    const picked = configOptions.find((c) => c.key === String(nextId));
+    const fromDefault = localStateFromConfigDefault(picked);
+    setModel(fromDefault.model);
+    setModelParamsJson(fromDefault.modelParamsJson);
   };
 
   const selectedRepo = useMemo(
     () => repos.find((r) => r.full_name === repoFullName),
     [repos, repoFullName]
   );
-
-  const [modelRepoId, setModelRepoId] = persistentState.useState('modelRepoId', '', {
-    persistWhen: hasPromptText,
+  const { models, stale: modelsStale } = useAgentConfigModels(agentConfigId, {
+    enabled:
+      Boolean(agentConfigId) &&
+      (Boolean(editingLoop) || sdkModelSeeded) &&
+      (isGlobal || Boolean(selectedRepo?.id)),
   });
 
-  useEffect(() => {
-    if (!isGlobal || modelRepoId || !repos.length) return;
-    setModelRepoId(String(repos[0].id));
-  }, [isGlobal, modelRepoId, repos, setModelRepoId]);
-
-  const modelScopeRepo = useMemo(() => {
-    if (selectedRepo) return selectedRepo;
-    if (!isGlobal || !modelRepoId) return null;
-    return repos.find((r) => String(r.id) === String(modelRepoId)) ?? null;
-  }, [selectedRepo, isGlobal, modelRepoId, repos]);
-
-  const {
-    sdks: availableSdks,
-    keys: availableSdkKeys,
-    loading: availableSdksLoading,
-  } = useAvailableAgentSdks(modelScopeRepo?.id);
-  const availableSdkKey = availableSdkKeys.join(',');
+  const agentConfigOptions = configOptions;
+  const hasAgentConfig = configOptions.length > 0;
 
   useEffect(() => {
-    if (!availableSdkKeys.length) return;
-    if (!availableSdkKeys.includes(agentSdk)) setAgentSdk(availableSdkKeys[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setAgentSdk resets model state intentionally
-  }, [availableSdkKeys, agentSdk]);
+    if (!configOptions.length) return;
+    if (!configOptions.some((c) => c.key === String(agentConfigId))) {
+      setAgentConfigId(configOptions[0].key);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configOptions, agentConfigId]);
 
-  // Seed SDK/model/params from the account default: the user's pinned defaults, else the agent
-  // of their most recent session. Resolved server-side so it is independent of the selected repo
+  // Seed config/model/params from Settings → Agent session defaults, else the most recent session.
+  // Resolved server-side so it is independent of the selected repo
   // (All Sessions mode included) instead of filtering sessions by the current repo.
   useEffect(() => {
-    if (availableSdksLoading) return;
+    if (configsLoading) return;
     if (editingLoop || sdkModelSeeded || userSettings == null) return;
     // A restored draft prompt means the persisted sdk/model/params were captured with it, so
     // keep them instead of re-seeding from agent defaults or the last session.
@@ -230,20 +224,18 @@ export default function BuilderForm({
       return;
     }
     let cancelled = false;
-    usersService
-      .defaultAgent()
+    agentConfigsService
+      .lastUsed()
       .then((resolved) => {
         if (cancelled) return;
         setSdkModelSeeded(true);
-        if (!resolved) return;
-        const sdk =
-          resolved.agent_sdk && availableSdkKeys.includes(resolved.agent_sdk)
-            ? resolved.agent_sdk
-            : (availableSdkKeys[0] ?? null);
-        applySdkAndModel(
-          sdk,
+        if (!resolved?.agent_config_id) return;
+        const configKey = String(resolved.agent_config_id);
+        const exists = configOptions.some((c) => c.key === configKey);
+        applyConfigAndModel(
+          exists ? configKey : configOptions[0]?.key,
           resolved.model || null,
-          sdk === 'cursor' && resolved.model_params?.length
+          resolved.agent_sdk === 'cursor' && resolved.model_params?.length
             ? JSON.stringify(resolved.model_params)
             : null
         );
@@ -255,7 +247,7 @@ export default function BuilderForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from the default agent
-  }, [editingLoop, sdkModelSeeded, userSettings, availableSdkKeys, availableSdksLoading]);
+  }, [editingLoop, sdkModelSeeded, userSettings, configOptions, configsLoading]);
   const {
     branches,
     loading: loadingBranches,
@@ -283,41 +275,10 @@ export default function BuilderForm({
     if (isGlobal && sessionStartMode === 'same-branch') setSessionStartMode('new-branch');
   }, [isGlobal, sessionStartMode]);
 
-  const loadModels = (sdk) => {
-    if (!modelScopeRepo?.id) {
-      setModels([]);
-      return Promise.resolve();
-    }
-    return fetchAgentSdkModels(sdk, modelScopeRepo.id)
-      .then((list) => {
-        // Drop a response for a previous SDK when the user switched mid-flight.
-        if (modelsSdkRef.current !== sdk) return;
-        setModels(list);
-      })
-      .catch(() => {
-        if (modelsSdkRef.current !== sdk) return;
-        setModels([]);
-      });
-  };
-
-  // Load order: resolve the initial SDK/model/params (agent defaults or last session) first,
-  // then fetch the model list for that SDK — otherwise the persisted default model is resolved
-  // against whichever SDK's list lands first and falls back to that list's first model.
+  // Validate/default model once the list for the current config is loaded — never against a
+  // stale list from the previous SDK.
   useEffect(() => {
-    if (!availableSdkKeys.includes(agentSdk)) return;
-    if (!editingLoop && !sdkModelSeeded) return;
-    if (modelsSdkRef.current !== agentSdk) {
-      modelsSdkRef.current = agentSdk;
-      setModels([]);
-    }
-    loadModels(agentSdk);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSdk, availableSdkKey, sdkModelSeeded, modelScopeRepo?.id]);
-
-  // Validate/default model when models load after an SDK change. Models only load once
-  // sdkModelSeeded is true (or when editing a loop), so a non-empty list implies seeding done.
-  useEffect(() => {
-    if (!models.length) return;
+    if (modelsStale || !models.length) return;
     const current = models.find((m) => m.id === model);
     if (current) {
       if (isCursor && !modelParamsJson) {
@@ -330,7 +291,7 @@ export default function BuilderForm({
     setModel(fallback.id);
     setModelParamsJson(paramsJsonForModelChange(fallback, cursorModelPrefs));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models]);
+  }, [models, modelsStale]);
 
   useEffect(() => {
     pluginsService
@@ -339,18 +300,13 @@ export default function BuilderForm({
       .catch(() => {});
   }, []);
 
-  const modelRepoOptions = useMemo(
-    () => repos.map((r) => ({ value: String(r.id), label: r.full_name })),
-    [repos]
-  );
-
   const isLoop = mode === 'loop';
   // The branch-name field is the only other entry, and a loop never shows it.
   const hasMoreOptions = (!isGlobal && !isLoop) || availablePlugins.length > 0;
   const canSubmit =
     !loading &&
-    availableSdkKeys.length > 0 &&
-    (isGlobal ? Boolean(modelScopeRepo?.id) : repos.length > 0 && repoFullName && branch) &&
+    hasAgentConfig &&
+    (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
 
   const clearForm = () => {
@@ -389,7 +345,7 @@ export default function BuilderForm({
       branchName: branchName || undefined,
       autoPush,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
-      agentSdk,
+      agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
   };
 
@@ -414,7 +370,7 @@ export default function BuilderForm({
         single_session: singleSession,
         create_new_branch: false,
         auto_push: false,
-        agent_sdk: payload.agentSdk,
+        agent_config_id: payload.agentConfigId,
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
@@ -430,7 +386,7 @@ export default function BuilderForm({
       // Every run needs its own branch pushed somewhere reviewable, so neither is optional.
       create_new_branch: true,
       auto_push: true,
-      agent_sdk: payload.agentSdk,
+      agent_config_id: payload.agentConfigId,
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
@@ -486,9 +442,9 @@ export default function BuilderForm({
       onChange={setInitialPrompt}
       onSubmit={handleComposerSubmit}
       placeholder={composerPlaceholder}
-      disabled={Boolean(modelScopeRepo) && !availableSdksLoading && availableSdkKeys.length === 0}
+      disabled={!configsLoading && !hasAgentConfig}
       sending={loading}
-      sdk={availableSdkKeys.includes(agentSdk) ? agentSdk : (availableSdkKeys[0] ?? agentSdk)}
+      agentConfigKey={agentConfigId || selectedConfig?.key || agentSdk}
       model={model || null}
       params={modelParamsJson}
       autoPush={autoPush}
@@ -498,8 +454,8 @@ export default function BuilderForm({
       onModelChange={handleComposerModelChange}
       onAutoPushChange={setAutoPush}
       showAutoPushParam={!isGlobal && !isLoop}
-      availableSdks={availableSdks}
-      onSdkChange={setAgentSdk}
+      agentConfigOptions={agentConfigOptions}
+      onAgentConfigChange={setAgentConfigId}
       canSend={canSubmit}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
@@ -542,10 +498,10 @@ export default function BuilderForm({
 
   return (
     <div className="space-y-4">
-      {userSettings && !availableSdksLoading && availableSdkKeys.length === 0 && (
+      {userSettings && !configsLoading && !hasAgentConfig && (
         <Alert variant="alert">
-          Add a Claude or Cursor API key in <Link to="/settings?tab=agent">Settings → Agent</Link>{' '}
-          to start a session.
+          Add an agent configuration in <Link to="/settings?tab=agent">Settings → Agent</Link> to
+          start a session.
         </Alert>
       )}
       {!loadingRepos && !isGlobal && repos.length === 0 && (
@@ -586,25 +542,6 @@ export default function BuilderForm({
             ))}
           </div>
         )
-      )}
-
-      {isGlobal && repos.length > 0 && (
-        <div>
-          <label className="mb-1 block text-sm font-medium text-heading">
-            Repository for agent credentials
-          </label>
-          <SearchableSelect
-            value={modelRepoId}
-            onChange={setModelRepoId}
-            options={modelRepoOptions}
-            getOptionValue={(o) => o.value}
-            getOptionLabel={(o) => o.label}
-            placeholder="Choose repository…"
-          />
-          <p className="mt-1 text-xs text-faint">
-            Global sessions do not use git; models and API keys are still resolved per repository.
-          </p>
-        </div>
       )}
 
       {isLoop && (

@@ -6,16 +6,18 @@ import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js
 export default function SwitchAgentSdkConfirmModal({
   fromSdk,
   toSdk,
+  fromLabel: fromLabelProp,
+  toLabel: toLabelProp,
   onConfirm,
   onCancel,
   loading = false,
 }) {
-  const fromLabel = formatAgentSdkDisplayName(fromSdk);
-  const toLabel = formatAgentSdkDisplayName(toSdk);
+  const fromLabel = fromLabelProp ?? formatAgentSdkDisplayName(fromSdk);
+  const toLabel = toLabelProp ?? formatAgentSdkDisplayName(toSdk);
 
   return (
     <Modal>
-      <ModalHeader title="Switch agent SDK" onClose={onCancel} />
+      <ModalHeader title="Switch agent configuration" onClose={onCancel} />
       <p className={`${TEXT_MUTED} text-sm mb-2`}>
         Switch from <span className="font-medium text-heading">{fromLabel}</span> to{' '}
         <span className="font-medium text-heading">{toLabel}</span>?

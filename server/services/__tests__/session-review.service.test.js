@@ -7,7 +7,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createTestDb } from '../../test-utils/db.js';
-import { encrypt } from '../../lib/encrypt.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
@@ -15,8 +14,8 @@ import { registerSessionReviewService } from '../feathers/session-review.service
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { gitRevParseShort } from '../github.js';
 import { registerClaudeAgentService } from '../feathers/claude-agent.service.ts';
-import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
-import { registerAgentSdk } from '../feathers/agent-sdks.service.js';
+import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
+import { registerAgentSdk } from '../feathers/agent-configs.service.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
   const tool = (name, description, inputSchema, handler) => ({
@@ -58,13 +57,6 @@ function makeQueryResult() {
   return gen;
 }
 
-function wireAgentMessageListeners(app) {
-  const cursor = app.service('cursor-agent');
-  app.service('messages').on('created', (row) => {
-    if (cursor?.handleMessageCreated) void cursor.handleMessageCreated(row);
-  });
-}
-
 function makeApp(db) {
   const app = feathers();
   app.set('db', db);
@@ -72,13 +64,11 @@ function makeApp(db) {
   app.use('users', { get: async (id) => ({ id, access_token: 'tok' }) }, { methods: ['get'] });
   registerMessagesService(app);
   registerQueuedMessagesService(app);
-  mountAgentSdks(app);
+  mountAgentConfigs(app);
   registerClaudeAgentService(app);
   app.use(
     'cursor-agent',
     {
-      isEnabled: async () => true,
-      listModels: async () => [],
       handleMessageCreated: async (row) => {
         if (row.type !== 'user' || row.agent_sdk !== 'cursor') return;
         const session = await db('sessions').where({ id: row.session_id }).first();
@@ -103,8 +93,6 @@ function makeApp(db) {
         'runTurn',
         'buildAgentOptions',
         'writePromptRule',
-        'isEnabled',
-        'listModels',
       ],
     }
   );
@@ -115,15 +103,12 @@ function makeApp(db) {
       handleMessageCreated: async () => {},
       stopTurn: async () => {},
       buildAgentOptions: async () => ({}),
-      isEnabled: async () => true,
-      listModels: async () => [],
     },
     {
-      methods: ['handleMessageCreated', 'stopTurn', 'buildAgentOptions', 'isEnabled', 'listModels'],
+      methods: ['handleMessageCreated', 'stopTurn', 'buildAgentOptions'],
     }
   );
   registerAgentSdk(app, { key: 'pi', label: 'Pi', servicePath: 'pi-agent' });
-  wireAgentMessageListeners(app);
   registerSessionIssuesService(app);
   registerSessionReviewService(app);
   return app;
@@ -156,9 +141,10 @@ beforeEach(async () => {
     github_id: 3,
     username: 'rev',
     approved: true,
-    anthropic_api_key_encrypted: encrypt('sk-ant-test'),
   });
   user = await db('users').where({ id: userId }).first();
+  const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+  const claudeConfigId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   [sessionId] = await db('sessions').insert({
     user_id: user.id,
@@ -171,6 +157,8 @@ beforeEach(async () => {
     status: 'stopped',
     session_path: '/tmp/wt',
     agent_sdk: 'claude',
+    agent_config_id: claudeConfigId,
+    review_agent_config_id: claudeConfigId,
     model: 'sonnet',
   });
   app = makeApp(db);
@@ -219,9 +207,17 @@ describe('session-review service', () => {
   it('uses review_agent_sdk when it differs from the session sdk', async () => {
     const runTurn = vi.fn(async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }));
     app.service('cursor-agent').runTurn = runTurn;
+    const { insertTestAgentConfig: insertConfig } =
+      await import('../../test-utils/agent-configs.js');
+    const cursorConfigId = await insertConfig(db, user.id, {
+      sdk: 'cursor',
+      apiKey: 'cursor-key',
+      apiKeyEnvVar: null,
+    });
     await db('sessions').where({ id: sessionId }).update({
       agent_sdk: 'claude',
       model: 'sonnet',
+      review_agent_config_id: cursorConfigId,
       review_agent_sdk: 'cursor',
       review_model: 'composer',
     });

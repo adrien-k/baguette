@@ -95,7 +95,7 @@ export default function Dashboard() {
     branchName,
     autoPush,
     plugins,
-    agentSdk,
+    agentConfigId,
   }) => {
     const params = isGlobal
       ? {
@@ -111,7 +111,7 @@ export default function Dashboard() {
           create_new_branch: createNewBranch ?? true,
           auto_push: autoPush ?? true,
         };
-    if (agentSdk) params.agent_sdk = agentSdk;
+    if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;

@@ -23,7 +23,7 @@ import {
   toStrippedName,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
-import { requireUser, decryptFields } from './hooks.js';
+import { requireUser } from './hooks.js';
 import { getGithubToken } from '../agent-settings.js';
 import { REPOS_DIR, normalizeRepoPathForStorage, resolveRepoPath } from '../../config.js';
 
@@ -69,12 +69,6 @@ class ReposService extends KnexService {
         'repos.default_branch',
         'repos.created_at',
         'user_repos.id as user_repo_id',
-        'user_repos.anthropic_api_key_encrypted',
-        'user_repos.anthropic_auth_token_encrypted',
-        'user_repos.anthropic_base_url',
-        'user_repos.cursor_api_key_encrypted',
-        'user_repos.pi_api_key_encrypted',
-        'user_repos.pi_api_key_env_var',
         'user_repos.agent_prompt',
         'user_repos.review_prompt',
         'user_repos.show_in_all_sessions'
@@ -495,16 +489,6 @@ class ReposService extends KnexService {
 export const reposHooks = {
   before: {
     all: [requireUser],
-  },
-  after: {
-    find: [
-      decryptFields({
-        anthropic_api_key: 'anthropic_api_key_encrypted',
-        anthropic_auth_token: 'anthropic_auth_token_encrypted',
-        cursor_api_key: 'cursor_api_key_encrypted',
-        pi_api_key: 'pi_api_key_encrypted',
-      }),
-    ],
   },
 };
 

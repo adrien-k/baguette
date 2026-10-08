@@ -9,16 +9,10 @@ import {
   parseCursorModelPrefsJson,
   stringifyCursorModelPrefs,
 } from '../../services/agent-preferences.js';
-import {
-  resolveDefaultAgent,
-  stringifyAgentSessionDefaults,
-  validateAgentSessionDefaults,
-  withLastUsedFlag,
-} from '../../services/agent-session-defaults.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
-import { normalizeAnthropicBaseUrl } from '../session-env.js';
-import { validatePiApiKeyEnvVarPatch } from './validate-pi-patch.js';
+import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
+import { normalizeUserAgentDefaultsPatch } from '../../services/user-agent-defaults.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -66,16 +60,6 @@ class UsersService extends KnexService {
     await db('users').where({ id: params.user.id }).update({ mcp_api_token_encrypted: null });
     return { ok: true };
   }
-
-  /**
-   * Effective default agent for new sessions: stored defaults when the user pinned an SDK,
-   * otherwise the agent of their most recent session. Account-wide, not repo-scoped.
-   */
-  async defaultAgent(_data, params) {
-    const db = this.options.Model;
-    if (!params.user?.id) throw new NotAuthenticated('Not authenticated');
-    return resolveDefaultAgent(db, params.user.id, this.app);
-  }
 }
 
 function assertSelfOnly(params) {
@@ -94,23 +78,6 @@ async function normalizeColorSchemePatch(context) {
   return context;
 }
 
-/** Normalize the Claude base URL on user patches. */
-async function normalizeAnthropicBaseUrlPatch(context) {
-  if (context.data.anthropic_base_url === undefined) return context;
-  context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
-  return context;
-}
-
-async function normalizeClaudeFieldsPatch(context) {
-  if (context.data.claude_gateway_model_discovery !== undefined) {
-    delete context.data.claude_gateway_model_discovery;
-  }
-  if (context.data.claude_default_model !== undefined) {
-    delete context.data.claude_default_model;
-  }
-  return context;
-}
-
 async function normalizeCursorModelPrefsPatch(context) {
   if (context.data.agent_preferences === undefined) return context;
 
@@ -123,22 +90,6 @@ async function normalizeCursorModelPrefsPatch(context) {
   return context;
 }
 
-async function normalizeAgentDefaultsOnPatch(context) {
-  if (context.data.agent_defaults === undefined) return context;
-  const userRow = await context.service.get(context.id, {
-    provider: undefined,
-    user: context.params.user,
-  });
-  const patch = context.data.agent_defaults;
-  const validated = await validateAgentSessionDefaults(userRow, patch, {
-    userId: context.id,
-    repoId: patch?.repo_id,
-    app: context.service.app,
-  });
-  context.data.agent_defaults = stringifyAgentSessionDefaults(validated);
-  return context;
-}
-
 function formatUserExternal(context) {
   if (!context.params.provider) return context;
   const process = (user) => {
@@ -147,7 +98,8 @@ function formatUserExternal(context) {
     user.mcp_token_configured = Boolean(user.mcp_api_token);
     user.mcp_endpoint = MCP_HTTP_ENDPOINT;
     user.agent_preferences = parseCursorModelPrefsJson(user.agent_preferences);
-    user.agent_defaults = withLastUsedFlag(user.agent_defaults);
+    user.agent_default_model = parseAgentDefaultModelJson(user.agent_default_model);
+    user.reviewer_default_model = parseAgentDefaultModelJson(user.reviewer_default_model);
     return user;
   };
   if (Array.isArray(context.result)) {
@@ -163,20 +115,12 @@ function formatUserExternal(context) {
 const encryptUserSecrets = encryptFields({
   access_token: 'access_token_encrypted',
   github_token: 'github_token_encrypted',
-  anthropic_api_key: 'anthropic_api_key_encrypted',
-  anthropic_auth_token: 'anthropic_auth_token_encrypted',
-  cursor_api_key: 'cursor_api_key_encrypted',
-  pi_api_key: 'pi_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
 });
 
 const decryptUserSecrets = decryptFields({
   access_token: 'access_token_encrypted',
   github_token: 'github_token_encrypted',
-  anthropic_api_key: 'anthropic_api_key_encrypted',
-  anthropic_auth_token: 'anthropic_auth_token_encrypted',
-  cursor_api_key: 'cursor_api_key_encrypted',
-  pi_api_key: 'pi_api_key_encrypted',
   mcp_api_token: 'mcp_api_token_encrypted',
 });
 
@@ -198,22 +142,12 @@ export const usersHooks = {
   before: {
     all: [requireUser],
     find: [orderByCreatedAt],
-    create: [
-      normalizeColorSchemePatch,
-      normalizeAnthropicBaseUrlPatch,
-      normalizeClaudeFieldsPatch,
-      normalizeCursorModelPrefsPatch,
-      validatePiApiKeyEnvVarPatch,
-      encryptUserSecrets,
-    ],
+    create: [normalizeColorSchemePatch, normalizeCursorModelPrefsPatch, encryptUserSecrets],
     patch: [
       restrictPatchToSelf,
       normalizeColorSchemePatch,
-      normalizeAnthropicBaseUrlPatch,
-      normalizeClaudeFieldsPatch,
       normalizeCursorModelPrefsPatch,
-      normalizeAgentDefaultsOnPatch,
-      validatePiApiKeyEnvVarPatch,
+      normalizeUserAgentDefaultsPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,
     ],
@@ -245,7 +179,6 @@ export function registerUsersService(app, path = 'users') {
       'reject',
       'generateMcpToken',
       'revokeMcpToken',
-      'defaultAgent',
     ],
   });
   app.service(path).hooks(usersHooks);

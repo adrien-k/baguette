@@ -1,27 +1,8 @@
 import { KnexService } from '@feathersjs/knex';
 import { NotFound } from '@feathersjs/errors';
-import { requireUser, scopeByUser, encryptFields, decryptFields, only } from './hooks.js';
-import { normalizeAnthropicBaseUrl } from '../session-env.js';
-import { validatePiApiKeyEnvVarPatch } from './validate-pi-patch.js';
+import { requireUser, scopeByUser, only } from './hooks.js';
 
-const WRITABLE_USER_REPO_FIELDS = [
-  'anthropic_api_key',
-  'anthropic_auth_token',
-  'anthropic_base_url',
-  'cursor_api_key',
-  'pi_api_key',
-  'pi_api_key_env_var',
-  'agent_prompt',
-  'review_prompt',
-  'show_in_all_sessions',
-];
-
-const USER_REPO_SECRETS = {
-  anthropic_api_key: 'anthropic_api_key_encrypted',
-  anthropic_auth_token: 'anthropic_auth_token_encrypted',
-  cursor_api_key: 'cursor_api_key_encrypted',
-  pi_api_key: 'pi_api_key_encrypted',
-};
+const WRITABLE_USER_REPO_FIELDS = ['agent_prompt', 'review_prompt', 'show_in_all_sessions'];
 
 class UserReposService extends KnexService {}
 
@@ -41,27 +22,10 @@ async function requireOwnUserRepo(context) {
   return context;
 }
 
-async function normalizeAnthropicBaseUrlPatch(context) {
-  if (context.data.anthropic_base_url === undefined) return context;
-  context.data.anthropic_base_url = normalizeAnthropicBaseUrl(context.data.anthropic_base_url);
-  return context;
-}
-
 export const userReposHooks = {
   before: {
     all: [requireUser, scopeByUser],
-    patch: [
-      requireOwnUserRepo,
-      only(WRITABLE_USER_REPO_FIELDS),
-      normalizeAnthropicBaseUrlPatch,
-      validatePiApiKeyEnvVarPatch,
-      encryptFields(USER_REPO_SECRETS),
-    ],
-  },
-  after: {
-    find: [decryptFields(USER_REPO_SECRETS)],
-    get: [decryptFields(USER_REPO_SECRETS)],
-    patch: [decryptFields(USER_REPO_SECRETS)],
+    patch: [requireOwnUserRepo, only(WRITABLE_USER_REPO_FIELDS)],
   },
 };
 

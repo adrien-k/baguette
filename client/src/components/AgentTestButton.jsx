@@ -1,24 +1,31 @@
 import { useState } from 'react';
 import { PlugZap, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
-import { agentSdksService } from '../feathers.js';
+import { agentConfigsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 
 /**
  * "Test connection" for agent credentials (Settings → Agent).
- * Posts dirty form fields via agent-sdks.test; unsent fields use effective saved config server-side.
  */
-export default function AgentTestButton({ sdk = 'claude', repoId = null, fields = {} }) {
+export default function AgentTestButton({
+  sdk = 'claude',
+  agentConfigId = null,
+  fields = {},
+  testRequest = null,
+}) {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState(null);
 
+  const request =
+    testRequest ?? (agentConfigId != null ? { id: agentConfigId, ...fields } : { sdk, ...fields });
+  const canTest = request.id != null || request.sdk != null;
+
   const runTest = async () => {
+    if (!canTest) return;
     setTesting(true);
     setResult(null);
     try {
-      const body = { sdk, ...fields };
-      if (repoId) body.repo_id = repoId;
-      const res = await agentSdksService.test(body);
+      const res = await agentConfigsService.testConnectivity(request);
       setResult(res);
     } catch (err) {
       toastError(`${formatAgentSdkDisplayName(sdk)} connection test failed`, err);
@@ -32,7 +39,7 @@ export default function AgentTestButton({ sdk = 'claude', repoId = null, fields 
       <button
         type="button"
         onClick={runTest}
-        disabled={testing}
+        disabled={testing || !canTest}
         className="inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading disabled:opacity-40 transition-colors"
       >
         <PlugZap className={`w-3.5 h-3.5 ${testing ? 'animate-pulse' : ''}`} />

@@ -10,7 +10,7 @@ import { registerClaudeAgentService } from './claude-agent.service.ts';
 import { registerCursorAgentService } from './cursor-agent.service.ts';
 import { registerPiAgentService } from './pi-agent.service.ts';
 import { registerMockAgentService } from './mock-agent.service.ts';
-import { registerAgentSdksService } from './agent-sdks.service.js';
+import { registerAgentConfigsService } from './agent-configs.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerSlackService } from './slack.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
@@ -27,7 +27,7 @@ export function registerFeathersServices(app, sseManager) {
   registerMessagesService(app);
   registerSessionsService(app);
   registerQueuedMessagesService(app);
-  registerAgentSdksService(app);
+  registerAgentConfigsService(app);
   registerClaudeAgentService(app);
   registerCursorAgentService(app);
   registerPiAgentService(app);

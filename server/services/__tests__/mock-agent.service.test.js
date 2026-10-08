@@ -11,7 +11,8 @@ import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMockAgentService } from '../feathers/mock-agent.service.ts';
 import { MOCK_AGENT_SUMMARY_TEXT, MOCK_STANDARD_MODEL_ID } from '../../../shared/mock-agent-sdk.js';
 import { DATA_DIR } from '../../config.js';
-import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
+import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
+import { ensureTestMockConfig } from '../../test-utils/agent-configs.js';
 import { sessionMessageIdentity } from '../feathers/message-create-fields.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
@@ -31,7 +32,7 @@ function makeApp(dbRef) {
   app.set('db', dbRef);
   registerSessionsService(app);
   registerMessagesService(app);
-  mountAgentSdks(app);
+  mountAgentConfigs(app);
   registerMockAgentService(app);
   return app;
 }
@@ -55,6 +56,7 @@ beforeEach(async () => {
   await db('repos').insert({ full_name: 'local/mock-repo', repo_path: '/tmp/unused' });
   const repo = await db('repos').where({ full_name: 'local/mock-repo' }).first();
 
+  const mockConfigId = await ensureTestMockConfig(db, userId);
   [sessionId] = await db('sessions').insert({
     user_id: userId,
     repo_id: repo.id,
@@ -63,6 +65,7 @@ beforeEach(async () => {
     short_id: 'mock01',
     initial_prompt: 'Test mock turn',
     status: 'stopped',
+    agent_config_id: mockConfigId,
     agent_sdk: 'mock',
     model: MOCK_STANDARD_MODEL_ID,
     session_path: WORKTREE_REL,

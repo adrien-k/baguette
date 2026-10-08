@@ -1,4 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
+import logger from '../../logger.js';
 import { requireUser, scopeBySessionUser } from './hooks.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
 import { assignTurnOnUserMessageCreate } from '../../../shared/turn-assignment.js';
@@ -69,6 +70,23 @@ async function afterCreateNotifySessions(context) {
   return context;
 }
 
+async function afterCreateDispatchAgent(context) {
+  if (!context.result || context.result.queued) return context;
+  if (context.result.type !== 'user') return context;
+  if (context.params._skipAgentDispatch) return context;
+  if (!context.app.services?.['agent-configs']) return context;
+  const row = context.params._force ? { ...context.result, force: true } : context.result;
+  try {
+    await context.app.service('agent-configs').dispatchCreatedMessage(row);
+  } catch (err) {
+    logger.error(
+      { err: err.message, sessionId: row.session_id },
+      'Failed to dispatch user message to agent SDK'
+    );
+  }
+  return context;
+}
+
 async function assignTurn(context) {
   const channel = context.data?.agent_type === 'reviewer' ? 'review' : 'chat';
   return assignTurnOnUserMessageCreate(context, channel);
@@ -80,6 +98,6 @@ export const messagesHooks = {
     create: [extractForceParam, requireMessageIdentity, assignTurn, queueIfRunning],
   },
   after: {
-    create: [afterCreateNotifySessions],
+    create: [afterCreateNotifySessions, afterCreateDispatchAgent],
   },
 };

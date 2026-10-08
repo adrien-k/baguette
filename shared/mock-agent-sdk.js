@@ -1,6 +1,3 @@
-/** Dev-only agent SDK for deterministic UI and e2e tests (no external API keys). */
-export const MOCK_AGENT_SDK = 'mock';
-
 export const MOCK_AGENT_SUMMARY_TEXT =
   'Simulated turn complete — exercised every tool kind (files, shell, todos, task, questions, plan, MCP, generic).';
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
-import { encrypt } from '../../lib/encrypt.js';
+import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
 vi.mock('../anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue([{ id: 'sonnet', display_name: 'Sonnet' }]),
@@ -14,9 +14,22 @@ import { buildBaguetteAccountToolList } from '../baguette-account-mcp-tools.js';
 
 const db = createTestDb({ beforeEach, afterEach });
 
-describe('CreateSession MCP agent defaults', () => {
+function parseMcpToolResult(result) {
+  const text = result?.content?.[0]?.text;
+  if (typeof text === 'string') {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return result;
+    }
+  }
+  return result;
+}
+
+describe('CreateSession MCP agent_config_id', () => {
   let app;
   let user;
+  let claudeConfigId;
   let createSpy;
 
   beforeEach(async () => {
@@ -25,14 +38,9 @@ describe('CreateSession MCP agent defaults', () => {
       github_id: 99,
       username: 'mcp-user',
       approved: true,
-      anthropic_api_key_encrypted: encrypt('sk-ant-test'),
-      agent_defaults: JSON.stringify({
-        agent_sdk: 'claude',
-        model: 'sonnet',
-        model_params: null,
-      }),
     });
     user = await db('users').where({ username: 'mcp-user' }).first();
+    claudeConfigId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });
 
     createSpy = vi.fn().mockResolvedValue({ id: 42, short_id: 'abc12345' });
     app = {
@@ -40,61 +48,24 @@ describe('CreateSession MCP agent defaults', () => {
       service: (name) => {
         if (name === 'users') {
           return {
-            get: async (id) => {
-              const row = await db('users').where({ id }).first();
-              return {
-                ...row,
-                anthropic_api_key: 'sk-ant-test',
-                cursor_api_key: null,
-                agent_defaults: row.agent_defaults,
-              };
-            },
+            get: async (id) => db('users').where({ id }).first(),
           };
         }
         if (name === 'repos') {
           return {
             find: async () => ({
-              data: [
-                {
-                  id: 1,
-                  full_name: 'acme/repo',
-                  default_branch: 'main',
-                  anthropic_api_key: null,
-                  cursor_api_key: 'cursor-test',
-                },
-              ],
+              data: [{ id: 1, full_name: 'acme/repo', default_branch: 'main' }],
             }),
           };
         }
         if (name === 'sessions') {
           return { create: createSpy };
         }
-        if (name === 'agent-sdks') {
+        if (name === 'agent-configs') {
           return {
-            listEnabled: async ({ user: u }) => {
-              const sdks = [];
-              if (u?.anthropic_api_key || u?.anthropic_auth_token) {
-                sdks.push({ key: 'claude', label: 'Claude' });
-              }
-              if (u?.cursor_api_key) {
-                sdks.push({ key: 'cursor', label: 'Cursor' });
-              }
-              return sdks;
-            },
-            isEnabled: async (sdk, { user: u }) => {
-              if (sdk === 'claude') return Boolean(u?.anthropic_api_key || u?.anthropic_auth_token);
-              if (sdk === 'cursor') return Boolean(u?.cursor_api_key);
-              return false;
-            },
-            listModelsForSdk: async (sdk) => {
-              if (sdk === 'claude') {
-                return [{ id: 'sonnet', display_name: 'Sonnet' }];
-              }
-              if (sdk === 'cursor') {
-                return listCursorModels();
-              }
-              return [];
-            },
+            getSdkMeta: (sdk) =>
+              sdk === 'claude' ? { key: 'claude', servicePath: 'claude-agent' } : null,
+            servicePathForSdk: () => 'claude-agent',
           };
         }
         throw new Error(`unexpected service ${name}`);
@@ -111,19 +82,35 @@ describe('CreateSession MCP agent defaults', () => {
     await db('user_repos').insert({ user_id: user.id, repo_id: 1 });
   });
 
-  it('uses last session when defaults are in last-used mode', async () => {
+  it('uses stored user agent_default_config_id when omitted', async () => {
     await db('users')
       .where({ id: user.id })
       .update({
-        agent_defaults: JSON.stringify({ agent_sdk: null, model: null, model_params: null }),
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
       });
+
+    const tools = buildBaguetteAccountToolList({ id: user.id }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    await createSession.handler({
+      repo_id: 1,
+      base_branch: 'main',
+      initial_prompt: 'hello',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: claudeConfigId, model: 'sonnet' }),
+      expect.any(Object)
+    );
+  });
+
+  it('uses last session agent_config_id when omitted', async () => {
     await db('sessions').insert({
       user_id: user.id,
       repo_full_name: 'acme/repo',
       base_branch: 'main',
       initial_prompt: 'prior',
       agent_sdk: 'claude',
-      model: 'sonnet',
+      agent_config_id: claudeConfigId,
     });
 
     const tools = buildBaguetteAccountToolList({ id: user.id }, app);
@@ -134,94 +121,44 @@ describe('CreateSession MCP agent defaults', () => {
       initial_prompt: 'hello',
     });
     expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ agent_sdk: 'claude', model: 'sonnet' }),
+      expect.objectContaining({ agent_config_id: claudeConfigId }),
       expect.any(Object)
     );
   });
 
-  it('applies stored defaults when agent_sdk and model are omitted', async () => {
+  it('requires agent_config_id when no prior session exists', async () => {
+    await db('agent_configs').delete();
+    const prevVitest = process.env.VITEST;
+    delete process.env.VITEST;
+    try {
+      const tools = buildBaguetteAccountToolList({ id: user.id }, app);
+      const createSession = tools.find((t) => t.name === 'CreateSession');
+      const result = parseMcpToolResult(
+        await createSession.handler({
+          repo_id: 1,
+          base_branch: 'main',
+          initial_prompt: 'hello',
+        })
+      );
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error ?? result?.message ?? '')).toMatch(/agent_config_id/i);
+    } finally {
+      if (prevVitest !== undefined) process.env.VITEST = prevVitest;
+    }
+  });
+
+  it('keeps explicit agent_config_id and model', async () => {
     const tools = buildBaguetteAccountToolList({ id: user.id }, app);
     const createSession = tools.find((t) => t.name === 'CreateSession');
     await createSession.handler({
       repo_id: 1,
       base_branch: 'main',
       initial_prompt: 'hello',
-    });
-    expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ agent_sdk: 'claude', model: 'sonnet' }),
-      expect.any(Object)
-    );
-  });
-
-  it('applies stored cursor model_params when omitted', async () => {
-    await db('users')
-      .where({ id: user.id })
-      .update({
-        agent_defaults: JSON.stringify({
-          agent_sdk: 'cursor',
-          model: 'composer',
-          model_params: [{ id: 'fast', value: 'true' }],
-        }),
-        cursor_api_key_encrypted: encrypt('cursor-test'),
-      });
-
-    listCursorModels.mockResolvedValue([
-      {
-        id: 'composer',
-        display_name: 'Composer',
-        variants: [{ params: [{ id: 'fast', value: 'true' }], is_default: true }],
-      },
-    ]);
-
-    const cursorApp = {
-      ...app,
-      service: (name) => {
-        if (name === 'users') {
-          return {
-            get: async (id) => {
-              const row = await db('users').where({ id }).first();
-              return {
-                ...row,
-                anthropic_api_key: 'sk-ant-test',
-                cursor_api_key: 'cursor-test',
-                agent_defaults: row.agent_defaults,
-              };
-            },
-          };
-        }
-        return app.service(name);
-      },
-    };
-
-    const tools = buildBaguetteAccountToolList({ id: user.id }, cursorApp);
-    const createSession = tools.find((t) => t.name === 'CreateSession');
-    await createSession.handler({
-      repo_id: 1,
-      base_branch: 'main',
-      initial_prompt: 'hello',
-    });
-    expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agent_sdk: 'cursor',
-        model: 'composer',
-        model_params: JSON.stringify([{ id: 'fast', value: 'true' }]),
-      }),
-      expect.any(Object)
-    );
-  });
-
-  it('keeps explicit agent_sdk and model', async () => {
-    const tools = buildBaguetteAccountToolList({ id: user.id }, app);
-    const createSession = tools.find((t) => t.name === 'CreateSession');
-    await createSession.handler({
-      repo_id: 1,
-      base_branch: 'main',
-      initial_prompt: 'hello',
-      agent_sdk: 'claude',
+      agent_config_id: claudeConfigId,
       model: 'sonnet',
     });
     expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ agent_sdk: 'claude', model: 'sonnet' }),
+      expect.objectContaining({ agent_config_id: claudeConfigId }),
       expect.any(Object)
     );
   });

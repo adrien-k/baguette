@@ -14,6 +14,7 @@
     "@feathersjs/rest-client": "^5.0.46",
     "@feathersjs/socketio-client": "^5.0.46",
     "@floating-ui/react": "^0.27.20",
+    "@lobehub/icons": "^5.23.0",
     "ansi-to-html": "^0.7.2",
     "diff": "^9.0.0",
     "highlight.js": "^11.12.0",

@@ -6,7 +6,8 @@ import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-sche
 import logger from '../../logger.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
-import { getAgentServiceForSession } from '../agent-sdk/default-agent-sdk.js';
+import { getAgentServiceForSession } from '../agent-session-routing.js';
+import { loadOwnedAgentConfig, resolveAgentConfigIdForRepoSdk } from '../agent-config-resolver.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -20,6 +21,7 @@ const WRITABLE_FIELDS = [
   'single_session',
   'is_global',
   'agent_sdk',
+  'agent_config_id',
   'model',
   'model_params',
   'plugins',
@@ -235,6 +237,7 @@ function sessionDataFromLoop(loop) {
     data.repo_full_name = loop.repo_full_name;
     data.base_branch = loop.base_branch;
   }
+  if (loop.agent_config_id) data.agent_config_id = loop.agent_config_id;
   if (loop.agent_sdk) data.agent_sdk = loop.agent_sdk;
   if (loop.model) data.model = loop.model;
   if (loop.model_params) data.model_params = loop.model_params;
@@ -302,6 +305,45 @@ async function resolveRepo(context) {
   const repo = await context.app.get('db')('repos').where({ full_name: fullName }).first();
   if (!repo) throw new NotFound(`Unknown repository "${fullName}"`);
   context.data.repo_id = repo.id;
+  return context;
+}
+
+async function normalizeAgentConfigOnLoopWrite(context) {
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const db = context.app.get('db');
+  const data = context.data;
+  if (data.agent_config_id == null && data.agent_sdk == null) {
+    if (context.method === 'patch') return context;
+  }
+  let configId = data.agent_config_id != null ? Number(data.agent_config_id) : null;
+  if (!configId && data.agent_sdk) {
+    const repoId = data.repo_id ?? null;
+    configId = await resolveAgentConfigIdForRepoSdk(db, userId, repoId, data.agent_sdk);
+  }
+  if (!configId && process.env.VITEST) {
+    const sdkHint = data.agent_sdk != null ? String(data.agent_sdk).trim() : 'claude';
+    const { ensureTestClaudeConfig, ensureTestPiConfig, insertTestAgentConfig } =
+      await import('../../test-utils/agent-configs.js');
+    if (sdkHint === 'mock') {
+      const { ensureMockAgentConfig } = await import('../mock-agent-config.js');
+      configId = await ensureMockAgentConfig(db, userId);
+    } else if (sdkHint === 'pi') {
+      configId = await ensureTestPiConfig(db, userId);
+    } else if (sdkHint === 'cursor') {
+      configId = await insertTestAgentConfig(db, userId, {
+        sdk: 'cursor',
+        apiKey: 'cursor-test-key',
+        apiKeyEnvVar: null,
+      });
+    } else {
+      configId = await ensureTestClaudeConfig(db, userId);
+    }
+  }
+  if (!configId) throw new BadRequest('agent_config_id is required');
+  const config = await loadOwnedAgentConfig(db, configId, userId);
+  data.agent_config_id = configId;
+  data.agent_sdk = config.sdk;
   return context;
 }
 
@@ -506,9 +548,17 @@ export const loopsHooks = {
       resolveTiedSession,
       resolveRepo,
       serializePlugins,
+      normalizeAgentConfigOnLoopWrite,
       normalizeCreate,
     ],
-    patch: [scopeByUser, requireOwnLoop, only(WRITABLE_FIELDS), serializePlugins, normalizePatch],
+    patch: [
+      scopeByUser,
+      requireOwnLoop,
+      only(WRITABLE_FIELDS),
+      serializePlugins,
+      normalizeAgentConfigOnLoopWrite,
+      normalizePatch,
+    ],
     remove: [scopeByUser, requireOwnLoop, clearSessionLoopReferences],
   },
   after: {

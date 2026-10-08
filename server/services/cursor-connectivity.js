@@ -19,8 +19,11 @@ function withTimeout(promise, timeoutMs) {
  * Validate a Cursor API key by listing models through the Cursor SDK (the same call the
  * model list uses). No separate endpoint is needed — a successful models list proves
  * connectivity and authentication in one step.
+ *
+ * @param {object | null | undefined} config — decrypted agent_config (Cursor sdk)
  */
-export async function runCursorConnectivityTest({ apiKey } = {}) {
+export async function runCursorConnectivityTest(config) {
+  const apiKey = config?.api_key || null;
   if (!apiKey) {
     return {
       ok: false,

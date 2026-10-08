@@ -29,7 +29,6 @@ import {
 } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
-import { testCursorCredentials } from '../agent-sdk-credential-test.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
 import { reviewTurnKey } from './session-review.service.js';
@@ -47,10 +46,8 @@ import {
   CURSOR_AGENT_SDK_KEY,
   CURSOR_AGENT_SDK_LABEL,
   CURSOR_AGENT_SERVICE_PATH,
-  isCursorAgentSdkEnabled,
-  listCursorAgentModels,
-} from '../agent-sdk/cursor-agent-sdk.js';
-import { registerAgentSdk } from './agent-sdks.service.js';
+} from '../agent-sdk-meta.js';
+import { registerAgentSdk } from './agent-configs.service.js';
 import type {
   AgentApp,
   AgentSessionRow,
@@ -110,7 +107,6 @@ function extractUserText(parsed: unknown): string {
 
 export class CursorAgentService {
   app!: AgentApp;
-  private _messageListenerBound = false;
   private _handlingMessageIds = new Set<number>();
   private _activeSessions: Map<string | number, CursorSessionState>;
   private _sessionStores: Map<number, SqliteLocalAgentStore>;
@@ -141,15 +137,6 @@ export class CursorAgentService {
 
   setup(app: AgentApp) {
     this.app = app;
-    if (this._messageListenerBound) return;
-    this._messageListenerBound = true;
-    const messages = this.app.service('messages');
-    if (typeof messages?.on !== 'function') return;
-    messages.on('created', (row: MessageRowLike) => {
-      void this.handleMessageCreated(row).catch((err) =>
-        logger.error({ err: (err as Error).message }, 'cursor-agent: handleMessageCreated failed')
-      );
-    });
   }
 
   async writeAlwaysApplyRule(
@@ -197,17 +184,22 @@ ${body}`,
   }
 
   async resolveApiKey(session: AgentSessionRow): Promise<string | undefined> {
-    const user = await this.app.service('users').get(session.user_id, {});
-    let repoApiKey: string | null = null;
-    if (session.repo_id) {
-      const userRepos = await this.app.service('user-repos').find({
-        query: { repo_id: session.repo_id },
-        user: { id: session.user_id },
-        paginate: false,
-      });
-      repoApiKey = userRepos?.[0]?.cursor_api_key || null;
-    }
-    return repoApiKey || user.cursor_api_key || undefined;
+    return (await this.loadAgentConfigApiKey(session)) || undefined;
+  }
+
+  /** API key from the session's owned agent_configs row. */
+  private async loadAgentConfigApiKey(session: {
+    agent_config_id?: number | null;
+    user_id: number;
+  }): Promise<string | null> {
+    const db = this.app.get('db') as DbLike;
+    const { loadOwnedAgentConfigDecrypted } = await import('../agent-context.js');
+    const config = await loadOwnedAgentConfigDecrypted(
+      session.agent_config_id ?? null,
+      session.user_id,
+      db as never
+    );
+    return config?.api_key || null;
   }
 
   parseModelParams(modelParams: unknown): ModelParameterValue[] | null {
@@ -265,7 +257,9 @@ ${body}`,
           });
           const repo = userRepos?.[0] ?? null;
           if (repo) {
-            const models = await loadModelsForSdk(user, 'cursor', repo, this.app);
+            const models = await loadModelsForSdk(user, 'cursor', repo, this.app, {
+              agentConfigId: session.agent_config_id ?? session.review_agent_config_id ?? null,
+            });
             const prefs = parseCursorModelPrefsJson(user.agent_preferences);
             params = resolveCursorAgentModelParams({
               models,
@@ -969,7 +963,7 @@ ${body}`,
     shortId = '',
     user: { id?: number } | null = null,
     repo: { id?: number | null } | null = null,
-    session: Pick<AgentSessionRow, 'model' | 'model_params'> | null = null
+    session: Pick<AgentSessionRow, 'model' | 'model_params' | 'agent_config_id'> | null = null
   ): Promise<{ label: string; branchName: string }> {
     const fallbackBranch = `task-${shortId}`;
     const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
@@ -981,19 +975,12 @@ Task: ${initialPrompt}`;
     let label = '';
     let branchName = fallbackBranch;
 
-    const fullUser = user?.id ? await this.app.service('users').get(user.id, {}) : null;
-
-    let repoApiKey: string | null = null;
-    if (repo?.id && user?.id) {
-      const userRepos = await this.app.service('user-repos').find({
-        query: { repo_id: repo.id },
-        user: { id: user.id },
-        paginate: false,
-      });
-      repoApiKey = userRepos?.[0]?.cursor_api_key || null;
-    }
-
-    const apiKey = repoApiKey || fullUser?.cursor_api_key || undefined;
+    const apiKey = user?.id
+      ? await this.loadAgentConfigApiKey({
+          agent_config_id: session?.agent_config_id ?? null,
+          user_id: user.id,
+        })
+      : undefined;
     // Generate the label/branch with the session's selected model (and its variant params)
     // so the metadata matches the agent that will actually run the task. Sessions created
     // without an explicit model fall back to a cheap one so provisioning stays fast.
@@ -1072,18 +1059,6 @@ Task: ${initialPrompt}`;
     await directPromptTiedSessionLoopCompaction(this.app, args);
   }
 
-  async testCredentials({
-    user,
-    repo = null,
-    payload = {},
-  }: {
-    user: Record<string, unknown>;
-    repo?: Record<string, unknown> | null;
-    payload?: Record<string, unknown>;
-  }) {
-    return testCursorCredentials(user, repo, payload);
-  }
-
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
     { channel = 'chat' }: { channel?: MessageChannel } = {}
@@ -1095,17 +1070,6 @@ Task: ${initialPrompt}`;
 
   usesCompactionBeforeLoopRepeat(): boolean {
     return false;
-  }
-
-  async isEnabled(ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null }) {
-    return isCursorAgentSdkEnabled(ctx);
-  }
-
-  async listModels(
-    ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null },
-    { refresh = false }: { refresh?: boolean } = {}
-  ) {
-    return listCursorAgentModels(ctx, { refresh });
   }
 }
 
@@ -1125,9 +1089,8 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'openSessionStore',
       'disposeSessionStore',
       'prepareTiedSessionLoopCompaction',
+      'handleMessageCreated',
       'isInterruptedSessionResumable',
-      'isEnabled',
-      'listModels',
     ],
   });
   registerAgentSdk(app, {

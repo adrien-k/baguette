@@ -8,6 +8,12 @@ import { createTestDb } from '../../test-utils/db.js';
 const mockClearUserReposPickerCache = vi.fn();
 vi.mock('../anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue([{ id: 'sonnet', display_name: 'Sonnet' }]),
+  modelsCacheKey: vi.fn((url) => `anthropic-models:${url ?? 'default'}`),
+}));
+vi.mock('../../lib/cache.js', () => ({
+  fetch: (_key, _ttl, fn) => fn(),
+  clear: vi.fn(async () => {}),
+  clearByPrefix: vi.fn(async () => {}),
 }));
 vi.mock('../github.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -21,7 +27,8 @@ vi.mock('../github.js', async (importOriginal) => {
 });
 
 import { registerUsersService } from '../feathers/users.service.js';
-import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
+import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
+import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
 const db = createTestDb({ beforeEach, afterEach });
 
@@ -31,20 +38,8 @@ const unauthParams = { provider: 'rest' };
 function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
-  mountAgentSdks(app);
-  app.use(
-    'claude-agent',
-    {
-      async isEnabled() {
-        return true;
-      },
-      async listModels() {
-        return [{ id: 'sonnet', display_name: 'Sonnet' }];
-      },
-    },
-    { methods: ['isEnabled', 'listModels'] }
-  );
-  app.service('agent-sdks').register({
+  mountAgentConfigs(app);
+  app.service('agent-configs').registerSdk({
     key: 'claude',
     label: 'Claude',
     service_path: 'claude-agent',
@@ -267,34 +262,6 @@ describe('Users service - patch', () => {
     expect(result.access_token_encrypted).toBeUndefined();
   });
 
-  it('encrypts anthropic_api_key on patch', async () => {
-    await app
-      .service('users')
-      .patch(user1.id, { anthropic_api_key: 'sk-ant-test123' }, params(user1));
-    const row = await db('users').where({ id: user1.id }).first();
-    expect(row.anthropic_api_key_encrypted).toBeTruthy();
-    expect(row.anthropic_api_key_encrypted).not.toBe('sk-ant-test123');
-  });
-
-  it('returns masked anthropic_api_key for external calls', async () => {
-    await app
-      .service('users')
-      .patch(user1.id, { anthropic_api_key: 'sk-ant-test123456' }, params(user1));
-    const result = await app.service('users').get(user1.id, params(user1));
-    expect(result.anthropic_api_key).toBeTruthy();
-    expect(result.anthropic_api_key).not.toBe('sk-ant-test123456');
-    expect(result.anthropic_api_key_encrypted).toBeUndefined();
-  });
-
-  it('returns plaintext anthropic_api_key for internal calls (no provider)', async () => {
-    await app
-      .service('users')
-      .patch(user1.id, { anthropic_api_key: 'sk-ant-test123456' }, params(user1));
-    const result = await app.service('users').get(user1.id, { user: user1 });
-    expect(result.anthropic_api_key).toBe('sk-ant-test123456');
-    expect(result.anthropic_api_key_encrypted).toBeUndefined();
-  });
-
   it('encrypts access_token on patch', async () => {
     await app.service('users').patch(user1.id, { access_token: 'gho_testtoken' }, params(user1));
     const row = await db('users').where({ id: user1.id }).first();
@@ -340,6 +307,39 @@ describe('Users service - patch', () => {
   });
 });
 
+describe('Users service - agent defaults patch', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('validates default model against the selected agent config credentials', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'kimi-k3' }, { id: 'glm-5.3' }] }), {
+            status: 200,
+          })
+      )
+    );
+    const configId = await insertTestAgentConfig(db, user1.id, {
+      apiKey: 'sk-ant-api03-key',
+      apiUrl: 'https://opencode.ai/zen/go',
+      label: 'Claude GW',
+    });
+    const updated = await app.service('users').patch(
+      user1.id,
+      {
+        agent_default_config_id: configId,
+        agent_default_model: { model: 'kimi-k3' },
+      },
+      params(user1)
+    );
+    expect(updated.agent_default_model.model).toBe('kimi-k3');
+    expect(updated.agent_default_config_id).toBe(configId);
+  });
+});
+
 describe('Users service - remove', () => {
   it('any authenticated user can remove a user', async () => {
     await app.service('users').remove(pendingUser.id, params(user1));
@@ -351,192 +351,5 @@ describe('Users service - remove', () => {
     await expect(app.service('users').remove(pendingUser.id, unauthParams)).rejects.toThrow(
       'Not authenticated'
     );
-  });
-});
-
-describe('Users service - defaultAgent', () => {
-  const addSession = (overrides = {}) =>
-    db('sessions').insert({
-      user_id: user1.id,
-      repo_full_name: 'o/r',
-      initial_prompt: 'do something',
-      base_branch: 'main',
-      short_id: `s${Math.random().toString(36).slice(2, 8)}`,
-      ...overrides,
-    });
-
-  it('unauthenticated defaultAgent is rejected', async () => {
-    await expect(app.service('users').defaultAgent({}, unauthParams)).rejects.toThrow(
-      'Not authenticated'
-    );
-  });
-
-  it('returns the stored defaults when the user pinned an SDK', async () => {
-    await db('users')
-      .where({ id: user1.id })
-      .update({
-        agent_defaults: JSON.stringify({
-          agent_sdk: 'cursor',
-          model: 'cursor-model',
-          model_params: [{ id: 'thinking', value: 'high' }],
-        }),
-      });
-    await addSession({ agent_sdk: 'claude', model: 'claude-model' });
-
-    const result = await app.service('users').defaultAgent({}, params(user1));
-    expect(result).toEqual({
-      agent_sdk: 'cursor',
-      model: 'cursor-model',
-      model_params: [{ id: 'thinking', value: 'high' }],
-      source: 'defaults',
-    });
-  });
-
-  it('falls back to the latest session when defaults are in last-used mode', async () => {
-    await addSession({
-      agent_sdk: 'claude',
-      model: 'older-model',
-      last_activity_at: '2026-01-01 00:00:00',
-    });
-    await addSession({
-      agent_sdk: 'cursor',
-      model: 'newest-model',
-      model_params: JSON.stringify([{ id: 'thinking', value: 'low' }]),
-      last_activity_at: '2026-02-01 00:00:00',
-    });
-
-    const result = await app.service('users').defaultAgent({}, params(user1));
-    expect(result).toEqual({
-      agent_sdk: 'cursor',
-      model: 'newest-model',
-      model_params: [{ id: 'thinking', value: 'low' }],
-      source: 'last_used',
-    });
-  });
-
-  it('ignores the selected repo — resolves from a session on any repo', async () => {
-    await addSession({
-      repo_full_name: 'other-owner/other-repo',
-      agent_sdk: 'cursor',
-      model: 'global-model',
-      last_activity_at: '2026-03-01 00:00:00',
-    });
-
-    const result = await app.service('users').defaultAgent({}, params(user1));
-    expect(result.agent_sdk).toBe('cursor');
-    expect(result.model).toBe('global-model');
-  });
-
-  it('ignores other users sessions', async () => {
-    await db('sessions').insert({
-      user_id: user2.id,
-      repo_full_name: 'o/r',
-      initial_prompt: 'bob work',
-      base_branch: 'main',
-      short_id: 'bob01',
-      agent_sdk: 'cursor',
-      model: 'bob-model',
-    });
-
-    const result = await app.service('users').defaultAgent({}, params(user1));
-    expect(result).toEqual({
-      agent_sdk: 'claude',
-      model: null,
-      model_params: null,
-      source: 'last_used',
-    });
-  });
-
-  it('falls back to the first enabled SDK when there is no session yet', async () => {
-    const result = await app.service('users').defaultAgent({}, params(user1));
-    expect(result).toEqual({
-      agent_sdk: 'claude',
-      model: null,
-      model_params: null,
-      source: 'last_used',
-    });
-  });
-
-  it('skips archived sessions', async () => {
-    await addSession({
-      agent_sdk: 'cursor',
-      model: 'archived-model',
-      archived_at: '2026-04-01 00:00:00',
-    });
-    await addSession({
-      agent_sdk: 'claude',
-      model: 'live-model',
-      last_activity_at: '2026-02-01 00:00:00',
-    });
-
-    const result = await app.service('users').defaultAgent({}, params(user1));
-    expect(result.model).toBe('live-model');
-  });
-});
-
-describe('Users service - agent_defaults patch', () => {
-  it('returns empty defaults with use_last_used when unset', async () => {
-    const user = await app.service('users').get(user1.id, params(user1));
-    expect(user.agent_defaults).toEqual({
-      agent_sdk: null,
-      model: null,
-      model_params: null,
-      use_last_used: true,
-    });
-  });
-
-  it('validates SDK keys and persists agent defaults', async () => {
-    await app
-      .service('users')
-      .patch(user1.id, { anthropic_api_key: 'sk-ant-test123' }, params(user1));
-
-    const [repoId] = await db('repos').insert({
-      full_name: 'alice/defaults',
-      repo_path: '/tmp/alice-defaults',
-    });
-    await db('user_repos').insert({ user_id: user1.id, repo_id: repoId });
-
-    const updated = await app.service('users').patch(
-      user1.id,
-      {
-        agent_defaults: {
-          agent_sdk: 'claude',
-          model: 'sonnet',
-          model_params: null,
-          repo_id: repoId,
-        },
-      },
-      params(user1)
-    );
-
-    expect(updated.agent_defaults).toEqual({
-      agent_sdk: 'claude',
-      model: 'sonnet',
-      model_params: null,
-      use_last_used: false,
-    });
-  });
-
-  it('rejects cursor defaults without a Cursor API key', async () => {
-    const [repoId] = await db('repos').insert({
-      full_name: 'alice/cursor-defaults',
-      repo_path: '/tmp/alice-cursor-defaults',
-    });
-    await db('user_repos').insert({ user_id: user1.id, repo_id: repoId });
-
-    await expect(
-      app.service('users').patch(
-        user1.id,
-        {
-          agent_defaults: {
-            agent_sdk: 'cursor',
-            model: null,
-            model_params: null,
-            repo_id: repoId,
-          },
-        },
-        params(user1)
-      )
-    ).rejects.toThrow(/cursor/i);
   });
 });

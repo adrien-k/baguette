@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DEFAULT_PI_API_KEY_ENV_VAR,
   PI_API_KEY_ENV_VARS,
-  effectivePiApiKeyEnvVar,
   isPiApiKeyEnvVar,
   normalizePiApiKeyEnvVar,
   piProviderIdForEnvVar,
@@ -29,16 +27,8 @@ describe('pi-api-key-env-vars', () => {
     expect(piProviderIdForEnvVar('OPENCODE_API_KEY')).toBe('opencode');
   });
 
-  it('defaults effective env var to Anthropic', () => {
-    expect(effectivePiApiKeyEnvVar({}, null)).toBe(DEFAULT_PI_API_KEY_ENV_VAR);
-    expect(effectivePiApiKeyEnvVar({ pi_api_key_env_var: 'GROQ_API_KEY' }, null)).toBe(
-      'GROQ_API_KEY'
-    );
-    expect(
-      effectivePiApiKeyEnvVar(
-        { pi_api_key_env_var: 'ANTHROPIC_API_KEY' },
-        { pi_api_key_env_var: 'MISTRAL_API_KEY' }
-      )
-    ).toBe('MISTRAL_API_KEY');
+  it('falls back to the anthropic provider when the env var is unset', () => {
+    expect(piProviderIdForEnvVar(null)).toBe('anthropic');
+    expect(piProviderIdForEnvVar(undefined)).toBe('anthropic');
   });
 });

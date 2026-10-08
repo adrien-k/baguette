@@ -10,37 +10,12 @@ import {
   gatewayAuthHeaders,
   gatewayDiscoveryActive,
   listGatewayModels,
-  resolveClaudeGatewayConfig,
 } from '../claude-gateway-models.js';
-
-const ACCOUNT = {
-  anthropic_api_key: 'sk-ant-api03-account',
-  anthropic_auth_token: null,
-  anthropic_base_url: 'https://account-gw.example.com',
-};
-
-describe('resolveClaudeGatewayConfig', () => {
-  it('falls back to the account config when the repo has none', () => {
-    const config = resolveClaudeGatewayConfig(ACCOUNT, {});
-    expect(config.apiKey).toBe('sk-ant-api03-account');
-    expect(config.baseUrl).toBe('https://account-gw.example.com');
-  });
-
-  it('lets repo values override the account', () => {
-    const repo = {
-      anthropic_api_key: 'sk-ant-api03-repo',
-      anthropic_base_url: 'https://repo-gw.example.com',
-    };
-    const config = resolveClaudeGatewayConfig(ACCOUNT, repo);
-    expect(config.apiKey).toBe('sk-ant-api03-repo');
-    expect(config.baseUrl).toBe('https://repo-gw.example.com');
-  });
-});
 
 describe('gatewayDiscoveryActive', () => {
   it('is true whenever a base URL is set (discovery is always on)', () => {
-    expect(gatewayDiscoveryActive({ baseUrl: 'https://gw.example.com' })).toBe(true);
-    expect(gatewayDiscoveryActive({ baseUrl: null })).toBe(false);
+    expect(gatewayDiscoveryActive({ api_url: 'https://gw.example.com' })).toBe(true);
+    expect(gatewayDiscoveryActive({ api_url: null })).toBe(false);
   });
 });
 
@@ -75,8 +50,9 @@ describe('listGatewayModels', () => {
       )
     );
     const models = await listGatewayModels({
-      apiKey: 'key',
-      baseUrl: 'https://opencode.ai/zen/go',
+      api_key: 'key',
+      api_url: 'https://opencode.ai/zen/go',
+      api_key_env_var: 'ANTHROPIC_API_KEY',
     });
     expect(models).toEqual([
       { id: 'kimi-k3', display_name: 'kimi-k3', description: null },
@@ -90,12 +66,16 @@ describe('listGatewayModels', () => {
       vi.fn(async () => new Response('unauthorized', { status: 401 }))
     );
     await expect(
-      listGatewayModels({ apiKey: 'key', baseUrl: 'https://opencode.ai/zen/go' })
+      listGatewayModels({
+        api_key: 'key',
+        api_url: 'https://opencode.ai/zen/go',
+        api_key_env_var: 'ANTHROPIC_API_KEY',
+      })
     ).rejects.toThrow('Gateway model list failed (HTTP 401)');
   });
 
   it('requires a base URL', async () => {
-    await expect(listGatewayModels({ apiKey: 'key', baseUrl: null })).rejects.toThrow(
+    await expect(listGatewayModels({ api_key: 'key', api_url: null })).rejects.toThrow(
       'requires a Claude API base URL'
     );
   });

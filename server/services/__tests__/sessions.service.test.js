@@ -18,8 +18,8 @@ import { registerSessionsService, resolveSessionFromData } from '../feathers/ses
 import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
-import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
-import { registerAgentSdk } from '../feathers/agent-sdks.service.js';
+import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
+import { registerAgentSdk } from '../feathers/agent-configs.service.js';
 import {
   createWorktree,
   getOpenPR,
@@ -113,17 +113,6 @@ function cursorInterruptedResumable(session, { channel = 'chat' } = {}) {
     : Boolean(session.cursor_agent_id);
 }
 
-function wireAgentMessageListeners(app) {
-  app.service('messages').on('created', async (row) => {
-    if (row.type !== 'user') return;
-    const agentName = row.agent_sdk === 'cursor' ? 'cursor-agent' : 'claude-agent';
-    const agent = app.service(agentName);
-    if (agent?.handleMessageCreated) {
-      await agent.handleMessageCreated(row);
-    }
-  });
-}
-
 function makeApp(db) {
   const app = feathers();
   app.set('db', db);
@@ -146,7 +135,7 @@ function makeApp(db) {
     },
     { methods: ['deleteSessionTasks', 'create', 'find'] }
   );
-  mountAgentSdks(app);
+  mountAgentConfigs(app);
   app.use(
     'claude-agent',
     {
@@ -155,8 +144,6 @@ function makeApp(db) {
       syncSessionSettingsFromPatch,
       generateSessionMetadata,
       isInterruptedSessionResumable: claudeInterruptedResumable,
-      isEnabled: async () => true,
-      listModels: async () => [],
     },
     {
       methods: [
@@ -165,8 +152,6 @@ function makeApp(db) {
         'syncSessionSettingsFromPatch',
         'generateSessionMetadata',
         'isInterruptedSessionResumable',
-        'isEnabled',
-        'listModels',
       ],
     }
   );
@@ -177,8 +162,6 @@ function makeApp(db) {
       generateSessionMetadata,
       handleMessageCreated: cursorHandleMessageCreated,
       isInterruptedSessionResumable: cursorInterruptedResumable,
-      isEnabled: async () => true,
-      listModels: async () => [],
     },
     {
       methods: [
@@ -186,8 +169,6 @@ function makeApp(db) {
         'generateSessionMetadata',
         'handleMessageCreated',
         'isInterruptedSessionResumable',
-        'isEnabled',
-        'listModels',
       ],
     }
   );
@@ -201,7 +182,6 @@ function makeApp(db) {
   );
   registerSessionsService(app);
   registerMessagesService(app);
-  wireAgentMessageListeners(app);
   return app;
 }
 
@@ -1428,6 +1408,19 @@ describe('Sessions service - find, get, create', (hooks) => {
   // ── patch ──────────────────────────────────────────────────────────────────
 
   describe('patch', () => {
+    it('serializes model_params objects before writing to SQLite', async () => {
+      await app.service('sessions').patch(
+        sessId1,
+        {
+          model: 'composer-2.5',
+          model_params: [{ id: 'fast', value: 'false' }],
+        },
+        params({ id: userId1 })
+      );
+      const row = await db('sessions').where({ id: sessId1 }).first();
+      expect(row.model_params).toBe('[{"id":"fast","value":"false"}]');
+    });
+
     it('updates status on own session and returns the updated row', async () => {
       const session = await app
         .service('sessions')
@@ -1507,6 +1500,67 @@ describe('Sessions service - find, get, create', (hooks) => {
       expect(updated.claude_session_id).toBeNull();
       expect(updated.cursor_agent_id).toBeNull();
     });
+
+    it('clears builder agent resume ids when agent_config_id changes to a different sdk', async () => {
+      const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+      const claudeId = await insertTestAgentConfig(db, userId1, {
+        sdk: 'claude',
+        apiKey: 'sk-ant',
+      });
+      const cursorId = await insertTestAgentConfig(db, userId1, {
+        sdk: 'cursor',
+        apiKey: 'cursor-key',
+        apiKeyEnvVar: null,
+        label: 'Cursor',
+      });
+      await app.service('sessions').patch(
+        sessId1,
+        {
+          agent_config_id: claudeId,
+          claude_session_id: 'claude-thread-1',
+          cursor_agent_id: 'cursor-thread-1',
+        },
+        params({ id: userId1 })
+      );
+
+      const updated = await app
+        .service('sessions')
+        .patch(sessId1, { agent_config_id: cursorId }, params({ id: userId1 }));
+
+      expect(updated.agent_sdk).toBe('cursor');
+      expect(updated.claude_session_id).toBeNull();
+      expect(updated.cursor_agent_id).toBeNull();
+    });
+
+    it('keeps builder agent resume ids when agent_config_id changes to the same sdk', async () => {
+      const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+      const claudeA = await insertTestAgentConfig(db, userId1, {
+        sdk: 'claude',
+        apiKey: 'sk-ant-a',
+        label: 'Claude A',
+      });
+      const claudeB = await insertTestAgentConfig(db, userId1, {
+        sdk: 'claude',
+        apiKey: 'sk-ant-b',
+        label: 'Claude B',
+      });
+      await app.service('sessions').patch(
+        sessId1,
+        {
+          agent_config_id: claudeA,
+          claude_session_id: 'claude-thread-1',
+        },
+        params({ id: userId1 })
+      );
+
+      const updated = await app
+        .service('sessions')
+        .patch(sessId1, { agent_config_id: claudeB }, params({ id: userId1 }));
+
+      expect(updated.agent_sdk).toBe('claude');
+      expect(updated.agent_config_id).toBe(claudeB);
+      expect(updated.claude_session_id).toBe('claude-thread-1');
+    });
   });
 
   // ── create ─────────────────────────────────────────────────────────────────
@@ -1523,9 +1577,15 @@ describe('Sessions service - find, get, create', (hooks) => {
     });
 
     it('copies model and sdk onto reviewer fields at create', async () => {
+      const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+      const cursorConfigId = await insertTestAgentConfig(db, userId1, {
+        sdk: 'cursor',
+        apiKey: 'cursor-test-key',
+      });
       const session = await app.service('sessions').create(
         sessionData({
           repo_id: repoId,
+          agent_config_id: cursorConfigId,
           agent_sdk: 'cursor',
           model: 'composer-2',
           model_params: '[{"id":"fast","value":"true"}]',

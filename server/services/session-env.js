@@ -10,6 +10,9 @@ import {
 } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 import { gitAuthorEnvFromUser } from './git-identity.js';
+import { loadOwnedAgentConfigDecrypted } from './agent-context.js';
+import { claudeGatewayFields } from '../../shared/agent-config-api-key-env.js';
+import { applyAgentConfigToEnv } from './agent-config-env.js';
 
 const SERVER_ONLY_ENV_KEYS = [
   'NODE_ENV',
@@ -211,42 +214,21 @@ export function buildClaudeEnvFromPlainUser(
 }
 
 /**
- * Build the Claude agent subprocess environment for a given user + repo.
- * Fetches the user and per-repo key via Feather services (hooks decrypt, no raw DB access).
- * repo-level values take priority over the user-level values.
+ * Build the Claude agent subprocess environment for a given user (account credentials).
  *
  * @param {object} app  - Feathers app instance
  * @param {number} userId
- * @param {string|null} repoFullName - e.g. "owner/repo", or null when no repo context
+ * @param {string|null} _repoFullName - unused; kept for call-site compatibility
  */
-export async function getClaudeEnv(app, userId, repoFullName) {
-  const user = await app.service('users').get(userId, {}); // no provider → plaintext secrets
-
-  let repoApiKey = null;
-  let repoAuthToken = null;
-  let repoBaseUrl = null;
-  if (repoFullName) {
-    const db = app.get('db');
-    const repo = await db('repos')
-      .where({ full_name: repoFullName })
-      .whereNull('deleted_at')
-      .first();
-    if (repo) {
-      const userRepos = await app.service('user-repos').find({
-        query: { repo_id: repo.id },
-        user: { id: userId }, // internal call — no provider → plaintext
-        paginate: false,
-      });
-      repoApiKey = userRepos?.[0]?.anthropic_api_key || null;
-      repoAuthToken = userRepos?.[0]?.anthropic_auth_token || null;
-      repoBaseUrl = userRepos?.[0]?.anthropic_base_url ?? null;
-    }
+export async function getClaudeEnv(app, userId, _repoFullName, agentConfigId = null) {
+  const db = app.get('db');
+  let config = null;
+  if (agentConfigId != null) {
+    config = await loadOwnedAgentConfigDecrypted(agentConfigId, userId, db);
   }
-
-  const apiKey = repoApiKey || user.anthropic_api_key || null;
-  const authToken = repoAuthToken || user.anthropic_auth_token || null;
-  const baseUrl = repoBaseUrl ?? user.anthropic_base_url ?? null;
-  return buildClaudeEnvFromPlainUser(user, apiKey, baseUrl, {
+  const { apiKey, authToken, baseUrl } = claudeGatewayFields(config);
+  const userRow = await app.service('users').get(userId, {});
+  return buildClaudeEnvFromPlainUser(userRow, apiKey, baseUrl, {
     anthropicAuthToken: authToken,
   });
 }
@@ -261,6 +243,16 @@ export async function getClaudeEnvForSession(app, sessionId) {
   const db = app.get('db');
   const session = await db('sessions').where({ id: sessionId }).first();
   if (!session) return buildClaudeEnvFromPlainUser(null, null);
-  const repo = session.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
-  return getClaudeEnv(app, session.user_id, repo?.full_name ?? null);
+  return getClaudeEnv(app, session.user_id, null, session.agent_config_id ?? null);
+}
+
+/** Merge agent_config env vars into a base env (tasks, subprocesses). */
+export async function applySessionAgentConfigEnv(app, session, baseEnv) {
+  if (!session?.agent_config_id) return baseEnv;
+  const config = await loadOwnedAgentConfigDecrypted(
+    session.agent_config_id,
+    session.user_id,
+    app.get('db')
+  );
+  return applyAgentConfigToEnv(baseEnv, config);
 }

@@ -3,32 +3,30 @@ import { listModelsForUser } from '../../baguette-models-for-user.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createListModelsTool(ctx) {
-  const { app, userId, requireRepoAccess, loadRepoWithKeys } = ctx;
+  const { app, userId } = ctx;
   return {
     name: 'ListModels',
     description:
-      'List agent models grouped by SDK, including session usage counts. Requires repo_id — credentials use repository keys with account fallback. Prefer models with higher session_count.',
+      'List agent models grouped by SDK, including session usage counts. Pass agent_config_id from your agent configurations (Settings → Agent). Prefer models with higher session_count.',
     schema: {
-      repo_id: z
+      agent_config_id: z
         .number()
         .int()
-        .describe('Repository id — models and credentials are resolved per repository'),
+        .describe(
+          'Agent configuration id (required). Models use this config’s SDK and credentials.'
+        ),
     },
-    handler: async ({ repo_id }) => {
+    handler: async ({ agent_config_id: agentConfigId }) => {
+      if (agentConfigId == null) {
+        return fail(
+          'agent_config_id is required. Create agent configurations in Settings → Agent.'
+        );
+      }
       try {
-        if (repo_id == null) {
-          return fail('repo_id is required');
-        }
         const fullUser = await app.service('users').get(userId, {});
-        const access = await requireRepoAccess(repo_id);
-        if (!access) {
-          return fail(`Repository ${repo_id} not found or not linked to your account.`);
-        }
-        const repo = (await loadRepoWithKeys(repo_id)) ?? {
-          id: access.id,
-          full_name: access.full_name,
-        };
-        const result = await listModelsForUser(fullUser, repo, app);
+        const result = await listModelsForUser(fullUser, null, app, {
+          agentConfigId: Number(agentConfigId),
+        });
         return ok(result);
       } catch (err) {
         return fail(err.message);

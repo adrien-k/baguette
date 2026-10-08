@@ -1,33 +1,9 @@
 import { listAnthropicApiModels, probeAnthropicMessages } from '../lib/anthropic-api/models.js';
-import { buildClaudeEnvFromPlainUser, normalizeAnthropicBaseUrl } from './session-env.js';
+import { claudeGatewayFields } from '../../shared/agent-config-api-key-env.js';
+import { normalizeAnthropicBaseUrl } from './session-env.js';
 
 export const CLAUDE_TEST_TIMEOUT_MS = 20_000;
 const CLAUDE_MESSAGES_PROBE_MODEL = 'claude-sonnet-4-5';
-
-/**
- * Plaintext env for the test fetches, mirroring the session env cascade (host env fallbacks).
- */
-export function buildClaudeTestEnv(user, effective) {
-  return buildClaudeEnvFromPlainUser(
-    { username: user.username, github_id: user.github_id },
-    effective.anthropic_api_key,
-    effective.anthropic_base_url,
-    {
-      anthropicAuthToken: effective.anthropic_auth_token,
-    }
-  );
-}
-
-/** Anthropic auth headers for a plaintext Claude env (Bearer for tokens, x-api-key for keys). */
-export function claudeTestHeaders(env) {
-  const headers = { 'anthropic-version': '2023-06-01' };
-  if (env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) {
-    headers.Authorization = `Bearer ${env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN}`;
-  } else if (env.ANTHROPIC_API_KEY) {
-    headers['x-api-key'] = env.ANTHROPIC_API_KEY;
-  }
-  return headers;
-}
 
 function timeoutCheck(timeoutMs) {
   return `Timed out after ${Math.round(timeoutMs / 1000)}s`;
@@ -38,18 +14,20 @@ function timeoutCheck(timeoutMs) {
  * 1. GET /v1/models — connectivity + auth + the gateway's model list.
  * 2. POST /v1/messages (max_tokens: 1) — fallback for connectivity/auth when the endpoint
  *    does not implement /v1/models (404).
+ *
+ * @param {object | null | undefined} config — decrypted agent_config (Claude sdk)
  */
-export async function runClaudeConnectivityTest(env, { baseUrl } = {}) {
+export async function runClaudeConnectivityTest(config) {
+  const { apiKey, authToken, baseUrl } = claudeGatewayFields(config);
   const base = normalizeAnthropicBaseUrl(baseUrl) || 'https://api.anthropic.com';
   const checks = [];
   const modelIds = [];
 
+  const apiConfig = { baseUrl: base, apiKey, authToken };
+
   let modelsRes = null;
   let modelsParsed = null;
   let modelsList = null;
-  const apiKey = env.ANTHROPIC_API_KEY || null;
-  const authToken = env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN || null;
-  const apiConfig = { baseUrl: base, apiKey, authToken };
   try {
     modelsList = await listAnthropicApiModels(apiConfig, {
       limit: 100,

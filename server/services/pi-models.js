@@ -2,7 +2,6 @@ import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import * as cache from '../lib/cache.js';
 import { piProviderIdForEnvVar } from '../../shared/pi-api-key-env-vars.js';
-import { resolvePiCredentials } from './pi/pi-config.js';
 
 const PI_MODELS_CACHE_TTL = 60 * 60;
 
@@ -43,14 +42,4 @@ export async function listPiModels(apiKey, envVar, { refresh = false } = {}) {
       };
     });
   });
-}
-
-/**
- * @param {object} user
- * @param {object | null} [repo]
- */
-export async function listPiModelsForUser(user, repo = null) {
-  const { apiKey, envVar } = resolvePiCredentials(user, repo);
-  if (!apiKey) return [];
-  return listPiModels(apiKey, envVar);
 }

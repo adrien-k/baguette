@@ -32,15 +32,12 @@ export function createAuthRoutes(app) {
               email: 'dev@baguette.local',
               access_token: devGhKey,
               approved: true,
-              onboarding_completed: true,
             },
             {} // internal call — no provider, no user required
           );
           user = { id: created.id };
-        } else {
-          const patch = { onboarding_completed: true };
-          if (devGhKey) patch.access_token = devGhKey;
-          await app.service('users').patch(user.id, patch, {});
+        } else if (devGhKey) {
+          await app.service('users').patch(user.id, { access_token: devGhKey }, {});
         }
 
         res.cookie('userId', String(user.id), {

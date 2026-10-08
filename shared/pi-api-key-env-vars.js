@@ -91,11 +91,3 @@ export function piProviderIdForEnvVar(envVar) {
   const entry = PI_API_KEY_ENV_VARS.find((e) => e.env === normalized);
   return entry?.provider_id ?? 'anthropic';
 }
-
-/** Effective env var name for Pi (defaults when unset). */
-export function effectivePiApiKeyEnvVar(user, repo = null) {
-  const fromRepo = repo?.pi_api_key_env_var;
-  const fromUser = user?.pi_api_key_env_var;
-  const raw = fromRepo ?? fromUser ?? DEFAULT_PI_API_KEY_ENV_VAR;
-  return normalizePiApiKeyEnvVar(raw) ?? DEFAULT_PI_API_KEY_ENV_VAR;
-}

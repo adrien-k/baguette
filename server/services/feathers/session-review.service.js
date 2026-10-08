@@ -15,11 +15,8 @@ import { gitCommitCountSince } from '../github.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { markSessionReviewedAtHead } from '../session-branch-commits.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
-import {
-  agentSdkContextForSession,
-  agentServicePathForSdk,
-  resolveAgentSdkKey,
-} from '../agent-sdk/default-agent-sdk.js';
+import { agentServicePathForSession } from '../agent-session-routing.js';
+import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 
 const BAGUETTE_REVIEW_START_TITLE = 'Start review';
 const BAGUETTE_REVIEW_START_CONTENT = 'Begin the code review following your system instructions.';
@@ -138,15 +135,13 @@ export class SessionReviewService {
     return this._turnExtras.get(sessionId) ?? null;
   }
 
-  async resolveReviewSdk(session, data = {}) {
-    const ctx = await agentSdkContextForSession(this.app, session);
-    const explicit =
-      data.agent_sdk != null && String(data.agent_sdk).trim() !== ''
-        ? String(data.agent_sdk).trim()
-        : session.review_agent_sdk || session.agent_sdk;
-    const key = await resolveAgentSdkKey(this.app, explicit, ctx);
-    if (!key) throw new BadRequest('No agent SDK is available for this session');
-    return key;
+  async resolveReviewSdk(session) {
+    const reviewConfigId = session.review_agent_config_id ?? session.agent_config_id ?? null;
+    if (!reviewConfigId) {
+      throw new BadRequest('No review agent configuration on this session');
+    }
+    const config = await loadOwnedAgentConfig(this.app.get('db'), reviewConfigId, session.user_id);
+    return config.sdk;
   }
 
   async buildClaudeQueryOptions(session, { model, continuation = false, extraPrompt } = {}) {
@@ -589,9 +584,7 @@ export class SessionReviewService {
       await this._patchReviewStatus(session, 'failed');
       return false;
     }
-    const sdk = await this.resolveReviewSdk(session);
-    const ctx = await agentSdkContextForSession(this.app, session);
-    const agentService = await agentServicePathForSdk(this.app, sdk, ctx);
+    const agentService = await agentServicePathForSession(this.app, session, { review: true });
     const resumable = await this.app
       .service(agentService)
       .isInterruptedSessionResumable(session, { channel: 'review' });

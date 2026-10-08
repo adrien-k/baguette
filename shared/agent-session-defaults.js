@@ -45,6 +45,19 @@ export function coerceModelParams(value) {
   return out;
 }
 
+/** SQLite TEXT column: accept API arrays/objects and store JSON string. */
+export function stringifyModelParamsForStorage(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') return value;
+  const coerced = coerceModelParams(value);
+  if (coerced?.length) return JSON.stringify(coerced);
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const single = coerceModelParams([value]);
+    if (single?.length) return JSON.stringify(single);
+  }
+  return null;
+}
+
 export function parseAgentSessionDefaultsJson(raw) {
   if (raw == null || raw === '') return { ...EMPTY_AGENT_SESSION_DEFAULTS };
   let parsed = raw;

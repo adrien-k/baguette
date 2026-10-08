@@ -166,7 +166,7 @@ function RepositoriesTab({ settings, onSave }) {
     <div>
       <SettingsTabHeader title="Repositories">
         Repositories you can start sessions on. Link GitHub repositories or create local ones.
-        Per-repo API keys are under Agent; per-repo prompts are under Prompts.
+        Per-repo prompts are under Prompts.
       </SettingsTabHeader>
 
       <div className="space-y-6">

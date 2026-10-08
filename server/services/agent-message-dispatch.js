@@ -4,10 +4,7 @@ import {
   resolveTurnModel,
 } from '../../shared/turn-model.js';
 import { normalizeUserPayloadForStorage } from '../../shared/normalize-user-payload.js';
-import {
-  agentSdkContextForSession,
-  agentServicePathForSdk,
-} from './agent-sdk/default-agent-sdk.js';
+import { getAgentServiceForSession } from './agent-session-routing.js';
 import { persistTypedMessage } from './message-writer-factory.ts';
 
 /**
@@ -26,7 +23,7 @@ export function channelFromAgentType(agentType) {
 }
 
 /**
- * Route a persisted user row to agent services (each ignores non-matching SDK).
+ * Route a persisted user row to the SDK service for this session's agent config.
  * @param {import('@feathersjs/feathers').Application} app
  * @param {object} row
  * @param {'messages' | 'session-review-messages'} table
@@ -35,15 +32,10 @@ export async function dispatchCreatedMessageToAgents(app, row, table) {
   if (row.type !== 'user') return;
   const session = await app.get('db')('sessions').where({ id: row.session_id }).first();
   if (!session) return;
-  const sdk =
-    table === 'session-review-messages'
-      ? (session.review_agent_sdk ?? session.agent_sdk)
-      : session.agent_sdk;
-  const ctx = await agentSdkContextForSession(app, session);
-  const servicePath = await agentServicePathForSdk(app, sdk, ctx);
-  const agent = app.service(servicePath);
-  if (agent?.handleTableMessageCreated) {
-    await agent.handleTableMessageCreated(row, table);
+  const review = table === 'session-review-messages' || row.agent_type === 'reviewer';
+  const agent = await getAgentServiceForSession(app, session, { review });
+  if (typeof agent?.handleMessageCreated === 'function') {
+    await agent.handleMessageCreated(row);
   }
 }
 

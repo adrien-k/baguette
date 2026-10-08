@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { ParamPrefClearButton } from './ComposerParamControls.jsx';
 import LightChipDropdown from './LightChipDropdown.jsx';
 import ComposerParamPicker from './ComposerParamPicker.jsx';
 import Tooltip from './Tooltip.jsx';
 import { ParamToggleSwitch } from './ComposerParamControls.jsx';
-import AgentSdkIcon from './svg/AgentSdkIcon.jsx';
+import AgentConfigLogo from './AgentConfigLogo.jsx';
 import {
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,
@@ -57,7 +58,7 @@ function AgentSubmenu({ options, value, onChange, disabled = false }) {
         } disabled:opacity-50 disabled:pointer-events-none`}
       >
         <span className="text-faint shrink-0">Agent</span>
-        <AgentSdkIcon sdk={value} className="w-3.5 h-3.5 shrink-0" />
+        <AgentConfigLogo sdk={current?.sdk} logo={current?.logo} className="w-3.5 h-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-heading">{currentLabel}</span>
         <ChevronRight className="w-3 h-3 shrink-0 text-faint" />
       </button>
@@ -86,7 +87,11 @@ function AgentSubmenu({ options, value, onChange, disabled = false }) {
                   }`}
                 >
                   <span className="inline-flex items-center gap-2">
-                    <AgentSdkIcon sdk={opt.value} className="w-3.5 h-3.5 shrink-0" />
+                    <AgentConfigLogo
+                      sdk={opt.sdk}
+                      logo={opt.logo}
+                      className="w-3.5 h-3.5 shrink-0"
+                    />
                     {opt.label}
                   </span>
                 </button>
@@ -125,7 +130,8 @@ function useMediaQuery(query) {
  * Model + per-param picker beside the chat Send control.
  */
 export default function SessionModelSelect({
-  sdk,
+  /** Agent config id (string), or SDK id when no config picker is shown. */
+  agentConfigKey,
   model,
   params,
   autoPush = false,
@@ -135,13 +141,22 @@ export default function SessionModelSelect({
   onModelChange,
   onAutoPushChange,
   showAutoPushParam = false,
-  availableSdks,
-  onSdkChange,
+  agentConfigOptions,
+  onAgentConfigChange,
+  /** When set and `agentConfigKey` is empty, the trigger shows this instead of a model label (picker still opens). */
+  nullPlaceholder = null,
+  /** Clears agent/model selection; shows a clear control when `nullPlaceholder` is set and a config is selected. */
+  onClear,
   disabled = false,
   className = '',
 }) {
-  const isCursor = sdk === 'cursor';
-  const isPi = sdk === 'pi';
+  const isUnset = Boolean(nullPlaceholder) && (agentConfigKey == null || agentConfigKey === '');
+  const selectedAgentConfig = isUnset
+    ? null
+    : agentConfigOptions?.find((o) => String(o.key) === String(agentConfigKey));
+  const agentSdk = selectedAgentConfig?.sdk ?? (isUnset ? null : agentConfigKey);
+  const isCursor = agentSdk === 'cursor';
+  const isPi = agentSdk === 'pi';
   const usesAgentPricingTable = isCursor || isPi;
   const selectedModelId = model || null;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
@@ -152,8 +167,11 @@ export default function SessionModelSelect({
   );
   const orderedParamIds = orderedParamIdsFromVariants(variants);
 
-  const modelTriggerLabel =
-    selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
+  const modelTriggerLabel = isUnset
+    ? typeof nullPlaceholder === 'string'
+      ? nullPlaceholder
+      : 'Choose agent…'
+    : selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
 
   const pricingKnown =
     !usesAgentPricingTable ||
@@ -167,12 +185,18 @@ export default function SessionModelSelect({
     return opts;
   }, [models, selectedModelId]);
 
-  const sdkOptions = useMemo(
-    () => (availableSdks ?? []).map((sdk) => ({ value: sdk.key, label: sdk.label ?? sdk.key })),
-    [availableSdks]
+  const agentConfigMenuOptions = useMemo(
+    () =>
+      (agentConfigOptions ?? []).map((opt) => ({
+        value: opt.key,
+        label: opt.label ?? opt.key,
+        sdk: opt.sdk,
+        logo: opt.logo ?? null,
+      })),
+    [agentConfigOptions]
   );
 
-  const showSdkPicker = Boolean(onSdkChange && availableSdks?.length);
+  const showAgentConfigPicker = Boolean(onAgentConfigChange && agentConfigOptions?.length);
   const isSmUp = useMediaQuery('(min-width: 640px)');
   const showAutoPush = showAutoPushParam && onAutoPushChange;
   const autoPushOn = !!autoPush;
@@ -251,17 +275,19 @@ export default function SessionModelSelect({
   const showInlineAutoPush = showAutoPush && isSmUp;
   const showParamPicker = dropdownItems.length > 0;
 
-  if (!sdk && !showSdkPicker) return null;
+  const showClear = Boolean(nullPlaceholder && onClear && !isUnset);
+
+  if (!agentConfigKey && !showAgentConfigPicker && !nullPlaceholder) return null;
 
   const pickModel = (newId) => {
-    if (disabled || !newId || newId === selectedModelId) return;
+    if (disabled || isUnset || !newId || newId === selectedModelId) return;
     const newModelObj = models.find((m) => m.id === newId);
     onModelChange(newId, paramsJsonForModelChange(newModelObj, cursorModelPrefs));
   };
 
-  const pickSdk = (newSdk) => {
-    if (disabled || !newSdk || newSdk === sdk || !onSdkChange) return;
-    onSdkChange(newSdk);
+  const pickAgentConfig = (nextKey) => {
+    if (disabled || !nextKey || nextKey === agentConfigKey || !onAgentConfigChange) return;
+    onAgentConfigChange(nextKey);
   };
 
   return (
@@ -275,20 +301,28 @@ export default function SessionModelSelect({
               onChange={pickModel}
               options={modelOptions}
               header={
-                showSdkPicker ? (
+                showAgentConfigPicker ? (
                   <AgentSubmenu
-                    options={sdkOptions}
-                    value={sdk ?? ''}
-                    onChange={pickSdk}
+                    options={agentConfigMenuOptions}
+                    value={agentConfigKey ?? ''}
+                    onChange={pickAgentConfig}
                     disabled={disabled}
                   />
                 ) : null
               }
               selectedDisplay={{
-                label: modelTriggerLabel,
-                icon: <AgentSdkIcon sdk={sdk} />,
+                label:
+                  isUnset && typeof nullPlaceholder !== 'string' ? undefined : modelTriggerLabel,
+                content:
+                  isUnset && typeof nullPlaceholder !== 'string' ? nullPlaceholder : undefined,
+                icon: isUnset ? null : (
+                  <AgentConfigLogo
+                    sdk={selectedAgentConfig?.sdk ?? agentSdk}
+                    logo={selectedAgentConfig?.logo ?? null}
+                  />
+                ),
               }}
-              ariaLabel={showSdkPicker ? 'Choose agent and model' : 'Choose model'}
+              ariaLabel={showAgentConfigPicker ? 'Choose agent and model' : 'Choose model'}
               placement="top-start"
               triggerTitle={modelTriggerLabel}
               disabled={disabled}
@@ -298,6 +332,13 @@ export default function SessionModelSelect({
           </div>
           {showParamPicker && (
             <ComposerParamPicker items={dropdownItems} disabled={disabled} placement="top-start" />
+          )}
+          {showClear && (
+            <ParamPrefClearButton
+              visible
+              ariaLabel="Clear agent and model"
+              onClear={() => onClear()}
+            />
           )}
         </div>
 

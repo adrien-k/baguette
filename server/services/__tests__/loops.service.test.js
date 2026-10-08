@@ -12,8 +12,9 @@ import {
   claudeTiedSessionLoopCompaction,
   directPromptTiedSessionLoopCompaction,
 } from '../feathers/loop-compaction.ts';
-import { mountAgentSdks } from '../../test-utils/agent-sdks.js';
-import { registerAgentSdk } from '../feathers/agent-sdks.service.js';
+import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
+import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
+import { registerAgentSdk } from '../feathers/agent-configs.service.js';
 
 const sessionsCreate = vi.fn(async (data) => ({ id: 77, ...data }));
 const usersGet = vi.fn(async (id) => ({ id, access_token: 'gh-token' }));
@@ -38,35 +39,29 @@ function makeApp(db) {
     { create: queuedCreate, remove: queuedRemove },
     { methods: ['create', 'remove'] }
   );
-  mountAgentSdks(app);
+  mountAgentConfigs(app);
   app.use(
     'claude-agent',
     {
       prepareTiedSessionLoopCompaction: (args) => claudeTiedSessionLoopCompaction(app, args),
-      isEnabled: async () => true,
-      listModels: async () => [],
     },
-    { methods: ['prepareTiedSessionLoopCompaction', 'isEnabled', 'listModels'] }
+    { methods: ['prepareTiedSessionLoopCompaction'] }
   );
   registerAgentSdk(app, { key: 'claude', label: 'Claude', servicePath: 'claude-agent' });
   app.use(
     'cursor-agent',
     {
       prepareTiedSessionLoopCompaction: (args) => directPromptTiedSessionLoopCompaction(app, args),
-      isEnabled: async () => true,
-      listModels: async () => [],
     },
-    { methods: ['prepareTiedSessionLoopCompaction', 'isEnabled', 'listModels'] }
+    { methods: ['prepareTiedSessionLoopCompaction'] }
   );
   registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
   app.use(
     'pi-agent',
     {
       prepareTiedSessionLoopCompaction: (args) => directPromptTiedSessionLoopCompaction(app, args),
-      isEnabled: async () => true,
-      listModels: async () => [],
     },
-    { methods: ['prepareTiedSessionLoopCompaction', 'isEnabled', 'listModels'] }
+    { methods: ['prepareTiedSessionLoopCompaction'] }
   );
   registerAgentSdk(app, { key: 'pi', label: 'Pi', servicePath: 'pi-agent' });
   registerLoopsService(app);
@@ -413,7 +408,12 @@ describe('Loops service', (hooks) => {
     };
 
     it('creates a session from the loop template and re-arms it', async () => {
+      const cursorConfigId = await insertTestAgentConfig(db, aliceId, {
+        sdk: 'cursor',
+        apiKey: 'cursor-loop-key',
+      });
       const loop = await makeDueLoop({
+        agent_config_id: cursorConfigId,
         agent_sdk: 'cursor',
         model: 'composer-1',
         plan_mode: true,
@@ -430,6 +430,7 @@ describe('Loops service', (hooks) => {
           repo_full_name: 'test/repo',
           base_branch: 'main',
           initial_prompt: 'Check the dependencies',
+          agent_config_id: cursorConfigId,
           agent_sdk: 'cursor',
           model: 'composer-1',
           plan_mode: true,
@@ -563,8 +564,18 @@ describe('Loops service', (hooks) => {
     });
 
     it('sends only the prompt for a cursor session, which has no compaction', async () => {
-      const sessionId = await seedSession({ agent_sdk: 'cursor' });
-      const loop = await makeDueSingleSessionLoop({ agent_sdk: 'cursor' });
+      const cursorConfigId = await insertTestAgentConfig(db, aliceId, {
+        sdk: 'cursor',
+        apiKey: 'cursor-single-key',
+      });
+      const sessionId = await seedSession({
+        agent_sdk: 'cursor',
+        agent_config_id: cursorConfigId,
+      });
+      const loop = await makeDueSingleSessionLoop({
+        agent_config_id: cursorConfigId,
+        agent_sdk: 'cursor',
+      });
       await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
 
       await app.service('loops').runDue();

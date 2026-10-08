@@ -31,8 +31,8 @@ import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
-import { fetchAgentSdkModels } from '../utils/fetchAgentSdkModels.js';
-import { useAvailableAgentSdks } from '../hooks/useAvailableAgentSdks.js';
+import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
+import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { sessionsService, tasksService } from '../feathers.js';
 import {
   sessionActivityAt,
@@ -57,6 +57,7 @@ import SwitchAgentSdkConfirmModal from '../components/SwitchAgentSdkConfirmModal
 import TaskConfirmModal from '../components/TaskConfirmModal.jsx';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../utils/models.js';
+import { modelPatchFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
@@ -374,7 +375,7 @@ export default function Session() {
       return sessionIssues.filter((i) => i.status === 'opened').length;
     }
     return session?.open_issues_count ?? 0;
-  }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
+  }, [shouldLoadSessionIssues, sessionIssues, session]);
   const [prInfo, setPrInfo] = useState(null);
   const [showTasks, setShowTasks] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
@@ -420,7 +421,7 @@ export default function Session() {
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
-  const { keys: availableSdkKeys } = useAvailableAgentSdks(gitSession?.repo_id);
+  const { configOptions } = useAgentConfigs();
   const {
     commits: branchCommits,
     loading: branchCommitsLoading,
@@ -462,7 +463,7 @@ export default function Session() {
     setScrollToDiffFile(pendingSidebarDiffFile);
     setPendingSidebarDiffFile(null);
   }, [sessionDiffFileByFile, sessionDiffLoading, pendingSidebarDiffFile]);
-  const [models, setModels] = useState([]);
+  const { models, stale: modelsStale } = useAgentConfigModels(gitSession?.agent_config_id);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { pushing, beginLocalPush, endLocalPush } = useSessionPushInProgress(gitSession?.id);
   const [showPushModal, setShowPushModal] = useState(false);
@@ -596,15 +597,6 @@ export default function Session() {
   const { commitsToPush, refreshCommitsToPush } = useSessionCommitsToPush(gitSession);
 
   useEffect(() => {
-    const repoId = session?.repo_id;
-    if (!repoId) return;
-    const sdk = session.agent_sdk || availableSdkKeys[0];
-    if (!sdk) return;
-    fetchAgentSdkModels(sdk, repoId)
-      .then((list) => setModels(list))
-      .catch(() => {});
-  }, [session?.agent_sdk, session?.repo_id, availableSdkKeys]);
-  useEffect(() => {
     const onAppError = (msg) => {
       const text = msg.message || 'Something went wrong';
       toast.error(text);
@@ -675,7 +667,7 @@ export default function Session() {
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
   }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
 
-  const [pendingAgentSdk, setPendingAgentSdk] = useState(null);
+  const [pendingAgentConfigId, setPendingAgentConfigId] = useState(null);
   const [switchingAgentSdk, setSwitchingAgentSdk] = useState(false);
 
   const handleModelChange = (modelId, modelParams = null) => {
@@ -687,43 +679,57 @@ export default function Session() {
       .catch((err) => toastFeathersError('Failed to change model', err));
   };
 
-  const handleAgentSdkChangeRequest = (sdk) => {
-    if (!session?.id || session?.archived_at || session?.status === 'archiving') return;
-    if (!sdk || sdk === session.agent_sdk) return;
-    setPendingAgentSdk(sdk);
-  };
-
-  const handleAgentSdkSwitchCancel = () => {
-    if (switchingAgentSdk) return;
-    setPendingAgentSdk(null);
-  };
-
-  const handleAgentSdkSwitchConfirm = async () => {
-    if (!session?.id || !pendingAgentSdk || switchingAgentSdk) return;
+  const applyAgentConfigChange = async (configId, { clearModel = false } = {}) => {
+    if (!session?.id || !configId || switchingAgentSdk) return;
+    const picked = configOptions.find((c) => c.key === String(configId));
     setSwitchingAgentSdk(true);
     try {
       await sessionsService.patch(session.id, {
-        agent_sdk: pendingAgentSdk,
-        model: null,
-        model_params: null,
+        agent_config_id: Number(configId),
+        agent_sdk: picked?.sdk ?? undefined,
+        ...modelPatchFromConfigDefault(picked, { clearIfMissing: clearModel }),
       });
-      setPendingAgentSdk(null);
+      setPendingAgentConfigId(null);
     } catch (err) {
-      toastFeathersError('Failed to switch agent SDK', err);
+      toastFeathersError('Failed to switch agent configuration', err);
     } finally {
       setSwitchingAgentSdk(false);
     }
   };
 
+  const handleAgentConfigChangeRequest = (configId) => {
+    if (!session?.id || session?.archived_at || session?.status === 'archiving') return;
+    if (!configId || String(configId) === String(session.agent_config_id)) return;
+    const next = configOptions.find((c) => c.key === String(configId));
+    const current = configOptions.find((c) => c.key === String(session.agent_config_id));
+    const currentSdk = current?.sdk ?? session.agent_sdk;
+    const nextSdk = next?.sdk;
+    if (nextSdk && currentSdk && String(nextSdk) === String(currentSdk)) {
+      void applyAgentConfigChange(configId);
+      return;
+    }
+    setPendingAgentConfigId(configId);
+  };
+
+  const handleAgentSdkSwitchCancel = () => {
+    if (switchingAgentSdk) return;
+    setPendingAgentConfigId(null);
+  };
+
+  const handleAgentSdkSwitchConfirm = () => {
+    if (!pendingAgentConfigId) return;
+    void applyAgentConfigChange(pendingAgentConfigId, { clearModel: true });
+  };
+
   useEffect(() => {
-    if (!session?.id || !models.length) return;
-    const current = session.model;
+    if (!gitSession?.id || modelsStale || !models.length) return;
+    const current = gitSession.model;
     if (current && models.some((m) => m.id === current)) return;
     const fallback = defaultModelForSdk(models);
     if (!fallback) return;
     handleModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once per sdk/model list
-  }, [session?.id, session?.agent_sdk, session?.model, models]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once the config's list is current
+  }, [gitSession?.id, gitSession?.agent_sdk, gitSession?.model, models, modelsStale]);
 
   // Named .baguette.yaml task: the server resolves the command, ports and dependencies.
   const handleTaskStart = (taskKey) => {
@@ -968,7 +974,7 @@ export default function Session() {
     branchName,
     autoPush,
     plugins,
-    agentSdk,
+    agentConfigId,
   }) => {
     const params = isGlobal
       ? {
@@ -984,7 +990,7 @@ export default function Session() {
           create_new_branch: createNewBranch ?? true,
           auto_push: autoPush ?? true,
         };
-    if (agentSdk) params.agent_sdk = agentSdk;
+    if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;
@@ -1576,7 +1582,8 @@ export default function Session() {
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
-                onSdkChange={handleAgentSdkChangeRequest}
+                onAgentConfigChange={handleAgentConfigChangeRequest}
+                agentConfigOptions={configOptions}
                 onAutoPushChange={handleAutoPushChange}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
@@ -1619,7 +1626,8 @@ export default function Session() {
                 readonly={isReadonly}
                 models={models}
                 onModelChange={handleModelChange}
-                onSdkChange={handleAgentSdkChangeRequest}
+                onAgentConfigChange={handleAgentConfigChangeRequest}
+                agentConfigOptions={configOptions}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
               />
@@ -1709,10 +1717,15 @@ export default function Session() {
         )}
       </div>
 
-      {pendingAgentSdk && session && (
+      {pendingAgentConfigId && session && (
         <SwitchAgentSdkConfirmModal
           fromSdk={session.agent_sdk || 'claude'}
-          toSdk={pendingAgentSdk}
+          toSdk={configOptions.find((c) => c.key === String(pendingAgentConfigId))?.sdk ?? 'claude'}
+          fromLabel={
+            configOptions.find((c) => c.key === String(session.agent_config_id))?.label ??
+            session.agent_sdk
+          }
+          toLabel={configOptions.find((c) => c.key === String(pendingAgentConfigId))?.label}
           loading={switchingAgentSdk}
           onConfirm={handleAgentSdkSwitchConfirm}
           onCancel={handleAgentSdkSwitchCancel}

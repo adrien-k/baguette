@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerUsersService } from '../feathers/users.service.js';
-import { registerUserReposService } from '../feathers/user-repos.service.js';
 import {
   normalizeAnthropicBaseUrl,
   buildClaudeEnvFromPlainUser,
@@ -144,10 +143,9 @@ describe('buildClaudeEnvFromPlainUser', () => {
 
 const db = createTestDb({ beforeEach, afterEach });
 
-describe('getClaudeEnv repo override', () => {
+describe('getClaudeEnv agent_config_id', () => {
   let app;
   let user;
-  let repo;
 
   beforeEach(async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', HOST_API);
@@ -156,18 +154,9 @@ describe('getClaudeEnv repo override', () => {
     await db('users').insert({ github_id: 1, username: 'alice', approved: true });
     user = await db('users').where({ username: 'alice' }).first();
 
-    const [repoId] = await db('repos').insert({
-      full_name: 'alice/myrepo',
-      stripped_name: 'alice-myrepo',
-      repo_path: '/nonexistent',
-    });
-    repo = await db('repos').where({ id: repoId }).first();
-    await db('user_repos').insert({ user_id: user.id, repo_id: repo.id });
-
     app = feathers();
     app.set('db', db);
     registerUsersService(app);
-    registerUserReposService(app);
     await app.setup();
   });
 
@@ -175,106 +164,55 @@ describe('getClaudeEnv repo override', () => {
     vi.unstubAllEnvs();
   });
 
-  it('uses the user credential when the repo has none', async () => {
-    await app
-      .service('users')
-      .patch(user.id, { anthropic_auth_token: 'sk-ant-oat01-user' }, { user });
-    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-user');
-    expect(env.ANTHROPIC_API_KEY).toBe(HOST_API); // host env inherited, not stripped
-  });
-
-  it('applies repo-level and account-level credentials independently', async () => {
-    await app
-      .service('users')
-      .patch(user.id, { anthropic_auth_token: 'sk-ant-oat01-user' }, { user });
-    const userRepos = await app.service('user-repos').find({
-      query: { repo_id: repo.id },
-      user,
-      paginate: false,
+  it('uses auth token from agent_config', async () => {
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const configId = await insertTestAgentConfig(db, user.id, {
+      apiKey: 'sk-ant-oat01-user',
+      apiKeyEnvVar: 'ANTHROPIC_AUTH_TOKEN',
+      label: 'Claude token',
     });
-    await app
-      .service('user-repos')
-      .patch(userRepos[0].id, { anthropic_api_key: 'sk-ant-api03-repo' }, { user });
-
-    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-repo');
+    const env = await getClaudeEnv(app, user.id, null, configId);
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-user');
+    expect(env.ANTHROPIC_API_KEY).toBe(HOST_API);
   });
 
-  it('maps a legacy setup-token value in the API key field to ANTHROPIC_API_KEY', async () => {
-    await app
-      .service('users')
-      .patch(user.id, { anthropic_api_key: 'sk-ant-oat01-legacy' }, { user });
-    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
+  it('maps api key config to ANTHROPIC_API_KEY', async () => {
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const configId = await insertTestAgentConfig(db, user.id, {
+      apiKey: 'sk-ant-oat01-legacy',
+    });
+    const env = await getClaudeEnv(app, user.id, null, configId);
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-oat01-legacy');
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH); // inherited, untouched
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH);
   });
 
-  it('lets a repo base URL override the account default', async () => {
+  it('uses base URL from agent_config', async () => {
     vi.stubEnv('ANTHROPIC_BASE_URL', HOST_BASE_URL);
-    await app
-      .service('users')
-      .patch(user.id, { anthropic_base_url: 'https://account-gateway.example.com' }, { user });
-    const userRepos = await app.service('user-repos').find({
-      query: { repo_id: repo.id },
-      user,
-      paginate: false,
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const configId = await insertTestAgentConfig(db, user.id, {
+      apiKey: 'sk-key',
+      apiUrl: 'https://account-gateway.example.com',
     });
-    await app
-      .service('user-repos')
-      .patch(
-        userRepos[0].id,
-        { anthropic_base_url: 'https://repo-gateway.example.com/' },
-        { user }
-      );
-
-    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env.ANTHROPIC_BASE_URL).toBe('https://repo-gateway.example.com');
-  });
-
-  it('encrypts the repo auth token and uses it for the session env', async () => {
-    await app.service('users').patch(user.id, { anthropic_auth_token: 'account-token' }, { user });
-    const env1 = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env1.ANTHROPIC_AUTH_TOKEN).toBe('account-token');
-
-    const userRepos = await app.service('user-repos').find({
-      query: { repo_id: repo.id },
-      user,
-      paginate: false,
-    });
-    await app
-      .service('user-repos')
-      .patch(userRepos[0].id, { anthropic_auth_token: 'repo-token' }, { user });
-
-    const row = await db('user_repos').where({ id: userRepos[0].id }).first();
-    expect(row.anthropic_auth_token_encrypted).toBeTruthy();
-    expect(row.anthropic_auth_token_encrypted).not.toBe('repo-token');
-
-    const env2 = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env2.ANTHROPIC_AUTH_TOKEN).toBe('repo-token');
-    expect(env2.ANTHROPIC_API_KEY).toBe(HOST_API); // host env inherited, not stripped
+    const env = await getClaudeEnv(app, user.id, null, configId);
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://account-gateway.example.com');
   });
 
   it('does not set gateway discovery env vars in the session env', async () => {
-    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const configId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-key' });
+    const env = await getClaudeEnv(app, user.id, null, configId);
     expect(env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBeUndefined();
   });
 
-  it('ignores legacy default model / discovery fields in patches', async () => {
+  it('still patches color_scheme on users', async () => {
     await app.service('users').patch(
       user.id,
       {
-        claude_default_model: 'account-model',
-        claude_gateway_model_discovery: true,
         color_scheme: 'light',
       },
       { user }
     );
     const row = await db('users').where({ id: user.id }).first();
-    expect(row.claude_default_model).toBeUndefined();
-    expect(row.claude_gateway_model_discovery).toBeUndefined();
-    const env = await getClaudeEnv(app, user.id, 'alice/myrepo');
-    expect(env.ANTHROPIC_MODEL).toBeUndefined();
+    expect(row.color_scheme).toBe('light');
   });
 });

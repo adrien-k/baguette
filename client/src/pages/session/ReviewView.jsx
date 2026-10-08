@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bot, CheckCircle, ChevronDown, ChevronRight, PanelRight, Square } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
+  agentConfigsService,
   messagesService,
   sessionIssuesService,
   sessionReviewService,
@@ -14,9 +15,10 @@ import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
-import { fetchAgentSdkModels } from '../../utils/fetchAgentSdkModels.js';
-import { useAvailableAgentSdks } from '../../hooks/useAvailableAgentSdks.js';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
+import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
+import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ReviewFollowUpModal from '../../components/ReviewFollowUpModal.jsx';
 import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
@@ -88,7 +90,6 @@ export default function ReviewView({
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
   const { currentUser: userSettings } = useCurrentUser();
-  const [models, setModels] = useState([]);
   const [starting, setStarting] = useState(false);
   const [closedCount, setClosedCount] = useState(0);
   const [closedCountLoading, setClosedCountLoading] = useState(false);
@@ -106,33 +107,44 @@ export default function ReviewView({
   );
   const [reviewUserMessage, setReviewUserMessage] = reviewPersist.useState('focus', '');
 
-  const repoId = session?.repo_id;
-  const {
-    sdks: availableSdks,
-    keys: availableSdkKeys,
-    loading: availableSdksLoading,
-  } = useAvailableAgentSdks(repoId);
+  const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const agentConfigOptions = configOptions;
 
-  const hasStoredReviewSdk = session?.review_agent_sdk != null && session.review_agent_sdk !== '';
-  const fallbackSdk = availableSdkKeys[0] ?? null;
-  const reviewAgentSdk = hasStoredReviewSdk
-    ? session.review_agent_sdk
-    : session?.agent_sdk || fallbackSdk;
-  const reviewModel = hasStoredReviewSdk
-    ? session?.review_model || ''
-    : session?.review_model || session?.model || '';
-  const reviewModelParams = hasStoredReviewSdk
-    ? (session?.review_model_params ?? null)
-    : (session?.review_model_params ?? session?.model_params ?? null);
+  const reviewConfigId = session?.review_agent_config_id ?? session?.agent_config_id ?? null;
+  const { models, stale: modelsStale } = useAgentConfigModels(reviewConfigId);
+  const reviewAgentSdk =
+    session?.review_agent_sdk ?? session?.agent_sdk ?? agentConfigOptions[0]?.sdk ?? null;
+  const fallbackConfigId = agentConfigOptions[0]?.key ?? null;
+  const reviewModel = session?.review_model || session?.model || '';
+  const reviewModelParams = session?.review_model_params ?? session?.model_params ?? null;
 
   useEffect(() => {
     if (!session?.id || readonly) return;
     if (session.review_agent_sdk != null || session.review_model != null) return;
-    if (session.model == null && session.model_params == null && !session.agent_sdk) return;
-    if (!fallbackSdk && !session.agent_sdk) return;
+
+    if (userSettings?.reviewer_default_config_id) {
+      const configId = userSettings.reviewer_default_config_id;
+      agentConfigsService
+        .get(configId)
+        .then((config) =>
+          sessionsService.patch(session.id, {
+            review_agent_config_id: configId,
+            review_agent_sdk: config.sdk,
+            review_model: userSettings.reviewer_default_model?.model ?? null,
+            review_model_params: userSettings.reviewer_default_model?.model_params ?? null,
+          })
+        )
+        .catch((err) => toastError('Failed to initialize review model', err));
+      return;
+    }
+
+    if (session.model == null && session.model_params == null && !session.agent_config_id) return;
+    if (!fallbackConfigId && !session.agent_config_id) return;
+    const fromConfig = agentConfigOptions.find((c) => c.key === String(session.agent_config_id));
     sessionsService
       .patch(session.id, {
-        review_agent_sdk: session.agent_sdk || fallbackSdk,
+        review_agent_config_id: session.agent_config_id ?? Number(fallbackConfigId),
+        review_agent_sdk: fromConfig?.sdk ?? session.agent_sdk,
         review_model: session.model || null,
         review_model_params: session.model_params ?? null,
       })
@@ -144,17 +156,13 @@ export default function ReviewView({
     session?.model,
     session?.model_params,
     session?.agent_sdk,
+    session?.agent_config_id,
     readonly,
-    fallbackSdk,
+    fallbackConfigId,
+    agentConfigOptions,
+    userSettings?.reviewer_default_config_id,
+    userSettings?.reviewer_default_model,
   ]);
-
-  useEffect(() => {
-    setModels([]);
-    if (!session?.repo_id || !reviewAgentSdk) return;
-    fetchAgentSdkModels(reviewAgentSdk, session.repo_id)
-      .then((list) => setModels(list))
-      .catch(() => setModels([]));
-  }, [reviewAgentSdk, session?.repo_id]);
 
   const opened = issues.filter((i) => i.status === 'opened');
   const activeIssues = useMemo(() => issues.filter((i) => i.status !== 'ignored'), [issues]);
@@ -171,7 +179,10 @@ export default function ReviewView({
     reviewStatus === 'failed' ||
     reviewStatus === 'stopped';
   const hasSdkKey =
-    availableSdksLoading || !userSettings || availableSdkKeys.includes(reviewAgentSdk);
+    configsLoading ||
+    !userSettings ||
+    (reviewConfigId != null &&
+      agentConfigOptions.some((c) => String(c.key) === String(reviewConfigId)));
   const showStartForm = !hasReviewThread && !starting;
   const showFollowUpPanel = hasReviewThread || isRunning;
   const hasReview = hasReviewThread || isRunning;
@@ -400,13 +411,20 @@ export default function ReviewView({
     }
   };
 
-  const handleReviewSdkChange = async (sdk) => {
-    if (!session?.id || readonly || !sdk || sdk === reviewAgentSdk) return;
+  const handleReviewConfigChange = async (configId) => {
+    if (!session?.id || readonly || !configId || String(configId) === String(reviewConfigId)) {
+      return;
+    }
+    const picked = agentConfigOptions.find((c) => c.key === String(configId));
     try {
       await sessionsService.patch(session.id, {
-        review_agent_sdk: sdk,
-        review_model: null,
-        review_model_params: null,
+        review_agent_config_id: Number(configId),
+        review_agent_sdk: picked?.sdk ?? undefined,
+        ...modelPatchFromConfigDefault(picked, {
+          modelKey: 'review_model',
+          paramsKey: 'review_model_params',
+          clearIfMissing: true,
+        }),
       });
     } catch (err) {
       toastError('Failed to update review agent', err);
@@ -414,14 +432,14 @@ export default function ReviewView({
   };
 
   useEffect(() => {
-    if (!session?.id || readonly || !models.length) return;
+    if (!session?.id || readonly || modelsStale || !models.length) return;
     if (!reviewModel) return;
     if (models.some((m) => m.id === reviewModel)) return;
     const fallback = defaultModelForSdk(models);
     if (!fallback) return;
     handleReviewModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- default the review model once the SDK's list loads
-  }, [models, reviewModel, reviewAgentSdk, readonly, session?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- default the review model once the config's list is current
+  }, [models, modelsStale, reviewModel, reviewAgentSdk, readonly, session?.id]);
 
   const followUpReviewControls = !readonly && showFollowUpPanel && !isRunning && (
     <div className={REVIEW_CONTROLS_ROW_CLASS}>
@@ -433,15 +451,15 @@ export default function ReviewView({
         onClearReviewerChat={handleClearReview}
       />
       <SessionModelSelect
-        sdk={reviewAgentSdk}
+        agentConfigKey={reviewConfigId != null ? String(reviewConfigId) : reviewAgentSdk}
         model={reviewModel}
         params={reviewModelParams}
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={setCursorModelPref}
         onModelChange={handleReviewModelChange}
-        availableSdks={availableSdks}
-        onSdkChange={handleReviewSdkChange}
+        agentConfigOptions={agentConfigOptions}
+        onAgentConfigChange={handleReviewConfigChange}
         disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
         className={REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS}
       />
@@ -505,15 +523,15 @@ export default function ReviewView({
                 placeholder={REVIEW_FOCUS_PLACEHOLDER}
                 disabled={readonly}
                 sending={starting}
-                sdk={reviewAgentSdk}
+                agentConfigKey={reviewConfigId != null ? String(reviewConfigId) : reviewAgentSdk}
                 model={reviewModel}
                 params={reviewModelParams}
                 models={models}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
                 onModelChange={handleReviewModelChange}
-                availableSdks={availableSdks}
-                onSdkChange={handleReviewSdkChange}
+                agentConfigOptions={agentConfigOptions}
+                onAgentConfigChange={handleReviewConfigChange}
                 canSend={canStartReview}
                 submitLabel="Start review"
               />

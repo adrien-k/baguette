@@ -72,6 +72,7 @@ export default function LightChipDropdown({
   const [open, setOpen] = useState(false);
   const flatOptions = sections ? sections.flatMap((s) => s.options) : options;
   const selected = flatOptions.find((o) => o.value === value);
+  const triggerContent = selectedDisplay?.content;
   const triggerLabel = selectedDisplay?.label ?? selected?.label ?? 'Select';
   const triggerIcon = selectedDisplay?.icon ?? selected?.icon;
 
@@ -170,7 +171,7 @@ export default function LightChipDropdown({
             aria-expanded={open}
             aria-haspopup="dialog"
             aria-labelledby={label && id ? `${id}-label` : undefined}
-            title={triggerTitle ?? triggerLabel}
+            title={triggerTitle ?? (triggerContent ? undefined : triggerLabel)}
             className={`${triggerBase} ${
               fullWidth
                 ? 'w-full min-w-0 max-w-full justify-between'
@@ -185,7 +186,9 @@ export default function LightChipDropdown({
               {triggerIcon ? (
                 <span className="shrink-0 flex items-center">{triggerIcon}</span>
               ) : null}
-              {!iconOnly ? <span className="truncate">{triggerLabel}</span> : null}
+              {!iconOnly
+                ? (triggerContent ?? <span className="truncate">{triggerLabel}</span>)
+                : null}
             </span>
             {!hideChevron ? (
               <ChevronDown

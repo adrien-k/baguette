@@ -23,7 +23,6 @@ import {
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createPiModelRuntime } from '../pi-models.js';
 import { resolvePiCredentials } from '../pi/pi-config.js';
-import { testPiCredentials } from '../agent-sdk-credential-test.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
@@ -46,14 +45,8 @@ import type {
   TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
-import {
-  PI_AGENT_SDK_KEY,
-  PI_AGENT_SDK_LABEL,
-  PI_AGENT_SERVICE_PATH,
-  isPiAgentSdkEnabled,
-  listPiAgentModels,
-} from '../agent-sdk/pi-agent-sdk.js';
-import { registerAgentSdk } from './agent-sdks.service.js';
+import { PI_AGENT_SDK_KEY, PI_AGENT_SDK_LABEL, PI_AGENT_SERVICE_PATH } from '../agent-sdk-meta.js';
+import { registerAgentSdk } from './agent-configs.service.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
 const METADATA_TIMEOUT_MS = 30_000;
@@ -86,35 +79,26 @@ function extractUserText(parsed: unknown): string {
 
 export class PiAgentService {
   app!: AgentApp;
-  private _messageListenerBound = false;
   private _handlingMessageIds = new Set<number>();
   private _activeSessions = new Map<string | number, PiSessionState>();
 
   setup(app: AgentApp) {
     this.app = app;
-    if (this._messageListenerBound) return;
-    this._messageListenerBound = true;
-    const messages = this.app.service('messages');
-    if (typeof messages?.on !== 'function') return;
-    messages.on('created', (row: MessageRowLike) => {
-      void this.handleMessageCreated(row).catch((err) =>
-        logger.error({ err: (err as Error).message }, 'pi-agent: handleMessageCreated failed')
-      );
-    });
   }
 
   async resolveCredentials(session: AgentSessionRow) {
-    const user = await this.app.service('users').get(session.user_id, {});
-    let repo: Record<string, unknown> | null = null;
-    if (session.repo_id) {
-      const userRepos = await this.app.service('user-repos').find({
-        query: { repo_id: session.repo_id },
-        user: { id: session.user_id },
-        paginate: false,
-      });
-      repo = userRepos?.[0] ?? null;
-    }
-    return resolvePiCredentials(user, repo);
+    const config = await this.loadAgentConfig(session);
+    return resolvePiCredentials(config);
+  }
+
+  /** Decrypted agent_configs row for a session (null when the session has none). */
+  private async loadAgentConfig(session: { agent_config_id?: number | null; user_id: number }) {
+    const { loadOwnedAgentConfigDecrypted } = await import('../agent-context.js');
+    return loadOwnedAgentConfigDecrypted(
+      session.agent_config_id ?? null,
+      session.user_id,
+      this.app.get('db') as DbLike as never
+    );
   }
 
   async _buildAppendSystemPrompt(session: AgentSessionRow): Promise<string[]> {
@@ -613,8 +597,8 @@ export class PiAgentService {
     initialPrompt: string,
     shortId = '',
     user: { id?: number } | null = null,
-    repo: { id?: number | null } | null = null,
-    session: Pick<AgentSessionRow, 'model' | 'model_params'> | null = null
+    _repo: { id?: number | null } | null = null,
+    session: Pick<AgentSessionRow, 'model' | 'model_params' | 'agent_config_id'> | null = null
   ): Promise<{ label: string; branchName: string }> {
     const fallbackBranch = `task-${shortId}`;
     const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
@@ -626,17 +610,13 @@ Task: ${initialPrompt}`;
     let label = '';
     let branchName = fallbackBranch;
 
-    const fullUser = user?.id ? await this.app.service('users').get(user.id, {}) : null;
-    let repoRow: Record<string, unknown> | null = null;
-    if (repo?.id && user?.id) {
-      const userRepos = await this.app.service('user-repos').find({
-        query: { repo_id: repo.id },
-        user: { id: user.id },
-        paginate: false,
-      });
-      repoRow = userRepos?.[0] ?? null;
-    }
-    const { apiKey, envVar } = resolvePiCredentials(fullUser, repoRow);
+    const config = user?.id
+      ? await this.loadAgentConfig({
+          agent_config_id: session?.agent_config_id ?? null,
+          user_id: user.id,
+        })
+      : null;
+    const { apiKey, envVar } = resolvePiCredentials(config);
     if (!apiKey) {
       return { label, branchName };
     }
@@ -730,18 +710,6 @@ Task: ${initialPrompt}`;
     await directPromptTiedSessionLoopCompaction(this.app, args);
   }
 
-  async testCredentials({
-    user,
-    repo = null,
-    payload = {},
-  }: {
-    user: Record<string, unknown>;
-    repo?: Record<string, unknown> | null;
-    payload?: Record<string, unknown>;
-  }) {
-    return testPiCredentials(user, repo, payload);
-  }
-
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
     { channel = 'chat' }: { channel?: MessageChannel } = {}
@@ -749,17 +717,6 @@ Task: ${initialPrompt}`;
     return channel === 'review'
       ? Boolean(session.review_pi_session_id)
       : Boolean(session.pi_session_id);
-  }
-
-  async isEnabled(ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null }) {
-    return isPiAgentSdkEnabled(ctx);
-  }
-
-  async listModels(
-    ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null },
-    { refresh = false }: { refresh?: boolean } = {}
-  ) {
-    return listPiAgentModels(ctx, { refresh });
   }
 }
 
@@ -774,9 +731,8 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'buildAgentOptions',
       'generateSessionMetadata',
       'prepareTiedSessionLoopCompaction',
+      'handleMessageCreated',
       'isInterruptedSessionResumable',
-      'isEnabled',
-      'listModels',
     ],
   });
   registerAgentSdk(app, {

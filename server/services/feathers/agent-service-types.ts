@@ -55,6 +55,7 @@ export type AgentSessionRow = {
   model_params?: unknown;
   plugins?: string | null;
   agent_sdk?: string | null;
+  agent_config_id?: number | null;
   review_agent_sdk?: string | null;
   review_model?: string | null;
   claude_session_id?: string | null;
@@ -65,7 +66,6 @@ export type AgentSessionRow = {
   review_pi_session_id?: string | null;
   active_chat_turn_id?: number | null;
   active_review_turn_id?: number | null;
-  cursor_api_key?: string | null;
   agent_preferences?: string | null;
   [key: string]: unknown;
 };

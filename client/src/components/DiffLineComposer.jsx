@@ -22,10 +22,8 @@ export default function DiffLineComposer({
   cursorModelPrefs,
   onCursorModelPrefChange,
   onModelChange,
-  onSdkChange,
-  availableSdks,
-  userSettings,
-  sdkRepo,
+  onAgentConfigChange,
+  agentConfigOptions,
   onClose,
 }) {
   const [input, setInput] = useState('');
@@ -162,17 +160,17 @@ export default function DiffLineComposer({
         onSubmit={handleSend}
         placeholder="Add a note for the agent…"
         sending={sending}
-        sdk={session?.agent_sdk}
+        agentConfigKey={
+          session?.agent_config_id != null ? String(session.agent_config_id) : session?.agent_sdk
+        }
         model={composerModel}
         params={composerModelParams}
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
         onModelChange={handleComposerModelChange}
-        onSdkChange={onSdkChange}
-        availableSdks={availableSdks}
-        userSettings={userSettings}
-        sdkRepo={sdkRepo}
+        onAgentConfigChange={onAgentConfigChange}
+        agentConfigOptions={agentConfigOptions}
         textareaId="diff-line-composer"
         autoFocus
         canSend={canSendDraft}

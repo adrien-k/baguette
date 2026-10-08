@@ -1,36 +1,23 @@
-import { agentSdksService } from '../feathers.js';
+import { agentConfigsService } from '../feathers.js';
 
 /**
- * Enabled agent SDKs for a repository (repo + account credentials).
- * Omit `repoId` to use account credentials only.
- * @param {number|string} [repoId]
- * @returns {Promise<Array<{ key: string, label: string }>>}
+ * List models for a saved or draft agent configuration.
+ * Credential overrides are sent in the POST body (never query params).
+ * @param {{ agentConfigId?: number | null, sdk?: string | null, refresh?: boolean, credentialFields?: Record<string, string> }} options
  */
-export async function fetchAvailableAgentSdks(repoId) {
-  const query = {};
-  if (repoId != null && repoId !== '') query.repo_id = repoId;
-  const result = await agentSdksService.find({ query });
-  return result?.sdks ?? [];
-}
-
-/**
- * List models for one agent SDK and repository (repo + account credentials).
- * @param {string} [sdk]
- * @param {number|string} repoId
- * @param {{ refresh?: boolean }} [options]
- */
-export async function fetchAgentSdkModels(sdk, repoId, { refresh = false } = {}) {
-  if (repoId == null || repoId === '') {
-    throw new Error('repo_id is required to load agent models');
+export async function fetchAgentConfigModels({
+  agentConfigId = null,
+  sdk = null,
+  refresh = false,
+  credentialFields = {},
+} = {}) {
+  if (agentConfigId == null && !sdk) {
+    throw new Error('agentConfigId or sdk is required to load agent models');
   }
-  if (!sdk) {
-    throw new Error('sdk is required to load agent models');
-  }
-  const query = {
-    repo_id: repoId,
-    sdk,
-  };
-  if (refresh) query.refresh = 'true';
-  const result = await agentSdksService.models(null, { query });
+  const payload = { ...credentialFields };
+  if (agentConfigId != null) payload.id = agentConfigId;
+  else payload.sdk = sdk;
+  if (refresh) payload.refresh = true;
+  const result = await agentConfigsService.listModels(payload);
   return result?.models ?? [];
 }

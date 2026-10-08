@@ -409,10 +409,8 @@ export default function DiffView({
   readonly,
   models,
   onModelChange,
-  onSdkChange,
-  availableSdks,
-  userSettings,
-  sdkRepo,
+  onAgentConfigChange,
+  agentConfigOptions,
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
@@ -509,10 +507,8 @@ export default function DiffView({
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
         onModelChange={onModelChange}
-        onSdkChange={readonly ? undefined : onSdkChange}
-        availableSdks={availableSdks}
-        userSettings={userSettings}
-        sdkRepo={sdkRepo}
+        onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
+        agentConfigOptions={agentConfigOptions}
         onClose={() => setLineComposer(null)}
       />
     ) : null;

@@ -2,8 +2,23 @@ import { describe, it, expect } from 'vitest';
 import {
   parseAgentSessionDefaultsJson,
   resolveCreateSessionAgentFields,
+  stringifyModelParamsForStorage,
   withLastUsedFlag,
 } from '../agent-session-defaults.js';
+
+describe('stringifyModelParamsForStorage', () => {
+  it('stringifies param arrays for SQLite', () => {
+    expect(stringifyModelParamsForStorage([{ id: 'fast', value: 'false' }])).toBe(
+      '[{"id":"fast","value":"false"}]'
+    );
+  });
+
+  it('coerces a single param object', () => {
+    expect(stringifyModelParamsForStorage({ id: 'fast', value: 'false' })).toBe(
+      '[{"id":"fast","value":"false"}]'
+    );
+  });
+});
 
 describe('resolveCreateSessionAgentFields', () => {
   const stored = {

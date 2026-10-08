@@ -1,4 +1,3 @@
-import { BadRequest } from '@feathersjs/errors';
 import logger from '../../logger.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
@@ -9,15 +8,13 @@ import {
   rejectTurnMismatch,
 } from '../agent-message-dispatch.js';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
-import { MOCK_AGENT_SDK } from '../../../shared/mock-agent-sdk.js';
-import { isMockAgentServerEnabled } from '../agent-sdk/mock-agent-enabled.js';
+import { isMockAgentSdkEnabled } from '../../../shared/mock-agent-sdk.js';
 import {
+  MOCK_AGENT_SDK,
   MOCK_AGENT_SDK_LABEL,
   MOCK_AGENT_SERVICE_PATH,
-  isMockAgentSdkEnabledForUser,
-  listMockAgentModels,
-} from '../agent-sdk/mock-agent-sdk-server.js';
-import { registerAgentSdk } from './agent-sdks.service.js';
+} from '../agent-sdk-meta.js';
+import { registerAgentSdk } from './agent-configs.service.js';
 import { runMockAgentTurn } from '../mock/mock-agent-turn.js';
 import { reviewTurnKey } from './session-review.service.js';
 import type {
@@ -38,24 +35,14 @@ type MockSessionState = {
 
 export class MockAgentService {
   app!: AgentApp;
-  private _messageListenerBound = false;
   private _activeSessions = new Map<string | number, MockSessionState>();
 
   setup(app: AgentApp) {
     this.app = app;
-    if (this._messageListenerBound) return;
-    this._messageListenerBound = true;
-    const messages = this.app.service('messages');
-    if (typeof messages?.on !== 'function') return;
-    messages.on('created', (row: MessageRowLike) => {
-      void this.handleMessageCreated(row).catch((err) =>
-        logger.error({ err: (err as Error).message }, 'mock-agent: handleMessageCreated failed')
-      );
-    });
   }
 
   async handleTableMessageCreated(row: MessageRowLike, table: ChatTable) {
-    if (!isMockAgentServerEnabled()) return;
+    if (!isMockAgentSdkEnabled()) return;
     if (row.type !== 'user') return;
 
     const parsed = parseUserRow(row);
@@ -234,23 +221,6 @@ export class MockAgentService {
     return this._activeSessions.get(id) ?? null;
   }
 
-  async isEnabled(_ctx?: {
-    user?: Record<string, unknown>;
-    repo?: Record<string, unknown> | null;
-  }) {
-    return isMockAgentSdkEnabledForUser(_ctx ?? {});
-  }
-
-  async listModels(
-    ctx: { user?: Record<string, unknown>; repo?: Record<string, unknown> | null },
-    _opts?: { refresh?: boolean }
-  ) {
-    if (ctx?.repo?.id == null) {
-      throw new BadRequest('repo_id is required');
-    }
-    return listMockAgentModels();
-  }
-
   async generateSessionMetadata(
     _initialPrompt: string,
     shortId = '',
@@ -273,7 +243,7 @@ export class MockAgentService {
 }
 
 export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVICE_PATH) {
-  if (!isMockAgentServerEnabled()) return;
+  if (!isMockAgentSdkEnabled()) return;
   const service = new MockAgentService();
   service.setup(app);
   app.use(path, service, {
@@ -282,8 +252,6 @@ export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVIC
       'handleTableMessageCreated',
       'stopSession',
       'stopTurn',
-      'isEnabled',
-      'listModels',
       'generateSessionMetadata',
       'isInterruptedSessionResumable',
     ],

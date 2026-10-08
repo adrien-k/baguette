@@ -13,7 +13,7 @@ beforeEach(() => {
 
 describe('runCursorConnectivityTest', () => {
   it('fails with a clear message when no key is configured', async () => {
-    const result = await runCursorConnectivityTest({ apiKey: null });
+    const result = await runCursorConnectivityTest({ sdk: 'cursor', api_key: null });
     expect(result.ok).toBe(false);
     expect(result.checks[0]).toMatchObject({ id: 'auth', ok: false });
     expect(result.checks[0].detail).toMatch(/No Cursor API key configured/);
@@ -25,7 +25,7 @@ describe('runCursorConnectivityTest', () => {
       { id: '', displayName: 'empty ignored' },
       { id: 'composer-1', displayName: 'Composer' },
     ]);
-    const result = await runCursorConnectivityTest({ apiKey: 'cursor-key' });
+    const result = await runCursorConnectivityTest({ sdk: 'cursor', api_key: 'cursor-key' });
     expect(modelsList).toHaveBeenCalledWith({ apiKey: 'cursor-key' });
     expect(result.ok).toBe(true);
     expect(result.models).toEqual(['gpt-5', 'composer-1']);
@@ -36,7 +36,7 @@ describe('runCursorConnectivityTest', () => {
 
   it('reports SDK errors (e.g. invalid key) as an auth failure', async () => {
     modelsList.mockRejectedValue(new Error('Unauthorized: invalid API key'));
-    const result = await runCursorConnectivityTest({ apiKey: 'bad-key' });
+    const result = await runCursorConnectivityTest({ sdk: 'cursor', api_key: 'bad-key' });
     expect(result.ok).toBe(false);
     const byId = Object.fromEntries(result.checks.map((c) => [c.id, c]));
     expect(byId.auth.ok).toBe(false);
@@ -46,7 +46,7 @@ describe('runCursorConnectivityTest', () => {
   it('reports timeouts as an auth failure', async () => {
     modelsList.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 60_000)));
     vi.useFakeTimers();
-    const promise = runCursorConnectivityTest({ apiKey: 'cursor-key' });
+    const promise = runCursorConnectivityTest({ sdk: 'cursor', api_key: 'cursor-key' });
     await vi.advanceTimersByTimeAsync(21_000);
     const result = await promise;
     vi.useRealTimers();

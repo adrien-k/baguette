@@ -30,7 +30,6 @@ import {
   channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
-import { testClaudeCredentials } from '../agent-sdk-credential-test.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import {
   processClaudeQueryStream,
@@ -51,10 +50,8 @@ import {
   CLAUDE_AGENT_SDK_KEY,
   CLAUDE_AGENT_SDK_LABEL,
   CLAUDE_AGENT_SERVICE_PATH,
-  isClaudeAgentSdkEnabled,
-  listClaudeAgentModels,
-} from '../agent-sdk/claude-agent-sdk.js';
-import { registerAgentSdk } from './agent-sdks.service.js';
+} from '../agent-sdk-meta.js';
+import { registerAgentSdk } from './agent-configs.service.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
 
@@ -155,15 +152,6 @@ export class ClaudeAgentService {
 
   setup(app: AgentApp, _path?: string) {
     this.app = app;
-    if ((this as { _messageListenerBound?: boolean })._messageListenerBound) return;
-    (this as { _messageListenerBound?: boolean })._messageListenerBound = true;
-    const messages = this.app.service('messages');
-    if (typeof messages?.on !== 'function') return;
-    messages.on('created', (row: MessageRowLike) => {
-      void this.handleMessageCreated(row).catch((err) =>
-        logger.error({ err: (err as Error).message }, 'claude-agent: handleMessageCreated failed')
-      );
-    });
   }
 
   /**
@@ -1108,34 +1096,10 @@ Task: ${initialPrompt}`;
     await claudeTiedSessionLoopCompaction(this.app, args);
   }
 
-  /** Settings connectivity test — not exposed on REST; called via agent-sdks.test. */
-  async testCredentials({
-    user,
-    repo = null,
-    payload = {},
-  }: {
-    user: Record<string, unknown>;
-    repo?: Record<string, unknown> | null;
-    payload?: Record<string, unknown>;
-  }) {
-    return testClaudeCredentials(user, repo, payload);
-  }
-
   // Required by @feathersjs/express to recognise this as a Feathers service
   // rather than Express middleware.
   async get(id: number) {
     return this.getActiveSession(id) ?? null;
-  }
-
-  async isEnabled(ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null }) {
-    return isClaudeAgentSdkEnabled(ctx);
-  }
-
-  async listModels(
-    ctx: { user: Record<string, unknown>; repo?: Record<string, unknown> | null },
-    { refresh = false }: { refresh?: boolean } = {}
-  ) {
-    return listClaudeAgentModels(ctx, { refresh });
   }
 }
 
@@ -1155,8 +1119,6 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'syncSessionSettingsFromPatch',
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
-      'isEnabled',
-      'listModels',
       'generateSessionMetadata',
       'isInterruptedSessionResumable',
     ],

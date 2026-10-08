@@ -1,6 +1,7 @@
-import { BadRequest } from '@feathersjs/errors';
 import db from '../db.js';
 import { parseCursorModelPrefsJson } from './agent-preferences.js';
+import { loadOwnedAgentConfig } from './agent-config-resolver.js';
+import { listModelsForOwnedConfig } from './feathers/agent-configs.service.js';
 
 function parseSessionModelId(modelField) {
   if (!modelField) return null;
@@ -29,45 +30,73 @@ export async function getModelUsageCounts(userId) {
   return counts;
 }
 
+function modelEntriesFromList(models, sdk, agentConfigId, usage) {
+  const entries = [];
+  for (const m of models ?? []) {
+    const sessionCount = usage.get(`${sdk}:${m.id}`) ?? 0;
+    const entry = {
+      sdk,
+      id: m.id,
+      display_name: m.display_name ?? m.id,
+      session_count: sessionCount,
+      agent_config_id: agentConfigId,
+    };
+    if (m.variants?.length) {
+      entry.variants = m.variants.map((v, index) => ({
+        index,
+        display_name: v.display_name,
+        is_default: Boolean(v.is_default),
+        params: v.params ?? [],
+      }));
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
 /**
- * Models available to the user (SDKs without credentials omitted), with session usage counts.
- * Account or repo-level keys apply for the given repository.
+ * Models available to the user, with session usage counts.
  *
  * @param {object} user
  * @param {object} repo
  * @param {import('@feathersjs/feathers').Application} app
  */
-export async function listModelsForUser(user, repo, app) {
-  if (repo?.id == null) {
-    throw new BadRequest('repo_id is required');
-  }
+export async function listModelsForUser(user, repo, app, { agentConfigId = null } = {}) {
   const usage = await getModelUsageCounts(user.id);
   const prefs = parseCursorModelPrefsJson(user.agent_preferences);
-  const entries = [];
-  const ctx = { user, repo };
-  const enabled = await app.service('agent-sdks').listEnabled(ctx);
+  const knex = app.get('db');
 
-  for (const { key } of enabled) {
-    const models = await app.service('agent-sdks').listModelsForSdk(key, ctx);
-    if (!models?.length) continue;
-    for (const m of models) {
-      const sessionCount = usage.get(`${key}:${m.id}`) ?? 0;
-      const entry = {
-        sdk: key,
-        id: m.id,
-        display_name: m.display_name ?? m.id,
-        session_count: sessionCount,
-      };
-      if (m.variants?.length) {
-        entry.variants = m.variants.map((v, index) => ({
-          index,
-          display_name: v.display_name,
-          is_default: Boolean(v.is_default),
-          params: v.params ?? [],
-        }));
-      }
-      entries.push(entry);
+  if (agentConfigId != null) {
+    const config = await loadOwnedAgentConfig(knex, agentConfigId, user.id);
+    const models = await listModelsForOwnedConfig(app, {
+      configId: agentConfigId,
+      userId: user.id,
+    });
+    const entries = modelEntriesFromList(models, config.sdk, agentConfigId, usage);
+    entries.sort((a, b) => b.session_count - a.session_count);
+    return {
+      models: entries,
+      cursor_preferences: prefs,
+      agent_config_id: agentConfigId,
+      hint:
+        entries.length > 0
+          ? 'Models are sorted by session usage (highest first).'
+          : 'No models available for this agent configuration.',
+    };
+  }
+
+  const configRows = await knex('agent_configs')
+    .where({ user_id: user.id })
+    .orderBy('label', 'asc');
+  const entries = [];
+  for (const row of configRows) {
+    let models;
+    try {
+      models = await listModelsForOwnedConfig(app, { configId: row.id, userId: user.id });
+    } catch {
+      continue;
     }
+    entries.push(...modelEntriesFromList(models, row.sdk, row.id, usage));
   }
 
   entries.sort((a, b) => b.session_count - a.session_count);
@@ -78,22 +107,17 @@ export async function listModelsForUser(user, repo, app) {
     hint:
       entries.length > 0
         ? 'Models are sorted by how often you have used them in sessions (highest first). Prefer models with higher session_count when unsure.'
-        : 'No models available — add an Anthropic, Cursor, or Pi API key in Settings → Agent, or per-repository keys in repository settings.',
+        : 'No models available — add an agent configuration in Settings → Agent.',
   };
 }
 
 /**
  * @param {object} user
- * @param {string} agentSdk
- * @param {Record<string, unknown>} repo
+ * @param {string} _agentSdk
+ * @param {Record<string, unknown>} _repo
  * @param {import('@feathersjs/feathers').Application} app
  */
-export async function loadModelsForSdk(user, agentSdk, repo, app) {
-  if (repo?.id == null) {
-    throw new BadRequest('repo_id is required');
-  }
-  const models = await app
-    .service('agent-sdks')
-    .listModelsForSdk(agentSdk, { user, repo }, { refresh: false });
-  return models ?? [];
+export async function loadModelsForSdk(user, _agentSdk, _repo, app, { agentConfigId = null } = {}) {
+  if (agentConfigId == null) return [];
+  return listModelsForOwnedConfig(app, { configId: agentConfigId, userId: user.id });
 }

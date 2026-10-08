@@ -1,18 +1,11 @@
 import { BadRequest } from '@feathersjs/errors';
 import {
-  isLastUsedAgentDefaults,
-  mergeAgentSessionDefaults,
-  parseAgentSessionDefaultsJson,
-  stringifyAgentSessionDefaults,
-} from '../../shared/agent-session-defaults.js';
-import { getLastUsedSessionAgent } from './last-used-session-agent.js';
-import {
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,
 } from '../../shared/model-variants.js';
 import { loadModelsForSdk } from './baguette-models-for-user.js';
-import { requireRepoAccessForUserDb, userRowForAgentSdk } from './agent-sdk/agent-context.js';
-import { firstEnabledAgentSdkKey } from './agent-sdk/default-agent-sdk.js';
+import { userRowForAgentSdk } from './agent-context.js';
+import { parseAgentSessionDefaultsJson } from '../../shared/agent-session-defaults.js';
 
 export {
   coerceModelParams,
@@ -39,7 +32,11 @@ function validateModelParamsForVariants(variants, modelParams) {
   }
 }
 
-export async function validateAgentSessionDefaults(user, input, { userId, repoId, app } = {}) {
+export async function validateAgentSessionDefaults(
+  user,
+  input,
+  { app, agentConfigId = null } = {}
+) {
   const defaults = parseAgentSessionDefaultsJson(input);
 
   if (!defaults.agent_sdk && !defaults.model && !defaults.model_params) {
@@ -58,36 +55,17 @@ export async function validateAgentSessionDefaults(user, input, { userId, repoId
     throw new BadRequest('model is required when model_params is set');
   }
 
-  let repo = null;
-  if (defaults.agent_sdk || defaults.model) {
-    if (repoId == null || repoId === '') {
-      throw new BadRequest('repo_id is required');
-    }
-    if (userId == null) {
-      throw new BadRequest('userId is required for agent defaults validation');
-    }
-    const knex = app?.get?.('db');
-    if (!knex) {
-      throw new BadRequest('app db is required for agent defaults validation');
-    }
-    repo = await requireRepoAccessForUserDb(knex, Number(repoId), userId);
-    if (!repo) {
-      throw new BadRequest('Repository not found or not linked to your account');
-    }
-  }
+  const userForSdk = userRowForAgentSdk(user) ?? user;
 
   if (defaults.agent_sdk) {
-    const enabled = await app.service('agent-sdks').isEnabled(defaults.agent_sdk, { user, repo });
-    if (!enabled) {
-      throw new BadRequest(
-        `Agent SDK "${defaults.agent_sdk}" is not available for this repository. Add keys in Settings → Agent or repository settings.`
-      );
+    if (!app.service('agent-configs').getSdkMeta(defaults.agent_sdk)) {
+      throw new BadRequest(`Unknown agent SDK "${defaults.agent_sdk}"`);
     }
   }
 
   if (defaults.model) {
     const sdk = defaults.agent_sdk;
-    const models = await loadModelsForSdk(user, sdk, repo, app);
+    const models = await loadModelsForSdk(userForSdk, sdk, null, app, { agentConfigId });
     if (!models.some((m) => m.id === defaults.model)) {
       throw new BadRequest(`Unknown ${sdk} model "${defaults.model}". Refresh models in Settings.`);
     }
@@ -98,41 +76,4 @@ export async function validateAgentSessionDefaults(user, input, { userId, repoId
   }
 
   return defaults;
-}
-
-export function normalizeAgentDefaultsPatch(existingRaw, patch) {
-  const merged = mergeAgentSessionDefaults(existingRaw, patch);
-  return stringifyAgentSessionDefaults(merged);
-}
-
-/**
- * Effective default agent for new sessions: the user's stored defaults when they pin an SDK,
- * otherwise the sdk/model/params of their most recent session. Account-wide — deliberately
- * independent of the selected repo so "Last used agent" resolves the same everywhere.
- *
- * @returns {Promise<{ agent_sdk: string, model: string | null, model_params: Array | null,
- *   source: 'defaults' | 'last_used' }>}
- */
-export async function resolveDefaultAgent(db, userId, app) {
-  const defaults = parseAgentSessionDefaultsJson(
-    userId == null ? null : (await db('users').where({ id: userId }).first())?.agent_defaults
-  );
-  if (!isLastUsedAgentDefaults(defaults)) {
-    return {
-      agent_sdk: defaults.agent_sdk,
-      model: defaults.model,
-      model_params: defaults.model_params,
-      source: 'defaults',
-    };
-  }
-  const lastUsed = await getLastUsedSessionAgent(db, userId);
-  const userRow = userId == null ? null : await db('users').where({ id: userId }).first();
-  const user = userRowForAgentSdk(userRow);
-  const defaultSdk = user && app ? await firstEnabledAgentSdkKey(app, { user, repo: null }) : null;
-  return {
-    agent_sdk: lastUsed?.agent_sdk ?? defaultSdk,
-    model: lastUsed?.model ?? null,
-    model_params: lastUsed?.model_params ?? null,
-    source: 'last_used',
-  };
 }

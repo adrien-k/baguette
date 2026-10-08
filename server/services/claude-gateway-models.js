@@ -3,6 +3,7 @@ import { listAnthropicApiModels } from '../lib/anthropic-api/models.js';
 import { anthropicApiAuthHeaders } from '../lib/anthropic-api/client.js';
 import { listModels, modelsCacheKey } from './anthropic-models.js';
 import { normalizeAnthropicBaseUrl } from './session-env.js';
+import { claudeGatewayFields } from '../../shared/agent-config-api-key-env.js';
 
 const GATEWAY_MODELS_CACHE_TTL = 60 * 60; // 1 hour
 
@@ -14,18 +15,9 @@ export function gatewayAuthHeaders({ apiKey, authToken } = {}) {
   return anthropicApiAuthHeaders({ apiKey, authToken });
 }
 
-/** Effective Claude gateway config (repo overrides account) from plaintext rows. */
-export function resolveClaudeGatewayConfig(user, repo = null) {
-  return {
-    apiKey: repo?.anthropic_api_key || user?.anthropic_api_key || null,
-    authToken: repo?.anthropic_auth_token || user?.anthropic_auth_token || null,
-    baseUrl: repo?.anthropic_base_url ?? user?.anthropic_base_url ?? null,
-  };
-}
-
-/** A gateway is configured when a Claude API base URL is set. */
+/** A gateway is configured when a Claude API base URL is set (agent_config fields). */
 export function gatewayDiscoveryActive(config) {
-  return Boolean(normalizeAnthropicBaseUrl(config.baseUrl));
+  return Boolean(normalizeAnthropicBaseUrl(config?.api_url));
 }
 
 /**
@@ -48,18 +40,11 @@ export async function listClaudeModels(config, options = {}) {
  * to the built-in SDK list, which would show models the gateway cannot serve).
  */
 export async function listGatewayModels(config, { refresh = false } = {}) {
-  const base = normalizeAnthropicBaseUrl(config.baseUrl);
+  const base = normalizeAnthropicBaseUrl(config.api_url);
   if (!base) throw new Error('Gateway model discovery requires a Claude API base URL');
   const cacheKey = modelsCacheKey(base);
   if (refresh) await cache.clear(cacheKey);
   return cache.fetch(cacheKey, GATEWAY_MODELS_CACHE_TTL, async () =>
-    listAnthropicApiModels(
-      {
-        baseUrl: base,
-        apiKey: config.apiKey,
-        authToken: config.authToken,
-      },
-      { limit: 100 }
-    )
+    listAnthropicApiModels({ ...claudeGatewayFields(config), baseUrl: base }, { limit: 100 })
   );
 }

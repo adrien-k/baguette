@@ -24,7 +24,7 @@ export default function AgentMessageComposer({
   placeholder,
   disabled = false,
   sending = false,
-  sdk,
+  agentConfigKey,
   model,
   params,
   autoPush = false,
@@ -34,8 +34,8 @@ export default function AgentMessageComposer({
   onModelChange,
   onAutoPushChange,
   showAutoPushParam = false,
-  availableSdks,
-  onSdkChange,
+  agentConfigOptions,
+  onAgentConfigChange,
   formClassName = 'relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1',
   skipColumn = false,
   textareaId,
@@ -119,7 +119,7 @@ export default function AgentMessageComposer({
       />
       <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible min-w-0">
         <SessionModelSelect
-          sdk={sdk}
+          agentConfigKey={agentConfigKey}
           model={model}
           params={params}
           autoPush={autoPush}
@@ -129,8 +129,8 @@ export default function AgentMessageComposer({
           onModelChange={onModelChange}
           onAutoPushChange={onAutoPushChange}
           showAutoPushParam={showAutoPushParam}
-          availableSdks={availableSdks}
-          onSdkChange={onSdkChange}
+          agentConfigOptions={agentConfigOptions}
+          onAgentConfigChange={onAgentConfigChange}
           disabled={disabled || sending}
           className="min-w-0 flex-1"
         />

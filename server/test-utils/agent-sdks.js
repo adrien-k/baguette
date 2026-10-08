@@ -2,33 +2,26 @@ import {
   CLAUDE_AGENT_SDK_KEY,
   CLAUDE_AGENT_SDK_LABEL,
   CLAUDE_AGENT_SERVICE_PATH,
-} from '../services/agent-sdk/claude-agent-sdk.js';
-import {
   CURSOR_AGENT_SDK_KEY,
   CURSOR_AGENT_SDK_LABEL,
   CURSOR_AGENT_SERVICE_PATH,
-} from '../services/agent-sdk/cursor-agent-sdk.js';
+} from '../services/agent-sdk-meta.js';
 import {
   registerAgentSdk,
-  registerAgentSdksService,
-} from '../services/feathers/agent-sdks.service.js';
+  registerAgentConfigsService,
+} from '../services/feathers/agent-configs.service.js';
 
-/** Mount `agent-sdks` when the test app does not already have it. */
-export function mountAgentSdks(app) {
-  if (!app.services?.['agent-sdks']) {
-    registerAgentSdksService(app);
+/** Mount `agent-configs` when the test app does not already have it (SDK registry + dispatch). */
+export function mountAgentConfigs(app) {
+  if (!app.services?.['agent-configs']) {
+    registerAgentConfigsService(app);
   }
 }
 
 function useAgentServiceStub(app, { key, label, servicePath }, service, methods) {
-  mountAgentSdks(app);
+  mountAgentConfigs(app);
   const stub = {
-    async isEnabled() {
-      return true;
-    },
-    async listModels() {
-      return [];
-    },
+    async handleMessageCreated() {},
     async isInterruptedSessionResumable(session, { channel = 'chat' } = {}) {
       if (key === CURSOR_AGENT_SDK_KEY) {
         return channel === 'review'
@@ -44,12 +37,12 @@ function useAgentServiceStub(app, { key, label, servicePath }, service, methods)
     },
     ...service,
   };
-  const methodNames = ['isEnabled', 'listModels', 'isInterruptedSessionResumable', ...methods];
+  const methodNames = ['handleMessageCreated', 'isInterruptedSessionResumable', ...methods];
   app.use(servicePath, stub, { methods: [...new Set(methodNames)] });
   registerAgentSdk(app, { key, label, servicePath });
 }
 
-/** Stub Claude at its registered path so dispatch goes through `agent-sdks`. */
+/** Stub Claude at its registered path so dispatch goes through `agent-configs`. */
 export function useClaudeAgentStub(app, service, methods) {
   useAgentServiceStub(
     app,
@@ -63,7 +56,7 @@ export function useClaudeAgentStub(app, service, methods) {
   );
 }
 
-/** Stub Cursor at its registered path so dispatch goes through `agent-sdks`. */
+/** Stub Cursor at its registered path so dispatch goes through `agent-configs`. */
 export function useCursorAgentStub(app, service, methods) {
   useAgentServiceStub(
     app,
