@@ -1,5 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { sortIssuesBySeverity } from '../session-issues.js';
+import {
+  issueFixAgentPrompt,
+  issuesFixAllAgentPrompt,
+  sortIssuesBySeverity,
+} from '../session-issues.js';
+
+describe('issue fix agent prompts', () => {
+  it('does not embed issue title or description in the single-issue prompt', () => {
+    const text = issueFixAgentPrompt(
+      { id: 7, severity: 'high', title: 'Leaky title', description: 'Secret body' },
+      99
+    );
+    expect(text).toContain('issue #7');
+    expect(text).toContain('ReadIssue with issue_id 7');
+    expect(text).not.toContain('Leaky title');
+    expect(text).not.toContain('Secret body');
+  });
+
+  it('references ListIssues for fix-all', () => {
+    const text = issuesFixAllAgentPrompt(42);
+    expect(text).toContain('ListIssues with status "submitted"');
+    expect(text).toContain('session_id 42');
+  });
+});
 
 describe('sortIssuesBySeverity', () => {
   it('orders critical before high before medium before low', () => {

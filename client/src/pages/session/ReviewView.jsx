@@ -3,7 +3,6 @@ import { Bot, CheckCircle, ChevronDown, ChevronRight, PanelRight, Square } from 
 import { Link, useLocation } from 'react-router-dom';
 import {
   agentConfigsService,
-  messagesService,
   sessionIssuesService,
   sessionReviewService,
   sessionsService,
@@ -27,7 +26,6 @@ import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
-import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
@@ -58,23 +56,6 @@ function AllIssuesFixedMessage() {
       <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
       All issues fixed!
     </p>
-  );
-}
-
-function issueFixPrompt(issue, sessionId) {
-  return (
-    `Fix session review issue #${issue.id} (${issue.severity}): ${issue.title}\n\n` +
-    `${issue.description || ''}\n\n` +
-    `This issue is now submitted. Call ReadIssue with issue_id ${issue.id} (session_id ${sessionId}), ` +
-    `or ListIssues with status "submitted". When the fix is complete, call UpdateIssueStatus with issue_id ${issue.id} and status "resolved".`
-  );
-}
-
-function issuesFixAllPrompt(sessionId) {
-  return (
-    `Fix all submitted session review issues on this session.\n\n` +
-    `Start by calling ListIssues with status "submitted" (session_id ${sessionId}). ` +
-    `Implement fixes for each submitted issue, then call UpdateIssueStatus with status "resolved" for every issue you actually fixed.`
   );
 }
 
@@ -284,20 +265,10 @@ export default function ReviewView({
     }
   };
 
-  const sendFixMessage = async (text) => {
-    await messagesService.create({
-      session_id: session.id,
-      type: 'user',
-      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
-      ...builderMessageCreateFields(session),
-    });
-  };
-
   const handleFixIssue = async (issue) => {
     if (!session?.id || issue.status !== 'opened') return;
     try {
-      await sessionIssuesService.patch(issue.id, { status: 'submitted' });
-      await sendFixMessage(issueFixPrompt(issue, session.id));
+      await sessionIssuesService.askAgentToFix(issue.id);
     } catch (err) {
       toastError('Failed to submit issue for a fix', err);
     }
@@ -306,10 +277,7 @@ export default function ReviewView({
   const handleFixAllOpened = async () => {
     if (!session?.id || opened.length === 0) return;
     try {
-      await Promise.all(
-        opened.map((issue) => sessionIssuesService.patch(issue.id, { status: 'submitted' }))
-      );
-      await sendFixMessage(issuesFixAllPrompt(session.id));
+      await sessionIssuesService.askAgentToFixAll({ session_id: session.id });
     } catch (err) {
       toastError('Failed to submit issues for a fix', err);
     }

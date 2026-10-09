@@ -2,6 +2,8 @@ import { KnexService } from '@feathersjs/knex';
 import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
+import { issueFixAgentPrompt, issuesFixAllAgentPrompt } from '../../../shared/session-issues.js';
+import { sessionMessageIdentity } from './message-create-fields.js';
 import {
   ISSUE_SEVERITIES,
   ISSUE_STATUSES,
@@ -10,7 +12,15 @@ import {
   assertAgentIssueStatus,
 } from '../session-issues.js';
 
+function issueActionParams(params) {
+  return { user: params.user, provider: params.provider };
+}
+
 export class SessionIssuesService extends KnexService {
+  setup(app) {
+    this.app = app;
+  }
+
   async create(data, params) {
     try {
       if (data.severity) assertIssueSeverity(data.severity);
@@ -56,6 +66,58 @@ export class SessionIssuesService extends KnexService {
       patch.description = String(patch.description);
     }
     return super.patch(id, { ...patch, updated_at: new Date().toISOString() }, params);
+  }
+
+  async _postBuilderFixMessage(session, text, params) {
+    const identity = sessionMessageIdentity(session, 'builder');
+    const content = String(text ?? '').trim();
+    if (!content) throw new BadRequest('message is required');
+    return this.app.service('messages').create(
+      {
+        session_id: session.id,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content },
+        }),
+        ...identity,
+      },
+      { user: params.user, provider: params.provider }
+    );
+  }
+
+  async askAgentToFix(issueId, params) {
+    const issue = await this.get(issueId, params);
+    if (issue.status !== 'opened') {
+      throw new BadRequest('Only opened issues can be submitted for a fix');
+    }
+    const session = await this.app.service('sessions').get(issue.session_id, { user: params.user });
+    const callParams = issueActionParams(params);
+    await this._postBuilderFixMessage(session, issueFixAgentPrompt(issue, session.id), callParams);
+    const patched = await this.patch(issue.id, { status: 'submitted' }, callParams);
+    return { ok: true, issue: patched };
+  }
+
+  async askAgentToFixAll(data, params) {
+    const sessionId = data?.session_id;
+    if (!sessionId) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    const callParams = issueActionParams(params);
+    const found = await this.find({
+      ...callParams,
+      query: { session_id: session.id, status: 'opened', $limit: 500 },
+      paginate: false,
+    });
+    const opened = Array.isArray(found) ? found : (found?.data ?? []);
+    if (opened.length === 0) {
+      throw new BadRequest('No opened issues to submit for a fix');
+    }
+    await this._postBuilderFixMessage(session, issuesFixAllAgentPrompt(session.id), callParams);
+    const issues = [];
+    for (const issue of opened) {
+      issues.push(await this.patch(issue.id, { status: 'submitted' }, callParams));
+    }
+    return { ok: true, issues };
   }
 }
 
@@ -103,7 +165,7 @@ export function registerSessionIssuesService(app, path = 'session-issues') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new SessionIssuesService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'askAgentToFix', 'askAgentToFixAll'],
   });
   app.service(path).hooks({
     before: {

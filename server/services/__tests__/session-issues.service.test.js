@@ -48,6 +48,8 @@ beforeEach(async () => {
     short_id: 'reviss',
     status: 'stopped',
     session_path: '/tmp/wt',
+    agent_sdk: 'claude',
+    model: 'sonnet',
   });
   app = makeApp(db);
   await app.setup();
@@ -161,5 +163,56 @@ describe('session-issues service', () => {
     await expect(
       app.service('session-issues').patch(created.id, { status: 'done' }, params(user))
     ).rejects.toThrow('Invalid issue status');
+  });
+
+  it('askAgentToFix posts a builder message then marks the issue submitted', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Sensitive title',
+        description: 'Sensitive description',
+      },
+      { user }
+    );
+    const result = await app.service('session-issues').askAgentToFix(created.id, params(user));
+    expect(result.ok).toBe(true);
+    expect(result.issue.status).toBe('submitted');
+
+    const messages = await app.service('messages').find({
+      ...params(user),
+      query: { session_id: sessionId, $sort: { id: 1 } },
+      paginate: false,
+    });
+    const rows = Array.isArray(messages) ? messages : messages.data;
+    expect(rows).toHaveLength(1);
+    const parsed = JSON.parse(rows[0].message_json);
+    const content = parsed.content ?? parsed.message?.content ?? '';
+    expect(content).toContain('ReadIssue');
+    expect(content).not.toContain('Sensitive title');
+    expect(content).not.toContain('Sensitive description');
+  });
+
+  it('askAgentToFixAll posts one message then submits every opened issue', async () => {
+    const a = await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'low', title: 'A' }, { user });
+    const b = await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'medium', title: 'B' }, { user });
+    const result = await app
+      .service('session-issues')
+      .askAgentToFixAll({ session_id: sessionId }, params(user));
+    expect(result.ok).toBe(true);
+    expect(result.issues.map((i) => i.id).sort()).toEqual([a.id, b.id].sort());
+    expect(result.issues.every((i) => i.status === 'submitted')).toBe(true);
+
+    const messages = await app.service('messages').find({
+      ...params(user),
+      query: { session_id: sessionId },
+      paginate: false,
+    });
+    const rows = Array.isArray(messages) ? messages : messages.data;
+    expect(rows).toHaveLength(1);
   });
 });

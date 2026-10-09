@@ -28,3 +28,21 @@ export function compareIssuesBySeverity(a, b) {
 export function sortIssuesBySeverity(issues) {
   return [...issues].sort(compareIssuesBySeverity);
 }
+
+/** User message text when asking the builder to fix a single review issue (body comes from ReadIssue). */
+export function issueFixAgentPrompt(issue, sessionId) {
+  return (
+    `Fix session review issue #${issue.id}.\n\n` +
+    `Call ReadIssue with issue_id ${issue.id} (session_id ${sessionId}) for details. ` +
+    `This issue is now submitted. When the fix is complete, call UpdateIssueStatus with issue_id ${issue.id} and status "resolved".`
+  );
+}
+
+/** User message text when asking the builder to fix all opened review issues on a session. */
+export function issuesFixAllAgentPrompt(sessionId) {
+  return (
+    `Fix all submitted session review issues on this session.\n\n` +
+    `Start by calling ListIssues with status "submitted" (session_id ${sessionId}). ` +
+    `Implement fixes for each submitted issue, then call UpdateIssueStatus with status "resolved" for every issue you actually fixed.`
+  );
+}
