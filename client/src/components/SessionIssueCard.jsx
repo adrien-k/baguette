@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { ISSUE_SEVERITIES } from '@baguette/shared/session-issues.js';
 import { NEUTRAL_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../utils/buttonStyles.js';
-import AutoGrowTextarea from './AutoGrowTextarea.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import { issueAgentSubtitle } from '../utils/messageModelLabel.js';
+import ComposerTextarea from './ComposerTextarea.jsx';
 
 const SEVERITY_CLASS = {
   critical: 'bg-danger/15 text-danger border-danger/35',
@@ -74,6 +74,8 @@ export default function SessionIssueCard({
     if (ok) setEditing(false);
   };
 
+  const canSaveIssue = Boolean(draftTitle.trim());
+
   const active = issue.status === 'opened';
   const canEdit = !readonly && issue.status === 'opened';
   const agentSubtitle = issueAgentSubtitle({
@@ -117,9 +119,14 @@ export default function SessionIssueCard({
           </label>
           <label className="block">
             <span className="text-[11px] text-faint mb-1 block">Description</span>
-            <AutoGrowTextarea
+            <ComposerTextarea
               value={draftDescription}
               onChange={(e) => setDraftDescription(e.target.value)}
+              onSubmit={() => {
+                void handleSave();
+              }}
+              canSubmit={canSaveIssue}
+              disabled={saving}
               rows={4}
               maxLines={24}
               className={`${FIELD_CLASS} font-mono text-xs leading-relaxed resize-none`}

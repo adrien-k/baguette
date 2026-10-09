@@ -1,7 +1,6 @@
 import SessionModelSelect from './SessionModelSelect.jsx';
-import AutoGrowTextarea from './AutoGrowTextarea.jsx';
+import ComposerTextarea from './ComposerTextarea.jsx';
 import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
-import { handleComposerEnterKeyDown } from '../utils/composerEnterSubmit.js';
 import ButtonWithOptions from './ButtonWithOptions.jsx';
 import { SPLIT_GROUP_CLASS, SPLIT_PRIMARY_CLASS } from './splitButtonStyles.js';
 
@@ -57,13 +56,6 @@ export default function AgentMessageComposer({
 
   const hasDraft = canSendProp ?? Boolean(value.trim());
   const canSubmit = hasDraft && !disabled && !sending && !submitDisabled;
-  const handleKeyDown = (e) => {
-    handleComposerEnterKeyDown(e, {
-      disabled: disabled || sending || submitDisabled,
-      canSubmit: hasDraft,
-      onSubmit,
-    });
-  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -101,16 +93,17 @@ export default function AgentMessageComposer({
         disabled ? 'opacity-60' : 'focus-within:ring-2 focus-within:ring-brand/50'
       }`}
     >
-      <AutoGrowTextarea
+      <ComposerTextarea
         id={textareaId}
         rows={rows}
         maxHeightPx={resizable ? 320 : 160}
         keepManualResize={resizable}
         value={value}
         onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
+        onSubmit={onSubmit}
+        canSubmit={hasDraft && !submitDisabled}
         disabled={disabled || sending}
+        placeholder={placeholder}
         autoFocus={autoFocus}
         className={
           resizable

@@ -9,6 +9,7 @@ import {
   rebuildQueuedMessageJson,
 } from '../utils/queuedMessagePayload.js';
 import UserMessageContent from './chat/UserMessageContent.tsx';
+import ComposerTextarea from './ComposerTextarea.jsx';
 
 function formatSendAt(sendAt) {
   if (!sendAt) return null;
@@ -50,6 +51,8 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
     setEditing(false);
   };
 
+  const canSaveEdit = Boolean(editText.trim()) || hasFiles;
+
   return (
     <div className="flex flex-col gap-1.5 bg-control/60 border border-strong/60 rounded-lg px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-xs text-accent/80 font-medium min-w-0">
@@ -67,11 +70,14 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
 
       {editing ? (
         <div className="flex flex-col gap-1.5">
-          <textarea
+          <ComposerTextarea
             autoFocus
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
+            onSubmit={saveEdit}
+            canSubmit={canSaveEdit}
             rows={3}
+            maxLines={12}
             className="w-full bg-nav border border-strong rounded px-2.5 py-1.5 text-sm text-fg placeholder-faint focus:outline-none focus:ring-2 focus:ring-brand/50 resize-none"
           />
           <div className="flex gap-1.5 justify-end">

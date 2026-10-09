@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { MessageSquare } from 'lucide-react';
 import Modal, { ModalActions, ModalHeader } from './Modal.jsx';
-import AutoGrowTextarea from './AutoGrowTextarea.jsx';
+import ComposerTextarea from './ComposerTextarea.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
-import { handleComposerEnterKeyDown } from '../utils/composerEnterSubmit.js';
 import { TEXT_MUTED } from '../utils/ui.js';
 
 const PLACEHOLDER = 'Message to send to the reviewer…';
@@ -23,14 +22,6 @@ export default function ReviewFollowUpModal({
     onConfirm(trimmed);
   };
 
-  const handleKeyDown = (e) => {
-    handleComposerEnterKeyDown(e, {
-      disabled: submitting,
-      canSubmit: Boolean(trimmed),
-      onSubmit: handleConfirm,
-    });
-  };
-
   return (
     <Modal maxWidth="max-w-md">
       <ModalHeader
@@ -41,14 +32,15 @@ export default function ReviewFollowUpModal({
       />
       <label className="block">
         <span className={`${TEXT_MUTED} text-sm mb-1.5 block`}>Message</span>
-        <AutoGrowTextarea
+        <ComposerTextarea
           rows={4}
           maxHeightPx={240}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={PLACEHOLDER}
+          onSubmit={handleConfirm}
+          canSubmit={Boolean(trimmed)}
           disabled={submitting}
+          placeholder={PLACEHOLDER}
           className="block w-full rounded-lg border border-strong bg-control px-3 py-2.5 text-sm text-fg placeholder-faint focus:outline-none focus:ring-2 focus:ring-brand/50 resize-none"
           autoFocus
         />
