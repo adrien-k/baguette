@@ -2,6 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { toastFeathersError } from '../utils/toastError.jsx';
 import { messagesService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
+import {
+  insertSessionMessageById,
+  mergeSessionMessagesFromFetch,
+} from '../utils/sessionMessageOrder.js';
 
 const PAGE_SIZE = 100;
 
@@ -37,7 +41,7 @@ async function pageBuilderMessagesAfter(sessionId, afterId, maxId = null) {
  * Returns messages for a session with cursor-based pagination.
  * - Initial load: last 100 messages (newest first, then reversed for display)
  * - loadMore(): prepends the next 100 older messages
- * - Real-time created events always append to the tail
+ * - Real-time created events insert by ascending id (out-of-order delivery stays sorted)
  * - SSE reconnect: reconcile patches in the loaded id window, then page in newer rows (no full reload)
  */
 export function useGetMessages(sessionId) {
@@ -68,21 +72,14 @@ export function useGetMessages(sessionId) {
     const loaded = messagesRef.current;
     if (!loaded.length) return;
 
-    const minId = loaded[0].id;
-    const maxId = loaded[loaded.length - 1].id;
+    const minId = Math.min(...loaded.map((m) => m.id));
+    const maxId = Math.max(...loaded.map((m) => m.id));
 
     try {
       const inWindow = await pageBuilderMessagesAfter(sessionId, minId - 1, maxId);
       const newer = await pageBuilderMessagesAfter(sessionId, maxId);
-      if (inWindow.length === 0 && newer.length === 0) return;
-
-      const freshById = new Map(inWindow.map((m) => [m.id, m]));
-      setMessages((prev) => {
-        const merged = prev.map((m) => freshById.get(m.id) ?? m);
-        const seen = new Set(merged.map((m) => m.id));
-        const appended = newer.filter((m) => !seen.has(m.id));
-        return appended.length ? [...merged, ...appended] : merged;
-      });
+      const fetched = [...inWindow, ...newer];
+      setMessages((prev) => mergeSessionMessagesFromFetch(prev, fetched));
     } catch (err) {
       toastFeathersError('Failed to load new messages', err);
     }
@@ -172,7 +169,7 @@ export function useGetMessages(sessionId) {
     const onCreated = (message) => {
       if (message.session_id !== sessionId) return;
       if (message.agent_type === 'reviewer') return;
-      setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+      setMessages((prev) => insertSessionMessageById(prev, message));
     };
 
     const onPatched = (message) => {
