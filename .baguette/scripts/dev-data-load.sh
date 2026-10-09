@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy shared dev SQLite from ../../../dev-data-dir into ./.data, migrate, run message backfills.
+# Copy shared dev SQLite from ../../../dev-data-dir into ./.data, then migrate.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,6 +12,5 @@ if [ -d "$src" ]; then
 else
   echo "Dev data source not found ($src); skipping copy, running migrate only." >&2
 fi
+
 pnpm run migrate
-node scripts/2026100601_backfill-message-rows.js
-node scripts/2026100602_backfill-dedupe-streamed-assistants.js

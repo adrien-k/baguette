@@ -20,10 +20,21 @@ export function accountAgentConfigLabel(sdk) {
 
 /** Per-repo config label: "{Sdk} {repoShort}" truncated to 20 chars. */
 export function repoAgentConfigLabel(sdk, repoFullName) {
-  const short = repoFullName?.includes('/')
-    ? repoFullName.split('/').pop()
-    : repoFullName || 'repo';
+  const short = repoShortName(repoFullName);
   return truncateLabel(`${sdkDisplayName(sdk)} ${short}`);
+}
+
+function repoShortName(repoFullName) {
+  return repoFullName?.includes('/') ? repoFullName.split('/').pop() : repoFullName || 'repo';
+}
+
+/**
+ * Per-repo Claude auth-token config label: "Claude token {repoShort}" truncated to 20 chars.
+ * Always longer than the bare CLAUDE_TOKEN_LABEL, so account-scope lookups by the bare label
+ * can never match a repo-scoped token config.
+ */
+export function repoAgentTokenLabel(repoFullName) {
+  return truncateLabel(`${sdkDisplayName('claude')} token ${repoShortName(repoFullName)}`);
 }
 
 export const CLAUDE_TOKEN_LABEL = truncateLabel('Claude token');

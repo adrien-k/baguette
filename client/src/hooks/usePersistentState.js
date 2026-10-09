@@ -39,6 +39,10 @@ export function usePersistentState(storageKey) {
       setStore((prev) => {
         const resolved =
           typeof newValue === 'function' ? newValue(prev[fieldKey] ?? defaultValue) : newValue;
+        // Returning the previous store when nothing changed lets React bail out of the
+        // re-render. Setter identities are unstable (recreated per render), so effects that
+        // list them as deps re-run on every commit and would loop forever otherwise.
+        if (Object.is(prev[fieldKey], resolved)) return prev;
         const next = { ...prev, [fieldKey]: resolved };
         if (storageKey) {
           const gates = gatesRef.current[storageKey] ?? {};

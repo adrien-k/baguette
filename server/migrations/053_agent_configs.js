@@ -2,9 +2,9 @@ import {
   accountAgentConfigLabel,
   CLAUDE_TOKEN_LABEL,
   repoAgentConfigLabel,
+  repoAgentTokenLabel,
   uniqueAgentConfigLabel,
 } from '../../shared/agent-config-labels.js';
-import { pickAgentConfigIdForSessionBackfill } from '../../shared/agent-config-backfill.js';
 import { buildUserRepoDefaultsPatch } from './lib/user-repo-defaults-backfill.js';
 import {
   ANTHROPIC_API_KEY_ENV,
@@ -15,6 +15,37 @@ import {
   normalizePiApiKeyEnvVar,
 } from '../../shared/pi-api-key-env-vars.js';
 
+/** @typedef {{ primary: number | null, token: number | null, cursor: number | null, pi: number | null }} ScopeConfigIds */
+
+/**
+ * @param {ScopeConfigIds | undefined} scope
+ * @param {string} sdk
+ * @returns {number | null}
+ */
+function pickConfigIdFromScope(scope, sdk) {
+  if (!scope) return null;
+  if (sdk === 'cursor') return scope.cursor ?? null;
+  if (sdk === 'claude') {
+    if (scope.token != null && scope.primary == null) return scope.token;
+    return scope.primary ?? scope.token ?? null;
+  }
+  if (sdk === 'pi') return scope.pi ?? null;
+  return scope.primary ?? scope.cursor ?? scope.token ?? scope.pi ?? null;
+}
+
+/**
+ * Pick config id for session/loop backfill after migrating legacy credentials.
+ * Prefers repo-scoped configs when present, then account-scoped.
+ * @param {ScopeConfigIds | undefined} repoScope
+ * @param {ScopeConfigIds | undefined} accountScope
+ * @param {string} sdk — session agent_sdk
+ */
+export function pickAgentConfigIdForSessionBackfill(repoScope, accountScope, sdk) {
+  const fromRepo = pickConfigIdFromScope(repoScope, sdk);
+  if (fromRepo != null) return fromRepo;
+  return pickConfigIdFromScope(accountScope, sdk);
+}
+
 function piEnvVarFromRow(raw) {
   try {
     return normalizePiApiKeyEnvVar(raw ?? DEFAULT_PI_API_KEY_ENV_VAR);
@@ -23,7 +54,21 @@ function piEnvVarFromRow(raw) {
   }
 }
 
-export { pickAgentConfigIdForSessionBackfill };
+/**
+ * A repo-level base-URL override ran against the account credentials pre-migration
+ * ("repo overrides user"), so a link with a base URL but no key of its own inherits the
+ * account key — otherwise the repo-scoped config, and with it the base URL, would be lost.
+ */
+function repoBackfillRow(link, user) {
+  if (!link.anthropic_base_url) return link;
+  return {
+    ...link,
+    anthropic_api_key_encrypted:
+      link.anthropic_api_key_encrypted || user?.anthropic_api_key_encrypted || null,
+    anthropic_auth_token_encrypted:
+      link.anthropic_auth_token_encrypted || user?.anthropic_auth_token_encrypted || null,
+  };
+}
 
 const USER_CRED_COLS = [
   'anthropic_api_key_encrypted',
@@ -89,9 +134,22 @@ export async function insertAgentConfigRow(
 
 /**
  * Backfill configs for one credential scope (user row or user_repos row).
+ * The account scope (first caller per user) keeps the bare CLAUDE_TOKEN_LABEL for its
+ * auth-token row; repo scopes pass a repo-specific base so the bare label stays unambiguous.
+ * @param {import('knex').Knex} knex
+ * @param {number} userId
+ * @param {object} row — credential-bearing row (user or user_repos)
+ * @param {(sdk: string) => string} labelBaseForSdk
+ * @param {string} [tokenLabelBase] — label base for the Claude auth-token row
  * @returns {Promise<ScopeConfigIds>}
  */
-export async function backfillConfigsForScope(knex, userId, row, labelBaseForSdk) {
+export async function backfillConfigsForScope(
+  knex,
+  userId,
+  row,
+  labelBaseForSdk,
+  tokenLabelBase = CLAUDE_TOKEN_LABEL
+) {
   const usedLabels = new Set(
     (await knex('agent_configs').where({ user_id: userId }).select('label')).map((r) =>
       r.label.toLowerCase()
@@ -110,7 +168,7 @@ export async function backfillConfigsForScope(knex, userId, row, labelBaseForSdk
   const tokenClaudeId = await insertAgentConfigRow(knex, {
     userId,
     usedLabels,
-    labelBase: CLAUDE_TOKEN_LABEL,
+    labelBase: tokenLabelBase,
     sdk: 'claude',
     apiKeyEncrypted: row.anthropic_auth_token_encrypted ?? null,
     apiKeyEnvVar: ANTHROPIC_AUTH_TOKEN_ENV,
@@ -158,6 +216,7 @@ export async function up(knex) {
   const repoScopeByKey = new Map();
 
   const users = await knex('users').select('*');
+  const userById = new Map(users.map((u) => [u.id, u]));
   for (const user of users) {
     const ids = await backfillConfigsForScope(knex, user.id, user, (sdk) =>
       accountAgentConfigLabel(sdk)
@@ -169,8 +228,12 @@ export async function up(knex) {
   for (const link of userRepos) {
     const repo = await knex('repos').where({ id: link.repo_id }).first();
     const fullName = repo?.full_name ?? 'repo';
-    const ids = await backfillConfigsForScope(knex, link.user_id, link, (sdk) =>
-      repoAgentConfigLabel(sdk, fullName)
+    const ids = await backfillConfigsForScope(
+      knex,
+      link.user_id,
+      repoBackfillRow(link, userById.get(link.user_id)),
+      (sdk) => repoAgentConfigLabel(sdk, fullName),
+      repoAgentTokenLabel(fullName)
     );
     repoScopeByKey.set(`${link.user_id}:${link.repo_id}`, ids);
   }
@@ -218,9 +281,8 @@ export async function up(knex) {
   }
 
   for (const link of userRepos) {
-    const account = accountByUser.get(link.user_id);
     const repoScope = repoScopeByKey.get(`${link.user_id}:${link.repo_id}`);
-    const patch = await buildUserRepoDefaultsPatch(knex, link, repoScope, account);
+    const patch = await buildUserRepoDefaultsPatch(knex, link, repoScope);
     if (patch) {
       await knex('user_repos').where({ id: link.id }).update(patch);
     }
@@ -244,7 +306,7 @@ export async function up(knex) {
   for (const col of USER_CRED_COLS) {
     await dropColumnIfExists(knex, 'users', col);
   }
-  await dropColumnIfExists(knex, 'users', 'agent_defaults');
+  // users.agent_defaults is kept here — 055 consumes it to seed users.agent_default_*.
   await dropColumnIfExists(knex, 'users', 'pi_api_key_encrypted');
   await dropColumnIfExists(knex, 'users', 'pi_api_key_env_var');
 

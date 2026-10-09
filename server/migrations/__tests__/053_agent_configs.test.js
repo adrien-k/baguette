@@ -11,7 +11,9 @@ import {
 } from '../053_agent_configs.js';
 import {
   accountAgentConfigLabel,
+  CLAUDE_TOKEN_LABEL,
   repoAgentConfigLabel,
+  repoAgentTokenLabel,
 } from '../../../shared/agent-config-labels.js';
 
 const migrationsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -189,5 +191,111 @@ describe('053_agent_configs', () => {
     const link = await db('user_repos').where({ user_id: userId, repo_id: repoId }).first();
     expect(link.agent_default_config_id).toBeNull();
     expect(link.agent_default_model).toBeNull();
+  });
+
+  it('keeps users.agent_defaults for 055 and preserves base-url-only repo overrides', async () => {
+    const [userId] = await db('users').insert({
+      github_id: 300,
+      username: 'gateway-user',
+      approved: true,
+      anthropic_api_key_encrypted: encrypt('account-key'),
+      anthropic_base_url: 'https://account-gateway.example',
+      agent_defaults: JSON.stringify({ agent_sdk: 'claude', model: 'sonnet' }),
+    });
+    const [repoId] = await db('repos').insert({
+      full_name: 'org/gateway-repo',
+      repo_path: 'repos/org/gateway-repo',
+    });
+    await db('user_repos').insert({
+      user_id: userId,
+      repo_id: repoId,
+      anthropic_base_url: 'https://repo-gateway.example',
+    });
+
+    await expect(agentConfigsUp(db)).resolves.toBeUndefined();
+
+    const repoConfig = await db('agent_configs')
+      .where({ user_id: userId, sdk: 'claude' })
+      .orderBy('id', 'asc');
+    expect(repoConfig).toHaveLength(2);
+    expect(repoConfig[0].api_url).toBe('https://account-gateway.example');
+    expect(repoConfig[1].label).toBe(repoAgentConfigLabel('claude', 'org/gateway-repo'));
+    expect(repoConfig[1].api_url).toBe('https://repo-gateway.example');
+    // borrowed account key — ciphertext is copied verbatim from the account config
+    expect(repoConfig[1].api_key_encrypted).toBe(repoConfig[0].api_key_encrypted);
+    expect(await db.schema.hasColumn('users', 'agent_defaults')).toBe(true);
+  });
+
+  it('labels repo auth-token configs with the repo short name', async () => {
+    const accountTok = encrypt('account-tok');
+    const repoTok = encrypt('repo-tok');
+    const [userId] = await db('users').insert({
+      github_id: 400,
+      username: 'token-repos',
+      approved: true,
+      anthropic_auth_token_encrypted: accountTok,
+    });
+    const [repoId] = await db('repos').insert({
+      full_name: 'org/token-repo',
+      repo_path: 'repos/org/token-repo',
+    });
+    await db('user_repos').insert({
+      user_id: userId,
+      repo_id: repoId,
+      anthropic_auth_token_encrypted: repoTok,
+    });
+
+    await agentConfigsUp(db);
+
+    const rows = await db('agent_configs').where({ user_id: userId }).orderBy('id', 'asc');
+    expect(rows.map((r) => r.label)).toEqual([
+      CLAUDE_TOKEN_LABEL,
+      repoAgentTokenLabel('org/token-repo'),
+    ]);
+    expect(rows[0].api_key_env_var).toBe('ANTHROPIC_AUTH_TOKEN');
+    expect(rows[1].api_key_env_var).toBe('ANTHROPIC_AUTH_TOKEN');
+    expect(rows[0].api_key_encrypted).toBe(accountTok);
+    expect(rows[1].api_key_encrypted).toBe(repoTok);
+  });
+});
+
+describe('pickAgentConfigIdForSessionBackfill', () => {
+  it('prefers Claude auth-token config when only token exists', () => {
+    const scope = { primary: null, token: 42, cursor: null, pi: null };
+    expect(pickAgentConfigIdForSessionBackfill(scope, undefined, 'claude')).toBe(42);
+  });
+
+  it('prefers Claude API-key config when only primary exists', () => {
+    const scope = { primary: 11, token: null, cursor: null, pi: null };
+    expect(pickAgentConfigIdForSessionBackfill(scope, undefined, 'claude')).toBe(11);
+  });
+
+  it('prefers primary when both Claude configs exist', () => {
+    const scope = { primary: 11, token: 42, cursor: null, pi: null };
+    expect(pickAgentConfigIdForSessionBackfill(scope, undefined, 'claude')).toBe(11);
+  });
+
+  it('uses repo scope before account scope', () => {
+    const repo = { primary: 1, token: null, cursor: null, pi: null };
+    const account = { primary: 2, token: null, cursor: null, pi: null };
+    expect(pickAgentConfigIdForSessionBackfill(repo, account, 'claude')).toBe(1);
+  });
+
+  it('falls back to account scope when repo scope has no config for the sdk', () => {
+    const repo = { primary: null, token: null, cursor: null, pi: null };
+    const account = { primary: 2, token: null, cursor: null, pi: null };
+    expect(pickAgentConfigIdForSessionBackfill(repo, account, 'claude')).toBe(2);
+  });
+
+  it('falls back to account scope only when repo scope is absent, not when it is empty', () => {
+    const account = { primary: 2, token: null, cursor: null, pi: null };
+    expect(pickAgentConfigIdForSessionBackfill(undefined, account, 'claude')).toBe(2);
+    expect(
+      pickAgentConfigIdForSessionBackfill(
+        { primary: null, token: null, cursor: null, pi: null },
+        null,
+        'claude'
+      )
+    ).toBeNull();
   });
 });

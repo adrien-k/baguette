@@ -10,7 +10,7 @@
     "install:all": "\"$npm_execpath\" install && cd client && \"$npm_execpath\" install",
     "build": "npm run build --prefix client",
     "start": "NODE_ENV=production node server/index.js",
-    "migrate": "knex migrate:latest --knexfile knexfile.js",
+    "migrate": "node scripts/migrate-latest.js",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

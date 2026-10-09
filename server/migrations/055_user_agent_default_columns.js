@@ -1,34 +1,22 @@
-function parseSessionModelId(modelField) {
-  if (!modelField) return null;
-  try {
-    const parsed = JSON.parse(modelField);
-    if (parsed?.id) return parsed.id;
-  } catch {
-    /* plain id */
-  }
-  return modelField;
-}
+import { pickAgentConfigIdForSessionBackfill } from './053_agent_configs.js';
+import { stringifyDefaultModel } from './lib/user-repo-defaults-backfill.js';
+import { parseAgentSessionDefaultsJson } from '../../shared/agent-session-defaults.js';
+import { accountAgentConfigLabel, CLAUDE_TOKEN_LABEL } from '../../shared/agent-config-labels.js';
 
-function modelParamsForDefault(raw) {
-  if (raw == null || raw === '') return null;
-  if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-  return raw;
-}
-
-function stringifyDefaultModel(model, modelParams) {
-  const id = parseSessionModelId(model);
-  if (!id && (modelParams == null || modelParams === '')) return null;
-  const params = modelParamsForDefault(modelParams);
-  return JSON.stringify({
-    model: id,
-    model_params: Array.isArray(params) && params.length ? params : null,
-  });
+/**
+ * Account-level config ids for a user, resolved by the labels 053 created. 053 backfills the
+ * account scope before any repo scope, so account configs own the bare labels ("Claude",
+ * "Claude token", "Cursor", "Pi") while repo-scoped configs — auth-token rows included —
+ * always carry the repo-short suffix.
+ */
+function accountScopeFromConfigs(configs) {
+  const byLabel = (label) => configs.find((c) => c.label === label)?.id ?? null;
+  return {
+    primary: byLabel(accountAgentConfigLabel('claude')),
+    token: byLabel(CLAUDE_TOKEN_LABEL),
+    cursor: byLabel(accountAgentConfigLabel('cursor')),
+    pi: byLabel(accountAgentConfigLabel('pi')),
+  };
 }
 
 export async function up(knex) {
@@ -44,8 +32,37 @@ export async function up(knex) {
     await knex.raw('ALTER TABLE users ADD COLUMN reviewer_default_model TEXT');
   }
 
-  const users = await knex('users').select('id');
-  for (const { id: userId } of users) {
+  const hasAgentDefaults = await knex.schema.hasColumn('users', 'agent_defaults');
+  const users = await knex('users').select('id', ...(hasAgentDefaults ? ['agent_defaults'] : []));
+  for (const { id: userId, agent_defaults: rawDefaults } of users) {
+    // Pre-053 account defaults (Settings → Agent): a fixed SDK seeds the default config and
+    // model/params directly; "last used" (agent_sdk null) keeps the session-based seeding below.
+    const defaults = parseAgentSessionDefaultsJson(rawDefaults);
+    if (defaults.agent_sdk) {
+      const configs = await knex('agent_configs')
+        .where({ user_id: userId })
+        .orderBy('id', 'asc')
+        .select('id', 'label', 'sdk', 'api_key_env_var');
+      const configId = pickAgentConfigIdForSessionBackfill(
+        undefined,
+        accountScopeFromConfigs(configs),
+        defaults.agent_sdk
+      );
+      if (configId != null) {
+        const modelJson = stringifyDefaultModel(
+          defaults.model,
+          defaults.agent_sdk === 'cursor' ? defaults.model_params : null
+        );
+        await knex('users').where({ id: userId }).update({
+          agent_default_config_id: configId,
+          agent_default_model: modelJson,
+          reviewer_default_config_id: configId,
+          reviewer_default_model: modelJson,
+        });
+        continue;
+      }
+    }
+
     const session = await knex('sessions')
       .where({ user_id: userId })
       .whereNull('archived_at')
@@ -77,6 +94,10 @@ export async function up(knex) {
       reviewer_default_model: reviewerDefaultModel,
     });
   }
+
+  if (hasAgentDefaults) {
+    await knex.raw('ALTER TABLE users DROP COLUMN agent_defaults');
+  }
 }
 
 export async function down(knex) {
@@ -89,5 +110,8 @@ export async function down(knex) {
     if (await knex.schema.hasColumn('users', col)) {
       await knex.raw(`ALTER TABLE users DROP COLUMN ${col}`);
     }
+  }
+  if (!(await knex.schema.hasColumn('users', 'agent_defaults'))) {
+    await knex.raw('ALTER TABLE users ADD COLUMN agent_defaults TEXT');
   }
 }
