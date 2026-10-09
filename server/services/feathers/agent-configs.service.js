@@ -24,11 +24,7 @@ import {
   resolveListModelsRequest,
 } from '../agent-config-credential-overrides.js';
 import { normalizeAgentConfigLogo } from '../../../shared/agent-config-logo.js';
-import {
-  applyAgentConfigReplacements,
-  assertAgentConfigNotInUse,
-  summarizeAgentConfigReferences,
-} from '../agent-config-references.js';
+import { throwIfAgentConfigDeleted } from '../agent-config-deleted.js';
 
 const VALID_SDKS = new Set(['claude', 'cursor', 'pi', 'mock']);
 
@@ -46,6 +42,7 @@ export async function listModelsForOwnedConfig(
   const knex = app.get('db');
   const row = await knex('agent_configs').where({ id: configId, user_id: userId }).first();
   if (!row) throw new NotFound('Agent configuration not found');
+  throwIfAgentConfigDeleted(row);
   const config = applyCredentialOverridesToConfig(decryptAgentConfigRow(row), credentialOverrides);
   return listModelsForAgentConfigShape(app, { config, refresh });
 }
@@ -128,7 +125,7 @@ class AgentConfigsService extends KnexService {
 
   async _ownedRow(id, userId) {
     const row = await this.options.Model('agent_configs').where({ id, user_id: userId }).first();
-    if (!row) throw new NotFound('Agent configuration not found');
+    if (!row || row.deleted_at) throw new NotFound('Agent configuration not found');
     return row;
   }
 
@@ -141,6 +138,7 @@ class AgentConfigsService extends KnexService {
     const rows = await this.options
       .Model('agent_configs')
       .where({ user_id: userId })
+      .whereNull('deleted_at')
       .orderBy('label', 'asc');
     return { data: rows, total: rows.length, limit: rows.length, skip: 0 };
   }
@@ -165,36 +163,11 @@ class AgentConfigsService extends KnexService {
     const row = await this._ownedRow(id, userId);
     const knex = this.app.get('db');
     const configId = Number(id);
-    const summary = await summarizeAgentConfigReferences(knex, userId, configId);
-    assertAgentConfigNotInUse(summary);
-    await knex('agent_configs').where({ id: configId, user_id: userId }).delete();
-    return row;
-  }
-
-  async removeWithReplacement(data, params) {
-    const userId = params.user?.id;
-    if (!userId) throw new Forbidden('Not authenticated');
-    const configId = Number(data?.id);
-    if (!Number.isFinite(configId)) throw new BadRequest('id is required');
-    await this._ownedRow(configId, userId);
-    const knex = this.app.get('db');
-    const summary = await summarizeAgentConfigReferences(knex, userId, configId);
-    if (!summary.in_use) {
-      await knex('agent_configs').where({ id: configId, user_id: userId }).delete();
-      return { id: configId };
-    }
-    await applyAgentConfigReplacements(
-      knex,
-      userId,
-      configId,
-      {
-        builder: data?.builder_replacement,
-        reviewer: data?.reviewer_replacement,
-      },
-      summary
-    );
-    await knex('agent_configs').where({ id: configId, user_id: userId }).delete();
-    return { id: configId };
+    const deletedAt = new Date().toISOString();
+    await knex('agent_configs')
+      .where({ id: configId, user_id: userId })
+      .update({ deleted_at: deletedAt, updated_at: deletedAt });
+    return { ...row, deleted_at: deletedAt };
   }
 
   async listModels(data, params) {
@@ -337,6 +310,7 @@ async function ensureUniqueLabel(context) {
   const db = context.service.options.Model;
   let q = db('agent_configs')
     .where({ user_id: userId })
+    .whereNull('deleted_at')
     .whereRaw('LOWER(label) = ?', [label.toLowerCase()]);
   if (context.method === 'patch') q = q.whereNot('id', context.id);
   const existing = await q.first();
@@ -415,7 +389,6 @@ export function registerAgentConfigsService(app, path = 'agent-configs') {
       'listModels',
       'testConnectivity',
       'lastUsed',
-      'removeWithReplacement',
     ],
   });
   app.service(path).hooks(agentConfigsHooks);

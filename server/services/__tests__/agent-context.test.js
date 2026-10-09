@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
+import { AGENT_CONFIG_DELETED_MESSAGE } from '../agent-config-deleted.js';
 import { loadOwnedAgentConfigDecrypted, userRowForAgentSdk } from '../agent-context.js';
 
 describe('userRowForAgentSdk', () => {
@@ -42,5 +43,15 @@ describe('loadOwnedAgentConfigDecrypted', () => {
 
   it('returns null without throwing when the session has no config', async () => {
     expect(await loadOwnedAgentConfigDecrypted(null, owner.id, db)).toBeNull();
+  });
+
+  it('rejects a soft-deleted agent configuration', async () => {
+    await db('agent_configs')
+      .where({ id: configId })
+      .update({ deleted_at: new Date().toISOString() });
+    await expect(loadOwnedAgentConfigDecrypted(configId, owner.id, db)).rejects.toMatchObject({
+      name: 'BadRequest',
+      message: AGENT_CONFIG_DELETED_MESSAGE,
+    });
   });
 });

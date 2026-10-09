@@ -103,5 +103,5 @@ export const sessionReviewService = createService('session-review', {
   customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
 });
 export const agentConfigsService = createService('agent-configs', {
-  customMethods: ['listModels', 'testConnectivity', 'lastUsed', 'removeWithReplacement'],
+  customMethods: ['listModels', 'testConnectivity', 'lastUsed'],
 });

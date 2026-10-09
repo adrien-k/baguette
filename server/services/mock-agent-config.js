@@ -4,7 +4,10 @@ import { accountAgentConfigLabel } from '../../shared/agent-config-labels.js';
 /** Ensure a Mock agent_configs row exists when the mock agent server is enabled. */
 export async function ensureMockAgentConfig(db, userId) {
   if (!isMockAgentSdkEnabled()) return null;
-  const existing = await db('agent_configs').where({ user_id: userId, sdk: 'mock' }).first();
+  const existing = await db('agent_configs')
+    .where({ user_id: userId, sdk: 'mock' })
+    .whereNull('deleted_at')
+    .first();
   if (existing) return existing.id;
   const [id] = await db('agent_configs').insert({
     user_id: userId,

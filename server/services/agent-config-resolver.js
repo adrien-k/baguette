@@ -1,4 +1,5 @@
 import { BadRequest, NotFound } from '@feathersjs/errors';
+import { throwIfAgentConfigDeleted } from './agent-config-deleted.js';
 import { decryptAgentConfigRow } from './agent-config-env.js';
 import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
 import {
@@ -21,6 +22,7 @@ function parseSessionModelId(modelField) {
 export async function loadOwnedAgentConfig(knex, configId, userId) {
   const row = await knex('agent_configs').where({ id: configId, user_id: userId }).first();
   if (!row) throw new NotFound('Agent configuration not found');
+  throwIfAgentConfigDeleted(row);
   return decryptAgentConfigRow(row);
 }
 
@@ -81,6 +83,7 @@ async function repoDefaultAgentFields(db, userId, repoId) {
   if (!link?.agent_default_config_id) return null;
   const config = await db('agent_configs')
     .where({ id: link.agent_default_config_id, user_id: userId })
+    .whereNull('deleted_at')
     .first();
   if (!config) return null;
   const { model, model_params } = parseAgentDefaultModelJson(link.agent_default_model);
@@ -102,6 +105,7 @@ async function repoDefaultReviewerFields(db, userId, repoId) {
   if (!link?.reviewer_default_config_id) return null;
   const config = await db('agent_configs')
     .where({ id: link.reviewer_default_config_id, user_id: userId })
+    .whereNull('deleted_at')
     .first();
   if (!config) return null;
   const { model, model_params } = parseAgentDefaultModelJson(link.reviewer_default_model);
@@ -122,6 +126,7 @@ async function userDefaultAgentFields(db, userId) {
   if (!user?.agent_default_config_id) return null;
   const config = await db('agent_configs')
     .where({ id: user.agent_default_config_id, user_id: userId })
+    .whereNull('deleted_at')
     .first();
   if (!config) return null;
   const { model, model_params } = parseAgentDefaultModelJson(user.agent_default_model);
@@ -142,6 +147,7 @@ async function userDefaultReviewerFields(db, userId) {
   if (!user?.reviewer_default_config_id) return null;
   const config = await db('agent_configs')
     .where({ id: user.reviewer_default_config_id, user_id: userId })
+    .whereNull('deleted_at')
     .first();
   if (!config) return null;
   const { model, model_params } = parseAgentDefaultModelJson(user.reviewer_default_model);
@@ -217,7 +223,10 @@ export async function resolveAgentConfigIdForRepoSdk(
   sdk,
   { role = 'agent' } = {}
 ) {
-  const configs = await knex('agent_configs').where({ user_id: userId, sdk }).orderBy('id', 'asc');
+  const configs = await knex('agent_configs')
+    .where({ user_id: userId, sdk })
+    .whereNull('deleted_at')
+    .orderBy('id', 'asc');
   if (!configs.length) return null;
   const configIds = new Set(configs.map((c) => c.id));
 

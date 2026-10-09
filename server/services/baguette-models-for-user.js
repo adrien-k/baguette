@@ -86,6 +86,7 @@ export async function listModelsForUser(user, repo, app, { agentConfigId = null 
 
   const configRows = await knex('agent_configs')
     .where({ user_id: user.id })
+    .whereNull('deleted_at')
     .orderBy('label', 'asc');
   const entries = [];
   for (const row of configRows) {

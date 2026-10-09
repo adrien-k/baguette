@@ -46,6 +46,7 @@ export async function insertTestAgentConfig(
 export async function ensureTestClaudeConfig(db, userId, apiKey = 'sk-ant-test-key') {
   const existing = await db('agent_configs')
     .where({ user_id: userId, sdk: 'claude', api_key_env_var: ANTHROPIC_API_KEY_ENV })
+    .whereNull('deleted_at')
     .first();
   if (existing) return existing.id;
   return insertTestAgentConfig(db, userId, { sdk: 'claude', apiKey });
@@ -53,7 +54,10 @@ export async function ensureTestClaudeConfig(db, userId, apiKey = 'sk-ant-test-k
 
 /** Default pi config id for a user in tests. */
 export async function ensureTestPiConfig(db, userId, apiKey = 'pi-test-key') {
-  const existing = await db('agent_configs').where({ user_id: userId, sdk: 'pi' }).first();
+  const existing = await db('agent_configs')
+    .where({ user_id: userId, sdk: 'pi' })
+    .whereNull('deleted_at')
+    .first();
   if (existing) return existing.id;
   return insertTestAgentConfig(db, userId, { sdk: 'pi', apiKey });
 }

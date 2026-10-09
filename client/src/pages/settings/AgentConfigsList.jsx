@@ -1,17 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { agentConfigsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { parseAgentDefaultModelJson } from '@baguette/shared/agent-default-model.js';
 import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
 import AgentConfigModal from './AgentConfigModal.jsx';
-import AgentConfigDeleteReplacementModal from './AgentConfigDeleteReplacementModal.jsx';
 import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
 import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
-import {
-  agentConfigInUseReferences,
-  isAgentConfigInUseError,
-} from '../../utils/agentConfigDeleteErrors.js';
 import {
   TEXT_FAINT,
   TEXT_HEADING,
@@ -30,20 +25,7 @@ export default function AgentConfigsList() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [replacementDelete, setReplacementDelete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-
-  const configOptions = useMemo(
-    () =>
-      configs.map((c) => ({
-        key: String(c.id),
-        label: c.label,
-        sdk: c.sdk,
-        logo: c.logo ?? null,
-        default_model: c.default_model,
-      })),
-    [configs]
-  );
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -74,7 +56,6 @@ export default function AgentConfigsList() {
       setEditing(null);
     }
     setConfirmDelete(null);
-    setReplacementDelete(null);
   };
 
   const handleDeleteConfirm = async () => {
@@ -83,25 +64,6 @@ export default function AgentConfigsList() {
     try {
       await agentConfigsService.remove(confirmDelete.id);
       finishDeleteUi(confirmDelete.id);
-      await reload();
-    } catch (err) {
-      if (isAgentConfigInUseError(err)) {
-        const references = agentConfigInUseReferences(err);
-        setReplacementDelete({ config: confirmDelete, references });
-        setConfirmDelete(null);
-      } else {
-        toastError('Failed to delete agent configuration', err);
-      }
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleReplacementConfirm = async (payload) => {
-    setDeletingId(payload.id);
-    try {
-      await agentConfigsService.removeWithReplacement(payload);
-      finishDeleteUi(payload.id);
       await reload();
     } catch (err) {
       toastError('Failed to delete agent configuration', err);
@@ -200,7 +162,7 @@ export default function AgentConfigsList() {
         </div>
       )}
       {modal}
-      {confirmDelete && !replacementDelete && (
+      {confirmDelete && (
         <Modal maxWidth="max-w-md" padding="p-5">
           <ModalHeader
             title="Delete agent configuration?"
@@ -208,8 +170,8 @@ export default function AgentConfigsList() {
             disabled={deletingId !== null}
           />
           <p className={`${TEXT_MUTED} text-sm mb-4`}>
-            Permanently remove <strong className={TEXT_PRIMARY}>{confirmDelete.label}</strong>? If
-            anything still references it, you will choose a replacement next.
+            Remove <strong className={TEXT_PRIMARY}>{confirmDelete.label}</strong>? Sessions and
+            defaults that still reference it will fail until you pick another configuration.
           </p>
           <ModalActions className="flex justify-end gap-2 mt-4">
             <button
@@ -231,16 +193,6 @@ export default function AgentConfigsList() {
           </ModalActions>
         </Modal>
       )}
-      {replacementDelete ? (
-        <AgentConfigDeleteReplacementModal
-          config={replacementDelete.config}
-          references={replacementDelete.references}
-          configOptions={configOptions}
-          deleting={deletingId === replacementDelete.config.id}
-          onClose={() => !deletingId && setReplacementDelete(null)}
-          onConfirm={handleReplacementConfirm}
-        />
-      ) : null}
     </div>
   );
 }

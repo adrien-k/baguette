@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb, testSessionAgentDefaults } from '../../test-utils/db.js';
+import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
+import { AGENT_CONFIG_DELETED_MESSAGE } from '../agent-config-deleted.js';
+import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
 
 const db = createTestDb({ beforeEach, afterEach });
 const params = (user) => ({ provider: 'rest', user });
@@ -102,7 +104,7 @@ describe('agent-configs default_model', () => {
 });
 
 describe('agent-configs remove', () => {
-  it('removes when nothing references the configuration', async () => {
+  it('soft-deletes and hides from find/get', async () => {
     const spare = await app
       .service('agent-configs')
       .create({ label: 'Keep', sdk: 'claude' }, params(user1));
@@ -110,80 +112,54 @@ describe('agent-configs remove', () => {
       .service('agent-configs')
       .create({ label: 'Gone', sdk: 'claude' }, params(user1));
     await app.service('agent-configs').remove(doomed.id, params(user1));
+    const row = await db('agent_configs').where({ id: doomed.id }).first();
+    expect(row.deleted_at).toBeTruthy();
     await expect(app.service('agent-configs').get(doomed.id, params(user1))).rejects.toMatchObject({
       name: 'NotFound',
     });
+    const listed = await app.service('agent-configs').find(params(user1));
+    expect(listed.data.some((c) => c.id === doomed.id)).toBe(false);
     await expect(app.service('agent-configs').get(spare.id, params(user1))).resolves.toBeTruthy();
   });
 
-  it('rejects remove with Conflict when references exist', async () => {
+  it('soft-deletes even when references exist', async () => {
     const doomed = await app
       .service('agent-configs')
       .create({ label: 'Gone', sdk: 'claude' }, params(user1));
     await db('users').where({ id: user1.id }).update({ agent_default_config_id: doomed.id });
-    await expect(
-      app.service('agent-configs').remove(doomed.id, params(user1))
-    ).rejects.toMatchObject({
-      name: 'Conflict',
-      data: { code: 'agent_config_in_use' },
-    });
+    await app.service('agent-configs').remove(doomed.id, params(user1));
+    const row = await db('agent_configs').where({ id: doomed.id }).first();
+    expect(row.deleted_at).toBeTruthy();
+    const user = await db('users').where({ id: user1.id }).first();
+    expect(user.agent_default_config_id).toBe(doomed.id);
   });
 
-  it('removeWithReplacement migrates references then deletes', async () => {
-    const replacement = await app
-      .service('agent-configs')
-      .create({ label: 'Keep', sdk: 'claude', default_model: { model: 'opus' } }, params(user1));
+  it('allows reusing the label after soft delete', async () => {
     const doomed = await app
       .service('agent-configs')
-      .create({ label: 'Gone', sdk: 'claude' }, params(user1));
-    await db('users').where({ id: user1.id }).update({
-      agent_default_config_id: doomed.id,
-      reviewer_default_config_id: doomed.id,
+      .create({ label: 'Reuse', sdk: 'claude' }, params(user1));
+    await app.service('agent-configs').remove(doomed.id, params(user1));
+    const again = await app
+      .service('agent-configs')
+      .create({ label: 'Reuse', sdk: 'claude' }, params(user1));
+    expect(again.label).toBe('Reuse');
+    expect(again.id).not.toBe(doomed.id);
+  });
+
+  it('listModels and SDK loaders reject a soft-deleted config', async () => {
+    const doomed = await app
+      .service('agent-configs')
+      .create({ label: 'Gone', sdk: 'claude', api_key: 'sk-ant-test' }, params(user1));
+    await app.service('agent-configs').remove(doomed.id, params(user1));
+    await expect(
+      app.service('agent-configs').listModels({ id: doomed.id }, params(user1))
+    ).rejects.toMatchObject({
+      name: 'BadRequest',
+      message: AGENT_CONFIG_DELETED_MESSAGE,
     });
-    const [repoId] = await db('repos').insert({
-      full_name: 'test/agent-config-delete',
-      default_branch: 'main',
-      repo_path: 'test/agent-config-delete',
-    });
-    const [sessId] = await db('sessions').insert({
-      user_id: user1.id,
-      repo_id: repoId,
-      repo_full_name: 'test/agent-config-delete',
-      base_branch: 'main',
-      initial_prompt: 'x',
-      short_id: 'delcfg01',
-      status: 'active',
-      session_path: '/tmp/delcfg',
-      agent_config_id: doomed.id,
-      review_agent_config_id: doomed.id,
-      ...testSessionAgentDefaults,
-    });
-    await app.service('agent-configs').removeWithReplacement(
-      {
-        id: doomed.id,
-        builder_replacement: {
-          agent_config_id: replacement.id,
-          model: 'opus',
-          model_params: null,
-        },
-        reviewer_replacement: {
-          agent_config_id: replacement.id,
-          model: 'opus',
-          model_params: null,
-        },
-      },
-      params(user1)
-    );
-    const session = await db('sessions').where({ id: sessId }).first();
-    expect(session.agent_config_id).toBe(replacement.id);
-    expect(session.model).toBe('opus');
-    expect(session.review_agent_config_id).toBe(replacement.id);
-    expect(session.review_model).toBe('opus');
-    const user = await db('users').where({ id: user1.id }).first();
-    expect(user.agent_default_config_id).toBe(replacement.id);
-    expect(user.reviewer_default_config_id).toBe(replacement.id);
-    await expect(app.service('agent-configs').get(doomed.id, params(user1))).rejects.toMatchObject({
-      name: 'NotFound',
+    await expect(loadOwnedAgentConfigDecrypted(doomed.id, user1.id, db)).rejects.toMatchObject({
+      name: 'BadRequest',
+      message: AGENT_CONFIG_DELETED_MESSAGE,
     });
   });
 });
