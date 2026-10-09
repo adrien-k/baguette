@@ -5,6 +5,7 @@ import {
   uniqueAgentConfigLabel,
 } from '../../shared/agent-config-labels.js';
 import { pickAgentConfigIdForSessionBackfill } from '../../shared/agent-config-backfill.js';
+import { buildUserRepoDefaultsPatch } from './lib/user-repo-defaults-backfill.js';
 import {
   ANTHROPIC_API_KEY_ENV,
   ANTHROPIC_AUTH_TOKEN_ENV,
@@ -175,6 +176,15 @@ export async function up(knex) {
   }
 
   await knex.raw(
+    'ALTER TABLE user_repos ADD COLUMN agent_default_config_id INTEGER REFERENCES agent_configs(id)'
+  );
+  await knex.raw('ALTER TABLE user_repos ADD COLUMN agent_default_model TEXT');
+  await knex.raw(
+    'ALTER TABLE user_repos ADD COLUMN reviewer_default_config_id INTEGER REFERENCES agent_configs(id)'
+  );
+  await knex.raw('ALTER TABLE user_repos ADD COLUMN reviewer_default_model TEXT');
+
+  await knex.raw(
     'ALTER TABLE sessions ADD COLUMN agent_config_id INTEGER REFERENCES agent_configs(id)'
   );
   await knex.raw(
@@ -204,6 +214,15 @@ export async function up(knex) {
     if (reviewAgentConfigId != null) patch.review_agent_config_id = reviewAgentConfigId;
     if (Object.keys(patch).length) {
       await knex('sessions').where({ id: session.id }).update(patch);
+    }
+  }
+
+  for (const link of userRepos) {
+    const account = accountByUser.get(link.user_id);
+    const repoScope = repoScopeByKey.get(`${link.user_id}:${link.repo_id}`);
+    const patch = await buildUserRepoDefaultsPatch(knex, link, repoScope, account);
+    if (patch) {
+      await knex('user_repos').where({ id: link.id }).update(patch);
     }
   }
 
@@ -253,6 +272,15 @@ export async function down(knex) {
   }
   if (!(await columnExists(knex, 'users', 'pi_api_key_env_var'))) {
     await knex.raw('ALTER TABLE users ADD COLUMN pi_api_key_env_var TEXT');
+  }
+
+  for (const col of [
+    'reviewer_default_model',
+    'reviewer_default_config_id',
+    'agent_default_model',
+    'agent_default_config_id',
+  ]) {
+    await dropColumnIfExists(knex, 'user_repos', col);
   }
 
   await dropColumnIfExists(knex, 'loops', 'agent_config_id');

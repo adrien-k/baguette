@@ -1,7 +1,10 @@
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { decryptAgentConfigRow } from './agent-config-env.js';
 import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
-import { coerceModelParams } from '../../shared/agent-session-defaults.js';
+import {
+  coerceModelParams,
+  stringifyModelParamsForStorage,
+} from '../../shared/agent-session-defaults.js';
 
 function parseSessionModelId(modelField) {
   if (!modelField) return null;
@@ -21,11 +24,15 @@ export async function loadOwnedAgentConfig(knex, configId, userId) {
   return decryptAgentConfigRow(row);
 }
 
-async function lastUsedSessionAgentRow(db, userId) {
-  return db('sessions')
+async function lastUsedSessionAgentRow(db, userId, repoId = null) {
+  let query = db('sessions')
     .where({ user_id: userId })
     .whereNull('archived_at')
-    .whereNotNull('agent_config_id')
+    .whereNotNull('agent_config_id');
+  if (repoId != null) {
+    query = query.where({ repo_id: repoId });
+  }
+  return query
     .orderByRaw('COALESCE(last_activity_at, updated_at, created_at) DESC')
     .select(
       'agent_config_id',
@@ -62,6 +69,48 @@ function reviewerFieldsFromSessionRow(row) {
     review_model: parseSessionModelId(modelField),
     review_model_params: coerceModelParams(paramsField),
     source: 'last_used',
+  };
+}
+
+async function repoDefaultAgentFields(db, userId, repoId) {
+  if (repoId == null) return null;
+  const link = await db('user_repos')
+    .where({ user_id: userId, repo_id: repoId })
+    .select('agent_default_config_id', 'agent_default_model')
+    .first();
+  if (!link?.agent_default_config_id) return null;
+  const config = await db('agent_configs')
+    .where({ id: link.agent_default_config_id, user_id: userId })
+    .first();
+  if (!config) return null;
+  const { model, model_params } = parseAgentDefaultModelJson(link.agent_default_model);
+  return {
+    agent_config_id: link.agent_default_config_id,
+    agent_sdk: config.sdk,
+    model,
+    model_params,
+    source: 'repo',
+  };
+}
+
+async function repoDefaultReviewerFields(db, userId, repoId) {
+  if (repoId == null) return null;
+  const link = await db('user_repos')
+    .where({ user_id: userId, repo_id: repoId })
+    .select('reviewer_default_config_id', 'reviewer_default_model')
+    .first();
+  if (!link?.reviewer_default_config_id) return null;
+  const config = await db('agent_configs')
+    .where({ id: link.reviewer_default_config_id, user_id: userId })
+    .first();
+  if (!config) return null;
+  const { model, model_params } = parseAgentDefaultModelJson(link.reviewer_default_model);
+  return {
+    review_agent_config_id: link.reviewer_default_config_id,
+    review_agent_sdk: config.sdk,
+    review_model: model,
+    review_model_params: model_params,
+    source: 'repo',
   };
 }
 
@@ -105,20 +154,36 @@ async function userDefaultReviewerFields(db, userId) {
   };
 }
 
-/** Builder prefill: stored user defaults, else most recent session (account-wide). */
-export async function resolveEffectiveAgentDefaults(db, userId) {
+/** Builder prefill: repo defaults, account defaults, then last session (repo-scoped when repoId set). */
+export async function resolveEffectiveAgentDefaults(db, userId, repoId = null) {
+  const fromRepo = await repoDefaultAgentFields(db, userId, repoId);
+  if (fromRepo) return fromRepo;
   const fromUser = await userDefaultAgentFields(db, userId);
   if (fromUser) return fromUser;
-  const row = await lastUsedSessionAgentRow(db, userId);
-  return agentFieldsFromSessionRow(row);
+  let row = await lastUsedSessionAgentRow(db, userId, repoId);
+  let fields = agentFieldsFromSessionRow(row);
+  if (fields) return fields;
+  if (repoId != null) {
+    row = await lastUsedSessionAgentRow(db, userId);
+    fields = agentFieldsFromSessionRow(row);
+  }
+  return fields;
 }
 
-/** Reviewer prefill: stored user defaults, else most recent session review fields. */
-export async function resolveEffectiveReviewerDefaults(db, userId) {
+/** Reviewer prefill: repo defaults, account defaults, then last session (repo-scoped when repoId set). */
+export async function resolveEffectiveReviewerDefaults(db, userId, repoId = null) {
+  const fromRepo = await repoDefaultReviewerFields(db, userId, repoId);
+  if (fromRepo) return fromRepo;
   const fromUser = await userDefaultReviewerFields(db, userId);
   if (fromUser) return fromUser;
-  const row = await lastUsedSessionAgentRow(db, userId);
-  return reviewerFieldsFromSessionRow(row);
+  let row = await lastUsedSessionAgentRow(db, userId, repoId);
+  let fields = reviewerFieldsFromSessionRow(row);
+  if (fields) return fields;
+  if (repoId != null) {
+    row = await lastUsedSessionAgentRow(db, userId);
+    fields = reviewerFieldsFromSessionRow(row);
+  }
+  return fields;
 }
 
 /** @deprecated Use resolveEffectiveAgentDefaults */
@@ -127,9 +192,9 @@ export async function resolveLastUsedAgentConfig(db, userId) {
 }
 
 /** Builder + reviewer defaults for API (agent-configs.lastUsed). */
-export async function resolveSessionFormDefaults(db, userId) {
-  const agent = await resolveEffectiveAgentDefaults(db, userId);
-  const reviewer = await resolveEffectiveReviewerDefaults(db, userId);
+export async function resolveSessionFormDefaults(db, userId, repoId = null) {
+  const agent = await resolveEffectiveAgentDefaults(db, userId, repoId);
+  const reviewer = await resolveEffectiveReviewerDefaults(db, userId, repoId);
   return {
     agent_config_id: agent?.agent_config_id ?? null,
     agent_sdk: agent?.agent_sdk ?? null,
@@ -148,13 +213,12 @@ export async function resolveSessionFormDefaults(db, userId) {
  * Resolve config id for an SDK when callers omit agent_config_id (loops, session create).
  * Uses stored user defaults, then the most recent session — never repo label heuristics.
  *
- * @param {unknown} _repoId — ignored; kept for call-site compatibility
  * @param {{ role?: 'agent' | 'reviewer' }} [options]
  */
 export async function resolveAgentConfigIdForRepoSdk(
   knex,
   userId,
-  _repoId,
+  repoId,
   sdk,
   { role = 'agent' } = {}
 ) {
@@ -166,14 +230,33 @@ export async function resolveAgentConfigIdForRepoSdk(
     .where({ id: userId })
     .select('agent_default_config_id', 'reviewer_default_config_id')
     .first();
-  const defaultConfigId =
+  let link = null;
+  if (repoId != null) {
+    link = await knex('user_repos')
+      .where({ user_id: userId, repo_id: repoId })
+      .select('agent_default_config_id', 'reviewer_default_config_id')
+      .first();
+  }
+  const repoDefaultId =
+    role === 'reviewer' ? link?.reviewer_default_config_id : link?.agent_default_config_id;
+  const userDefaultId =
     role === 'reviewer' ? user?.reviewer_default_config_id : user?.agent_default_config_id;
-  if (defaultConfigId != null && configIds.has(defaultConfigId)) {
-    return defaultConfigId;
+  if (repoDefaultId != null && configIds.has(repoDefaultId)) {
+    return repoDefaultId;
+  }
+  if (userDefaultId != null && configIds.has(userDefaultId)) {
+    return userDefaultId;
   }
 
-  const lastRow = await lastUsedSessionAgentRow(knex, userId);
-  if (lastRow) {
+  const lastRows = [];
+  if (repoId != null) {
+    const repoRow = await lastUsedSessionAgentRow(knex, userId, repoId);
+    if (repoRow) lastRows.push(repoRow);
+  }
+  const accountRow = await lastUsedSessionAgentRow(knex, userId);
+  if (accountRow) lastRows.push(accountRow);
+
+  for (const lastRow of lastRows) {
     const sessionConfigId =
       role === 'reviewer'
         ? (lastRow.review_agent_config_id ?? lastRow.agent_config_id)
@@ -230,10 +313,7 @@ export async function assertAgentConfigOnCreate(context) {
     const reviewConfig = await loadOwnedAgentConfig(db, reviewId, userId);
     data.review_agent_config_id = reviewId;
     data.review_agent_sdk = reviewConfig.sdk;
-  } else if (data.review_agent_sdk === undefined) {
-    data.review_agent_config_id = agentConfigId;
-    data.review_agent_sdk = config.sdk;
-  } else {
+  } else if (data.review_agent_sdk !== undefined) {
     const reviewSdk = data.review_agent_sdk;
     const reviewId = await resolveAgentConfigIdForRepoSdk(
       db,
@@ -244,6 +324,17 @@ export async function assertAgentConfigOnCreate(context) {
     );
     if (reviewId) {
       data.review_agent_config_id = reviewId;
+    }
+  } else {
+    const reviewer = await resolveEffectiveReviewerDefaults(db, userId, data.repo_id ?? null);
+    if (reviewer && (reviewer.source === 'repo' || reviewer.source === 'user')) {
+      data.review_agent_config_id = reviewer.review_agent_config_id;
+      data.review_agent_sdk = reviewer.review_agent_sdk;
+      if (reviewer.review_model != null && reviewer.review_model !== '') {
+        data.review_model = reviewer.review_model;
+      }
+      const reviewParams = stringifyModelParamsForStorage(reviewer.review_model_params);
+      if (reviewParams != null) data.review_model_params = reviewParams;
     }
   }
 

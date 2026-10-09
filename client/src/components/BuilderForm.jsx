@@ -106,6 +106,8 @@ export default function BuilderForm({
   // exist through hasPromptText, so their sdk/model/params picks are intentional and should not
   // be re-seeded from agent defaults or the last session.
   const hasPersistedPromptRef = useRef(Boolean(persistKey && hasPromptText(persistentState.store)));
+  /** Last repo/global scope we applied lastUsed() for — avoids clobbering manual picks on user/config refetches. */
+  const lastSeededScopeRef = useRef(null);
   const { repos, loading: loadingRepos } = useRepoContext();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const defaultTarget = editingLoop
@@ -217,23 +219,37 @@ export default function BuilderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configOptions, agentConfigId]);
 
-  // Seed config/model/params from Settings → Agent session defaults, else the most recent session.
-  // Resolved server-side so it is independent of the selected repo
-  // (All Sessions mode included) instead of filtering sessions by the current repo.
+  // Seed config/model/params from Settings → Agent session defaults (repo-scoped when a repo is
+  // selected), else the most recent session for that scope. Re-run only when repo/global scope
+  // changes — not when userSettings or configOptions refetch with new object identity.
   useEffect(() => {
     if (configsLoading) return;
-    if (editingLoop || sdkModelSeeded || userSettings == null) return;
+    if (editingLoop || userSettings == null) return;
+    if (!configOptions.length) {
+      setSdkModelSeeded(true);
+      return;
+    }
+    const seedScope = {
+      isGlobal: Boolean(isGlobal),
+      repoId: !isGlobal && selectedRepo?.id ? selectedRepo.id : null,
+    };
     // A restored draft prompt means the persisted sdk/model/params were captured with it, so
     // keep them instead of re-seeding from agent defaults or the last session.
     if (hasPersistedPromptRef.current) {
       setSdkModelSeeded(true);
+      lastSeededScopeRef.current = seedScope;
+      return;
+    }
+    const prev = lastSeededScopeRef.current;
+    if (prev && prev.isGlobal === seedScope.isGlobal && prev.repoId === seedScope.repoId) {
       return;
     }
     let cancelled = false;
     agentConfigsService
-      .lastUsed()
+      .lastUsed(seedScope.repoId != null ? { repo_id: seedScope.repoId } : {})
       .then((resolved) => {
         if (cancelled) return;
+        lastSeededScopeRef.current = seedScope;
         setSdkModelSeeded(true);
         if (!resolved?.agent_config_id) return;
         const configKey = String(resolved.agent_config_id);
@@ -247,13 +263,16 @@ export default function BuilderForm({
         );
       })
       .catch(() => {
-        if (!cancelled) setSdkModelSeeded(true);
+        if (!cancelled) {
+          lastSeededScopeRef.current = seedScope;
+          setSdkModelSeeded(true);
+        }
       });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from the default agent
-  }, [editingLoop, sdkModelSeeded, userSettings, configOptions, configsLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scope + readiness only; configOptions read inside effect
+  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal]);
   const {
     branches,
     loading: loadingBranches,

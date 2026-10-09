@@ -35,22 +35,42 @@ export async function summarizeAgentConfigReferences(knex, userId, configId) {
   const user = await knex('users').where({ id: userId }).first();
   const builderUserDefault = user?.agent_default_config_id === configId;
   const reviewerUserDefault = user?.reviewer_default_config_id === configId;
+  const builderRepoDefaults = Number(
+    (
+      await knex('user_repos')
+        .where({ user_id: userId, agent_default_config_id: configId })
+        .count('* as count')
+        .first()
+    )?.count ?? 0
+  );
+  const reviewerRepoDefaults = Number(
+    (
+      await knex('user_repos')
+        .where({ user_id: userId, reviewer_default_config_id: configId })
+        .count('* as count')
+        .first()
+    )?.count ?? 0
+  );
 
   const builder = {
     sessions: builderSessions,
     loops,
     user_default: builderUserDefault,
+    repo_defaults: builderRepoDefaults,
   };
   const reviewer = {
     sessions: reviewerSessions,
     user_default: reviewerUserDefault,
+    repo_defaults: reviewerRepoDefaults,
   };
   const in_use =
     builder.sessions > 0 ||
     builder.loops > 0 ||
     builder.user_default ||
+    builder.repo_defaults > 0 ||
     reviewer.sessions > 0 ||
-    reviewer.user_default;
+    reviewer.user_default ||
+    reviewer.repo_defaults > 0;
 
   return { in_use, builder, reviewer };
 }
@@ -195,5 +215,28 @@ export async function applyAgentConfigReplacements(
           }),
         });
     }
+  }
+
+  if (builder) {
+    await knex('user_repos')
+      .where({ user_id: userId, agent_default_config_id: deletedConfigId })
+      .update({
+        agent_default_config_id: builder.agent_config_id,
+        agent_default_model: stringifyAgentDefaultModel({
+          model: builder.model,
+          model_params: builder.model_params,
+        }),
+      });
+  }
+  if (reviewer) {
+    await knex('user_repos')
+      .where({ user_id: userId, reviewer_default_config_id: deletedConfigId })
+      .update({
+        reviewer_default_config_id: reviewer.agent_config_id,
+        reviewer_default_model: stringifyAgentDefaultModel({
+          model: reviewer.model,
+          model_params: reviewer.model_params,
+        }),
+      });
   }
 }

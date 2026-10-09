@@ -171,4 +171,23 @@ describe('053_agent_configs', () => {
     expect(scope.token).toBeTruthy();
     expect(pickAgentConfigIdForSessionBackfill(null, scope, 'claude')).toBe(scope.token);
   });
+
+  it('completes when a user_repos link has no sessions (pre-053 schema)', async () => {
+    const [userId] = await db('users').insert({
+      github_id: 200,
+      username: 'linked-no-sessions',
+      approved: true,
+    });
+    const [repoId] = await db('repos').insert({
+      full_name: 'org/idle-repo',
+      repo_path: 'repos/org/idle-repo',
+    });
+    await db('user_repos').insert({ user_id: userId, repo_id: repoId });
+
+    await expect(agentConfigsUp(db)).resolves.toBeUndefined();
+
+    const link = await db('user_repos').where({ user_id: userId, repo_id: repoId }).first();
+    expect(link.agent_default_config_id).toBeNull();
+    expect(link.agent_default_model).toBeNull();
+  });
 });

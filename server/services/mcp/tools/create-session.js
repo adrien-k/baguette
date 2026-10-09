@@ -117,7 +117,11 @@ export function createCreateSessionTool(ctx) {
       let model = modelArg ?? null;
       let defaultModelParams;
       if (agentConfigId == null || model == null) {
-        const effective = await resolveEffectiveAgentDefaults(db, userId);
+        const effective = await resolveEffectiveAgentDefaults(
+          db,
+          userId,
+          is_global ? null : repo_id
+        );
         if (agentConfigId == null) agentConfigId = effective?.agent_config_id ?? null;
         if (!model && effective?.model) model = effective.model;
         if (variantIndexArg == null && effective?.model_params?.length) {

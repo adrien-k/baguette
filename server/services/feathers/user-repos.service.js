@@ -1,8 +1,18 @@
 import { KnexService } from '@feathersjs/knex';
 import { NotFound } from '@feathersjs/errors';
+import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
+import { normalizeUserRepoAgentDefaultsPatch } from '../../services/user-agent-defaults.js';
 import { requireUser, scopeByUser, only } from './hooks.js';
 
-const WRITABLE_USER_REPO_FIELDS = ['agent_prompt', 'review_prompt', 'show_in_all_sessions'];
+const WRITABLE_USER_REPO_FIELDS = [
+  'agent_prompt',
+  'review_prompt',
+  'show_in_all_sessions',
+  'agent_default_config_id',
+  'agent_default_model',
+  'reviewer_default_config_id',
+  'reviewer_default_model',
+];
 
 class UserReposService extends KnexService {}
 
@@ -22,10 +32,32 @@ async function requireOwnUserRepo(context) {
   return context;
 }
 
+function formatUserRepoExternal(context) {
+  if (!context.params.provider) return context;
+  const process = (row) => {
+    row.agent_default_model = parseAgentDefaultModelJson(row.agent_default_model);
+    row.reviewer_default_model = parseAgentDefaultModelJson(row.reviewer_default_model);
+    return row;
+  };
+  if (Array.isArray(context.result)) {
+    context.result = context.result.map(process);
+  } else if (context.result) {
+    context.result = process(context.result);
+  }
+  return context;
+}
+
 export const userReposHooks = {
   before: {
     all: [requireUser, scopeByUser],
-    patch: [requireOwnUserRepo, only(WRITABLE_USER_REPO_FIELDS)],
+    patch: [
+      requireOwnUserRepo,
+      normalizeUserRepoAgentDefaultsPatch,
+      only(WRITABLE_USER_REPO_FIELDS),
+    ],
+  },
+  after: {
+    all: [formatUserRepoExternal],
   },
 };
 

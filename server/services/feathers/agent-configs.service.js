@@ -226,10 +226,15 @@ class AgentConfigsService extends KnexService {
     return { models };
   }
 
-  async lastUsed(_data, params) {
+  async lastUsed(data, params) {
     const userId = params.user?.id;
     if (!userId) throw new Forbidden('Not authenticated');
-    return resolveSessionFormDefaults(this.app.get('db'), userId);
+    const repoIdRaw = data?.repo_id;
+    const repoId = repoIdRaw != null && repoIdRaw !== '' ? Number(repoIdRaw) : null;
+    if (repoId != null && !Number.isFinite(repoId)) {
+      throw new BadRequest('repo_id must be a number');
+    }
+    return resolveSessionFormDefaults(this.app.get('db'), userId, repoId);
   }
 
   async testConnectivity(data, params) {

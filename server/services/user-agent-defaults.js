@@ -81,7 +81,7 @@ async function normalizeReviewerModelPatch(raw, configId, user, app) {
   return stringifyAgentDefaultModel(parsed);
 }
 
-export async function normalizeUserAgentDefaultsPatch(context) {
+export async function normalizeAgentDefaultsPatch(context) {
   const data = context.data;
   const touched = DEFAULT_PATCH_KEYS.some((k) => data[k] !== undefined);
   if (!touched) return context;
@@ -146,4 +146,12 @@ export async function normalizeUserAgentDefaultsPatch(context) {
   }
 
   return context;
+}
+
+export async function normalizeUserAgentDefaultsPatch(context) {
+  return normalizeAgentDefaultsPatch(context);
+}
+
+export async function normalizeUserRepoAgentDefaultsPatch(context) {
+  return normalizeAgentDefaultsPatch(context);
 }
