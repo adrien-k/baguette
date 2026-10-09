@@ -11,8 +11,10 @@ export function createPrMarkCommentViewedTool(ctx) {
     schema: {
       commentId: z.number().int().describe('Comment ID from PrComments'),
       commentType: z
-        .enum(['issue', 'review'])
-        .describe('"issue" for conversation thread comments, "review" for inline review comments'),
+        .enum(['issue', 'review', 'review_body'])
+        .describe(
+          '"issue" for conversation thread comments, "review_body" for submitted PR review summaries, "review" for inline review comments'
+        ),
     },
     handler: async ({ commentId, commentType }) => {
       const session = await getSession();
@@ -21,7 +23,9 @@ export function createPrMarkCommentViewedTool(ctx) {
         await getToken(),
         session.repo_full_name,
         commentId,
-        commentType
+        commentType,
+        'eyes',
+        commentType === 'review_body' ? session.pr_number : null
       );
       return ok({ reactionId: result.id, content: result.content });
     },

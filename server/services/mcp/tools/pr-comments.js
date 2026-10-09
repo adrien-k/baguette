@@ -5,7 +5,8 @@ export function createPrCommentsTool(ctx) {
   const { getSession, getToken } = ctx;
   return {
     name: 'PrComments',
-    description: 'List PR conversation comments and inline review comments on the diff.',
+    description:
+      'List PR conversation comments and inline review comments on the diff. Conversation feedback is in issueComments (commentType "issue" or "review_body"); inline code comments are in reviewComments (commentType "review"). Check warnings if conversation comments are missing.',
     schema: {},
     handler: async () => {
       const session = await getSession();

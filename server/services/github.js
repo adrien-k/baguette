@@ -1160,26 +1160,74 @@ export async function getOpenPRByNumber(token, repoFullName, prNumber) {
   };
 }
 
+/** @param {object} c GitHub comment or review payload with optional reactions. */
+function isUnviewedPrComment(c) {
+  return !((c.reactions?.eyes ?? 0) > 0);
+}
+
+/**
+ * Paginated GitHub list endpoint; returns all items or failure metadata for page 1.
+ * @returns {Promise<{ ok: true, items: object[] } | { ok: false, status: number, text: string }>}
+ */
+async function fetchGithubListPages(url, token, accept) {
+  const items = [];
+  let page = 1;
+  while (true) {
+    const separator = url.includes('?') ? '&' : '?';
+    const res = await githubFetch(`${url}${separator}per_page=100&page=${page}`, {
+      token,
+      accept,
+    });
+    if (!res.ok) {
+      if (page === 1) {
+        const text = await res.text().catch(() => '');
+        return { ok: false, status: res.status, text };
+      }
+      break;
+    }
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) break;
+    items.push(...data);
+    if (data.length < 100) break;
+    page++;
+  }
+  return { ok: true, items };
+}
+
 /**
  * Lists comments on a PR: the conversation thread plus inline review comments on the diff.
  *
  * GitHub stores every pull request as an issue (same numeric id). Comments on the main PR
  * “Conversation” tab are therefore **issue comments** (`/issues/{n}/comments`), not pull
- * comments. Inline feedback on files uses the pull review comments API (`/pulls/{n}/comments`).
+ * comments. Submitted PR reviews with a summary body (`/pulls/{n}/reviews`) also appear on
+ * the conversation timeline but are not issue comments. Inline feedback on files uses the
+ * pull review comments API (`/pulls/{n}/comments`).
  *
- * @returns {{ issueComments: object[], reviewComments: object[] }}
+ * @returns {{ issueComments: object[], reviewComments: object[], warnings?: string[] }}
  */
 export async function getPRComments(token, repoFullName, prNumber) {
-  const ghInit = { token, accept: 'application/vnd.github+json' };
-  const mapComment = (c) => ({
+  const ghAccept = 'application/vnd.github+json';
+  const base = `https://api.github.com/repos/${repoFullName}`;
+  const mapIssueComment = (c) => ({
     id: c.id,
+    commentType: 'issue',
     user: c.user?.login,
     body: c.body,
     created_at: c.created_at,
     html_url: c.html_url,
   });
+  const mapReviewBody = (r) => ({
+    id: r.id,
+    commentType: 'review_body',
+    user: r.user?.login,
+    body: r.body,
+    state: r.state,
+    created_at: r.submitted_at,
+    html_url: r.html_url,
+  });
   const mapReviewComment = (c) => ({
     id: c.id,
+    commentType: 'review',
     user: c.user?.login,
     body: c.body,
     path: c.path,
@@ -1188,43 +1236,72 @@ export async function getPRComments(token, repoFullName, prNumber) {
     html_url: c.html_url,
   });
 
-  const [issueRes, reviewRes] = await Promise.all([
-    // PR conversation thread — same resource as issue comments because PR #n === issue #n
-    githubFetch(
-      `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments?per_page=100`,
-      ghInit
-    ),
-    githubFetch(
-      `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/comments?per_page=100`,
-      ghInit
-    ),
+  const [issueResult, reviewResult, reviewsResult] = await Promise.all([
+    fetchGithubListPages(`${base}/issues/${prNumber}/comments`, token, ghAccept),
+    fetchGithubListPages(`${base}/pulls/${prNumber}/comments`, token, ghAccept),
+    fetchGithubListPages(`${base}/pulls/${prNumber}/reviews`, token, ghAccept),
   ]);
 
-  const issueComments = issueRes.ok
-    ? (await issueRes.json()).filter((c) => !(c.reactions?.eyes > 0)).map(mapComment)
+  const warnings = [];
+  if (!issueResult.ok) {
+    warnings.push(
+      `Could not load PR conversation comments via the issues API (HTTP ${issueResult.status}).` +
+        (issueResult.text ? ` ${issueResult.text}` : '') +
+        ' Ensure the GitHub App has repository Issues read access.'
+    );
+  }
+  if (!reviewResult.ok) {
+    warnings.push(
+      `Could not load inline review comments (HTTP ${reviewResult.status}).` +
+        (reviewResult.text ? ` ${reviewResult.text}` : '')
+    );
+  }
+
+  const threadComments = issueResult.ok
+    ? issueResult.items.filter(isUnviewedPrComment).map(mapIssueComment)
     : [];
-  const reviewComments = reviewRes.ok
-    ? (await reviewRes.json()).filter((c) => !(c.reactions?.eyes > 0)).map(mapReviewComment)
+  const reviewBodies = reviewsResult.ok
+    ? reviewsResult.items
+        .filter((r) => r.body?.trim())
+        .filter(isUnviewedPrComment)
+        .map(mapReviewBody)
     : [];
-  return { issueComments, reviewComments };
+  const issueComments = [...threadComments, ...reviewBodies].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
+  const reviewComments = reviewResult.ok
+    ? reviewResult.items.filter(isUnviewedPrComment).map(mapReviewComment)
+    : [];
+
+  return warnings.length > 0
+    ? { issueComments, reviewComments, warnings }
+    : { issueComments, reviewComments };
 }
 
 /**
- * Adds a reaction to a PR comment (issue comment or review comment).
- * @param {'issue'|'review'} commentType
+ * Adds a reaction to a PR comment (issue comment, inline review comment, or review summary).
+ * @param {'issue'|'review'|'review_body'} commentType
  * @param {string} content - GitHub reaction type, e.g. 'eyes'
+ * @param {number} [prNumber] - Required when commentType is `review_body`
  */
 export async function addReactionToComment(
   token,
   repoFullName,
   commentId,
   commentType,
-  content = 'eyes'
+  content = 'eyes',
+  prNumber = null
 ) {
-  const endpoint =
-    commentType === 'review'
-      ? `https://api.github.com/repos/${repoFullName}/pulls/comments/${commentId}/reactions`
-      : `https://api.github.com/repos/${repoFullName}/issues/comments/${commentId}/reactions`;
+  let endpoint;
+  if (commentType === 'review') {
+    endpoint = `https://api.github.com/repos/${repoFullName}/pulls/comments/${commentId}/reactions`;
+  } else if (commentType === 'review_body') {
+    if (!prNumber) throw new Error('prNumber is required for review_body reactions');
+    endpoint = `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}/reviews/${commentId}/reactions`;
+  } else {
+    endpoint = `https://api.github.com/repos/${repoFullName}/issues/comments/${commentId}/reactions`;
+  }
   const res = await githubFetch(endpoint, {
     method: 'POST',
     token,
