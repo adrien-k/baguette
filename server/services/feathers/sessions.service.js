@@ -1457,10 +1457,9 @@ export class SessionsService extends KnexService {
     const user = await this.app.service('users').get(session.user_id, {});
     if (!getGithubToken(user)) return;
 
-    let shouldSync = Boolean(session.pr_number || session.label || session.pr_description != null);
+    let commitsToPush;
     try {
-      const { commitsToPush } = await computeSessionGitStatus(session);
-      shouldSync = shouldSync || commitsToPush > 0;
+      ({ commitsToPush } = await computeSessionGitStatus(session));
     } catch (err) {
       logger.warn(
         { sessionId: session.id, err: err?.message },
@@ -1468,7 +1467,7 @@ export class SessionsService extends KnexService {
       );
       return;
     }
-    if (!shouldSync) return;
+    if (commitsToPush <= 0) return;
 
     await this.push(
       { id: session.id },

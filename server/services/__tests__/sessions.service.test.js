@@ -1770,6 +1770,31 @@ describe('Sessions service - find, get, create', (hooks) => {
       pushSpy.mockRestore();
     });
 
+    it('skips auto-push when there are no commits to push', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-auto-push-no-commits',
+        auto_push: 1,
+        status: 'completed',
+        label: 'Title only',
+        pr_description: 'Body without new commits',
+        pr_number: 42,
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+    });
+
     it('does not flush queued messages when onTurnComplete runs on a stopped session', async () => {
       const created = await app
         .service('sessions')
