@@ -12,15 +12,12 @@ export type {
   PlanMessagePayload,
   SessionMessagePayload,
   SystemMessagePayload,
-  ToolArgsByKind,
   ToolCallKind,
   ToolCallPayload,
-  ToolCallStatus,
   ToolResultByKind,
   TurnResultPayload,
   UserMessagePayload,
   GenericToolResult,
-  MessageOp,
 } from './message-types.ts';
 
 import type { SessionMessagePayload, ToolCallPayload, ToolCallStatus } from './message-types.ts';

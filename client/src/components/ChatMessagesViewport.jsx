@@ -1,8 +1,4 @@
-import { SCROLL_BOTTOM_THRESHOLD_PX } from '../utils/scrollBottom.js';
 import StickToBottomScrollArea from './StickToBottomScrollArea.jsx';
-
-/** @deprecated use SCROLL_BOTTOM_THRESHOLD_PX from utils/scrollBottom.js */
-export const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = SCROLL_BOTTOM_THRESHOLD_PX;
 
 /** Centered narrow column for session chat, details, preview, and review issues. */
 export const SESSION_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-3xl 2xl:max-w-5xl mx-auto';

@@ -5,10 +5,9 @@ import logger from '../logger.js';
 import { resolveDataDirRelativePath } from '../config.js';
 import { dockerBuildImageTag, dockerContainerHostname } from './docker-session.js';
 
-export const BAGUETTE_DIR = '.baguette';
+const BAGUETTE_DIR = '.baguette';
 export const CONFIG_FILENAME = '.baguette.yaml';
 export const INSTRUCTIONS_REL_PATH = path.join(BAGUETTE_DIR, 'instructions.md');
-export const SCRIPTS_REL_DIR = path.join(BAGUETTE_DIR, 'scripts');
 
 function parseBaguetteConfigYaml(raw, sourceLabel) {
   const content = yaml.load(raw);
@@ -100,7 +99,7 @@ export class TaskEnvInterpolationError extends Error {
 }
 
 /** Collect `${{ baguette.tasks.<key>.<attr> }}` references from a config subtree. */
-export function collectTaskPlaceholderRefs(value, refs = []) {
+function collectTaskPlaceholderRefs(value, refs = []) {
   if (typeof value === 'string') {
     const re = new RegExp(TASK_PLACEHOLDER_SCAN_REGEX.source, 'g');
     let match;
@@ -155,7 +154,7 @@ export function assertTaskEnvReferencesValid(taskEnv, configTaskKeys, dependsOnK
   }
 }
 
-export function assertNoRemainingTaskPlaceholders(value, contextLabel = 'task.env') {
+function assertNoRemainingTaskPlaceholders(value, contextLabel = 'task.env') {
   const refs = collectTaskPlaceholderRefs(value);
   if (refs.length === 0) return;
   const { taskKey, attr } = refs[0];
@@ -259,7 +258,7 @@ export function configValueIncludesPlaceholder(value, needle = '${{') {
 /**
  * Recursively apply `mapString` to every string in objects, arrays, or a lone string.
  */
-export function deepMapStrings(value, mapString) {
+function deepMapStrings(value, mapString) {
   if (typeof value === 'string') return mapString(value);
   if (Array.isArray(value)) return value.map((item) => deepMapStrings(item, mapString));
   if (value && typeof value === 'object') {
@@ -462,7 +461,7 @@ export function getAvailableCommands(baguetteConfig) {
 const SERVICE_NAME_REGEX = /^[a-z0-9][a-z0-9-]*$/;
 
 /** Optional human-readable blurb for preview UIs (`services` block). */
-export function normalizeServiceDescription(value) {
+function normalizeServiceDescription(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed || null;

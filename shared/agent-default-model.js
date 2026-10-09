@@ -1,6 +1,6 @@
 import { coerceModelParams } from './agent-session-defaults.js';
 
-export const EMPTY_AGENT_DEFAULT_MODEL = {
+const EMPTY_AGENT_DEFAULT_MODEL = {
   model: null,
   model_params: null,
 };

@@ -9,7 +9,7 @@ type MessageShape = {
 };
 
 /** Typed `content` array or legacy SDK `message.content` blocks (text + file_reference). */
-export function userContentBlocksFromMessage(msg: MessageShape): UserContentBlock[] | null {
+function userContentBlocksFromMessage(msg: MessageShape): UserContentBlock[] | null {
   if (Array.isArray(msg.content)) return msg.content;
   const legacy = msg.message?.content;
   if (!Array.isArray(legacy)) return null;

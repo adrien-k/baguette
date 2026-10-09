@@ -2195,7 +2195,7 @@ function applyGroupSort(context) {
   return context;
 }
 
-export const sessionsHooks = {
+const sessionsHooks = {
   before: {
     all: [requireUser, sanitizeSessionFindQuery, scopeByUser],
     find: [applySessionListFilters, applyGroupSort],

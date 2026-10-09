@@ -10,7 +10,7 @@ export function isDiffWithinInlineLimit(diff) {
   return Buffer.byteLength(diff, 'utf8') <= MAX_INLINE_DIFF_BYTES;
 }
 
-export function diffFilePaths(files) {
+function diffFilePaths(files) {
   return (files ?? [])
     .map((f) => f.new_path || f.old_path)
     .filter((p) => typeof p === 'string' && p.length > 0);

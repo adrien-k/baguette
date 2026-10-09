@@ -19,7 +19,7 @@ export async function loadConfiguredSlackApps(app) {
   }
 }
 
-export function formatSlackAppList(apps) {
+function formatSlackAppList(apps) {
   return apps.map((a) => `"${a.name}"`).join(', ');
 }
 

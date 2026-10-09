@@ -2,7 +2,7 @@ import path from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { cursorSessionDataDir } from '../cursor/cursor-session-paths.js';
 
-export function piSessionDataDir(session) {
+function piSessionDataDir(session) {
   const base = cursorSessionDataDir(session);
   return base ? path.join(base, 'pi-agent') : null;
 }

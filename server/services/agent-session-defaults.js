@@ -7,17 +7,6 @@ import { loadModelsForSdk } from './baguette-models-for-user.js';
 import { userRowForAgentSdk } from './agent-context.js';
 import { parseAgentSessionDefaultsJson } from '../../shared/agent-session-defaults.js';
 
-export {
-  coerceModelParams,
-  isLastUsedAgentDefaults,
-  LAST_USED_AGENT_SDK,
-  mergeAgentSessionDefaults,
-  parseAgentSessionDefaultsJson,
-  resolveCreateSessionAgentFields,
-  stringifyAgentSessionDefaults,
-  withLastUsedFlag,
-} from '../../shared/agent-session-defaults.js';
-
 function validateModelParamsForVariants(variants, modelParams) {
   if (!modelParams?.length) return;
   const orderedIds = orderedParamIdsFromVariants(variants);

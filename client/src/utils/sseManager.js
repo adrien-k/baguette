@@ -1,5 +1,5 @@
 /** Wait before reopening SSE so the network can settle (hidden/offline or after a drop). */
-export const SSE_RECONNECT_DELAY_MS = 500;
+const SSE_RECONNECT_DELAY_MS = 500;
 
 /** @see EventSource.readyState when the browser will not retry on its own */
 const EVENT_SOURCE_CLOSED = 2;

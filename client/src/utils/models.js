@@ -2,15 +2,9 @@ import { resolveVariantForStoredParams } from '@baguette/shared/model-variants.j
 
 export {
   applyParamOverrides,
-  pickPreferredVariantIdx,
-  variantLabel,
-  resolveCursorModelParams,
-  findVariantForStoredParams,
-  findClosestVariantForParams,
   resolveVariantForStoredParams,
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,
-  mergeModelParam,
   formatParamDisplayValue,
   resolveParamsAfterParamChange,
   formatParamLabel,
@@ -52,15 +46,4 @@ export function parseModelField(model) {
     // not JSON-encoded model field
   }
   return model;
-}
-
-export function parseModelFieldFull(model) {
-  if (!model) return { id: null, params: null };
-  try {
-    const parsed = JSON.parse(model);
-    if (parsed?.id) return { id: parsed.id, params: parsed.params || null };
-  } catch {
-    // not JSON-encoded model field
-  }
-  return { id: model, params: null };
 }

@@ -3,8 +3,6 @@ import {
   CLAUDE_AGENT_SDK_LABEL,
   CLAUDE_AGENT_SERVICE_PATH,
   CURSOR_AGENT_SDK_KEY,
-  CURSOR_AGENT_SDK_LABEL,
-  CURSOR_AGENT_SERVICE_PATH,
 } from '../services/agent-sdk-meta.js';
 import {
   registerAgentSdk,
@@ -50,20 +48,6 @@ export function useClaudeAgentStub(app, service, methods) {
       key: CLAUDE_AGENT_SDK_KEY,
       label: CLAUDE_AGENT_SDK_LABEL,
       servicePath: CLAUDE_AGENT_SERVICE_PATH,
-    },
-    service,
-    methods
-  );
-}
-
-/** Stub Cursor at its registered path so dispatch goes through `agent-configs`. */
-export function useCursorAgentStub(app, service, methods) {
-  useAgentServiceStub(
-    app,
-    {
-      key: CURSOR_AGENT_SDK_KEY,
-      label: CURSOR_AGENT_SDK_LABEL,
-      servicePath: CURSOR_AGENT_SERVICE_PATH,
     },
     service,
     methods

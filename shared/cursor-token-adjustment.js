@@ -91,7 +91,7 @@ export function parseCursorRawTokenUsage(json) {
  *
  * @param {{ input_tokens?: number, cache_read_tokens?: number }} usage
  */
-export function cursorBillingInputTokens(usage) {
+function cursorBillingInputTokens(usage) {
   const input = Number(usage.input_tokens) || 0;
   const cacheRead = Number(usage.cache_read_tokens) || 0;
   if (input >= cacheRead) return Math.max(0, input - cacheRead);

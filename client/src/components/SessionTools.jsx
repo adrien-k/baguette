@@ -15,7 +15,7 @@ function wrapClick(onToolClick) {
   };
 }
 
-export function canShowSessionPushTool(session, { readonly, onPush } = {}) {
+function canShowSessionPushTool(session, { readonly, onPush } = {}) {
   if (!session) return false;
   return !!onPush && !readonly && !isGlobalSession(session);
 }

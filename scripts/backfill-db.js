@@ -1,5 +1,5 @@
 /** SQLite bind-parameter budget (default limit 999; stay conservative). */
-export const SQLITE_BIND_CHUNK = 400;
+const SQLITE_BIND_CHUNK = 400;
 
 /**
  * All session_messages in session order — one table scan instead of per-session SELECTs.
@@ -47,7 +47,7 @@ export function rowPatchIsNoop(row, patch) {
  * @param {number[]} ids
  * @param {import('knex').Knex.Transaction} [trx]
  */
-export async function deleteMessageRowsById(knex, ids, trx) {
+async function deleteMessageRowsById(knex, ids, trx) {
   if (!ids.length) return;
   const q = trx ?? knex;
   for (let i = 0; i < ids.length; i += SQLITE_BIND_CHUNK) {
@@ -62,7 +62,7 @@ export async function deleteMessageRowsById(knex, ids, trx) {
  * @param {{ id: number, patch: Record<string, unknown> }[]} patches
  * @param {import('knex').Knex.Transaction} [trx]
  */
-export async function patchMessageRows(knex, patches, trx) {
+async function patchMessageRows(knex, patches, trx) {
   if (!patches.length) return;
   const q = trx ?? knex;
   for (const { id, patch } of patches) {

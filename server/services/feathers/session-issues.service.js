@@ -5,8 +5,6 @@ import { DEFAULT_PAGINATE } from '../../config.js';
 import { issueFixAgentPrompt, issuesFixAllAgentPrompt } from '../../../shared/session-issues.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import {
-  ISSUE_SEVERITIES,
-  ISSUE_STATUSES,
   assertIssueSeverity,
   assertIssueStatus,
   assertAgentIssueStatus,
@@ -16,7 +14,7 @@ function issueActionParams(params) {
   return { user: params.user, provider: params.provider };
 }
 
-export class SessionIssuesService extends KnexService {
+class SessionIssuesService extends KnexService {
   setup(app) {
     this.app = app;
   }
@@ -140,7 +138,7 @@ function validateFindStatus(context) {
 }
 
 /** Closed issues are archived; list only when status is explicitly `closed`. */
-export async function excludeClosedSessionIssues(context) {
+async function excludeClosedSessionIssues(context) {
   if (context.method !== 'find') return context;
   const status = context.params?.query?.status;
   if (status != null) return context;
@@ -179,5 +177,3 @@ export function registerSessionIssuesService(app, path = 'session-issues') {
     },
   });
 }
-
-export { ISSUE_SEVERITIES, ISSUE_STATUSES };

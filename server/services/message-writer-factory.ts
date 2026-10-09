@@ -1,6 +1,6 @@
 import { MessageStreamWriter } from '../../shared/message-stream-writer.ts';
 import { hasNonemptyToolInput } from '../../shared/merge-tool-call-input.js';
-import { dbRowFromPayload, dbPatchFromPayload } from '../../shared/message-db-row.js';
+import { dbRowFromPayload } from '../../shared/message-db-row.js';
 import { agentEventLogPath, appendAgentEvent } from './agent-event-log.js';
 import type { SessionMessagePayload, SessionMessageRow } from '../../shared/session-messages.ts';
 import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from './claude/claude-mapping.ts';
@@ -172,5 +172,3 @@ export async function persistTypedMessage(
     user: { id: opts.userId },
   });
 }
-
-export { dbPatchFromPayload };

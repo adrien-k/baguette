@@ -4,7 +4,7 @@ import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { assertTodoStatus } from '../session-todos.js';
 
-export class SessionTodosService extends KnexService {
+class SessionTodosService extends KnexService {
   async create(data, params) {
     const content = data.content != null ? String(data.content).trim() : '';
     if (!content) throw new BadRequest('content is required');

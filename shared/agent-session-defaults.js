@@ -1,13 +1,13 @@
-export const EMPTY_AGENT_SESSION_DEFAULTS = {
+const EMPTY_AGENT_SESSION_DEFAULTS = {
   agent_sdk: null,
   model: null,
   model_params: null,
 };
 
 /** UI / API sentinel — stored JSON keeps agent_sdk null (last-used mode). */
-export const LAST_USED_AGENT_SDK = 'last_used';
+const LAST_USED_AGENT_SDK = 'last_used';
 
-export function isLastUsedAgentDefaults(defaults) {
+function isLastUsedAgentDefaults(defaults) {
   const parsed = parseAgentSessionDefaultsJson(defaults);
   return parsed.agent_sdk == null;
 }
@@ -74,21 +74,6 @@ export function parseAgentSessionDefaultsJson(raw) {
     model: parsed.model ?? null,
     model_params: coerceModelParams(parsed.model_params),
   };
-}
-
-export function stringifyAgentSessionDefaults(defaults) {
-  return JSON.stringify(defaults);
-}
-
-export function mergeAgentSessionDefaults(existingRaw, patch) {
-  const existing = parseAgentSessionDefaultsJson(existingRaw);
-  const out = { ...existing };
-  if (patch.agent_sdk !== undefined) out.agent_sdk = coerceSdk(patch.agent_sdk);
-  if (patch.model !== undefined) out.model = patch.model || null;
-  if (patch.model_params !== undefined) {
-    out.model_params = coerceModelParams(patch.model_params);
-  }
-  return out;
 }
 
 /**

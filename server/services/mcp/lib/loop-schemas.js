@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const loopScheduleSchema = {
+const loopScheduleSchema = {
   schedule_type: z.enum(['interval', 'daily', 'weekly']).describe('Recurrence type'),
   interval_minutes: z.number().int().optional().describe('For schedule_type interval'),
   time_of_day: z.string().optional().describe('HH:MM for daily/weekly schedules'),

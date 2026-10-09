@@ -7,7 +7,7 @@ import { requireQueuedMessageIdentity } from './message-identity.js';
 
 const SCHEDULED_DISPATCH_BATCH = 20;
 
-export class QueuedMessagesService extends KnexService {
+class QueuedMessagesService extends KnexService {
   setup(app) {
     this.app = app;
   }

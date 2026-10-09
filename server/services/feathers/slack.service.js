@@ -116,7 +116,7 @@ function touchTimestamps(context) {
 const encryptToken = encryptFields({ bot_token: 'bot_token_encrypted' });
 const decryptToken = decryptFields({ bot_token: 'bot_token_encrypted' });
 
-export const slackHooks = {
+const slackHooks = {
   before: {
     all: [requireUser],
     create: [

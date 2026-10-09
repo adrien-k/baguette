@@ -15,7 +15,7 @@ function parsePayload(messageJson) {
  * @param {number} sessionId
  * @returns {Promise<number|null>}
  */
-export async function allocateNextTurnId(db, sessionId) {
+async function allocateNextTurnId(db, sessionId) {
   const rows = await db('sessions')
     .where({ id: sessionId })
     .increment('current_turn_id', 1)

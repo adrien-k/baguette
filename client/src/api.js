@@ -12,9 +12,3 @@ export async function apiFetch(path, options = {}) {
   }
   return res.json();
 }
-
-export function createWebSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-  return ws;
-}

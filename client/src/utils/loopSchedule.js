@@ -22,7 +22,7 @@ export const INTERVAL_PRESETS = [
   { value: 10080, label: 'Every week' },
 ];
 
-export function browserTimezone() {
+function browserTimezone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   } catch {

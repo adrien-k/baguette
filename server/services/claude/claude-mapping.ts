@@ -21,11 +21,9 @@ import type {
   BetaToolResultBlockParam,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs';
 import type {
-  SDKAssistantMessage,
   SDKMessage,
   SDKResultMessage,
   SDKStatusMessage,
-  SDKSystemMessage,
   SDKThinkingTokensMessage,
   SDKPartialAssistantMessage,
   SDKUserMessage,
@@ -50,8 +48,6 @@ import {
   isBaguetteMcpToolName,
 } from '../../../shared/baguette-mcp-tool-names.js';
 
-export type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-
 /** Tool names that produce a `plan` row rather than a tool_call row. */
 const PLAN_TOOL_NAMES = new Set(['ExitPlanMode', 'createPlan']);
 
@@ -61,12 +57,8 @@ const PLAN_TOOL_NAMES = new Set(['ExitPlanMode', 'createPlan']);
  */
 const TASK_TRACKER_TOOL_NAMES = new Set(['TaskCreate', 'TaskUpdate', 'TaskList']);
 
-export function isClaudePlanTool(name?: string | null): boolean {
+function isClaudePlanTool(name?: string | null): boolean {
   return PLAN_TOOL_NAMES.has(name ?? '');
-}
-
-export function isClaudeTaskTrackerTool(name?: string | null): boolean {
-  return TASK_TRACKER_TOOL_NAMES.has(name ?? '');
 }
 
 /** Claude Agent SDK registers the shell tool as lowercase `bash`. */
@@ -80,7 +72,7 @@ const CLAUDE_TOOL_ALIAS: Record<string, string> = {
  * the codebase consumes. MCP tool names are kept verbatim since they carry
  * the provider's namespace.
  */
-export function canonicalizeClaudeToolName(name: string): string {
+function canonicalizeClaudeToolName(name: string): string {
   if (!name) return name;
   if (name.startsWith('mcp__')) return name;
   if (TASK_TRACKER_TOOL_NAMES.has(name)) return 'TodoWrite';
@@ -307,27 +299,6 @@ function mapClaudeStreamEvent(msg: SDKPartialAssistantMessage): MessageOp[] | nu
         partial_json: ev.delta.partial_json,
       },
     ];
-  }
-  return null;
-}
-
-/** Type guard for assistant messages, used by downstream consumers. */
-export function isClaudeAssistantMessage(msg: SDKMessage): msg is SDKAssistantMessage {
-  return msg.type === 'assistant';
-}
-
-/** Type guard for the system init message. */
-export function isClaudeSystemInit(msg: SDKMessage): msg is SDKSystemMessage {
-  return msg.type === 'system' && msg.subtype === 'init';
-}
-
-/** Extract the plan markdown from an assistant message's plan tool_use block. */
-export function claudePlanFromMessage(msg: SDKAssistantMessage): string | null {
-  for (const block of msg.message.content) {
-    if (block.type === 'tool_use' && isClaudePlanTool(block.name)) {
-      const markdown = planMarkdownFromToolInput(block.input);
-      if (markdown) return markdown;
-    }
   }
   return null;
 }

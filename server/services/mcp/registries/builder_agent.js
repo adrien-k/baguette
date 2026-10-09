@@ -35,7 +35,7 @@ import { createPlanHandlers } from '../lib/plan-handlers.js';
 import { createCreatePlanTool } from '../tools/create-plan.js';
 import { createEditPlanTool } from '../tools/edit-plan.js';
 
-export function buildBuilderIssueTools(session, app) {
+function buildBuilderIssueTools(session, app) {
   const h = createIssueHandlers(session, app);
   return [createUpdateIssueStatusTool(h)];
 }
@@ -87,9 +87,4 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
 /** @deprecated Use buildBuilderIssueTools */
 export function buildSessionAgentIssueMcpTools(session, app) {
   return buildBuilderIssueTools(session, app);
-}
-
-/** @deprecated Use buildBuilderAgentTools */
-export function buildSessionAgentTools(session, app, options) {
-  return buildBuilderAgentTools(session, app, options);
 }

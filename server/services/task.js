@@ -22,7 +22,7 @@ export const DEPENDS_ON_TTL_MS = 5 * 60 * 1000; // 5 minutes
 /** How often a task heartbeats its depends_on tasks. */
 export const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 /** After SIGTERM, wait this long before escalating to SIGKILL. */
-export const KILL_GRACE_MS = 30_000;
+const KILL_GRACE_MS = 30_000;
 /** Wall-clock cap for panel / manual tasks (no idle TTL). */
 export const BASE_TASK_TIMEOUT_MS = 10 * 60 * 60 * 1000; // 10 hours
 
@@ -41,7 +41,7 @@ function isTaskHeartbeatEligible(status) {
 }
 
 /** Env passed to `docker run -e` — session/task/extra/port keys only, not host process.env. */
-export function buildDockerRunEnv(fullEnv, declaredKeys, extraEnv, portEnvVars = []) {
+function buildDockerRunEnv(fullEnv, declaredKeys, extraEnv, portEnvVars = []) {
   const keys = new Set(Array.isArray(declaredKeys) ? declaredKeys : []);
   if (extraEnv && typeof extraEnv === 'object') {
     for (const key of Object.keys(extraEnv)) keys.add(key);

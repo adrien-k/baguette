@@ -37,7 +37,7 @@ export function formatUsd(n) {
 }
 
 export const USAGE_DAY_OPTIONS = [7, 30, 90];
-export const DEFAULT_USAGE_DAYS = 30;
+const DEFAULT_USAGE_DAYS = 30;
 
 export function parseUsageDays(value) {
   const n = Number(value);
@@ -45,7 +45,7 @@ export function parseUsageDays(value) {
 }
 
 /** Reviewer vs session-chat. Null / `turn` / anything else counts as session. */
-export function usageKindOf(row) {
+function usageKindOf(row) {
   return row?.kind === 'review' ? 'review' : 'session';
 }
 

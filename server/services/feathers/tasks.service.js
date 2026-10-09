@@ -512,7 +512,7 @@ export function registerTasksService(app, path = 'tasks') {
   app.service(path).hooks(tasksHooks);
 }
 
-export const tasksHooks = {
+const tasksHooks = {
   before: {
     all: [requireUser],
     // `task_key` names a .baguette.yaml task (command/ports/label resolved server-side);

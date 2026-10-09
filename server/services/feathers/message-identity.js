@@ -6,9 +6,4 @@ export function scopeAgentTypeDefaultFind(context) {
   return context;
 }
 
-export {
-  normalizeAgentType,
-  requireMessageIdentity,
-  requireQueuedMessageIdentity,
-  sessionMessageIdentity,
-} from './message-create-fields.js';
+export { requireMessageIdentity, requireQueuedMessageIdentity } from './message-create-fields.js';

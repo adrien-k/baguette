@@ -76,7 +76,7 @@ export const AUTH_GITHUB_CLIENT_SECRET = process.env.AUTH_GITHUB_CLIENT_SECRET;
  * user selected when installing the App — so access can be scoped to a single repository.
  * AUTH_GITHUB_CLIENT_ID / AUTH_GITHUB_CLIENT_SECRET hold the App's credentials.
  */
-export const AUTH_GITHUB_APP_SLUG = process.env.AUTH_GITHUB_APP_SLUG || null;
+const AUTH_GITHUB_APP_SLUG = process.env.AUTH_GITHUB_APP_SLUG || null;
 export const GITHUB_APP_INSTALL_URL = AUTH_GITHUB_APP_SLUG
   ? `https://github.com/apps/${AUTH_GITHUB_APP_SLUG}/installations/new`
   : null;

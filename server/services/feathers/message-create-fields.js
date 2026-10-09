@@ -1,7 +1,7 @@
 import { BadRequest, Forbidden } from '@feathersjs/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 
-export function normalizeAgentType(value) {
+function normalizeAgentType(value) {
   return value === 'reviewer' ? 'reviewer' : 'builder';
 }
 

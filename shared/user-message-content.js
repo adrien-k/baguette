@@ -1,5 +1,5 @@
 /** Text form agents see for a diff line reference (Cursor / Claude). */
-export function fileReferenceAgentText({ path, line, short_sha, change }) {
+function fileReferenceAgentText({ path, line, short_sha, change }) {
   let text = `@${path}:${line}`;
   if (short_sha?.trim()) text += ` commit: ${short_sha.trim()}`;
   if (change === 'added' || change === 'removed') text += ` change: ${change}`;
@@ -30,7 +30,7 @@ export function expandUserContentForAgent(content) {
 }
 
 /** Replace file_reference blocks with text blocks for the Claude agent SDK. */
-export function normalizeUserContentBlocks(content) {
+function normalizeUserContentBlocks(content) {
   if (!Array.isArray(content)) return content;
   if (!content.some((b) => b.type === 'file_reference')) return content;
   return content.flatMap((b) => {

@@ -1,8 +1,6 @@
 import { createPiModelRuntime } from './pi-models.js';
 import { resolvePiCredentials } from './pi/pi-config.js';
 
-export const PI_TEST_TIMEOUT_MS = 20_000;
-
 /**
  * @param {object | null | undefined} config — decrypted agent_config (Pi sdk)
  */

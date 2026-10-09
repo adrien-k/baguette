@@ -1,6 +1,6 @@
 import { Cursor } from '@cursor/sdk';
 
-export const CURSOR_TEST_TIMEOUT_MS = 20_000;
+const CURSOR_TEST_TIMEOUT_MS = 20_000;
 
 function timeoutCheck(timeoutMs) {
   return `Timed out after ${Math.round(timeoutMs / 1000)}s`;

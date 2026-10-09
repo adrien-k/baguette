@@ -19,7 +19,7 @@ import { wrapBaguetteToolList } from './lib/wrap-baguette-tool-handler.js';
  *
  * Slack tools are included only when at least one Slack app has a bot token.
  */
-export async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
+async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
   let baseTools = [];
   try {
     const owner = await app.service('users').get(session.user_id, {});

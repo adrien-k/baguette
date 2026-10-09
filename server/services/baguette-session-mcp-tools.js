@@ -1,1 +1,1 @@
-export { buildBaguetteSessionMcpTools, resolveOwnedSession } from './mcp/index.js';
+export { buildBaguetteSessionMcpTools } from './mcp/registries/base_agent.js';

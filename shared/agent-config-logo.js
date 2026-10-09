@@ -46,9 +46,6 @@ export const AGENT_CONFIG_LOGO_OPTIONS = [
 /** @type {Set<string>} */
 export const LOBE_ICON_IDS = new Set(AGENT_CONFIG_LOGO_OPTIONS.map((entry) => entry.id));
 
-/** @deprecated Use AGENT_CONFIG_LOGO_OPTIONS */
-export const LOBE_ICON_CATALOG = AGENT_CONFIG_LOGO_OPTIONS;
-
 /** Lobe icon id used when `agent_configs.logo` is null. */
 export const SDK_DEFAULT_LOBE_ICON = {
   claude: 'ClaudeCode',
@@ -89,9 +86,4 @@ export function normalizeAgentConfigLogo(value) {
   const stored = storedLogoId(value);
   if (stored) return stored;
   throw new Error('logo must be a supported Lobe icon id');
-}
-
-export function isValidAgentConfigLogo(value) {
-  if (value == null || value === '') return true;
-  return storedLogoId(value) != null;
 }

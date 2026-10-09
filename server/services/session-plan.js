@@ -1,9 +1,3 @@
-import { cursorSessionDataDir } from './cursor/cursor-session-paths.js';
-
-export function sessionDataDir(session) {
-  return cursorSessionDataDir(session);
-}
-
 async function findPlanRow(app, sessionId, userId) {
   const result = await app.service('session-plans').find({
     query: { session_id: sessionId, $limit: 1 },

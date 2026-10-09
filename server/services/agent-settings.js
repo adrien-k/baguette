@@ -1,4 +1,4 @@
-export const SYSTEM_ALLOWED_COMMANDS = [
+const SYSTEM_ALLOWED_COMMANDS = [
   'git commit',
   'git add',
   'git merge',

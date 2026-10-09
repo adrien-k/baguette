@@ -3,7 +3,7 @@ import { BadRequest } from '@feathersjs/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 
-export class SessionPlansService extends KnexService {
+class SessionPlansService extends KnexService {
   async create(data, params) {
     const markdown = data.markdown != null ? String(data.markdown).trim() : '';
     if (!markdown) throw new BadRequest('markdown is required');

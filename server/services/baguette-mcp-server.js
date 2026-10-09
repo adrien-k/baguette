@@ -1,5 +1,4 @@
 export {
-  buildBaguetteToolList,
   buildBaguetteMcpServer,
   buildCursorCustomTools,
   buildPiCustomTools,

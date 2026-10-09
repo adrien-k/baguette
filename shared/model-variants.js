@@ -5,7 +5,7 @@ import {
 } from './cursor-model-prefs.js';
 
 /** @param {string} value */
-export function parseContextSizeToken(value) {
+function parseContextSizeToken(value) {
   if (value == null || value === '') return null;
   const m = String(value)
     .trim()
@@ -19,18 +19,10 @@ export function parseContextSizeToken(value) {
 }
 
 /** Effort tiers low → max (unknown values sort before `low`). */
-export const EFFORT_LEVEL_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_LEVEL_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** Reasoning tiers none → max. */
-export const REASONING_LEVEL_ORDER = [
-  'none',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'extra-high',
-  'max',
-];
+const REASONING_LEVEL_ORDER = ['none', 'low', 'medium', 'high', 'xhigh', 'extra-high', 'max'];
 
 function tierRank(value, tierOrder) {
   const i = tierOrder.indexOf(value);
@@ -41,7 +33,7 @@ function tierRank(value, tierOrder) {
  * Tiered pref → concrete value: exact match, else highest available tier strictly below pref.
  * If pref is below every option, use the lowest available tier.
  */
-export function tierOptionFromPref(prefValue, options, tierOrder) {
+function tierOptionFromPref(prefValue, options, tierOrder) {
   if (!options?.length) return prefValue;
   if (options.includes(prefValue)) return prefValue;
   const prefRank = tierRank(prefValue, tierOrder);
@@ -234,7 +226,7 @@ function scoreVariantAgainstStoredParams(variantParams, storedParams) {
  * Pick the registry variant that agrees with the most stored param values (alias-aware).
  * Ties break with the user's Cursor model preferences, then `is_default`.
  */
-export function findClosestVariantForParams(variants, storedParams, cursorModelPrefs) {
+function findClosestVariantForParams(variants, storedParams, cursorModelPrefs) {
   if (!variants?.length) return null;
   if (!storedParams?.length) {
     const idx = pickPreferredVariantIdx(variants, cursorModelPrefs);

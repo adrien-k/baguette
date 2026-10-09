@@ -16,8 +16,6 @@ const DISPLAY_STATUS: Record<string, string> = {
   CompleteTodo: 'completed',
 };
 
-export { resolveSessionTodoForTool } from '../../utils/sessionTodoMcpDisplay.ts';
-
 export default function SessionTodoToolBlock({
   toolName,
   args,

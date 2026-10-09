@@ -1,4 +1,4 @@
-export const TODO_STATUSES = ['pending', 'in_progress', 'completed'];
+const TODO_STATUSES = ['pending', 'in_progress', 'completed'];
 
 /** Todos shown in ListTodos and session UI (completed rows are removed via CompleteTodo). */
 export const OPEN_TODO_STATUSES = ['pending', 'in_progress'];

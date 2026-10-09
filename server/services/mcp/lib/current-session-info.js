@@ -2,10 +2,10 @@ import { resolveDataDirRelativePath } from '../../../config.js';
 import { isGlobalSession } from '../../../../shared/session-scope.js';
 import { ok } from './result.js';
 
-export const BUILDER_SESSION_RESTRICTIONS =
+const BUILDER_SESSION_RESTRICTIONS =
   "Work exclusively within this session's session_path (the git worktree root returned above). Do not read, edit, search files, or run any shell command outside of it. If session_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before git or other repo-local commands.";
 
-export const REVIEW_READ_ONLY_SESSION_RESTRICTIONS =
+const REVIEW_READ_ONLY_SESSION_RESTRICTIONS =
   "Work exclusively within this session's session_path (the git worktree root returned above). You may read files and run read-only git/search commands there only. Do not edit files or run commands that change the working tree. If session_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before repo-local commands.";
 
 const GLOBAL_REPOS_RESTRICTIONS =
@@ -15,7 +15,7 @@ const GLOBAL_REPOS_RESTRICTIONS =
  * @param {object} sessionRow
  * @param {{ readOnlySession?: boolean }} [options]
  */
-export function buildCurrentSessionInfo(sessionRow, { readOnlySession = false } = {}) {
+function buildCurrentSessionInfo(sessionRow, { readOnlySession = false } = {}) {
   const sessionPath =
     sessionRow.absolute_session_path || resolveDataDirRelativePath(sessionRow.session_path) || '';
 

@@ -4,5 +4,3 @@ import SessionTodoList from './SessionTodoList.tsx';
 export default function TodoBlock({ todos }: { todos?: unknown }) {
   return <SessionTodoList todos={todos} variant="compact" />;
 }
-
-export type { SessionTodoItem } from './SessionTodoList.tsx';

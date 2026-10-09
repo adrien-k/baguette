@@ -45,7 +45,6 @@ export function clearSseConnectionOnLogout() {
   sseManager.stop();
 }
 
-export default app;
 export const sessionsService = createService('sessions', {
   customMethods: [
     'stop',

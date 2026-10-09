@@ -13,10 +13,6 @@ const DEFAULT_PATCH_KEYS = [
   'reviewer_default_model',
 ];
 
-export function userAgentDefaultsPatchKeys() {
-  return DEFAULT_PATCH_KEYS;
-}
-
 async function normalizeModelPatch(raw, configId, user, app) {
   if (raw === undefined) return undefined;
   if (raw === null || raw === '') return null;
@@ -81,7 +77,7 @@ async function normalizeReviewerModelPatch(raw, configId, user, app) {
   return stringifyAgentDefaultModel(parsed);
 }
 
-export async function normalizeAgentDefaultsPatch(context) {
+async function normalizeAgentDefaultsPatch(context) {
   const data = context.data;
   const touched = DEFAULT_PATCH_KEYS.some((k) => data[k] !== undefined);
   if (!touched) return context;

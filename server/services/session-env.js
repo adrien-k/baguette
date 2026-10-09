@@ -12,7 +12,6 @@ import { getPreviewHost, getServicePreviewHost } from './preview.js';
 import { gitAuthorEnvFromUser } from './git-identity.js';
 import { loadOwnedAgentConfigDecrypted } from './agent-context.js';
 import { claudeGatewayFields } from '../../shared/agent-config-api-key-env.js';
-import { applyAgentConfigToEnv } from './agent-config-env.js';
 
 const SERVER_ONLY_ENV_KEYS = [
   'NODE_ENV',
@@ -124,11 +123,6 @@ export async function interpolateTaskConfigValue(db, sessionId, value) {
   const { interpolateOpts } = await buildInterpolateContext(db, sessionId);
   if (!interpolateOpts) return value;
   return interpolateBaguetteConfig(value, interpolateOpts);
-}
-
-/** @deprecated Use interpolateTaskConfigValue */
-export async function interpolateTaskDockerContainer(db, sessionId, container) {
-  return interpolateTaskConfigValue(db, sessionId, container);
 }
 
 /**
@@ -244,15 +238,4 @@ export async function getClaudeEnvForSession(app, sessionId) {
   const session = await db('sessions').where({ id: sessionId }).first();
   if (!session) return buildClaudeEnvFromPlainUser(null, null);
   return getClaudeEnv(app, session.user_id, null, session.agent_config_id ?? null);
-}
-
-/** Merge agent_config env vars into a base env (tasks, subprocesses). */
-export async function applySessionAgentConfigEnv(app, session, baseEnv) {
-  if (!session?.agent_config_id) return baseEnv;
-  const config = await loadOwnedAgentConfigDecrypted(
-    session.agent_config_id,
-    session.user_id,
-    app.get('db')
-  );
-  return applyAgentConfigToEnv(baseEnv, config);
 }

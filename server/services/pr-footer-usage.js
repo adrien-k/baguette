@@ -31,7 +31,7 @@ function cursorFastEnabled(session, kind) {
  * @param {import('knex').Knex} db
  * @param {number} sessionId
  */
-export async function querySessionUsageByModel(db, sessionId) {
+async function querySessionUsageByModel(db, sessionId) {
   const rows = await db('usage')
     .where({ session_id: sessionId })
     .select(

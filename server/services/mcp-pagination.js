@@ -9,7 +9,7 @@ export const DEFAULT_LOG_BYTES = MAX_LOG_RANGE_BYTES;
  * @param {number} totalBytes
  * @returns {number}
  */
-export function toAbsoluteByteIndex(index, totalBytes) {
+function toAbsoluteByteIndex(index, totalBytes) {
   return index >= 0 ? index : totalBytes + index;
 }
 

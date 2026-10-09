@@ -33,7 +33,7 @@ type MockSessionState = {
   channel?: MessageChannel;
 };
 
-export class MockAgentService {
+class MockAgentService {
   app!: AgentApp;
   private _activeSessions = new Map<string | number, MockSessionState>();
 

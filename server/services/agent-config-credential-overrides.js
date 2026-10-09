@@ -19,7 +19,7 @@ export function credentialOverridesFromQuery(fields = {}) {
 }
 
 /** Same as credentialOverridesFromQuery; use for POST bodies (testConnectivity, listModels). */
-export const credentialOverridesFromPayload = credentialOverridesFromQuery;
+const credentialOverridesFromPayload = credentialOverridesFromQuery;
 
 function truthyRefresh(value) {
   return value === true || value === 'true' || value === '1';

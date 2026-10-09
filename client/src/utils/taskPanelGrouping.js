@@ -15,7 +15,7 @@ function compareByLabel(a, b) {
  * @param {(item: object) => string} getLabel
  * @returns {{ ungrouped: object[], namespaces: { namespace: string, items: object[] }[] }}
  */
-export function groupByNamespacedLabel(items, getLabel) {
+function groupByNamespacedLabel(items, getLabel) {
   const sorted = [...items].sort((a, b) => compareByLabel(getLabel(a), getLabel(b)));
   const ungrouped = [];
   const byNamespace = new Map();

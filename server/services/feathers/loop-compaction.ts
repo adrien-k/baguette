@@ -1,13 +1,5 @@
 import type { AgentApp, TiedSessionLoopCompactionArgs } from './agent-service-types.ts';
 
-export function agentServicePathForSdk(
-  agentSdk: string | null | undefined
-): 'claude-agent' | 'cursor-agent' | 'pi-agent' {
-  if (agentSdk === 'cursor') return 'cursor-agent';
-  if (agentSdk === 'pi') return 'pi-agent';
-  return 'claude-agent';
-}
-
 /** Cursor / Pi: no compaction — send the loop prompt as the next user message. */
 export async function directPromptTiedSessionLoopCompaction(
   app: AgentApp,

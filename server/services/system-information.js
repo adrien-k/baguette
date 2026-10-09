@@ -61,7 +61,7 @@ async function usageCostUsdSince(userId, sinceIso) {
   return parseFloat(row?.cost_usd ?? 0) || 0;
 }
 
-export const ACTIVE_AGENT_STATUSES = ['running', 'provisioning', 'archiving'];
+const ACTIVE_AGENT_STATUSES = ['running', 'provisioning', 'archiving'];
 
 const ACTIVE_SESSION_COLUMNS = [
   'id',

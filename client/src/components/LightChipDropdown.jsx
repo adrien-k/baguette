@@ -13,18 +13,18 @@ export function chipOptionClassName(selected) {
   }`;
 }
 
-export function listOptionClassName(selected) {
+function listOptionClassName(selected) {
   return `w-full text-left flex items-center gap-2 px-3 py-2 text-sm transition-colors disabled:opacity-50 ${
     selected ? 'text-fg bg-control-hover' : 'text-fg-muted hover:text-fg hover:bg-control/50'
   }`;
 }
 
-export const lightChipPanelClassName = `max-w-[min(100vw-2rem,20rem)] max-h-72 overflow-y-auto ${DROPDOWN_PANEL_CLASS} p-2.5`;
+const lightChipPanelClassName = `max-w-[min(100vw-2rem,20rem)] max-h-72 overflow-y-auto ${DROPDOWN_PANEL_CLASS} p-2.5`;
 
-export const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
+const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /** List panel without min/max width — pair with `matchTriggerWidth` on the dropdown. */
-export const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
+const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
  * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean }} LightDropdownOption

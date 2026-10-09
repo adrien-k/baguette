@@ -124,7 +124,7 @@ const REVIEW_RESTART_PROMPT =
   'The Baguette server restarted and interrupted your previous review turn before it finished. ' +
   'Check the current issues and the working-tree diff, then continue the review from where you left off.';
 
-export class SessionReviewService {
+class SessionReviewService {
   constructor() {
     this._active = new Map();
     /** @type {Map<number, { extraPrompt?: string, continuation?: boolean }>} */

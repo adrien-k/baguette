@@ -73,8 +73,3 @@ export function buildBaguetteSessionMcpTools(user, app, { callerSession = null }
   const ctx = createAccountContext(user, app, { callerSession });
   return sessionToolsFromContext(ctx);
 }
-
-export function buildBaguetteLoopMcpTools(user, app) {
-  const ctx = createAccountContext(user, app);
-  return loopToolsFromContext(ctx);
-}

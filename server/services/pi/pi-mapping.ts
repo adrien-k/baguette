@@ -23,13 +23,13 @@ const PI_TOOL_ALIAS: Record<string, string> = {
 
 const PLAN_TOOL_NAMES = new Set(['createPlan', 'ExitPlanMode', 'exit_plan']);
 
-export function canonicalizePiToolName(name: string): string {
+function canonicalizePiToolName(name: string): string {
   if (!name) return name;
   if (name.startsWith('mcp__')) return name;
   return PI_TOOL_ALIAS[name] ?? name;
 }
 
-export function piToolKindFromName(canonicalName: string): ToolCallKind {
+function piToolKindFromName(canonicalName: string): ToolCallKind {
   if (canonicalName === 'AskUserQuestions') return 'ask_user';
   const short = baguetteMcpShortName(canonicalName);
   if (short === 'AskUserQuestions') return 'ask_user';

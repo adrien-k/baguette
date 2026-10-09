@@ -159,7 +159,7 @@ export function isThinkingTokensRow(row) {
   return payload.type === 'system' && payload.subtype === 'thinking_tokens';
 }
 
-export function normalizeThinkingTokensPayload(payload) {
+function normalizeThinkingTokensPayload(payload) {
   return {
     type: 'system',
     subtype: 'thinking_tokens',
@@ -203,7 +203,7 @@ export function collapseStreamableAssistantRun(runRows) {
  * @param {object[]} rows
  * @returns {{ deleteIds: number[], patches: { id: number, patch: Record<string, unknown> }[], groupsCollapsed: number, rowsDeleted: number }}
  */
-export function planStreamedAssistantDedupeForSession(rows) {
+function planStreamedAssistantDedupeForSession(rows) {
   let run = [];
   const deleteIds = [];
   const patches = [];
@@ -245,7 +245,7 @@ export function planStreamedAssistantDedupeForSession(rows) {
  * @param {object[]} rows
  * @returns {{ deleteIds: number[], patches: { id: number, patch: Record<string, unknown> }[], groupsCollapsed: number, rowsDeleted: number }}
  */
-export function planThinkingTokensDedupeForSession(rows) {
+function planThinkingTokensDedupeForSession(rows) {
   let run = [];
   const deleteIds = [];
   const patches = [];
@@ -353,7 +353,7 @@ export async function dedupeThinkingTokenRows(knex, { reportProgress = false } =
  * @param {import('knex').Knex} knex
  * @param {{ reportProgress?: boolean }} [options]
  */
-export async function dedupeLegacyStreamRows(knex, { reportProgress = false } = {}) {
+async function dedupeLegacyStreamRows(knex, { reportProgress = false } = {}) {
   const sessions = await knex('session_messages').distinct('session_id');
   const assistantCounts = { sessions: sessions.length, groupsCollapsed: 0, rowsDeleted: 0 };
   const tokenCounts = { sessions: sessions.length, groupsCollapsed: 0, rowsDeleted: 0 };

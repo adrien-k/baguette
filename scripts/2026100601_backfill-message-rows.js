@@ -52,7 +52,7 @@ function isToolResultCarrierRow(row) {
  * @param {object[]} rows
  * @returns {{ deleteIds: number[], patches: { id: number, patch: Record<string, unknown> }[], currentTurnId: number, counts: object }}
  */
-export function planMessageRowBackfill(rows) {
+function planMessageRowBackfill(rows) {
   const counts = {
     mergedToolResults: 0,
     toolCallsRewritten: 0,

@@ -55,10 +55,7 @@ export async function listModelsForOwnedConfig(
  * @param {import('@feathersjs/feathers').Application} app
  * @param {{ sdk: string, refresh?: boolean, credentialOverrides?: Record<string, string> }} opts
  */
-export async function listModelsForDraftConfig(
-  app,
-  { sdk, refresh = false, credentialOverrides = {} }
-) {
+async function listModelsForDraftConfig(app, { sdk, refresh = false, credentialOverrides = {} }) {
   if (!VALID_SDKS.has(sdk)) {
     throw new BadRequest('sdk must be claude, cursor, pi, or mock');
   }
@@ -370,7 +367,7 @@ function formatExternal(context) {
 const encryptApiKey = encryptFields({ api_key: 'api_key_encrypted' });
 const decryptApiKey = decryptFields({ api_key: 'api_key_encrypted' });
 
-export const agentConfigsHooks = {
+const agentConfigsHooks = {
   before: {
     all: [requireUser],
     create: [validateAgentConfigWrite, ensureUniqueLabel, encryptApiKey],

@@ -37,8 +37,6 @@ import {
   isBaguetteMcpToolName,
 } from '../../../shared/baguette-mcp-tool-names.js';
 
-export type { SDKMessage } from '@cursor/sdk';
-
 /**
  * Cursor names its tools in snake_case; map to the canonical PascalCase
  * vocabulary the rest of the codebase consumes (`Bash`, `Read`, `Write`, …).
@@ -218,16 +216,6 @@ export function mapCursorEvent(sdkMsg: SDKMessage): MessageOp[] | null {
       return null;
     }
   }
-}
-
-/** Type guard for assistant messages, used by downstream consumers. */
-export function isCursorAssistantMessage(msg: SDKMessage): msg is SDKAssistantMessage {
-  return msg.type === 'assistant';
-}
-
-/** Type guard for tool-call events. */
-export function isCursorToolUseMessage(msg: SDKMessage): msg is SDKToolUseMessage {
-  return msg.type === 'tool_call';
 }
 
 /** Plan tool names, shared with the turn controller for pending-tool accounting. */

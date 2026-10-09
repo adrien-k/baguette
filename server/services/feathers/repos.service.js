@@ -501,7 +501,7 @@ class ReposService extends KnexService {
   }
 }
 
-export const reposHooks = {
+const reposHooks = {
   before: {
     all: [requireUser],
   },

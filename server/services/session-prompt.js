@@ -27,7 +27,7 @@ export async function buildSystemPromptAppend(sessionRow, { agentPrompt = '' } =
 }
 
 /** Uninterpolated base-prompt.md for Settings (readonly base). */
-export async function loadBaseSessionPromptTemplate() {
+async function loadBaseSessionPromptTemplate() {
   return loadPrompt('base-prompt', {});
 }
 

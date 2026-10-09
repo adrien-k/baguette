@@ -138,7 +138,7 @@ async function clearGithubPickerCacheOnTokenPatch(context) {
   return context;
 }
 
-export const usersHooks = {
+const usersHooks = {
   before: {
     all: [requireUser],
     find: [orderByCreatedAt],

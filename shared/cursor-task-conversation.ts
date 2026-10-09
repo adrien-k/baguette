@@ -27,7 +27,7 @@ function truncate(text: string, max = 140): string {
 }
 
 /** Cursor wraps tool results in `{ status: 'success', value: … }`. */
-export function unwrapCursorTaskEnvelope(raw: unknown): unknown {
+function unwrapCursorTaskEnvelope(raw: unknown): unknown {
   if (isDict(raw) && raw.status === 'success' && raw.value !== undefined && raw.value !== null) {
     return raw.value;
   }
@@ -123,7 +123,7 @@ export function parseCursorTaskConversationSteps(raw: unknown): TaskConversation
   return out;
 }
 
-export function summarizeCursorTaskConversation(steps: TaskConversationStep[]): string | null {
+function summarizeCursorTaskConversation(steps: TaskConversationStep[]): string | null {
   for (let i = steps.length - 1; i >= 0; i--) {
     const s = steps[i];
     if (s.kind === 'assistant' && s.detail) return s.detail;

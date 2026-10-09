@@ -8,7 +8,7 @@ import { scopeAgentTypeDefaultFind, requireMessageIdentity } from './message-ide
 /**
  * Messages service (table: session_messages). Scoped by session; access restricted to sessions owned by params.user.
  */
-export class MessagesService extends KnexService {}
+class MessagesService extends KnexService {}
 
 export function registerMessagesService(app, path = 'messages') {
   const options = {
@@ -92,7 +92,7 @@ async function assignTurn(context) {
   return assignTurnOnUserMessageCreate(context, channel);
 }
 
-export const messagesHooks = {
+const messagesHooks = {
   before: {
     all: [requireUser, scopeAgentTypeDefaultFind, scopeBySessionUser],
     create: [extractForceParam, requireMessageIdentity, assignTurn, queueIfRunning],

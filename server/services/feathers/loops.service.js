@@ -46,7 +46,7 @@ const SCHEDULE_FIELDS = [
  * Loops service (table: loops). A loop is a saved session template plus a recurrence; the
  * scheduler asks this service to run the ones that are due, which creates a real session.
  */
-export class LoopsService extends KnexService {
+class LoopsService extends KnexService {
   setup(app) {
     this.app = app;
   }
@@ -169,7 +169,7 @@ const BUSY_SESSION_STATUSES = new Set(['running', 'approval', 'provisioning', 'a
  * Session-created loops whose session is archived (or gone) stay in the table
  * but are hidden from find/get and skipped by `runDue`.
  */
-export function applyActiveSessionLoopScope(query) {
+function applyActiveSessionLoopScope(query) {
   return query.where(function () {
     this.where('loops.created_from_session', 0).orWhereExists(function () {
       this.select('*')
@@ -546,7 +546,7 @@ async function orderByNewestFirst(context) {
   return context;
 }
 
-export const loopsHooks = {
+const loopsHooks = {
   before: {
     all: [requireUser],
     find: [coerceBooleanQuery, scopeByUser, scopeActiveSessionLoops, orderByNewestFirst],

@@ -1,4 +1,3 @@
-import db from '../db.js';
 import { parseCursorModelPrefsJson } from './agent-preferences.js';
 import { loadOwnedAgentConfig } from './agent-config-resolver.js';
 import { listModelsForOwnedConfig } from './feathers/agent-configs.service.js';
@@ -15,8 +14,8 @@ function parseSessionModelId(modelField) {
 }
 
 /** Session counts per (agent_sdk, model id) for the user. */
-export async function getModelUsageCounts(userId) {
-  const rows = await db('sessions')
+export async function getModelUsageCounts(knex, userId) {
+  const rows = await knex('sessions')
     .where({ user_id: userId })
     .whereNull('archived_at')
     .select('agent_sdk', 'model');
@@ -62,9 +61,9 @@ function modelEntriesFromList(models, sdk, agentConfigId, usage) {
  * @param {import('@feathersjs/feathers').Application} app
  */
 export async function listModelsForUser(user, repo, app, { agentConfigId = null } = {}) {
-  const usage = await getModelUsageCounts(user.id);
-  const prefs = parseCursorModelPrefsJson(user.agent_preferences);
   const knex = app.get('db');
+  const usage = await getModelUsageCounts(knex, user.id);
+  const prefs = parseCursorModelPrefsJson(user.agent_preferences);
 
   if (agentConfigId != null) {
     const config = await loadOwnedAgentConfig(knex, agentConfigId, user.id);

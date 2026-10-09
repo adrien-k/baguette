@@ -1,7 +1,7 @@
 const listeners = new Set();
 
 /** Debounce refetch fan-out so a flaky reconnect does not stampede the API. */
-export const SSE_REFETCH_DEBOUNCE_MS = 250;
+const SSE_REFETCH_DEBOUNCE_MS = 250;
 
 /** @type {ReturnType<typeof setTimeout> | null} */
 let notifyTimer = null;

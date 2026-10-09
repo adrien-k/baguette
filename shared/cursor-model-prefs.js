@@ -9,7 +9,7 @@ export const CURSOR_PARAM_ORDER = [
   'cyber',
 ];
 
-export const PARAM_ID_TO_PREF_KEY = {
+const PARAM_ID_TO_PREF_KEY = {
   fast: 'cursor_fast',
   thinking: 'cursor_thinking',
   effort: 'cursor_effort',

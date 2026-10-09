@@ -1,9 +1,46 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import { importX } from 'eslint-plugin-import-x';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import prettierConfig from 'eslint-config-prettier';
 import tseslint from 'typescript-eslint';
+
+/** Paths whose exports are consumed outside static import analysis (app entrypoints, config). */
+const unusedExportIgnorePaths = [
+  'eslint.config.js',
+  'knexfile.js',
+  'vitest.config.js',
+  'server/index.js',
+  'client/postcss.config.js',
+  'client/vite.config.js',
+  // Knex loads migration up/down by convention, not static imports.
+  'server/migrations',
+];
+
+const importXUnusedExportSettings = {
+  // Required for no-unused-modules to scan JSX/TS importers (default is .js only).
+  'import-x/extensions': ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx'],
+  'import-x/parsers': {
+    '@typescript-eslint/parser': ['.ts', '.tsx'],
+  },
+  'import-x/resolver': {
+    typescript: {
+      project: './tsconfig.json',
+    },
+    node: true,
+  },
+};
+
+const unusedExportRuleOptions = (src, ignoreExports) => [
+  'error',
+  {
+    unusedExports: true,
+    ignoreUnusedTypeExports: true,
+    src,
+    ignoreExports: [...unusedExportIgnorePaths, ...ignoreExports],
+  },
+];
 
 export default [
   {
@@ -21,6 +58,41 @@ export default [
     rules: {
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-console': 'error',
+    },
+  },
+
+  // Scoped `src` graphs — a single repo-wide scan false-positives on cross-root default exports.
+  {
+    files: ['server/**/*.{js,ts}', 'scripts/**/*.js', 'knexfile.js', 'vitest.config.js'],
+    plugins: {
+      'import-x': importX,
+    },
+    settings: importXUnusedExportSettings,
+    rules: {
+      'import-x/no-unused-modules': unusedExportRuleOptions(
+        ['./server', './shared', './scripts', './client/src', 'knexfile.js', 'vitest.config.js'],
+        []
+      ),
+    },
+  },
+  // Shared is consumed via `@baguette/shared/*` aliases; unused-export analysis false-positives there.
+  {
+    files: ['shared/**/*.{js,ts}'],
+    rules: {
+      'import-x/no-unused-modules': 'off',
+    },
+  },
+  {
+    files: ['client/src/**/*.{js,jsx,ts,tsx}'],
+    plugins: {
+      'import-x': importX,
+    },
+    settings: importXUnusedExportSettings,
+    rules: {
+      'import-x/no-unused-modules': unusedExportRuleOptions(
+        ['./client/src', './shared'],
+        ['client/src/main.jsx']
+      ),
     },
   },
 

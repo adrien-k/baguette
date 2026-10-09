@@ -1,7 +1,7 @@
 import net from 'net';
 
 /** Loopback addresses Baguette probes and proxies (IPv4 first). */
-export const LOOPBACK_HOSTS = ['127.0.0.1', '::1'];
+const LOOPBACK_HOSTS = ['127.0.0.1', '::1'];
 
 function tryConnect(port, host) {
   return new Promise((resolve) => {
@@ -29,21 +29,4 @@ export async function getLoopbackHost(port) {
  */
 export async function isPortListening(port) {
   return (await getLoopbackHost(port)) != null;
-}
-
-/**
- * Poll until every port in `ports` is listening, or timeout.
- * @param {number[]} ports
- * @param {{ timeoutMs?: number, pollMs?: number }} opts
- * @returns {Promise<boolean>} true if all ports are listening before timeout
- */
-export async function waitForPorts(ports, { timeoutMs = 60_000, pollMs = 1000 } = {}) {
-  if (!ports.length) return true;
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const results = await Promise.all(ports.map(isPortListening));
-    if (results.every(Boolean)) return true;
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-  return false;
 }

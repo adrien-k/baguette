@@ -3,7 +3,7 @@ import { GitHubBadCredentialsError } from '../errors/github-errors.js';
 /**
  * Standard GitHub REST headers. Pass `token` when the caller has one.
  */
-export function githubAuthHeaders(token, { accept, ...extra } = {}) {
+function githubAuthHeaders(token, { accept, ...extra } = {}) {
   return {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     Accept: accept ?? 'application/vnd.github.v3+json',

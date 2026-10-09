@@ -64,7 +64,7 @@ function mcpDataHasPayload(data: Record<string, unknown>): boolean {
   );
 }
 
-export function parseMcpJsonResult(result: unknown): McpResultData | null {
+function parseMcpJsonResult(result: unknown): McpResultData | null {
   if (result == null) return null;
   if (typeof result === 'object') {
     const obj = result as McpResultData & { data?: unknown; content?: unknown };
@@ -84,7 +84,7 @@ export function parseMcpJsonResult(result: unknown): McpResultData | null {
   return parseJsonObject(result);
 }
 
-export function PrUpsertBlock({
+function PrUpsertBlock({
   title,
   body,
   result,
@@ -168,7 +168,7 @@ export function PrUpsertBlock({
   );
 }
 
-export function CreateIssueBlock({ block }: { block: McpBlockData }) {
+function CreateIssueBlock({ block }: { block: McpBlockData }) {
   const { short_id } = useParams();
   const { sessionUrl } = useFilterRoutes();
   const [searchParams] = useSearchParams();

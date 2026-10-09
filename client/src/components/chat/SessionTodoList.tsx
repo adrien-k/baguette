@@ -19,10 +19,6 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   completed: 'bg-success/15 text-success border-success/35',
 };
 
-export function isOpenTodoStatus(status?: string) {
-  return status === 'pending' || status === 'in_progress';
-}
-
 export function SessionTodoStatusBadge({ status = 'pending' }: { status?: string }) {
   const key = status in STATUS_LABEL ? status : 'pending';
   return (

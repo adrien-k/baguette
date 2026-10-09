@@ -2,7 +2,7 @@ import { listAnthropicApiModels, probeAnthropicMessages } from '../lib/anthropic
 import { claudeGatewayFields } from '../../shared/agent-config-api-key-env.js';
 import { normalizeAnthropicBaseUrl } from './session-env.js';
 
-export const CLAUDE_TEST_TIMEOUT_MS = 20_000;
+const CLAUDE_TEST_TIMEOUT_MS = 20_000;
 const CLAUDE_MESSAGES_PROBE_MODEL = 'claude-sonnet-4-5';
 
 function timeoutCheck(timeoutMs) {

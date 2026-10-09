@@ -1,6 +1,6 @@
 import { ansiToHtml } from '../../utils/ansi.js';
 
-export const TERMINAL_PRE_CLASS =
+const TERMINAL_PRE_CLASS =
   'ansi-log font-mono text-xs whitespace-pre overflow-x-auto overflow-y-auto max-h-80 max-w-full rounded p-2';
 
 /** Render command/stdout/stderr text as an ANSI-styled terminal log. */

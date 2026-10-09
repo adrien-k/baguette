@@ -80,7 +80,7 @@ function maskSecretValues(context) {
   return context;
 }
 
-export const secretsHooks = {
+const secretsHooks = {
   before: {
     all: [requireUser],
   },

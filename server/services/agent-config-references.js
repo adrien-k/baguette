@@ -87,7 +87,7 @@ export function assertAgentConfigNotInUse(summary) {
  * @param {unknown} raw
  * @param {string} label
  */
-export function parseAgentConfigReplacement(raw, label) {
+function parseAgentConfigReplacement(raw, label) {
   if (!raw || typeof raw !== 'object') {
     throw new BadRequest(`${label} is required`);
   }

@@ -4,7 +4,7 @@ import { Repeat } from 'lucide-react';
 const LOOP_TITLE = 'Started by a loop';
 
 /** Shared secondary styling for loop-spawned sessions (sidebar icon + dashboard badge). */
-export const SESSION_LOOP_ICON_CLASS = 'w-3 h-3 shrink-0 text-secondary';
+const SESSION_LOOP_ICON_CLASS = 'w-3 h-3 shrink-0 text-secondary';
 
 export function SessionLoopIcon({ className = '' }) {
   return (

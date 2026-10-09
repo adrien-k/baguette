@@ -58,7 +58,7 @@ export function messageContainsPrUpsert(msg) {
 }
 
 /** Index of the last message containing PrUpsert, or -1 if none. */
-export function findLastPrUpsertMessageIndex(messages) {
+function findLastPrUpsertMessageIndex(messages) {
   let last = -1;
   for (let i = 0; i < messages.length; i++) {
     if (messageContainsPrUpsert(messages[i])) last = i;
@@ -111,7 +111,7 @@ export function isChatWorkMessage(msg, context) {
   return false;
 }
 
-export function countToolCallsInMessages(messages) {
+function countToolCallsInMessages(messages) {
   let n = 0;
   for (const msg of messages) {
     if (msg.type === 'tool_call') {
@@ -126,7 +126,7 @@ export function countToolCallsInMessages(messages) {
   return n;
 }
 
-export function workSpanDurationMs(messages) {
+function workSpanDurationMs(messages) {
   const times = messages
     .map((m) => m.created_at)
     .filter(Boolean)

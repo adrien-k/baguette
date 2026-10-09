@@ -1,5 +1,5 @@
 /** Stable key for collapsing duplicate TodoWrite tool_call rows in chat. */
-export function todoToolCallKey(msg) {
+function todoToolCallKey(msg) {
   return msg.call_id ?? `tool-${msg.id}`;
 }
 

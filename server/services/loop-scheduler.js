@@ -1,7 +1,7 @@
 import logger from '../logger.js';
 
 /** How often we look for due loops and scheduled queued messages. */
-export const LOOP_TICK_MS = 30_000;
+const LOOP_TICK_MS = 30_000;
 
 /**
  * Single periodic tick for time-based background work: recurring loops and scheduled chat messages.

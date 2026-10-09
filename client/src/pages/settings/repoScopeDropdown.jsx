@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 import { Layers } from 'lucide-react';
 import RepoDropdown, { repoDropdownRepoSections } from '../../components/RepoDropdown.jsx';
 
-export const REPO_SCOPE_ALL_LABEL = 'All my repos';
+const REPO_SCOPE_ALL_LABEL = 'All my repos';
 
-export function useRepoScopeSections(repos) {
+function useRepoScopeSections(repos) {
   return useMemo(
     () => [
       {
@@ -22,7 +22,7 @@ export function useRepoScopeSections(repos) {
   );
 }
 
-export function repoScopeTriggerTitle(value) {
+function repoScopeTriggerTitle(value) {
   return value
     ? 'Repository scope: this repo only'
     : `Repository scope: ${REPO_SCOPE_ALL_LABEL.toLowerCase()}`;

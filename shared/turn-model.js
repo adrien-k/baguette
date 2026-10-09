@@ -33,7 +33,7 @@ export function isHumanUserMessage(parsed) {
 }
 
 /** User or Baguette-injected message that starts a new agent turn. */
-export function isTurnStartingUserMessage(msg) {
+function isTurnStartingUserMessage(msg) {
   if (msg?.type !== 'user') return false;
   return isHumanUserMessage(msg) || isBaguetteUserMessage(msg);
 }

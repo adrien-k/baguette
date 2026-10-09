@@ -1,4 +1,4 @@
-export function mapChangedFilesFromApi(files) {
+function mapChangedFilesFromApi(files) {
   return (files ?? []).map((f) => ({
     oldPath: f.old_path,
     newPath: f.new_path,

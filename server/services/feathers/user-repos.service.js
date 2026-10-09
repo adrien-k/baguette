@@ -47,7 +47,7 @@ function formatUserRepoExternal(context) {
   return context;
 }
 
-export const userReposHooks = {
+const userReposHooks = {
   before: {
     all: [requireUser, scopeByUser],
     patch: [

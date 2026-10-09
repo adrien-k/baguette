@@ -3,7 +3,7 @@ export const SECONDARY_BUTTON_CLASS =
   'inline-flex items-center gap-1.5 px-3 py-1.5 bg-ok hover:bg-ok-hover text-on-solid text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 /** Brand primary actions (Save, Send, confirm). */
-export const PRIMARY_BUTTON_CLASS =
+const PRIMARY_BUTTON_CLASS =
   'inline-flex items-center justify-center bg-brand hover:bg-brand-hover disabled:bg-disabled disabled:text-faint text-on-brand font-medium rounded-lg transition-colors';
 
 /** Neutral actions (Plan, Cancel, run configured task, preview logs, etc.). */

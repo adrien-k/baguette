@@ -16,7 +16,7 @@ function endTurnAfterBaguetteTool(app, session) {
   }
 }
 
-export function wrapBaguetteToolHandler(session, app, name, handler) {
+function wrapBaguetteToolHandler(session, app, name, handler) {
   return async (args) => {
     const result = await handler(args);
     if (isTurnEndingBaguetteTool(name)) {

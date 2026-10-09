@@ -76,7 +76,7 @@ export function toStrippedName(fullName) {
 }
 
 /** Base directory for all repo data (worktrees, main clone): `<REPOS_DIR>/<stripped>/` */
-export function repoDirPath(strippedName) {
+function repoDirPath(strippedName) {
   return path.join(REPOS_DIR, strippedName);
 }
 
@@ -436,7 +436,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
 }
 
 /** Resolve the on-disk worktree path from the DB row, or from repo + short_id when still provisioning. */
-export function resolveSessionWorktreePath(session, repo) {
+function resolveSessionWorktreePath(session, repo) {
   const fromDb = resolveDataDirRelativePath(session?.session_path);
   if (fromDb) return fromDb;
   const stripped = repo?.stripped_name || (repo?.full_name ? toStrippedName(repo.full_name) : null);
@@ -446,7 +446,7 @@ export function resolveSessionWorktreePath(session, repo) {
   return null;
 }
 
-export async function tryDeleteUniqueLocalBranch(mainRepoPath, session) {
+async function tryDeleteUniqueLocalBranch(mainRepoPath, session) {
   const localBranch = session?.local_branch;
   const remoteBranch = session?.remote_branch;
   if (!mainRepoPath || !localBranch || !remoteBranch || localBranch === remoteBranch) return;
@@ -558,30 +558,6 @@ export async function getOpenPR(token, repoFullName, branch) {
     base_ref: pr.base.ref,
     draft: Boolean(pr.draft),
   };
-}
-
-/**
- * Checks whether the worktree has uncommitted changes or commits not yet pushed
- * to any remote. Returns true if a git-sync turn should be injected.
- */
-export async function worktreeNeedsSync(worktreePath) {
-  try {
-    await execFileAsync('git', ['add', '-A'], { cwd: worktreePath, stdio: 'pipe' });
-    const { stdout: staged } = await execFileAsync('git', ['status', '--porcelain'], {
-      cwd: worktreePath,
-    });
-    if (staged.trim()) return true;
-
-    // Commits that exist locally but have no corresponding remote ref
-    const { stdout: unpushed } = await execFileAsync(
-      'git',
-      ['log', '--oneline', 'HEAD', '--not', '--remotes'],
-      { cwd: worktreePath }
-    );
-    return unpushed.trim().length > 0;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -729,21 +705,6 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
     return parseInt(stdout.trim(), 10) || 0;
   } catch {
     return 0;
-  }
-}
-
-/**
- * Returns true if there are uncommitted changes in the worktree.
- * @returns {Promise<boolean>}
- */
-export async function gitHasUncommitted(worktreePath) {
-  try {
-    const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'status', '--porcelain'], {
-      maxBuffer: 256,
-    });
-    return stdout.trim().length > 0;
-  } catch {
-    return false;
   }
 }
 

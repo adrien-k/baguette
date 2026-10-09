@@ -6,9 +6,9 @@
  * firing at 09:00 local across DST changes; interval schedules are plain elapsed time.
  */
 
-export const SCHEDULE_TYPES = ['interval', 'daily', 'weekly'];
-export const MIN_INTERVAL_MINUTES = 15;
-export const MAX_INTERVAL_MINUTES = 60 * 24 * 30;
+const SCHEDULE_TYPES = ['interval', 'daily', 'weekly'];
+const MIN_INTERVAL_MINUTES = 15;
+const MAX_INTERVAL_MINUTES = 60 * 24 * 30;
 
 const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 const TIME_OF_DAY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -138,17 +138,6 @@ export function parseDaysOfWeek(value) {
   } catch {
     return null;
   }
-}
-
-/** The schedule half of a loop row, in the shape `normalizeSchedule` accepts. */
-export function scheduleFromLoop(loop) {
-  return {
-    type: loop.schedule_type,
-    interval_minutes: loop.interval_minutes,
-    time_of_day: loop.time_of_day,
-    days_of_week: parseDaysOfWeek(loop.days_of_week),
-    timezone: loop.timezone,
-  };
 }
 
 /**

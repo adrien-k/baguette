@@ -39,22 +39,6 @@ export type ToolCallKind =
   | 'mcp'
   | 'generic';
 
-export const TOOL_CALL_KINDS = [
-  'bash',
-  'read',
-  'delete',
-  'glob',
-  'grep',
-  'write',
-  'edit',
-  'todo',
-  'task',
-  'ask_user',
-  'exit_plan',
-  'mcp',
-  'generic',
-] as const satisfies readonly ToolCallKind[];
-
 export type ToolCallStatus = 'running' | 'completed' | 'error' | 'cancelled';
 
 /** Fields shared by every tool result, regardless of kind. */
@@ -285,5 +269,3 @@ export type MessageOp =
   | { op: 'plan'; markdown: string }
   | { op: 'system'; payload: SystemMessagePayload }
   | { op: 'turn_result'; payload: TurnResultPayload };
-
-export type { SessionMessageRow } from './session-messages.ts';

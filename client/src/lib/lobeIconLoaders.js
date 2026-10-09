@@ -2,7 +2,6 @@
  * Per-icon dynamic imports for the curated agent-config logo set only.
  * Avoids loading the full @lobehub/icons barrel.
  */
-import { LOBE_ICON_IDS } from '@baguette/shared/agent-config-logo.js';
 
 /** @type {Record<string, () => Promise<{ default: object }>>} */
 const LOADERS = {
@@ -50,10 +49,6 @@ const LOADERS = {
 };
 
 const cache = new Map();
-
-export function canLoadLobeIcon(iconId) {
-  return LOBE_ICON_IDS.has(iconId) && Boolean(LOADERS[iconId]);
-}
 
 export function loadLobeIconModule(iconId) {
   const loader = LOADERS[iconId];

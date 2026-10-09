@@ -171,7 +171,7 @@ export async function resolveEffectiveAgentDefaults(db, userId, repoId = null) {
 }
 
 /** Reviewer prefill: repo defaults, account defaults, then last session (repo-scoped when repoId set). */
-export async function resolveEffectiveReviewerDefaults(db, userId, repoId = null) {
+async function resolveEffectiveReviewerDefaults(db, userId, repoId = null) {
   const fromRepo = await repoDefaultReviewerFields(db, userId, repoId);
   if (fromRepo) return fromRepo;
   const fromUser = await userDefaultReviewerFields(db, userId);
@@ -184,11 +184,6 @@ export async function resolveEffectiveReviewerDefaults(db, userId, repoId = null
     fields = reviewerFieldsFromSessionRow(row);
   }
   return fields;
-}
-
-/** @deprecated Use resolveEffectiveAgentDefaults */
-export async function resolveLastUsedAgentConfig(db, userId) {
-  return resolveEffectiveAgentDefaults(db, userId);
 }
 
 /** Builder + reviewer defaults for API (agent-configs.lastUsed). */
