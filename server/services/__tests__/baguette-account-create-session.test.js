@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
@@ -13,7 +13,7 @@ vi.mock('../cursor-models.js', () => ({
 import { buildBaguetteAccountToolList } from '../baguette-account-mcp-tools.js';
 import { resolveCreateSessionBaseBranch } from '../mcp/tools/create-session.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 describe('resolveCreateSessionBaseBranch', () => {
   it('accepts branch alone', () => {

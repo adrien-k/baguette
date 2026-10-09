@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import {
   createTestDb,
@@ -20,7 +20,7 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
   };
 });
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 function parseResult(result) {
   return JSON.parse(result.content[0].text);

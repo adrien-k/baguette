@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 
 import { createTestDb } from '../../test-utils/db.js';
@@ -14,7 +14,7 @@ import {
 } from '../feathers/agent-configs.service.js';
 import { sessionMessageIdentity } from '../feathers/message-create-fields.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 let app;
 let user1;

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
@@ -6,7 +6,7 @@ import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 const params = (user) => ({ provider: 'rest', user });
 
 function makeApp(dbRef) {

@@ -23,7 +23,7 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
   };
 });
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const params = (user) => ({ provider: 'rest', user });
 
@@ -106,6 +106,9 @@ describe('MockAgentService', () => {
 
     await vi.waitFor(
       async () => {
+        const sessionRow = await db('sessions').where({ id: sessionId }).first();
+        expect(sessionRow.status).toBe('completed');
+
         const rows = await db('session_messages').where({ session_id: sessionId }).orderBy('id');
         const assistant = rows.find((r) => {
           try {
@@ -157,8 +160,5 @@ describe('MockAgentService', () => {
       return p.blocks?.some((b) => b.type === 'thinking');
     });
     expect(thinkingRow).toBeTruthy();
-
-    const sessionRow = await db('sessions').where({ id: sessionId }).first();
-    expect(sessionRow.status).toBe('completed');
   });
 });

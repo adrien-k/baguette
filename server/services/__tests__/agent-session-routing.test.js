@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
 import { agentServicePathForSession, getAgentServiceForSession } from '../agent-session-routing.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 function makeApp() {
   const app = feathers();

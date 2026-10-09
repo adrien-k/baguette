@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
 import { AGENT_CONFIG_DELETED_MESSAGE } from '../agent-config-deleted.js';
 import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 const params = (user) => ({ provider: 'rest', user });
 
 function makeApp() {

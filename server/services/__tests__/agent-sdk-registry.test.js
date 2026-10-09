@@ -20,7 +20,7 @@ vi.mock('../baguette-mcp-server.js', () => ({
   buildCursorCustomTools: vi.fn(async () => []),
 }));
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 function makeApp() {
   const app = feathers();

@@ -44,7 +44,7 @@ import {
   clearInstallationsCache,
 } from '../../services/github.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 let server;
 let baseUrl;

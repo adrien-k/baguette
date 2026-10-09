@@ -79,8 +79,8 @@ const loopData = (overrides = {}) => ({
   ...overrides,
 });
 
-describe('Loops service', (hooks) => {
-  const db = createTestDb(hooks);
+describe('Loops service', () => {
+  const db = createTestDb();
 
   let app;
   let aliceId;

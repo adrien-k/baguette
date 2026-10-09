@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createTestDb } from '../../server/test-utils/db.js';
 import { backfillTrimArchivedSessionMessages } from '../2026100603_backfill-trim-archived-session-messages.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 async function seedSession({ archived = false, shortId }) {
   let user = await db('users').where({ username: 't' }).first();

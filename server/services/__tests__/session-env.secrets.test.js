@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { loadSecretsForUser } from '../session-env.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 describe('loadSecretsForUser', () => {
   beforeEach(async () => {

@@ -6,7 +6,7 @@ import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSlackService } from '../feathers/slack.service.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const params = { provider: 'rest', user: { id: 1 } };
 const unauthParams = { provider: 'rest' };

@@ -214,8 +214,8 @@ async function seedUserAndSession(db, { github_id, username, shortId, sessionPat
 // 1. Custom methods: stop, commands, remove
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Sessions service - custom methods', (hooks) => {
-  const db = createTestDb(hooks);
+describe('Sessions service - custom methods', () => {
+  const db = createTestDb();
 
   let app;
   let userId;
@@ -867,8 +867,8 @@ describe('Sessions service - custom methods', (hooks) => {
 // Repos unlink — session scope (real sessions + repos services)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Repos service - unlink', (hooks) => {
-  const db = createTestDb(hooks);
+describe('Repos service - unlink', () => {
+  const db = createTestDb();
 
   let app;
   let userId;
@@ -948,8 +948,8 @@ function sessionData(overrides = {}) {
   };
 }
 
-describe('Sessions service - find, get, create', (hooks) => {
-  const db = createTestDb(hooks);
+describe('Sessions service - find, get, create', () => {
+  const db = createTestDb();
 
   let app;
   let repoId;
@@ -2166,8 +2166,8 @@ describe('Sessions service - find, get, create', (hooks) => {
 // 3. restartInterruptedSessions — recovery of sessions cut short by a reboot
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Sessions service - restartInterruptedSessions', (hooks) => {
-  const db = createTestDb(hooks);
+describe('Sessions service - restartInterruptedSessions', () => {
+  const db = createTestDb();
 
   let app;
   let userId;

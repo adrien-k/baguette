@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { AGENT_CONFIG_DELETED_MESSAGE } from '../agent-config-deleted.js';
@@ -17,7 +17,7 @@ describe('userRowForAgentSdk', () => {
 });
 
 describe('loadOwnedAgentConfigDecrypted', () => {
-  const db = createTestDb({ beforeEach, afterEach });
+  const db = createTestDb();
   let owner;
   let configId;
 

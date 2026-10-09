@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 describe('trimSessionMessagesForArchive', () => {
   let sessionId;

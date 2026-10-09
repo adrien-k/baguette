@@ -1,12 +1,12 @@
 /**
  * Integration tests for the secrets Feathers service.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSecretsService } from '../feathers/secrets.service.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const user1 = { id: 1 };
 const user2 = { id: 2 };

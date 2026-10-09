@@ -17,7 +17,7 @@ vi.mock('../feathers/claude-agent.service.ts', () => ({
   getSessionEnv: vi.fn().mockResolvedValue({}),
 }));
 
-describe('Tasks service — in-memory', (hooks) => {
+describe('Tasks service — in-memory', () => {
   let app;
   let userId1, userId2;
   let sessionId1, sessionId2;
@@ -28,7 +28,7 @@ describe('Tasks service — in-memory', (hooks) => {
     user: userId != null ? { id: userId } : undefined,
   });
 
-  const db = createTestDb(hooks);
+  const db = createTestDb();
 
   beforeEach(async () => {
     // Reset in-memory tasks between tests so IDs are predictable.

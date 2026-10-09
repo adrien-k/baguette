@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { buildSystemPromptAppend, buildReviewSystemPromptAppend } from '../session-prompt.js';
 
@@ -25,7 +25,7 @@ vi.mock('../../config.js', async (importOriginal) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 async function seedSession(fields = {}) {
   await db('users')

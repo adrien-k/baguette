@@ -141,7 +141,7 @@ describe('buildClaudeEnvFromPlainUser', () => {
   });
 });
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 describe('getClaudeEnv agent_config_id', () => {
   let app;

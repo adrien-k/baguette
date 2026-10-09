@@ -5,9 +5,16 @@
 import Knex from 'knex';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { beforeAll, beforeEach, afterAll } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsPath = path.join(__dirname, '../migrations');
+
+const TABLES_SKIP_TRUNCATE = new Set([
+  'sqlite_sequence',
+  'knex_migrations',
+  'knex_migrations_lock',
+]);
 
 /** Default agent identity on sessions / messages rows in tests (matches messages.create requirements). */
 export const testSessionAgentDefaults = {
@@ -31,26 +38,42 @@ async function createAndMigrate() {
   return db;
 }
 
+async function truncateAllTables(db) {
+  await db.raw('PRAGMA foreign_keys = OFF');
+  const tables = await db
+    .select('name')
+    .from('sqlite_master')
+    .where('type', 'table')
+    .whereNotIn('name', [...TABLES_SKIP_TRUNCATE]);
+  for (const { name } of tables) {
+    await db(name).del();
+  }
+  // Reset AUTOINCREMENT so the next insert in each table starts at 1 again.
+  await db('sqlite_sequence').del();
+  await db.raw('PRAGMA foreign_keys = ON');
+}
+
 /**
- * Wire an in-memory test DB to Vitest lifecycle hooks.
- * - beforeAll: create DB and run migrations
- * - afterEach: clear all table data
+ * Wire an in-memory test DB to Vitest lifecycle hooks in the current suite.
+ * - beforeAll: create DB and run migrations once
+ * - beforeEach: delete all rows (fast reset between tests)
  * - afterAll: destroy the DB
  *
- * @param {() => void | Promise<void>} beforeAllFn - Vitest beforeAll
- * @param {() => void | Promise<void>} afterAllFn - Vitest afterAll
- * @param {() => void | Promise<void>} afterEachFn - Vitest afterEach
- * @returns {{ get db(): import('knex').Knex | null }} Getter for the DB (valid after beforeAll has run)
+ * @returns {import('knex').Knex} Knex query builder bound to the suite DB
  */
-export function createTestDb({ beforeEach, afterEach }) {
+export function createTestDb() {
   let dbRef = null;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     dbRef = await createAndMigrate();
   });
 
-  afterEach(async () => {
-    await dbRef.destroy();
+  beforeEach(async () => {
+    await truncateAllTables(dbRef);
+  });
+
+  afterAll(async () => {
+    await dbRef?.destroy();
   });
 
   const db = (table) => dbRef(table);

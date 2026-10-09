@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { DEBOUNCE_DELAY_MS } from '../session-activity.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 function makeApp(dbRef) {
   const app = feathers();

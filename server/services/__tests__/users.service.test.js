@@ -30,7 +30,7 @@ import { registerUsersService } from '../feathers/users.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const params = (user) => ({ provider: 'rest', user });
 const unauthParams = { provider: 'rest' };

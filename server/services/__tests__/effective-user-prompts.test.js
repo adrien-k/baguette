@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { getEffectiveAgentPrompt, getEffectiveReviewPrompt } from '../effective-user-prompts.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 describe('effective-user-prompts', () => {
   let app;

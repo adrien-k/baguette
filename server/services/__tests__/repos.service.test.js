@@ -7,7 +7,7 @@
  * - create: registers a repo via ensureMainClone (mocked); revives soft-deleted repos
  * - remove: soft-deletes a repo and its active sessions
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerReposService } from '../feathers/repos.service.js';
@@ -60,7 +60,7 @@ import {
   ensureMainClone,
 } from '../github.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const adminUser = { id: null, access_token: 'gh_token_admin' };
 const regularUser = { id: null, access_token: 'gh_token_user' };

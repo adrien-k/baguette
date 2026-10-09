@@ -1,7 +1,7 @@
 /**
  * Integration tests for the user-repos Feathers service.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerUserReposService } from '../feathers/user-repos.service.js';
@@ -18,7 +18,7 @@ vi.mock('../../lib/cache.js', () => ({
   clearByPrefix: vi.fn(async () => {}),
 }));
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const params = (user) => ({ provider: 'rest', user });
 

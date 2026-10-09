@@ -30,7 +30,7 @@ vi.mock('../../lib/encrypt.js', () => ({ decrypt: vi.fn() }));
 
 import createSettingsRoutes from '../settings.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const USER = 1;
 const OTHER_USER = 2;

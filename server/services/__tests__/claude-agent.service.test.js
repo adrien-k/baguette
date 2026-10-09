@@ -168,8 +168,8 @@ const BASE_REPO = {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('ClaudeAgentService', (hooks) => {
-  const db = createTestDb(hooks);
+describe('ClaudeAgentService', () => {
+  const db = createTestDb();
   let mockApp;
 
   beforeEach(async () => {

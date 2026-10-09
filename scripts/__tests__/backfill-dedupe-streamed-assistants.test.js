@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createTestDb } from '../../server/test-utils/db.js';
 import {
   coalesceStringParts,
@@ -10,7 +10,7 @@ import {
   isThinkingTokensRow,
 } from '../2026100602_backfill-dedupe-streamed-assistants.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 async function seedSession(shortId) {
   const [userId] = await db('users').insert({

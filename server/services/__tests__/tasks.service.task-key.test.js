@@ -36,7 +36,7 @@ const CONFIG = {
   },
 };
 
-describe('Tasks service — task_key resolution', (hooks) => {
+describe('Tasks service — task_key resolution', () => {
   let app;
   let userId;
   let sessionId;
@@ -44,7 +44,7 @@ describe('Tasks service — task_key resolution', (hooks) => {
   const params = () => ({ provider: 'rest', user: { id: userId } });
   const create = (data) => app.service('tasks').create(data, params());
 
-  const db = createTestDb(hooks);
+  const db = createTestDb();
 
   beforeEach(async () => {
     loadBaguetteConfig.mockResolvedValue(CONFIG);

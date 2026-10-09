@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { encrypt } from '../../lib/encrypt.js';
 import { findUserByMcpToken } from '../mcp-auth.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 describe('mcp-auth', () => {
   let userId;

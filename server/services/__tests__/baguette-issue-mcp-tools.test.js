@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
@@ -11,7 +11,7 @@ import {
 } from '../baguette-issue-mcp-tools.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 function parseOk(result) {
   return JSON.parse(result.content[0].text);

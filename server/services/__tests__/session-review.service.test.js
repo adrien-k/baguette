@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createTestDb } from '../../test-utils/db.js';
@@ -32,12 +32,16 @@ vi.mock('@cursor/sdk', () => ({
   Agent: { create: vi.fn() },
 }));
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 const params = (user) => ({ provider: 'rest', user });
 const execFileAsync = promisify(execFile);
 
 async function git(cwd, ...args) {
   await execFileAsync('git', ['-C', cwd, ...args]);
+}
+
+async function removeGitWorktree(dir) {
+  await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
 
 async function initGitWorktree() {
@@ -555,7 +559,7 @@ describe('session-review service', () => {
       );
     });
     query.mockImplementation(() => makeQueryResult());
-    await fs.promises.rm(wt, { recursive: true, force: true });
+    await removeGitWorktree(wt);
   });
 
   it('send updates last_reviewed_commit_sha after new commits', async () => {
@@ -585,7 +589,7 @@ describe('session-review service', () => {
     const session = await db('sessions').where({ id: sessionId }).first();
     const head = await gitRevParseShort(wt, 'HEAD');
     expect(session.last_reviewed_commit_sha).toBe(head);
-    await fs.promises.rm(wt, { recursive: true, force: true });
+    await removeGitWorktree(wt);
   });
 
   it('clearContext wipes review messages and agent ids', async () => {
@@ -639,7 +643,7 @@ describe('session-review service', () => {
         'completed'
       );
     });
-    await fs.promises.rm(wt, { recursive: true, force: true });
+    await removeGitWorktree(wt);
   });
 
   it('reviewNewCommits appends user_message to the review prompt', async () => {
@@ -671,7 +675,7 @@ describe('session-review service', () => {
         'completed'
       );
     });
-    await fs.promises.rm(wt, { recursive: true, force: true });
+    await removeGitWorktree(wt);
   });
 
   it('reviewNewCommits allows a follow-up with no new commits', async () => {
@@ -698,7 +702,7 @@ describe('session-review service', () => {
         'completed'
       );
     });
-    await fs.promises.rm(wt, { recursive: true, force: true });
+    await removeGitWorktree(wt);
   });
 
   it('reviewNewCommits uses the base branch when the commit marker is unset', async () => {
@@ -749,7 +753,7 @@ describe('session-review service', () => {
     await vi.waitFor(() => {
       expect(app.service('session-review')._active.has(sessionId)).toBe(false);
     });
-    await fs.promises.rm(wt, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeGitWorktree(wt);
   });
 
   it('clearContext rejects while a review turn is active', async () => {

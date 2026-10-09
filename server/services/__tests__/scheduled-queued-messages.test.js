@@ -1,7 +1,7 @@
 /**
  * Scheduled queued messages: kind=scheduled rows dispatched on send_at via messages.create.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
@@ -17,7 +17,7 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
   };
 });
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const params = (user) => ({ provider: 'rest', user });
 const messageJson = JSON.stringify({

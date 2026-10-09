@@ -17,7 +17,7 @@ vi.mock('../anthropic-models.js', () => ({
 const { listModelsForUser, loadModelsForSdk } = await import('../baguette-models-for-user.js');
 const { listModels } = await import('../anthropic-models.js');
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 function makeApp() {
   const app = feathers();

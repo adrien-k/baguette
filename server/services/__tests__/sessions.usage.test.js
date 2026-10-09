@@ -6,7 +6,7 @@
  * totals for the whole query rather than per-turn figures. Each turn's row is
  * therefore the difference from the previous result.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { SessionsService } from '../feathers/sessions.service.js';
@@ -16,7 +16,7 @@ vi.mock('../../logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const db = createTestDb({ beforeEach, afterEach });
+const db = createTestDb();
 
 const modelUsage = (input, output, cacheRead = 0, cacheWrite = 0) => ({
   inputTokens: input,
