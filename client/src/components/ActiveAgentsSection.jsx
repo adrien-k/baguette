@@ -18,9 +18,13 @@ function modelAndParamsLabel(model, modelParams) {
   return `${id} · ${modelParams}`;
 }
 
-export default function ActiveAgentsSection({ id = 'active-agents' }) {
+export default function ActiveAgentsSection({
+  id = 'active-agents',
+  userId = null,
+  showUser = false,
+}) {
   const { sessionUrl } = useFilterRoutes();
-  const { agents, loading } = useActiveAgents();
+  const { agents, loading } = useActiveAgents({ userId });
 
   useEffect(() => {
     if (loading || window.location.hash !== `#${id}`) return;
@@ -60,7 +64,10 @@ export default function ActiveAgentsSection({ id = 'active-agents' }) {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-heading truncate">{sessionTitle}</div>
-                    <div className="text-xs text-faint truncate mt-0.5">{repoLabel}</div>
+                    <div className="text-xs text-faint truncate mt-0.5">
+                      {showUser && agent.username ? <span>{agent.username} · </span> : null}
+                      {repoLabel}
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs shrink-0 sm:justify-end sm:text-right">
                     <span className="text-fg-muted">{KIND_LABELS[agent.kind] ?? agent.kind}</span>

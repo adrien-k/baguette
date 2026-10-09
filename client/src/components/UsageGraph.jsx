@@ -6,6 +6,7 @@ import {
   OTHER_KEY,
   recentDays,
   sumBy,
+  usageConfigKey,
 } from '../utils/usageSeries.js';
 import UsageModelLabel from './UsageModelLabel.jsx';
 
@@ -22,7 +23,7 @@ function yAxisTicks(max) {
 
 const DIMENSIONS = [
   { key: 'repo', label: 'By repo' },
-  { key: 'sdk', label: 'By agent' },
+  { key: 'config', label: 'By config' },
   { key: 'kind', label: 'By activity' },
   { key: 'model', label: 'By model' },
 ];
@@ -61,7 +62,7 @@ function axisLabel(day, days) {
 }
 
 /**
- * Stacked daily chart (tokens or spend). `rows` come from `/api/usage/breakdown`.
+ * Stacked daily chart (tokens or spend). `rows` come from the usage service `breakdown` method.
  * Click a day to pin it (parent can filter the table); click again to clear.
  */
 export default function UsageGraph({
@@ -79,13 +80,13 @@ export default function UsageGraph({
   const total = data.reduce((sum, r) => sum + metricOf(r, metric), 0);
 
   const canSplitByRepo = sumBy(data, (r) => r.repo_full_name).size > 1;
-  const canSplitBySdk = sumBy(data, (r) => r.agent_sdk).size > 1;
+  const canSplitByConfig = sumBy(data, (r) => usageConfigKey(r)).size > 1;
   const canSplitByKind = sumBy(data, (r) => (r.kind === 'review' ? 'review' : 'session')).size > 1;
   const canSplitByModel = sumBy(data, (r) => r.model || '').size > 1;
 
   const dimensionOptions = DIMENSIONS.filter((d) => {
     if (d.key === 'repo') return canSplitByRepo;
-    if (d.key === 'sdk') return canSplitBySdk;
+    if (d.key === 'config') return canSplitByConfig;
     if (d.key === 'model') return canSplitByModel;
     return canSplitByKind;
   });

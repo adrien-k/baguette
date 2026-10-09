@@ -77,7 +77,8 @@ import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
-import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
+import { estimateUsageRowCostUsd } from '../../lib/usage-row-cost.js';
+import { usageAgentConfigIdForTurn } from '../../lib/usage-agent-config.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
@@ -1268,7 +1269,11 @@ export class SessionsService extends KnexService {
    * TODO: should rather be implemented on the claude-agent service
    * @returns {Promise<number>} cost delta written to `usage.cost_usd`
    */
-  async recordClaudeUsage(session, result, { kind, model, totalsKey, patchSessionCost } = {}) {
+  async recordClaudeUsage(
+    session,
+    result,
+    { kind, model, totalsKey, patchSessionCost, agentConfigId } = {}
+  ) {
     if (!session || !result) return 0;
     const key = totalsKey ?? session.id;
     const prev = this._lastResultTotals.get(key) ?? { cost: 0, models: {} };
@@ -1281,6 +1286,7 @@ export class SessionsService extends KnexService {
     if (costUpdate <= 0 && turnUsage.total_tokens <= 0) return 0;
 
     const db = this.app.get('db');
+
     const row = {
       session_id: session.id,
       user_id: session.user_id,
@@ -1297,6 +1303,7 @@ export class SessionsService extends KnexService {
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
       model: turnUsage.model ?? model ?? session.model ?? null,
+      agent_config_id: usageAgentConfigIdForTurn(session, { kind, agentConfigId }),
     };
     if (kind) row.kind = kind;
     await db('usage').insert(row);
@@ -1322,21 +1329,26 @@ export class SessionsService extends KnexService {
    * @param {Record<string, unknown>} turnUsage per-turn accumulator; derivation mutates it in place
    * @returns {Promise<number>} cost delta written to `usage.cost_usd`
    */
-  async recordCursorUsage(session, turnUsage, { kind, turnModel, patchSessionCost } = {}) {
+  async recordCursorUsage(
+    session,
+    turnUsage,
+    { kind, turnModel, patchSessionCost, agentConfigId } = {}
+  ) {
     if (!session || !turnUsage) return 0;
 
     applyCursorUsageDerivation(turnUsage);
-    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
+    const db = this.app.get('db');
+    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, session, { kind, turnModel });
 
     if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
 
-    const db = this.app.get('db');
     await db('usage').insert({
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUsd, 0),
       agent_sdk: 'cursor',
+      agent_config_id: usageAgentConfigIdForTurn(session, { kind, agentConfigId }),
       kind: kind ?? null,
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
@@ -1371,20 +1383,25 @@ export class SessionsService extends KnexService {
    * @param {Record<string, unknown>} turnUsage
    * @returns {Promise<number>}
    */
-  async recordPiUsage(session, turnUsage, { kind, turnModel, patchSessionCost } = {}) {
+  async recordPiUsage(
+    session,
+    turnUsage,
+    { kind, turnModel, patchSessionCost, agentConfigId } = {}
+  ) {
     if (!session || !turnUsage) return 0;
 
-    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel });
+    const db = this.app.get('db');
+    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, session, { kind, turnModel });
 
     if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
 
-    const db = this.app.get('db');
     await db('usage').insert({
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUsd, 0),
       agent_sdk: 'pi',
+      agent_config_id: usageAgentConfigIdForTurn(session, { kind, agentConfigId }),
       kind: kind ?? null,
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,

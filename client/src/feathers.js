@@ -90,6 +90,12 @@ export const loopsService = createService('loops');
 export const usersService = createService('users', {
   customMethods: ['approve', 'reject', 'generateMcpToken', 'revokeMcpToken'],
 });
+export const usageModelPricingService = createService('usage-model-pricing', {
+  customMethods: ['recompute'],
+});
+export const usageService = createService('usage', {
+  customMethods: ['breakdown', 'agentConfigs', 'activeAgents', 'usageUsers'],
+});
 export const pluginsService = createService('admin/plugins', { customMethods: ['refresh'] });
 export const slackService = createService('admin/slack', {
   customMethods: ['test'],

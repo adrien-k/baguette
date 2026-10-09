@@ -1,10 +1,10 @@
 /**
  * Chart-data helpers for the Usage page: they pivot the flat
- * (day, repo, sdk, kind, model) rows from `/api/usage/breakdown` into stacked series
+ * (day, repo, agent_config_id, kind, model) breakdown rows into stacked series
  * along whichever dimension is being shown, and into a coarser table.
  *
  * The graph defaults to tokens (reported by both SDKs). It can also plot `cost_usd`
- * when the user toggles to spend; Cursor and Pi rows use estimated cost from the agent pricing table.
+ * when the user toggles to spend; all agent SDKs use estimated cost from the model pricing table.
  */
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { repoDisplayName } from './repoDisplayName.js';
@@ -132,8 +132,22 @@ export const SERIES_COLORS = [
 const OTHER_COLOR = 'bg-track';
 export const OTHER_KEY = '__other__';
 
-const SDK_COLORS = { claude: SERIES_COLORS[0], cursor: SERIES_COLORS[1] };
 const KIND_COLORS = { session: SERIES_COLORS[0], review: SERIES_COLORS[2] };
+
+export const UNKNOWN_CONFIG_KEY = '__none__';
+
+/** Display label for an agent configuration on the Usage page. */
+export function usageConfigLabel(row) {
+  if (row?.agent_config_label) return row.agent_config_label;
+  if (row?.agent_config_id != null) return `Config ${row.agent_config_id}`;
+  if (row?.agent_sdk) return `${formatAgentSdkDisplayName(row.agent_sdk)} (no config)`;
+  return 'Unknown configuration';
+}
+
+export function usageConfigKey(row) {
+  if (row?.agent_config_id != null) return String(row.agent_config_id);
+  return UNKNOWN_CONFIG_KEY;
+}
 
 /** The last `count` UTC days, oldest first — `date(created_at)` on the server is UTC too. */
 export function recentDays(count = DEFAULT_USAGE_DAYS) {
@@ -179,9 +193,23 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
     (r) => r.model || '',
     metric
   );
+  const { colors: configColors, otherCount: otherConfigCount } = rankedPaletteKeys(
+    rows,
+    (r) => usageConfigKey(r),
+    metric
+  );
+
+  const configTitle = new Map();
+  for (const r of rows) {
+    const key = usageConfigKey(r);
+    if (!configTitle.has(key)) configTitle.set(key, usageConfigLabel(r));
+  }
 
   const keyOf = (r) => {
-    if (dimension === 'sdk') return r.agent_sdk;
+    if (dimension === 'config') {
+      const key = usageConfigKey(r);
+      return configColors.has(key) ? key : OTHER_KEY;
+    }
     if (dimension === 'kind') return usageKindOf(r);
     if (dimension === 'model') {
       const model = r.model || '';
@@ -192,7 +220,7 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
 
   const colorOf = (key) => {
     if (key === OTHER_KEY) return OTHER_COLOR;
-    if (dimension === 'sdk') return SDK_COLORS[key] ?? OTHER_COLOR;
+    if (dimension === 'config') return configColors.get(key) ?? OTHER_COLOR;
     if (dimension === 'kind') return KIND_COLORS[key] ?? OTHER_COLOR;
     if (dimension === 'model') return modelColors.get(key) ?? OTHER_COLOR;
     return repoColors.get(key) ?? OTHER_COLOR;
@@ -204,9 +232,13 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
         const n = otherModelCount;
         return `Other (${n} ${n === 1 ? 'model' : 'models'})`;
       }
+      if (dimension === 'config') {
+        const n = otherConfigCount;
+        return `Other (${n} ${n === 1 ? 'config' : 'configs'})`;
+      }
       return `Other (${otherRepoCount} ${otherRepoCount === 1 ? 'repo' : 'repos'})`;
     }
-    if (dimension === 'sdk') return formatAgentSdkDisplayName(key);
+    if (dimension === 'config') return configTitle.get(key) ?? key;
     if (dimension === 'kind') return KIND_LABELS[key] ?? key;
     if (dimension === 'model') return usageModelLabel(key);
     return usageRepoLabel(key);
@@ -250,11 +282,14 @@ export function aggregateUsage(rows, { byModel = false } = {}) {
   for (const row of rows) {
     const kind = usageKindOf(row);
     const model = row.model || '';
+    const configKey = usageConfigKey(row);
     const key = byModel
-      ? `${row.repo_full_name}\t${row.agent_sdk}\t${kind}\t${model}`
-      : `${row.repo_full_name}\t${row.agent_sdk}\t${kind}`;
+      ? `${row.repo_full_name}\t${configKey}\t${kind}\t${model}`
+      : `${row.repo_full_name}\t${configKey}\t${kind}`;
     const prev = totals.get(key) ?? {
       repo_full_name: row.repo_full_name,
+      agent_config_id: row.agent_config_id ?? null,
+      agent_config_label: row.agent_config_label ?? null,
       agent_sdk: row.agent_sdk,
       kind,
       ...(byModel ? { model } : {}),

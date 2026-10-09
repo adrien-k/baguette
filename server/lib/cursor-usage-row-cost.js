@@ -2,6 +2,7 @@ import {
   estimateAgentTurnCostUsd,
   parseModelParamsJson,
 } from '../../shared/agent-model-pricing.js';
+import { parseCursorRawTokenUsage } from '../../shared/cursor-token-adjustment.js';
 
 /**
  * USD estimate for a Cursor/Pi `usage` row (or live turn tokens) using session model snapshots.
@@ -29,4 +30,20 @@ export function estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel
 
   const priced = estimateAgentTurnCostUsd(turnUsage, modelId, parseModelParamsJson(paramsJson));
   return priced ?? 0;
+}
+
+/** @param {Record<string, unknown>} usageRow */
+export function turnUsageFromUsageRow(usageRow) {
+  const raw = parseCursorRawTokenUsage(usageRow.raw_token_usage);
+  const tokenSource = raw ?? usageRow;
+  return {
+    input_tokens: Number(usageRow.input_tokens) || 0,
+    output_tokens: Number(tokenSource.output_tokens) || 0,
+    cache_read_tokens: Number(tokenSource.cache_read_tokens) || 0,
+    cache_write_tokens: Number(tokenSource.cache_write_tokens) || 0,
+    reasoning_tokens: Number(tokenSource.reasoning_tokens) || 0,
+    total_tokens: Number(usageRow.total_tokens) || 0,
+    model: usageRow.model ?? null,
+    raw_token_usage: usageRow.raw_token_usage ?? null,
+  };
 }

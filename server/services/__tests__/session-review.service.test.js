@@ -203,7 +203,7 @@ describe('session-review service', () => {
     const usage = await db('usage').where({ session_id: sessionId, kind: 'review' });
     expect(usage.length).toBe(1);
     expect(usage[0].agent_sdk).toBe('claude');
-    expect(Number(usage[0].cost_usd)).toBeCloseTo(0.01);
+    expect(Number(usage[0].cost_usd)).toBeCloseTo(0.01, 6);
     expect(usage[0].input_tokens).toBe(10);
     expect(usage[0].output_tokens).toBe(5);
   });

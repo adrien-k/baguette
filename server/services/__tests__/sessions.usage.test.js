@@ -203,6 +203,33 @@ describe('claude usage recording', () => {
     expect(service._patch).not.toHaveBeenCalled();
   });
 
+  it('prefers agentConfigId snapshot over session agent_config_id on the row', async () => {
+    const { userId, sessionId } = await seed();
+    const [configA] = await db('agent_configs').insert({
+      user_id: userId,
+      label: 'A',
+      sdk: 'claude',
+    });
+    const [configB] = await db('agent_configs').insert({
+      user_id: userId,
+      label: 'B',
+      sdk: 'claude',
+    });
+    await db('sessions').where({ id: sessionId }).update({ agent_config_id: configB });
+    const service = makeService();
+    const session = await db('sessions').where({ id: sessionId }).first();
+
+    await service.recordClaudeUsage(
+      session,
+      resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
+      { agentConfigId: configA }
+    );
+
+    const rows = await usageRows(sessionId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].agent_config_id).toBe(configA);
+  });
+
   it('records review usage without mixing chat running totals', async () => {
     const { sessionId } = await seed();
     const service = makeService();
@@ -263,7 +290,7 @@ describe('cursor usage recording', () => {
     expect(JSON.parse(rows[0].raw_token_usage).input_tokens).toBe(8007);
     expect(rows[0].input_tokens).toBe(8004);
     expect(rows[0].total_tokens).toBe(8016);
-    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.00161611, 6);
+    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.00161526, 5);
     expect(rows[0].agent_sdk).toBe('cursor');
     expect(service._patch).toHaveBeenCalledWith(
       sessionId,

@@ -11,30 +11,35 @@ import {
   OTHER_KEY,
   listSessionCostLines,
   summarizeCostByModel,
+  usageConfigKey,
+  usageConfigLabel,
   usageModelLabel,
   usageRepoLabel,
+  UNKNOWN_CONFIG_KEY,
 } from '../usageSeries.js';
 
-const row = (day, repo, sdk, tokens) => ({
+const row = (day, repo, configId, tokens, { label = null, sdk = 'claude' } = {}) => ({
   day,
   repo_full_name: repo,
+  agent_config_id: configId,
+  agent_config_label: label,
   agent_sdk: sdk,
   cost_usd: 0,
   total_tokens: tokens,
 });
 
 const rows = [
-  row('2026-09-20', 'acme/alpha', 'claude', 3),
-  row('2026-09-20', 'acme/alpha', 'cursor', 1),
-  row('2026-09-20', 'acme/beta', 'claude', 8),
-  row('2026-09-21', 'acme/alpha', 'claude', 2),
+  row('2026-09-20', 'acme/alpha', 1, 3, { label: 'Claude prod' }),
+  row('2026-09-20', 'acme/alpha', 2, 1, { label: 'Cursor prod', sdk: 'cursor' }),
+  row('2026-09-20', 'acme/beta', 1, 8, { label: 'Claude prod' }),
+  row('2026-09-21', 'acme/alpha', 1, 2, { label: 'Claude prod' }),
 ];
 
 describe('sumBy', () => {
   it('totals rows per key', () => {
-    expect([...sumBy(rows, (r) => r.agent_sdk)]).toEqual([
-      ['claude', 13],
-      ['cursor', 1],
+    expect([...sumBy(rows, (r) => usageConfigKey(r))]).toEqual([
+      ['1', 13],
+      ['2', 1],
     ]);
   });
 
@@ -42,7 +47,7 @@ describe('sumBy', () => {
   // usage was recorded, carry no token count at all.
   it('counts rows with no token column as zero', () => {
     const legacy = [{ day: '2026-09-20', repo_full_name: 'acme/alpha', agent_sdk: 'claude' }];
-    expect([...sumBy(legacy, (r) => r.agent_sdk)]).toEqual([['claude', 0]]);
+    expect([...sumBy(legacy, (r) => usageConfigKey(r))]).toEqual([[UNKNOWN_CONFIG_KEY, 0]]);
   });
 });
 
@@ -92,7 +97,7 @@ describe('buildSeries by repo', () => {
       buildSeries(data, 'repo').series.find((s) => s.key === repo).color;
 
     // Make alpha the top spender; beta must keep the colour it had before.
-    const flipped = [...rows, row('2026-09-22', 'acme/alpha', 'claude', 100)];
+    const flipped = [...rows, row('2026-09-22', 'acme/alpha', 1, 100)];
     expect(colorOf(flipped, 'acme/beta')).toBe(colorOf(rows, 'acme/beta'));
     expect(colorOf(flipped, 'acme/alpha')).toBe(colorOf(rows, 'acme/alpha'));
   });
@@ -100,7 +105,7 @@ describe('buildSeries by repo', () => {
   it('folds repos past the palette into a single "Other" series, listed last', () => {
     const many = Array.from({ length: SERIES_COLORS.length + 3 }, (_, i) =>
       // Earlier repos spend more, so the last three are the ones that fold.
-      row('2026-09-20', `acme/repo-${String(i).padStart(2, '0')}`, 'claude', 100 - i)
+      row('2026-09-20', `acme/repo-${String(i).padStart(2, '0')}`, 1, 100 - i)
     );
 
     const { series, byDay } = buildSeries(many, 'repo');
@@ -116,29 +121,32 @@ describe('buildSeries by repo', () => {
 
   it('labels a single folded repo in the singular', () => {
     const many = Array.from({ length: SERIES_COLORS.length + 1 }, (_, i) =>
-      row('2026-09-20', `acme/repo-${String(i).padStart(2, '0')}`, 'claude', 100 - i)
+      row('2026-09-20', `acme/repo-${String(i).padStart(2, '0')}`, 1, 100 - i)
     );
     expect(buildSeries(many, 'repo').series.at(-1).label).toBe('Other (1 repo)');
   });
 });
 
-describe('buildSeries by sdk', () => {
-  it('builds one series per agent with friendly labels', () => {
-    const { series, byDay } = buildSeries(rows, 'sdk');
+describe('buildSeries by config', () => {
+  it('builds one series per configuration with labels', () => {
+    const { series, byDay } = buildSeries(rows, 'config');
     expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
-      ['claude', 'Claude', 13],
-      ['cursor', 'Cursor', 1],
+      ['1', 'Claude prod', 13],
+      ['2', 'Cursor prod', 1],
     ]);
     expect([...byDay.get('2026-09-20')]).toEqual([
-      ['claude', 11],
-      ['cursor', 1],
+      ['1', 11],
+      ['2', 1],
     ]);
   });
 
-  it('falls back to the raw name and neutral colour for an unknown agent', () => {
-    const { series } = buildSeries([row('2026-09-20', 'acme/alpha', 'codex', 5)], 'sdk');
-    expect(series[0].label).toBe('Codex');
-    expect(series[0].color).toBe('bg-track');
+  it('labels usage without a configuration id', () => {
+    const unconfigured = [
+      { day: '2026-09-20', repo_full_name: 'acme/alpha', agent_sdk: 'claude', total_tokens: 5 },
+    ];
+    expect(usageConfigLabel(unconfigured[0])).toBe('Claude (no config)');
+    const { series } = buildSeries(unconfigured, 'config');
+    expect(series[0].key).toBe(UNKNOWN_CONFIG_KEY);
   });
 });
 
@@ -159,9 +167,9 @@ describe('recentDays', () => {
 describe('buildSeries by model', () => {
   it('stacks one series per model', () => {
     const mixed = [
-      { ...row('2026-09-20', 'acme/alpha', 'claude', 5), model: 'opus' },
-      { ...row('2026-09-20', 'acme/alpha', 'claude', 3), model: 'haiku' },
-      { ...row('2026-09-21', 'acme/alpha', 'claude', 2), model: 'opus' },
+      { ...row('2026-09-20', 'acme/alpha', 1, 5), model: 'opus' },
+      { ...row('2026-09-20', 'acme/alpha', 1, 3), model: 'haiku' },
+      { ...row('2026-09-21', 'acme/alpha', 1, 2), model: 'opus' },
     ];
     const { series, byDay } = buildSeries(mixed, 'model');
     expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
@@ -178,8 +186,8 @@ describe('buildSeries by model', () => {
 describe('buildSeries by cost metric', () => {
   it('sums cost_usd instead of tokens', () => {
     const priced = [
-      { ...row('2026-09-20', 'acme/alpha', 'claude', 100), cost_usd: 0.5 },
-      { ...row('2026-09-20', 'acme/beta', 'claude', 200), cost_usd: 1.2 },
+      { ...row('2026-09-20', 'acme/alpha', 1, 100), cost_usd: 0.5 },
+      { ...row('2026-09-20', 'acme/beta', 1, 200), cost_usd: 1.2 },
     ];
     const { series } = buildSeries(priced, 'repo', 'cost');
     expect(series.map((s) => [s.key, s.total])).toEqual([
@@ -192,8 +200,8 @@ describe('buildSeries by cost metric', () => {
 describe('buildSeries by kind', () => {
   it('stacks session vs review', () => {
     const mixed = [
-      row('2026-09-20', 'acme/alpha', 'claude', 5),
-      { ...row('2026-09-20', 'acme/alpha', 'claude', 3), kind: 'review' },
+      row('2026-09-20', 'acme/alpha', 1, 5),
+      { ...row('2026-09-20', 'acme/alpha', 1, 3), kind: 'review' },
     ];
     const { series, byDay } = buildSeries(mixed, 'kind');
     expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
@@ -210,9 +218,9 @@ describe('buildSeries by kind', () => {
 describe('aggregateUsage', () => {
   it('collapses days into one row per repo, agent, and activity', () => {
     const aggregated = aggregateUsage([
-      row('2026-09-20', 'acme/alpha', 'claude', 3),
-      row('2026-09-21', 'acme/alpha', 'claude', 2),
-      { ...row('2026-09-21', 'acme/alpha', 'claude', 4), kind: 'review' },
+      row('2026-09-20', 'acme/alpha', 1, 3),
+      row('2026-09-21', 'acme/alpha', 1, 2),
+      { ...row('2026-09-21', 'acme/alpha', 1, 4), kind: 'review' },
     ]);
     expect(aggregated.map((r) => [r.repo_full_name, r.kind, r.total_tokens])).toEqual([
       ['acme/alpha', 'session', 5],
@@ -223,9 +231,9 @@ describe('aggregateUsage', () => {
   it('can split the same repo/agent/activity across models', () => {
     const aggregated = aggregateUsage(
       [
-        { ...row('2026-09-20', 'acme/alpha', 'claude', 3), model: 'opus' },
-        { ...row('2026-09-21', 'acme/alpha', 'claude', 2), model: 'opus' },
-        { ...row('2026-09-21', 'acme/alpha', 'claude', 4), model: 'haiku' },
+        { ...row('2026-09-20', 'acme/alpha', 1, 3), model: 'opus' },
+        { ...row('2026-09-21', 'acme/alpha', 1, 2), model: 'opus' },
+        { ...row('2026-09-21', 'acme/alpha', 1, 4), model: 'haiku' },
       ],
       { byModel: true }
     );
@@ -238,14 +246,14 @@ describe('aggregateUsage', () => {
   it('sums cache writes with the other token types', () => {
     const aggregated = aggregateUsage([
       {
-        ...row('2026-09-20', 'acme/alpha', 'claude', 10),
+        ...row('2026-09-20', 'acme/alpha', 1, 10),
         input_tokens: 6,
         output_tokens: 4,
         cache_read_tokens: 20,
         cache_write_tokens: 3,
       },
       {
-        ...row('2026-09-21', 'acme/alpha', 'claude', 5),
+        ...row('2026-09-21', 'acme/alpha', 1, 5),
         input_tokens: 2,
         output_tokens: 3,
         cache_read_tokens: 8,

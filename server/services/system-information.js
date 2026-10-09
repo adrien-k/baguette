@@ -64,25 +64,27 @@ async function usageCostUsdSince(userId, sinceIso) {
 const ACTIVE_AGENT_STATUSES = ['running', 'provisioning', 'archiving'];
 
 const ACTIVE_SESSION_COLUMNS = [
-  'id',
-  'short_id',
-  'label',
-  'repo_full_name',
-  'status',
-  'review_status',
-  'agent_sdk',
-  'model',
-  'model_params',
-  'review_agent_sdk',
-  'review_model',
-  'review_model_params',
+  'sessions.id',
+  'sessions.short_id',
+  'sessions.label',
+  'sessions.repo_full_name',
+  'sessions.status',
+  'sessions.review_status',
+  'sessions.agent_sdk',
+  'sessions.model',
+  'sessions.model_params',
+  'sessions.review_agent_sdk',
+  'sessions.review_model',
+  'sessions.review_model_params',
 ];
 
 function sessionAgentRow(row, kind) {
   const isReview = kind === 'review';
   return {
-    session_id: row.id,
+    session_id: row.id ?? row.session_id,
     short_id: row.short_id,
+    user_id: row.user_id,
+    username: row.username ?? null,
     label: row.label,
     repo_full_name: row.repo_full_name ?? '',
     kind,
@@ -92,15 +94,16 @@ function sessionAgentRow(row, kind) {
   };
 }
 
-/** Running chat and review agents for the signed-in user (Usage page + ops). */
-export async function getActiveAgents(userId) {
-  const rows = await db('sessions')
-    .where({ user_id: userId })
-    .whereNull('archived_at')
+/** Running chat and review agents (all users, or one user when `userId` is set). */
+export async function getActiveAgents(userId = null, knex = db) {
+  const q = knex('sessions').whereNull('archived_at');
+  if (userId != null) q.where({ user_id: userId });
+  const rows = await q
     .where((qb) => {
       qb.whereIn('status', ACTIVE_AGENT_STATUSES).orWhere('review_status', 'running');
     })
-    .select(ACTIVE_SESSION_COLUMNS);
+    .leftJoin('users', 'users.id', 'sessions.user_id')
+    .select([...ACTIVE_SESSION_COLUMNS, 'sessions.user_id', 'users.username']);
 
   const agents = [];
   for (const row of rows) {

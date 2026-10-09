@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { apiFetch } from '../api.js';
+import { usageService } from '../feathers.js';
 import { useAgentActivityRefresh } from './useAgentActivityRefresh.js';
 
 const POLL_MS = 30_000;
@@ -7,14 +7,14 @@ const POLL_MS = 30_000;
 /**
  * @param {{ intervalMs?: number | null, onError?: (err: unknown) => void }} options
  */
-export function useActiveAgents({ intervalMs = POLL_MS, onError } = {}) {
+export function useActiveAgents({ userId = null, intervalMs = POLL_MS, onError } = {}) {
   const [agents, setAgents] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(
     async (isRefresh = false) => {
       try {
-        const data = await apiFetch('/api/usage/active-agents');
+        const data = await usageService.activeAgents(userId ? { user_id: String(userId) } : {});
         setAgents(Array.isArray(data) ? data : []);
       } catch (err) {
         onError?.(err);
@@ -22,7 +22,7 @@ export function useActiveAgents({ intervalMs = POLL_MS, onError } = {}) {
         if (!isRefresh) setLoading(false);
       }
     },
-    [onError]
+    [onError, userId]
   );
 
   useEffect(() => {

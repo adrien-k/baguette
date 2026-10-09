@@ -775,7 +775,6 @@ export default function ChatView({
                     onChange={setInput}
                     onSubmit={handleSend}
                     placeholder={`Message ${agentDisplayName}...`}
-                    hint="If you need a plan, ask the agent to draft one."
                     sending={sending}
                     agentConfigKey={
                       session?.agent_config_id != null

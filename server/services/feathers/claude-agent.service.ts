@@ -24,6 +24,10 @@ import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-co
 import { isBaguetteUserMessage, resolveTurnModel } from '../../../shared/turn-model.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
+  reviewTurnAgentConfigId,
+  usageAgentConfigIdForSession,
+} from '../../lib/usage-agent-config.js';
+import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
@@ -78,7 +82,8 @@ type ClaudeAgentState = {
   streamWriter?: MessageStreamWriter | null;
   turnChannel?: MessageChannel;
   activeKey?: string | number;
-  endTurnAfterBaguetteTool?: boolean;
+  /** Agent config for this turn (snapshot at turn start; used when recording usage). */
+  turnAgentConfigId?: number | null;
 };
 
 type RunTurnOpts = {
@@ -114,6 +119,7 @@ type StartAgentLoopOpts = {
   channel?: MessageChannel;
   activeKey?: string | number;
   writer?: MessageStreamWriter | null;
+  turnAgentConfigId?: number | null;
 };
 
 type SessionOrId = number | string | { id: number };
@@ -125,8 +131,8 @@ function commandsToAllowedTools(commands: string[]): string[] {
 /** Hard cap on session metadata (label/branch) generation — provisioning must not stall on CLI API retries. */
 const METADATA_TIMEOUT_MS = 30_000;
 
-function claudeSdkPermissionMode(_sessionRow: AgentSessionRow): 'acceptEdits' {
-  return 'acceptEdits';
+function claudeSdkPermissionMode(sessionRow: AgentSessionRow): 'plan' | 'acceptEdits' {
+  return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
 }
 
 function toSdkUserMessage(prompt: unknown): SDKUserMessage {
@@ -396,6 +402,10 @@ export class ClaudeAgentService {
     }
 
     const { model, modelParams } = resolveTurnModel(row, session);
+    const turnAgentConfigId =
+      channel === 'review'
+        ? reviewTurnAgentConfigId(session, row as Record<string, unknown>)
+        : usageAgentConfigIdForSession(session, undefined);
     const writer =
       row.turn_id != null
         ? createMessageStreamWriter(this.app, {
@@ -419,6 +429,7 @@ export class ClaudeAgentService {
         channel,
         activeKey,
         writer,
+        turnAgentConfigId,
       });
       if (!resumed) return;
       agentSession = resumed;
@@ -428,6 +439,7 @@ export class ClaudeAgentService {
         channel,
         activeKey,
         writer,
+        turnAgentConfigId,
       });
     }
 
@@ -436,13 +448,14 @@ export class ClaudeAgentService {
 
   async createAgentSession(
     session: AgentSessionRow,
-    { model, channel = 'chat', activeKey, writer }: StartAgentLoopOpts = {}
+    { model, channel = 'chat', activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     const sessionState = await this._startAgentLoop(session, {
       model,
       channel,
       activeKey,
       writer,
+      turnAgentConfigId,
     });
 
     if (channel !== 'review') {
@@ -556,11 +569,7 @@ export class ClaudeAgentService {
         } as PermissionResult;
       }
 
-      if (
-        toolName === 'AskUserQuestion' ||
-        toolName === 'AskUserQuestions' ||
-        toolName === 'mcp__baguette__AskUserQuestions'
-      ) {
+      if (toolName === 'AskUserQuestion') {
         return {
           behavior: 'deny',
           message: 'Questions presented to the user inline. They will reply with their answers.',
@@ -610,7 +619,7 @@ export class ClaudeAgentService {
    */
   async _startAgentLoop(
     sessionRow: AgentSessionRow,
-    { model, channel = 'chat', activeKey, writer }: StartAgentLoopOpts = {}
+    { model, channel = 'chat', activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
@@ -653,6 +662,11 @@ export class ClaudeAgentService {
         streamWriter: writer ?? null,
         turnChannel: channel,
         activeKey: resolvedActiveKey,
+        turnAgentConfigId:
+          turnAgentConfigId ??
+          (channel === 'review'
+            ? reviewTurnAgentConfigId(sessionRow, {})
+            : usageAgentConfigIdForSession(sessionRow, undefined)),
       },
       activeKey: resolvedActiveKey,
     });
@@ -669,7 +683,7 @@ export class ClaudeAgentService {
 
   async resumeSession(
     session: AgentSessionRow,
-    { model, channel, activeKey, writer }: StartAgentLoopOpts = {}
+    { model, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     const resumeId =
       channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
@@ -680,6 +694,7 @@ export class ClaudeAgentService {
       channel,
       activeKey,
       writer,
+      turnAgentConfigId,
     });
 
     logger.info(
@@ -692,7 +707,7 @@ export class ClaudeAgentService {
 
   async ensureActiveSession(
     sessionOrId: SessionOrId,
-    { model, channel, activeKey, writer }: StartAgentLoopOpts = {}
+    { model, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState | null> {
     const sessionRow: AgentSessionRow | undefined =
       typeof sessionOrId === 'object' && sessionOrId !== null
@@ -712,6 +727,7 @@ export class ClaudeAgentService {
         channel,
         activeKey: key,
         writer,
+        turnAgentConfigId,
       }).finally(() => {
         this._resumePromises.delete(key);
       });
@@ -725,7 +741,8 @@ export class ClaudeAgentService {
   async _recordClaudeTurnUsage(
     session: AgentSessionRow,
     result: SDKMessage,
-    channel: MessageChannel
+    channel: MessageChannel,
+    turnAgentConfigId?: number | null
   ): Promise<void> {
     const isReview = channel === 'review';
     await this.app
@@ -735,6 +752,7 @@ export class ClaudeAgentService {
         model: isReview ? (session.review_model ?? session.model) : undefined,
         totalsKey: isReview ? reviewTurnKey(session.id) : undefined,
         patchSessionCost: true,
+        agentConfigId: turnAgentConfigId,
       })
       .catch((err) =>
         logger.warn(
@@ -788,7 +806,12 @@ export class ClaudeAgentService {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
       if (session) {
-        await this._recordClaudeTurnUsage(session, lastResult, sessionState.turnChannel ?? 'chat');
+        await this._recordClaudeTurnUsage(
+          session,
+          lastResult,
+          sessionState.turnChannel ?? 'chat',
+          sessionState.turnAgentConfigId
+        );
       }
     }
 
@@ -887,11 +910,10 @@ export class ClaudeAgentService {
       }
     });
 
-    const endAfterTool = sessionState.endTurnAfterBaguetteTool;
     return {
-      turnComplete: endAfterTool ? true : result.turnComplete,
-      streamFailed: endAfterTool ? false : result.streamFailed || streamFailed,
-      outcome: endAfterTool ? 'completed' : result.outcome,
+      turnComplete: result.turnComplete,
+      streamFailed: result.streamFailed || streamFailed,
+      outcome: result.outcome,
       lastResult: result.lastResult,
     };
   }
@@ -1107,17 +1129,6 @@ Task: ${initialPrompt}`;
   async get(id: number) {
     return this.getActiveSession(id) ?? null;
   }
-
-  endTurnAfterBaguetteTool(sessionId: number): void {
-    const session = this.getActiveSession(sessionId);
-    if (!session) return;
-    session.endTurnAfterBaguetteTool = true;
-    try {
-      session.abortController.abort();
-    } catch {
-      // ignore
-    }
-  }
 }
 
 export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SERVICE_PATH) {
@@ -1135,7 +1146,6 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'buildQueryOptions',
       'syncSessionSettingsFromPatch',
       'prepareTiedSessionLoopCompaction',
-      'endTurnAfterBaguetteTool',
       'handleMessageCreated',
       'generateSessionMetadata',
       'isInterruptedSessionResumable',

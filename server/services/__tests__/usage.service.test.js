@@ -1,85 +1,34 @@
 /**
- * Tests for the usage endpoint backing the dashboard usage graph. It must scope rows to the
- * signed-in user, break them down by day/repo/sdk, sum both cost and tokens, and honour
- * the `?repo=` and `?sdk=` filters.
+ * Usage Feathers service: system-wide breakdown, agent-config filter list, active agents.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
-
-vi.mock('../../config.js', () => ({}));
-
-const dbMock = vi.hoisted(() => {
-  const ref = { current: null };
-  const proxy = (table) => ref.current(table);
-  proxy.raw = (...args) => ref.current.raw(...args);
-  return { ref, proxy };
-});
-vi.mock('../../db.js', () => ({ default: dbMock.proxy }));
-
-vi.mock('../../services/agent-settings.js', () => ({ getGithubToken: vi.fn() }));
-vi.mock('../../services/anthropic-models.js', () => ({
-  listModels: vi.fn(),
-  refreshModels: vi.fn(),
-}));
-vi.mock('../../services/cursor-models.js', () => ({
-  listCursorModels: vi.fn(),
-  refreshCursorModels: vi.fn(),
-}));
-vi.mock('../../lib/encrypt.js', () => ({ decrypt: vi.fn() }));
-
-import createSettingsRoutes from '../settings.js';
+import { registerUsageService } from '../feathers/usage.service.js';
 
 const db = createTestDb();
 
 const USER = 1;
 const OTHER_USER = 2;
 
-let server;
-let baseUrl;
+const params = (userId) => ({ provider: 'rest', user: { id: userId } });
 
-beforeEach(async () => {
-  dbMock.ref.current = db;
-
-  await db('users').insert([
-    { id: USER, github_id: 'gh-1', username: 'alice' },
-    { id: OTHER_USER, github_id: 'gh-2', username: 'bob' },
-  ]);
-
-  const app = express();
-  app.use(
-    createSettingsRoutes((req, res, next) => {
-      req.user = { id: USER };
-      next();
-    })
-  );
-
-  server = app.listen(0);
-  await new Promise((resolve) => server.once('listening', resolve));
-  baseUrl = `http://127.0.0.1:${server.address().port}`;
-});
-
-afterEach(async () => {
-  await new Promise((resolve) => server.close(resolve));
-});
+let app;
+let svc;
+let claudeConfigId;
+let cursorConfigId;
 
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
 
-const getJson = async (path) => {
-  const res = await fetch(`${baseUrl}${path}`);
-  const body = await res.json();
-  expect(res.status, JSON.stringify(body)).toBe(200);
-  return body;
-};
-
 /** `usage.session_id` is NOT NULL, so every usage row needs an owning session. */
-async function createSession(userId, repo) {
+async function createSession(userId, repo, { agent_config_id = null } = {}) {
   const [row] = await db('sessions')
     .insert({
       user_id: userId,
       repo_full_name: repo,
       base_branch: 'main',
       initial_prompt: 'test',
+      agent_config_id,
     })
     .returning('id');
   return typeof row === 'object' ? row.id : row;
@@ -88,12 +37,16 @@ async function createSession(userId, repo) {
 async function insertUsage(rows) {
   for (const r of rows) {
     const userId = r.user_id ?? USER;
+    const agentConfigId =
+      r.agent_config_id ??
+      (r.sdk === 'cursor' ? cursorConfigId : r.sdk === 'pi' ? null : claudeConfigId);
     await db('usage').insert({
-      session_id: await createSession(userId, r.repo),
+      session_id: await createSession(userId, r.repo, { agent_config_id: agentConfigId }),
       user_id: userId,
       repo_full_name: r.repo,
       cost_usd: r.cost,
       agent_sdk: r.sdk ?? 'claude',
+      agent_config_id: agentConfigId,
       created_at: r.created_at ?? daysAgo(1),
       input_tokens: r.input ?? 0,
       output_tokens: r.output ?? 0,
@@ -106,40 +59,67 @@ async function insertUsage(rows) {
   }
 }
 
-describe('GET /api/usage/breakdown', () => {
-  it('returns only the requested agent SDK when ?sdk= is given', async () => {
+beforeEach(async () => {
+  await db('users').insert([
+    { id: USER, github_id: 'gh-1', username: 'alice' },
+    { id: OTHER_USER, github_id: 'gh-2', username: 'bob' },
+  ]);
+
+  [claudeConfigId] = await db('agent_configs').insert({
+    user_id: USER,
+    label: 'Alice Claude',
+    sdk: 'claude',
+  });
+  [cursorConfigId] = await db('agent_configs').insert({
+    user_id: USER,
+    label: 'Alice Cursor',
+    sdk: 'cursor',
+  });
+
+  app = feathers();
+  app.set('db', db);
+  registerUsageService(app);
+  await app.setup();
+  svc = app.service('usage');
+});
+
+describe('usage.breakdown', () => {
+  it('returns only the requested agent config when agent_config_id is given', async () => {
     const day = daysAgo(1);
     await insertUsage([
       { repo: 'acme/alpha', cost: 1, input: 100, output: 10, created_at: day },
       { repo: 'acme/alpha', cost: 0, input: 500, output: 50, sdk: 'cursor', created_at: day },
     ]);
 
-    const claude = await getJson('/api/usage/breakdown?sdk=claude');
+    const claude = await svc.breakdown({ agent_config_id: String(claudeConfigId) }, params(USER));
     expect(claude).toHaveLength(1);
-    expect(claude[0].agent_sdk).toBe('claude');
+    expect(claude[0].agent_config_id).toBe(claudeConfigId);
+    expect(claude[0].agent_config_label).toBe('Alice Claude');
     expect(claude[0].total_tokens).toBe(110);
 
-    const cursor = await getJson('/api/usage/breakdown?sdk=cursor');
+    const cursor = await svc.breakdown({ agent_config_id: String(cursorConfigId) }, params(USER));
     expect(cursor).toHaveLength(1);
-    expect(cursor[0].agent_sdk).toBe('cursor');
+    expect(cursor[0].agent_config_id).toBe(cursorConfigId);
     expect(cursor[0].total_tokens).toBe(550);
   });
 
-  it('returns only the requested repo when ?repo= is given', async () => {
+  it('returns only the requested repo when repo is given', async () => {
     const day = daysAgo(1);
     await insertUsage([
       { repo: 'acme/alpha', cost: 1.5, created_at: day },
       { repo: 'acme/beta', cost: 10, created_at: day },
     ]);
 
-    const all = await getJson('/api/usage/breakdown');
+    const all = await svc.breakdown({}, params(USER));
     expect(all.map((r) => r.repo_full_name).sort()).toEqual(['acme/alpha', 'acme/beta']);
 
-    const scoped = await getJson('/api/usage/breakdown?repo=acme%2Falpha');
+    const scoped = await svc.breakdown({ repo: 'acme/alpha' }, params(USER));
     expect(scoped).toEqual([
       {
         day: day.slice(0, 10),
         repo_full_name: 'acme/alpha',
+        agent_config_id: claudeConfigId,
+        agent_config_label: 'Alice Claude',
         agent_sdk: 'claude',
         kind: 'session',
         model: '',
@@ -153,7 +133,7 @@ describe('GET /api/usage/breakdown', () => {
     ]);
   });
 
-  it('splits a day by repo and by sdk, summing repeated rows', async () => {
+  it('splits a day by repo and by agent config, summing repeated rows', async () => {
     const day = daysAgo(2);
     await insertUsage([
       { repo: 'acme/alpha', cost: 1, created_at: day },
@@ -162,14 +142,14 @@ describe('GET /api/usage/breakdown', () => {
       { repo: 'acme/beta', cost: 8, sdk: 'cursor', created_at: day },
     ]);
 
-    const rows = await getJson('/api/usage/breakdown');
-    const cost = (repo, sdk) =>
-      rows.find((r) => r.repo_full_name === repo && r.agent_sdk === sdk)?.cost_usd;
+    const rows = await svc.breakdown({}, params(USER));
+    const cost = (repo, configId) =>
+      rows.find((r) => r.repo_full_name === repo && r.agent_config_id === configId)?.cost_usd;
 
     expect(rows).toHaveLength(3);
-    expect(cost('acme/alpha', 'claude')).toBeCloseTo(3);
-    expect(cost('acme/alpha', 'cursor')).toBeCloseTo(4);
-    expect(cost('acme/beta', 'cursor')).toBeCloseTo(8);
+    expect(cost('acme/alpha', claudeConfigId)).toBeCloseTo(3);
+    expect(cost('acme/alpha', cursorConfigId)).toBeCloseTo(4);
+    expect(cost('acme/beta', cursorConfigId)).toBeCloseTo(8);
     expect(rows.every((r) => r.day === day.slice(0, 10))).toBe(true);
   });
 
@@ -179,7 +159,7 @@ describe('GET /api/usage/breakdown', () => {
       { repo: 'acme/alpha', cost: 2, created_at: daysAgo(3) },
     ]);
 
-    const rows = await getJson('/api/usage/breakdown');
+    const rows = await svc.breakdown({}, params(USER));
     expect(rows.map((r) => r.cost_usd)).toEqual([2, 1]);
   });
 
@@ -190,7 +170,7 @@ describe('GET /api/usage/breakdown', () => {
       { repo: 'acme/alpha', cost: 2, input: 500, output: 50, created_at: day },
     ]);
 
-    const [row] = await getJson('/api/usage/breakdown');
+    const [row] = await svc.breakdown({}, params(USER));
     expect(row.input_tokens).toBe(1500);
     expect(row.output_tokens).toBe(250);
     expect(row.total_tokens).toBe(1750);
@@ -219,7 +199,7 @@ describe('GET /api/usage/breakdown', () => {
       },
     ]);
 
-    const [row] = await getJson('/api/usage/breakdown');
+    const [row] = await svc.breakdown({}, params(USER));
     expect(row.cache_read_tokens).toBe(150);
     expect(row.cache_write_tokens).toBe(28);
   });
@@ -245,77 +225,106 @@ describe('GET /api/usage/breakdown', () => {
       },
     ]);
 
-    const rows = await getJson('/api/usage/breakdown');
+    const rows = await svc.breakdown({}, params(USER));
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.model === 'claude-opus-4').total_tokens).toBe(100);
     expect(rows.find((r) => r.model === 'claude-haiku-4-5').total_tokens).toBe(40);
   });
 
-  // Cursor local agents report tokens but never a cost, so a row can be all tokens.
   it('reports tokens for rows that carry no cost', async () => {
     await insertUsage([{ repo: 'acme/alpha', cost: 0, input: 8007, output: 12, sdk: 'cursor' }]);
 
-    const [row] = await getJson('/api/usage/breakdown');
+    const [row] = await svc.breakdown({}, params(USER));
     expect(row.cost_usd).toBe(0);
     expect(row.total_tokens).toBe(8019);
   });
 
-  it('excludes other users and rows older than 30 days', async () => {
+  it('includes all users by default and can filter with user_id', async () => {
+    const day = daysAgo(1);
     await insertUsage([
-      { repo: 'acme/alpha', cost: 5, user_id: OTHER_USER },
-      { repo: 'acme/alpha', cost: 7, created_at: daysAgo(31) },
+      { repo: 'acme/alpha', cost: 5, user_id: OTHER_USER, created_at: day },
+      { repo: 'acme/beta', cost: 3, created_at: day },
     ]);
 
-    expect(await getJson('/api/usage/breakdown')).toEqual([]);
+    const all = await svc.breakdown({}, params(USER));
+    expect(all.map((r) => r.cost_usd).sort()).toEqual([3, 5]);
+
+    const bob = await svc.breakdown({ user_id: String(OTHER_USER) }, params(USER));
+    expect(bob).toHaveLength(1);
+    expect(bob[0].cost_usd).toBe(5);
   });
 
-  it('honours ?days=7 and ?days=90 windows', async () => {
+  it('excludes rows older than 30 days by default', async () => {
+    await insertUsage([{ repo: 'acme/alpha', cost: 7, created_at: daysAgo(31) }]);
+    expect(await svc.breakdown({}, params(USER))).toEqual([]);
+  });
+
+  it('honours days=7 and days=90 windows', async () => {
     await insertUsage([
       { repo: 'acme/alpha', cost: 1, input: 10, output: 0, created_at: daysAgo(10) },
       { repo: 'acme/alpha', cost: 2, input: 20, output: 0, created_at: daysAgo(45) },
     ]);
 
-    expect(await getJson('/api/usage/breakdown?days=7')).toEqual([]);
-    expect((await getJson('/api/usage/breakdown')).map((r) => r.total_tokens)).toEqual([10]);
+    expect(await svc.breakdown({ days: '7' }, params(USER))).toEqual([]);
+    expect((await svc.breakdown({}, params(USER))).map((r) => r.total_tokens)).toEqual([10]);
     expect(
-      (await getJson('/api/usage/breakdown?days=90')).map((r) => r.total_tokens).sort()
+      (await svc.breakdown({ days: '90' }, params(USER))).map((r) => r.total_tokens).sort()
     ).toEqual([10, 20]);
   });
 
-  it('splits session vs review activity and honours ?kind=', async () => {
+  it('splits session vs review activity and honours kind=review', async () => {
     const day = daysAgo(1);
     await insertUsage([
       { repo: 'acme/alpha', cost: 1, input: 100, output: 0, created_at: day },
       { repo: 'acme/alpha', cost: 2, input: 50, output: 0, created_at: day, kind: 'review' },
     ]);
 
-    const all = await getJson('/api/usage/breakdown');
+    const all = await svc.breakdown({}, params(USER));
     expect(all).toHaveLength(2);
     expect(all.find((r) => r.kind === 'session').total_tokens).toBe(100);
     expect(all.find((r) => r.kind === 'review').total_tokens).toBe(50);
 
-    const review = await getJson('/api/usage/breakdown?kind=review');
+    const review = await svc.breakdown({ kind: 'review' }, params(USER));
     expect(review).toHaveLength(1);
     expect(review[0].kind).toBe('review');
     expect(review[0].total_tokens).toBe(50);
   });
 
-  it('treats ?repo=__global__ as sessions with an empty repo', async () => {
+  it('treats repo=__global__ as sessions with an empty repo', async () => {
     const day = daysAgo(1);
     await insertUsage([
       { repo: '', cost: 0, input: 40, output: 0, created_at: day },
       { repo: 'acme/alpha', cost: 0, input: 10, output: 0, created_at: day },
     ]);
 
-    const scoped = await getJson('/api/usage/breakdown?repo=__global__');
+    const scoped = await svc.breakdown({ repo: '__global__' }, params(USER));
     expect(scoped).toHaveLength(1);
     expect(scoped[0].repo_full_name).toBe('');
     expect(scoped[0].total_tokens).toBe(40);
   });
 });
 
-describe('GET /api/usage/active-agents', () => {
-  it('returns chat and review agents for the signed-in user only', async () => {
+describe('usage.usageUsers', () => {
+  it('returns distinct users with usage in the window and supports search', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/a', cost: 1, user_id: USER, created_at: day },
+      { repo: 'acme/b', cost: 1, user_id: OTHER_USER, created_at: day },
+    ]);
+
+    const all = await svc.usageUsers({ days: '30' }, params(USER));
+    expect(all.map((r) => r.user_id).sort()).toEqual([USER, OTHER_USER]);
+    expect(all.find((r) => r.user_id === USER).username).toBe('alice');
+
+    const bobOnly = await svc.usageUsers({ days: '30', q: 'bob' }, params(USER));
+    expect(bobOnly).toHaveLength(1);
+    expect(bobOnly[0].user_id).toBe(OTHER_USER);
+    expect(bobOnly[0].username).toBe('bob');
+  });
+});
+
+describe('usage.activeAgents', () => {
+  it('returns chat and review agents for all users by default', async () => {
     await db('sessions').insert({
       user_id: USER,
       short_id: 'run12345',
@@ -339,12 +348,23 @@ describe('GET /api/usage/active-agents', () => {
       status: 'running',
     });
 
-    const rows = await getJson('/api/usage/active-agents');
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.kind).sort()).toEqual(['chat', 'review']);
+    const rows = await svc.activeAgents({}, params(USER));
+    expect(rows).toHaveLength(3);
+    expect(
+      rows
+        .filter((r) => r.short_id === 'run12345')
+        .map((r) => r.kind)
+        .sort()
+    ).toEqual(['chat', 'review']);
     expect(rows.every((r) => r.session_id)).toBe(true);
-    expect(rows.find((r) => r.kind === 'chat').model).toBe('claude-sonnet-4-20250514');
+    expect(rows.find((r) => r.kind === 'chat' && r.short_id === 'run12345').model).toBe(
+      'claude-sonnet-4-20250514'
+    );
     expect(rows.find((r) => r.kind === 'review').agent_sdk).toBe('cursor');
+
+    const scoped = await svc.activeAgents({ user_id: String(USER) }, params(USER));
+    expect(scoped).toHaveLength(2);
+    expect(scoped.every((r) => r.short_id === 'run12345')).toBe(true);
   });
 
   it('returns an empty list when nothing is running', async () => {
@@ -356,6 +376,6 @@ describe('GET /api/usage/active-agents', () => {
       initial_prompt: 'go',
       status: 'completed',
     });
-    expect(await getJson('/api/usage/active-agents')).toEqual([]);
+    expect(await svc.activeAgents({}, params(USER))).toEqual([]);
   });
 });

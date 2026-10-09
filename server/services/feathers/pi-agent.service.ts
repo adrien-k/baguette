@@ -26,6 +26,10 @@ import { resolvePiCredentials } from '../pi/pi-config.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
+  reviewTurnAgentConfigId,
+  usageAgentConfigIdForSession,
+} from '../../lib/usage-agent-config.js';
+import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
@@ -59,7 +63,7 @@ type PiSessionState = {
   writer?: MessageStreamWriter | null;
   turnId?: number | null;
   channel?: MessageChannel;
-  endTurnAfterBaguetteTool?: boolean;
+  turnAgentConfigId?: number | null;
 };
 
 export type PiBuildAgentOptionsResult = CreateAgentSessionOptions & {
@@ -269,7 +273,16 @@ export class PiAgentService {
     }
 
     const turnModel = resolveTurnModel(row, session);
-    const meta = { turnId: row.turn_id as number | null, channel, activeKey };
+    const turnAgentConfigId =
+      channel === 'review'
+        ? reviewTurnAgentConfigId(session, row as Record<string, unknown>)
+        : usageAgentConfigIdForSession(session, undefined);
+    const meta = {
+      turnId: row.turn_id as number | null,
+      channel,
+      activeKey,
+      turnAgentConfigId,
+    };
     attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel, meta), {
       userId: session.user_id,
       sessionId: session.id,
@@ -333,11 +346,7 @@ export class PiAgentService {
         },
         abortSignal: controller.signal,
       });
-      outcome = sessionState.endTurnAfterBaguetteTool
-        ? 'completed'
-        : finishedOk
-          ? 'completed'
-          : 'failed';
+      outcome = finishedOk ? 'completed' : 'failed';
       return { outcome, turnUsage };
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -383,7 +392,12 @@ export class PiAgentService {
     session: AgentSessionRow,
     parsed: unknown,
     turnModel: { model?: string | null; modelParams?: unknown } = {},
-    meta: { turnId?: number | null; channel?: MessageChannel; activeKey?: string | number } = {}
+    meta: {
+      turnId?: number | null;
+      channel?: MessageChannel;
+      activeKey?: string | number;
+      turnAgentConfigId?: number | null;
+    } = {}
   ): Promise<void> {
     const sessionId = session.id;
     const userId = session.user_id;
@@ -413,6 +427,11 @@ export class PiAgentService {
           })
         : null;
 
+    const turnAgentConfigId =
+      meta.turnAgentConfigId ??
+      (channel === 'review'
+        ? reviewTurnAgentConfigId(session, {})
+        : usageAgentConfigIdForSession(session, undefined));
     const sessionState: PiSessionState = {
       isProcessing: true,
       userId,
@@ -420,6 +439,7 @@ export class PiAgentService {
       writer,
       turnId,
       channel,
+      turnAgentConfigId,
     };
     this._activeSessions.set(activeKey, sessionState);
 
@@ -487,6 +507,7 @@ export class PiAgentService {
             kind: channel === 'review' ? 'review' : undefined,
             turnModel,
             patchSessionCost: true,
+            agentConfigId: sessionState.turnAgentConfigId,
           })
           .catch((err: Error) =>
             logger.warn({ sessionId, err: err.message }, 'pi-agent: failed to record turn usage')
@@ -715,18 +736,6 @@ Task: ${initialPrompt}`;
     await directPromptTiedSessionLoopCompaction(this.app, args);
   }
 
-  endTurnAfterBaguetteTool(sessionId: number): void {
-    const sessionState = this._activeSessions.get(sessionId);
-    if (!sessionState) return;
-    sessionState.endTurnAfterBaguetteTool = true;
-    try {
-      sessionState.abortController?.abort();
-      void sessionState.piSession?.abort();
-    } catch {
-      // ignore
-    }
-  }
-
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
     { channel = 'chat' }: { channel?: MessageChannel } = {}
@@ -748,7 +757,6 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'buildAgentOptions',
       'generateSessionMetadata',
       'prepareTiedSessionLoopCompaction',
-      'endTurnAfterBaguetteTool',
       'handleMessageCreated',
       'isInterruptedSessionResumable',
     ],

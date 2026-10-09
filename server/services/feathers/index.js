@@ -19,6 +19,8 @@ import { registerSessionIssuesService } from './session-issues.service.js';
 import { registerSessionTodosService } from './session-todos.service.js';
 import { registerSessionPlansService } from './session-plans.service.js';
 import { registerSessionReviewService } from './session-review.service.js';
+import { registerUsageModelPricingService } from './usage-model-pricing.service.js';
+import { registerUsageService } from './usage.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
 /**
@@ -46,6 +48,8 @@ export function registerFeathersServices(app, sseManager) {
   registerSessionTodosService(app);
   registerSessionPlansService(app);
   registerSessionReviewService(app);
+  registerUsageModelPricingService(app);
+  registerUsageService(app);
 
   app.service('sessions').registerActivityMessageListeners(app);
 
