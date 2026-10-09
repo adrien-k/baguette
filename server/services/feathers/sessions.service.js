@@ -81,6 +81,7 @@ import { estimateCursorUsageCostUsd } from '../../lib/cursor-usage-row-cost.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
+import { readSessionPlanMarkdown } from '../session-plan.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import {
   queryFlagDisabled,
@@ -949,6 +950,11 @@ export class SessionsService extends KnexService {
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
     }
+  }
+
+  async getPlan(_data, params) {
+    const session = params.resolvedSession;
+    return readSessionPlanMarkdown(this.app, session);
   }
 
   async showDiff(data, params) {
@@ -2119,6 +2125,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'branchCommits',
       'shas',
       'showDiff',
+      'getPlan',
       'merge',
       'setPrDraft',
       'push',
@@ -2220,6 +2227,7 @@ export const sessionsHooks = {
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     showDiff: [resolveSessionFromData],
+    getPlan: [resolveSessionFromData],
     merge: [resolveSessionFromData],
     setPrDraft: [resolveSessionFromData],
     push: [resolveSessionFromData],

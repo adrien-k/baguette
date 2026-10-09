@@ -50,7 +50,6 @@ export type AgentSessionRow = {
   base_branch?: string | null;
   session_path?: string | null;
   absolute_session_path?: string | null;
-  plan_mode?: boolean | number | null;
   model?: string | null;
   model_params?: unknown;
   plugins?: string | null;

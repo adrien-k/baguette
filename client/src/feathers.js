@@ -59,6 +59,7 @@ export const sessionsService = createService('sessions', {
     'branchCommits',
     'shas',
     'showDiff',
+    'getPlan',
     'merge',
     'setPrDraft',
     'push',
@@ -97,6 +98,8 @@ export const slackService = createService('admin/slack', {
 export const sessionIssuesService = createService('session-issues', {
   customMethods: ['askAgentToFix', 'askAgentToFixAll'],
 });
+export const sessionTodosService = createService('session-todos');
+export const sessionPlansService = createService('session-plans');
 export const sessionReviewService = createService('session-review', {
   customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
 });

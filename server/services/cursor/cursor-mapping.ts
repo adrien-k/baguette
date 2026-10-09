@@ -32,6 +32,10 @@ import type {
   ToolCallPayload,
   ToolResultBase,
 } from '../../../shared/message-types.ts';
+import {
+  baguetteMcpShortName,
+  isBaguetteMcpToolName,
+} from '../../../shared/baguette-mcp-tool-names.js';
 
 export type { SDKMessage } from '@cursor/sdk';
 
@@ -273,8 +277,11 @@ export function cursorToolKindFromName(name: string | null | undefined): ToolCal
   if (n === 'Edit') return 'edit';
   if (n === 'TodoWrite' || n === 'updateTodos') return 'todo';
   if (n === 'Task') return 'task';
-  if (n === 'AskUserQuestion') return 'ask_user';
+  if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return 'ask_user';
   if (n === 'ExitPlanMode' || n === 'createPlan') return 'exit_plan';
+  if (isBaguetteMcpToolName(n) || isBaguetteMcpToolName(baguetteMcpShortName(name ?? ''))) {
+    return 'mcp';
+  }
   if (n === 'mcp' || n.startsWith('mcp__')) return 'mcp';
   return 'generic';
 }

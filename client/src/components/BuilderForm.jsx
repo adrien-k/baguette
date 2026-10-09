@@ -53,7 +53,6 @@ const SESSION_START_MODES = [
     label: 'New branch',
     subtitle: 'on a new branch',
     hint: 'Branches out of the selected branch, which creates a new PR.',
-    planMode: false,
     createNewBranch: true,
     repoOnly: false,
   },
@@ -62,18 +61,8 @@ const SESSION_START_MODES = [
     label: 'Same branch',
     subtitle: 'on the same branch',
     hint: 'Work on the selected branch without creating a new one.',
-    planMode: false,
     createNewBranch: false,
     repoOnly: true,
-  },
-  {
-    id: 'plan',
-    label: 'Plan',
-    subtitle: 'planning',
-    hint: 'Agent explores and plans before making changes.',
-    planMode: true,
-    createNewBranch: true,
-    repoOnly: false,
   },
 ];
 
@@ -343,7 +332,7 @@ export default function BuilderForm({
     setLoopName('');
   };
 
-  const buildPayload = ({ planMode, createNewBranch = true }) => {
+  const buildPayload = ({ createNewBranch = true }) => {
     const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
     const parsedParams = (() => {
       if (!isCursor || !modelParamsJson) return null;
@@ -363,7 +352,6 @@ export default function BuilderForm({
       branch,
       initialPrompt,
       files,
-      planMode,
       model: model || undefined,
       modelParams: isCursor ? stringifyModelParams(finalParams) : undefined,
       createNewBranch,
@@ -379,14 +367,14 @@ export default function BuilderForm({
 
   const handleStartSession = async () => {
     if (!canSubmit) return;
-    const { planMode, createNewBranch } = activeSessionStartMode;
-    if (await onSubmit(buildPayload({ planMode, createNewBranch }))) clearForm();
+    const { createNewBranch } = activeSessionStartMode;
+    if (await onSubmit(buildPayload({ createNewBranch }))) clearForm();
   };
 
   // A loop replays the same session on a schedule, so it saves the form as a template instead
   // of starting anything now. Attached files are per-run inputs and are not carried over.
   const buildLoopPayload = () => {
-    const payload = buildPayload({ planMode: false });
+    const payload = buildPayload({ createNewBranch: true });
     if (payload.isGlobal) {
       return {
         is_global: true,
@@ -455,8 +443,8 @@ export default function BuilderForm({
   const composerPlaceholder = isLoop
     ? 'Describe what the agent should do on every run...'
     : isGlobal
-      ? 'Describe what you want the agent to do. Leave empty to just open a session.'
-      : 'Describe what you want the agent to do. Leave empty to just open a session on the selected branch.';
+      ? 'Ask the agent what you want to build or plan. Leave empty to just open a session.'
+      : 'Ask the agent what you want to build or plan. Leave empty to just open a session on the selected branch.';
 
   const renderComposer = (attachButton = null) => (
     <AgentMessageComposer

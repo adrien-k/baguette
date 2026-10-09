@@ -78,6 +78,7 @@ type ClaudeAgentState = {
   streamWriter?: MessageStreamWriter | null;
   turnChannel?: MessageChannel;
   activeKey?: string | number;
+  endTurnAfterBaguetteTool?: boolean;
 };
 
 type RunTurnOpts = {
@@ -124,8 +125,8 @@ function commandsToAllowedTools(commands: string[]): string[] {
 /** Hard cap on session metadata (label/branch) generation — provisioning must not stall on CLI API retries. */
 const METADATA_TIMEOUT_MS = 30_000;
 
-function claudeSdkPermissionMode(sessionRow: AgentSessionRow): 'plan' | 'acceptEdits' {
-  return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
+function claudeSdkPermissionMode(_sessionRow: AgentSessionRow): 'acceptEdits' {
+  return 'acceptEdits';
 }
 
 function toSdkUserMessage(prompt: unknown): SDKUserMessage {
@@ -555,7 +556,11 @@ export class ClaudeAgentService {
         } as PermissionResult;
       }
 
-      if (toolName === 'AskUserQuestion') {
+      if (
+        toolName === 'AskUserQuestion' ||
+        toolName === 'AskUserQuestions' ||
+        toolName === 'mcp__baguette__AskUserQuestions'
+      ) {
         return {
           behavior: 'deny',
           message: 'Questions presented to the user inline. They will reply with their answers.',
@@ -882,10 +887,11 @@ export class ClaudeAgentService {
       }
     });
 
+    const endAfterTool = sessionState.endTurnAfterBaguetteTool;
     return {
-      turnComplete: result.turnComplete,
-      streamFailed: result.streamFailed || streamFailed,
-      outcome: result.outcome,
+      turnComplete: endAfterTool ? true : result.turnComplete,
+      streamFailed: endAfterTool ? false : result.streamFailed || streamFailed,
+      outcome: endAfterTool ? 'completed' : result.outcome,
       lastResult: result.lastResult,
     };
   }
@@ -1101,6 +1107,17 @@ Task: ${initialPrompt}`;
   async get(id: number) {
     return this.getActiveSession(id) ?? null;
   }
+
+  endTurnAfterBaguetteTool(sessionId: number): void {
+    const session = this.getActiveSession(sessionId);
+    if (!session) return;
+    session.endTurnAfterBaguetteTool = true;
+    try {
+      session.abortController.abort();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SERVICE_PATH) {
@@ -1118,6 +1135,7 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'buildQueryOptions',
       'syncSessionSettingsFromPatch',
       'prepareTiedSessionLoopCompaction',
+      'endTurnAfterBaguetteTool',
       'handleMessageCreated',
       'generateSessionMetadata',
       'isInterruptedSessionResumable',

@@ -25,6 +25,15 @@ import { createShowDiffTool } from '../tools/show-diff.js';
 import { createUploadImageTool } from '../tools/upload-image.js';
 import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
+import { createTodoHandlers } from '../lib/todo-handlers.js';
+import { createCreateTodoTool } from '../tools/create-todo.js';
+import { createProcessTodoTool } from '../tools/process-todo.js';
+import { createCompleteTodoTool } from '../tools/complete-todo.js';
+import { createListTodosTool } from '../tools/list-todos.js';
+import { createAskUserQuestionsTool } from '../tools/ask-user-questions.js';
+import { createPlanHandlers } from '../lib/plan-handlers.js';
+import { createCreatePlanTool } from '../tools/create-plan.js';
+import { createEditPlanTool } from '../tools/edit-plan.js';
 
 export function buildBuilderIssueTools(session, app) {
   const h = createIssueHandlers(session, app);
@@ -34,8 +43,17 @@ export function buildBuilderIssueTools(session, app) {
 /** Repo session builder MCP tools (git, PR, tasks, issues for the coding agent). */
 export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
   const ctx = createSessionAgentContext(session, app, { slackApps });
+  const todoHandlers = createTodoHandlers(session, app);
+  const planHandlers = createPlanHandlers(session, app);
   const tools = [
     ...buildBuilderIssueTools(session, app),
+    createAskUserQuestionsTool(),
+    createCreatePlanTool(planHandlers),
+    createEditPlanTool(planHandlers),
+    createCreateTodoTool(todoHandlers),
+    createProcessTodoTool(todoHandlers),
+    createCompleteTodoTool(todoHandlers),
+    createListTodosTool(todoHandlers),
     createGitPullTool(ctx),
     createGitFetchTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),

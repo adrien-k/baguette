@@ -49,6 +49,7 @@ export default function AgentMessageComposer({
   autoFocus = false,
   resizable = false,
   rows = 1,
+  hint,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -111,6 +112,7 @@ export default function AgentMessageComposer({
             : `${TEXTAREA_CLASS} resize-none`
         }
       />
+      {hint ? <p className="px-2 sm:px-3 pb-1 text-xs text-faint">{hint}</p> : null}
       <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible min-w-0">
         <SessionModelSelect
           agentConfigKey={agentConfigKey}

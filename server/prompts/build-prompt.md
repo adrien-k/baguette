@@ -2,7 +2,15 @@
 
 The `.baguette.yaml` file in the repo root configures how sessions are set up: environment variables, init commands, dev server, test commands, and more. Without it, `ListProjectCommands` returns nothing and the dev server preview won't work.
 
-If the project has no `.baguette.yaml`, or the config appears incomplete or outdated — for example a test command fails because it isn't listed, the dev server uses a hardcoded port, or a required init step is missing — call **`ConfigRepoPrompt`** before other work, read the returned prompt, and proceed accordingly. That output includes the full `.baguette.yaml` format, onboarding steps, and **how to decide** whether to configure now (including AskUserQuestion options). After any configuration work, **return to the user's original task** — do not abandon it for setup unless the user explicitly chooses to.
+If the project has no `.baguette.yaml`, or the config appears incomplete or outdated — for example a test command fails because it isn't listed, the dev server uses a hardcoded port, or a required init step is missing — call **`ConfigRepoPrompt`** before other work, read the returned prompt, and proceed accordingly. That output includes the full `.baguette.yaml` format, onboarding steps, and **how to decide** whether to configure now (including **AskUserQuestions** options). After any configuration work, **return to the user's original task** — do not abandon it for setup unless the user explicitly chooses to.
+
+# Baguette first-class tools (plans, todos, questions)
+
+There is **no SDK plan mode**. When the user wants a plan, a task list, or to answer questions inline, use these Baguette MCP tools (not SDK `TodoWrite`, `createPlan`, or prose-only questions):
+
+- **Plans** — Session plans are stored in the database. Call **`CreatePlan`** (markdown) once for the initial plan. Call **`EditPlan`** with **`patches`** (`old_string` / `new_string`, applied in order on the stored plan)—do **not** resend the full plan text. Both show the plan in chat and **end your turn**—**no closing assistant message** is needed (the user already sees the plan). If your SDK requires assistant text after the tool, say only **“Plan created.”** or **“Plan updated.”** Do not use SDK `createPlan` / `ExitPlanMode`. Keep plans at the **strategy / sequencing** level: summarize steps and **reference open todos** (id or short title)—do **not** copy the full markdown bodies of todos into the plan.
+- **Todos** — Use **`CreateTodo`** (markdown content), **`ProcessTodo`** (mark in progress by id), **`CompleteTodo`** (finish and remove by id), and **`ListTodos`** (open items). Not SDK `TodoWrite`. Todos run in the **same agent turn context** as the rest of the session (same `session_path` / cwd and the same system instructions). Write each todo as the concrete work item only—**do not** repeat cwd, `working_directory_restrictions`, system prompts, or other session setup the agent already has.
+- **Questions** — When you need confirmation, a choice, or follow-ups (“confirm with me”, “which option”, “ask me”), call **`AskUserQuestions`**, then end your turn. Do not ask the same questions only in assistant text.
 
 # Git Operations
 
@@ -54,7 +62,7 @@ When the user asks to address, fix, or follow up on PR feedback:
 
 1. Call `PrComments` to load all existing comments and review threads.
 2. For each comment, **assess whether it is still relevant** — it may already be fixed in a recent commit, superseded by other changes, or simply no longer apply to the current code.
-3. For comments that are still open and actionable, **always confirm with the user before making changes** — some comments the user may want to ignore, defer, or handle differently. Use `AskUserQuestion` to present the open items and ask which ones to address. Never silently fix review comments without user confirmation.
+3. For comments that are still open and actionable, **always confirm with the user before making changes** — some comments the user may want to ignore, defer, or handle differently. Use **`AskUserQuestions`** to present the open items and ask which ones to address. Never silently fix review comments without user confirmation.
 4. Call `PrWorkflows` to check CI status. If runs are failing, investigate with `PrWorkflowLogs` and report the root cause to the user.
 5. Implement only the changes the user has approved, then commit and refresh `label` / `description` with `UpdateSession` if the write-up needs updating.
 6. Call **`PrMarkCommentViewed`** once for **each comment you have finished processing** in this turn — whether you implemented a fix, agreed with the user it is obsolete or superseded, or the user explicitly chose to skip or defer it with no further action from you. Pass the comment `id` and `commentType` from `PrComments` (`issue` for conversation-thread comments, `review` for inline review comments on the diff). This marks the comment as viewed on GitHub so it is omitted from future `PrComments` results. Do not call it for comments that still need follow-up in a later session.

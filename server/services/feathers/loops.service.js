@@ -18,7 +18,6 @@ const WRITABLE_FIELDS = [
   'prompt',
   'create_new_branch',
   'auto_push',
-  'plan_mode',
   'single_session',
   'is_global',
   'agent_sdk',
@@ -185,7 +184,6 @@ const BOOLEAN_QUERY_FIELDS = [
   'enabled',
   'create_new_branch',
   'auto_push',
-  'plan_mode',
   'single_session',
   'is_global',
   'created_from_session',
@@ -228,7 +226,6 @@ function sessionDataFromLoop(loop) {
   const data = {
     loop_id: loop.id,
     initial_prompt: loop.prompt,
-    plan_mode: !!loop.plan_mode,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
   };
@@ -370,7 +367,6 @@ function normalizeCreate(context) {
   if (!data.is_global && isLocalRepo(repo ?? data.repo_full_name)) {
     data.auto_push = false;
   }
-  data.plan_mode = !!data.plan_mode;
   data.single_session = !!data.single_session;
   if (data.session_id != null) {
     data.session_id = Number(data.session_id);
@@ -425,13 +421,7 @@ function normalizePatch(context) {
   if (context.params.provider && 'session_id' in data) delete data.session_id;
 
   if ('prompt' in data && !data.prompt?.trim()) throw new BadRequest('prompt is required');
-  for (const field of [
-    'enabled',
-    'create_new_branch',
-    'auto_push',
-    'plan_mode',
-    'single_session',
-  ]) {
+  for (const field of ['enabled', 'create_new_branch', 'auto_push', 'single_session']) {
     if (field in data) data[field] = !!data[field];
   }
   const loopRepo = context.params.loopRepo;
@@ -486,7 +476,6 @@ function formatLoop(loop) {
     enabled: !!loop.enabled,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
-    plan_mode: !!loop.plan_mode,
     single_session: !!loop.single_session,
     is_global: !!loop.is_global,
     created_from_session: !!loop.created_from_session,

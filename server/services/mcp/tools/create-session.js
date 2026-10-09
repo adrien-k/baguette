@@ -63,7 +63,6 @@ export function createCreateSessionTool(ctx) {
         .describe('Create a new working branch (default true)'),
       branch_name: z.string().optional().describe('Optional new branch name'),
       auto_push: z.boolean().optional().describe('Auto-push commits (default true)'),
-      plan_mode: z.boolean().optional().describe('Start in plan mode'),
       plugins: z.array(z.string()).optional().describe('Plugin ids to enable'),
     },
     handler: async ({
@@ -78,7 +77,6 @@ export function createCreateSessionTool(ctx) {
       create_new_branch = true,
       branch_name,
       auto_push = true,
-      plan_mode = false,
       plugins,
     }) => {
       if (!is_global && repo_id == null) {
@@ -174,7 +172,6 @@ export function createCreateSessionTool(ctx) {
 
       const payload = {
         initial_prompt,
-        plan_mode: Boolean(plan_mode),
         agent_config_id: agentConfigId,
         agent_sdk,
       };

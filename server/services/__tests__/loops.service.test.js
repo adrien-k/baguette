@@ -425,7 +425,6 @@ describe('Loops service', (hooks) => {
         agent_config_id: cursorConfigId,
         agent_sdk: 'cursor',
         model: 'composer-1',
-        plan_mode: true,
         auto_push: false,
         plugins: ['plugin-a'],
       });
@@ -442,7 +441,6 @@ describe('Loops service', (hooks) => {
           agent_config_id: cursorConfigId,
           agent_sdk: 'cursor',
           model: 'composer-1',
-          plan_mode: true,
           auto_push: false,
           plugins: ['plugin-a'],
         }),

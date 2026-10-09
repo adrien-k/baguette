@@ -6,6 +6,7 @@ import ThinkingBlock from './chat/ThinkingBlock.tsx';
 import ToolCallBlock from './chat/ToolCallBlock.tsx';
 import BaguetteBlock from './chat/BaguetteBlock.tsx';
 import PlanReviewBlock from './chat/PlanReviewBlock.tsx';
+import AskUserAnswerBlock from './chat/AskUserAnswerBlock.tsx';
 import CopyButton from './chat/CopyButton.tsx';
 import { isHumanUserMessage, isMcpUserMessage } from '@baguette/shared/turn-model.js';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
@@ -40,6 +41,16 @@ function TypedUserMessage({
 
   if (isMcpUserMessage(message)) {
     return <McpAgentBlock message={message} />;
+  }
+
+  if (message.subtype === 'ask_user_answer') {
+    const answers = (message as { answers?: { question?: string; value?: string }[] }).answers;
+    const userText = userMessagePlainText(message);
+    return (
+      <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
+        <AskUserAnswerBlock answers={answers} fallbackText={userText} />
+      </div>
+    );
   }
 
   const turnModelLabel = isHumanUserMessage(message)

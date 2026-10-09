@@ -132,6 +132,7 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
         source: normalized.source,
         title: normalized.title,
         subtype: row.subtype ?? normalized.subtype ?? null,
+        answers: (payload as { answers?: { question?: string; value?: string }[] }).answers,
       };
     }
     if (Array.isArray(normalized.content)) {

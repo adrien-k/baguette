@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import MarkdownContent from '../MarkdownContent.jsx';
-import { messagesService, sessionsService } from '../../feathers.js';
+import { messagesService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
@@ -22,7 +22,6 @@ export default function PlanReviewBlock({
     if (sessionId == null) return;
     setLoading(true);
     try {
-      await sessionsService.patch(sessionId, { plan_mode: false });
       await messagesService.create({
         session_id: sessionId,
         type: 'user',

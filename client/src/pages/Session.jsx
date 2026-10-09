@@ -23,6 +23,7 @@ import {
   ClipboardCheck,
   MonitorPlay,
   FileText,
+  ListTodo,
 } from 'lucide-react';
 import BuilderForm from '../components/BuilderForm.jsx';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
@@ -63,6 +64,8 @@ import DiffView from './session/DiffView.jsx';
 import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
 import DetailsView from './session/DetailsView.jsx';
+import PlanView from './session/PlanView.jsx';
+import { useGetSessionTodos } from '../hooks/useGetSessionTodos.js';
 import SessionSidePanel from './session/SessionSidePanel.jsx';
 import SessionMainViewFooter from './session/SessionMainViewFooter.jsx';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
@@ -310,6 +313,7 @@ const BASE_VIEWS = [
   { id: 'diff', label: 'Diff', Icon: FolderOpen },
 ];
 const DETAILS_VIEW = { id: 'details', label: 'Details', Icon: FileText };
+const PLAN_VIEW = { id: 'plan', label: 'Plan', Icon: ListTodo };
 const PREVIEW_VIEW = { id: 'preview', label: 'Preview', Icon: MonitorPlay };
 const GLOBAL_SESSION_VIEW_DISABLED_TOOLTIP = 'Not available for global sessions.';
 
@@ -317,7 +321,7 @@ function isGlobalSessionDisabledView(viewId) {
   return viewId === 'review' || viewId === 'diff' || viewId === 'preview';
 }
 
-const SESSION_VIEWS = [...BASE_VIEWS, PREVIEW_VIEW, DETAILS_VIEW];
+const SESSION_VIEWS = [...BASE_VIEWS, PREVIEW_VIEW, PLAN_VIEW, DETAILS_VIEW];
 function nextVisibleSession({ sessions, short_id, session, repoId, fromAllSessions }) {
   return sessions.find((s) => {
     if (
@@ -376,7 +380,9 @@ export default function Session() {
       return sessionIssues.filter((i) => i.status === 'opened').length;
     }
     return session?.open_issues_count ?? 0;
-  }, [shouldLoadSessionIssues, sessionIssues, session]);
+  }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
+  const { todos: sessionTodos } = useGetSessionTodos(sessionId, { enabled: sessionId != null });
+  const planTabTodoCount = sessionTodos.length;
   const [prInfo, setPrInfo] = useState(null);
   const [showTasks, setShowTasks] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
@@ -981,7 +987,6 @@ export default function Session() {
     branch,
     initialPrompt,
     files,
-    planMode,
     model,
     modelParams,
     createNewBranch,
@@ -994,13 +999,11 @@ export default function Session() {
       ? {
           is_global: true,
           initial_prompt: initialPrompt,
-          plan_mode: planMode,
         }
       : {
           repo_full_name: repoFullName,
           base_branch: branch,
           initial_prompt: initialPrompt,
-          plan_mode: planMode,
           create_new_branch: createNewBranch ?? true,
           auto_push: autoPushEnabledForRepo(
             repoFullName,
@@ -1487,6 +1490,11 @@ export default function Session() {
                           {openIssuesTabCount}
                         </span>
                       )}
+                      {id === 'plan' && planTabTodoCount > 0 && (
+                        <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
+                          {planTabTodoCount}
+                        </span>
+                      )}
                     </button>
                   );
                   if (!tabDisabledForGlobal) {
@@ -1658,6 +1666,9 @@ export default function Session() {
                 readonly={isReadonly}
                 onViewLogs={handleViewTaskLogs}
               />
+            )}
+            {!isNewSessionRoute && !awaitingSession && session && activeView === 'plan' && (
+              <PlanView session={session} />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'details' && (
               <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />

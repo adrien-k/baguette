@@ -146,7 +146,6 @@ const BASE_SESSION_DATA = {
   repo_full_name: 'owner/repo',
   base_branch: 'main',
   initial_prompt: 'Fix the bug',
-  plan_mode: false,
   agent_sdk: 'claude',
   model: 'sonnet',
   // Must follow REPOS_DIR/<stripped>/sessions/<id> so createCanUseTool can derive the repo dir

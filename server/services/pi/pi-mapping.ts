@@ -6,6 +6,10 @@ import type {
   ToolCallPayload,
 } from '../../../shared/message-types.ts';
 import { mapCursorToolArgs, mapCursorToolResult } from '../cursor/cursor-mapping.ts';
+import {
+  baguetteMcpShortName,
+  isBaguetteMcpToolName,
+} from '../../../shared/baguette-mcp-tool-names.js';
 
 const PI_TOOL_ALIAS: Record<string, string> = {
   bash: 'Bash',
@@ -26,6 +30,10 @@ export function canonicalizePiToolName(name: string): string {
 }
 
 export function piToolKindFromName(canonicalName: string): ToolCallKind {
+  if (canonicalName === 'AskUserQuestions') return 'ask_user';
+  const short = baguetteMcpShortName(canonicalName);
+  if (short === 'AskUserQuestions') return 'ask_user';
+  if (isBaguetteMcpToolName(canonicalName) || isBaguetteMcpToolName(short)) return 'mcp';
   const map: Record<string, ToolCallKind> = {
     Bash: 'bash',
     Read: 'read',

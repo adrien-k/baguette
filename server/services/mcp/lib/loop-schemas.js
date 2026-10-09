@@ -17,7 +17,6 @@ export const loopPatchSchema = {
   prompt: z.string().optional(),
   create_new_branch: z.boolean().optional(),
   auto_push: z.boolean().optional(),
-  plan_mode: z.boolean().optional(),
   single_session: z.boolean().optional(),
   agent_sdk: z.enum(['claude', 'cursor', 'pi']).optional(),
   model: z.string().optional(),

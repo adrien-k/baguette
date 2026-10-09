@@ -186,6 +186,8 @@ export type UserMessagePayload = {
   title?: string;
   /** `null` is allowed to mirror the nullable `session_messages.subtype` column. */
   subtype?: string | null;
+  /** Populated for `subtype: ask_user_answer` (AskUserQuestions replies). */
+  answers?: { question?: string; value?: string }[];
 };
 
 export type AssistantBlock =
@@ -222,7 +224,7 @@ export type TurnResultPayload = {
   total_cost_usd: number | null;
 };
 
-/** Plan presented for review while `sessions.plan_mode` is on. Never a tool_call row. */
+/** Plan presented for review in chat. Never a tool_call row. */
 export type PlanMessagePayload = {
   type: 'plan';
   markdown: string;

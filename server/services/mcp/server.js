@@ -11,6 +11,7 @@ import { buildBaseAgentTools } from './registries/base_agent.js';
 import { buildBuilderAgentTools } from './registries/builder_agent.js';
 import { buildReviewerAgentTools } from './registries/reviewer_agent.js';
 import { parsePiToolParams } from './lib/pi-tool-params.js';
+import { wrapBaguetteToolList } from './lib/wrap-baguette-tool-handler.js';
 
 /**
  * Creates tool definitions shared between Claude SDK MCP server and Cursor customTools.
@@ -29,11 +30,12 @@ export async function buildBaguetteToolList(session, app, { slackApps = [] } = {
 
   const tools = [...baseTools, ...buildBuilderAgentTools(session, app, { slackApps })];
 
+  const wrapped = wrapBaguetteToolList(session, app, tools);
   if (isGlobalSession(session)) {
     const excluded = new Set(GLOBAL_SESSION_EXCLUDED_MCP_TOOLS);
-    return tools.filter((t) => !excluded.has(t.name));
+    return wrapped.filter((t) => !excluded.has(t.name));
   }
-  return tools;
+  return wrapped;
 }
 
 export async function buildBaguetteMcpServer(session, app) {

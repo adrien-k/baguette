@@ -1,0 +1,80 @@
+import { useState } from 'react';
+import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
+import { messagesService } from '../../feathers.js';
+import { toastError } from '../../utils/toastError.jsx';
+import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
+import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+
+export default function ShowPlanBlock({
+  heading = 'Plan ready for review',
+  markdown,
+  sessionId,
+  session,
+  userReplied = false,
+  isRunning = false,
+}: {
+  heading?: string;
+  markdown?: string | null;
+  sessionId?: number | null;
+  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
+  userReplied?: boolean;
+  isRunning?: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const sendUserMessage = async (text: string) => {
+    if (sessionId == null) return;
+    setLoading(true);
+    try {
+      await messagesService.create({
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', content: text }),
+        ...builderMessageCreateFields(session ?? {}),
+      });
+    } catch (err) {
+      toastError('Failed to send message', err);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
+      <div className="px-3 sm:px-4 py-2 border-b border-brand/10 flex items-center gap-2">
+        <p className="text-xs text-accent/70">{heading}</p>
+        {isRunning && (
+          <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
+        )}
+      </div>
+      <div className="px-3 sm:px-4 py-3 overflow-auto max-h-[50vh] text-sm">
+        {markdown?.trim() ? (
+          <CollapsibleMarkdown previewLines={12} simpleToggle>
+            {markdown}
+          </CollapsibleMarkdown>
+        ) : (
+          <p className="text-sm text-faint italic">No plan content yet.</p>
+        )}
+      </div>
+      {!userReplied && (
+        <div className="px-3 sm:px-4 pb-4 pt-1 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => sendUserMessage('Proceed with the plan.')}
+            disabled={loading}
+            className={SECONDARY_BUTTON_CLASS}
+          >
+            Run the plan
+          </button>
+          <button
+            type="button"
+            onClick={() => sendUserMessage('Please refine the plan.')}
+            disabled={loading}
+            className={SECONDARY_BUTTON_CLASS}
+          >
+            Refine the plan
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

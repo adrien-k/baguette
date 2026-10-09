@@ -45,6 +45,10 @@ import {
   mergeToolCallInput,
   toolInputFromPayload,
 } from '../../../shared/merge-tool-call-input.js';
+import {
+  baguetteMcpShortName,
+  isBaguetteMcpToolName,
+} from '../../../shared/baguette-mcp-tool-names.js';
 
 export type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
@@ -374,8 +378,11 @@ export function claudeToolKindFromName(name: string | null | undefined): ToolCal
   if (n === 'Edit') return 'edit';
   if (n === 'TodoWrite') return 'todo';
   if (n === 'Task' || n === 'Agent') return 'task';
-  if (n === 'AskUserQuestion') return 'ask_user';
+  if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return 'ask_user';
+  const short = baguetteMcpShortName(name ?? '');
+  if (short === 'AskUserQuestions') return 'ask_user';
   if (n === 'ExitPlanMode' || n === 'createPlan') return 'exit_plan';
+  if (isBaguetteMcpToolName(n) || isBaguetteMcpToolName(short)) return 'mcp';
   if (n === 'mcp' || n.startsWith('mcp__')) return 'mcp';
   return 'generic';
 }

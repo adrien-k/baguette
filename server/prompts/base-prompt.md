@@ -6,7 +6,7 @@
 
 # Session context
 
-Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns the worktree path, **`base_branch`**, **`remote_branch`**, **`local_branch`**, **`label`**, **`pr_description`**, and working-directory rules for this session. For pull request title, URL, and description on GitHub, call **`PrRead`**.
+Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns **`session_path`** (worktree root), **`base_branch`**, **`remote_branch`**, **`local_branch`**, **`label`**, **`pr_description`**, and working-directory rules for this session. Session plans use **`CreatePlan`** / **`EditPlan`** (not files in the worktree). Use **`UpdateSession`** to change label and description; for pull request title, URL, and description on GitHub, call **`PrRead`**.
 
 When someone refers to a session’s branch by name (for example “the `feature/foo` session”), they often mean the shared **`remote_branch`** (PR/push head), not the unique **`local_branch`** checked out in a single worktree. Several sessions can share one `remote_branch` with different `local_branch` values. To find those sessions and read each one’s `local_branch`, call **`SearchSessions`** with `remote_branch` set to that name.
 

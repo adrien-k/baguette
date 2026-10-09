@@ -10,6 +10,8 @@ import { ansiToHtml } from '../../utils/ansi.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
 import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
 import BashToolBlock from './BashToolBlock.tsx';
+import ShowPlanBlock from './ShowPlanBlock.tsx';
+import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
 
 function formatRunTaskCommand(label: string, runArgs?: unknown) {
   const parts = Array.isArray(runArgs)
@@ -41,15 +43,45 @@ export type McpBlockData = {
   input?: Record<string, unknown>;
 };
 
-export function parseMcpJsonResult(result: unknown): McpResultData | null {
-  if (result == null) return null;
-  if (typeof result === 'object') return result as McpResultData;
-  if (typeof result !== 'string' || !result.trim()) return null;
+function parseJsonObject(text: unknown): McpResultData | null {
+  if (typeof text !== 'string' || !text.trim().startsWith('{')) return null;
   try {
-    return JSON.parse(result) as McpResultData;
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as McpResultData) : null;
   } catch {
     return null;
   }
+}
+
+function mcpDataHasPayload(data: Record<string, unknown>): boolean {
+  return (
+    data.todo != null ||
+    data.todos != null ||
+    data.markdown != null ||
+    data.ok === true ||
+    data.ok === false ||
+    data.error != null
+  );
+}
+
+export function parseMcpJsonResult(result: unknown): McpResultData | null {
+  if (result == null) return null;
+  if (typeof result === 'object') {
+    const obj = result as McpResultData & { data?: unknown; content?: unknown };
+    const fromContent = parseJsonObject(obj.content);
+
+    if (obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
+      const data = obj.data as Record<string, unknown>;
+      if (mcpDataHasPayload(data)) {
+        return fromContent ? { ...fromContent, ...data } : (data as McpResultData);
+      }
+    }
+
+    if (fromContent) return fromContent;
+    return obj;
+  }
+  if (typeof result !== 'string' || !result.trim()) return null;
+  return parseJsonObject(result);
 }
 
 export function PrUpsertBlock({
@@ -489,6 +521,8 @@ export default function BaguetteMcpToolBlock({
   isError = false,
   startedAt,
   sessionId,
+  session,
+  userReplied = false,
 }: {
   tool: string;
   args?: Record<string, unknown>;
@@ -496,8 +530,44 @@ export default function BaguetteMcpToolBlock({
   isError?: boolean;
   startedAt?: string | null;
   sessionId?: number | string | null;
+  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
+  userReplied?: boolean;
 }) {
   const mcpResult = parseMcpJsonResult(result);
+
+  if (
+    toolShortName === 'CreateTodo' ||
+    toolShortName === 'ProcessTodo' ||
+    toolShortName === 'CompleteTodo'
+  ) {
+    return (
+      <SessionTodoToolBlock
+        toolName={toolShortName}
+        args={args}
+        mcpResult={mcpResult}
+        result={result}
+        isError={isError}
+      />
+    );
+  }
+
+  if (toolShortName === 'CreatePlan' || toolShortName === 'EditPlan') {
+    const markdownFromResult = (mcpResult?.markdown as string | undefined) ?? '';
+    const markdownFromArgs =
+      typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '';
+    const markdown = markdownFromResult || (toolShortName === 'CreatePlan' ? markdownFromArgs : '');
+    const heading = toolShortName === 'CreatePlan' ? 'Plan created' : 'Plan updated';
+    return (
+      <ShowPlanBlock
+        heading={heading}
+        markdown={markdown}
+        isRunning={result == null}
+        sessionId={sessionId != null ? Number(sessionId) : null}
+        session={session}
+        userReplied={userReplied}
+      />
+    );
+  }
 
   if (toolShortName === 'CreateIssue') {
     return <CreateIssueBlock block={{ result, isError, input: args }} />;

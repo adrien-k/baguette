@@ -16,6 +16,8 @@ import { registerSlackService } from './slack.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerLoopsService } from './loops.service.js';
 import { registerSessionIssuesService } from './session-issues.service.js';
+import { registerSessionTodosService } from './session-todos.service.js';
+import { registerSessionPlansService } from './session-plans.service.js';
 import { registerSessionReviewService } from './session-review.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
@@ -41,6 +43,8 @@ export function registerFeathersServices(app, sseManager) {
   registerSlackService(app);
   registerLoopsService(app);
   registerSessionIssuesService(app);
+  registerSessionTodosService(app);
+  registerSessionPlansService(app);
   registerSessionReviewService(app);
 
   app.service('sessions').registerActivityMessageListeners(app);
@@ -78,6 +82,18 @@ export function registerFeathersServices(app, sseManager) {
       if (!data?.session_id) return;
       const session = await db('sessions').where({ id: data.session_id }).first();
       if (session) sseManager.send(session.user_id, { service: 'session-issues', event, data });
+    });
+
+    app.service('session-todos').on(event, async (data) => {
+      if (!data?.session_id) return;
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session) sseManager.send(session.user_id, { service: 'session-todos', event, data });
+    });
+
+    app.service('session-plans').on(event, async (data) => {
+      if (!data?.session_id) return;
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session) sseManager.send(session.user_id, { service: 'session-plans', event, data });
     });
   }
 

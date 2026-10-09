@@ -25,6 +25,7 @@ export function normalizeMcpParamsForPi(raw) {
     const trimmed = v.trim();
     if (!/^\d+$/.test(trimmed)) continue;
     if (
+      key === 'id' ||
       key === 'session_id' ||
       key === 'message_id' ||
       key.endsWith('_id') ||

@@ -1,13 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  Bot,
-  ChevronDown,
-  CheckSquare2,
-  Loader2,
-  Square,
-  Wrench,
-  MessageSquare,
-} from 'lucide-react';
+import { Bot, ChevronDown, Loader2, Wrench, MessageSquare } from 'lucide-react';
 import type { TaskConversationStep } from '@baguette/shared/cursor-task-conversation.ts';
 import type {
   GenericToolResult,
@@ -23,6 +15,7 @@ import BashToolBlock from './BashToolBlock.tsx';
 import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
 import PlanReviewBlock from './PlanReviewBlock.tsx';
 import BaguetteMcpToolBlock from './BaguetteMcpToolBlock.tsx';
+import TodoBlock from './TodoBlock.tsx';
 
 /**
  * Renderer for typed `tool_call` rows (payload fields + row meta). Reads the
@@ -44,40 +37,6 @@ type QuietCall = Exclude<
   TypedToolCall,
   { kind: 'bash' | 'edit' | 'write' | 'todo' | 'task' | 'ask_user' | 'exit_plan' | 'mcp' }
 >;
-
-function TodoBlock({ todos }: { todos?: unknown }) {
-  const list = Array.isArray(todos) ? todos : [];
-  const visible = list.filter(
-    (todo) =>
-      typeof (todo as { content?: string }).content === 'string' &&
-      (todo as { content?: string }).content!.trim()
-  );
-  if (visible.length === 0) return null;
-  return (
-    <div className="py-0.5 pl-1 space-y-0.5">
-      {list.map((todo, i) => {
-        const t = todo as { status?: string; content?: string };
-        const isCompleted = t.status === 'completed';
-        const isInProgress = t.status === 'in_progress';
-        return (
-          <div
-            key={i}
-            className={`flex items-center gap-1.5 text-xs ${isCompleted ? 'text-faint' : isInProgress ? 'text-secondary' : 'text-faint'}`}
-          >
-            {isCompleted ? (
-              <CheckSquare2 className="w-3 h-3 shrink-0 text-success" />
-            ) : isInProgress ? (
-              <Loader2 className="w-3 h-3 shrink-0 text-accent animate-spin" />
-            ) : (
-              <Square className="w-3 h-3 shrink-0 text-faint" />
-            )}
-            <span className={isCompleted ? 'line-through' : ''}>{t.content}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function TaskStepIcon({ step }: { step: TaskConversationStep }) {
   if (step.kind === 'tool') {
@@ -357,14 +316,23 @@ function ToolCallSwitch({
       // Typed mcp args are flat: { tool: shortName, ...toolFields }.
       const { tool, ...fields } = message.args;
       const toolName = tool || message.name.replace(/^mcp__baguette__/, '') || 'mcp';
+      const mcpResult = message.result;
+      const parsedData =
+        mcpResult?.data &&
+        typeof mcpResult.data === 'object' &&
+        Object.keys(mcpResult.data).length > 0
+          ? mcpResult.data
+          : null;
       return (
         <BaguetteMcpToolBlock
           tool={toolName}
           args={fields}
-          result={message.result?.data ?? message.result}
+          result={parsedData ?? mcpResult}
           isError={isError}
           startedAt={startedAt}
           sessionId={sessionId}
+          session={session}
+          userReplied={userReplied}
         />
       );
     }

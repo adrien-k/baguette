@@ -89,7 +89,6 @@ export default function Dashboard() {
     branch,
     initialPrompt,
     files,
-    planMode,
     model,
     modelParams,
     createNewBranch,
@@ -102,13 +101,11 @@ export default function Dashboard() {
       ? {
           is_global: true,
           initial_prompt: initialPrompt,
-          plan_mode: planMode,
         }
       : {
           repo_full_name: repoFullName,
           base_branch: branch,
           initial_prompt: initialPrompt,
-          plan_mode: planMode,
           create_new_branch: createNewBranch ?? true,
           auto_push: autoPushEnabledForRepo(
             repoFullName,

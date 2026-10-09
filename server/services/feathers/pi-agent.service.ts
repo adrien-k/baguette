@@ -59,6 +59,7 @@ type PiSessionState = {
   writer?: MessageStreamWriter | null;
   turnId?: number | null;
   channel?: MessageChannel;
+  endTurnAfterBaguetteTool?: boolean;
 };
 
 export type PiBuildAgentOptionsResult = CreateAgentSessionOptions & {
@@ -332,7 +333,11 @@ export class PiAgentService {
         },
         abortSignal: controller.signal,
       });
-      outcome = finishedOk ? 'completed' : 'failed';
+      outcome = sessionState.endTurnAfterBaguetteTool
+        ? 'completed'
+        : finishedOk
+          ? 'completed'
+          : 'failed';
       return { outcome, turnUsage };
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -710,6 +715,18 @@ Task: ${initialPrompt}`;
     await directPromptTiedSessionLoopCompaction(this.app, args);
   }
 
+  endTurnAfterBaguetteTool(sessionId: number): void {
+    const sessionState = this._activeSessions.get(sessionId);
+    if (!sessionState) return;
+    sessionState.endTurnAfterBaguetteTool = true;
+    try {
+      sessionState.abortController?.abort();
+      void sessionState.piSession?.abort();
+    } catch {
+      // ignore
+    }
+  }
+
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
     { channel = 'chat' }: { channel?: MessageChannel } = {}
@@ -731,6 +748,7 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'buildAgentOptions',
       'generateSessionMetadata',
       'prepareTiedSessionLoopCompaction',
+      'endTurnAfterBaguetteTool',
       'handleMessageCreated',
       'isInterruptedSessionResumable',
     ],

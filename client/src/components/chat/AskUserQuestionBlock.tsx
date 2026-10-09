@@ -64,11 +64,17 @@ export default function AskUserQuestionBlock({
   );
   const [loading, setLoading] = useState(false);
 
-  const sendMsg = (text: string) =>
+  const sendMsg = (text: string, answers: { question: string; value: string }[]) =>
     messagesService.create({
       session_id: sessionId,
       type: 'user',
-      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
+      subtype: 'ask_user_answer',
+      message_json: JSON.stringify({
+        type: 'user',
+        subtype: 'ask_user_answer',
+        content: text,
+        answers,
+      }),
       ...builderMessageCreateFields(session ?? {}),
     });
 
@@ -103,7 +109,19 @@ export default function AskUserQuestionBlock({
     if (!isAnswerComplete(questions, answersToUse)) return;
     setLoading(true);
     try {
-      await sendMsg(buildAnswerMessage(questions, answersToUse));
+      const answerRows = questions.map((q, i) => {
+        const ans = answersToUse[i];
+        let value: string;
+        if (q.multiSelect) {
+          const selected = ans.selected instanceof Set ? ans.selected : new Set<string>();
+          const parts = [...selected].map((l) => (l === 'Other' ? ans.otherText || 'Other' : l));
+          value = parts.join(', ');
+        } else {
+          value = ans.selected === 'Other' ? ans.otherText || 'Other' : (ans.selected as string);
+        }
+        return { question: q.question, value };
+      });
+      await sendMsg(buildAnswerMessage(questions, answersToUse), answerRows);
     } catch (err) {
       toastError('Failed to send answers', err);
       setLoading(false);

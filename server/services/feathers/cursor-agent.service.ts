@@ -79,6 +79,7 @@ type CursorSessionState = {
   writer?: MessageStreamWriter | null;
   turnId?: number | null;
   channel?: MessageChannel;
+  endTurnAfterBaguetteTool?: boolean;
 };
 
 type StreamOneRunOpts = {
@@ -643,12 +644,8 @@ ${body}`,
         },
       });
       const userText = extractUserText(parsed);
-      const sendOptions: Record<string, unknown> = {};
-      if (session.plan_mode) {
-        sendOptions.mode = 'plan';
-      }
 
-      const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
+      const run = await this._sendWithBusyRetry(agent, session, userText, {});
       sessionState.currentRun = run;
 
       const { allFinishedOk } = await this._streamRunChainWithFollowUps(
@@ -776,7 +773,7 @@ ${body}`,
 
     const { abortSignal, onUsage: onUsageOverride, onStatus: onStatusOverride } = streamOpts;
 
-    return processCursorRunStream(run, {
+    const streamResult = await processCursorRunStream(run, {
       writer,
       abortSignal,
       onUsage: (sdkMsg: SDKUsageMessage) => {
@@ -827,6 +824,21 @@ ${body}`,
         }
       },
     });
+    if (sessionState?.endTurnAfterBaguetteTool) {
+      return { finishedOk: true, hasBackgroundTask: false };
+    }
+    return streamResult;
+  }
+
+  endTurnAfterBaguetteTool(sessionId: number): void {
+    const sessionState = this._activeSessions.get(sessionId);
+    if (!sessionState) return;
+    sessionState.endTurnAfterBaguetteTool = true;
+    try {
+      sessionState.abortController?.abort();
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -1089,6 +1101,7 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'openSessionStore',
       'disposeSessionStore',
       'prepareTiedSessionLoopCompaction',
+      'endTurnAfterBaguetteTool',
       'handleMessageCreated',
       'isInterruptedSessionResumable',
     ],

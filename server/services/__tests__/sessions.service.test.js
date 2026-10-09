@@ -620,7 +620,6 @@ describe('Sessions service - custom methods', (hooks) => {
         session_id: sessId,
         create_new_branch: false,
         auto_push: false,
-        plan_mode: false,
       });
 
       await app.service('sessions').remove(sessId, params({ id: userId }));
@@ -646,7 +645,6 @@ describe('Sessions service - custom methods', (hooks) => {
         session_id: sessId,
         create_new_branch: false,
         auto_push: false,
-        plan_mode: false,
       });
 
       await app.service('sessions').remove(sessId, params({ id: userId }));
