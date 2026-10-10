@@ -24,6 +24,8 @@ export default function DiffLineComposer({
   onModelChange,
   onAgentConfigChange,
   agentConfigOptions,
+  configsLoading = false,
+  modelsLoading = false,
   onClose,
 }) {
   const [input, setInput] = useState('');
@@ -171,6 +173,8 @@ export default function DiffLineComposer({
         onModelChange={handleComposerModelChange}
         onAgentConfigChange={onAgentConfigChange}
         agentConfigOptions={agentConfigOptions}
+        configsLoading={configsLoading}
+        modelsLoading={modelsLoading}
         textareaId="diff-line-composer"
         autoFocus
         canSend={canSendDraft}

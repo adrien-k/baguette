@@ -458,6 +458,8 @@ export default function ReviewView({
         onModelChange={handleReviewModelChange}
         agentConfigOptions={agentConfigOptions}
         onAgentConfigChange={handleReviewConfigChange}
+        configsLoading={configsLoading}
+        modelsLoading={modelsStale && !models.length}
         disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
         className={REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS}
       />
@@ -530,6 +532,8 @@ export default function ReviewView({
                 onModelChange={handleReviewModelChange}
                 agentConfigOptions={agentConfigOptions}
                 onAgentConfigChange={handleReviewConfigChange}
+                configsLoading={configsLoading}
+                modelsLoading={modelsStale && !models.length}
                 canSend={canStartReview}
                 submitLabel="Start review"
               />

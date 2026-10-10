@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { ParamPrefClearButton } from './ComposerParamControls.jsx';
 import LightChipDropdown from './LightChipDropdown.jsx';
 import ComposerParamPicker from './ComposerParamPicker.jsx';
@@ -113,6 +113,27 @@ function AgentSubmenu({ options, value, onChange, disabled = false }) {
   );
 }
 
+/** Matches loaded model trigger footprint (icon + label + chevron) to avoid layout shift. */
+function SessionModelSelectLoadingTrigger() {
+  return (
+    <div
+      className="flex min-w-[70px] max-w-full w-fit items-center gap-1.5 py-1 text-xs leading-none"
+      aria-busy="true"
+      aria-label="Loading agent and model"
+    >
+      <span
+        className="h-3.5 w-3.5 shrink-0 rounded-sm bg-control-hover motion-safe:animate-pulse"
+        aria-hidden
+      />
+      <span
+        className="h-3 w-[7.5rem] sm:w-[9rem] max-w-full shrink rounded bg-control-hover motion-safe:animate-pulse"
+        aria-hidden
+      />
+      <ChevronDown className="h-3 w-3 shrink-0 text-faint/40" strokeWidth={2.5} aria-hidden />
+    </div>
+  );
+}
+
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(query).matches
@@ -150,6 +171,8 @@ export default function SessionModelSelect({
   /** Clears agent/model selection; shows a clear control when `nullPlaceholder` is set and a config is selected. */
   onClear,
   disabled = false,
+  configsLoading = false,
+  modelsLoading = false,
   className = '',
 }) {
   const isUnset = Boolean(nullPlaceholder) && (agentConfigKey == null || agentConfigKey === '');
@@ -283,7 +306,13 @@ export default function SessionModelSelect({
 
   const showClear = Boolean(nullPlaceholder && onClear && !isUnset);
 
-  if (!agentConfigKey && !showAgentConfigPicker && !nullPlaceholder) return null;
+  const waitingForConfigs = configsLoading && Boolean(onAgentConfigChange);
+  const waitingForModels = modelsLoading && !isUnset;
+  const showLoadingPlaceholder = waitingForConfigs || waitingForModels;
+
+  if (!agentConfigKey && !showAgentConfigPicker && !nullPlaceholder && !showLoadingPlaceholder) {
+    return null;
+  }
 
   const pickModel = (newId) => {
     if (disabled || isUnset || !newId || newId === selectedModelId) return;
@@ -295,6 +324,14 @@ export default function SessionModelSelect({
     if (disabled || !nextKey || nextKey === agentConfigKey || !onAgentConfigChange) return;
     onAgentConfigChange(nextKey);
   };
+
+  if (showLoadingPlaceholder) {
+    return (
+      <div className={`relative flex w-full min-w-0 max-w-full flex-col ${className}`}>
+        <SessionModelSelectLoadingTrigger />
+      </div>
+    );
+  }
 
   return (
     <div className={`relative flex w-full min-w-0 max-w-full flex-col ${className}`}>

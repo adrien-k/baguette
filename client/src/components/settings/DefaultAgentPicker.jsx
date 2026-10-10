@@ -76,6 +76,7 @@ export default function DefaultAgentPicker({
         onAgentConfigChange={handleSdkChange}
         nullPlaceholder={nullPlaceholder}
         onClear={allowInherit ? handleClear : undefined}
+        modelsLoading={!isUnset && modelsStale && !models.length}
         disabled={!isUnset && modelsStale && !models.length}
         className="min-w-0 max-w-full"
       />

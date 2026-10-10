@@ -110,6 +110,7 @@ export default function AgentConfigDefaultModelPicker({
             cursorModelPrefs={cursorModelPrefs}
             onCursorModelPrefChange={setCursorModelPref}
             onModelChange={handleModelChange}
+            modelsLoading={modelsLoading && !models.length}
             disabled={busy}
             className="min-w-0 flex-1"
           />
@@ -126,9 +127,6 @@ export default function AgentConfigDefaultModelPicker({
           Refresh models
         </button>
       </div>
-      {canLoad && modelsLoading && !models.length ? (
-        <p className={`text-xs ${TEXT_FAINT}`}>Loading models…</p>
-      ) : null}
       {canLoad && isDraft ? (
         <p className={`text-xs ${TEXT_FAINT}`}>
           Default model is applied when you save this configuration.

@@ -36,6 +36,8 @@ export default function AgentMessageComposer({
   showAutoPushParam = false,
   agentConfigOptions,
   onAgentConfigChange,
+  configsLoading = false,
+  modelsLoading = false,
   formClassName = 'relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1',
   skipColumn = false,
   textareaId,
@@ -128,6 +130,8 @@ export default function AgentMessageComposer({
           showAutoPushParam={showAutoPushParam}
           agentConfigOptions={agentConfigOptions}
           onAgentConfigChange={onAgentConfigChange}
+          configsLoading={configsLoading}
+          modelsLoading={modelsLoading}
           disabled={disabled || sending}
           className="min-w-0 flex-1"
         />

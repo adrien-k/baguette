@@ -428,7 +428,7 @@ export default function Session() {
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
-  const { configOptions } = useAgentConfigs();
+  const { configOptions, loading: configsLoading } = useAgentConfigs();
   const {
     commits: branchCommits,
     loading: branchCommitsLoading,
@@ -1610,6 +1610,8 @@ export default function Session() {
                 onModelChange={handleModelChange}
                 onAgentConfigChange={handleAgentConfigChangeRequest}
                 agentConfigOptions={configOptions}
+                configsLoading={configsLoading}
+                modelsLoading={modelsStale && !models.length}
                 onAutoPushChange={handleAutoPushChange}
                 autoPushDisabled={sessionIsLocalRepo}
                 autoPush={sessionAutoPushOn}
@@ -1656,6 +1658,8 @@ export default function Session() {
                 onModelChange={handleModelChange}
                 onAgentConfigChange={handleAgentConfigChangeRequest}
                 agentConfigOptions={configOptions}
+                configsLoading={configsLoading}
+                modelsLoading={modelsStale && !models.length}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
               />

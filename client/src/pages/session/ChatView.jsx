@@ -115,6 +115,8 @@ export default function ChatView({
   autoPush: autoPushProp,
   onAgentConfigChange,
   agentConfigOptions,
+  configsLoading = false,
+  modelsLoading = false,
   cursorModelPrefs,
   onCursorModelPrefChange,
   commitsToPush = 0,
@@ -792,6 +794,8 @@ export default function ChatView({
                     autoPushDisabled={autoPushDisabled}
                     onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
                     agentConfigOptions={agentConfigOptions}
+                    configsLoading={configsLoading}
+                    modelsLoading={modelsLoading}
                     showAutoPushParam
                     textareaId="chat-input"
                     canSend={canSendDraft}

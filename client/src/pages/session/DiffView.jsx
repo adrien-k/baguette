@@ -478,6 +478,8 @@ export default function DiffView({
   onModelChange,
   onAgentConfigChange,
   agentConfigOptions,
+  configsLoading = false,
+  modelsLoading = false,
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
@@ -578,6 +580,8 @@ export default function DiffView({
         onModelChange={onModelChange}
         onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
         agentConfigOptions={agentConfigOptions}
+        configsLoading={configsLoading}
+        modelsLoading={modelsLoading}
         onClose={() => setLineComposer(null)}
       />
     ) : null;

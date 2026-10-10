@@ -470,6 +470,8 @@ export default function BuilderForm({
       showAutoPushParam={!isGlobal && !isLoop}
       agentConfigOptions={agentConfigOptions}
       onAgentConfigChange={setAgentConfigId}
+      configsLoading={configsLoading}
+      modelsLoading={modelsStale && !models.length}
       canSend={canSubmit}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
