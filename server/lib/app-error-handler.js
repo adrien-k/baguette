@@ -84,11 +84,73 @@ function errorMessage(err) {
   return err?.message || 'Internal Server Error';
 }
 
+function isDevEnvironment() {
+  return process.env.NODE_ENV === 'development';
+}
+
+/** @param {Record<string, unknown>} output */
+export function enrichDevServerError(output, err) {
+  const error = normalizeError(err);
+  if (error.stack) output.stack = error.stack;
+  const { cause } = error;
+  if (cause !== undefined && cause !== null) {
+    output.cause =
+      cause instanceof Error
+        ? { message: cause.message, ...(cause.stack ? { stack: cause.stack } : {}) }
+        : cause;
+  }
+  return output;
+}
+
+export function devErrorPlainText(err) {
+  const error = normalizeError(err);
+  const lines = [error.message];
+  const { cause } = error;
+  if (cause !== undefined && cause !== null) {
+    lines.push('', 'Caused by:');
+    if (cause instanceof Error) {
+      lines.push(cause.message);
+      if (cause.stack) lines.push(cause.stack);
+    } else {
+      lines.push(String(cause));
+    }
+  }
+  if (error.stack) {
+    lines.push('', error.stack);
+  }
+  return lines.join('\n');
+}
+
+function devJsonErrorHandler(error, req, res) {
+  const code = !Number.isNaN(Number.parseInt(error.code, 10))
+    ? Number.parseInt(error.code, 10)
+    : 500;
+  const output = { ...error.toJSON() };
+  if (code >= 500) enrichDevServerError(output, error);
+  res.status(code).set('Content-Type', 'application/json').json(output);
+}
+
+function devHtmlErrorHandler(error, req, res) {
+  const code = !Number.isNaN(Number.parseInt(error.code, 10))
+    ? Number.parseInt(error.code, 10)
+    : 500;
+  res.status(code).type('text/plain').send(devErrorPlainText(error));
+}
+
 /**
  * Express error middleware: handleAppError then Feathers JSON error formatting.
  */
 export function createExpressErrorHandler(app) {
-  const feathersHandler = express.errorHandler();
+  const isDev = isDevEnvironment();
+  const feathersHandler = express.errorHandler({
+    logger: false,
+    ...(isDev
+      ? {
+          html: devHtmlErrorHandler,
+          json: devJsonErrorHandler,
+        }
+      : {}),
+  });
   return (err, req, res, next) => {
     if (res.headersSent) return next(err);
     handleAppError(app, err, { userId: req.user?.id });

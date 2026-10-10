@@ -20,7 +20,7 @@ export function createAuthRoutes(app) {
   const router = Router();
 
   if (process.env.NODE_ENV === 'development') {
-    router.get('/auth/dev', async (req, res) => {
+    router.get('/auth/dev', async (req, res, next) => {
       try {
         const devGhKey = process.env.DEV_USER_GH_KEY || '';
         let user = await db('users').where({ email: 'dev@baguette.local' }).first();
@@ -50,7 +50,7 @@ export function createAuthRoutes(app) {
         res.redirect(toSafePath(req.query.redirectTo) ?? '/');
       } catch (err) {
         logger.error(err, 'Dev sign-in error');
-        res.status(500).send('Dev sign-in failed');
+        next(err);
       }
     });
   }
@@ -102,7 +102,7 @@ export function createAuthRoutes(app) {
     await Promise.all([clearReposCache(scope), clearInstallationsCache(scope)]);
   };
 
-  router.get('/auth/github/callback', async (req, res) => {
+  router.get('/auth/github/callback', async (req, res, next) => {
     if (!AUTH_GITHUB_CLIENT_ID || !AUTH_GITHUB_CLIENT_SECRET)
       return res.status(503).send('GitHub App not configured');
     const { code, setup_action: setupAction, installation_id: installationId } = req.query;
@@ -195,7 +195,7 @@ export function createAuthRoutes(app) {
       finishRedirect(req, res);
     } catch (err) {
       logger.error(err, 'GitHub auth error');
-      res.status(500).send('Authentication failed');
+      next(err);
     }
   });
 
