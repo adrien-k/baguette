@@ -38,7 +38,7 @@ export class CodeServerHandler {
   async buildTask() {
     const task = this.app.service('tasks').createTask({
       sessionId: null,
-      command: 'code-server --auth none --disable-telemetry',
+      command: 'code-server --auth none --disable-telemetry --disable-workspace-trust',
       label: 'baguette:codeserver',
       ports: ['PORT'],
       env: {},
