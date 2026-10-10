@@ -446,6 +446,8 @@ export default function Session() {
     diffFile: sessionDiffActiveFile,
     loading: sessionDiffLoading,
     error: sessionDiffError,
+    stale: sessionDiffStale,
+    hasFetched: sessionDiffHasFetched,
     refresh: refreshSessionDiff,
   } = useSessionDiff(
     gitSession,
@@ -1646,6 +1648,8 @@ export default function Session() {
                 diff={sessionDiff}
                 diffLoading={sessionDiffLoading}
                 diffError={sessionDiffError}
+                diffStale={sessionDiffStale}
+                diffHasFetched={sessionDiffHasFetched}
                 onRefreshDiff={refreshSessionDiff}
                 fileByFile={sessionDiffFileByFile}
                 changedFiles={diffFiles}
