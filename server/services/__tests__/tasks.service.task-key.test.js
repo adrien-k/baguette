@@ -147,6 +147,28 @@ describe('Tasks service — task_key resolution', () => {
     expect(deps[0].command).toBe('pnpm install\npnpm run migrate');
   });
 
+  it('reuses the same baguette:init task when two tasks start concurrently', async () => {
+    await db('sessions').where({ id: sessionId }).update({ initialized: false });
+    const [taskA, taskB] = await Promise.all([
+      create({ session_id: sessionId, task_key: 'run-tests' }),
+      create({ session_id: sessionId, task_key: 'dev-server' }),
+    ]);
+    const initA = app.service('tasks').getTask(taskA.id)._dependsOn[0];
+    const initB = app.service('tasks').getTask(taskB.id)._dependsOn[0];
+    expect(initA.id).toBe(initB.id);
+  });
+
+  it('marks the session initialized only after baguette:init exits successfully', async () => {
+    await db('sessions').where({ id: sessionId }).update({ initialized: false });
+    const task = await create({ session_id: sessionId, task_key: 'run-tests' });
+    expect((await db('sessions').where({ id: sessionId }).first()).initialized).toBe(0);
+    const init = app.service('tasks').getTask(task.id)._dependsOn[0];
+    init.exit(0);
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).initialized).toBe(1);
+    });
+  });
+
   it('runs baguette:init before yaml depends-on tasks on first start', async () => {
     loadBaguetteConfig.mockResolvedValue({
       session: {

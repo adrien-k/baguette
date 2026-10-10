@@ -24,6 +24,8 @@ export class TasksService {
   constructor() {
     this._tasks = new Map();
     this._nextId = 1;
+    /** @type {Map<number, Promise<Task>>} */
+    this._sessionInitCreation = new Map();
   }
 
   setup(app) {
@@ -227,10 +229,67 @@ export class TasksService {
     return task.label === key;
   }
 
+  /**
+   * Return an active `baguette:init` task for the session, or create one.
+   * Concurrent task creates await the same in-flight init creation promise.
+   */
+  async _getOrCreateSessionInitTask({ session_id, session, initDef, cwd, interpolateOpts }) {
+    const running = this._findRunningTask(session_id, 'baguette:init');
+    if (running) return running;
+
+    const pending = this._sessionInitCreation.get(session_id);
+    if (pending) return await pending;
+
+    const createPromise = (async () => {
+      const again = this._findRunningTask(session_id, 'baguette:init');
+      if (again) return again;
+
+      const initCommand = await this.app
+        .service('sessions')
+        .getInterpolatedCommand(session.id, initDef.run);
+      const initEnv = await this.app.service('sessions').getTaskEnv(session.id);
+      const initTask = this.createTask({
+        sessionId: session_id,
+        shortId: session.short_id,
+        command: initCommand,
+        taskKey: 'baguette:init',
+        ports: [],
+        env: initEnv,
+        cwd,
+        dependsOn: [],
+        ttl: DEPENDS_ON_TTL_MS,
+        maxRuntimeMs: null,
+        interpolateOpts,
+      });
+      initTask.onExit(async (_id, code) => {
+        if (code !== 0) return;
+        try {
+          await this.app
+            .get('db')('sessions')
+            .where({ id: session_id })
+            .update({ initialized: true });
+        } catch (err) {
+          logger.error(err, 'failed to mark session initialized after baguette:init');
+        }
+      });
+      return initTask;
+    })();
+
+    this._sessionInitCreation.set(session_id, createPromise);
+    try {
+      return await createPromise;
+    } finally {
+      if (this._sessionInitCreation.get(session_id) === createPromise) {
+        this._sessionInitCreation.delete(session_id);
+      }
+    }
+  }
+
   /** Reset all in-memory state. For use in tests only. */
   _resetForTest() {
     this._tasks.clear();
     this._nextId = 1;
+    this._sessionInitCreation.clear();
   }
 
   // ── Feathers service methods ──────────────────────────────────────────────
@@ -394,28 +453,21 @@ export class TasksService {
 
     // Run session.init before yaml depends-on (install-only; DB setup belongs on tasks with depends-on).
     if (!skipInit && !session.initialized && session.session_path && task_key !== 'baguette:init') {
-      // Mark initialized eagerly to prevent double-init on concurrent task starts.
-      await this.app.get('db')('sessions').where({ id: session_id }).update({ initialized: true });
       const initDef = taskDefs['baguette:init'];
       if (initDef) {
-        const initCommand = await this.app
-          .service('sessions')
-          .getInterpolatedCommand(session.id, initDef.run);
-        const initEnv = await this.app.service('sessions').getTaskEnv(session.id);
-        const initTask = this.createTask({
-          sessionId: session_id,
-          shortId: session.short_id,
-          command: initCommand,
-          taskKey: 'baguette:init',
-          ports: [],
-          env: initEnv,
+        const initTask = await this._getOrCreateSessionInitTask({
+          session_id,
+          session,
+          initDef,
           cwd,
-          dependsOn: [],
-          ttl: DEPENDS_ON_TTL_MS,
-          maxRuntimeMs: null,
           interpolateOpts,
         });
         dependsOn.push(initTask);
+      } else {
+        await this.app
+          .get('db')('sessions')
+          .where({ id: session_id })
+          .update({ initialized: true });
       }
     }
 
