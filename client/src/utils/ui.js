@@ -12,10 +12,10 @@ export const CARD_MUTED_CLASS = 'rounded-xl border border-line bg-inset/50';
 export const HAIRLINE = 'border-line';
 export const DROPDOWN_PANEL_CLASS = 'bg-surface border border-strong rounded-lg shadow-xl';
 
-export const MODAL_OVERLAY_CLASS =
-  'fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim';
+export const MODAL_OVERLAY_CLASS = 'fixed inset-0 z-50 overflow-y-auto bg-scrim';
 
-export const MODAL_PANEL_CLASS = 'bg-surface border border-strong rounded-xl shadow-2xl w-full';
+export const MODAL_PANEL_CLASS =
+  'bg-surface border border-strong rounded-xl shadow-2xl w-full min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain';
 
 export const TEXT_PRIMARY = 'text-fg';
 export const TEXT_SECONDARY = 'text-secondary';

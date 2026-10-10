@@ -14,8 +14,10 @@ export default function Modal({
 }) {
   return (
     <div className={`${MODAL_OVERLAY_CLASS} ${overlayClassName}`}>
-      <div className={`${MODAL_PANEL_CLASS} ${maxWidth} ${padding} ${panelClassName}`}>
-        {children}
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className={`${MODAL_PANEL_CLASS} ${maxWidth} ${padding} ${panelClassName}`}>
+          {children}
+        </div>
       </div>
     </div>
   );

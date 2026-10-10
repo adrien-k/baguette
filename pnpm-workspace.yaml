@@ -3,6 +3,7 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   protobufjs: true
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@cursor/sdk-darwin-arm64@1.0.30'
   - '@cursor/sdk-darwin-x64@1.0.30'

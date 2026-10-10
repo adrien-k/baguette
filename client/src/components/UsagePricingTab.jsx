@@ -11,16 +11,19 @@ function numOrEmpty(value) {
 
 function PricingInputs({ row, draft = {}, onChange, disabled }) {
   const fields = [
-    ['price_input', 'Input'],
-    ['price_cache_write', 'Cache write'],
-    ['price_cache_read', 'Cache read'],
-    ['price_output', 'Output'],
+    ['price_input', 'Input', 'In'],
+    ['price_cache_write', 'Cache write', 'C write'],
+    ['price_cache_read', 'Cache read', 'C read'],
+    ['price_output', 'Output', 'Out'],
   ];
   return (
-    <div className="flex flex-wrap gap-2">
-      {fields.map(([key, label]) => (
-        <label key={key} className="flex flex-col gap-0.5 text-xs text-faint min-w-[5.5rem]">
-          <span>{label}</span>
+    <div className="grid grid-cols-4 gap-1 sm:gap-2 min-w-0 w-full">
+      {fields.map(([key, label, shortLabel]) => (
+        <label key={key} className="flex min-w-0 flex-col gap-0.5 text-faint">
+          <span className="text-[10px] sm:text-xs leading-tight truncate" title={label}>
+            <span className="sm:hidden">{shortLabel}</span>
+            <span className="hidden sm:inline">{label}</span>
+          </span>
           <input
             type="number"
             min="0"
@@ -28,7 +31,7 @@ function PricingInputs({ row, draft = {}, onChange, disabled }) {
             disabled={disabled}
             value={draft[key] ?? numOrEmpty(row?.[key])}
             onChange={(e) => onChange(key, e.target.value)}
-            className="rounded-md border border-line bg-control px-2 py-1 text-sm text-heading tabular-nums disabled:opacity-60"
+            className="w-full min-w-0 rounded-md border border-line bg-control px-1 sm:px-2 py-1 text-xs sm:text-sm text-heading tabular-nums disabled:opacity-60"
             placeholder="—"
           />
         </label>
