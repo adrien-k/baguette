@@ -253,6 +253,8 @@ async function validateAgentConfigWrite(context) {
     const label = truncateLabel(String(data.label).trim());
     if (!label) throw new BadRequest('label is required');
     data.label = label;
+  } else if (context.method === 'create') {
+    throw new BadRequest('label is required');
   }
   if (data.sdk !== undefined && !VALID_SDKS.has(data.sdk)) {
     throw new BadRequest('sdk must be claude, cursor, pi, or mock');

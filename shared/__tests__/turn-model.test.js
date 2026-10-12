@@ -4,6 +4,7 @@ import {
   findLastTurnStartIndex,
   isHumanUserMessage,
   isMcpUserMessage,
+  requireTurnModelFromRow,
   resolveTurnModel,
   turnModelCreateFields,
 } from '../turn-model.js';
@@ -30,6 +31,53 @@ describe('resolveTurnModel', () => {
   it('uses explicit model with null params (Claude)', () => {
     expect(resolveTurnModel({ model: 'sonnet', model_params: null }, session)).toEqual({
       model: 'sonnet',
+      modelParams: null,
+    });
+  });
+});
+
+describe('requireTurnModelFromRow', () => {
+  it('requires the model snapshot on the row — no session fallback', () => {
+    expect(requireTurnModelFromRow({ model: 'sonnet' })).toEqual({
+      model: 'sonnet',
+      modelParams: null,
+    });
+    expect(() => requireTurnModelFromRow({}, { sdk: 'claude' })).toThrow(
+      'Message is missing model for this turn (claude)'
+    );
+    expect(() => requireTurnModelFromRow({ model: '   ' })).toThrow(
+      'Message is missing model for this turn'
+    );
+  });
+
+  it('ignores the session — turns never inherit session defaults at run time', () => {
+    expect(() =>
+      requireTurnModelFromRow(
+        { message_json: '{}' },
+        {
+          sdk: 'claude',
+        }
+      )
+    ).toThrow('Message is missing model for this turn (claude)');
+  });
+
+  it('requires model_params on the row for Cursor turns', () => {
+    expect(
+      requireTurnModelFromRow(
+        { model: 'composer', model_params: '[{"id":"max"}]' },
+        {
+          sdk: 'cursor',
+        }
+      )
+    ).toEqual({ model: 'composer', modelParams: '[{"id":"max"}]' });
+    expect(() => requireTurnModelFromRow({ model: 'composer' }, { sdk: 'cursor' })).toThrow(
+      'Message is missing model_params for this Cursor turn'
+    );
+  });
+
+  it('does not require model_params for other SDKs', () => {
+    expect(requireTurnModelFromRow({ model: 'pi-main' }, { sdk: 'pi' })).toEqual({
+      model: 'pi-main',
       modelParams: null,
     });
   });

@@ -48,6 +48,23 @@ describe('agent-configs external format', () => {
   });
 });
 
+describe('agent-configs create validation', () => {
+  it('requires label on create', async () => {
+    await expect(
+      app.service('agent-configs').create({ sdk: 'claude' }, params(user1))
+    ).rejects.toMatchObject({ name: 'BadRequest', message: 'label is required' });
+  });
+
+  it('persists a custom label on create', async () => {
+    const created = await app
+      .service('agent-configs')
+      .create({ label: 'My Gateway', sdk: 'claude' }, params(user1));
+    expect(created.label).toBe('My Gateway');
+    const row = await db('agent_configs').where({ id: created.id }).first();
+    expect(row.label).toBe('My Gateway');
+  });
+});
+
 describe('agent-configs logo', () => {
   it('stores and returns logo', async () => {
     const created = await app

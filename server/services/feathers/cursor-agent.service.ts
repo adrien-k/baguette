@@ -25,17 +25,18 @@ import {
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
 import {
   isHumanUserMessage as isHumanUserMessageShared,
-  resolveTurnModel,
+  requireTurnModelFromRow,
 } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
+import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
+import {
+  requireAgentConfigIdForTurn,
+  usageAgentConfigIdForSession,
+} from '../../lib/usage-agent-config.js';
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
 import { reviewTurnKey } from './session-review.service.js';
-import {
-  reviewTurnAgentConfigId,
-  usageAgentConfigIdForSession,
-} from '../../lib/usage-agent-config.js';
 import {
   isDispatchableUserMessage,
   parseUserRow,
@@ -190,22 +191,30 @@ ${body}`,
     return rulesRoot;
   }
 
-  async resolveApiKey(session: AgentSessionRow): Promise<string | undefined> {
-    return (await this.loadAgentConfigApiKey(session)) || undefined;
+  async resolveApiKey(
+    session: AgentSessionRow,
+    channel: MessageChannel = 'chat',
+    agentConfigId?: number | null
+  ): Promise<string | undefined> {
+    return (await this.loadAgentConfigApiKey(session, channel, agentConfigId)) || undefined;
   }
 
   /** API key from the session's owned agent_configs row. */
-  private async loadAgentConfigApiKey(session: {
-    agent_config_id?: number | null;
-    user_id: number;
-  }): Promise<string | null> {
+  private async loadAgentConfigApiKey(
+    session: {
+      agent_config_id?: number | null;
+      review_agent_config_id?: number | null;
+      user_id: number;
+    },
+    channel: MessageChannel = 'chat',
+    agentConfigId?: number | null
+  ): Promise<string | null> {
     const db = this.app.get('db') as DbLike;
-    const { loadOwnedAgentConfigDecrypted } = await import('../agent-context.js');
-    const config = await loadOwnedAgentConfigDecrypted(
-      session.agent_config_id ?? null,
-      session.user_id,
-      db as never
-    );
+    const configId = agentConfigId ?? usageAgentConfigIdForSession(session, channel);
+    if (configId == null) {
+      throw new Error('Agent configuration is required to run this turn');
+    }
+    const config = await loadOwnedAgentConfigDecrypted(configId, session.user_id, db as never);
     return config?.api_key || null;
   }
 
@@ -228,6 +237,8 @@ ${body}`,
       model,
       modelParams,
       apiKey,
+      channel = 'chat',
+      agentConfigId,
     }: {
       customTools?: unknown;
       settingSources?: string[];
@@ -235,10 +246,15 @@ ${body}`,
       model?: string | null;
       modelParams?: unknown;
       apiKey?: string | undefined;
+      channel?: MessageChannel;
+      /** The turn's agent config snapshot (from the message row); falls back to the session. */
+      agentConfigId?: number | null;
     } = {}
   ): Promise<AgentOptions> {
     const cwd = resolveDataDirRelativePath(session.session_path) || '';
-    const resolvedApiKey = apiKey !== undefined ? apiKey : await this.resolveApiKey(session);
+    const configId = agentConfigId ?? usageAgentConfigIdForSession(session, channel);
+    const resolvedApiKey =
+      apiKey !== undefined ? apiKey : await this.resolveApiKey(session, channel, configId);
     const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
     const store = await this.openSessionStore(session);
     const agentOptions = {
@@ -265,7 +281,7 @@ ${body}`,
           const repo = userRepos?.[0] ?? null;
           if (repo) {
             const models = await loadModelsForSdk(user, 'cursor', repo, this.app, {
-              agentConfigId: session.agent_config_id ?? session.review_agent_config_id ?? null,
+              agentConfigId: configId,
             });
             const prefs = parseCursorModelPrefsJson(user.agent_preferences);
             params = resolveCursorAgentModelParams({
@@ -342,18 +358,12 @@ ${body}`,
       return;
     }
 
-    const turnModel = resolveTurnModel(row, session);
-    const turnAgentConfigId =
-      channel === 'review'
-        ? reviewTurnAgentConfigId(session, row as Record<string, unknown>)
-        : usageAgentConfigIdForSession(session, undefined);
     const meta = {
       turnId: row.turn_id as number | null,
       channel,
       activeKey,
-      turnAgentConfigId,
     };
-    attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel, meta), {
+    attachAppErrorHandler(this.app, this._runTurn(session, parsed, row, meta), {
       userId: session.user_id,
       sessionId: session.id,
     }).catch((err) => {
@@ -438,15 +448,16 @@ ${body}`,
 
   async _sessionAgentOptions(
     session: AgentSessionRow,
-    turnModel: { model?: string | null; modelParams?: unknown } = {}
+    turnModel: { model?: string | null; modelParams?: unknown } = {},
+    agentConfigId?: number | null
   ) {
-    const user = await this.app.service('users').get(session.user_id, {});
     const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
     const pluginDirs = await this._getPluginDirs(session);
     return this.buildAgentOptions(session, {
       dirs: [baguetteRulesDir, ...pluginDirs].filter((d): d is string => Boolean(d)),
-      model: turnModel.model ?? session.model ?? user.cursor_model ?? null,
-      modelParams: turnModel.modelParams ?? session.model_params,
+      model: turnModel.model ?? null,
+      modelParams: turnModel.modelParams ?? null,
+      agentConfigId,
     });
   }
 
@@ -596,12 +607,11 @@ ${body}`,
   async _runTurn(
     session: AgentSessionRow,
     parsed: unknown,
-    turnModel: { model?: string | null; modelParams?: unknown } = {},
+    row: MessageRowLike,
     meta: {
       turnId?: number | null;
       channel?: MessageChannel;
       activeKey?: string | number;
-      turnAgentConfigId?: number | null;
     } = {}
   ): Promise<void> {
     const sessionId = session.id;
@@ -618,38 +628,39 @@ ${body}`,
       await db('sessions').where({ id: sessionId }).update(activeField);
     }
 
-    const writer =
-      turnId != null
-        ? createMessageStreamWriter(this.app, {
-            sessionId,
-            userId,
-            turnId,
-            channel,
-            sessionPath: session.session_path,
-            agentType: 'cursor',
-            model: turnModel.model ?? session.model ?? '',
-            modelParams: turnModel.modelParams,
-          })
-        : null;
-
-    const turnAgentConfigId =
-      meta.turnAgentConfigId ??
-      (channel === 'review'
-        ? reviewTurnAgentConfigId(session, {})
-        : usageAgentConfigIdForSession(session, undefined));
     const sessionState: CursorSessionState = {
       isProcessing: true,
       userId,
       currentRun: null,
-      writer,
+      writer: null,
       turnId,
       channel,
-      turnAgentConfigId,
+      turnAgentConfigId: null,
     };
     this._activeSessions.set(activeKey, sessionState);
     const turnUsage = emptyTurnUsage() as TurnUsage;
     let awaitingUser = false;
     try {
+      // Required turn context, resolved here so failures follow the turn's error path:
+      // the model snapshot comes from the message row (params required on Cursor),
+      // credentials from the row's agent config (session fallback for legacy rows).
+      const turnModel = requireTurnModelFromRow(row, { sdk: 'cursor' });
+      const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
+      const writer =
+        turnId != null
+          ? createMessageStreamWriter(this.app, {
+              sessionId,
+              userId,
+              turnId,
+              channel,
+              sessionPath: session.session_path,
+              agentType: 'cursor',
+              model: turnModel.model ?? '',
+              modelParams: turnModel.modelParams,
+            })
+          : null;
+      sessionState.writer = writer;
+      sessionState.turnAgentConfigId = turnAgentConfigId;
       if (channel !== 'review') {
         await this.app
           .service('sessions')
@@ -667,10 +678,11 @@ ${body}`,
           ? await this.app.service('session-review').buildCursorReviewAgentOptions(session, {
               model: turnModel.model,
               modelParams: turnModel.modelParams,
+              agentConfigId: turnAgentConfigId,
               continuation: !!resumeAgentId || Boolean(reviewExtras.continuation),
               extraPrompt: reviewExtras.extraPrompt,
             })
-          : await this._sessionAgentOptions(session, turnModel);
+          : await this._sessionAgentOptions(session, turnModel, turnAgentConfigId);
       const agent = await this.createOrResumeAgent(session, {
         agentOptions,
         resumeAgentId,
@@ -818,7 +830,7 @@ ${body}`,
         channel: sessionState?.channel ?? 'chat',
         sessionPath: session.session_path,
         agentType: 'cursor',
-        model: turnModel.model ?? session.model ?? '',
+        model: turnModel.model ?? '',
         modelParams: turnModel.modelParams,
       });
 
@@ -830,7 +842,7 @@ ${body}`,
       onUsage: (sdkMsg: SDKUsageMessage) => {
         onUsageOverride?.(sdkMsg);
         addTokenUsage(turnUsage, sdkMsg.usage);
-        turnUsage.model = run.model?.id ?? turnModel.model ?? session.model ?? turnUsage.model;
+        turnUsage.model = run.model?.id ?? turnModel.model ?? turnUsage.model;
       },
       onStatus: async (sdkMsg: SDKStatusMessage) => {
         const custom = await onStatusOverride?.(sdkMsg);

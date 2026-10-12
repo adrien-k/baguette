@@ -90,6 +90,15 @@ export async function assignTurnOnUserMessageCreate(context, channel) {
     data.turn_id = turnId;
   }
 
+  // Seed the turn's agent config snapshot when the row doesn't carry one yet:
+  // what the row holds is what the turn runs with.
+  if (data.agent_config_id == null) {
+    data.agent_config_id =
+      channel === 'review'
+        ? (session.review_agent_config_id ?? session.agent_config_id ?? null)
+        : (session.agent_config_id ?? null);
+  }
+
   const parsed = parsePayload(data.message_json);
   data.message_json = JSON.stringify(normalizeUserPayloadForStorage(parsed));
 

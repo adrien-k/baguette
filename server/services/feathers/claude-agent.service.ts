@@ -21,15 +21,15 @@ import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from '../../claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
-import { isBaguetteUserMessage, resolveTurnModel } from '../../../shared/turn-model.js';
+import { isBaguetteUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import {
   applyClaudeModelParamsToQueryInstance,
   claudeSdkOptionsFromModelParams,
 } from '../../../shared/claude-model-params.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
-  reviewTurnAgentConfigId,
-  usageAgentConfigIdForSession,
+  requireAgentConfigIdForSession,
+  requireAgentConfigIdForTurn,
 } from '../../lib/usage-agent-config.js';
 import {
   isDispatchableUserMessage,
@@ -185,6 +185,7 @@ export class ClaudeAgentService {
       modelParams,
       canUseTool,
       plugins,
+      claudeEnv,
     }: {
       systemPrompt?: string;
       mcpServer?: ClaudeSdkOptions['mcpServers'];
@@ -196,10 +197,13 @@ export class ClaudeAgentService {
       modelParams?: unknown;
       canUseTool?: CanUseTool;
       plugins?: ClaudeSdkOptions['plugins'];
+      /** Prebuilt subprocess env from the turn's agent config (sessions.getClaudeEnv). */
+      claudeEnv?: Record<string, string>;
     } = {}
   ): Promise<ClaudeSdkOptions> {
-    const claudeEnv = await this.app.service('sessions').getClaudeEnv(sessionRow.id);
-    const resolvedModel = model !== undefined ? model : sessionRow.model;
+    if (!model) throw new Error('Model is required to run this turn');
+    if (!claudeEnv) throw new Error('Agent configuration is required to run this turn');
+    const resolvedModel = model;
     const cwd =
       resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
     const resolvedMcp = mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app));
@@ -228,16 +232,18 @@ export class ClaudeAgentService {
   async _buildSessionQueryOptions(
     sessionRow: AgentSessionRow,
     {
+      claudeEnv,
       canUseTool,
       allowedTools,
       model,
       modelParams,
     }: {
+      claudeEnv: Record<string, string>;
       canUseTool?: CanUseTool;
       allowedTools?: string[];
       model?: string | null;
       modelParams?: unknown;
-    } = {}
+    }
   ): Promise<ClaudeSdkOptions> {
     let pluginRows: Array<Record<string, unknown>> = [];
     if (sessionRow.plugins) {
@@ -261,13 +267,14 @@ export class ClaudeAgentService {
     );
     const systemPrompt = await buildSystemPromptAppend(sessionRow, { agentPrompt });
     return this.buildQueryOptions(sessionRow, {
+      claudeEnv,
       systemPrompt,
       canUseTool,
       allowedTools,
       permissionMode: claudeSdkPermissionMode(sessionRow),
       plugins,
-      ...(model !== undefined ? { model } : {}),
-      ...(modelParams !== undefined ? { modelParams } : {}),
+      model,
+      modelParams,
     });
   }
 
@@ -433,11 +440,9 @@ export class ClaudeAgentService {
       await db('sessions').where({ id: sessionId }).update(activeField);
     }
 
-    const { model, modelParams } = resolveTurnModel(row, session);
-    const turnAgentConfigId =
-      channel === 'review'
-        ? reviewTurnAgentConfigId(session, row as Record<string, unknown>)
-        : usageAgentConfigIdForSession(session, undefined);
+    const turnModel = requireTurnModelFromRow(row, { sdk });
+    const { model, modelParams } = turnModel;
+    const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
     const writer =
       row.turn_id != null
         ? createMessageStreamWriter(this.app, {
@@ -670,6 +675,8 @@ export class ClaudeAgentService {
       turnAgentConfigId,
     }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
+    if (!model) throw new Error('Model is required to run this turn');
+    const turnConfigId = turnAgentConfigId ?? requireAgentConfigIdForSession(sessionRow, channel);
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
     const sessionSettings = {
@@ -678,6 +685,9 @@ export class ClaudeAgentService {
     const canUseTool = this.createCanUseTool();
     const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser());
     const resolvedActiveKey = activeKey ?? sessionId;
+    // Env from the turn's agent config row — the config id was resolved at dispatch
+    // (message row snapshot, session fallback) and is required to be present.
+    const claudeEnv = await getClaudeEnv(this.app, sessionRow.user_id, null, turnConfigId);
     let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
       const extras = this.app.service('session-review').peekTurnExtras(sessionId) ?? {};
@@ -685,15 +695,17 @@ export class ClaudeAgentService {
       queryOptions = await this.app.service('session-review').buildClaudeQueryOptions(sessionRow, {
         model,
         modelParams,
+        claudeEnv,
         continuation: !!resumeId || Boolean(extras.continuation),
         extraPrompt: extras.extraPrompt,
       });
     } else {
       queryOptions = await this._buildSessionQueryOptions(sessionRow, {
+        claudeEnv,
         canUseTool,
         allowedTools,
-        ...(model !== undefined ? { model } : {}),
-        ...(modelParams !== undefined ? { modelParams } : {}),
+        model,
+        modelParams,
       });
     }
 
@@ -713,11 +725,7 @@ export class ClaudeAgentService {
         streamWriter: writer ?? null,
         turnChannel: channel,
         activeKey: resolvedActiveKey,
-        turnAgentConfigId:
-          turnAgentConfigId ??
-          (channel === 'review'
-            ? reviewTurnAgentConfigId(sessionRow, {})
-            : usageAgentConfigIdForSession(sessionRow, undefined)),
+        turnAgentConfigId: turnConfigId,
       },
       activeKey: resolvedActiveKey,
     });

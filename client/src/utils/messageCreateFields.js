@@ -14,14 +14,26 @@ export function builderMessageCreateFields(session, { model, model_params } = {}
   return fields;
 }
 
-/** agent_sdk + turn model snapshot for session-review.start / send / reviewNewCommits. */
-export function reviewComposerAgentFields({ agent_sdk, model, model_params } = {}) {
-  const fields = { agent_sdk: agent_sdk || 'claude' };
+/**
+ * Whole review turn snapshot for session-review.start / send / reviewNewCommits:
+ * the agent config and the model pair ride on the post itself (explicit, even when
+ * null), so the turn is what the reviewer panel currently shows — not a session
+ * fallback the post forgot to name.
+ */
+export function reviewComposerAgentFields({
+  agent_sdk,
+  model,
+  model_params,
+  review_agent_config_id,
+} = {}) {
   const resolvedModel = model != null && String(model).trim() !== '' ? String(model).trim() : null;
   if (!resolvedModel) {
     throw new Error('model is required to start or continue a review');
   }
-  fields.model = resolvedModel;
-  if (model_params != null) fields.model_params = model_params;
-  return fields;
+  return {
+    agent_sdk: agent_sdk || 'claude',
+    model: resolvedModel,
+    model_params: model_params ?? null,
+    review_agent_config_id: review_agent_config_id ?? null,
+  };
 }

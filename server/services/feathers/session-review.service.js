@@ -17,6 +17,7 @@ import { markSessionReviewedAtHead } from '../session-branch-commits.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import { agentServicePathForSession } from '../agent-session-routing.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
+import { reviewTurnAgentConfigId } from '../../lib/usage-agent-config.js';
 
 const BAGUETTE_REVIEW_START_TITLE = 'Start review';
 const BAGUETTE_REVIEW_START_CONTENT = 'Begin the code review following your system instructions.';
@@ -77,11 +78,14 @@ function reviewTurnModel(session, data = {}) {
   return { model, modelParams };
 }
 
-function reviewUserRowFields(session, data = {}) {
+/** Reviewer row identity: turn model + the validated review config, else review defaults. */
+function reviewerRowIdentity(session, data = {}, agentSdk = null) {
+  const turnModel = reviewTurnModel(session, data);
   return sessionMessageIdentity(session, 'reviewer', {
-    agent_sdk: data.agent_sdk,
-    model: data.model,
-    model_params: data.model_params,
+    agent_sdk: agentSdk ?? data.agent_sdk,
+    model: turnModel.model,
+    model_params: turnModel.modelParams,
+    agent_config_id: reviewTurnAgentConfigId(session, data),
   });
 }
 
@@ -136,10 +140,10 @@ class SessionReviewService {
     return this._turnExtras.get(sessionId) ?? null;
   }
 
-  async resolveReviewSdk(session) {
-    const reviewConfigId = session.review_agent_config_id ?? session.agent_config_id ?? null;
-    if (!reviewConfigId) {
-      throw new BadRequest('No review agent configuration on this session');
+  async resolveReviewSdk(session, data = {}) {
+    const reviewConfigId = reviewTurnAgentConfigId(session, data);
+    if (reviewConfigId == null) {
+      throw new BadRequest('No agent configuration on this session');
     }
     const config = await loadOwnedAgentConfig(this.app.get('db'), reviewConfigId, session.user_id);
     return config.sdk;
@@ -147,7 +151,7 @@ class SessionReviewService {
 
   async buildClaudeQueryOptions(
     session,
-    { model, modelParams, continuation = false, extraPrompt } = {}
+    { model, modelParams, claudeEnv, continuation = false, extraPrompt } = {}
   ) {
     const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
     const resolvedParams =
@@ -162,15 +166,16 @@ class SessionReviewService {
       allowedTools: REVIEWER_ALLOWED_TOOLS,
       settingSources: [],
       resume: resumeId,
-      model: model || session.review_model || session.model,
+      model,
       modelParams: resolvedParams,
       permissionMode: 'acceptEdits',
+      claudeEnv,
     });
   }
 
   async buildPiReviewAgentOptions(
     session,
-    { model, modelParams, continuation = false, extraPrompt } = {}
+    { model, modelParams, agentConfigId, continuation = false, extraPrompt } = {}
   ) {
     const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
     const resolvedParams =
@@ -180,8 +185,9 @@ class SessionReviewService {
     const turnAgent = reviewTurnAgentMetadata('pi', { model, modelParams: resolvedParams });
     const piAgent = this.app.service('pi-agent');
     return await piAgent.buildAgentOptions(session, {
-      model: model || session.review_model || session.model,
+      model,
       modelParams: resolvedParams,
+      agentConfigId,
       channel: 'review',
       customTools: buildReviewerPiCustomTools(session, this.app, turnAgent),
       storedPiSessionId: continuation ? session.review_pi_session_id : null,
@@ -191,7 +197,7 @@ class SessionReviewService {
 
   async buildCursorReviewAgentOptions(
     session,
-    { model, modelParams, continuation = false, extraPrompt } = {}
+    { model, modelParams, agentConfigId, continuation = false, extraPrompt } = {}
   ) {
     const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
     const cursorAgent = this.app.service('cursor-agent');
@@ -206,7 +212,20 @@ class SessionReviewService {
       dirs: rulesRoot ? [rulesRoot] : [],
       model,
       modelParams,
+      agentConfigId,
+      channel: 'review',
     });
+  }
+
+  /** Persist review_agent_config_id from start/send when the client sends an explicit id. */
+  _reviewConfigPatchFromData(session, data) {
+    const raw = data?.review_agent_config_id;
+    if (raw == null || raw === '') return {};
+    const configId = Number(raw);
+    if (!Number.isFinite(configId) || Number(session.review_agent_config_id) === configId) {
+      return {};
+    }
+    return { review_agent_config_id: configId };
   }
 
   async onAgentTurnComplete(
@@ -273,6 +292,7 @@ class SessionReviewService {
           review_cursor_agent_id: null,
           review_pi_session_id: null,
           review_initial_prompt: reviewInitialPromptFromStartData(data),
+          ...this._reviewConfigPatchFromData(session, data),
         },
         { user: { id: session.user_id } }
       );
@@ -285,7 +305,7 @@ class SessionReviewService {
         continuation: false,
       });
       const { persist: startMessage } = buildReviewStartMessage(data);
-      await this._persist(session, startMessage, data);
+      await this._persist(session, startMessage, data, agentSdk);
 
       return { ok: true, review_status: 'running' };
     } catch (err) {
@@ -339,7 +359,7 @@ class SessionReviewService {
           session_id: session.id,
           message_json: JSON.stringify(userMessage),
           kind: 'turn',
-          ...reviewUserRowFields(session, data),
+          ...reviewerRowIdentity(session, data),
         },
         { user: params.user }
       );
@@ -366,7 +386,7 @@ class SessionReviewService {
       const { model, modelParams } = reviewTurnModel(session, data);
       this._turnExtras.set(session.id, { continuation: true });
 
-      const created = await this._persist(session, userMessage, data);
+      const created = await this._persist(session, userMessage, data, agentSdk);
       if (created?.queued) {
         this._active.delete(session.id);
         return { ok: true, queued: true };
@@ -379,6 +399,7 @@ class SessionReviewService {
           review_agent_sdk: agentSdk,
           review_model: model,
           review_model_params: modelParams ?? null,
+          ...this._reviewConfigPatchFromData(session, data),
         },
         { user: { id: session.user_id } }
       );
@@ -445,7 +466,7 @@ class SessionReviewService {
     return { ok: true };
   }
 
-  async _persist(session, message, data = {}) {
+  async _persist(session, message, data = {}, agentSdk = null) {
     const row = {
       session_id: session.id,
       type: message.type,
@@ -454,16 +475,7 @@ class SessionReviewService {
       message_json: JSON.stringify(message),
       total_cost_usd: message.type === 'result' ? (message.total_cost_usd ?? null) : null,
     };
-    Object.assign(
-      row,
-      message.type === 'user'
-        ? reviewUserRowFields(session, data)
-        : sessionMessageIdentity(session, 'reviewer', {
-            agent_sdk: data.agent_sdk,
-            model: data.model,
-            model_params: data.model_params,
-          })
-    );
+    Object.assign(row, reviewerRowIdentity(session, data, agentSdk));
     return await this.app.service('messages').create(row, {
       provider: undefined,
       user: { id: session.user_id },

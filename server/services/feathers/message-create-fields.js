@@ -1,9 +1,25 @@
 import { BadRequest, Forbidden } from '@feathersjs/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
+import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 
 function normalizeAgentType(value) {
   return value === 'reviewer' ? 'reviewer' : 'builder';
+}
+
+/** Row column value for an agent config id: integer, or null. */
+function coerceAgentConfigId(raw) {
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function agent_config_idForSession(session, agent_type) {
+  const seeded =
+    agent_type === 'reviewer'
+      ? (session.review_agent_config_id ?? session.agent_config_id)
+      : session.agent_config_id;
+  return coerceAgentConfigId(seeded);
 }
 
 function agentSdkForSession(session, agentType) {
@@ -30,6 +46,11 @@ export function sessionMessageIdentity(session, agentType, overrides = {}) {
   if (modelParams != null && agentSdkSupportsModelParams(agent_sdk)) {
     row.model_params = modelParams;
   }
+  // Turn snapshot: the row carries the agent config the turn runs with (explicit
+  // override wins; otherwise seeded from the session/channel pair).
+  row.agent_config_id =
+    coerceAgentConfigId(overrides.agent_config_id) ??
+    agent_config_idForSession(session, agent_type);
   return row;
 }
 
@@ -54,6 +75,17 @@ export async function requireMessageIdentity(context) {
 
   assertIdentityFields(data);
   data.agent_type = normalizeAgentType(data.agent_type);
+
+  // A turn never runs on another user's config: validate explicitly provided ids.
+  if (data.agent_config_id != null && data.agent_config_id !== '') {
+    const configId = coerceAgentConfigId(data.agent_config_id);
+    if (configId == null) {
+      data.agent_config_id = null;
+    } else {
+      await loadOwnedAgentConfig(context.app.get('db'), configId, context.params.user?.id);
+      data.agent_config_id = configId;
+    }
+  }
   return context;
 }
 

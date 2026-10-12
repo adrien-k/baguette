@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
@@ -46,6 +46,8 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
   const [saving, setSaving] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [draftDefaultModel, setDraftDefaultModel] = useState(null);
+  /** Previous SDK when syncing default label on SDK change (create flow only). */
+  const prevSdkForLabelRef = useRef(null);
 
   const sdkOptions = useMemo(() => {
     const opts = [...BASE_SDK_OPTIONS];
@@ -95,8 +97,10 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
             ).trim()
           )
       );
+      prevSdkForLabelRef.current = config.sdk ?? 'claude';
       return;
     }
+    prevSdkForLabelRef.current = null;
     setLabel(sdkDisplayName('claude'));
     setSdk('claude');
     setApiUrl('');
@@ -111,8 +115,21 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
 
   useEffect(() => {
     if (isEdit) return;
-    setLabel(sdkDisplayName(sdk));
+    const prevSdk = prevSdkForLabelRef.current;
+    if (prevSdk === null) {
+      prevSdkForLabelRef.current = sdk;
+      return;
+    }
+    if (prevSdk === sdk) return;
+    setLabel((current) => {
+      const trimmed = current.trim();
+      if (!trimmed || trimmed === sdkDisplayName(prevSdk)) {
+        return sdkDisplayName(sdk);
+      }
+      return current;
+    });
     setApiKeyEnvVar(defaultAgentConfigApiKeyEnvVar(sdk));
+    prevSdkForLabelRef.current = sdk;
   }, [sdk, isEdit]);
 
   const handleConfigPatched = (updated) => {

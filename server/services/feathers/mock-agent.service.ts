@@ -7,7 +7,7 @@ import {
   parseUserRow,
   rejectTurnMismatch,
 } from '../agent-message-dispatch.js';
-import { resolveTurnModel } from '../../../shared/turn-model.js';
+import { requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { isMockAgentSdkEnabled } from '../../../shared/mock-agent-sdk.js';
 import {
   MOCK_AGENT_SDK,
@@ -15,6 +15,7 @@ import {
   MOCK_AGENT_SERVICE_PATH,
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
+import { requireAgentConfigIdForTurn } from '../../lib/usage-agent-config.js';
 import { runMockAgentTurn } from '../mock/mock-agent-turn.js';
 import { reviewTurnKey } from './session-review.service.js';
 import type {
@@ -83,13 +84,15 @@ class MockAgentService {
       return;
     }
 
-    const turnModel = resolveTurnModel(row, session);
+    const turnModel = requireTurnModelFromRow(row, { sdk: MOCK_AGENT_SDK });
+    const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
     attachAppErrorHandler(
       this.app,
       this._runTurn(session, row, turnModel, {
         turnId: row.turn_id as number | null,
         channel,
         activeKey,
+        turnAgentConfigId,
       }),
       { userId: session.user_id, sessionId }
     ).catch((err) => {
@@ -105,7 +108,12 @@ class MockAgentService {
     session: AgentSessionRow,
     row: MessageRowLike,
     turnModel: { model?: string | null; modelParams?: unknown },
-    meta: { turnId?: number | null; channel?: MessageChannel; activeKey?: string | number }
+    meta: {
+      turnId?: number | null;
+      channel?: MessageChannel;
+      activeKey?: string | number;
+      turnAgentConfigId?: number | null;
+    }
   ) {
     const sessionId = session.id;
     const userId = session.user_id;
@@ -120,7 +128,7 @@ class MockAgentService {
       await db('sessions').where({ id: sessionId }).update(activeField);
     }
 
-    const model = turnModel.model ?? row.model ?? session.model ?? '';
+    const model = turnModel.model ?? '';
     const writer =
       turnId != null
         ? createMessageStreamWriter(this.app, {

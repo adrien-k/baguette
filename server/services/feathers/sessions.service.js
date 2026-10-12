@@ -69,7 +69,6 @@ import path from 'path';
 import {
   buildTaskEnv,
   getInterpolateOptsForSession,
-  getClaudeEnvForSession,
   interpolateTaskCommand,
   interpolateTaskConfigValue,
 } from '../session-env.js';
@@ -412,10 +411,6 @@ export class SessionsService extends KnexService {
   /** @deprecated Use getInterpolatedConfigValue */
   async getInterpolatedDockerContainer(sessionId, container) {
     return this.getInterpolatedConfigValue(sessionId, container);
-  }
-
-  async getClaudeEnv(sessionId) {
-    return getClaudeEnvForSession(this.app, sessionId);
   }
 
   async removeByRepoId(repoId, params) {
@@ -1532,6 +1527,7 @@ export class SessionsService extends KnexService {
         agent_sdk: queued.agent_sdk,
         model: queued.model,
         ...(queued.model_params != null ? { model_params: queued.model_params } : {}),
+        ...(queued.agent_config_id != null ? { agent_config_id: queued.agent_config_id } : {}),
       },
       { user: { id: queued.user_id } }
     );

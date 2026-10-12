@@ -43,6 +43,7 @@ class QueuedMessagesService extends KnexService {
             agent_sdk: row.agent_sdk,
             model: row.model,
             ...(row.model_params != null ? { model_params: row.model_params } : {}),
+            ...(row.agent_config_id != null ? { agent_config_id: row.agent_config_id } : {}),
           },
           { provider: 'rest', user: { id: row.user_id } }
         );
@@ -98,7 +99,16 @@ export function registerQueuedMessagesService(app, path = 'queued-messages') {
 
 async function validateSessionOwnership(context) {
   if (!context.data.session_id) throw new BadRequest('session_id is required');
-  await context.app.service('sessions').get(context.data.session_id, { user: context.params.user });
+  const session = await context.app
+    .service('sessions')
+    .get(context.data.session_id, { user: context.params.user });
+  // Seed the turn's agent config snapshot when the row doesn't carry one yet.
+  if (context.data.agent_config_id == null) {
+    context.data.agent_config_id =
+      context.data.agent_type === 'reviewer'
+        ? (session.review_agent_config_id ?? session.agent_config_id ?? null)
+        : (session.agent_config_id ?? null);
+  }
   return context;
 }
 
@@ -150,6 +160,7 @@ const queuedMessagesHooks = {
         'model_params',
         'agent_type',
         'agent_sdk',
+        'agent_config_id',
       ]),
       validateSessionOwnership,
       normalizeInternalCreate,
@@ -165,6 +176,7 @@ const queuedMessagesHooks = {
         'model_params',
         'agent_type',
         'agent_sdk',
+        'agent_config_id',
       ]),
       validateSessionOwnership,
     ],

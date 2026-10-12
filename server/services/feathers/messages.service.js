@@ -39,6 +39,9 @@ async function queueTurnMessage(context) {
       agent_sdk: context.data.agent_sdk,
       model: context.data.model,
       ...(context.data.model_params != null ? { model_params: context.data.model_params } : {}),
+      ...(context.data.agent_config_id != null
+        ? { agent_config_id: context.data.agent_config_id }
+        : {}),
     },
     { user: context.params.user }
   );

@@ -18,16 +18,17 @@ import { emptyTurnUsage } from '../turn-usage.js';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
 import {
   isHumanUserMessage as isHumanUserMessageShared,
-  resolveTurnModel,
+  requireTurnModelFromRow,
 } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createPiModelRuntime, resolvePiSessionModel } from '../pi-models.js';
+import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
 import { resolvePiCredentials } from '../pi/pi-config.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
 import { lunaroutePiAdditionalExtensionPaths } from '../pi/pi-lunaroute-extension-path.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
-  reviewTurnAgentConfigId,
+  requireAgentConfigIdForTurn,
   usageAgentConfigIdForSession,
 } from '../../lib/usage-agent-config.js';
 import {
@@ -99,16 +100,28 @@ export class PiAgentService {
     this.app = app;
   }
 
-  async resolveCredentials(session: AgentSessionRow) {
-    const config = await this.loadAgentConfig(session);
+  async resolveCredentials(
+    session: AgentSessionRow,
+    channel: MessageChannel = 'chat',
+    agentConfigId?: number | null
+  ) {
+    const config = await this.loadAgentConfig(session, channel, agentConfigId);
     return resolvePiCredentials(config);
   }
 
   /** Decrypted agent_configs row for a session (null when the session has none). */
-  private async loadAgentConfig(session: { agent_config_id?: number | null; user_id: number }) {
-    const { loadOwnedAgentConfigDecrypted } = await import('../agent-context.js');
+  private async loadAgentConfig(
+    session: {
+      agent_config_id?: number | null;
+      review_agent_config_id?: number | null;
+      user_id: number;
+    },
+    channel: MessageChannel = 'chat',
+    agentConfigId?: number | null
+  ) {
+    const configId = agentConfigId ?? usageAgentConfigIdForSession(session, channel);
     return loadOwnedAgentConfigDecrypted(
-      session.agent_config_id ?? null,
+      configId,
       session.user_id,
       this.app.get('db') as DbLike as never
     );
@@ -154,6 +167,7 @@ export class PiAgentService {
       modelParams,
       customTools,
       channel = 'chat',
+      agentConfigId,
       storedPiSessionId,
       appendSystemPrompt,
     }: {
@@ -161,6 +175,8 @@ export class PiAgentService {
       modelParams?: unknown;
       customTools?: CreateAgentSessionOptions['customTools'];
       channel?: MessageChannel;
+      /** The turn's agent config snapshot (from the message row); falls back to the session. */
+      agentConfigId?: number | null;
       storedPiSessionId?: string | null;
       appendSystemPrompt?: string[];
     } = {}
@@ -168,13 +184,13 @@ export class PiAgentService {
     await this._ensurePiDirs(session);
     const cwd = piWorktreeCwd(session);
     const agentDir = piAgentDir(session) ?? undefined;
-    const agentConfig = await this.loadAgentConfig(session);
+    const agentConfig = await this.loadAgentConfig(session, channel, agentConfigId);
     const { apiKey, envVar } = resolvePiCredentials(agentConfig);
     if (!apiKey) {
       throw new Error('Pi API key is not configured for this session');
     }
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
-    const modelId = model ?? session.model ?? null;
+    const modelId = model ?? null;
     const settingsManager = SettingsManager.create(cwd, agentDir);
     const systemAppend = appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session));
     const resourceLoader = new DefaultResourceLoader({
@@ -194,7 +210,7 @@ export class PiAgentService {
       model: undefined,
       thinkingLevel: undefined,
       pendingModelId: modelId,
-      pendingModelParams: modelParams ?? session.model_params ?? null,
+      pendingModelParams: modelParams ?? null,
       piApiKeyEnvVar: envVar,
       piApiKey: apiKey,
       piAgentConfig: agentConfig,
@@ -296,18 +312,12 @@ export class PiAgentService {
       return;
     }
 
-    const turnModel = resolveTurnModel(row, session);
-    const turnAgentConfigId =
-      channel === 'review'
-        ? reviewTurnAgentConfigId(session, row as Record<string, unknown>)
-        : usageAgentConfigIdForSession(session, undefined);
     const meta = {
       turnId: row.turn_id as number | null,
       channel,
       activeKey,
-      turnAgentConfigId,
     };
-    attachAppErrorHandler(this.app, this._runTurn(session, parsed, turnModel, meta), {
+    attachAppErrorHandler(this.app, this._runTurn(session, parsed, row, meta), {
       userId: session.user_id,
       sessionId: session.id,
     }).catch((err) => {
@@ -440,12 +450,11 @@ export class PiAgentService {
   async _runTurn(
     session: AgentSessionRow,
     parsed: unknown,
-    turnModel: { model?: string | null; modelParams?: unknown } = {},
+    row: MessageRowLike,
     meta: {
       turnId?: number | null;
       channel?: MessageChannel;
       activeKey?: string | number;
-      turnAgentConfigId?: number | null;
     } = {}
   ): Promise<void> {
     const sessionId = session.id;
@@ -462,38 +471,40 @@ export class PiAgentService {
       await db('sessions').where({ id: sessionId }).update(activeField);
     }
 
-    const writer =
-      turnId != null
-        ? createMessageStreamWriter(this.app, {
-            sessionId,
-            userId,
-            turnId,
-            channel,
-            sessionPath: session.session_path,
-            agentType: 'pi',
-            model: turnModel.model ?? session.model ?? '',
-            modelParams: turnModel.modelParams,
-          })
-        : null;
-
-    const turnAgentConfigId =
-      meta.turnAgentConfigId ??
-      (channel === 'review'
-        ? reviewTurnAgentConfigId(session, {})
-        : usageAgentConfigIdForSession(session, undefined));
     const sessionState: PiSessionState = {
       isProcessing: true,
       userId,
       piSession: null,
-      writer,
+      writer: null,
       turnId,
       channel,
-      turnAgentConfigId,
+      turnAgentConfigId: null,
     };
     this._activeSessions.set(activeKey, sessionState);
 
+    let writer: MessageStreamWriter | null = null;
     let awaitingUser = false;
     try {
+      // Required turn context, resolved here so failures follow the turn's error path:
+      // the model snapshot comes from the message row, credentials from the row's
+      // agent config (session fallback for legacy rows).
+      const turnModel = requireTurnModelFromRow(row, { sdk: 'pi' });
+      const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
+      writer =
+        turnId != null
+          ? createMessageStreamWriter(this.app, {
+              sessionId,
+              userId,
+              turnId,
+              channel,
+              sessionPath: session.session_path,
+              agentType: 'pi',
+              model: turnModel.model ?? '',
+              modelParams: turnModel.modelParams,
+            })
+          : null;
+      sessionState.writer = writer;
+      sessionState.turnAgentConfigId = turnAgentConfigId;
       if (channel !== 'review') {
         await this.app
           .service('sessions')
@@ -503,10 +514,7 @@ export class PiAgentService {
 
       const storedPiSessionId =
         channel === 'review' ? session.review_pi_session_id : session.pi_session_id;
-      const model =
-        channel === 'review'
-          ? (turnModel.model ?? session.review_model ?? session.model)
-          : (turnModel.model ?? session.model);
+      const model = turnModel.model;
 
       const reviewExtras =
         channel === 'review'
@@ -517,6 +525,7 @@ export class PiAgentService {
           ? await this.app.service('session-review').buildPiReviewAgentOptions(session, {
               model,
               modelParams: turnModel.modelParams,
+              agentConfigId: turnAgentConfigId,
               continuation: !!storedPiSessionId || Boolean(reviewExtras?.continuation),
               extraPrompt: reviewExtras?.extraPrompt,
             })
@@ -524,6 +533,7 @@ export class PiAgentService {
               model,
               modelParams: turnModel.modelParams,
               channel,
+              agentConfigId: turnAgentConfigId,
               storedPiSessionId: storedPiSessionId as string | null | undefined,
             });
 

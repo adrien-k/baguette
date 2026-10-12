@@ -208,6 +208,64 @@ describe('session-review service', () => {
     expect(usage[0].output_tokens).toBe(5);
   });
 
+  it('snapshots the review model and config on reviewer rows instead of the builder ones', async () => {
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const reviewerId = await insertTestAgentConfig(db, user.id, {
+      apiKey: 'sk-reviewer',
+      label: 'Review Claude',
+    });
+    await db('sessions').where({ id: sessionId }).update({
+      review_agent_config_id: reviewerId,
+      review_agent_sdk: 'claude',
+      review_model: 'review-claude-4-5',
+    });
+
+    await app.service('session-review').start({ session_id: sessionId }, params(user));
+
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    const msgs = await app.service('messages').find({
+      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
+      ...params(user),
+    });
+    const firstUser = (msgs.data ?? msgs).find((m) => m.type === 'user');
+    expect(firstUser.model).toBe('review-claude-4-5');
+    expect(firstUser.agent_sdk).toBe('claude');
+    expect(firstUser.agent_config_id).toBe(reviewerId);
+    // The turn runs the row's snapshots — the reviewer's model and credentials —
+    // not the builder's.
+    expect(query.mock.calls[0][0].options.model).toBe('review-claude-4-5');
+    expect(query.mock.calls[0][0].options.env.ANTHROPIC_API_KEY).toBe('sk-reviewer');
+    const usage = await db('usage').where({ session_id: sessionId, kind: 'review' });
+    expect(usage[0].agent_config_id).toBe(reviewerId);
+  });
+
+  it('runs the review on the message row config even when the review_agent_config_id payload differs from the session', async () => {
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const reviewerId = await insertTestAgentConfig(db, user.id, {
+      apiKey: 'sk-reviewer',
+      label: 'Review Claude',
+    });
+
+    await app
+      .service('session-review')
+      .start({ session_id: sessionId, review_agent_config_id: reviewerId }, params(user));
+
+    await vi.waitFor(async () => {
+      expect((await db('sessions').where({ id: sessionId }).first()).review_status).toBe(
+        'completed'
+      );
+    });
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(session.review_agent_config_id).toBe(reviewerId);
+    expect(query.mock.calls[0][0].options.env.ANTHROPIC_API_KEY).toBe('sk-reviewer');
+    const usage = await db('usage').where({ session_id: sessionId, kind: 'review' });
+    expect(usage[0].agent_config_id).toBe(reviewerId);
+  });
+
   it('uses review_agent_sdk when it differs from the session sdk', async () => {
     const runTurn = vi.fn(async () => ({ outcome: 'completed', agent: { agentId: 'rev-cursor' } }));
     app.service('cursor-agent').runTurn = runTurn;

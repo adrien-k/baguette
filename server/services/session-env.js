@@ -217,6 +217,7 @@ export function buildClaudeEnvFromPlainUser(
  * @param {object} app  - Feathers app instance
  * @param {number} userId
  * @param {string|null} _repoFullName - unused; kept for call-site compatibility
+ * @param {number|null} [agentConfigId=null] - agent_configs row whose credentials to use
  */
 export async function getClaudeEnv(app, userId, _repoFullName, agentConfigId = null) {
   const db = app.get('db');
@@ -229,17 +230,4 @@ export async function getClaudeEnv(app, userId, _repoFullName, agentConfigId = n
   return buildClaudeEnvFromPlainUser(userRow, apiKey, baseUrl, {
     anthropicAuthToken: authToken,
   });
-}
-
-/**
- * Convenience wrapper: resolve userId + repoFullName from a session row, then call getClaudeEnv.
- *
- * @param {object} app       - Feathers app instance
- * @param {number} sessionId
- */
-export async function getClaudeEnvForSession(app, sessionId) {
-  const db = app.get('db');
-  const session = await db('sessions').where({ id: sessionId }).first();
-  if (!session) return buildClaudeEnvFromPlainUser(null, null);
-  return getClaudeEnv(app, session.user_id, null, session.agent_config_id ?? null);
 }

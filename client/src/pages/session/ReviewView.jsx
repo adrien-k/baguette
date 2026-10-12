@@ -19,6 +19,7 @@ import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
+import { reviewComposerAgentFields } from '../../utils/messageCreateFields.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ReviewFollowUpModal from '../../components/ReviewFollowUpModal.jsx';
 import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
@@ -337,6 +338,12 @@ export default function ReviewView({
       await sessionReviewService.start({
         session_id: session.id,
         user_message: reviewUserMessage.trim(),
+        ...reviewComposerAgentFields({
+          agent_sdk: reviewAgentSdk,
+          model: reviewModel,
+          model_params: reviewModelParams,
+          review_agent_config_id: reviewConfigId,
+        }),
       });
     } catch (err) {
       toastError('Failed to start review', err);
@@ -349,7 +356,15 @@ export default function ReviewView({
     if (!session?.id || reviewingNewCommits || isRunning) return;
     setReviewingNewCommits(true);
     try {
-      await sessionReviewService.reviewNewCommits({ session_id: session.id });
+      await sessionReviewService.reviewNewCommits({
+        session_id: session.id,
+        ...reviewComposerAgentFields({
+          agent_sdk: reviewAgentSdk,
+          model: reviewModel,
+          model_params: reviewModelParams,
+          review_agent_config_id: reviewConfigId,
+        }),
+      });
     } catch (err) {
       toastError('Failed to review latest changes', err);
     } finally {
@@ -363,7 +378,16 @@ export default function ReviewView({
     if (!trimmed) return;
     setSendingReviewFollowUp(true);
     try {
-      await sessionReviewService.send({ session_id: session.id, message: trimmed });
+      await sessionReviewService.send({
+        session_id: session.id,
+        message: trimmed,
+        ...reviewComposerAgentFields({
+          agent_sdk: reviewAgentSdk,
+          model: reviewModel,
+          model_params: reviewModelParams,
+          review_agent_config_id: reviewConfigId,
+        }),
+      });
       setShowFollowUpModal(false);
     } catch (err) {
       toastError('Failed to send follow-up message', err);

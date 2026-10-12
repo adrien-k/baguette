@@ -178,8 +178,15 @@ describe('ClaudeAgentService', () => {
     mockApp = makeMockApp(db);
 
     await db('users').insert(BASE_USER);
+    const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+    const claudeConfigId = await insertTestAgentConfig(db, BASE_USER.id, {
+      apiKey: 'sk-ant-test-key',
+    });
     await db('repos').insert(BASE_REPO);
-    [BASE_SESSION_ID] = await db('sessions').insert(BASE_SESSION_DATA);
+    [BASE_SESSION_ID] = await db('sessions').insert({
+      ...BASE_SESSION_DATA,
+      agent_config_id: claudeConfigId,
+    });
 
     // Default mocks
     loadBaguetteConfig.mockResolvedValue(null);
@@ -198,7 +205,9 @@ describe('ClaudeAgentService', () => {
       });
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      const sessionState = await service.createAgentSession(sessionRow);
+      const sessionState = await service.createAgentSession(sessionRow, {
+        model: sessionRow.model,
+      });
 
       // query() started with cwd pointing at the worktree
       expect(query).toHaveBeenCalledWith(
@@ -236,7 +245,7 @@ describe('ClaudeAgentService', () => {
       });
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       expect(typeof capturedOptions.canUseTool).toBe('function');
     });
@@ -266,7 +275,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       // Wait for the background processMessages loop to finish
       await vi.waitFor(() => {
@@ -295,7 +304,9 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      const sessionState = await service.createAgentSession(sessionRow);
+      const sessionState = await service.createAgentSession(sessionRow, {
+        model: sessionRow.model,
+      });
 
       await vi.waitFor(() => {
         expect(sessionState.claudeSessionId).toBe('claude-xyz');
@@ -319,7 +330,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         expect(mockApp._sessionPatch).toHaveBeenCalledWith(
@@ -343,7 +354,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -390,7 +401,7 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -440,7 +451,7 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -500,7 +511,7 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         const notifCalls = mockApp._messageCreate.mock.calls.filter(
@@ -541,7 +552,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         const patchCalls = mockApp._sessionPatch.mock.calls;
@@ -565,7 +576,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         expect(mockApp._sessionPatch).toHaveBeenCalledWith(
@@ -597,7 +608,7 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => errorIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       await vi.waitFor(() => {
         expect(mockApp._sessionPatch).toHaveBeenCalledWith(
@@ -657,7 +668,7 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -679,7 +690,7 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -707,7 +718,7 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow);
+      await service.createAgentSession(sessionRow, { model: sessionRow.model });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -739,6 +750,7 @@ describe('ClaudeAgentService', () => {
       await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
         type: 'user',
+        model: 'sonnet',
         message_json: JSON.stringify(userMsg),
       });
 
@@ -772,6 +784,69 @@ describe('ClaudeAgentService', () => {
       await vi.waitFor(() => {
         expect(service.getActiveSession(BASE_SESSION_ID)).toBeUndefined();
       });
+    });
+
+    it('refuses to start a turn when the message has no model snapshot', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const createAgentSessionSpy = vi
+        .spyOn(service, 'createAgentSession')
+        .mockResolvedValue({ channel: { push: vi.fn() } });
+
+      await expect(
+        service.handleMessageCreated({
+          session_id: BASE_SESSION_ID,
+          type: 'user',
+          message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        })
+      ).rejects.toThrow('Message is missing model for this turn (claude)');
+
+      expect(createAgentSessionSpy).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start a turn whose message names a missing agent config', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+
+      await expect(
+        service.handleMessageCreated({
+          session_id: BASE_SESSION_ID,
+          type: 'user',
+          model: 'sonnet',
+          agent_config_id: 9999,
+          message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        })
+      ).rejects.toThrow('Agent configuration not found');
+
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start a turn when the session has no agent config', async () => {
+      await db('sessions').where({ id: BASE_SESSION_ID }).update({ agent_config_id: null });
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const createAgentSessionSpy = vi
+        .spyOn(service, 'createAgentSession')
+        .mockResolvedValue({ channel: { push: vi.fn() } });
+
+      await expect(
+        service.handleMessageCreated({
+          session_id: BASE_SESSION_ID,
+          type: 'user',
+          model: 'sonnet',
+          message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        })
+      ).rejects.toThrow('Agent configuration is required to run this turn');
+
+      expect(createAgentSessionSpy).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
     });
   });
 

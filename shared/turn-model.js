@@ -77,6 +77,25 @@ export function resolveTurnModel(source, session) {
   };
 }
 
+/**
+ * Strict model snapshot for one turn, taken from the message row only — no session
+ * fallback. Turns never inherit the session default at run time: rows snapshot their
+ * model when created. Cursor turns additionally require `model_params` on the row.
+ *
+ * @param {Record<string, unknown>} row - message / queued row carrying model + model_params
+ * @param {{ sdk?: string|null }} [opts]
+ */
+export function requireTurnModelFromRow(row, { sdk } = {}) {
+  const pair = readTurnModelPair(row);
+  if (!pair.hasModel) {
+    throw new Error(`Message is missing model for this turn${sdk ? ` (${sdk})` : ''}`);
+  }
+  if (sdk === 'cursor' && !pair.hasParams) {
+    throw new Error('Message is missing model_params for this Cursor turn');
+  }
+  return { model: pair.model, modelParams: pair.modelParams };
+}
+
 /** Fields to copy onto messages.create / queued-messages.create when model is explicit. */
 export function turnModelCreateFields(source) {
   const { hasModel, model, modelParams } = readTurnModelPair(source);
