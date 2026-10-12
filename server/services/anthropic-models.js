@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { claudeCodeModelDisplayName } from '../../shared/claude-code-model-display.js';
 import * as cache from '../lib/cache.js';
 import { normalizeAnthropicBaseUrl } from './session-env.js';
 
@@ -30,7 +31,10 @@ export async function listModels(claudeApiUrl = null, { refresh = false } = {}) 
       const sdkModels = await q.supportedModels();
       return sdkModels.map((m) => ({
         id: m.value,
-        display_name: m.displayName,
+        display_name: claudeCodeModelDisplayName({
+          displayName: m.displayName,
+          description: m.description,
+        }),
         description: m.description,
       }));
     } finally {
