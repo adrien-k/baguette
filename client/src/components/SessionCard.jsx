@@ -58,7 +58,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
   if (!isArchived && !isArchiving) {
     if (isSessionStoppable(session)) {
       actions.push({ node: <StopSession session={session} /> });
-    } else if (session.status !== 'provisioning') {
+    } else {
       actions.push({ node: <ArchiveSession session={session} /> });
     }
   }

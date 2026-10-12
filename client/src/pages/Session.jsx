@@ -297,9 +297,9 @@ function MiniSessionEntry({
           <div className="shrink-0">
             {isSessionStoppable(s) ? (
               <StopSession session={s} />
-            ) : s.status !== 'provisioning' ? (
+            ) : (
               <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
-            ) : null}
+            )}
           </div>
         )}
       </div>

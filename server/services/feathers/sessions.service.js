@@ -124,6 +124,8 @@ export class SessionsService extends KnexService {
     this.app = app;
     /** @type {Map<number, Promise<unknown>>} */
     this._provisioningBySessionId = new Map();
+    /** Session ids whose in-flight provisioning should not finalize (user is archiving). */
+    this._provisioningAbortSessionIds = new Set();
     /** Session ids currently in `remove()` — a second archive is rejected. */
     this._archivePendingSessionIds = new Set();
   }
@@ -183,6 +185,14 @@ export class SessionsService extends KnexService {
   async _awaitProvisioning(sessionId) {
     const pending = this._provisioningBySessionId.get(sessionId);
     if (pending) await pending.catch(() => {});
+  }
+
+  async _getSessionRow(id, params) {
+    const query = this.options.Model('sessions').where({ id });
+    if (params?.provider) {
+      query.where({ user_id: params?.user?.id });
+    }
+    return query.first();
   }
 
   /**
@@ -422,9 +432,6 @@ export class SessionsService extends KnexService {
     }
     const sessions = await query;
     for (const session of sessions) {
-      // Archive is refused while status is still `provisioning`; wait for the
-      // in-process job so repo deletion can finish the session afterwards.
-      await this._awaitProvisioning(session.id);
       await this.remove(session.id);
     }
   }
@@ -438,7 +445,11 @@ export class SessionsService extends KnexService {
     if (!session) throw new NotFound('Session not found');
     if (session.archived_at) throw new BadRequest('Session already archived');
     if (session.status === PROVISIONING_STATUS) {
-      throw new BadRequest('Cannot archive a session while it is still being set up');
+      this._provisioningAbortSessionIds.add(id);
+      await unstickProvisioningSessionRow(this.app, id);
+      session = await this._getSessionRow(id, params);
+      if (!session) throw new NotFound('Session not found');
+      if (session.archived_at) throw new BadRequest('Session already archived');
     }
     if (this._archivePendingSessionIds.has(id)) {
       throw new BadRequest('Session is already being archived');
@@ -463,6 +474,7 @@ export class SessionsService extends KnexService {
       await this._runCleanupAndFinalize(session);
       return await this.options.Model('sessions').where({ id }).first();
     } finally {
+      this._provisioningAbortSessionIds.delete(id);
       this._archivePendingSessionIds.delete(id);
     }
   }
@@ -1805,10 +1817,37 @@ async function provisionSessionEnvironment(app, session, params) {
     patch.remote_branch = remoteName;
   }
 
+  await throwIfProvisioningCancelled(app, session, repo);
   return await app.service('sessions').patch(session.id, patch, userParams);
 }
 
+async function throwIfProvisioningCancelled(app, session, repo) {
+  const db = app.get('db');
+  const row = await db('sessions').where({ id: session.id }).first();
+  const cancelled =
+    app.service('sessions')._provisioningAbortSessionIds.has(session.id) ||
+    row?.archived_at ||
+    row?.status === ARCHIVING_STATUS ||
+    row?.status === ARCHIVED_STATUS;
+  if (!cancelled) return;
+  await removeWorktree(session, repo).catch((err) =>
+    logger.warn({ err, sessionId: session.id }, 'Failed to remove worktree after setup cancel')
+  );
+  throw new Error('Session setup cancelled');
+}
+
 async function finalizeSessionAfterProvision(app, session, params) {
+  const db = app.get('db');
+  const row = await db('sessions').where({ id: session.id }).first();
+  const sessionsService = app.service('sessions');
+  if (
+    sessionsService._provisioningAbortSessionIds.has(session.id) ||
+    row?.archived_at ||
+    row?.status === ARCHIVING_STATUS ||
+    row?.status === ARCHIVED_STATUS
+  ) {
+    return session;
+  }
   const enriched = await withHasWebserver(session);
   const promptContext = {
     app,
@@ -1827,12 +1866,38 @@ async function finalizeSessionAfterProvision(app, session, params) {
   if (!createdInitialPrompt) {
     await app.service('sessions').flushNextQueuedTurn(session.id, 'builder');
   }
-  const row = await app.get('db')('sessions').where({ id: session.id }).first();
-  if (row?.status === PROVISIONING_STATUS) {
+  const latest = await db('sessions').where({ id: session.id }).first();
+  if (latest?.status === PROVISIONING_STATUS) {
     await app
       .service('sessions')
       .patch(session.id, { status: 'stopped' }, { provider: undefined, user: params.user });
   }
+}
+
+/** Direct DB update so setup failure clears `provisioning` even when Feathers patch fails. */
+async function markSessionSetupFailed(app, sessionId) {
+  const db = app.get('db');
+  try {
+    await db('sessions').where({ id: sessionId }).update({ status: 'failed', session_path: null });
+  } catch {
+    await db('sessions').where({ id: sessionId }).update({ status: 'failed' });
+  }
+  const updated = await db('sessions').where({ id: sessionId }).first();
+  if (updated) app.service('sessions').emit('patched', updated);
+}
+
+/** Row still `provisioning` after the in-memory job ended — unblock archive / UI. */
+async function unstickProvisioningSessionRow(app, sessionId) {
+  const db = app.get('db');
+  try {
+    await db('sessions').where({ id: sessionId, status: PROVISIONING_STATUS }).update({
+      status: 'stopped',
+    });
+  } catch (err) {
+    logger.error({ err, sessionId }, 'Failed to unstick provisioning session status');
+  }
+  const updated = await db('sessions').where({ id: sessionId }).first();
+  if (updated) app.service('sessions').emit('patched', updated);
 }
 
 async function failSessionProvisioning(app, sessionId, user, err) {
@@ -1840,6 +1905,8 @@ async function failSessionProvisioning(app, sessionId, user, err) {
   const userParams = { provider: undefined, user };
   const message = err?.message || 'Session setup failed';
   const db = app.get('db');
+  const sessionsService = app.service('sessions');
+  const aborted = sessionsService._provisioningAbortSessionIds.has(sessionId);
   try {
     const session = await db('sessions').where({ id: sessionId }).first();
     if (session && !session.archived_at) {
@@ -1850,7 +1917,7 @@ async function failSessionProvisioning(app, sessionId, user, err) {
         logger.warn({ err: rmErr, sessionId }, 'Failed to remove worktree after provisioning error')
       );
     }
-    if (session) {
+    if (session && !aborted) {
       await app.service('messages').create(
         {
           session_id: sessionId,
@@ -1872,10 +1939,12 @@ async function failSessionProvisioning(app, sessionId, user, err) {
       'Failed to post setup failure message after provisioning error'
     );
   }
+  if (aborted) {
+    await unstickProvisioningSessionRow(app, sessionId);
+    return;
+  }
   try {
-    await app
-      .service('sessions')
-      .patch(sessionId, { status: 'failed', session_path: null }, userParams);
+    await markSessionSetupFailed(app, sessionId);
   } catch (patchErr) {
     logger.error(
       { err: patchErr, sessionId },

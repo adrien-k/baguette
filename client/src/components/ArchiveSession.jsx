@@ -13,7 +13,7 @@ export default function ArchiveSession({ session, onArchive }) {
 
   const isProvisioning = session.status === 'provisioning';
   const isArchiving = session.status === 'archiving';
-  const blocked = archiving || checking || isArchiving || isProvisioning;
+  const blocked = archiving || checking || isArchiving;
   const hasDraftPr = session.pr_status === 'draft' && session.pr_number;
 
   const performArchive = async ({ closePr = false } = {}) => {
@@ -33,6 +33,11 @@ export default function ArchiveSession({ session, onArchive }) {
     e.stopPropagation();
     if (blocked) return;
 
+    if (isProvisioning) {
+      await performArchive();
+      return;
+    }
+
     setChecking(true);
     try {
       const commitsToPush = await fetchSessionCommitsToPush(session);
@@ -49,9 +54,8 @@ export default function ArchiveSession({ session, onArchive }) {
     }
   };
 
-  const title = isProvisioning
-    ? 'Session is still being set up'
-    : archiving || isArchiving
+  const title =
+    archiving || isArchiving
       ? 'Archiving…'
       : checking
         ? 'Checking for unpushed commits…'

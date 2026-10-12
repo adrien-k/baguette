@@ -687,17 +687,15 @@ describe('Sessions service - custom methods', () => {
       }
     });
 
-    it('rejects archive while the session is still provisioning', async () => {
+    it('archives when the session is still marked provisioning', async () => {
       await db('sessions').where({ id: sessId }).update({ status: 'provisioning' });
 
-      await expect(app.service('sessions').remove(sessId, params({ id: userId }))).rejects.toThrow(
-        /still being set up/
-      );
+      await app.service('sessions').remove(sessId, params({ id: userId }));
 
       const row = await db('sessions').where({ id: sessId }).first();
-      expect(row.archived_at).toBeFalsy();
-      expect(row.status).toBe('provisioning');
-      expect(removeWorktree).not.toHaveBeenCalled();
+      expect(row.archived_at).toBeTruthy();
+      expect(row.status).toBe('archived');
+      expect(removeWorktree).toHaveBeenCalled();
     });
 
     it('removes worktree by short_id when session_path is not set yet', async () => {
@@ -2170,7 +2168,7 @@ describe('Sessions service - find, get, create', () => {
       }
     });
 
-    it('rejects archive while a session is still provisioning', async () => {
+    it('archives while worktree setup is still in progress', async () => {
       let resolveWorktree;
       const worktreeReady = new Promise((resolve) => {
         resolveWorktree = () => resolve({ worktreePath: '/tmp/test-worktree' });
@@ -2184,14 +2182,12 @@ describe('Sessions service - find, get, create', () => {
           syncProvision: false,
         });
 
-        await expect(
-          app.service('sessions').remove(session.id, params({ id: userId1 }))
-        ).rejects.toThrow(/still being set up/);
+        await app.service('sessions').remove(session.id, params({ id: userId1 }));
 
         const row = await db('sessions').where({ id: session.id }).first();
-        expect(row.archived_at).toBeFalsy();
-        expect(row.status).toBe('provisioning');
-        expect(removeWorktree).not.toHaveBeenCalled();
+        expect(row.archived_at).toBeTruthy();
+        expect(row.status).toBe('archived');
+        expect(removeWorktree).toHaveBeenCalled();
       } finally {
         resolveWorktree?.();
         if (session) await app.service('sessions')._awaitProvisioning(session.id);
