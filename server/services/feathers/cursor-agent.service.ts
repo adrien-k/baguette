@@ -805,7 +805,8 @@ ${body}`,
 
   /**
    * Stream one run to completion. Returns { finishedOk, hasBackgroundTask }.
-   * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message.
+   * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message,
+   * except CANCELLED after a turn-ending Baguette tool (plan / questions), which is expected.
    * FINISHED is left for the caller to handle (so follow-up runs can be chained first).
    */
   async _streamOneRun(
@@ -853,6 +854,10 @@ ${body}`,
           return { break: true, finishedOk: true };
         }
         if (status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED') {
+          // CreatePlan / EditPlan / AskUserQuestions end the turn by cancelling the run.
+          if (status === 'CANCELLED' && sessionState?.endTurnAwaitingUser) {
+            return { break: true, finishedOk: true };
+          }
           logger.warn(
             {
               sessionId,
