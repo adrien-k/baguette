@@ -1,21 +1,16 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
-import {
-  requireOwnedSessionById,
-  buildMcpUserMessageJson,
-  canPostToSession,
-  crossSessionPostError,
-} from '../lib/session-resolution.js';
+import { requireOwnedSessionById, buildMcpUserMessageJson } from '../lib/session-resolution.js';
 import { sessionMessageIdentity } from '../../feathers/message-create-fields.js';
 
 export function createCreateSessionMessageTool(ctx) {
-  const { app, userId, callerSession } = ctx;
+  const { app, userId } = ctx;
   return {
     name: 'CreateSessionMessage',
     description:
       'IMPORTANT: Do not use this tool unless the user explicitly asks you to send or schedule a message to a session. ' +
       'Send a user message to a session now, or schedule it with send_at (ISO timestamp in the future). ' +
-      'Repo session agents may only post to their own session_id; global session agents and external MCP may post to any of your sessions. ' +
+      'You may post to any of your sessions (session_id must belong to your account). ' +
       'Immediate sends while the agent is running are queued for the next turn, like the UI Send button.',
     schema: {
       session_id: z.number().int().describe('Target session id'),
@@ -35,9 +30,6 @@ export function createCreateSessionMessageTool(ctx) {
       const { session_id, text, send_at, force } = args;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
-      if (!canPostToSession(callerSession, session_id)) {
-        return fail(crossSessionPostError());
-      }
 
       const message_json = buildMcpUserMessageJson(text);
       const userParams = { provider: 'rest', user: { id: userId } };

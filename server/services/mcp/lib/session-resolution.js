@@ -1,5 +1,3 @@
-import { isGlobalSession } from '../../../../shared/session-scope.js';
-
 export const SESSION_LIST_COLUMNS = [
   'id',
   'short_id',
@@ -113,15 +111,4 @@ export function summarizeAssistantMessage(row) {
     message: parsed?.message ?? null,
     message_json: row.message_json,
   };
-}
-
-export function crossSessionPostError() {
-  return 'Posting to another session is only allowed from a global Baguette session or external MCP.';
-}
-
-export function canPostToSession(callerSession, targetSessionId) {
-  // External HTTP MCP has no caller session; account token already scopes to the user.
-  if (!callerSession) return true;
-  if (isGlobalSession(callerSession)) return true;
-  return callerSession.id === targetSessionId;
 }

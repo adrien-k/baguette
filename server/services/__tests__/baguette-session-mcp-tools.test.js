@@ -183,7 +183,7 @@ describe('baguette session MCP tools', () => {
     expect(JSON.parse(queued.message_json).content).toBe('later');
   });
 
-  it('CreateSessionMessage rejects another session for repo agents', async () => {
+  it('CreateSessionMessage allows repo agent to post to another owned session', async () => {
     const [otherId] = await db('sessions').insert({
       user_id: userId,
       repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
@@ -197,9 +197,8 @@ describe('baguette session MCP tools', () => {
       ...testSessionAgentDefaults,
     });
     const create = tools.find((t) => t.name === 'CreateSessionMessage');
-    const out = parseResult(await create.handler({ session_id: otherId, text: 'nope' }));
-    expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/global Baguette session/);
+    const out = parseOk(await create.handler({ session_id: otherId, text: 'from repo agent' }));
+    expect(out.message_id).toBeTruthy();
   });
 
   it('CreateSessionMessage allows global agent to post to another session', async () => {
