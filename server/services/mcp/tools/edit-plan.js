@@ -12,7 +12,7 @@ export function createEditPlanTool(h) {
   return {
     name: 'EditPlan',
     description:
-      'Patch the session plan stored in the database. Send one or more { old_string, new_string } edits; the server applies them to the saved plan in order—do not resend the full plan markdown. Summarize in patches; reference todos by id or title. Shows the updated plan in chat and ends your turn—do not add a follow-up assistant message (if required, say only “Plan updated.”). Requires CreatePlan first.',
+      'Patch the session plan stored in the database. Send one or more { old_string, new_string } edits; the server applies them to the saved plan in order—do not resend the full plan markdown. Summarize in patches; reference todos by id or title. Shows the updated plan in chat; end your turn right after this tool returns—no follow-up message (if required, say only “Plan updated.”). Requires CreatePlan first.',
     schema: {
       patches: z
         .array(planPatchSchema)

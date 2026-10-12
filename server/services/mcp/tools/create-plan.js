@@ -4,7 +4,7 @@ export function createCreatePlanTool(h) {
   return {
     name: 'CreatePlan',
     description:
-      'Create the session plan (markdown). Summarize approach and reference todos by id or short title—do not paste full todo bodies. Shows the plan in chat and ends your turn—do not add a follow-up assistant message (if required, say only “Plan created.”). Use once per session; use EditPlan to revise.',
+      'Create the session plan (markdown). Summarize approach and reference todos by id or short title—do not paste full todo bodies. Shows the plan in chat; end your turn right after this tool returns—no follow-up message (if required, say only “Plan created.”). Use once per session; use EditPlan to revise.',
     schema: {
       markdown: z
         .string()

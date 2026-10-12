@@ -314,6 +314,50 @@ describe('ClaudeAgentService', () => {
     });
   });
 
+  // ── Turn-ending Baguette tools ─────────────────────────────────────────────
+
+  describe('turn-ending Baguette tools', () => {
+    it('keeps approval and records usage when endTurnAwaitingUser is set mid-turn', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const recordSpy = vi.spyOn(service, '_recordClaudeTurnUsage').mockResolvedValue(undefined);
+
+      const resultMsg = {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        total_cost_usd: 0.01,
+      };
+      vi.spyOn(service, '_consumeQuery').mockImplementation(async (sessionState) => {
+        sessionState.endTurnAwaitingUser = true;
+        return {
+          turnComplete: true,
+          streamFailed: false,
+          outcome: 'completed',
+          lastResult: resultMsg,
+        };
+      });
+
+      const sessionState = {
+        sessionId: BASE_SESSION_ID,
+        userId: BASE_USER.id,
+        turnChannel: 'chat',
+        endTurnAwaitingUser: false,
+        streamWriter: null,
+      };
+
+      await service.processMessages(sessionState);
+
+      expect(recordSpy).toHaveBeenCalled();
+      const terminalStatusPatch = mockApp._sessionPatch.mock.calls.find(
+        ([, data]) => data?.status === 'completed' || data?.status === 'failed'
+      );
+      expect(terminalStatusPatch).toBeUndefined();
+    });
+  });
+
   // ── 3. Assistant success ───────────────────────────────────────────────────
 
   describe('assistant success', () => {

@@ -53,7 +53,6 @@ import type {
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
 import { PI_AGENT_SDK_KEY, PI_AGENT_SDK_LABEL, PI_AGENT_SERVICE_PATH } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
-import { endBuilderTurnAwaitingUser } from '../agent-awaiting-user.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
 const METADATA_TIMEOUT_MS = 30_000;
@@ -435,18 +434,6 @@ export class PiAgentService {
     this._activeSessions.delete(activeKey);
   }
 
-  async endTurnAfterBaguetteTool(sessionId: number): Promise<void> {
-    await endBuilderTurnAwaitingUser(
-      this.app,
-      this._activeSessions.get(sessionId),
-      sessionId,
-      async (sessionState) => {
-        sessionState.abortController?.abort();
-        await sessionState.piSession?.abort();
-      }
-    );
-  }
-
   async _runTurn(
     session: AgentSessionRow,
     parsed: unknown,
@@ -563,7 +550,7 @@ export class PiAgentService {
 
       awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
       turnFinishedOk = outcome === 'completed' || awaitingUser;
-      if (turnFinishedOk && !awaitingUser) {
+      if (outcome === 'completed') {
         await this.app
           .service('sessions')
           .recordPiUsage(session, turnUsage ?? emptyTurnUsage(), {
@@ -575,16 +562,18 @@ export class PiAgentService {
           .catch((err: Error) =>
             logger.warn({ sessionId, err: err.message }, 'pi-agent: failed to record turn usage')
           );
-        if (channel === 'review') {
-          await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
-            sdk: 'pi',
-            turnModel,
-            turnUsage,
-          });
-        } else {
-          await this.app
-            .service('sessions')
-            .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+        if (!awaitingUser) {
+          if (channel === 'review') {
+            await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
+              sdk: 'pi',
+              turnModel,
+              turnUsage,
+            });
+          } else {
+            await this.app
+              .service('sessions')
+              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+          }
         }
       } else if (outcome === 'failed' && channel === 'review') {
         await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
@@ -874,7 +863,6 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
       'isInterruptedSessionResumable',
-      'endTurnAfterBaguetteTool',
     ],
   });
   registerAgentSdk(app, {

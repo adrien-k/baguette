@@ -60,7 +60,6 @@ import {
   CLAUDE_AGENT_SERVICE_PATH,
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
-import { endBuilderTurnAwaitingUser } from '../agent-awaiting-user.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
 
@@ -339,19 +338,6 @@ export class ClaudeAgentService {
 
   async stopTurn(activeKey: string | number): Promise<void> {
     await this._disposeActiveSession(activeKey);
-  }
-
-  /** End the builder turn after AskUserQuestions / CreatePlan / EditPlan (see wrap-baguette-tool-handler). */
-  async endTurnAfterBaguetteTool(sessionId: number): Promise<void> {
-    await endBuilderTurnAwaitingUser(
-      this.app,
-      this.getActiveSession(sessionId),
-      sessionId,
-      (sessionState) => {
-        sessionState.channel.end();
-        sessionState.abortController.abort();
-      }
-    );
   }
 
   async handleMessageCreated(row: MessageRowLike): Promise<void> {
@@ -839,7 +825,6 @@ export class ClaudeAgentService {
     const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
-    const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
     const { turnComplete, streamFailed, outcome, lastResult } = await this._consumeQuery(
       sessionState,
       {
@@ -875,6 +860,8 @@ export class ClaudeAgentService {
       }
     );
 
+    const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
+
     if (lastResult) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
@@ -888,7 +875,7 @@ export class ClaudeAgentService {
       }
     }
 
-    if (isReview && turnComplete) {
+    if (isReview && turnComplete && !awaitingUser) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
       if (session) {
@@ -1234,7 +1221,6 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'handleMessageCreated',
       'generateSessionMetadata',
       'isInterruptedSessionResumable',
-      'endTurnAfterBaguetteTool',
     ],
   });
   registerAgentSdk(app, {

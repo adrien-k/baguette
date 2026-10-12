@@ -17,7 +17,7 @@ export function createAskUserQuestionsTool() {
   return {
     name: 'AskUserQuestions',
     description:
-      'Present questions to the user inline in chat. Use when you need confirmation, a choice, or follow-up answers. End your turn after calling this; do not ask the same questions in prose.',
+      'Present questions to the user inline in chat. Use when you need confirmation, a choice, or follow-up answers. End your turn right after this tool returns—no extra assistant message. Do not ask the same questions in prose.',
     schema: {
       questions: z.array(questionSchema).min(1).describe('Questions to show'),
     },

@@ -25,24 +25,16 @@ export function isSessionAwaitingUser(session) {
 }
 
 /**
- * End a builder chat turn after AskUserQuestions / CreatePlan / EditPlan.
+ * After AskUserQuestions / CreatePlan / EditPlan: mark the session awaiting user input.
+ * Does not abort or cancel the agent — the model should end the turn on its own.
  *
  * @param {import('@feathersjs/feathers').Application} app
- * @param {{ channel?: string; turnChannel?: string; userId: number; endTurnAwaitingUser?: boolean } | null | undefined} sessionState
  * @param {number} sessionId
- * @param {(state: NonNullable<typeof sessionState>) => void | Promise<void>} stopActiveTurn
+ * @param {number} userId
+ * @param {{ endTurnAwaitingUser?: boolean } | null | undefined} sessionState
  */
-export async function endBuilderTurnAwaitingUser(app, sessionState, sessionId, stopActiveTurn) {
+export async function markAwaitingUserAfterTurnEndingTool(app, sessionId, userId, sessionState) {
   if (!sessionState) return;
-  const channel = sessionState.channel ?? sessionState.turnChannel ?? 'chat';
-  if (channel === 'review') return;
-
   sessionState.endTurnAwaitingUser = true;
-  await markSessionAwaitingUser(app, sessionId, sessionState.userId);
-
-  try {
-    await stopActiveTurn(sessionState);
-  } catch {
-    // turn may already be idle
-  }
+  await markSessionAwaitingUser(app, sessionId, userId);
 }
