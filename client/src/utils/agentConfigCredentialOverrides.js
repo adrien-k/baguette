@@ -65,6 +65,13 @@ export function buildAgentConfigConnectivityRequest({
     apiKeyDirty,
     apiKeyEnvVar,
   });
+  const trimmedKey = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (trimmedKey) {
+    overrides.api_key = trimmedKey;
+  }
+  if (sdk === 'pi' && apiKeyEnvVar) {
+    overrides.api_key_env_var = apiKeyEnvVar;
+  }
   if (agentConfigId != null) {
     return { id: agentConfigId, ...overrides };
   }

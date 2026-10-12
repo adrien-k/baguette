@@ -1,5 +1,9 @@
 # Baguette - Claude Code Notes
 
+## Code style
+
+Limit **ternary operators** (`? :`) to **one level**. For multiple branches, use `if` / `return`, a small helper function, or `switch` instead of nested ternaries.
+
 ## Before committing
 
 Always run format (must pass):

@@ -57,7 +57,7 @@ function asInput(args: unknown): Record<string, unknown> {
   return {};
 }
 
-function turnResult(status: 'ok' | 'error', error_message: string | null): MessageOp[] {
+export function piTurnResultOps(status: 'ok' | 'error', error_message: string | null): MessageOp[] {
   return [
     {
       op: 'turn_result',
@@ -69,6 +69,10 @@ function turnResult(status: 'ok' | 'error', error_message: string | null): Messa
       },
     },
   ];
+}
+
+function turnResult(status: 'ok' | 'error', error_message: string | null): MessageOp[] {
+  return piTurnResultOps(status, error_message);
 }
 
 export function mapPiEvent(event: Record<string, unknown>): MessageOp[] | null {

@@ -5,7 +5,6 @@ import {
 } from '@baguette/shared/agent-config-logo.js';
 import SearchableSelect from '../../components/SearchableSelect';
 import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
-import LobeIconAvatar from '../../components/LobeIconAvatar.jsx';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 
 function optionLabel(entry) {
@@ -29,13 +28,18 @@ export default function AgentConfigLogoPicker({ sdk, value, onChange, disabled =
 
   const selectValue = value == null || value === '' ? SDK_DEFAULT_LOGO_OPTION : value;
 
-  const renderSelected = (entry) => (
+  const renderLogoMark = (entry) => (
+    <AgentConfigLogo
+      sdk={sdk}
+      logo={entry.id === SDK_DEFAULT_LOGO_OPTION ? null : entry.id}
+      className="w-5 h-5 shrink-0"
+      size={20}
+    />
+  );
+
+  const renderLogoOption = (entry) => (
     <span className="flex items-center gap-2 min-w-0">
-      {entry.id === SDK_DEFAULT_LOGO_OPTION ? (
-        <AgentConfigLogo sdk={sdk} logo={null} className="w-5 h-5 shrink-0" />
-      ) : (
-        <LobeIconAvatar iconId={entry.id} className="w-5 h-5 shrink-0" size={20} />
-      )}
+      {renderLogoMark(entry)}
       <span className="truncate">{optionLabel(entry)}</span>
     </span>
   );
@@ -50,8 +54,8 @@ export default function AgentConfigLogoPicker({ sdk, value, onChange, disabled =
       emptyText="No matching icons"
       getOptionValue={(o) => o.id}
       getOptionLabel={optionLabel}
-      renderOption={(entry) => <span className="truncate">{optionLabel(entry)}</span>}
-      renderSelected={renderSelected}
+      renderOption={renderLogoOption}
+      renderSelected={renderLogoOption}
     />
   );
 }

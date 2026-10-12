@@ -608,9 +608,10 @@ export default function Session() {
   useEffect(() => {
     const onAppError = (msg) => {
       const text = msg.message || 'Something went wrong';
-      toast.error(text);
+      const shortText = text.split('\n')[0]?.trim() || text;
+      toast.error(shortText);
       if (msg.sessionId && sessionId && msg.sessionId === sessionId) {
-        setError(text);
+        setError(shortText);
       }
     };
     sessionsService.on('app:error', onAppError);

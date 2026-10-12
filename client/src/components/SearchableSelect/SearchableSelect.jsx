@@ -4,9 +4,13 @@ import { useSearchableSelectAsync } from './useSearchableSelectAsync.js';
 import { DROPDOWN_PANEL_CLASS } from '../../utils/dropdownPanel.js';
 
 const COLOR_CLASSES = {
-  amber: { ring: 'focus:ring-brand/50', border: 'border-brand/50' },
-  violet: { ring: 'focus:ring-merged/50', border: 'border-merged/50' },
+  amber: { ring: 'focus:ring-brand/50' },
+  violet: { ring: 'focus:ring-merged/50' },
 };
+
+/** Match `INPUT_CLASS` / native selects (`border-strong`), not a persistent brand outline. */
+const CLOSED_CONTROL_CLASS =
+  'w-full rounded-md border border-strong bg-control px-3 py-2.5 text-sm text-fg';
 
 /**
  * Searchable select with a text input for filtering and a dropdown list.
@@ -27,7 +31,8 @@ const COLOR_CLASSES = {
  *   placeholder      – input placeholder when idle
  *   loadingText      – placeholder while loading
  *   emptyText        – placeholder when options is empty (and not loading)
- *   disabledText     – placeholder when disabled
+ *   disabledText     – when disabled with no closed selection, input placeholder; when disabled
+ *                      with a selection shown, native `title` tooltip on that row
  *   getOptionValue   – (option) => string key — default: identity (for string arrays)
  *   getOptionLabel   – (option) => string for filtering — default: String(option)
  *   renderOption     – (option) => ReactNode for dropdown row — default: getOptionLabel
@@ -57,7 +62,7 @@ export default function SearchableSelect({
   const [search, setSearch] = useState(null); // null means search is closed
   const inputRef = useRef(null);
   const isOpen = search !== null;
-  const { ring, border } = COLOR_CLASSES[color] ?? COLOR_CLASSES.amber;
+  const { ring } = COLOR_CLASSES[color] ?? COLOR_CLASSES.amber;
 
   const { fetchedOptions, asyncLoading, fetchForQuery, debouncedFetch, cancelDebouncedFetch } =
     useSearchableSelectAsync({
@@ -93,16 +98,17 @@ export default function SearchableSelect({
     cancelDebouncedFetch();
   }, [cancelDebouncedFetch]);
 
-  const inputPlaceholder =
-    disabled && disabledText
+  const showClosedSelected = search === null && (selectedItem || value);
+
+  const inputPlaceholder = showClosedSelected
+    ? ''
+    : disabled && disabledText
       ? disabledText
       : showLoadingPlaceholder
         ? loadingText
         : listSource.length === 0
           ? emptyText
           : placeholder;
-
-  const showClosedSelected = search === null && (selectedItem || value);
 
   const renderSelectedContent = () => {
     if (selectedItem) {
@@ -156,16 +162,19 @@ export default function SearchableSelect({
             }}
             placeholder={inputPlaceholder}
             disabled={inputDisabled}
-            className={`w-full rounded-md border border-strong bg-control px-3 py-2.5 text-sm text-fg placeholder-faint focus:border-transparent focus:outline-none focus:ring-2 ${ring} disabled:opacity-50 ${
+            aria-hidden={showClosedSelected ? true : undefined}
+            tabIndex={showClosedSelected ? -1 : undefined}
+            className={
               showClosedSelected
-                ? 'absolute inset-0 z-0 min-h-10.5 opacity-0 pointer-events-none'
-                : 'relative'
-            }`}
+                ? 'pointer-events-none absolute h-px w-px overflow-hidden opacity-0 border-0 p-0'
+                : `w-full rounded-md border border-strong bg-control px-3 py-2.5 text-sm text-fg placeholder-faint focus:border-transparent focus:outline-none focus:ring-2 ${ring} disabled:cursor-not-allowed`
+            }
           />
           {showClosedSelected &&
             (disabled ? (
               <div
-                className={`relative z-10 w-full rounded-md border ${border} bg-control px-3 py-2.5 text-sm text-fg opacity-50`}
+                title={disabledText ?? undefined}
+                className={`${CLOSED_CONTROL_CLASS} cursor-not-allowed`}
               >
                 {renderSelectedContent()}
               </div>
@@ -173,7 +182,7 @@ export default function SearchableSelect({
               <button
                 type="button"
                 onClick={openSearchAndFocus}
-                className={`relative z-10 w-full rounded-md border ${border} bg-control px-3 py-2.5 text-sm text-fg text-left cursor-pointer focus:outline-none focus:ring-2 ${ring}`}
+                className={`${CLOSED_CONTROL_CLASS} text-left cursor-pointer focus:outline-none focus:ring-2 ${ring}`}
                 aria-label="Change selection"
               >
                 {renderSelectedContent()}

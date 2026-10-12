@@ -2,7 +2,6 @@ import {
   type AgentSession as PiAgentSession,
   createAgentSession,
   DefaultResourceLoader,
-  resolveCliModel,
   SessionManager,
   SettingsManager,
   type CreateAgentSessionOptions,
@@ -14,6 +13,7 @@ import { buildPiCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { processPiSessionStream, type PiTurnUsage } from '../pi/pi-sdk-turn.ts';
+import { piTurnResultOps } from '../pi/pi-mapping.ts';
 import { emptyTurnUsage } from '../turn-usage.js';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
 import {
@@ -21,9 +21,10 @@ import {
   resolveTurnModel,
 } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
-import { createPiModelRuntime } from '../pi-models.js';
+import { createPiModelRuntime, resolvePiSessionModel } from '../pi-models.js';
 import { resolvePiCredentials } from '../pi/pi-config.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
+import { lunaroutePiAdditionalExtensionPaths } from '../pi/pi-lunaroute-extension-path.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
   reviewTurnAgentConfigId,
@@ -68,6 +69,10 @@ type PiSessionState = {
 
 export type PiBuildAgentOptionsResult = CreateAgentSessionOptions & {
   modelRuntime: Awaited<ReturnType<typeof createPiModelRuntime>>;
+  pendingModelId?: string | null;
+  piApiKeyEnvVar?: string;
+  piApiKey?: string | null;
+  piAgentConfig?: Record<string, unknown> | null;
 };
 
 function extractUserText(parsed: unknown): string {
@@ -158,26 +163,13 @@ export class PiAgentService {
     await this._ensurePiDirs(session);
     const cwd = piWorktreeCwd(session);
     const agentDir = piAgentDir(session) ?? undefined;
-    const { apiKey, envVar } = await this.resolveCredentials(session);
+    const agentConfig = await this.loadAgentConfig(session);
+    const { apiKey, envVar } = resolvePiCredentials(agentConfig);
     if (!apiKey) {
       throw new Error('Pi API key is not configured for this session');
     }
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
     const modelId = model ?? session.model ?? null;
-    let resolvedModel = undefined;
-    let thinkingLevel = undefined;
-    if (modelId) {
-      const resolved = resolveCliModel({ cliModel: modelId, modelRuntime });
-      if (resolved.error) {
-        logger.warn(
-          { sessionId: session.id, modelId, err: resolved.error },
-          'pi-agent: could not resolve model'
-        );
-      } else {
-        resolvedModel = resolved.model;
-        thinkingLevel = resolved.thinkingLevel;
-      }
-    }
     const settingsManager = SettingsManager.create(cwd, agentDir);
     const systemAppend = appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session));
     const resourceLoader = new DefaultResourceLoader({
@@ -185,6 +177,7 @@ export class PiAgentService {
       agentDir: agentDir ?? cwd,
       settingsManager,
       appendSystemPrompt: systemAppend,
+      additionalExtensionPaths: lunaroutePiAdditionalExtensionPaths(envVar),
     });
     await resourceLoader.reload();
     const resolvedTools = customTools ?? (await buildPiCustomTools(session, this.app, { channel }));
@@ -193,8 +186,12 @@ export class PiAgentService {
       cwd,
       agentDir,
       modelRuntime,
-      model: resolvedModel,
-      thinkingLevel,
+      model: undefined,
+      thinkingLevel: undefined,
+      pendingModelId: modelId,
+      piApiKeyEnvVar: envVar,
+      piApiKey: apiKey,
+      piAgentConfig: agentConfig,
       customTools: resolvedTools,
       resourceLoader,
       settingsManager,
@@ -211,6 +208,20 @@ export class PiAgentService {
     }
   ): Promise<PiAgentSession> {
     const { session: piSession } = await createAgentSession(opts.agentOptions);
+    const { pendingModelId, piApiKeyEnvVar, piApiKey, piAgentConfig, modelRuntime } =
+      opts.agentOptions;
+    if (pendingModelId && modelRuntime) {
+      await this._bindPiSessionModel(
+        piSession,
+        modelRuntime,
+        pendingModelId,
+        piApiKeyEnvVar ?? '',
+        {
+          apiKey: piApiKey,
+          config: piAgentConfig,
+        }
+      );
+    }
     const piSessionId = piSession.sessionId;
     if (piSessionId) {
       await opts.persistPiSessionId?.(piSessionId);
@@ -329,12 +340,14 @@ export class PiAgentService {
       this._activeSessions.set(key, sessionState);
     }
     let outcome: 'completed' | 'failed' | 'stopped' = 'failed';
+    let streamStarted = false;
     try {
       const piSession = await this.createOrResumePiSession(session, {
         agentOptions,
         persistPiSessionId,
       });
       sessionState.piSession = piSession;
+      streamStarted = true;
       const { finishedOk, turnUsage } = await processPiSessionStream({
         writer,
         subscribe: (listener) =>
@@ -355,21 +368,32 @@ export class PiAgentService {
           'Pi session stream error'
         );
         try {
-          await persistStatus?.((err as Error).message);
+          if (!streamStarted) {
+            await this._recordPiTurnError(writer, (err as Error).message);
+          } else {
+            await persistStatus?.((err as Error).message);
+            this.app.service('sessions').emit('app:error', {
+              sessionId: session.id,
+              message: (err as Error).message,
+              user_id: session.user_id,
+            });
+          }
         } catch {
           // ignore secondary errors
         }
-        this.app.service('sessions').emit('app:error', {
-          sessionId: session.id,
-          message: (err as Error).message,
-          user_id: session.user_id,
-        });
         outcome = 'failed';
       } else {
         outcome = 'stopped';
       }
       return { outcome, turnUsage: emptyTurnUsage() };
     } finally {
+      if (!streamStarted) {
+        try {
+          await writer.finish();
+        } catch {
+          // ignore writer cleanup errors
+        }
+      }
       if (ownsActiveSession) {
         this._activeSessions.delete(key);
       }
@@ -548,20 +572,26 @@ export class PiAgentService {
             await this.app
               .service('sessions')
               .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
-            await this._persistStatusMessage(
-              sessionId,
-              userId,
-              (err as Error).message,
-              session,
-              channel
-            );
+            if (writer) {
+              await this._recordPiTurnError(writer, (err as Error).message);
+            } else {
+              await this._persistStatusMessage(
+                sessionId,
+                userId,
+                (err as Error).message,
+                session,
+                channel
+              );
+              this.app.service('sessions').emit('app:error', {
+                sessionId,
+                message: (err as Error).message,
+                user_id: userId,
+              });
+            }
           }
         } catch {
           // ignore secondary errors
         }
-        this.app
-          .service('sessions')
-          .emit('app:error', { sessionId, message: (err as Error).message, user_id: userId });
       }
     } finally {
       const clearField =
@@ -582,6 +612,32 @@ export class PiAgentService {
         );
       }
     }
+  }
+
+  async _bindPiSessionModel(
+    piSession: PiAgentSession,
+    modelRuntime: Awaited<ReturnType<typeof createPiModelRuntime>>,
+    modelId: string,
+    envVar: string,
+    options: {
+      apiKey?: string | null;
+      config?: Record<string, unknown> | null;
+    } = {}
+  ) {
+    const resolved = await resolvePiSessionModel(modelRuntime, modelId, envVar, {
+      apiKey: options.apiKey,
+      config: options.config,
+    });
+    if (resolved.error || !resolved.model) {
+      throw new Error(resolved.error ?? `Could not resolve Pi model "${modelId}"`);
+    }
+    await piSession.setModel(resolved.model, { thinkingLevel: resolved.thinkingLevel });
+  }
+
+  async _recordPiTurnError(writer: MessageStreamWriter | null | undefined, message: string) {
+    const text = String(message ?? '').trim();
+    if (!writer || !text) return;
+    await writer.apply(piTurnResultOps('error', text));
   }
 
   async _persistStatusMessage(
@@ -649,26 +705,36 @@ Task: ${initialPrompt}`;
 
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
     const modelId = session?.model || PI_METADATA_MODEL_ID;
-    const { model } = resolveCliModel({ cliModel: modelId, modelRuntime });
-    if (!model) {
-      return { label, branchName };
-    }
 
     const cwd = process.cwd();
     const agentDir = undefined;
     const settingsManager = SettingsManager.create(cwd, agentDir);
-    const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: cwd, settingsManager });
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir: cwd,
+      settingsManager,
+      additionalExtensionPaths: lunaroutePiAdditionalExtensionPaths(envVar),
+    });
     await resourceLoader.reload();
     const sessionManager = SessionManager.inMemory(cwd);
     const { session: piSession } = await createAgentSession({
       cwd,
       modelRuntime,
-      model,
+      model: undefined,
       resourceLoader,
       settingsManager,
       sessionManager,
       customTools: [],
     });
+
+    try {
+      await this._bindPiSessionModel(piSession, modelRuntime, modelId, envVar, {
+        apiKey,
+        config,
+      });
+    } catch {
+      return { label, branchName };
+    }
 
     let collectedText = '';
     const unsubscribe = piSession.subscribe((event) => {

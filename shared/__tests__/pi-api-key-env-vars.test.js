@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   PI_API_KEY_ENV_VARS,
+  isLunaroutePiApiKeyEnvVar,
   isPiApiKeyEnvVar,
   normalizePiApiKeyEnvVar,
   piProviderIdForEnvVar,
@@ -25,6 +26,9 @@ describe('pi-api-key-env-vars', () => {
     expect(piProviderIdForEnvVar('OPENAI_API_KEY')).toBe('openai');
     expect(piProviderIdForEnvVar('OPENCODE_GO_API_KEY')).toBe('opencode-go');
     expect(piProviderIdForEnvVar('OPENCODE_API_KEY')).toBe('opencode');
+    expect(piProviderIdForEnvVar('LUNAROUTE_API_KEY')).toBe('lunaroute');
+    expect(isLunaroutePiApiKeyEnvVar('LUNAROUTE_API_KEY')).toBe(true);
+    expect(isLunaroutePiApiKeyEnvVar('ANTHROPIC_API_KEY')).toBe(false);
   });
 
   it('falls back to the anthropic provider when the env var is unset', () => {

@@ -41,10 +41,20 @@ export const AGENT_CONFIG_LOGO_OPTIONS = [
   { id: 'Minimax', fullTitle: 'MiniMax' },
   { id: 'Pi', fullTitle: 'Pi' },
   { id: 'LobeHub', fullTitle: 'LobeHub' },
+  { id: 'LunaRoute', fullTitle: 'LunaRoute' },
 ];
+
+/** Lobe icon ids with bundled client assets (see `client/src/utils/agent-config-custom-logos.js`). */
+export const CUSTOM_AGENT_CONFIG_LOGO_IDS = ['LunaRoute'];
 
 /** @type {Set<string>} */
 export const LOBE_ICON_IDS = new Set(AGENT_CONFIG_LOGO_OPTIONS.map((entry) => entry.id));
+
+/** @type {Set<string>} */
+export const SUPPORTED_AGENT_CONFIG_LOGO_IDS = new Set([
+  ...LOBE_ICON_IDS,
+  ...CUSTOM_AGENT_CONFIG_LOGO_IDS,
+]);
 
 /** Lobe icon id used when `agent_configs.logo` is null. */
 export const SDK_DEFAULT_LOBE_ICON = {
@@ -63,7 +73,7 @@ export const SDK_DEFAULT_LOGO_OPTION = '__sdk_default__';
 function storedLogoId(raw) {
   if (raw == null || raw === '') return null;
   const s = String(raw).trim();
-  return LOBE_ICON_IDS.has(s) ? s : null;
+  return SUPPORTED_AGENT_CONFIG_LOGO_IDS.has(s) ? s : null;
 }
 
 /**

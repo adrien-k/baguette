@@ -1,6 +1,7 @@
 /** @typedef {{ env: string, label: string, provider_id: string }} PiApiKeyEnvVarEntry */
 
 export const DEFAULT_PI_API_KEY_ENV_VAR = 'ANTHROPIC_API_KEY';
+export const LUNAROUTE_PI_API_KEY_ENV_VAR = 'LUNAROUTE_API_KEY';
 
 /**
  * Primary API-key env vars from https://pi.dev/docs/latest/providers#use-an-api-key-from-the-environment
@@ -22,6 +23,7 @@ export const PI_API_KEY_ENV_VARS = [
   { env: 'CEREBRAS_API_KEY', label: 'Cerebras', provider_id: 'cerebras' },
   { env: 'XAI_API_KEY', label: 'xAI', provider_id: 'xai' },
   { env: 'OPENROUTER_API_KEY', label: 'OpenRouter', provider_id: 'openrouter' },
+  { env: 'LUNAROUTE_API_KEY', label: 'LunaRoute', provider_id: 'lunaroute' },
   { env: 'AI_GATEWAY_API_KEY', label: 'Vercel AI Gateway', provider_id: 'vercel-ai-gateway' },
   { env: 'ZAI_API_KEY', label: 'ZAI Coding Plan (Global)', provider_id: 'zai' },
   { env: 'ZAI_CODING_CN_API_KEY', label: 'ZAI Coding Plan (China)', provider_id: 'zai-coding-cn' },
@@ -90,4 +92,10 @@ export function piProviderIdForEnvVar(envVar) {
   const normalized = normalizePiApiKeyEnvVar(envVar ?? DEFAULT_PI_API_KEY_ENV_VAR);
   const entry = PI_API_KEY_ENV_VARS.find((e) => e.env === normalized);
   return entry?.provider_id ?? 'anthropic';
+}
+
+/** @param {string | null | undefined} envVar */
+export function isLunaroutePiApiKeyEnvVar(envVar) {
+  if (envVar == null || String(envVar).trim() === '') return false;
+  return String(envVar).trim() === LUNAROUTE_PI_API_KEY_ENV_VAR;
 }

@@ -22,7 +22,7 @@ export async function listModelsForAgentConfig(sdk, config, { refresh = false } 
       return listPiModels(
         config.api_key,
         config.api_key_env_var || defaultAgentConfigApiKeyEnvVar('pi'),
-        { refresh }
+        { refresh, config }
       );
     case 'mock':
       if (!isMockAgentSdkEnabled()) return [];

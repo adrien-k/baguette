@@ -15,6 +15,7 @@ describe('agent-config-logo', () => {
   it('normalizes empty to null', () => {
     expect(normalizeAgentConfigLogo(null)).toBeNull();
     expect(normalizeAgentConfigLogo('OpenRouter')).toBe('OpenRouter');
+    expect(normalizeAgentConfigLogo('LunaRoute')).toBe('LunaRoute');
   });
 
   it('rejects unknown logos', () => {

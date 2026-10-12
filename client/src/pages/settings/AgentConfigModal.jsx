@@ -8,6 +8,7 @@ import SearchableSelect from '../../components/SearchableSelect';
 import AgentTestButton from '../../components/AgentTestButton.jsx';
 import AgentConfigDefaultModelPicker from './AgentConfigDefaultModelPicker.jsx';
 import AgentConfigLogoPicker from './AgentConfigLogoPicker.jsx';
+import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
 import { agentConfigsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { sdkDisplayName } from '@baguette/shared/agent-config-labels.js';
@@ -21,6 +22,7 @@ import {
   buildAgentConfigConnectivityRequest,
   buildAgentConfigCredentialOverrides,
 } from '../../utils/agentConfigCredentialOverrides.js';
+import { agentConfigSecretPlaceholder } from '../../utils/agentConfigSecretPlaceholder.js';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { INPUT_CLASS } from '../../utils/ui.js';
 
@@ -82,7 +84,8 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
       );
       setLogo(config.logo ?? null);
       setMoreOpen(
-        Boolean(config.api_url?.trim()) ||
+        Boolean(config.logo) ||
+          Boolean(config.api_url?.trim()) ||
           Boolean(
             config.extra_env_json &&
             String(
@@ -160,8 +163,7 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
     }
   };
 
-  const secretPlaceholder =
-    sdk === 'cursor' ? 'cursor-…' : sdk === 'pi' ? 'provider API key' : 'sk-ant-…';
+  const secretPlaceholder = agentConfigSecretPlaceholder(sdk, apiKeyEnvVar);
 
   const pickerConfig = liveConfig?.id ? liveConfig : null;
   const agentConfigId = config?.id ?? liveConfig?.id ?? null;
@@ -177,6 +179,13 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
         apiKeyEnvVar,
       }),
     [sdk, config, apiUrl, apiKey, apiKeyDirty, apiKeyEnvVar]
+  );
+
+  const renderSdkOption = (option) => (
+    <span className="flex items-center gap-2 min-w-0">
+      <AgentConfigLogo sdk={option.value} logo={null} className="w-5 h-5 shrink-0" size={20} />
+      <span className="truncate">{option.label}</span>
+    </span>
   );
 
   const connectivityRequest = useMemo(
@@ -203,22 +212,23 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
       <Field label="Label" hint="Max 20 characters, unique per account.">
         <TextInput maxLength={20} value={label} onChange={(e) => setLabel(e.target.value)} />
       </Field>
-      <Field label="SDK">
-        <select
-          className={INPUT_CLASS}
+      <Field
+        label="SDK"
+        hint="Uses each SDK’s default logo. Pick a different mark under More options."
+      >
+        <SearchableSelect
+          options={sdkOptions}
           value={sdk}
-          disabled={isEdit}
-          onChange={(e) => setSdk(e.target.value)}
-        >
-          {sdkOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Logo" hint="Shown in the model picker; defaults to the SDK mark.">
-        <AgentConfigLogoPicker sdk={sdk} value={logo} onChange={setLogo} disabled={saving} />
+          onChange={setSdk}
+          disabled={isEdit || saving}
+          disabledText="SDK cannot be changed after creation"
+          placeholder="Select SDK…"
+          emptyText="No matching SDKs"
+          getOptionValue={(o) => o.value}
+          getOptionLabel={(o) => o.label}
+          renderOption={renderSdkOption}
+          renderSelected={renderSdkOption}
+        />
       </Field>
       {sdk === 'claude' ? (
         <Field label="Credential type">
@@ -287,8 +297,14 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
         </button>
         {moreOpen && (
           <div className="mt-3 space-y-4">
+            <Field label="Logo" hint="Shown in the model picker; defaults to the SDK mark.">
+              <AgentConfigLogoPicker sdk={sdk} value={logo} onChange={setLogo} disabled={saving} />
+            </Field>
             {sdk === 'claude' ? (
-              <Field label="API base URL">
+              <Field
+                label="API base URL"
+                hint="Routing non-Anthropic models through the Claude SDK can produce incorrect usage and cost figures. Prefer the Pi SDK for accurate billing."
+              >
                 <TextInput
                   value={apiUrl}
                   onChange={(e) => setApiUrl(e.target.value)}
