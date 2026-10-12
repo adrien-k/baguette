@@ -52,6 +52,7 @@ import type {
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
 import { PI_AGENT_SDK_KEY, PI_AGENT_SDK_LABEL, PI_AGENT_SERVICE_PATH } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
+import { endBuilderTurnAwaitingUser } from '../agent-awaiting-user.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
 const METADATA_TIMEOUT_MS = 30_000;
@@ -65,6 +66,7 @@ type PiSessionState = {
   turnId?: number | null;
   channel?: MessageChannel;
   turnAgentConfigId?: number | null;
+  endTurnAwaitingUser?: boolean;
 };
 
 export type PiBuildAgentOptionsResult = CreateAgentSessionOptions & {
@@ -412,6 +414,18 @@ export class PiAgentService {
     this._activeSessions.delete(activeKey);
   }
 
+  async endTurnAfterBaguetteTool(sessionId: number): Promise<void> {
+    await endBuilderTurnAwaitingUser(
+      this.app,
+      this._activeSessions.get(sessionId),
+      sessionId,
+      async (sessionState) => {
+        sessionState.abortController?.abort();
+        await sessionState.piSession?.abort();
+      }
+    );
+  }
+
   async _runTurn(
     session: AgentSessionRow,
     parsed: unknown,
@@ -467,6 +481,7 @@ export class PiAgentService {
     };
     this._activeSessions.set(activeKey, sessionState);
 
+    let awaitingUser = false;
     try {
       if (channel !== 'review') {
         await this.app
@@ -523,8 +538,9 @@ export class PiAgentService {
         },
       });
 
-      turnFinishedOk = outcome === 'completed';
-      if (turnFinishedOk) {
+      awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
+      turnFinishedOk = outcome === 'completed' || awaitingUser;
+      if (turnFinishedOk && !awaitingUser) {
         await this.app
           .service('sessions')
           .recordPiUsage(session, turnUsage ?? emptyTurnUsage(), {
@@ -551,12 +567,13 @@ export class PiAgentService {
         await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
           sdk: 'pi',
         });
-      } else if (outcome === 'failed' && channel !== 'review') {
+      } else if (outcome === 'failed' && channel !== 'review' && !awaitingUser) {
         await this.app
           .service('sessions')
           .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
       }
     } catch (err) {
+      awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
       if ((err as Error).name !== 'AbortError') {
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId, err: (err as Error).message }, 'Pi session stream error');
@@ -592,6 +609,8 @@ export class PiAgentService {
         } catch {
           // ignore secondary errors
         }
+      } else if (awaitingUser) {
+        turnFinishedOk = true;
       }
     } finally {
       const clearField =
@@ -825,6 +844,7 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
       'isInterruptedSessionResumable',
+      'endTurnAfterBaguetteTool',
     ],
   });
   registerAgentSdk(app, {

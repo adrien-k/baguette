@@ -56,6 +56,7 @@ import {
   CLAUDE_AGENT_SERVICE_PATH,
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
+import { endBuilderTurnAwaitingUser } from '../agent-awaiting-user.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
 
@@ -84,6 +85,8 @@ type ClaudeAgentState = {
   activeKey?: string | number;
   /** Agent config for this turn (snapshot at turn start; used when recording usage). */
   turnAgentConfigId?: number | null;
+  /** Set when a turn-ending Baguette MCP tool ends the turn early for user input. */
+  endTurnAwaitingUser?: boolean;
 };
 
 type RunTurnOpts = {
@@ -313,6 +316,19 @@ export class ClaudeAgentService {
 
   async stopTurn(activeKey: string | number): Promise<void> {
     await this._disposeActiveSession(activeKey);
+  }
+
+  /** End the builder turn after AskUserQuestions / CreatePlan / EditPlan (see wrap-baguette-tool-handler). */
+  async endTurnAfterBaguetteTool(sessionId: number): Promise<void> {
+    await endBuilderTurnAwaitingUser(
+      this.app,
+      this.getActiveSession(sessionId),
+      sessionId,
+      (sessionState) => {
+        sessionState.channel.end();
+        sessionState.abortController.abort();
+      }
+    );
   }
 
   async handleMessageCreated(row: MessageRowLike): Promise<void> {
@@ -767,6 +783,7 @@ export class ClaudeAgentService {
     const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
+    const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
     const { turnComplete, streamFailed, outcome, lastResult } = await this._consumeQuery(
       sessionState,
       {
@@ -829,18 +846,21 @@ export class ClaudeAgentService {
 
     // One terminal status for the whole turn (including background-task auto-resume).
     // Usage is recorded from the last SDK result; queued follow-ups start after this.
-    if (!isReview && (turnComplete || streamFailed)) {
+    if (!isReview && (turnComplete || streamFailed) && !awaitingUser) {
       const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
       await this.app
         .service('sessions')
         .patch(sessionId, { status: terminalStatus }, { user: { id: userId } });
     }
 
-    if (turnComplete && !isReview && outcome === 'completed') {
-      try {
-        await this.app.service('sessions').onTurnComplete(sessionId);
-      } catch (err) {
-        logger.warn({ sessionId, err: (err as Error).message }, 'Failed to send queued message');
+    if (!isReview) {
+      const shouldCompleteTurn = awaitingUser || (turnComplete && outcome === 'completed');
+      if (shouldCompleteTurn) {
+        try {
+          await this.app.service('sessions').onTurnComplete(sessionId);
+        } catch (err) {
+          logger.warn({ sessionId, err: (err as Error).message }, 'Failed to send queued message');
+        }
       }
     }
   }
@@ -1149,6 +1169,7 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'handleMessageCreated',
       'generateSessionMetadata',
       'isInterruptedSessionResumable',
+      'endTurnAfterBaguetteTool',
     ],
   });
   registerAgentSdk(app, {

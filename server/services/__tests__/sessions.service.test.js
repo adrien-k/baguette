@@ -1795,6 +1795,44 @@ describe('Sessions service - find, get, create', () => {
       pushSpy.mockRestore();
     });
 
+    it('does not flush queued messages when onTurnComplete runs on an approval session', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await app
+        .get('db')('queued_messages')
+        .insert({
+          session_id: created.id,
+          user_id: userId1,
+          kind: 'turn',
+          agent_type: 'builder',
+          message_json: JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: 'queued' },
+          }),
+          created_at: new Date().toISOString(),
+        });
+
+      await app
+        .service('sessions')
+        .patch(created.id, { status: 'approval' }, params({ id: userId1 }));
+
+      const flushSpy = vi.spyOn(app.service('sessions'), 'flushNextQueuedTurn');
+      const turnHandler = vi.fn();
+      app.service('sessions').on('turn:complete', turnHandler);
+
+      await app.service('sessions').onTurnComplete(created.id);
+
+      expect(flushSpy).not.toHaveBeenCalled();
+      expect(turnHandler).toHaveBeenCalledTimes(1);
+      const remaining = await app
+        .get('db')('queued_messages')
+        .where({ session_id: created.id, kind: 'turn' });
+      expect(remaining).toHaveLength(1);
+      flushSpy.mockRestore();
+    });
+
     it('does not flush queued messages when onTurnComplete runs on a stopped session', async () => {
       const created = await app
         .service('sessions')
@@ -2286,14 +2324,16 @@ describe('Sessions service - restartInterruptedSessions', () => {
     ]);
   });
 
-  it('recovers sessions waiting on approval', async () => {
-    await seedSession({ status: 'approval', claude_session_id: 'claude-abc' });
+  it('leaves sessions waiting on user approval alone on restart', async () => {
+    const sessId = await seedSession({ status: 'approval', claude_session_id: 'claude-abc' });
 
     expect(await app.service('sessions').restartInterruptedSessions()).toEqual({
-      restarted: 1,
+      restarted: 0,
       stopped: 0,
       failed: 0,
     });
+    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('approval');
+    expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
   });
 
   it('leaves settled and archived sessions alone', async () => {

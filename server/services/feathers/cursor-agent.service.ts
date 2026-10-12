@@ -62,6 +62,7 @@ import type {
   TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
+import { endBuilderTurnAwaitingUser } from '../agent-awaiting-user.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -84,6 +85,7 @@ type CursorSessionState = {
   turnId?: number | null;
   channel?: MessageChannel;
   turnAgentConfigId?: number | null;
+  endTurnAwaitingUser?: boolean;
 };
 
 type StreamOneRunOpts = {
@@ -579,6 +581,18 @@ ${body}`,
     this._activeSessions.delete(activeKey);
   }
 
+  async endTurnAfterBaguetteTool(sessionId: number): Promise<void> {
+    await endBuilderTurnAwaitingUser(
+      this.app,
+      this._activeSessions.get(sessionId),
+      sessionId,
+      async (sessionState) => {
+        sessionState.abortController?.abort();
+        await sessionState.currentRun?.cancel();
+      }
+    );
+  }
+
   async _runTurn(
     session: AgentSessionRow,
     parsed: unknown,
@@ -634,6 +648,7 @@ ${body}`,
     };
     this._activeSessions.set(activeKey, sessionState);
     const turnUsage = emptyTurnUsage() as TurnUsage;
+    let awaitingUser = false;
     try {
       if (channel !== 'review') {
         await this.app
@@ -688,7 +703,9 @@ ${body}`,
         }
       );
 
-      if (allFinishedOk) {
+      awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
+
+      if (allFinishedOk && !awaitingUser) {
         turnFinishedOk = true;
         await this.app
           .service('sessions')
@@ -716,8 +733,11 @@ ${body}`,
             .service('sessions')
             .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
         }
+      } else if (awaitingUser) {
+        turnFinishedOk = true;
       }
     } catch (err) {
+      awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
       if ((err as Error).name !== 'AbortError') {
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId, err: (err as Error).message }, 'Cursor session stream error');
@@ -747,6 +767,8 @@ ${body}`,
         this.app
           .service('sessions')
           .emit('app:error', { sessionId, message: (err as Error).message, user_id: userId });
+      } else if (awaitingUser) {
+        turnFinishedOk = true;
       }
     } finally {
       const clearField =
@@ -1117,6 +1139,7 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
       'isInterruptedSessionResumable',
+      'endTurnAfterBaguetteTool',
     ],
   });
   registerAgentSdk(app, {

@@ -56,6 +56,7 @@ import { isGlobalSession } from '../../../shared/session-scope.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
+import { isSessionAwaitingUser } from '../agent-awaiting-user.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
@@ -188,8 +189,9 @@ export class SessionsService extends KnexService {
   /**
    * Recover sessions that were mid-turn when the server last stopped.
    *
-   * A session left in `running`/`approval` has no agent process behind it after a reboot, so it
-   * would otherwise sit there forever. Sessions whose agent conversation can be resumed
+   * A session left in `running` has no agent process behind it after a reboot, so it
+   * would otherwise sit there forever. Sessions in `approval` are waiting on the user and are
+   * left unchanged. Sessions whose agent conversation can be resumed
    * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
    * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
    * Reviews left in `review_status: 'running'` are resumed the same way when a review agent id is stored.
@@ -206,7 +208,7 @@ export class SessionsService extends KnexService {
     let interrupted;
     try {
       interrupted = await db('sessions')
-        .whereIn('status', ['running', 'approval'])
+        .whereIn('status', ['running'])
         .whereNull('archived_at')
         .select('id', 'user_id', 'agent_sdk', 'claude_session_id', 'cursor_agent_id');
     } catch (err) {
@@ -1446,6 +1448,11 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (session?.status === 'stopped') return;
+
+    if (isSessionAwaitingUser(session)) {
+      this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
+      return;
+    }
 
     const fresh = await db('sessions').where({ id: sessionId }).first();
     if (fresh) {
