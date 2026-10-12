@@ -43,6 +43,7 @@ export function issuesFixAllAgentPrompt(sessionId) {
   return (
     `Fix all submitted session review issues on this session.\n\n` +
     `Start by calling ListIssues with status "submitted" (session_id ${sessionId}). ` +
-    `Implement fixes for each submitted issue, then call UpdateIssueStatus with status "resolved" for every issue you actually fixed.`
+    `For each issue: call ReadIssue for details, implement the fix, then call UpdateIssueStatus with status "resolved" before moving on to the next issue. ` +
+    `Prefer one separate git commit per issue; combine multiple issues into a single commit only when they can be fixed together easily in one change.`
   );
 }

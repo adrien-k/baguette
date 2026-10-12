@@ -21,6 +21,8 @@ describe('issue fix agent prompts', () => {
     const text = issuesFixAllAgentPrompt(42);
     expect(text).toContain('ListIssues with status "submitted"');
     expect(text).toContain('session_id 42');
+    expect(text).toContain('one separate git commit per issue');
+    expect(text).toContain('fixed together easily');
   });
 });
 
