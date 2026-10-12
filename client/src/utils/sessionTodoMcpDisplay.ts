@@ -2,8 +2,6 @@ import type { SessionTodoItem } from '../components/chat/SessionTodoList.tsx';
 
 const DISPLAY_STATUS: Record<string, string> = {
   CreateTodo: 'pending',
-  ProcessTodo: 'in_progress',
-  CompleteTodo: 'completed',
 };
 
 export type McpTodoPayload = {
@@ -19,22 +17,34 @@ function asTodoItem(value: unknown): SessionTodoItem | null {
   return t;
 }
 
+function nestedToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const nested = args.input ?? args.arguments ?? args.params;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  return {};
+}
+
+export function todoIdFromArgs(args: Record<string, unknown>): number | null {
+  const raw = args.id ?? nestedToolArgs(args).id;
+  if (raw == null) return null;
+  const id = Number(raw);
+  return Number.isInteger(id) ? id : null;
+}
+
 export function todoContentFromArgs(args: Record<string, unknown>): string | null {
   if (typeof args.content === 'string' && args.content.trim()) {
     return args.content.trim();
   }
-  const nested = args.input ?? args.arguments ?? args.params;
-  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-    const c = (nested as { content?: unknown }).content;
-    if (typeof c === 'string' && c.trim()) return c.trim();
-  }
+  const nested = nestedToolArgs(args);
+  const c = nested.content;
+  if (typeof c === 'string' && c.trim()) return c.trim();
   return null;
 }
 
 function todoFromTodosList(
   toolName: string,
-  mcpResult: McpTodoPayload | null,
-  args: Record<string, unknown>
+  mcpResult: McpTodoPayload | null
 ): SessionTodoItem | null {
   const todos = mcpResult?.todos;
   if (!Array.isArray(todos) || todos.length === 0) return null;
@@ -45,14 +55,10 @@ function todoFromTodosList(
     return asTodoItem(todos[todos.length - 1]);
   }
 
-  const id = args.id != null ? Number(args.id) : null;
-  if (id != null && Number.isInteger(id)) {
-    const match = todos.find((t) => Number(t.id) === id);
-    if (match) return asTodoItem(match) ?? null;
-  }
   return null;
 }
 
+/** Resolve todo payload for CreateTodo chat blocks. */
 export function resolveSessionTodoForTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -65,7 +71,7 @@ export function resolveSessionTodoForTool(
     return { ...fromResult, status: displayStatus };
   }
 
-  const fromList = todoFromTodosList(toolName, mcpResult, args);
+  const fromList = todoFromTodosList(toolName, mcpResult);
   if (fromList) {
     return { ...fromList, status: displayStatus };
   }
@@ -73,15 +79,6 @@ export function resolveSessionTodoForTool(
   const content = todoContentFromArgs(args);
   if (toolName === 'CreateTodo' && content) {
     return { content, status: displayStatus };
-  }
-
-  if ((toolName === 'ProcessTodo' || toolName === 'CompleteTodo') && args.id != null) {
-    const id = Number(args.id);
-    return {
-      id: Number.isInteger(id) ? id : undefined,
-      content: content ?? `Todo #${args.id}`,
-      status: displayStatus,
-    };
   }
 
   return null;

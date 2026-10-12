@@ -76,8 +76,10 @@ export function createTodoHandlers(session, app) {
         if (todoId == null) return fail('Invalid todo id');
         const existing = await app.service('session-todos').get(todoId, userParams);
         if (Number(existing.session_id) !== Number(sessionId)) return fail('Todo not found');
-        const todo = serializeTodo(existing);
-        await app.service('session-todos').remove(todoId, userParams);
+        const row = await app
+          .service('session-todos')
+          .patch(todoId, { status: 'completed' }, userParams);
+        const todo = serializeTodo(row);
         const todos = await listOpenTodos(app, sessionId, userId);
         return ok({ todo, todos });
       } catch (err) {

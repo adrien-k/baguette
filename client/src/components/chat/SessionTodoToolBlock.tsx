@@ -1,6 +1,9 @@
+import { Link, useParams } from 'react-router-dom';
 import { SessionTodoMarkdown, SessionTodoStatusBadge } from './SessionTodoList.tsx';
+import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import {
   resolveSessionTodoForTool,
+  todoIdFromArgs,
   type McpTodoPayload,
 } from '../../utils/sessionTodoMcpDisplay.ts';
 
@@ -16,6 +19,43 @@ const DISPLAY_STATUS: Record<string, string> = {
   CompleteTodo: 'completed',
 };
 
+function SessionTodoStatusLine({
+  toolName,
+  args,
+  result,
+  isError = false,
+}: {
+  toolName: 'ProcessTodo' | 'CompleteTodo';
+  args: Record<string, unknown>;
+  result?: unknown;
+  isError?: boolean;
+}) {
+  const { short_id } = useParams();
+  const { sessionUrl } = useFilterRoutes();
+  const isRunning = result == null;
+  const id = todoIdFromArgs(args);
+  const heading = TOOL_HEADING[toolName] ?? toolName;
+  const planTo =
+    short_id != null ? `${sessionUrl(short_id)}?view=plan${id != null ? `#todo-${id}` : ''}` : null;
+
+  return (
+    <div className="text-xs font-mono py-0.5 pl-1 flex items-center gap-1.5 text-faint flex-wrap">
+      <span>↳</span>
+      <span className={isError ? 'text-red-700' : ''}>{heading}</span>
+      {id != null && <span className="text-faint tabular-nums">#{id}</span>}
+      {isError && <span className="text-red-700">[error]</span>}
+      {isRunning && !isError && (
+        <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
+      )}
+      {planTo && (
+        <Link to={planTo} className="text-accent hover:underline shrink-0 normal-case">
+          Todos
+        </Link>
+      )}
+    </div>
+  );
+}
+
 export default function SessionTodoToolBlock({
   toolName,
   args,
@@ -29,6 +69,12 @@ export default function SessionTodoToolBlock({
   result?: unknown;
   isError?: boolean;
 }) {
+  if (toolName === 'ProcessTodo' || toolName === 'CompleteTodo') {
+    return (
+      <SessionTodoStatusLine toolName={toolName} args={args} result={result} isError={isError} />
+    );
+  }
+
   const isRunning = result == null;
   const todo = resolveSessionTodoForTool(toolName, args, mcpResult as McpTodoPayload | null);
   const heading = TOOL_HEADING[toolName] ?? toolName;

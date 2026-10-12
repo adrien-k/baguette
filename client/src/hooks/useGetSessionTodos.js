@@ -3,7 +3,7 @@ import { sessionTodosService } from '../feathers.js';
 
 const OPEN_TODO_STATUSES = new Set(['pending', 'in_progress']);
 
-export function useGetSessionTodos(sessionId, { enabled = true } = {}) {
+export function useGetSessionTodos(sessionId, { enabled = true, openOnly = true } = {}) {
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -17,10 +17,13 @@ export function useGetSessionTodos(sessionId, { enabled = true } = {}) {
       .find({
         query: { session_id: sessionId, $sort: { sort_order: 1, id: 1 }, $limit: 500 },
       })
-      .then((res) => setTodos((res.data ?? []).filter((row) => OPEN_TODO_STATUSES.has(row.status))))
+      .then((res) => {
+        const rows = res.data ?? [];
+        setTodos(openOnly ? rows.filter((row) => OPEN_TODO_STATUSES.has(row.status)) : rows);
+      })
       .catch(() => setTodos([]))
       .finally(() => setLoading(false));
-  }, [enabled, sessionId]);
+  }, [enabled, openOnly, sessionId]);
 
   useEffect(() => {
     reload();

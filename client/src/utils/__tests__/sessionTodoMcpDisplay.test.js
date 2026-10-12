@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSessionTodoForTool, todoContentFromArgs } from '../sessionTodoMcpDisplay.ts';
+import {
+  resolveSessionTodoForTool,
+  todoContentFromArgs,
+  todoIdFromArgs,
+} from '../sessionTodoMcpDisplay.ts';
 
 describe('todoContentFromArgs', () => {
   it('reads flat content', () => {
@@ -8,6 +12,12 @@ describe('todoContentFromArgs', () => {
 
   it('reads nested input.content', () => {
     expect(todoContentFromArgs({ input: { content: 'nested' } })).toBe('nested');
+  });
+});
+
+describe('todoIdFromArgs', () => {
+  it('reads nested tool id', () => {
+    expect(todoIdFromArgs({ input: { id: 7 } })).toBe(7);
   });
 });
 

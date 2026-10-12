@@ -1,6 +1,6 @@
 const TODO_STATUSES = ['pending', 'in_progress', 'completed'];
 
-/** Todos shown in ListTodos and session UI (completed rows are removed via CompleteTodo). */
+/** Todos with these statuses are returned by ListTodos (open items for the agent). */
 export const OPEN_TODO_STATUSES = ['pending', 'in_progress'];
 
 export function assertTodoStatus(status) {

@@ -75,7 +75,8 @@ export default function SessionTodoList({
         {list.map((todo, i) => (
           <li
             key={todo.id ?? i}
-            className="rounded-lg border border-line bg-inset/30 p-3 sm:p-4 space-y-2"
+            id={todo.id != null ? `todo-${todo.id}` : undefined}
+            className="rounded-lg border border-line bg-inset/30 p-3 sm:p-4 space-y-2 scroll-mt-4"
           >
             <div className="flex flex-wrap items-center gap-2">
               <SessionTodoIcon status={todo.status} />
