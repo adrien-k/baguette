@@ -10,7 +10,7 @@ import {
 
 const SAVE_DEBOUNCE_MS = 400;
 
-/** User-level Cursor model param preferences (shared across repos). */
+/** User-level default model param preferences for Claude, Cursor, and Pi (shared across repos). */
 export function useCursorModelPrefs() {
   const { user } = useAuth();
   const {

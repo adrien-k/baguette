@@ -1,5 +1,6 @@
 import { BadRequest, Forbidden } from '@feathersjs/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
+import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 
 function normalizeAgentType(value) {
   return value === 'reviewer' ? 'reviewer' : 'builder';
@@ -26,7 +27,7 @@ export function sessionMessageIdentity(session, agentType, overrides = {}) {
       : agentSdkForSession(session, agent_type);
   if (!model) throw new BadRequest('model is required');
   const row = { agent_type, agent_sdk, model };
-  if (modelParams != null && agent_sdk === 'cursor') {
+  if (modelParams != null && agentSdkSupportsModelParams(agent_sdk)) {
     row.model_params = modelParams;
   }
   return row;

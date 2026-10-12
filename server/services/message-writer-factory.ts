@@ -11,6 +11,7 @@ import {
 } from './cursor/cursor-mapping.ts';
 import { piBuildToolCallComplete, piBuildToolCallStart } from './pi/pi-mapping.ts';
 import { createClaudeTaskTracker } from '../../shared/claude-task-tracker.js';
+import { agentSdkSupportsModelParams } from '../../shared/agent-sdk-model-params.js';
 
 /** @param app Feathers application */
 export type WriterFactoryApp = {
@@ -49,7 +50,9 @@ function messageIdentityFromChannel(
     agent_type: channel === 'review' ? 'reviewer' : 'builder',
     agent_sdk: agentSdk,
     model,
-    ...(modelParams != null && agentSdk === 'cursor' ? { model_params: modelParams } : {}),
+    ...(modelParams != null && agentSdkSupportsModelParams(agentSdk)
+      ? { model_params: modelParams }
+      : {}),
   };
 }
 

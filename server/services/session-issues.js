@@ -32,7 +32,10 @@ export function issueAgentMetadataFromTurn(turnAgent = {}) {
   return {
     agent_sdk,
     model: turnAgent.model ?? null,
-    model_params: agent_sdk === 'cursor' ? (turnAgent.model_params ?? null) : null,
+    model_params:
+      agent_sdk === 'cursor' || agent_sdk === 'claude' || agent_sdk === 'pi'
+        ? (turnAgent.model_params ?? null)
+        : null,
   };
 }
 

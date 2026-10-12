@@ -10,7 +10,10 @@ vi.mock('../../lib/cache.js', () => ({
 }));
 
 vi.mock('../anthropic-models.js', () => ({
-  listModels: vi.fn(async () => [{ id: 'claude-sonnet-4-5', display_name: 'Sonnet' }]),
+  listModels: vi.fn(async () => ({
+    models: [{ id: 'claude-sonnet-4-5', display_name: 'Sonnet' }],
+    rejected_models: [],
+  })),
   modelsCacheKey: vi.fn((url) => `anthropic-models:${url ?? 'default'}`),
 }));
 

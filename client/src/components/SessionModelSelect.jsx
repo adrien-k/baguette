@@ -182,6 +182,8 @@ export default function SessionModelSelect({
   const agentSdk = selectedAgentConfig?.sdk ?? (isUnset ? null : agentConfigKey);
   const isCursor = agentSdk === 'cursor';
   const isPi = agentSdk === 'pi';
+  const isClaude = agentSdk === 'claude';
+  const usesModelParamVariants = isCursor || isPi || isClaude;
   const usesAgentPricingTable = isCursor || isPi;
   const selectedModelId = model || null;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
@@ -246,9 +248,9 @@ export default function SessionModelSelect({
     };
   }, [showAutoPush, autoPushOn, autoPushDisabled, onAutoPushChange]);
 
-  const cursorParamItems = useMemo(() => {
+  const modelParamItems = useMemo(() => {
     const items = [];
-    if (isCursor && variants.length > 0) {
+    if (usesModelParamVariants && variants.length > 0) {
       for (const paramId of orderedParamIds) {
         const valueOptions = paramValueOptionsFromVariants(variants, paramId, currentParams);
         const currentValue =
@@ -266,7 +268,7 @@ export default function SessionModelSelect({
           options,
           onSelect: (value) => {
             if (!selectedModelId || disabled) return;
-            const prefKey = prefKeyForParamId(paramId);
+            const prefKey = isCursor ? prefKeyForParamId(paramId) : null;
             if (prefKey && onCursorModelPrefChange) {
               onCursorModelPrefChange(prefKey, prefValueFromParamValue(paramId, value));
             }
@@ -284,6 +286,7 @@ export default function SessionModelSelect({
     }
     return items;
   }, [
+    usesModelParamVariants,
     isCursor,
     variants,
     orderedParamIds,
@@ -297,9 +300,9 @@ export default function SessionModelSelect({
   const dropdownItems = useMemo(() => {
     const items = [];
     if (autoPushPickerItem && !isSmUp) items.push(autoPushPickerItem);
-    items.push(...cursorParamItems);
+    items.push(...modelParamItems);
     return items;
-  }, [autoPushPickerItem, isSmUp, cursorParamItems]);
+  }, [autoPushPickerItem, isSmUp, modelParamItems]);
 
   const showInlineAutoPush = showAutoPush && isSmUp;
   const showParamPicker = dropdownItems.length > 0;

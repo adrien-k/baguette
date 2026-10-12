@@ -44,7 +44,13 @@ export async function listModelsForOwnedConfig(
   if (!row) throw new NotFound('Agent configuration not found');
   throwIfAgentConfigDeleted(row);
   const config = applyCredentialOverridesToConfig(decryptAgentConfigRow(row), credentialOverrides);
-  return listModelsForAgentConfigShape(app, { config, refresh });
+  let user = null;
+  try {
+    user = await app.service('users').get(userId, { provider: undefined });
+  } catch {
+    user = null;
+  }
+  return listModelsForAgentConfigShape(app, { config, refresh, user });
 }
 
 /**
@@ -57,16 +63,19 @@ async function listModelsForDraftConfig(app, { sdk, refresh = false, credentialO
     throw new BadRequest('sdk must be claude, cursor, pi, or mock');
   }
   const config = draftAgentConfigForConnectivityTest(sdk, credentialOverrides);
-  return listModelsForAgentConfigShape(app, { config, refresh });
+  return listModelsForAgentConfigShape(app, { config, refresh, user: null });
 }
 
-async function listModelsForAgentConfigShape(app, { config, refresh }) {
+async function listModelsForAgentConfigShape(app, { config, refresh, user = null }) {
   const configs = app.service('agent-configs');
   if (!configs.getSdkMeta(config.sdk)) {
     throw new NotFound(`Agent SDK "${config.sdk}" is not available`);
   }
-  const models = await listModelsForAgentConfig(config.sdk, config, { refresh });
-  return models ?? [];
+  const result = await listModelsForAgentConfig(config.sdk, config, { refresh, user });
+  return {
+    models: result?.models ?? [],
+    rejected_models: result?.rejected_models ?? [],
+  };
 }
 
 class AgentConfigsService extends KnexService {
@@ -178,22 +187,27 @@ class AgentConfigsService extends KnexService {
       params.query ?? {}
     );
     let models;
+    let rejected_models = [];
     if (id != null) {
-      models = await listModelsForOwnedConfig(this.app, {
+      const result = await listModelsForOwnedConfig(this.app, {
         configId: Number(id),
         userId,
         refresh,
         credentialOverrides,
       });
+      models = result.models;
+      rejected_models = result.rejected_models;
     } else {
       if (!sdk) throw new BadRequest('id or sdk is required');
-      models = await listModelsForDraftConfig(this.app, {
+      const result = await listModelsForDraftConfig(this.app, {
         sdk: String(sdk),
         refresh,
         credentialOverrides,
       });
+      models = result.models;
+      rejected_models = result.rejected_models;
     }
-    return { models };
+    return { models, rejected_models };
   }
 
   async lastUsed(data, params) {

@@ -152,7 +152,7 @@ function applyAnthropicBaseUrl(env, configuredUrl) {
 }
 
 /** Claude Code built-in model aliases (not gateway/third-party ids). */
-const CLAUDE_BUILTIN_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku']);
+const CLAUDE_BUILTIN_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku', 'default']);
 
 /**
  * Whether `modelId` refers to an Anthropic Claude model (native id or CLI alias).
@@ -164,6 +164,10 @@ export function isAnthropicClaudeModelId(modelId) {
   if (!id) return true;
   if (id.startsWith('claude-')) return true;
   if (CLAUDE_BUILTIN_MODEL_ALIASES.has(id.toLowerCase())) return true;
+  const withoutOneM = id.replace(/\[1m\]$/i, '');
+  if (withoutOneM !== id && CLAUDE_BUILTIN_MODEL_ALIASES.has(withoutOneM.toLowerCase())) {
+    return true;
+  }
   return false;
 }
 

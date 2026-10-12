@@ -2,8 +2,16 @@ import * as cache from '../lib/cache.js';
 import { listAnthropicApiModels } from '../lib/anthropic-api/models.js';
 import { anthropicApiAuthHeaders } from '../lib/anthropic-api/client.js';
 import { listModels, modelsCacheKey } from './anthropic-models.js';
-import { normalizeAnthropicBaseUrl } from './session-env.js';
+import { buildClaudeEnvFromPlainUser, normalizeAnthropicBaseUrl } from './session-env.js';
 import { claudeGatewayFields } from '../../shared/agent-config-api-key-env.js';
+
+/** Subprocess env for Claude Agent SDK calls using an agent_configs row. */
+function claudeSubprocessEnvFromAgentConfig(config, userRow = null) {
+  const { apiKey, authToken, baseUrl } = claudeGatewayFields(config);
+  return buildClaudeEnvFromPlainUser(userRow, apiKey, baseUrl, {
+    anthropicAuthToken: authToken,
+  });
+}
 
 const GATEWAY_MODELS_CACHE_TTL = 60 * 60; // 1 hour
 
@@ -27,11 +35,16 @@ export function gatewayDiscoveryActive(config) {
  * a base URL there is no gateway to query, so the SDK's built-in list applies.
  * Cached per API URL; throws on gateway failure — callers must surface the error.
  */
-export async function listClaudeModels(config, options = {}) {
+/**
+ * @returns {Promise<{ models: object[], rejected_models: { id: string, message: string }[] }>}
+ */
+export async function listClaudeModels(config, { refresh = false, user = null } = {}) {
   if (gatewayDiscoveryActive(config)) {
-    return listGatewayModels(config, options);
+    const models = await listGatewayModels(config, { refresh });
+    return { models, rejected_models: [] };
   }
-  return listModels(config.baseUrl ?? null, options);
+  const claudeEnv = claudeSubprocessEnvFromAgentConfig(config, user);
+  return listModels(config.baseUrl ?? null, { refresh, claudeEnv, probeAccess: refresh });
 }
 
 /**

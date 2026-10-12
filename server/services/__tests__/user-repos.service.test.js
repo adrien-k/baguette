@@ -9,7 +9,10 @@ import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
 vi.mock('../anthropic-models.js', () => ({
-  listModels: vi.fn().mockResolvedValue([{ id: 'sonnet', display_name: 'Sonnet' }]),
+  listModels: vi.fn().mockResolvedValue({
+    models: [{ id: 'sonnet', display_name: 'Sonnet' }],
+    rejected_models: [],
+  }),
   modelsCacheKey: vi.fn((url) => `anthropic-models:${url ?? 'default'}`),
 }));
 vi.mock('../../lib/cache.js', () => ({

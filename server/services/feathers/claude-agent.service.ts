@@ -22,6 +22,10 @@ import { resolveDataDirRelativePath } from '../../config.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from '../../claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
 import { isBaguetteUserMessage, resolveTurnModel } from '../../../shared/turn-model.js';
+import {
+  applyClaudeModelParamsToQueryInstance,
+  claudeSdkOptionsFromModelParams,
+} from '../../../shared/claude-model-params.js';
 import { reviewTurnKey } from './session-review.service.js';
 import {
   reviewTurnAgentConfigId,
@@ -119,6 +123,7 @@ type ConsumeQueryOpts = {
 
 type StartAgentLoopOpts = {
   model?: string | null;
+  modelParams?: unknown;
   channel?: MessageChannel;
   activeKey?: string | number;
   writer?: MessageStreamWriter | null;
@@ -177,6 +182,7 @@ export class ClaudeAgentService {
       settingSources = ['project'],
       resume,
       model,
+      modelParams,
       canUseTool,
       plugins,
     }: {
@@ -187,6 +193,7 @@ export class ClaudeAgentService {
       settingSources?: SettingSource[];
       resume?: string | boolean;
       model?: string | null;
+      modelParams?: unknown;
       canUseTool?: CanUseTool;
       plugins?: ClaudeSdkOptions['plugins'];
     } = {}
@@ -196,11 +203,13 @@ export class ClaudeAgentService {
     const cwd =
       resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
     const resolvedMcp = mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app));
+    const paramOptions = claudeSdkOptionsFromModelParams(modelParams);
     return {
       cwd,
       env: applyClaudeAgentModelEnv(claudeEnv, resolvedModel),
       resume: resume !== undefined ? resume || undefined : sessionRow.claude_session_id,
       model: resolvedModel,
+      ...paramOptions,
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources,
       mcpServers: { baguette: resolvedMcp },
@@ -222,7 +231,13 @@ export class ClaudeAgentService {
       canUseTool,
       allowedTools,
       model,
-    }: { canUseTool?: CanUseTool; allowedTools?: string[]; model?: string | null } = {}
+      modelParams,
+    }: {
+      canUseTool?: CanUseTool;
+      allowedTools?: string[];
+      model?: string | null;
+      modelParams?: unknown;
+    } = {}
   ): Promise<ClaudeSdkOptions> {
     let pluginRows: Array<Record<string, unknown>> = [];
     if (sessionRow.plugins) {
@@ -252,6 +267,7 @@ export class ClaudeAgentService {
       permissionMode: claudeSdkPermissionMode(sessionRow),
       plugins,
       ...(model !== undefined ? { model } : {}),
+      ...(modelParams !== undefined ? { modelParams } : {}),
     });
   }
 
@@ -442,6 +458,7 @@ export class ClaudeAgentService {
     if (resumeId) {
       const resumed = await this.ensureActiveSession(session, {
         model,
+        modelParams,
         channel,
         activeKey,
         writer,
@@ -452,6 +469,7 @@ export class ClaudeAgentService {
     } else {
       agentSession = await this.createAgentSession(session, {
         model,
+        modelParams,
         channel,
         activeKey,
         writer,
@@ -464,10 +482,18 @@ export class ClaudeAgentService {
 
   async createAgentSession(
     session: AgentSessionRow,
-    { model, channel = 'chat', activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
+    {
+      model,
+      modelParams,
+      channel = 'chat',
+      activeKey,
+      writer,
+      turnAgentConfigId,
+    }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     const sessionState = await this._startAgentLoop(session, {
       model,
+      modelParams,
       channel,
       activeKey,
       writer,
@@ -635,7 +661,14 @@ export class ClaudeAgentService {
    */
   async _startAgentLoop(
     sessionRow: AgentSessionRow,
-    { model, channel = 'chat', activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
+    {
+      model,
+      modelParams,
+      channel = 'chat',
+      activeKey,
+      writer,
+      turnAgentConfigId,
+    }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
@@ -651,6 +684,7 @@ export class ClaudeAgentService {
       const resumeId = sessionRow.review_claude_session_id;
       queryOptions = await this.app.service('session-review').buildClaudeQueryOptions(sessionRow, {
         model,
+        modelParams,
         continuation: !!resumeId || Boolean(extras.continuation),
         extraPrompt: extras.extraPrompt,
       });
@@ -659,6 +693,7 @@ export class ClaudeAgentService {
         canUseTool,
         allowedTools,
         ...(model !== undefined ? { model } : {}),
+        ...(modelParams !== undefined ? { modelParams } : {}),
       });
     }
 
@@ -694,12 +729,23 @@ export class ClaudeAgentService {
       logger.error({ sessionId }, err.message);
     });
 
+    if (modelParams != null) {
+      void applyClaudeModelParamsToQueryInstance(sessionState.queryInstance, modelParams).catch(
+        (err: Error) => {
+          logger.warn(
+            { sessionId, err: err.message },
+            'claude-agent: failed to apply model params to query'
+          );
+        }
+      );
+    }
+
     return sessionState;
   }
 
   async resumeSession(
     session: AgentSessionRow,
-    { model, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
+    { model, modelParams, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     const resumeId =
       channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
@@ -707,6 +753,7 @@ export class ClaudeAgentService {
 
     const sessionState = await this._startAgentLoop(session, {
       model,
+      modelParams,
       channel,
       activeKey,
       writer,
@@ -723,7 +770,7 @@ export class ClaudeAgentService {
 
   async ensureActiveSession(
     sessionOrId: SessionOrId,
-    { model, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
+    { model, modelParams, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState | null> {
     const sessionRow: AgentSessionRow | undefined =
       typeof sessionOrId === 'object' && sessionOrId !== null
@@ -740,6 +787,7 @@ export class ClaudeAgentService {
     if (!this._resumePromises.has(key)) {
       const promise = this.resumeSession(sessionRow, {
         model,
+        modelParams,
         channel,
         activeKey: key,
         writer,
@@ -999,6 +1047,15 @@ export class ClaudeAgentService {
     }
     session.queryInstance.setPermissionMode(effectiveMode);
     session.queryInstance.setModel(sessionRow.model ?? undefined);
+    void applyClaudeModelParamsToQueryInstance(
+      session.queryInstance,
+      sessionRow.model_params
+    ).catch((err: Error) => {
+      logger.warn(
+        { sessionId, err: err.message },
+        'claude-agent: failed to sync model params from session patch'
+      );
+    });
   }
 
   async stopSession(sessionId: number): Promise<void> {

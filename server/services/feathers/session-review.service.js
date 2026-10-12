@@ -86,10 +86,11 @@ function reviewUserRowFields(session, data = {}) {
 }
 
 function reviewTurnAgentMetadata(agentSdk, { model, modelParams }) {
+  const supportsParams = agentSdk === 'cursor' || agentSdk === 'claude' || agentSdk === 'pi';
   return {
     agent_sdk: agentSdk,
     model: model ?? null,
-    model_params: agentSdk === 'cursor' ? (modelParams ?? null) : null,
+    model_params: supportsParams ? (modelParams ?? null) : null,
   };
 }
 
@@ -144,9 +145,16 @@ class SessionReviewService {
     return config.sdk;
   }
 
-  async buildClaudeQueryOptions(session, { model, continuation = false, extraPrompt } = {}) {
+  async buildClaudeQueryOptions(
+    session,
+    { model, modelParams, continuation = false, extraPrompt } = {}
+  ) {
     const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
-    const turnAgent = reviewTurnAgentMetadata('claude', { model });
+    const resolvedParams =
+      modelParams !== undefined
+        ? modelParams
+        : (session.review_model_params ?? session.model_params ?? null);
+    const turnAgent = reviewTurnAgentMetadata('claude', { model, modelParams: resolvedParams });
     const resumeId = continuation ? session.review_claude_session_id : null;
     return await this.app.service('claude-agent').buildQueryOptions(session, {
       systemPrompt,
@@ -155,16 +163,25 @@ class SessionReviewService {
       settingSources: [],
       resume: resumeId,
       model: model || session.review_model || session.model,
+      modelParams: resolvedParams,
       permissionMode: 'acceptEdits',
     });
   }
 
-  async buildPiReviewAgentOptions(session, { model, continuation = false, extraPrompt } = {}) {
+  async buildPiReviewAgentOptions(
+    session,
+    { model, modelParams, continuation = false, extraPrompt } = {}
+  ) {
     const systemPrompt = await this._prepareReviewPrompt(session, extraPrompt, continuation);
-    const turnAgent = reviewTurnAgentMetadata('pi', { model });
+    const resolvedParams =
+      modelParams !== undefined
+        ? modelParams
+        : (session.review_model_params ?? session.model_params ?? null);
+    const turnAgent = reviewTurnAgentMetadata('pi', { model, modelParams: resolvedParams });
     const piAgent = this.app.service('pi-agent');
     return await piAgent.buildAgentOptions(session, {
       model: model || session.review_model || session.model,
+      modelParams: resolvedParams,
       channel: 'review',
       customTools: buildReviewerPiCustomTools(session, this.app, turnAgent),
       storedPiSessionId: continuation ? session.review_pi_session_id : null,

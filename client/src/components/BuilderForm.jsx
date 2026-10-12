@@ -171,6 +171,7 @@ export default function BuilderForm({
     configOptions.find((c) => c.key === String(agentConfigId)) ?? configOptions[0] ?? null;
   const agentSdk = selectedConfig?.sdk ?? '';
   const isCursor = agentSdk === 'cursor';
+  const usesModelParams = agentSdk === 'cursor' || agentSdk === 'claude' || agentSdk === 'pi';
 
   const applyConfigAndModel = (nextConfigId, modelId, paramsJson) => {
     if (nextConfigId) setAgentConfigIdRaw(String(nextConfigId));
@@ -246,9 +247,7 @@ export default function BuilderForm({
         applyConfigAndModel(
           exists ? configKey : configOptions[0]?.key,
           resolved.model || null,
-          resolved.agent_sdk === 'cursor' && resolved.model_params?.length
-            ? JSON.stringify(resolved.model_params)
-            : null
+          resolved.model_params?.length ? JSON.stringify(resolved.model_params) : null
         );
       })
       .catch(() => {
@@ -295,7 +294,7 @@ export default function BuilderForm({
     if (modelsStale || !models.length) return;
     const current = models.find((m) => m.id === model);
     if (current) {
-      if (isCursor && !modelParamsJson) {
+      if (usesModelParams && !modelParamsJson) {
         setModelParamsJson(paramsJsonForModelChange(current, cursorModelPrefs));
       }
       return;
@@ -333,9 +332,9 @@ export default function BuilderForm({
   };
 
   const buildPayload = ({ createNewBranch = true }) => {
-    const selectedModel = isCursor ? models.find((m) => m.id === model) : null;
+    const selectedModel = usesModelParams ? models.find((m) => m.id === model) : null;
     const parsedParams = (() => {
-      if (!isCursor || !modelParamsJson) return null;
+      if (!usesModelParams || !modelParamsJson) return null;
       try {
         const parsed = JSON.parse(modelParamsJson);
         return Array.isArray(parsed) && parsed.length ? parsed : null;
@@ -343,9 +342,14 @@ export default function BuilderForm({
         return null;
       }
     })();
-    const finalParams = isCursor
-      ? applyParamOverrides(parsedParams ?? [], cursorModelPrefs, selectedModel?.variants ?? [])
-      : null;
+    let finalParams = parsedParams;
+    if (isCursor) {
+      finalParams = applyParamOverrides(
+        parsedParams ?? [],
+        cursorModelPrefs,
+        selectedModel?.variants ?? []
+      );
+    }
     return {
       isGlobal,
       repoFullName,
@@ -353,7 +357,7 @@ export default function BuilderForm({
       initialPrompt,
       files,
       model: model || undefined,
-      modelParams: isCursor ? stringifyModelParams(finalParams) : undefined,
+      modelParams: usesModelParams ? stringifyModelParams(finalParams) : undefined,
       createNewBranch,
       branchName: branchName || undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),

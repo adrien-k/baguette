@@ -3,7 +3,10 @@ import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
 vi.mock('../anthropic-models.js', () => ({
-  listModels: vi.fn().mockResolvedValue([{ id: 'sonnet', display_name: 'Sonnet' }]),
+  listModels: vi.fn().mockResolvedValue({
+    models: [{ id: 'sonnet', display_name: 'Sonnet' }],
+    rejected_models: [],
+  }),
 }));
 const listCursorModels = vi.fn().mockResolvedValue([]);
 vi.mock('../cursor-models.js', () => ({

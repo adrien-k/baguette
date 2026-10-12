@@ -7,7 +7,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
   return (
     <div>
       <SettingsTabHeader title="Agent">
-        Named Claude, Cursor, and Pi configurations plus Cursor model preferences (account-wide).
+        Named Claude, Cursor, and Pi configurations plus default model parameters (account-wide).
         System prompts live under Prompts.
       </SettingsTabHeader>
 
@@ -27,8 +27,8 @@ export default function AgentSettingsTab({ settings, onSave }) {
         </SettingsSection>
 
         <SettingsSection
-          title="Cursor model preferences"
-          description="Used when starting Cursor sessions from the dashboard, builder, and MCP. If a model does not offer a strict match for a parameter, Baguette selects the closest available option."
+          title="Default model parameters"
+          description="Account-wide defaults for effort, context, fast mode, reasoning, and related chips when you pick a Claude, Cursor, or Pi model in the dashboard, builder, or MCP. If a model does not offer an exact match, Baguette picks the closest option."
         >
           <CursorModelPreferencesSection />
         </SettingsSection>

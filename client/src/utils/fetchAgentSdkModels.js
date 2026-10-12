@@ -19,5 +19,8 @@ export async function fetchAgentConfigModels({
   else payload.sdk = sdk;
   if (refresh) payload.refresh = true;
   const result = await agentConfigsService.listModels(payload);
-  return result?.models ?? [];
+  return {
+    models: result?.models ?? [],
+    rejected_models: result?.rejected_models ?? [],
+  };
 }

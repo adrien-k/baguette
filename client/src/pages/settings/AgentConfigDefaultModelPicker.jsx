@@ -50,13 +50,16 @@ export default function AgentConfigDefaultModelPicker({
       if (refresh) setRefreshing(true);
       else setModelsLoading(true);
       try {
-        const list = await fetchAgentConfigModels({
+        const { models: list, rejected_models } = await fetchAgentConfigModels({
           agentConfigId,
           sdk: agentConfigId == null ? sdk : null,
           refresh,
           credentialFields: overrides,
         });
         setModels(list);
+        for (const row of rejected_models) {
+          toastError(`Model not available: ${row.id}`, new Error(row.message));
+        }
       } catch (err) {
         toastError('Failed to load models', err);
         setModels([]);

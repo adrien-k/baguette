@@ -6,6 +6,8 @@ import {
   isLunaroutePiApiKeyEnvVar,
   piProviderIdForEnvVar,
 } from '../../shared/pi-api-key-env-vars.js';
+import { attachPiModelVariants } from '../../shared/pi-model-variants.js';
+import { piThinkingLevelFromModelParams } from '../../shared/pi-model-params.js';
 
 const PI_MODELS_CACHE_TTL = 60 * 60;
 
@@ -56,7 +58,13 @@ export async function createPiModelRuntime(apiKey, envVar) {
  * @param {string} envVar
  * @param {{ apiKey?: string | null, config?: object | null, fetchImpl?: typeof fetch }} [options]
  */
-export async function resolvePiSessionModel(modelRuntime, modelId, envVar, options = {}) {
+export async function resolvePiSessionModel(
+  modelRuntime,
+  modelId,
+  envVar,
+  options = {},
+  modelParams = null
+) {
   if (!modelId) {
     return { model: undefined, thinkingLevel: undefined, error: undefined };
   }
@@ -69,6 +77,8 @@ export async function resolvePiSessionModel(modelRuntime, modelId, envVar, optio
       modelRuntime,
     });
     if (resolved.model) {
+      const override = piThinkingLevelFromModelParams(modelParams);
+      if (override) resolved.thinkingLevel = override;
       return resolved;
     }
 
@@ -107,7 +117,23 @@ export async function resolvePiSessionModel(modelRuntime, modelId, envVar, optio
     return resolved;
   }
 
-  return resolveCliModel({ cliModel: modelId, modelRuntime });
+  const resolved = resolveCliModel({ cliModel: modelId, modelRuntime });
+  const override = piThinkingLevelFromModelParams(modelParams);
+  if (override && resolved.model) {
+    resolved.thinkingLevel = override;
+  }
+  return resolved;
+}
+
+function mapPiCatalogRow(m) {
+  const id = m.id ?? m.modelId ?? `${m.providerId}/${m.name}`;
+  const display = m.displayName ?? m.name ?? m.id ?? (typeof id === 'string' ? id : String(id));
+  return attachPiModelVariants({
+    id: typeof id === 'string' ? id : String(id),
+    display_name: typeof display === 'string' ? display : String(display),
+    description: null,
+    thinkingLevelMap: m.thinkingLevelMap,
+  });
 }
 
 /**
@@ -120,18 +146,11 @@ export async function listPiModels(apiKey, envVar, { refresh = false, config = n
   if (refresh) await cache.clear(cacheKey);
   return cache.fetch(cacheKey, PI_MODELS_CACHE_TTL, async () => {
     if (isLunaroutePiApiKeyEnvVar(envVar)) {
-      return listLunarouteGatewayModels(apiKey, { config });
+      const rows = await listLunarouteGatewayModels(apiKey, { config });
+      return rows.map((m) => attachPiModelVariants(m));
     }
     const runtime = await createPiModelRuntime(apiKey, envVar);
     const available = await runtime.getAvailable();
-    return available.map((m) => {
-      const id = m.id ?? m.modelId ?? `${m.providerId}/${m.name}`;
-      const display = m.displayName ?? m.name ?? m.id ?? (typeof id === 'string' ? id : String(id));
-      return {
-        id: typeof id === 'string' ? id : String(id),
-        display_name: typeof display === 'string' ? display : String(display),
-        description: null,
-      };
-    });
+    return available.map((m) => mapPiCatalogRow(m));
   });
 }

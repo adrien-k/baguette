@@ -20,7 +20,7 @@ export function useAgentConfigModels(configId, { enabled = true } = {}) {
     setModels([]);
     let cancelled = false;
     fetchAgentConfigModels({ agentConfigId: Number(configId) })
-      .then((list) => {
+      .then(({ models: list }) => {
         if (cancelled) return;
         setModels(list);
         setLoadedForId(configId);

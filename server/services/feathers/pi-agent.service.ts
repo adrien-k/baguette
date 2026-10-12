@@ -72,6 +72,7 @@ type PiSessionState = {
 export type PiBuildAgentOptionsResult = CreateAgentSessionOptions & {
   modelRuntime: Awaited<ReturnType<typeof createPiModelRuntime>>;
   pendingModelId?: string | null;
+  pendingModelParams?: unknown;
   piApiKeyEnvVar?: string;
   piApiKey?: string | null;
   piAgentConfig?: Record<string, unknown> | null;
@@ -150,12 +151,14 @@ export class PiAgentService {
     session: AgentSessionRow,
     {
       model,
+      modelParams,
       customTools,
       channel = 'chat',
       storedPiSessionId,
       appendSystemPrompt,
     }: {
       model?: string | null;
+      modelParams?: unknown;
       customTools?: CreateAgentSessionOptions['customTools'];
       channel?: MessageChannel;
       storedPiSessionId?: string | null;
@@ -191,6 +194,7 @@ export class PiAgentService {
       model: undefined,
       thinkingLevel: undefined,
       pendingModelId: modelId,
+      pendingModelParams: modelParams ?? session.model_params ?? null,
       piApiKeyEnvVar: envVar,
       piApiKey: apiKey,
       piAgentConfig: agentConfig,
@@ -210,8 +214,14 @@ export class PiAgentService {
     }
   ): Promise<PiAgentSession> {
     const { session: piSession } = await createAgentSession(opts.agentOptions);
-    const { pendingModelId, piApiKeyEnvVar, piApiKey, piAgentConfig, modelRuntime } =
-      opts.agentOptions;
+    const {
+      pendingModelId,
+      pendingModelParams,
+      piApiKeyEnvVar,
+      piApiKey,
+      piAgentConfig,
+      modelRuntime,
+    } = opts.agentOptions;
     if (pendingModelId && modelRuntime) {
       await this._bindPiSessionModel(
         piSession,
@@ -221,6 +231,7 @@ export class PiAgentService {
         {
           apiKey: piApiKey,
           config: piAgentConfig,
+          modelParams: pendingModelParams,
         }
       );
     }
@@ -505,11 +516,13 @@ export class PiAgentService {
         channel === 'review'
           ? await this.app.service('session-review').buildPiReviewAgentOptions(session, {
               model,
+              modelParams: turnModel.modelParams,
               continuation: !!storedPiSessionId || Boolean(reviewExtras?.continuation),
               extraPrompt: reviewExtras?.extraPrompt,
             })
           : await this.buildAgentOptions(session, {
               model,
+              modelParams: turnModel.modelParams,
               channel,
               storedPiSessionId: storedPiSessionId as string | null | undefined,
             });
@@ -641,12 +654,19 @@ export class PiAgentService {
     options: {
       apiKey?: string | null;
       config?: Record<string, unknown> | null;
+      modelParams?: unknown;
     } = {}
   ) {
-    const resolved = await resolvePiSessionModel(modelRuntime, modelId, envVar, {
-      apiKey: options.apiKey,
-      config: options.config,
-    });
+    const resolved = await resolvePiSessionModel(
+      modelRuntime,
+      modelId,
+      envVar,
+      {
+        apiKey: options.apiKey,
+        config: options.config,
+      },
+      options.modelParams ?? null
+    );
     if (resolved.error || !resolved.model) {
       throw new Error(resolved.error ?? `Could not resolve Pi model "${modelId}"`);
     }

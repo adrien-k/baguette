@@ -67,7 +67,7 @@ export async function listModelsForUser(user, repo, app, { agentConfigId = null 
 
   if (agentConfigId != null) {
     const config = await loadOwnedAgentConfig(knex, agentConfigId, user.id);
-    const models = await listModelsForOwnedConfig(app, {
+    const { models } = await listModelsForOwnedConfig(app, {
       configId: agentConfigId,
       userId: user.id,
     });
@@ -92,7 +92,7 @@ export async function listModelsForUser(user, repo, app, { agentConfigId = null 
   for (const row of configRows) {
     let models;
     try {
-      models = await listModelsForOwnedConfig(app, { configId: row.id, userId: user.id });
+      ({ models } = await listModelsForOwnedConfig(app, { configId: row.id, userId: user.id }));
     } catch {
       continue;
     }
@@ -119,5 +119,9 @@ export async function listModelsForUser(user, repo, app, { agentConfigId = null 
  */
 export async function loadModelsForSdk(user, _agentSdk, _repo, app, { agentConfigId = null } = {}) {
   if (agentConfigId == null) return [];
-  return listModelsForOwnedConfig(app, { configId: agentConfigId, userId: user.id });
+  const { models } = await listModelsForOwnedConfig(app, {
+    configId: agentConfigId,
+    userId: user.id,
+  });
+  return models;
 }

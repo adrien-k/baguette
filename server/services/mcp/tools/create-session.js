@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { resolveCursorModelParams } from '../../../../shared/model-variants.js';
+import { resolveClaudeAgentModelParams } from '../../claude-model-params.js';
+import { resolvePiAgentModelParams } from '../../pi-model-params.js';
 import { parseCursorModelPrefsJson } from '../../agent-preferences.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import {
@@ -163,6 +165,23 @@ export function createCreateSessionTool(ctx) {
                 modelParamsJson: undefined,
                 variantIndex: variantIndexArg,
                 cursorModelPrefs: prefs,
+              });
+          } else if (agent_sdk === 'claude') {
+            modelParams =
+              defaultModelParams ??
+              resolveClaudeAgentModelParams({
+                models,
+                modelId: model,
+                modelParams: undefined,
+                cursorModelPrefs: prefs,
+              });
+          } else if (agent_sdk === 'pi') {
+            modelParams =
+              defaultModelParams ??
+              resolvePiAgentModelParams({
+                models,
+                modelId: model,
+                modelParams: undefined,
               });
           }
         } catch (err) {

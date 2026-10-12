@@ -116,11 +116,16 @@ export function resolveCreateSessionAgentFields(
   } else if (
     fixed &&
     defaults.model_params &&
-    agent_sdk === 'cursor' &&
-    defaults.agent_sdk === 'cursor'
+    agent_sdk === defaults.agent_sdk &&
+    (agent_sdk === 'cursor' || agent_sdk === 'claude' || agent_sdk === 'pi')
   ) {
     model_params = defaults.model_params;
-  } else if (useLastUsed && agent_sdk === 'cursor' && lastUsed?.model_params?.length) {
+  } else if (
+    useLastUsed &&
+    (agent_sdk === 'cursor' || agent_sdk === 'claude' || agent_sdk === 'pi') &&
+    lastUsed?.agent_sdk === agent_sdk &&
+    lastUsed?.model_params?.length
+  ) {
     model_params = lastUsed.model_params;
   }
 

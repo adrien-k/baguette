@@ -3,9 +3,11 @@ import {
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,
 } from '../../shared/model-variants.js';
+import { normalizeClaudeCodePickerModelId } from '../../shared/claude-code-model-list.js';
 import { loadModelsForSdk } from './baguette-models-for-user.js';
 import { userRowForAgentSdk } from './agent-context.js';
 import { parseAgentSessionDefaultsJson } from '../../shared/agent-session-defaults.js';
+import { agentSdkSupportsModelParams } from '../../shared/agent-sdk-model-params.js';
 
 function validateModelParamsForVariants(variants, modelParams) {
   if (!modelParams?.length) return;
@@ -36,8 +38,8 @@ export async function validateAgentSessionDefaults(
     throw new BadRequest('agent_sdk is required when model is set');
   }
 
-  if (defaults.model_params && defaults.agent_sdk !== 'cursor') {
-    throw new BadRequest('model_params is only valid when agent_sdk is cursor');
+  if (defaults.model_params && !agentSdkSupportsModelParams(defaults.agent_sdk)) {
+    throw new BadRequest('model_params is only valid for cursor, claude, or pi agent_sdk');
   }
 
   if (defaults.model_params && !defaults.model) {
@@ -55,12 +57,20 @@ export async function validateAgentSessionDefaults(
   if (defaults.model) {
     const sdk = defaults.agent_sdk;
     const models = await loadModelsForSdk(userForSdk, sdk, null, app, { agentConfigId });
-    if (!models.some((m) => m.id === defaults.model)) {
+    const pickerIds = new Set(models.map((m) => m.id));
+    const modelId =
+      sdk === 'claude'
+        ? normalizeClaudeCodePickerModelId(defaults.model, pickerIds)
+        : defaults.model;
+    if (!models.some((m) => m.id === modelId)) {
       throw new BadRequest(`Unknown ${sdk} model "${defaults.model}". Refresh models in Settings.`);
     }
     if (defaults.model_params?.length) {
-      const modelObj = models.find((m) => m.id === defaults.model);
+      const modelObj = models.find((m) => m.id === modelId);
       validateModelParamsForVariants(modelObj?.variants ?? [], defaults.model_params);
+    }
+    if (modelId !== defaults.model) {
+      return { ...defaults, model: modelId };
     }
   }
 

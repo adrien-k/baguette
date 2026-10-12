@@ -80,7 +80,7 @@ function PrefDropdownRow({ label, value, options, onChange, ariaLabel }) {
   );
 }
 
-/** Account-wide Cursor model preferences (used when creating sessions and by MCP CreateSession). */
+/** Account-wide default model parameters for Claude, Cursor, and Pi (sessions, builder, MCP). */
 export default function CursorModelPreferencesSection() {
   const {
     cursorFast,
@@ -106,7 +106,7 @@ export default function CursorModelPreferencesSection() {
     <div
       className="w-full max-w-[15rem] py-1 overflow-visible"
       role="group"
-      aria-label="Cursor model preferences"
+      aria-label="Default model parameters"
     >
       <PrefYesNoRow label="Fast" value={cursorFast} onChange={setCursorFast} />
       <PrefYesNoRow label="Thinking" value={cursorThinking} onChange={setCursorThinking} />
