@@ -10,20 +10,7 @@ import {
 } from '../utils/queuedMessagePayload.js';
 import UserMessageContent from './chat/UserMessageContent.tsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
-
-function formatSendAt(sendAt) {
-  if (!sendAt) return null;
-  try {
-    return new Date(sendAt).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  } catch {
-    return null;
-  }
-}
+import { formatMonthDayTime } from '../utils/dates.js';
 
 function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
@@ -34,7 +21,7 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   const hasFiles = queuedMessageHasAttachments(item.message_json);
   const showBlockPreview = blocks.some((b) => b?.type === 'file_reference');
   const isScheduled = item.kind === 'scheduled';
-  const sendAtLabel = isScheduled ? formatSendAt(item.send_at) : null;
+  const sendAtLabel = isScheduled ? formatMonthDayTime(item.send_at) || null : null;
   const { model, modelParams } = resolveTurnModel(item, session);
   const turnModelLabel = messageModelLabel({ model, modelParams, models });
 

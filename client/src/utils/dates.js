@@ -1,5 +1,11 @@
 import { isTaskRunTimerActive } from '../../../shared/task-status.js';
 
+function parseIsoDate(isoString) {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /** Wall-clock run time from `started_at` until exit (or `now` while running). */
 export function getTaskRunDurationMs(task, now = Date.now()) {
   const startedAt = task?.started_at ?? task?.startedAt;
@@ -29,10 +35,45 @@ export function formatTaskDuration(ms) {
   return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
 }
 
+/** Short time of day (e.g. chat message headers). */
+export function formatMessageTime(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Full local date and time (e.g. timestamp tooltips). */
+export function formatMessageDateTimeTooltip(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return isoString ? String(isoString) : '';
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Month, day, and time without year (commits, scheduled messages). */
+export function formatMonthDayTime(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function formatRelativeTime(isoString) {
-  if (!isoString) return '';
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
   const now = new Date();
-  const date = new Date(isoString);
   const diff = now - date;
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'just now';

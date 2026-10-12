@@ -10,6 +10,7 @@ import AskUserAnswerBlock from './chat/AskUserAnswerBlock.tsx';
 import CopyButton from './chat/CopyButton.tsx';
 import { isHumanUserMessage, isMcpUserMessage } from '@baguette/shared/turn-model.js';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
+import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import { messageModelLabel } from '../utils/messageModelLabel.js';
 
 export type ChatMessageProps = {
@@ -67,12 +68,10 @@ function TypedUserMessage({
         <div className="flex items-center gap-2 min-w-0">
           <span className="shrink-0">You</span>
           {message.created_at && (
-            <span className="text-faint font-normal shrink-0">
-              {new Date(message.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
+            <MessageTimestamp
+              createdAt={message.created_at}
+              className="text-faint font-normal shrink-0"
+            />
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 min-w-0">
@@ -189,12 +188,10 @@ function TypedMessage({
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="shrink-0">{agentName}</span>
                       {i === firstTextBlockIndex && message.created_at && (
-                        <span className="text-faint font-normal shrink-0">
-                          {new Date(message.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
+                        <MessageTimestamp
+                          createdAt={message.created_at}
+                          className="text-faint font-normal shrink-0"
+                        />
                       )}
                     </div>
                     <CopyButton text={block.text} />

@@ -1,19 +1,6 @@
 import { RefreshCw } from 'lucide-react';
 import Tooltip from '../../components/Tooltip.jsx';
-
-function formatCommitDate(iso) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
-}
+import { formatMonthDayTime } from '../../utils/dates.js';
 
 const SELECTED_COMMIT_BG = 'bg-brand/10';
 
@@ -89,7 +76,7 @@ export default function SessionCommitsPanel({
                   {c.author_date ? (
                     <>
                       {c.author_name ? ' · ' : null}
-                      {formatCommitDate(c.author_date)}
+                      {formatMonthDayTime(c.author_date)}
                     </>
                   ) : null}
                 </>

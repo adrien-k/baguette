@@ -1,6 +1,7 @@
 import { Bot } from 'lucide-react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import CopyButton from './CopyButton.tsx';
+import MessageTimestamp from './MessageTimestamp.tsx';
 
 type McpUserMessage = {
   content?: string;
@@ -18,12 +19,7 @@ export default function McpAgentBlock({ message }: { message: McpUserMessage }) 
         <span>Agent</span>
         <span className="text-merged/80 font-normal">via MCP</span>
         {message.created_at && (
-          <span className="text-faint font-normal">
-            {new Date(message.created_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
+          <MessageTimestamp createdAt={message.created_at} className="text-faint font-normal" />
         )}
         {userText ? (
           <span className="ml-auto">
