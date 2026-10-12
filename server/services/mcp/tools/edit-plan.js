@@ -18,7 +18,7 @@ export function createEditPlanTool(h) {
         .array(planPatchSchema)
         .min(1)
         .describe(
-          'Ordered patches against the stored plan. Copy old_string exactly from the current plan (e.g. from a prior CreatePlan result or sessions.getPlan).'
+          'Ordered patches against the stored plan. Copy old_string exactly from the current plan (e.g. from ReadPlan or a prior CreatePlan result).'
         ),
     },
     handler: h.editPlan,

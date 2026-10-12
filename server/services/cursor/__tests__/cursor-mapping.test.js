@@ -174,6 +174,7 @@ describe('cursorToolKindFromName', () => {
       ListTodos: 'mcp',
       CreatePlan: 'mcp',
       EditPlan: 'mcp',
+      ReadPlan: 'mcp',
       mcp__baguette__create_issue: 'mcp',
       SomethingUnknown: 'generic',
     };

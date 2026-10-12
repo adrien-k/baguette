@@ -6,8 +6,6 @@ import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
 import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.tsx';
-import SessionTodosPanel from '../../components/session/SessionTodosPanel.jsx';
-import { useGetSessionPlan } from '../../hooks/useGetSessionPlan.js';
 import TextInput from '../../components/TextInput.jsx';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';
@@ -72,9 +70,6 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const [saving, setSaving] = useState(false);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
-  const { markdown: planMarkdown, loading: planLoading } = useGetSessionPlan(session?.id, {
-    enabled: session?.id != null,
-  });
 
   useEffect(() => {
     setTitle(session?.label ?? '');
@@ -214,22 +209,6 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
               <p className="text-faint">No description yet.</p>
             )}
           </div>
-        </DetailsCard>
-
-        <DetailsCard label="Todos">
-          <SessionTodosPanel sessionId={session?.id} />
-        </DetailsCard>
-
-        <DetailsCard label="Plan">
-          {planLoading ? (
-            <p className="text-sm text-faint">Loading plan…</p>
-          ) : planMarkdown.trim() ? (
-            <CollapsibleMarkdown previewLines={12} simpleToggle>
-              {planMarkdown}
-            </CollapsibleMarkdown>
-          ) : (
-            <p className="text-sm text-faint">No plan yet.</p>
-          )}
         </DetailsCard>
 
         <DetailsCard label="Git">

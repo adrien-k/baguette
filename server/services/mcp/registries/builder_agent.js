@@ -34,6 +34,7 @@ import { createAskUserQuestionsTool } from '../tools/ask-user-questions.js';
 import { createPlanHandlers } from '../lib/plan-handlers.js';
 import { createCreatePlanTool } from '../tools/create-plan.js';
 import { createEditPlanTool } from '../tools/edit-plan.js';
+import { createReadPlanTool } from '../tools/read-plan.js';
 
 function buildBuilderIssueTools(session, app) {
   const h = createIssueHandlers(session, app);
@@ -50,6 +51,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
     createAskUserQuestionsTool(),
     createCreatePlanTool(planHandlers),
     createEditPlanTool(planHandlers),
+    createReadPlanTool(planHandlers),
     createCreateTodoTool(todoHandlers),
     createProcessTodoTool(todoHandlers),
     createCompleteTodoTool(todoHandlers),

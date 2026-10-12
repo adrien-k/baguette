@@ -551,12 +551,21 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
-  if (toolShortName === 'CreatePlan' || toolShortName === 'EditPlan') {
+  if (
+    toolShortName === 'CreatePlan' ||
+    toolShortName === 'EditPlan' ||
+    toolShortName === 'ReadPlan'
+  ) {
     const markdownFromResult = (mcpResult?.markdown as string | undefined) ?? '';
     const markdownFromArgs =
       typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '';
     const markdown = markdownFromResult || (toolShortName === 'CreatePlan' ? markdownFromArgs : '');
-    const heading = toolShortName === 'CreatePlan' ? 'Plan created' : 'Plan updated';
+    const heading =
+      toolShortName === 'CreatePlan'
+        ? 'Plan created'
+        : toolShortName === 'EditPlan'
+          ? 'Plan updated'
+          : 'Plan';
     return (
       <ShowPlanBlock
         heading={heading}

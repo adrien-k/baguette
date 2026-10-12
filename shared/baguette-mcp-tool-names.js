@@ -52,6 +52,7 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'ListTodos',
   'CreatePlan',
   'EditPlan',
+  'ReadPlan',
 ]);
 
 export const TURN_ENDING_BAGUETTE_TOOLS = new Set(['AskUserQuestions', 'CreatePlan', 'EditPlan']);

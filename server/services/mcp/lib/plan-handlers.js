@@ -52,5 +52,15 @@ export function createPlanHandlers(session, app) {
         return serviceError(err);
       }
     },
+
+    async readPlan() {
+      try {
+        const existing = await getPlanRow(app, sessionId, userId);
+        if (!existing) return fail('No plan yet; use CreatePlan');
+        return ok({ markdown: existing.markdown });
+      } catch (err) {
+        return serviceError(err);
+      }
+    },
   };
 }

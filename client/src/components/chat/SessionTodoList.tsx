@@ -1,5 +1,9 @@
 import { CheckSquare2, Loader2, Square } from 'lucide-react';
 import MarkdownContent from '../MarkdownContent.jsx';
+import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
+
+/** Collapsed preview length for todo bodies on the Plan tab. */
+const TODO_DETAIL_PREVIEW_LINES = 4;
 
 export type SessionTodoItem = {
   id?: number;
@@ -85,7 +89,11 @@ export default function SessionTodoList({
                 <span className="text-[11px] font-mono text-faint">#{todo.id}</span>
               )}
             </div>
-            <SessionTodoMarkdown content={todo.content!.trim()} />
+            <div className="text-sm text-secondary">
+              <CollapsibleMarkdown previewLines={TODO_DETAIL_PREVIEW_LINES} simpleToggle>
+                {todo.content!.trim()}
+              </CollapsibleMarkdown>
+            </div>
           </li>
         ))}
       </ul>
