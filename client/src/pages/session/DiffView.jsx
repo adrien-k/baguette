@@ -35,6 +35,7 @@ import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
+import { useLongPressPointer } from '../../hooks/useLongPressPointer.js';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastFeathersError } from '../../utils/toastError.jsx';
@@ -173,21 +174,19 @@ function lineRefFromRow(row, filePath) {
   return { path: filePath, line };
 }
 
-function DiffCodeRow({ rowClass, onOpenComposer, active, tapLineToComment, children }) {
+function DiffCodeRow({ rowClass, onOpenComposer, active, longPressLineToComment, children }) {
   const canOpen = Boolean(onOpenComposer);
-  const openFromPointer = (e) => {
-    if (!tapLineToComment || !canOpen) return;
-    if (e.pointerType === 'mouse') return;
-    if (e.button !== 0) return;
-    if (e.target.closest('button')) return;
-    onOpenComposer();
-  };
+  const longPressPointer = useLongPressPointer({
+    enabled: longPressLineToComment && canOpen,
+    onLongPress: () => onOpenComposer?.(),
+  });
+
   return (
     <div
       className={`group/diffline relative flex w-full min-w-0 items-start ${rowClass} ${
         active ? 'ring-1 ring-inset ring-brand/60' : ''
-      } ${tapLineToComment && canOpen ? 'cursor-pointer touch-manipulation' : ''}`}
-      onPointerUp={openFromPointer}
+      } ${longPressLineToComment && canOpen ? 'touch-manipulation' : ''}`}
+      {...longPressPointer}
     >
       {canOpen && (
         <button
@@ -222,7 +221,14 @@ function isLineActive(active, filePath, line, change) {
 
 const LINE_HINT = 'Comment on this line';
 
-function InlineDiff({ lines, filePath, onLineReference, activeLine, composer, tapLineToComment }) {
+function InlineDiff({
+  lines,
+  filePath,
+  onLineReference,
+  activeLine,
+  composer,
+  longPressLineToComment,
+}) {
   const rows = buildInlineRows(lines);
   const sendRef = (row) => {
     const ref = lineRefFromRow(row, filePath);
@@ -250,7 +256,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer, ta
               rowClass={DIFF_REMOVED_ROW}
               onOpenComposer={openComposer}
               active={active}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}></span>
@@ -263,7 +269,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer, ta
               rowClass={DIFF_ADDED_ROW}
               onOpenComposer={openComposer}
               active={active}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             >
               <span className={NUM_CLS}></span>
               <span className={NUM_CLS}>{row.newNum}</span>
@@ -276,7 +282,7 @@ function InlineDiff({ lines, filePath, onLineReference, activeLine, composer, ta
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={openComposer}
               active={active}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}>{row.newNum}</span>
@@ -301,7 +307,7 @@ function SideBySideDiff({
   onLineReference,
   activeLine,
   composer,
-  tapLineToComment,
+  longPressLineToComment,
 }) {
   const rows = buildSideBySideRows(lines);
   const sendRef = (line, change) => {
@@ -334,7 +340,7 @@ function SideBySideDiff({
                 rowClass={DIFF_REMOVED_ROW}
                 onOpenComposer={onLineReference ? () => sendRef(row.left, 'removed') : undefined}
                 active={leftActive}
-                tapLineToComment={tapLineToComment}
+                longPressLineToComment={longPressLineToComment}
               >
                 <span className={NUM_CLS}>{row.left.num}</span>
                 <span className={DIFF_LINE_CONTENT_CLS}>{row.left.content || ' '}</span>
@@ -350,7 +356,7 @@ function SideBySideDiff({
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={onLineReference ? () => sendRef(row.left) : undefined}
               active={leftActive}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             >
               <span className={NUM_CLS}>{row.left?.num}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.left?.content || ' '}</span>
@@ -363,7 +369,7 @@ function SideBySideDiff({
                 rowClass={DIFF_ADDED_ROW}
                 onOpenComposer={onLineReference ? () => sendRef(row.right, 'added') : undefined}
                 active={rightActive}
-                tapLineToComment={tapLineToComment}
+                longPressLineToComment={longPressLineToComment}
               >
                 <span className={NUM_CLS}>{row.right.num}</span>
                 <span className={DIFF_LINE_CONTENT_CLS}>{row.right.content || ' '}</span>
@@ -379,7 +385,7 @@ function SideBySideDiff({
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={onLineReference ? () => sendRef(row.right) : undefined}
               active={rightActive}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             >
               <span className={NUM_CLS}>{row.right?.num}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.right?.content || ' '}</span>
@@ -406,7 +412,7 @@ function FileDiff({
   onLineReference,
   activeLine,
   composer,
-  tapLineToComment,
+  longPressLineToComment,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const displayPath = diffFileDisplayPath(file);
@@ -434,7 +440,7 @@ function FileDiff({
               onLineReference={onLineReference}
               activeLine={activeLine}
               composer={composer}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             />
           ) : (
             <SideBySideDiff
@@ -443,7 +449,7 @@ function FileDiff({
               onLineReference={onLineReference}
               activeLine={activeLine}
               composer={composer}
-              tapLineToComment={tapLineToComment}
+              longPressLineToComment={longPressLineToComment}
             />
           )}
         </div>
@@ -547,7 +553,7 @@ export default function DiffView({
   }, [fileByFile, scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
-  const tapLineToComment = canComment && !finePointerHover;
+  const longPressLineToComment = canComment && !finePointerHover;
   const enrichLineRef = (ref) => {
     const short_sha = selectedCommitMeta?.short_sha ?? branchHeadShortSha;
     return short_sha ? { ...ref, short_sha } : ref;
@@ -731,7 +737,7 @@ export default function DiffView({
                         </>
                       ) : (
                         <>
-                          tap a line or{' '}
+                          long-press a line or{' '}
                           <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to
                           message the agent
                         </>
@@ -771,7 +777,7 @@ export default function DiffView({
                   onLineReference={canComment ? handleLineClick : undefined}
                   activeLine={lineComposer}
                   composer={lineComposerEl}
-                  tapLineToComment={tapLineToComment}
+                  longPressLineToComment={longPressLineToComment}
                 />
               ))}
             </div>
