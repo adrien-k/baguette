@@ -33,8 +33,10 @@ export function createCreateSessionMessageTool(ctx) {
 
       const message_json = buildMcpUserMessageJson(text);
       const userParams = { provider: 'rest', user: { id: userId } };
-      const session = await app.service('sessions').get(session_id, { user: { id: userId } });
-      const identity = sessionMessageIdentity(session, 'builder');
+      const db = app.get('db');
+      const builder = await db('agents').where({ session_id, is_primary: 1 }).first();
+      if (!builder) return fail('Agent not found');
+      const identity = sessionMessageIdentity(builder);
 
       if (send_at) {
         try {

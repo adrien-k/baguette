@@ -4,6 +4,7 @@ import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { issueFixAgentPrompt, issuesFixAllAgentPrompt } from '../../../shared/session-issues.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
+import { getPrimaryBuilderAgent } from '../agents-db.js';
 import {
   assertIssueSeverity,
   assertIssueStatus,
@@ -70,7 +71,9 @@ class SessionIssuesService extends KnexService {
   }
 
   async _postBuilderFixMessage(session, text, params) {
-    const identity = sessionMessageIdentity(session, 'builder');
+    const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
+    if (!builder) throw new BadRequest('Agent not found');
+    const identity = sessionMessageIdentity(builder);
     const content = String(text ?? '').trim();
     if (!content) throw new BadRequest('message is required');
     return this.app.service('messages').create(

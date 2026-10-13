@@ -25,13 +25,16 @@ const db = createTestDb();
 const params = (user) => ({ provider: 'rest', user });
 const unauthParams = { provider: 'rest' };
 
-const builderFields = (extra = {}) => ({
-  agent_type: 'builder',
-  agent_sdk: 'claude',
-  model: 'sonnet',
-  model_params: '[{"id":"effort","value":"high"}]',
-  ...extra,
-});
+async function builderFields(extra = {}) {
+  const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+  return {
+    agent_id: builder.id,
+    agent_sdk: 'claude',
+    model: 'sonnet',
+    model_params: '[{"id":"effort","value":"high"}]',
+    ...extra,
+  };
+}
 
 function makeApp(dbRef) {
   const app = feathers();
@@ -138,6 +141,36 @@ describe('Messages service - find', () => {
       'Not authenticated'
     );
   });
+
+  it('ignores legacy agent_type in find query (column dropped)', async () => {
+    const result = await app.service('messages').find({
+      query: { session_id: sessionId, agent_type: 'builder' },
+      ...params({ id: userId }),
+    });
+    const data = result.data ?? result;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe(msgId);
+  });
+
+  it('does not error on legacy agent_type when session has no primary builder', async () => {
+    const repo = await db('repos').where({ full_name: 'test/repo' }).first();
+    const bareSessionId = await insertTestSession(db, {
+      user_id: userId,
+      repo_id: repo.id,
+      repo_full_name: 'test/repo',
+      base_branch: 'main',
+      initial_prompt: 'No builder',
+      short_id: 'ee33ff',
+      status: 'active',
+    });
+    await db('agents').where({ session_id: bareSessionId }).delete();
+
+    const result = await app.service('messages').find({
+      query: { session_id: bareSessionId, agent_type: 'builder' },
+      ...params({ id: userId }),
+    });
+    expect(result.data ?? result).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -178,7 +211,7 @@ describe('Messages service - create', () => {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
-        ...builderFields(),
+        ...(await builderFields()),
       },
       params({ id: userId })
     );
@@ -195,10 +228,10 @@ describe('Messages service - create', () => {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
-        ...builderFields({
+        ...(await builderFields({
           model: 'sonnet',
           model_params: '[{"id":"fast","value":"true"}]',
-        }),
+        })),
       },
       params({ id: userId })
     );
@@ -215,7 +248,7 @@ describe('Messages service - create', () => {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
-        ...builderFields(),
+        ...(await builderFields()),
       },
       params({ id: userId })
     );
@@ -247,11 +280,23 @@ describe('Messages service - create', () => {
 // agent_type / queueWhileRunning
 // ---------------------------------------------------------------------------
 
-describe('Messages service - agent_type and queue', () => {
-  it('defaults find to builder rows only', async () => {
+describe('Messages service - agent_id scoping and queue', () => {
+  it('defaults find to primary builder rows only', async () => {
+    const [reviewerId] = await db('agents').insert({
+      session_id: sessionId,
+      name: 'Reviewer',
+      agent_type: 'reviewer',
+      is_primary: 0,
+      status: 'stopped',
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      agent_config_id: (await db('agents').where({ session_id: sessionId, is_primary: 1 }).first())
+        .agent_config_id,
+      current_turn_id: 0,
+    });
     await db('session_messages').insert({
       session_id: sessionId,
-      agent_type: 'reviewer',
+      agent_id: reviewerId,
       agent_sdk: 'claude',
       model: 'sonnet',
       type: 'user',
@@ -267,7 +312,7 @@ describe('Messages service - agent_type and queue', () => {
     expect(data[0].id).toBe(msgId);
   });
 
-  it('allows client create with agent_type reviewer when agent_id is set', async () => {
+  it('allows client create for reviewer when agent_id is set', async () => {
     const [reviewerId] = await db('agents').insert({
       session_id: sessionId,
       name: 'Reviewer',
@@ -285,7 +330,6 @@ describe('Messages service - agent_type and queue', () => {
       {
         session_id: sessionId,
         type: 'user',
-        agent_type: 'reviewer',
         agent_id: reviewerId,
         agent_sdk: 'claude',
         model: 'sonnet',
@@ -297,38 +341,7 @@ describe('Messages service - agent_type and queue', () => {
       params({ id: userId })
     );
     expect(result.id).toBeTruthy();
-    expect(result.agent_type).toBe('reviewer');
-  });
-
-  it('defaults agent_id to the reviewer row when agent_type is reviewer', async () => {
-    const [reviewerId] = await db('agents').insert({
-      session_id: sessionId,
-      name: 'Reviewer',
-      agent_type: 'reviewer',
-      is_primary: 0,
-      status: 'stopped',
-      agent_sdk: 'claude',
-      model: 'sonnet',
-      agent_config_id: (await db('agents').where({ session_id: sessionId, is_primary: 1 }).first())
-        .agent_config_id,
-      current_turn_id: 0,
-    });
-    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
-
-    const result = await app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: 'assistant',
-        agent_type: 'reviewer',
-        agent_sdk: 'claude',
-        model: 'sonnet',
-        message_json: JSON.stringify({ type: 'assistant', content: 'review output' }),
-      },
-      params({ id: userId })
-    );
-
     expect(result.agent_id).toBe(reviewerId);
-    expect(result.agent_id).not.toBe(builder.id);
   });
 
   it('queues a builder user message while the session turn is running', async () => {
@@ -344,7 +357,7 @@ describe('Messages service - agent_type and queue', () => {
           type: 'user',
           message: { role: 'user', content: 'follow up' },
         }),
-        ...builderFields(),
+        ...(await builderFields()),
       },
       params({ id: userId })
     );
@@ -352,7 +365,8 @@ describe('Messages service - agent_type and queue', () => {
     expect(result).toEqual({ queued: true });
     const queued = await db('queued_messages').where({ session_id: sessionId });
     expect(queued).toHaveLength(1);
-    expect(queued[0].agent_type).toBe('builder');
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    expect(queued[0].agent_id).toBe(builder.id);
     expect(queued[0].kind).toBe('turn');
     expect(queued[0].agent_sdk).toBe('claude');
     expect(queued[0].model).toBe('sonnet');

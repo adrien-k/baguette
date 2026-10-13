@@ -29,17 +29,9 @@ export async function dispatchCreatedMessageToAgents(app, row) {
   const session = await app.get('db')('sessions').where({ id: row.session_id }).first();
   if (!session) return;
   const db = app.get('db');
-  let agentRow = row.agent_id != null ? await getAgentById(db, row.agent_id) : null;
-  if (!agentRow) {
-    const review = row.agent_type === 'reviewer';
-    agentRow = await db('agents')
-      .where({
-        session_id: row.session_id,
-        ...(review ? { agent_type: 'reviewer' } : { is_primary: 1 }),
-      })
-      .first();
-  }
-  if (!agentRow) return;
+  if (row.agent_id == null) return;
+  const agentRow = await getAgentById(db, row.agent_id);
+  if (!agentRow || agentRow.session_id !== row.session_id) return;
   const agent = await getAgentServiceForAgent(app, agentRow);
   if (typeof agent?.handleMessageCreated === 'function') {
     await agent.handleMessageCreated(row);
@@ -61,6 +53,7 @@ export async function rejectTurnMismatch(app, { session, row, channel, activeTur
     {
       sessionId: session.id,
       userId,
+      agentId: row.agent_id,
       turnId: row.turn_id,
       channel,
       agentSdk: row.agent_sdk ?? undefined,

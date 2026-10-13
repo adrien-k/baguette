@@ -184,6 +184,7 @@ export default function ChatView({
   const isProvisioning = session?.status === 'provisioning';
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
+  const canQuickSend = Boolean(session?.id && activeAgent?.id);
   const agentDisplayName = activeAgent
     ? agentDisplayTitle(activeAgent)
     : agentSource?.agent_sdk
@@ -306,14 +307,18 @@ export default function ChatView({
     }
   };
 
-  const handleQuickSend = (text) => {
-    if (!session?.id) return;
-    messagesService.create({
-      session_id: session.id,
-      type: 'user',
-      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
-      ...builderMessageCreateFields(session, { agent: activeAgent }),
-    });
+  const handleQuickSend = async (text) => {
+    if (!canQuickSend) return;
+    try {
+      await messagesService.create({
+        session_id: session.id,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
+        ...builderMessageCreateFields(session, { agent: activeAgent }),
+      });
+    } catch (err) {
+      toastFeathersError('Failed to send message', err);
+    }
   };
 
   const handleRestore = async () => {
@@ -638,7 +643,8 @@ export default function ChatView({
                   <button
                     type="button"
                     onClick={() => handleQuickSend('continue')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover border border-strong rounded-lg text-xs text-secondary transition-colors"
+                    disabled={!canQuickSend}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover disabled:opacity-50 disabled:cursor-not-allowed border border-strong rounded-lg text-xs text-secondary transition-colors"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     Continue
@@ -670,6 +676,7 @@ export default function ChatView({
                       icon={GitPullRequest}
                       label="Git sync"
                       tooltip="Pull latest from the remote and base branch. Fix conflicts if any."
+                      disabled={!canQuickSend}
                       onClick={() =>
                         handleQuickSend(
                           'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
@@ -689,6 +696,7 @@ export default function ChatView({
                       icon={CircleCheck}
                       label="Check CI"
                       tooltip="Check all PR workflow statuses and fix problems."
+                      disabled={!canQuickSend}
                       onClick={() =>
                         handleQuickSend(
                           'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
@@ -704,6 +712,7 @@ export default function ChatView({
                           ? CHECK_COMMENTS_TOOLTIP_REVIEWER
                           : CHECK_COMMENTS_TOOLTIP_BUILDER
                       }
+                      disabled={!canQuickSend}
                       onClick={() =>
                         handleQuickSend(
                           isReviewerAgent

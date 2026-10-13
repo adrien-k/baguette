@@ -1,6 +1,7 @@
 /**
  * DB helpers for `agents` rows (internal — Feathers service owns external API).
  */
+import { BadRequest } from '@feathersjs/errors';
 
 export async function getPrimaryBuilderAgent(db, sessionId) {
   return db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
@@ -15,19 +16,19 @@ export async function getAgentById(db, agentId) {
 }
 
 /**
- * Resolve the agents row for a message / queued row (agent_id, else builder or reviewer).
+ * Resolve the agents row for a message / queued row via `agent_id` (required).
  * @param {import('knex').Knex} db
- * @param {{ session_id: number; agent_id?: number | null; agent_type?: string | null }} row
+ * @param {{ session_id: number; agent_id?: number | null }} row
  */
 export async function resolveAgentRowForMessage(db, row) {
-  if (row.agent_id != null) {
-    const byId = await getAgentById(db, row.agent_id);
-    if (byId) return byId;
+  if (row.agent_id == null) {
+    throw new BadRequest('agent_id is required');
   }
-  if (row.agent_type === 'reviewer') {
-    return getReviewerAgent(db, row.session_id);
+  const byId = await getAgentById(db, row.agent_id);
+  if (!byId || byId.session_id !== row.session_id) {
+    throw new BadRequest('Agent not found');
   }
-  return getPrimaryBuilderAgent(db, row.session_id);
+  return byId;
 }
 
 export async function listAgentsForSession(db, sessionId) {

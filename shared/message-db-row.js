@@ -1,20 +1,19 @@
 /**
- * Map typed message_json payloads to session_messages columns (one shared table,
- * scoped by `agent_type`: 'builder' | 'reviewer').
+ * Map typed message_json payloads to session_messages columns (scoped by `agent_id`).
  */
 
 /**
  * @param {number} sessionId
  * @param {number|null} turnId
  * @param {object} payload
- * @param {{ agent_type?: string, agent_sdk?: string | null, model?: string | null, model_params?: unknown }} [identity]
+ * @param {{ agent_id?: number, agent_sdk?: string | null, model?: string | null, model_params?: unknown }} [identity]
  */
 export function dbRowFromPayload(sessionId, turnId, payload, identity = {}) {
   const row = {
     session_id: sessionId,
     turn_id: turnId ?? null,
     message_json: JSON.stringify(payload),
-    ...(identity.agent_type ? { agent_type: identity.agent_type } : {}),
+    ...(identity.agent_id != null ? { agent_id: identity.agent_id } : {}),
     ...(identity.agent_sdk ? { agent_sdk: identity.agent_sdk } : {}),
     ...(identity.model ? { model: identity.model } : {}),
     ...(identity.model_params != null ? { model_params: identity.model_params } : {}),

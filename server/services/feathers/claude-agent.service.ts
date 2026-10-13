@@ -452,6 +452,7 @@ export class ClaudeAgentService {
             sessionId,
             userId: session.user_id,
             turnId: row.turn_id,
+            agentId: agent.id,
             channel,
             sessionPath: session.session_path,
             agentType: 'claude',
@@ -600,7 +601,7 @@ export class ClaudeAgentService {
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(builder, 'builder'),
+        ...sessionMessageIdentity(builder),
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -652,11 +653,7 @@ export class ClaudeAgentService {
       agentRow = await getPrimaryBuilderAgent(db, sessionId);
     }
     if (!agentRow) return;
-    const identity = sessionMessageIdentity(
-      agentRow,
-      channel === 'review' ? 'reviewer' : 'builder',
-      { agent_sdk: 'claude' }
-    );
+    const identity = sessionMessageIdentity(agentRow, { agent_sdk: 'claude' });
 
     await app.service('messages').create({
       session_id: sessionId,
@@ -1055,7 +1052,7 @@ export class ClaudeAgentService {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content }),
-        ...sessionMessageIdentity(builder, 'builder'),
+        ...sessionMessageIdentity(builder),
       },
       { user: { id: sessionRow.user_id } }
     );
@@ -1207,16 +1204,11 @@ Task: ${initialPrompt}`;
       return;
     }
 
-    const channel = sessionState.turnChannel ?? 'chat';
     const agentRow = (await getAgentById(this.app.get('db'), sessionState.agentId)) as
       AgentRow | undefined;
     if (!agentRow) return;
 
-    const identity = sessionMessageIdentity(
-      agentRow,
-      channel === 'review' ? 'reviewer' : 'builder',
-      { agent_sdk: 'claude' }
-    );
+    const identity = sessionMessageIdentity(agentRow, { agent_sdk: 'claude' });
 
     await app.service('messages').create(
       {

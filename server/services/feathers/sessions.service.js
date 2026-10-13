@@ -296,7 +296,7 @@ export class SessionsService extends KnexService {
             message: { role: 'user', content: RESTART_PROMPT },
             title: 'Server restarted',
           }),
-          ...sessionMessageIdentity(builder, 'builder'),
+          ...sessionMessageIdentity(builder),
         },
         { ...userParams, _skipAgentDispatch: true }
       );
@@ -417,7 +417,7 @@ export class SessionsService extends KnexService {
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify({ type: 'system', subtype: 'status', status, ...extra }),
-        ...sessionMessageIdentity(builder, 'builder'),
+        ...sessionMessageIdentity(builder),
       },
       userParams
     );
@@ -1212,20 +1212,23 @@ export class SessionsService extends KnexService {
 
     await db('sessions').where({ id: session.id }).update(dbUpdate);
 
-    await this.app.service('messages').create(
-      {
-        session_id: session.id,
-        type: 'system',
-        subtype: 'status',
-        message_json: JSON.stringify({
+    const restoreBuilder = await getPrimaryBuilderAgent(db, session.id);
+    if (restoreBuilder) {
+      await this.app.service('messages').create(
+        {
+          session_id: session.id,
           type: 'system',
           subtype: 'status',
-          status: worktreeExists ? 'Session restored' : 'Session restored — worktree recreated',
-        }),
-        ...sessionMessageIdentity(session, 'builder'),
-      },
-      { user: { id: session.user_id } }
-    );
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: worktreeExists ? 'Session restored' : 'Session restored — worktree recreated',
+          }),
+          ...sessionMessageIdentity(restoreBuilder),
+        },
+        { user: { id: session.user_id } }
+      );
+    }
 
     const updated = await db('sessions').where({ id: session.id }).first();
     this.emit('patched', updated);
@@ -1237,12 +1240,16 @@ export class SessionsService extends KnexService {
     const sessionId = message.session_id;
     if (!sessionId) return;
     if (message.type !== 'user') return;
-    if (message.agent_type === 'reviewer') {
+    const db = this.app.get('db');
+    const messageAgent =
+      message.agent_id != null
+        ? await db('agents').where({ id: message.agent_id, session_id: sessionId }).first()
+        : null;
+    if (messageAgent?.agent_type === 'reviewer') {
       await this.onReviewerMessageCreated(message);
       return;
     }
 
-    const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
     if (
@@ -1577,7 +1584,6 @@ export class SessionsService extends KnexService {
         type: 'user',
         message_json: queued.message_json,
         agent_id: queued.agent_id ?? agentRow.id,
-        agent_type: queued.agent_type ?? agentRow.agent_type,
         agent_sdk: queued.agent_sdk,
         model: queued.model,
         ...(queued.model_params != null ? { model_params: queued.model_params } : {}),
@@ -1975,7 +1981,7 @@ async function failSessionProvisioning(app, sessionId, user, err) {
               subtype: 'status',
               status: `Setup failed — ${message}`,
             }),
-            ...sessionMessageIdentity(builder, 'builder'),
+            ...sessionMessageIdentity(builder),
           },
           userParams
         );
@@ -2532,7 +2538,7 @@ async function persistSystemPrompt(context) {
         subtype: 'prompt',
         content: promptAppend,
       }),
-      ...sessionMessageIdentity(builder, 'builder'),
+      ...sessionMessageIdentity(builder),
     },
     { provider: undefined, user: context.params.user }
   );
@@ -2559,7 +2565,7 @@ async function createFirstMessage(context) {
       type: 'user',
       force: true,
       message_json: JSON.stringify(initialSdkMessage),
-      ...sessionMessageIdentity(builder, 'builder'),
+      ...sessionMessageIdentity(builder),
     },
     { user: context.params.user }
   );

@@ -42,7 +42,6 @@ export type SessionMessageRow = {
   /** Model snapshot for user rows; legacy rows carry extra SDK fields. */
   model?: string | null;
   model_params?: unknown;
-  agent_type?: 'builder' | 'reviewer';
   agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
   /** Raw SDK columns that survive on legacy rows (uuid, parent_tool_use_id, …). */
   [key: string]: unknown;
@@ -62,7 +61,6 @@ export type MessageViewMeta = {
   tool_status?: ToolCallStatus | null;
   tool_started_at?: string | null;
   tool_ended_at?: string | null;
-  agent_type?: 'builder' | 'reviewer';
   agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
 };
 

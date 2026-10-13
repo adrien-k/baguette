@@ -485,6 +485,7 @@ export class PiAgentService {
               sessionId,
               userId,
               turnId,
+              agentId: agent.id,
               channel,
               sessionPath: session.session_path,
               agentType: 'pi',
@@ -680,7 +681,7 @@ export class PiAgentService {
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(agentRow, channel === 'review' ? 'reviewer' : 'builder', {
+        ...sessionMessageIdentity(agentRow, {
           agent_sdk: 'pi',
         }),
       },

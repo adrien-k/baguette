@@ -110,7 +110,7 @@ describe('MockAgentService', () => {
           type: 'user',
           message: { role: 'user', content: 'Hello mock agent' },
         }),
-        ...sessionMessageIdentity(builder, 'builder'),
+        ...sessionMessageIdentity(builder),
       },
       params({ id: userId })
     );

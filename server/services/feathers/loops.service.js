@@ -158,7 +158,7 @@ class LoopsService extends KnexService {
     if (!builder) {
       return { sessionId: (await this._startSession(loop, user)).id };
     }
-    const identity = sessionMessageIdentity(builder, 'builder', { ...loop, ...turnModel });
+    const identity = sessionMessageIdentity(builder, { ...loop, ...turnModel });
 
     const agent = await getAgentServiceForSession(this.app, tied);
     await agent.prepareTiedSessionLoopCompaction({

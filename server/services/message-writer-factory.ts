@@ -32,6 +32,7 @@ export type MessageWriterOpts = {
   sessionId: number;
   userId: number;
   turnId: number;
+  agentId: number;
   channel: 'chat' | 'review';
   sessionPath?: string | null;
   /** Which provider is producing this turn's stream. */
@@ -40,14 +41,14 @@ export type MessageWriterOpts = {
   modelParams?: unknown;
 };
 
-function messageIdentityFromChannel(
-  channel: 'chat' | 'review',
+function messageIdentityFromWriter(
+  agentId: number,
   agentSdk: 'claude' | 'cursor' | 'pi' | 'mock',
   model: string,
   modelParams?: unknown
 ) {
   return {
-    agent_type: channel === 'review' ? 'reviewer' : 'builder',
+    agent_id: agentId,
     agent_sdk: agentSdk,
     model,
     ...(modelParams != null && agentSdkSupportsModelParams(agentSdk)
@@ -62,8 +63,8 @@ function messageIdentityFromChannel(
  */
 export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWriterOpts) {
   const userParams = { provider: undefined, user: { id: opts.userId } };
-  const identity = messageIdentityFromChannel(
-    opts.channel,
+  const identity = messageIdentityFromWriter(
+    opts.agentId,
     opts.agentType,
     opts.model,
     opts.modelParams
@@ -151,6 +152,7 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
 export type TypedMessageOpts = {
   sessionId: number;
   userId: number;
+  agentId: number;
   turnId?: number | null;
   channel: 'chat' | 'review';
   agentSdk?: 'claude' | 'cursor' | 'pi' | 'mock';
@@ -168,7 +170,7 @@ export async function persistTypedMessage(
   payload: SessionMessagePayload
 ) {
   const agentSdk = opts.agentSdk ?? 'claude';
-  const identity = messageIdentityFromChannel(opts.channel, agentSdk, opts.model, opts.modelParams);
+  const identity = messageIdentityFromWriter(opts.agentId, agentSdk, opts.model, opts.modelParams);
   const row = dbRowFromPayload(opts.sessionId, opts.turnId ?? null, payload, identity);
   return app.service('messages').create(row, {
     provider: undefined,

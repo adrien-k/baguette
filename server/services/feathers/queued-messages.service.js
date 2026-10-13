@@ -4,7 +4,7 @@ import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import logger from '../../logger.js';
 import { requireQueuedMessageIdentity } from './message-identity.js';
-import { getPrimaryBuilderAgent, getReviewerAgent } from '../agents-db.js';
+import { getPrimaryBuilderAgent } from '../agents-db.js';
 
 const SCHEDULED_DISPATCH_BATCH = 20;
 
@@ -40,7 +40,7 @@ class QueuedMessagesService extends KnexService {
             session_id: row.session_id,
             type: 'user',
             message_json: row.message_json,
-            agent_type: row.agent_type ?? 'builder',
+            agent_id: row.agent_id,
             agent_sdk: row.agent_sdk,
             model: row.model,
             ...(row.model_params != null ? { model_params: row.model_params } : {}),
@@ -75,7 +75,7 @@ class QueuedMessagesService extends KnexService {
         message_json: data.message_json,
         kind: 'scheduled',
         send_at: when.toISOString(),
-        agent_type: data.agent_type ?? 'builder',
+        agent_id: data.agent_id,
         agent_sdk: data.agent_sdk,
         model: data.model,
         ...(data.model_params != null ? { model_params: data.model_params } : {}),
@@ -104,16 +104,16 @@ async function validateSessionOwnership(context) {
     user: context.params.user,
   });
   const db = context.app.get('db');
-  const agentRow =
-    context.data.agent_id != null
-      ? await db('agents')
-          .where({ id: context.data.agent_id, session_id: context.data.session_id })
-          .first()
-      : context.data.agent_type === 'reviewer'
-        ? await getReviewerAgent(db, context.data.session_id)
-        : await getPrimaryBuilderAgent(db, context.data.session_id);
-  if (context.data.agent_id == null && agentRow?.id) {
-    context.data.agent_id = agentRow.id;
+  const sessionId = context.data.session_id;
+  let agentRow = null;
+  if (context.data.agent_id != null) {
+    agentRow = await db('agents')
+      .where({ id: context.data.agent_id, session_id: sessionId })
+      .first();
+    if (!agentRow) throw new BadRequest('Agent not found');
+  } else {
+    agentRow = await getPrimaryBuilderAgent(db, sessionId);
+    if (agentRow) context.data.agent_id = agentRow.id;
   }
   if (context.data.agent_config_id == null && agentRow?.agent_config_id != null) {
     context.data.agent_config_id = agentRow.agent_config_id;
@@ -167,7 +167,7 @@ const queuedMessagesHooks = {
         'send_at',
         'model',
         'model_params',
-        'agent_type',
+        'agent_id',
         'agent_sdk',
         'agent_config_id',
       ]),
@@ -183,7 +183,7 @@ const queuedMessagesHooks = {
         'send_at',
         'model',
         'model_params',
-        'agent_type',
+        'agent_id',
         'agent_sdk',
         'agent_config_id',
       ]),

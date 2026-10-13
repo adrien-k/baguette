@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { createTestDb, insertTestSession } from '../../server/test-utils/db.js';
+import {
+  createTestDb,
+  insertTestSession,
+  getPrimaryBuilderAgentId,
+} from '../../server/test-utils/db.js';
 import { backfillMessageRows } from '../2026100601_backfill-message-rows.js';
 
 const db = createTestDb();
@@ -24,25 +28,26 @@ async function seedSession(sessionShortId) {
     agent_sdk: 'claude',
     model: 'sonnet',
   });
-  return sessionId;
+  const builderAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+  return { sessionId, builderAgentId };
 }
 
 describe('backfill-message-rows', () => {
   it('merges tool-result user rows into typed tool_call rows', async () => {
-    const sessionId = await seedSession('bf');
+    const { sessionId, builderAgentId } = await seedSession('bf');
     const toolUseId = 'toolu_abc';
     const createdAt = new Date().toISOString();
     await db('session_messages').insert([
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'run it' }),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: JSON.stringify({
           type: 'assistant',
@@ -62,7 +67,7 @@ describe('backfill-message-rows', () => {
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'user',
         message_json: JSON.stringify({
           type: 'user',
@@ -108,20 +113,20 @@ describe('backfill-message-rows', () => {
   });
 
   it('drops duplicate assistant tool_use rows that share a tool_call_id', async () => {
-    const sessionId = await seedSession('bf-dup');
+    const { sessionId, builderAgentId } = await seedSession('bf-dup');
     const toolUseId = 'call-dup-1';
     const createdAt = new Date().toISOString();
     await db('session_messages').insert([
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'run' }),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: JSON.stringify({
           type: 'assistant',
@@ -141,7 +146,7 @@ describe('backfill-message-rows', () => {
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: JSON.stringify({
           type: 'assistant',
@@ -172,19 +177,31 @@ describe('backfill-message-rows', () => {
   });
 
   it('stamps turns across builder and reviewer rows in the shared table', async () => {
-    const sessionId = await seedSession('bf2');
+    const { sessionId, builderAgentId } = await seedSession('bf2');
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const [reviewerAgentId] = await db('agents').insert({
+      session_id: sessionId,
+      name: 'Reviewer',
+      agent_type: 'reviewer',
+      is_primary: 0,
+      status: 'stopped',
+      agent_config_id: builder.agent_config_id,
+      agent_sdk: builder.agent_sdk,
+      model: builder.model,
+      current_turn_id: 0,
+    });
     const createdAt = new Date().toISOString();
     await db('session_messages').insert([
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'build it' }),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'result',
         subtype: 'success',
         message_json: JSON.stringify({ type: 'result', subtype: 'success', total_cost_usd: 0.05 }),
@@ -192,7 +209,7 @@ describe('backfill-message-rows', () => {
       },
       {
         session_id: sessionId,
-        agent_type: 'reviewer',
+        agent_id: reviewerAgentId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'review it' }),
         created_at: createdAt,
@@ -208,9 +225,9 @@ describe('backfill-message-rows', () => {
     expect(rows[1].type).toBe('turn_result');
     expect(JSON.parse(rows[1].message_json)).toMatchObject({ type: 'turn_result', status: 'ok' });
     expect(rows[2].turn_id).toBe(2);
-    expect(rows[2].agent_type).toBe('reviewer');
+    expect(rows[2].agent_id).toBe(reviewerAgentId);
 
-    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
-    expect(builder.current_turn_id).toBe(2);
+    const builderAfter = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    expect(builderAfter.current_turn_id).toBe(2);
   });
 });

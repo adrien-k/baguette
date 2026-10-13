@@ -65,7 +65,7 @@ function reviewTurnModel(agent, data = {}) {
 /** Reviewer row identity: turn model + the validated review config, else review defaults. */
 function reviewerRowIdentity(agent, data = {}, agentSdk = null) {
   const turnModel = reviewTurnModel(agent, data);
-  return sessionMessageIdentity(agent, 'reviewer', {
+  return sessionMessageIdentity(agent, {
     agent_sdk: agentSdk ?? data.agent_sdk,
     model: turnModel.model,
     model_params: turnModel.modelParams,

@@ -3,26 +3,30 @@ import { getPrimaryBuilderAgent } from '../agents-db.js';
 /** Default message finds to the session primary builder when agent_id is omitted. */
 export async function scopeAgentDefaultFind(context) {
   if (context.method !== 'find') return context;
-  const query = context.params.query || {};
+  const query = { ...(context.params.query || {}) };
+  delete query.agent_type;
+
   if (query.include_all_agents) {
-    const next = { ...query };
-    delete next.include_all_agents;
-    context.params.query = next;
+    delete query.include_all_agents;
+    context.params.query = query;
     return context;
   }
-  if (query.agent_id != null || query.agent_type === 'reviewer') {
+  if (query.agent_id != null) {
+    context.params.query = query;
     return context;
   }
   const sessionId = query.session_id;
-  if (!sessionId) return context;
+  if (!sessionId) {
+    context.params.query = query;
+    return context;
+  }
 
   const db = context.app.get('db');
   const primary = await getPrimaryBuilderAgent(db, sessionId);
   if (primary) {
     context.params.query = { agent_id: primary.id, ...query };
-    delete context.params.query.agent_type;
   } else {
-    context.params.query = { agent_type: 'builder', ...query };
+    context.params.query = query;
   }
   return context;
 }

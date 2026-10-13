@@ -13,6 +13,7 @@ describe('CursorAgentService turn context', () => {
   const db = createTestDb();
   let agentPatch;
   let app;
+  let builderAgentId;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -71,6 +72,7 @@ describe('CursorAgentService turn context', () => {
       },
       emit: vi.fn(),
     };
+    builderAgentId = (await db('agents').where({ session_id: 1, is_primary: 1 }).first()).id;
   });
 
   it('marks the chat turn failed when the message has no model_params', async () => {
@@ -79,6 +81,7 @@ describe('CursorAgentService turn context', () => {
 
     await service.handleMessageCreated({
       session_id: 1,
+      agent_id: builderAgentId,
       type: 'user',
       model: 'composer-2.5',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
@@ -107,6 +110,7 @@ describe('CursorAgentService turn context', () => {
 
     await service.handleMessageCreated({
       session_id: 1,
+      agent_id: builderAgentId,
       type: 'user',
       agent_config_id: 5,
       agent_sdk: 'cursor',
@@ -126,6 +130,7 @@ describe('CursorAgentService turn context', () => {
 
     await service.handleMessageCreated({
       session_id: 1,
+      agent_id: builderAgentId,
       type: 'user',
       model: 'composer-2.5',
       model_params: '[{"id":"thinking","value":"low"}]',
@@ -162,6 +167,7 @@ describe('CursorAgentService turn context', () => {
 
     await service.handleMessageCreated({
       session_id: 1,
+      agent_id: builderAgentId,
       type: 'user',
       agent_sdk: 'cursor',
       model: 'composer-2.5',
@@ -186,10 +192,11 @@ describe('CursorAgentService turn context', () => {
     const service = new CursorAgentService();
     service.setup(app);
 
+    const reviewer = await db('agents').where({ session_id: 1, agent_type: 'reviewer' }).first();
     await service.handleMessageCreated({
       session_id: 1,
+      agent_id: reviewer.id,
       type: 'user',
-      agent_type: 'reviewer',
       agent_sdk: 'cursor',
       model: 'composer-2.5',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'review' } }),

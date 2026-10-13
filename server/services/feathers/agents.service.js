@@ -165,16 +165,9 @@ async function beforeRemove(context) {
   const db = context.app.get('db');
   if (row.agent_type === 'reviewer') {
     context.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(row.id));
-    await db('session_messages')
-      .where({ session_id: row.session_id, agent_type: 'reviewer' })
-      .delete();
-    await db('queued_messages')
-      .where({ session_id: row.session_id, agent_type: 'reviewer' })
-      .delete();
-  } else {
-    await db('session_messages').where({ agent_id: row.id }).delete();
-    await db('queued_messages').where({ agent_id: row.id }).delete();
   }
+  await db('session_messages').where({ agent_id: row.id }).delete();
+  await db('queued_messages').where({ agent_id: row.id }).delete();
   await db('usage').where({ agent_id: row.id }).update({ agent_id: null });
   return context;
 }

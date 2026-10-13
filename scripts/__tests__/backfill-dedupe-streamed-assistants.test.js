@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { createTestDb, insertTestSession } from '../../server/test-utils/db.js';
+import {
+  createTestDb,
+  insertTestSession,
+  getPrimaryBuilderAgentId,
+} from '../../server/test-utils/db.js';
 import {
   coalesceStringParts,
   collapseStreamableAssistantRun,
@@ -32,7 +36,8 @@ async function seedSession(shortId) {
     agent_sdk: 'cursor',
     model: 'sonnet',
   });
-  return sessionId;
+  const builderAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+  return { sessionId, builderAgentId };
 }
 
 function legacyAssistant(text) {
@@ -129,33 +134,33 @@ describe('backfill-dedupe-streamed-assistants', () => {
   });
 
   it('dedupeStreamedAssistantRows collapses runs per session', async () => {
-    const sessionId = await seedSession('dedupe');
+    const { sessionId, builderAgentId } = await seedSession('dedupe');
     const createdAt = new Date().toISOString();
     await db('session_messages').insert([
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'go' }),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: legacyAssistant('Part '),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: legacyAssistant('Part one'),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: legacyAssistant('Part one done'),
         created_at: createdAt,
@@ -235,19 +240,19 @@ describe('backfill-dedupe-streamed-assistants', () => {
   });
 
   it('dedupeThinkingTokenRows collapses consecutive rows per session', async () => {
-    const sessionId = await seedSession('tokens');
+    const { sessionId, builderAgentId } = await seedSession('tokens');
     const createdAt = new Date().toISOString();
     await db('session_messages').insert([
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'hi' }),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'system',
         subtype: 'thinking_tokens',
         message_json: JSON.stringify({
@@ -260,7 +265,7 @@ describe('backfill-dedupe-streamed-assistants', () => {
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'system',
         subtype: 'thinking_tokens',
         message_json: JSON.stringify({
@@ -273,7 +278,7 @@ describe('backfill-dedupe-streamed-assistants', () => {
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: legacyAssistant('answer'),
         created_at: createdAt,
@@ -291,19 +296,19 @@ describe('backfill-dedupe-streamed-assistants', () => {
   });
 
   it('does not merge across tool_call rows', async () => {
-    const sessionId = await seedSession('dedupe2');
+    const { sessionId, builderAgentId } = await seedSession('dedupe2');
     const createdAt = new Date().toISOString();
     await db('session_messages').insert([
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: legacyAssistant('Before'),
         created_at: createdAt,
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'tool_call',
         tool_call_id: 'tc1',
         message_json: JSON.stringify({
@@ -317,7 +322,7 @@ describe('backfill-dedupe-streamed-assistants', () => {
       },
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builderAgentId,
         type: 'assistant',
         message_json: legacyAssistant('After'),
         created_at: createdAt,

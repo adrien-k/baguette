@@ -2,11 +2,7 @@ import { BadRequest } from '@feathersjs/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
-import { getPrimaryBuilderAgent, getReviewerAgent } from '../agents-db.js';
-
-function normalizeAgentType(value) {
-  return value === 'reviewer' ? 'reviewer' : 'builder';
-}
+import { getPrimaryBuilderAgent } from '../agents-db.js';
 
 /** Row column value for an agent config id: integer, or null. */
 function coerceAgentConfigId(raw) {
@@ -19,44 +15,36 @@ function agentSdkForAgent(agent) {
   return agent.agent_sdk || 'claude';
 }
 
-async function defaultAgentIdForMessage(db, sessionId, agentType) {
-  const agent_type = normalizeAgentType(agentType);
-  if (agent_type === 'reviewer') {
-    const reviewer = await getReviewerAgent(db, sessionId);
-    return reviewer?.id ?? null;
+/**
+ * Resolve `agent_id` for a session message create; defaults to the primary builder.
+ * @param {import('knex').Knex} db
+ * @param {number} sessionId
+ * @param {number | null | undefined} agentId
+ */
+async function resolveMessageAgentIdForSession(db, sessionId, agentId) {
+  if (agentId != null) {
+    const agent = await db('agents').where({ id: agentId, session_id: sessionId }).first();
+    if (!agent) throw new BadRequest('Agent not found');
+    return agent.id;
   }
   const primary = await getPrimaryBuilderAgent(db, sessionId);
-  return primary?.id ?? null;
+  if (!primary) throw new BadRequest('Agent not found');
+  return primary.id;
 }
 
 /**
  * Required identity columns for session_messages / queued_messages rows.
- * `agent` is the agents table row defaults apply from.
+ * `agent` must be an `agents` table row.
  */
-function resolveMessageAgentId(agent, agentType) {
-  const agent_type = normalizeAgentType(agentType ?? agent.agent_type);
-  if (agent.builder_agent_id != null || agent.reviewer_agent_id != null) {
-    const id = agent_type === 'reviewer' ? agent.reviewer_agent_id : agent.builder_agent_id;
-    if (id != null) return id;
-  }
-  if (agent.agent_type && agent.session_id != null) {
-    return agent.id;
-  }
-  throw new BadRequest('Agent not found');
-}
-
-export function sessionMessageIdentity(agent, agentType, overrides = {}) {
-  if (!agent) throw new BadRequest('Agent not found');
-  const agent_type = normalizeAgentType(overrides.agent_type ?? agentType ?? agent.agent_type);
+export function sessionMessageIdentity(agent, overrides = {}) {
+  if (!agent?.id) throw new BadRequest('Agent not found');
   const { model, modelParams } = resolveTurnModel(overrides, agent);
   const agent_sdk =
     overrides.agent_sdk != null && String(overrides.agent_sdk).trim() !== ''
       ? String(overrides.agent_sdk).trim()
       : agentSdkForAgent(agent);
   if (!model) throw new BadRequest('model is required');
-  const agent_id = resolveMessageAgentId(agent, agent_type);
-  if (agent_id == null) throw new BadRequest('Agent not found');
-  const row = { agent_type, agent_sdk, model, agent_id };
+  const row = { agent_id: agent.id, agent_sdk, model };
   if (modelParams != null && agentSdkSupportsModelParams(agent_sdk)) {
     row.model_params = modelParams;
   }
@@ -65,9 +53,8 @@ export function sessionMessageIdentity(agent, agentType, overrides = {}) {
   return row;
 }
 
-function assertIdentityFields(data, { requireAgentType = true } = {}) {
+function assertIdentityFields(data) {
   const missing = [];
-  if (requireAgentType && !data.agent_type) missing.push('agent_type');
   if (!data.agent_sdk || String(data.agent_sdk).trim() === '') missing.push('agent_sdk');
   if (data.model == null || String(data.model).trim() === '') missing.push('model');
   if (data.agent_id == null) missing.push('agent_id');
@@ -76,21 +63,16 @@ function assertIdentityFields(data, { requireAgentType = true } = {}) {
   }
 }
 
-/** Validate agent_type, agent_sdk, and model on messages.create (no inference). */
+/** Validate agent_sdk, model, and agent_id on messages.create. */
 export async function requireMessageIdentity(context) {
   const data = context.data;
   if (!data?.session_id) throw new BadRequest('session_id is required');
 
   const db = context.app.get('db');
-  if (data.agent_type) {
-    data.agent_type = normalizeAgentType(data.agent_type);
-  }
-  if (data.agent_id == null) {
-    data.agent_id = await defaultAgentIdForMessage(db, data.session_id, data.agent_type);
-  }
+  data.agent_id = await resolveMessageAgentIdForSession(db, data.session_id, data.agent_id);
+  delete data.agent_type;
 
   assertIdentityFields(data);
-  data.agent_type = normalizeAgentType(data.agent_type);
 
   if (data.agent_config_id != null && data.agent_config_id !== '') {
     const configId = coerceAgentConfigId(data.agent_config_id);
@@ -104,19 +86,14 @@ export async function requireMessageIdentity(context) {
   return context;
 }
 
-/** Validate agent_type, agent_sdk, and model on queued-messages.create. */
+/** Validate agent_sdk, model, and agent_id on queued-messages.create. */
 export async function requireQueuedMessageIdentity(context) {
   if (context.method !== 'create') return context;
   const data = context.data;
   if (!data?.session_id) throw new BadRequest('session_id is required');
   const db = context.app.get('db');
-  if (data.agent_type) {
-    data.agent_type = normalizeAgentType(data.agent_type);
-  }
-  if (data.agent_id == null) {
-    data.agent_id = await defaultAgentIdForMessage(db, data.session_id, data.agent_type);
-  }
+  data.agent_id = await resolveMessageAgentIdForSession(db, data.session_id, data.agent_id);
+  delete data.agent_type;
   assertIdentityFields(data);
-  data.agent_type = normalizeAgentType(data.agent_type);
   return context;
 }

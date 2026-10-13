@@ -1844,13 +1844,18 @@ describe('Sessions service - find, get, create', () => {
         .service('sessions')
         .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
 
+      const builderAgent = await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .first();
       await app
         .get('db')('queued_messages')
         .insert({
           session_id: created.id,
           user_id: userId1,
           kind: 'turn',
-          agent_type: 'builder',
+          agent_id: builderAgent.id,
+          agent_sdk: builderAgent.agent_sdk,
+          model: builderAgent.model,
           message_json: JSON.stringify({
             type: 'user',
             message: { role: 'user', content: 'queued' },
@@ -1882,13 +1887,18 @@ describe('Sessions service - find, get, create', () => {
         .service('sessions')
         .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
 
+      const builderAgent = await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .first();
       await app
         .get('db')('queued_messages')
         .insert({
           session_id: created.id,
           user_id: userId1,
           kind: 'turn',
-          agent_type: 'builder',
+          agent_id: builderAgent.id,
+          agent_sdk: builderAgent.agent_sdk,
+          model: builderAgent.model,
           message_json: JSON.stringify({
             type: 'user',
             message: { role: 'user', content: 'queued' },
@@ -1899,6 +1909,9 @@ describe('Sessions service - find, get, create', () => {
       await app
         .service('sessions')
         .patch(created.id, { status: 'stopped' }, params({ id: userId1 }));
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'stopped' });
 
       await app.service('sessions').onTurnComplete(created.id);
 

@@ -913,6 +913,7 @@ describe('ClaudeAgentService', () => {
       await expect(
         service.handleMessageCreated({
           session_id: BASE_SESSION_ID,
+          agent_id: BASE_BUILDER.id,
           type: 'user',
           message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
         })
@@ -931,6 +932,7 @@ describe('ClaudeAgentService', () => {
       await expect(
         service.handleMessageCreated({
           session_id: BASE_SESSION_ID,
+          agent_id: BASE_BUILDER.id,
           type: 'user',
           model: 'sonnet',
           agent_config_id: 9999,
@@ -953,6 +955,7 @@ describe('ClaudeAgentService', () => {
       await expect(
         service.handleMessageCreated({
           session_id: BASE_SESSION_ID,
+          agent_id: BASE_BUILDER.id,
           type: 'user',
           model: 'sonnet',
           message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),

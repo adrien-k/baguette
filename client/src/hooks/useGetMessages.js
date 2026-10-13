@@ -19,8 +19,6 @@ function messageQueryBase(sessionId, agentId, { allAgents = false } = {}) {
     query.include_all_agents = true;
   } else if (agentId != null) {
     query.agent_id = agentId;
-  } else {
-    query.agent_type = 'builder';
   }
   return query;
 }
@@ -32,7 +30,7 @@ function findQueryFilter(sessionId, agentId, { allAgents = false } = {}) {
   if (agentId != null) {
     return { session_id: sessionId, agent_id: agentId };
   }
-  return { session_id: sessionId, agent_type: 'builder' };
+  return { session_id: sessionId };
 }
 
 async function pageMessagesAfter(sessionId, agentId, afterId, maxId = null, options = {}) {
@@ -192,7 +190,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
       if (message.session_id !== sessionId) return false;
       if (allAgents) return true;
       if (agentId != null) return message.agent_id === agentId;
-      return message.agent_type !== 'reviewer';
+      return true;
     };
 
     const onCreated = (message) => {

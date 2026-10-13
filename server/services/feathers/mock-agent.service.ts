@@ -143,6 +143,7 @@ class MockAgentService {
             sessionId,
             userId,
             turnId,
+            agentId: agent.id,
             channel,
             sessionPath: session.session_path,
             agentType: 'mock',

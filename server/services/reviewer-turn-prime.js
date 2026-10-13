@@ -45,7 +45,6 @@ export async function dispatchReviewerAfterCreate(app, agent, session, createDat
     subtype: startMessage.subtype ?? null,
     message_json: JSON.stringify(startMessage),
     agent_id: agent.id,
-    agent_type: 'reviewer',
     agent_sdk: agent.agent_sdk,
     model: agent.model,
     ...(agent.model_params != null ? { model_params: agent.model_params } : {}),
@@ -61,14 +60,13 @@ export async function dispatchReviewerAfterCreate(app, agent, session, createDat
 export async function primeReviewerUserMessageCreate(app, context) {
   if (context.result?.queued) return context;
   const data = context.data;
-  if (!data || data.type !== 'user' || data.agent_type !== 'reviewer') return context;
+  if (!data || data.type !== 'user' || data.agent_id == null) return context;
   const db = app.get('db');
+  const agent = await getAgentById(db, data.agent_id);
+  if (!agent || agent.agent_type !== 'reviewer') return context;
   const session = await db('sessions').where({ id: data.session_id }).first();
   if (!session) return context;
   await assertSessionCanReview(session);
-
-  const agent = data.agent_id != null ? await getAgentById(db, data.agent_id) : null;
-  if (!agent || agent.agent_type !== 'reviewer') return context;
   if (agent.status === 'running') return context;
 
   const hasThread = Boolean(

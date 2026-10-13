@@ -32,8 +32,6 @@ export function createGetSessionTool(ctx) {
       let countQuery = db('session_messages').where({ session_id });
       if (builderAgentId != null) {
         countQuery = countQuery.where({ agent_id: builderAgentId });
-      } else {
-        countQuery = countQuery.where({ agent_type: 'builder' });
       }
       const { count } = await countQuery.count('* as count').first();
       const messageCount = Number(count ?? 0);
@@ -44,8 +42,6 @@ export function createGetSessionTool(ctx) {
         .orderBy('id', 'desc');
       if (builderAgentId != null) {
         lastAssistantQuery = lastAssistantQuery.where({ agent_id: builderAgentId });
-      } else {
-        lastAssistantQuery = lastAssistantQuery.where({ agent_type: 'builder' });
       }
       const lastAssistant = await lastAssistantQuery.first();
 

@@ -44,8 +44,6 @@ export function createGetSessionMessagesTool(ctx) {
         .orderBy('id', 'asc');
       if (agentId != null) {
         query = query.where({ agent_id: agentId });
-      } else {
-        query = query.where({ agent_type: 'builder' });
       }
 
       if (afterMessage != null) query = query.where('id', '>', afterMessage);

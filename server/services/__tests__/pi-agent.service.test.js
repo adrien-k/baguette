@@ -71,6 +71,8 @@ function makeApp(overrides = {}) {
           where: () => ({
             first: async () => ({
               id: 1,
+              session_id: 1,
+              agent_type: 'builder',
               user_id: 2,
               agent_sdk: 'pi',
               model: 'claude-haiku-4-5',
@@ -143,8 +145,8 @@ describe('PiAgentService', () => {
       id: 10,
       type: 'user',
       session_id: 1,
+      agent_id: 1,
       agent_sdk: 'claude',
-      agent_type: 'builder',
       message_json: JSON.stringify({ type: 'user', content: 'hi' }),
     });
     expect(runTurnSpy).not.toHaveBeenCalled();
@@ -197,8 +199,8 @@ describe('PiAgentService', () => {
       id: 11,
       type: 'user',
       session_id: 1,
+      agent_id: 1,
       agent_sdk: 'pi',
-      agent_type: 'builder',
       force: true,
       message_json: JSON.stringify({ type: 'user', content: 'steer me' }),
     });

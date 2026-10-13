@@ -550,9 +550,10 @@ describe('Loops service', () => {
 
       await app.service('loops').runDue();
 
+      const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
       expect(queuedCreate.mock.calls[0][0]).toMatchObject({
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_id: builder.id,
         agent_sdk: 'claude',
         model: 'sonnet',
       });

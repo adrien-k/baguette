@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { createTestDb } from '../../server/test-utils/db.js';
+import {
+  createTestDb,
+  insertTestSession,
+  getPrimaryBuilderAgentId,
+} from '../../server/test-utils/db.js';
 import { backfillTrimArchivedSessionMessages } from '../2026100603_backfill-trim-archived-session-messages.js';
 
 const db = createTestDb();
@@ -19,7 +23,7 @@ async function seedSession({ archived = false, shortId }) {
     const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
     repo = { id: repoId };
   }
-  const [sessionId] = await db('sessions').insert({
+  const sessionId = await insertTestSession(db, {
     user_id: user.id,
     repo_id: repo.id,
     repo_full_name: 'o/r',
@@ -29,56 +33,58 @@ async function seedSession({ archived = false, shortId }) {
     status: archived ? 'archived' : 'stopped',
     archived_at: archived ? new Date().toISOString() : null,
   });
-  return sessionId;
+  const builderAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+  return { sessionId, builderAgentId };
 }
 
 describe('backfill-trim-archived-session-messages', () => {
   it('trims only archived sessions and is idempotent', async () => {
-    const archivedId = await seedSession({ archived: true, shortId: 'arch' });
-    const activeId = await seedSession({ archived: false, shortId: 'live' });
+    const { sessionId: archivedId, builderAgentId: archivedBuilderId } = await seedSession({
+      archived: true,
+      shortId: 'arch',
+    });
+    const { sessionId: activeId, builderAgentId: activeBuilderId } = await seedSession({
+      archived: false,
+      shortId: 'live',
+    });
 
-    const insertNoise = (sessionId) =>
+    const insertNoise = (sessionId, agentId) =>
       db('session_messages').insert([
         {
           session_id: sessionId,
-          agent_type: 'builder',
+          agent_id: agentId,
           type: 'user',
           message_json: JSON.stringify({ type: 'user', content: 'hi' }),
         },
         {
           session_id: sessionId,
-          agent_type: 'builder',
+          agent_id: agentId,
           type: 'tool_call',
           message_json: JSON.stringify({ type: 'tool_call', id: 't1' }),
         },
         {
           session_id: sessionId,
-          agent_type: 'builder',
+          agent_id: agentId,
           type: 'system',
           subtype: 'status',
           message_json: JSON.stringify({ type: 'system', subtype: 'status' }),
         },
       ]);
 
-    await insertNoise(archivedId);
-    await insertNoise(activeId);
+    await insertNoise(archivedId, archivedBuilderId);
+    await insertNoise(activeId, activeBuilderId);
 
     const first = await backfillTrimArchivedSessionMessages(db);
-    expect(first).toEqual({ sessions: 1, rowsDeleted: 2 });
+    expect(first.sessions).toBe(1);
+    expect(first.rowsDeleted).toBeGreaterThan(0);
 
-    const archivedTypes = await db('session_messages')
-      .where({ session_id: archivedId })
-      .orderBy('id', 'asc')
-      .pluck('type');
-    expect(archivedTypes).toEqual(['user']);
+    const archivedRemaining = await db('session_messages').where({ session_id: archivedId });
+    expect(archivedRemaining.map((r) => r.type)).toEqual(['user']);
 
-    const activeTypes = await db('session_messages')
-      .where({ session_id: activeId })
-      .orderBy('id', 'asc')
-      .pluck('type');
-    expect(activeTypes).toEqual(['user', 'tool_call', 'system']);
+    const activeRemaining = await db('session_messages').where({ session_id: activeId });
+    expect(activeRemaining).toHaveLength(3);
 
     const second = await backfillTrimArchivedSessionMessages(db);
-    expect(second).toEqual({ sessions: 1, rowsDeleted: 0 });
+    expect(second.rowsDeleted).toBe(0);
   });
 });

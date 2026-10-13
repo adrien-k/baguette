@@ -28,7 +28,13 @@ vi.mock('../baguette-config.js', async (importOriginal) => {
   return { ...actual, loadBaguetteConfig: vi.fn().mockResolvedValue(null) };
 });
 
-vi.mock('../agent-settings.js', () => ({ getGithubToken: vi.fn(() => 'ghtoken') }));
+vi.mock('../agent-settings.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGithubToken: vi.fn(() => 'ghtoken'),
+  };
+});
 vi.mock('../logger.js', () => ({ default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../config.js', async (importOriginal) => {
   const actual = await importOriginal();

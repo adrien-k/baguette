@@ -26,12 +26,15 @@ const messageJson = JSON.stringify({
   message: { role: 'user', content: 'Later' },
 });
 
-const builderIdentity = (extra = {}) => ({
-  agent_type: 'builder',
-  agent_sdk: 'claude',
-  model: 'sonnet',
-  ...extra,
-});
+async function builderIdentity(extra = {}) {
+  const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+  return {
+    agent_id: builder.id,
+    agent_sdk: 'claude',
+    model: 'sonnet',
+    ...extra,
+  };
+}
 
 function makeApp(dbRef) {
   const app = feathers();
@@ -76,12 +79,15 @@ beforeEach(async () => {
 describe('queued-messages schedule', () => {
   it('creates a scheduled row via schedule()', async () => {
     const sendAt = new Date(Date.now() + 60_000).toISOString();
-    const row = await app
-      .service('queued-messages')
-      .schedule(
-        { session_id: sessionId, message_json: messageJson, send_at: sendAt, ...builderIdentity() },
-        params({ id: userId })
-      );
+    const row = await app.service('queued-messages').schedule(
+      {
+        session_id: sessionId,
+        message_json: messageJson,
+        send_at: sendAt,
+        ...(await builderIdentity()),
+      },
+      params({ id: userId })
+    );
     expect(row.kind).toBe('scheduled');
     expect(row.send_at).toBeTruthy();
     expect(row.message_json).toBe(messageJson);
@@ -94,7 +100,7 @@ describe('queued-messages schedule', () => {
         session_id: sessionId,
         message_json: messageJson,
         send_at: sendAt,
-        ...builderIdentity({ model: 'sonnet', model_params: '[{"id":"fast"}]' }),
+        ...(await builderIdentity({ model: 'sonnet', model_params: '[{"id":"fast"}]' })),
       },
       params({ id: userId })
     );
@@ -112,12 +118,15 @@ describe('queued-messages schedule', () => {
 
   it('patch keeps kind=scheduled when another queued row exists', async () => {
     const sendAt = new Date(Date.now() + 60_000).toISOString();
-    const scheduled = await app
-      .service('queued-messages')
-      .schedule(
-        { session_id: sessionId, message_json: messageJson, send_at: sendAt, ...builderIdentity() },
-        params({ id: userId })
-      );
+    const scheduled = await app.service('queued-messages').schedule(
+      {
+        session_id: sessionId,
+        message_json: messageJson,
+        send_at: sendAt,
+        ...(await builderIdentity()),
+      },
+      params({ id: userId })
+    );
 
     await db('queued_messages').insert({
       session_id: sessionId,
@@ -128,7 +137,7 @@ describe('queued-messages schedule', () => {
       }),
       kind: 'turn',
       send_at: null,
-      ...builderIdentity(),
+      ...(await builderIdentity()),
     });
 
     const updatedJson = JSON.stringify({
@@ -154,7 +163,7 @@ describe('scheduled dispatcher', () => {
       message_json: messageJson,
       kind: 'scheduled',
       send_at: sendAt,
-      ...builderIdentity(),
+      ...(await builderIdentity()),
     });
 
     await app.service('queued-messages').runDue();
@@ -175,7 +184,7 @@ describe('scheduled dispatcher', () => {
       message_json: messageJson,
       kind: 'scheduled',
       send_at: sendAt,
-      ...builderIdentity({ model: 'sonnet', model_params: '[{"id":"fast"}]' }),
+      ...(await builderIdentity({ model: 'sonnet', model_params: '[{"id":"fast"}]' })),
     });
 
     await app.service('queued-messages').runDue();
@@ -197,7 +206,7 @@ describe('scheduled dispatcher', () => {
       message_json: messageJson,
       kind: 'scheduled',
       send_at: sendAt,
-      ...builderIdentity(),
+      ...(await builderIdentity()),
     });
 
     await app.service('queued-messages').runDue();

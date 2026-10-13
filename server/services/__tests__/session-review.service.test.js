@@ -199,6 +199,23 @@ async function reviewerRow() {
   return db('agents').where({ session_id: sessionId, agent_type: 'reviewer' }).first();
 }
 
+async function reviewerMessagesQuery(extra = {}) {
+  const rev = await reviewerRow();
+  return { session_id: sessionId, agent_id: rev.id, ...extra };
+}
+
+async function reviewerMessageRow(fields = {}) {
+  const rev = await reviewerRow();
+  if (!rev) throw new Error('reviewer agent missing');
+  return {
+    session_id: sessionId,
+    agent_id: rev.id,
+    agent_sdk: rev.agent_sdk ?? 'claude',
+    model: rev.model ?? 'sonnet',
+    ...fields,
+  };
+}
+
 async function sendReviewMessage(message, overrides = {}) {
   const rev = await reviewerRow();
   const builder = await primaryBuilderRow();
@@ -208,7 +225,6 @@ async function sendReviewMessage(message, overrides = {}) {
       type: 'user',
       message_json: JSON.stringify({ type: 'user', content: message }),
       agent_id: rev.id,
-      agent_type: 'reviewer',
       agent_sdk: overrides.agent_sdk ?? rev.agent_sdk ?? 'claude',
       model: overrides.model ?? rev.model ?? 'sonnet',
       agent_config_id:
@@ -292,7 +308,7 @@ describe('session-review service', () => {
     expect(session.status).toBe('stopped');
 
     const msgs = await app.service('messages').find({
-      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
+      query: { ...(await reviewerMessagesQuery({ $sort: { id: 1 } })) },
       ...params(user),
     });
     const rows = msgs.data ?? msgs;
@@ -327,7 +343,7 @@ describe('session-review service', () => {
       expect(await reviewerStatusForSession(db, sessionId)).toBe('completed');
     });
     const msgs = await app.service('messages').find({
-      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
+      query: { ...(await reviewerMessagesQuery({ $sort: { id: 1 } })) },
       ...params(user),
     });
     const firstUser = (msgs.data ?? msgs).find((m) => m.type === 'user');
@@ -431,7 +447,7 @@ describe('session-review service', () => {
     });
 
     const msgs = await app.service('messages').find({
-      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
+      query: { ...(await reviewerMessagesQuery({ $sort: { id: 1 } })) },
       ...params(user),
     });
     const rows = msgs.data ?? msgs;
@@ -489,37 +505,37 @@ describe('session-review service', () => {
   });
 
   it('send queues when a review turn is active', async () => {
-    await db('session_messages').insert({
-      agent_type: 'reviewer',
-      session_id: sessionId,
-      type: 'user',
-      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
-    });
     await upsertReviewerAgent({ status: 'running' });
+    await db('session_messages').insert(
+      await reviewerMessageRow({
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+      })
+    );
 
     const result = await sendReviewMessage('follow up', { agent_sdk: 'claude', model: 'sonnet' });
     expect(result).toEqual({ queued: true });
     const queued = await db('queued_messages').where({ session_id: sessionId });
     expect(queued).toHaveLength(1);
-    expect(queued[0].agent_type).toBe('reviewer');
+    expect(queued[0].agent_id).toBe((await reviewerRow()).id);
     expect(queued[0].agent_sdk).toBe('claude');
     expect(queued[0].model).toBe('sonnet');
   });
 
   it('keeps review_status running until a queued follow-up turn finishes', async () => {
-    await db('session_messages').insert({
-      agent_type: 'reviewer',
-      session_id: sessionId,
-      type: 'user',
-      message_json: JSON.stringify({ type: 'user', content: 'initial review' }),
-      turn_id: 1,
-    });
     await upsertReviewerAgent({
       status: 'running',
       claude_session_id: 'claude-review-1',
       active_turn_id: 1,
       current_turn_id: 1,
     });
+    await db('session_messages').insert(
+      await reviewerMessageRow({
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', content: 'initial review' }),
+        turn_id: 1,
+      })
+    );
 
     await sendReviewMessage('queued follow-up', { agent_sdk: 'claude', model: 'sonnet' });
 
@@ -534,8 +550,9 @@ describe('session-review service', () => {
       expect(await reviewerStatusForSession(db, sessionId)).toBe('completed');
     });
     expect(query).toHaveBeenCalled();
+    const rev = await reviewerRow();
     const flushed = await db('session_messages')
-      .where({ session_id: sessionId, agent_type: 'reviewer', type: 'user' })
+      .where({ session_id: sessionId, agent_id: rev.id, type: 'user' })
       .orderBy('id', 'asc');
     expect(flushed.some((m) => m.message_json.includes('queued follow-up'))).toBe(true);
     const followUpRow = flushed.find((m) => m.message_json.includes('queued follow-up'));
@@ -543,16 +560,16 @@ describe('session-review service', () => {
   });
 
   it('send runs a follow-up turn without clearing messages', async () => {
-    await db('session_messages').insert({
-      agent_type: 'reviewer',
-      session_id: sessionId,
-      type: 'user',
-      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
-    });
     await upsertReviewerAgent({
       status: 'completed',
       claude_session_id: 'claude-review-1',
     });
+    await db('session_messages').insert(
+      await reviewerMessageRow({
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+      })
+    );
 
     await sendReviewMessage('check again');
 
@@ -561,7 +578,7 @@ describe('session-review service', () => {
     });
 
     const msgs = await app.service('messages').find({
-      query: { session_id: sessionId, agent_type: 'reviewer', $sort: { id: 1 } },
+      query: { ...(await reviewerMessagesQuery({ $sort: { id: 1 } })) },
       ...params(user),
     });
     const rows = msgs.data ?? msgs;
@@ -577,9 +594,10 @@ describe('session-review service', () => {
     await vi.waitFor(async () => {
       expect(await reviewerStatusForSession(db, sessionId)).toBe('completed');
     });
+    const revAfterFirst = await reviewerRow();
     const first = await db('session_messages').where({
       session_id: sessionId,
-      agent_type: 'reviewer',
+      agent_id: revAfterFirst.id,
     });
     expect(first.some((m) => m.message_json?.includes('first pass'))).toBe(true);
 
@@ -589,26 +607,27 @@ describe('session-review service', () => {
     await vi.waitFor(async () => {
       expect(await reviewerStatusForSession(db, sessionId)).toBe('completed');
     });
+    const revAfterSecond = await reviewerRow();
     const second = await db('session_messages').where({
       session_id: sessionId,
-      agent_type: 'reviewer',
+      agent_id: revAfterSecond.id,
     });
     expect(second.some((m) => m.message_json?.includes('first pass'))).toBe(false);
     expect(second.some((m) => m.message_json?.includes('second pass'))).toBe(true);
   });
 
   it('resumes an interrupted review that has a stored agent id', async () => {
-    await db('session_messages').insert({
-      agent_type: 'reviewer',
-      session_id: sessionId,
-      type: 'user',
-      message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
-    });
     await upsertReviewerAgent({
       status: 'running',
       agent_sdk: 'claude',
       claude_session_id: 'claude-review-resume',
     });
+    await db('session_messages').insert(
+      await reviewerMessageRow({
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+      })
+    );
 
     const result = await getReviewAgentTurn(app).resumeInterrupted();
     expect(result).toEqual({ resumed: 1, failed: 0 });
@@ -618,9 +637,10 @@ describe('session-review service', () => {
     });
     const callOptions = query.mock.calls.at(-1)?.[0]?.options;
     expect(callOptions?.resume).toBe('claude-review-resume');
+    const rev = await reviewerRow();
     const msgs = await db('session_messages').where({
       session_id: sessionId,
-      agent_type: 'reviewer',
+      agent_id: rev.id,
     });
     expect(msgs.some((m) => m.message_json?.includes('Server restarted'))).toBe(true);
   });
@@ -642,10 +662,11 @@ describe('session-review service', () => {
       expect(await reviewerStatusForSession(db, sessionId)).toBe('completed');
     });
     const reviewer = await reviewerRow();
+    const reviewerId = reviewer.id;
     await app.service('agents').remove(reviewer.id, params(user));
     const rows = await db('session_messages').where({
       session_id: sessionId,
-      agent_type: 'reviewer',
+      agent_id: reviewerId,
     });
     expect(rows.length).toBe(0);
     expect(await reviewerRow()).toBeUndefined();
@@ -661,8 +682,9 @@ describe('session-review service', () => {
     await git(wt, 'commit', '--allow-empty', '-m', 'second');
 
     await reviewLatestCommits();
+    const rev = await reviewerRow();
     const rows = await db('session_messages')
-      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
+      .where({ session_id: sessionId, type: 'user', agent_id: rev.id })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.source).toBe('baguette');
@@ -682,8 +704,9 @@ describe('session-review service', () => {
     });
 
     await reviewLatestCommits({ user_message: 'check auth middleware' });
+    const rev = await reviewerRow();
     const rows = await db('session_messages')
-      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
+      .where({ session_id: sessionId, type: 'user', agent_id: rev.id })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.content).toMatch(/Additional instructions:/);
@@ -703,8 +726,9 @@ describe('session-review service', () => {
     });
 
     await reviewLatestCommits();
+    const rev = await reviewerRow();
     const rows = await db('session_messages')
-      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
+      .where({ session_id: sessionId, type: 'user', agent_id: rev.id })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.title).toBe('Review latest changes');
@@ -724,8 +748,9 @@ describe('session-review service', () => {
     });
 
     await reviewLatestCommits();
+    const rev = await reviewerRow();
     const rows = await db('session_messages')
-      .where({ session_id: sessionId, type: 'user', agent_type: 'reviewer' })
+      .where({ session_id: sessionId, type: 'user', agent_id: rev.id })
       .orderBy('id', 'desc');
     const latest = JSON.parse(rows[0].message_json);
     expect(latest.title).toBe('Review latest changes');

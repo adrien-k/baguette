@@ -12,7 +12,6 @@ export function useMarkSessionDiffStaleOnFileTools(sessionId, markStale) {
 
     const consider = (message) => {
       if (message.session_id !== sessionId) return;
-      if (message.agent_type === 'reviewer') return;
       if (!isFileMutatingToolCall(message)) return;
       if (!isTerminalToolCall(message)) return;
       markStale();

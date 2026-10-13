@@ -23,7 +23,6 @@ export const testSessionAgentDefaults = {
 };
 
 const testMessageIdentityDefaults = {
-  agent_type: 'builder',
   ...testSessionAgentDefaults,
 };
 
@@ -76,7 +75,7 @@ export async function insertTestSession(db, sessionFields = {}) {
   return insertSessionWithPrimaryBuilder(db, { ...sessionOnly, ...agentPatch });
 }
 
-async function getPrimaryBuilderAgentId(db, sessionId) {
+export async function getPrimaryBuilderAgentId(db, sessionId) {
   const row = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
   return row?.id ?? null;
 }

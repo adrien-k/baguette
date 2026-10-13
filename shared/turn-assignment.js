@@ -93,8 +93,8 @@ export async function assignTurnOnUserMessageCreate(context) {
   if (data.agent_config_id == null) {
     data.agent_config_id = agent.agent_config_id ?? null;
   }
-  if (!data.agent_type) {
-    data.agent_type = agent.agent_type === 'reviewer' ? 'reviewer' : 'builder';
+  if (data.agent_id == null) {
+    data.agent_id = agent.id;
   }
   if (!data.agent_sdk) {
     data.agent_sdk = agent.agent_sdk ?? 'claude';
