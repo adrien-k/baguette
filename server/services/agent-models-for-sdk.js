@@ -11,6 +11,10 @@ import { listPiModels } from './pi-models.js';
  * @param {{ refresh?: boolean }} [opts]
  */
 export async function listModelsForAgentConfig(sdk, config, { refresh = false, user = null } = {}) {
+  if (sdk === 'mock') {
+    if (!isMockAgentSdkEnabled()) return { models: [], rejected_models: [] };
+    return { models: listMockModels(), rejected_models: [] };
+  }
   if (!config?.api_key) return { models: [], rejected_models: [] };
   switch (sdk) {
     case 'claude': {
@@ -30,10 +34,6 @@ export async function listModelsForAgentConfig(sdk, config, { refresh = false, u
         { refresh, config }
       );
       return { models: models ?? [], rejected_models: [] };
-    }
-    case 'mock': {
-      if (!isMockAgentSdkEnabled()) return { models: [], rejected_models: [] };
-      return { models: listMockModels(), rejected_models: [] };
     }
     default:
       return { models: [], rejected_models: [] };

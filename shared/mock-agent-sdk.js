@@ -1,6 +1,23 @@
 export const MOCK_AGENT_SUMMARY_TEXT =
   'Simulated turn complete — exercised every tool kind (files, shell, todos, task, questions, plan, MCP, generic).';
 
+export const MOCK_REVIEWER_SUMMARY_TEXT =
+  'Mock review complete — filed sample issues for UI and e2e coverage.';
+
+/** Deterministic titles created by the mock reviewer turn (Issues tab). */
+export const MOCK_REVIEW_ISSUES = [
+  {
+    severity: 'high',
+    title: 'Mock review: missing error handling',
+    description: 'Simulated finding from the mock reviewer agent.',
+  },
+  {
+    severity: 'medium',
+    title: 'Mock review: unclear naming',
+    description: 'Second simulated issue for list and severity UI.',
+  },
+];
+
 /** Shown in chat assertions and the mock model list. */
 export const MOCK_STANDARD_MODEL_ID = 'mock-standard';
 

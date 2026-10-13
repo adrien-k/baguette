@@ -2,6 +2,7 @@ import { BadRequest } from '@feathersjs/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
+import { getPrimaryBuilderAgent, getReviewerAgent } from '../agents-db.js';
 
 function normalizeAgentType(value) {
   return value === 'reviewer' ? 'reviewer' : 'builder';
@@ -16,6 +17,16 @@ function coerceAgentConfigId(raw) {
 
 function agentSdkForAgent(agent) {
   return agent.agent_sdk || 'claude';
+}
+
+async function defaultAgentIdForMessage(db, sessionId, agentType) {
+  const agent_type = normalizeAgentType(agentType);
+  if (agent_type === 'reviewer') {
+    const reviewer = await getReviewerAgent(db, sessionId);
+    return reviewer?.id ?? null;
+  }
+  const primary = await getPrimaryBuilderAgent(db, sessionId);
+  return primary?.id ?? null;
 }
 
 /**
@@ -71,11 +82,11 @@ export async function requireMessageIdentity(context) {
   if (!data?.session_id) throw new BadRequest('session_id is required');
 
   const db = context.app.get('db');
+  if (data.agent_type) {
+    data.agent_type = normalizeAgentType(data.agent_type);
+  }
   if (data.agent_id == null) {
-    const primary = await db('agents')
-      .where({ session_id: data.session_id, is_primary: 1 })
-      .first();
-    if (primary) data.agent_id = primary.id;
+    data.agent_id = await defaultAgentIdForMessage(db, data.session_id, data.agent_type);
   }
 
   assertIdentityFields(data);
@@ -99,11 +110,11 @@ export async function requireQueuedMessageIdentity(context) {
   const data = context.data;
   if (!data?.session_id) throw new BadRequest('session_id is required');
   const db = context.app.get('db');
+  if (data.agent_type) {
+    data.agent_type = normalizeAgentType(data.agent_type);
+  }
   if (data.agent_id == null) {
-    const primary = await db('agents')
-      .where({ session_id: data.session_id, is_primary: 1 })
-      .first();
-    if (primary) data.agent_id = primary.id;
+    data.agent_id = await defaultAgentIdForMessage(db, data.session_id, data.agent_type);
   }
   assertIdentityFields(data);
   data.agent_type = normalizeAgentType(data.agent_type);

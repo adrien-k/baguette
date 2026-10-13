@@ -300,6 +300,37 @@ describe('Messages service - agent_type and queue', () => {
     expect(result.agent_type).toBe('reviewer');
   });
 
+  it('defaults agent_id to the reviewer row when agent_type is reviewer', async () => {
+    const [reviewerId] = await db('agents').insert({
+      session_id: sessionId,
+      name: 'Reviewer',
+      agent_type: 'reviewer',
+      is_primary: 0,
+      status: 'stopped',
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      agent_config_id: (await db('agents').where({ session_id: sessionId, is_primary: 1 }).first())
+        .agent_config_id,
+      current_turn_id: 0,
+    });
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+
+    const result = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'assistant',
+        agent_type: 'reviewer',
+        agent_sdk: 'claude',
+        model: 'sonnet',
+        message_json: JSON.stringify({ type: 'assistant', content: 'review output' }),
+      },
+      params({ id: userId })
+    );
+
+    expect(result.agent_id).toBe(reviewerId);
+    expect(result.agent_id).not.toBe(builder.id);
+  });
+
   it('queues a builder user message while the session turn is running', async () => {
     await db('agents')
       .where({ session_id: sessionId, is_primary: 1 })

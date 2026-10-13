@@ -10,7 +10,14 @@ import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMockAgentService } from '../feathers/mock-agent.service.ts';
-import { MOCK_AGENT_SUMMARY_TEXT, MOCK_STANDARD_MODEL_ID } from '../../../shared/mock-agent-sdk.js';
+import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
+import { registerReviewAgentTurn } from '../review-agent-turn.js';
+import {
+  MOCK_AGENT_SUMMARY_TEXT,
+  MOCK_REVIEW_ISSUES,
+  MOCK_REVIEWER_SUMMARY_TEXT,
+  MOCK_STANDARD_MODEL_ID,
+} from '../../../shared/mock-agent-sdk.js';
 import { DATA_DIR } from '../../config.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { ensureTestMockConfig } from '../../test-utils/agent-configs.js';
@@ -32,8 +39,10 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
+  registerReviewAgentTurn(app);
   registerAgentsService(app);
   registerMessagesService(app);
+  registerSessionIssuesService(app);
   mountAgentConfigs(app);
   registerMockAgentService(app);
   return app;
@@ -165,4 +174,61 @@ describe('MockAgentService', () => {
     });
     expect(thinkingRow).toBeTruthy();
   });
+
+  it('runs a mock reviewer turn and creates session issues', async () => {
+    const [reviewerId] = await db('agents').insert({
+      session_id: sessionId,
+      name: 'Reviewer',
+      agent_type: 'reviewer',
+      is_primary: 0,
+      status: 'stopped',
+      agent_sdk: 'mock',
+      model: MOCK_STANDARD_MODEL_ID,
+      agent_config_id: (await db('agents').where({ session_id: sessionId, is_primary: 1 }).first())
+        .agent_config_id,
+      current_turn_id: 0,
+    });
+
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'Review this session' },
+        }),
+        agent_id: reviewerId,
+        agent_type: 'reviewer',
+        agent_sdk: 'mock',
+        model: MOCK_STANDARD_MODEL_ID,
+      },
+      { provider: undefined, user: { id: userId } }
+    );
+
+    await vi.waitFor(
+      async () => {
+        const reviewer = await db('agents').where({ id: reviewerId }).first();
+        expect(reviewer.status).toBe('completed');
+
+        const issues = await db('session_issues').where({ session_id: sessionId });
+        expect(issues).toHaveLength(MOCK_REVIEW_ISSUES.length);
+        const titles = issues.map((i) => i.title).sort();
+        expect(titles).toEqual(MOCK_REVIEW_ISSUES.map((i) => i.title).sort());
+      },
+      { timeout: 10_000 }
+    );
+
+    const reviewMessages = await db('session_messages')
+      .where({ session_id: sessionId, agent_id: reviewerId })
+      .orderBy('id');
+    const summary = reviewMessages.find((r) => {
+      try {
+        const p = JSON.parse(r.message_json);
+        return p.type === 'assistant' && p.blocks?.[0]?.text?.includes(MOCK_REVIEWER_SUMMARY_TEXT);
+      } catch {
+        return false;
+      }
+    });
+    expect(summary).toBeTruthy();
+  }, 15_000);
 });

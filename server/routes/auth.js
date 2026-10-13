@@ -11,6 +11,8 @@ import {
   PUBLIC_API_URL,
 } from '../config.js';
 import { toSafePath } from '../lib/safe-path.js';
+import { ensureMockAgentConfig } from '../services/mock-agent-config.js';
+import { isMockAgentSdkEnabled, MOCK_STANDARD_MODEL_ID } from '../../shared/mock-agent-sdk.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -32,12 +34,37 @@ export function createAuthRoutes(app) {
               email: 'dev@baguette.local',
               access_token: devGhKey,
               approved: true,
+              onboarding_completed: true,
             },
             {} // internal call — no provider, no user required
           );
           user = { id: created.id };
-        } else if (devGhKey) {
-          await app.service('users').patch(user.id, { access_token: devGhKey }, {});
+        } else {
+          const patch = {};
+          if (devGhKey) patch.access_token = devGhKey;
+          if (!user.onboarding_completed) patch.onboarding_completed = true;
+          if (Object.keys(patch).length) {
+            await app.service('users').patch(user.id, patch, {});
+          }
+        }
+
+        const mockConfigId = await ensureMockAgentConfig(db, user.id);
+        if (mockConfigId && isMockAgentSdkEnabled()) {
+          const mockDefaultModel = {
+            model: MOCK_STANDARD_MODEL_ID,
+            model_params: null,
+          };
+          const devUser = await db('users').where({ id: user.id }).first();
+          await app.service('users').patch(
+            user.id,
+            {
+              agent_default_config_id: mockConfigId,
+              agent_default_model: mockDefaultModel,
+              reviewer_default_config_id: mockConfigId,
+              reviewer_default_model: mockDefaultModel,
+            },
+            { user: devUser }
+          );
         }
 
         res.cookie('userId', String(user.id), {

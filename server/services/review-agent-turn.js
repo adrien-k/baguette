@@ -319,10 +319,17 @@ class ReviewAgentTurn {
     }
     if (agentId == null) return;
     const key = reviewTurnKey(agentId);
-    await this.app.service('claude-agent').stopTurn(key);
-    await this.app.service('cursor-agent').stopTurn(key);
+    if ('claude-agent' in this.app.services) {
+      await this.app.service('claude-agent').stopTurn(key);
+    }
+    if ('cursor-agent' in this.app.services) {
+      await this.app.service('cursor-agent').stopTurn(key);
+    }
     if ('pi-agent' in this.app.services) {
       await this.app.service('pi-agent').stopTurn(key);
+    }
+    if ('mock-agent' in this.app.services) {
+      await this.app.service('mock-agent').stopTurn(key);
     }
   }
 

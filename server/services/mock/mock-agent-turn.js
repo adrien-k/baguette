@@ -2,7 +2,11 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
-import { MOCK_AGENT_SUMMARY_TEXT } from '../../../shared/mock-agent-sdk.js';
+import {
+  MOCK_AGENT_SUMMARY_TEXT,
+  MOCK_REVIEW_ISSUES,
+  MOCK_REVIEWER_SUMMARY_TEXT,
+} from '../../../shared/mock-agent-sdk.js';
 
 function parseNonNegativeMs(raw, fallback) {
   if (raw != null && raw !== '') {
@@ -279,6 +283,45 @@ export async function runMockAgentTurn({ session, writer, abortSignal }) {
 
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(MOCK_AGENT_SUMMARY_TEXT);
+  await writer.flushAssistant();
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+}
+
+/**
+ * Deterministic dev-only reviewer turn: CreateIssue-style MCP tools + summary.
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ * @param {(spec: { severity: string, title: string, description: string }) => Promise<unknown>} createIssue
+ */
+export async function runMockReviewerTurn({ writer, abortSignal, createIssue }) {
+  await writer.appendThinking('Simulating reviewer findings for the Issues tab…');
+  await writer.flushAssistant();
+  await delay(mockStepDelayMs(), abortSignal);
+
+  let ref = 0;
+  for (const spec of MOCK_REVIEW_ISSUES) {
+    ref += 1;
+    await runMockTool(writer, abortSignal, {
+      callId: `mock-create-issue-${ref}`,
+      name: 'mcp__baguette__CreateIssue',
+      args: {
+        severity: spec.severity,
+        title: spec.title,
+        description: spec.description,
+      },
+      run: async () => {
+        const issue = await createIssue(spec);
+        return JSON.stringify({ ok: true, issue });
+      },
+    });
+  }
+
+  await delay(mockStepDelayMs(), abortSignal);
+  await writer.appendAssistantText(MOCK_REVIEWER_SUMMARY_TEXT);
   await writer.flushAssistant();
   await writer.persistTurnResult({
     type: 'turn_result',

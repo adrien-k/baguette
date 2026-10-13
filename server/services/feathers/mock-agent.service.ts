@@ -15,8 +15,9 @@ import {
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
-import { runMockAgentTurn } from '../mock/mock-agent-turn.js';
-import { reviewTurnKey } from '../review-agent-turn.js';
+import { runMockAgentTurn, runMockReviewerTurn } from '../mock/mock-agent-turn.js';
+import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
+import { issueAgentMetadataFromTurn } from '../session-issues.js';
 import { resolveAgentRowForMessage } from '../agents-db.js';
 import {
   clearAgentActiveTurnId,
@@ -162,28 +163,57 @@ class MockAgentService {
       channel,
     });
 
+    const isReview = channel === 'review';
     let turnFinishedOk = false;
     try {
-      if (channel !== 'review') {
+      if (!isReview) {
         await setAgentTurnRunning(this.app, agent, userId);
         await this.app.service('sessions').onTurnStart(sessionId);
       }
 
-      await runMockAgentTurn({
-        session,
-        writer,
-        abortSignal: abortController.signal,
-      });
+      if (isReview) {
+        const turnMeta = issueAgentMetadataFromTurn({
+          agent_sdk: 'mock',
+          model: turnModel.model ?? agent.model,
+          model_params: turnModel.modelParams,
+        });
+        await runMockReviewerTurn({
+          writer,
+          abortSignal: abortController.signal,
+          createIssue: (spec) =>
+            this.app.service('session-issues').create(
+              {
+                session_id: sessionId,
+                status: 'opened',
+                severity: spec.severity,
+                title: spec.title,
+                description: spec.description,
+                ...turnMeta,
+              },
+              { user: { id: userId } }
+            ),
+        });
+      } else {
+        await runMockAgentTurn({
+          session,
+          writer,
+          abortSignal: abortController.signal,
+        });
+      }
 
       turnFinishedOk = true;
-      if (channel !== 'review') {
+      if (!isReview) {
         await setAgentTurnTerminal(this.app, agent, userId, 'completed');
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError' && (err as Error).message !== 'Aborted') {
         handleAppError(this.app, err as Error, { userId, sessionId });
         logger.error({ sessionId, err: (err as Error).message }, 'mock-agent stream error');
-        if (channel !== 'review') {
+        if (isReview) {
+          await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+            sdk: MOCK_AGENT_SDK,
+          });
+        } else {
           await setAgentTurnTerminal(this.app, agent, userId, 'failed');
         }
         this.app.service('sessions').emit('app:error', {
@@ -197,7 +227,12 @@ class MockAgentService {
       this._activeSessions.delete(activeKey);
     }
 
-    if (turnFinishedOk && channel !== 'review') {
+    if (turnFinishedOk && isReview) {
+      await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
+        sdk: MOCK_AGENT_SDK,
+        turnModel,
+      });
+    } else if (turnFinishedOk && !isReview) {
       await this.app
         .service('sessions')
         .onTurnComplete(sessionId)

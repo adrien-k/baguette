@@ -1,50 +1,15 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { test, expect } from '@playwright/test';
-import { MOCK_AGENT_SUMMARY_TEXT } from '../shared/mock-agent-sdk.js';
-
-const LOCAL_REPO_NAME = `e2e-mock-${Date.now()}`;
-
-async function listRepos(page) {
-  const body = await page.request.get('/api/repos').then((r) => r.json());
-  return Array.isArray(body) ? body : (body.data ?? []);
-}
+import { MOCK_AGENT_SUMMARY_TEXT, MOCK_REVIEW_ISSUES } from '../shared/mock-agent-sdk.js';
+import { createLocalRepo, devLogin, startMockBuilderSession } from './helpers.js';
 
 test.describe('mock agent chat', () => {
   test('dev login, local repo, mock session renders tool calls and summary', async ({ page }) => {
-    const authResponse = await page.goto('/auth/dev');
-    expect(authResponse?.ok()).toBe(true);
-    await page.waitForURL((url) => url.pathname === '/' || url.pathname === '', {
-      timeout: 15_000,
-    });
+    await devLogin(page);
 
-    await page.goto('/settings?tab=repos');
-    await expect(page.getByText(/Create a local repository/)).toBeVisible({ timeout: 30_000 });
-
-    const localRepoForm = page.locator('form').filter({
-      has: page.getByPlaceholder('Repository name (e.g. my-project)'),
-    });
-    await localRepoForm.getByPlaceholder('Repository name (e.g. my-project)').fill(LOCAL_REPO_NAME);
-    await localRepoForm.getByRole('button', { name: 'Create', exact: true }).click();
-
-    let repoId;
-    await expect(async () => {
-      const match = (await listRepos(page)).find((r) => r.full_name === LOCAL_REPO_NAME);
-      repoId = match?.id;
-      expect(repoId).toBeTruthy();
-    }).toPass({ timeout: 60_000 });
-
-    await page.goto(`/repos/${repoId}`);
-
-    await expect(page.getByRole('button', { name: 'Mock Standard' })).toBeVisible();
-
-    const composer = page.getByPlaceholder(/Describe what you want the agent to do/i);
-    await composer.fill('Exercise the mock agent for e2e');
-    await page.getByRole('button', { name: 'Start on a new branch' }).click();
-
-    const sessionLink = page.locator('a[href*="/sessions/"]').first();
-    await expect(sessionLink).toBeVisible({ timeout: 120_000 });
-    await sessionLink.click();
+    const repoId = await createLocalRepo(page);
+    await startMockBuilderSession(page, repoId);
 
     await expect(page.getByText('Exercise the mock agent for e2e')).toBeVisible();
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
@@ -67,5 +32,25 @@ test.describe('mock agent chat', () => {
       await mkdir(dirname(screenshotPath), { recursive: true });
       await page.screenshot({ path: screenshotPath, fullPage: true });
     }
+  });
+
+  test('mock builder session then mock reviewer creates issues on Issues tab', async ({ page }) => {
+    await devLogin(page);
+
+    const repoId = await createLocalRepo(page);
+    await startMockBuilderSession(page, repoId);
+
+    await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
+
+    await page.getByRole('button', { name: 'Issues' }).click();
+    await expect(page.getByRole('button', { name: 'Start review' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole('button', { name: 'Start review' }).click();
+
+    for (const issue of MOCK_REVIEW_ISSUES) {
+      await expect(page.getByText(issue.title)).toBeVisible({ timeout: 120_000 });
+    }
+    await expect(page.getByText('Review in progress')).toBeHidden({ timeout: 120_000 });
   });
 });
