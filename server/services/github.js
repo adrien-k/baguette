@@ -1655,6 +1655,7 @@ export async function upsertPR(
   if (prNumber) {
     const patchBody = { title, body };
     if (reopen) patchBody.state = 'open';
+    if (baseBranch) patchBody.base = baseBranch;
     const res = await githubFetch(
       `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
       {

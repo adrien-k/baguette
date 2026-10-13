@@ -863,11 +863,6 @@ export default function Session() {
     setShowPushModal(true);
   };
 
-  const handleChatPush = () => {
-    if (!session?.id || pushing) return;
-    void handlePushConfirmed();
-  };
-
   const handlePushConfirmed = async ({ forceMode, branch } = {}) => {
     if (!session?.id || pushing) return;
     setShowPushModal(false);
@@ -1662,7 +1657,7 @@ export default function Session() {
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
                 commitsToPush={commitsToPush}
-                onPush={handleChatPush}
+                onPush={handlePush}
                 pushing={pushing}
               />
             )}

@@ -63,7 +63,7 @@ export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
   return {
     name: 'CurrentSessionInfo',
     description:
-      'Get the current session label, pr_description, session_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Session plans live in the database — use ReadPlan / CreatePlan / EditPlan. Use **`UpdateSession`** to change label and description; use **`PrRead`** when you need the live GitHub PR URL or synced title/body.',
+      'Get the current session label, pr_description, session_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Session plans live in the database — use ReadPlan / CreatePlan / EditPlan. Use **`UpdateSession`** to change label, description, and/or base_branch; use **`PrRead`** when you need the live GitHub PR URL or synced title/body.',
     schema: {},
     handler: async () => {
       const session = await getSessionRow();
