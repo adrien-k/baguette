@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
+import { ensureReviewerAgentRow } from '../agents-db.js';
 import { CursorAgentService } from '../feathers/cursor-agent.service.ts';
 
 /**
@@ -10,7 +11,7 @@ import { CursorAgentService } from '../feathers/cursor-agent.service.ts';
  */
 describe('CursorAgentService turn context', () => {
   const db = createTestDb();
-  let sessionPatch;
+  let agentPatch;
   let app;
 
   beforeEach(async () => {
@@ -26,7 +27,7 @@ describe('CursorAgentService turn context', () => {
       created_at: db.fn.now(),
       updated_at: db.fn.now(),
     });
-    await db('sessions').insert({
+    await insertTestSession(db, {
       id: 1,
       user_id: 1,
       short_id: 'ctx01',
@@ -40,29 +41,33 @@ describe('CursorAgentService turn context', () => {
       model_params: null,
       session_path: 'sessions/wt',
     });
-    sessionPatch = vi.fn().mockResolvedValue({});
+    agentPatch = vi.fn().mockResolvedValue({});
     const sessionEmit = vi.fn();
+    const reviewAgentTurn = {
+      _active: new Map(),
+      peekTurnExtras: () => null,
+      onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
+      _persistStatus: vi.fn().mockResolvedValue(undefined),
+      buildCursorReviewAgentOptions: vi.fn().mockResolvedValue({}),
+    };
     app = {
-      get: (key) => (key === 'db' ? db : undefined),
+      get: (key) => {
+        if (key === 'db') return db;
+        if (key === 'reviewAgentTurn') return reviewAgentTurn;
+        return undefined;
+      },
       service: (name) => {
         if (name === 'sessions')
           return {
-            patch: sessionPatch,
+            patch: vi.fn().mockResolvedValue({}),
             emit: sessionEmit,
             onTurnStart: async () => {},
             onTurnComplete: async () => {},
+            recordCursorUsage: async () => {},
           };
-        if (name === 'session-review') return app.services['session-review'];
+        if (name === 'agents') return { patch: agentPatch };
         if (name === 'users') return { get: vi.fn().mockResolvedValue({ id: 1 }) };
         return { create: vi.fn().mockResolvedValue({ id: 1 }), patch: vi.fn() };
-      },
-      services: {
-        'session-review': {
-          _active: new Map(),
-          peekTurnExtras: () => null,
-          onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
-          _persistStatus: vi.fn().mockResolvedValue(undefined),
-        },
       },
       emit: vi.fn(),
     };
@@ -81,34 +86,42 @@ describe('CursorAgentService turn context', () => {
 
     await expect(
       vi.waitFor(() => {
-        expect(sessionPatch).toHaveBeenCalledWith(1, { status: 'failed' }, { user: { id: 1 } });
+        expect(agentPatch).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ status: 'failed' }),
+          expect.anything()
+        );
       })
     ).resolves.toBeUndefined();
-    expect(sessionPatch).not.toHaveBeenCalledWith(1, { status: 'running' }, { user: { id: 1 } });
+    expect(agentPatch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'running' }),
+      expect.anything()
+    );
   });
 
   it('runs the turn when model_params is snapshotted on the row', async () => {
     const service = new CursorAgentService();
     service.setup(app);
+    const runSpy = vi.spyOn(service, '_runTurn').mockResolvedValue(undefined);
 
     await service.handleMessageCreated({
       session_id: 1,
       type: 'user',
+      agent_config_id: 5,
+      agent_sdk: 'cursor',
       model: 'composer-2.5',
       model_params: '[{"id":"thinking","value":"low"}]',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
     });
 
-    // Gets past validation (patches running before the SDK touches anything).
-    await expect(
-      vi.waitFor(() => {
-        expect(sessionPatch).toHaveBeenCalledWith(1, { status: 'running' }, { user: { id: 1 } });
-      })
-    ).resolves.toBeUndefined();
+    await vi.waitFor(() => {
+      expect(runSpy).toHaveBeenCalled();
+    });
   });
 
   it('marks the chat turn failed when the session has no agent config', async () => {
-    await db('sessions').where({ id: 1 }).update({ agent_config_id: null });
+    await db('agents').where({ session_id: 1, is_primary: 1 }).update({ agent_config_id: null });
     const service = new CursorAgentService();
     service.setup(app);
 
@@ -122,7 +135,11 @@ describe('CursorAgentService turn context', () => {
 
     await expect(
       vi.waitFor(() => {
-        expect(sessionPatch).toHaveBeenCalledWith(1, { status: 'failed' }, { user: { id: 1 } });
+        expect(agentPatch).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ status: 'failed' }),
+          expect.anything()
+        );
       })
     ).resolves.toBeUndefined();
   });
@@ -140,11 +157,14 @@ describe('CursorAgentService turn context', () => {
     });
     const service = new CursorAgentService();
     service.setup(app);
-    const resolveSpy = vi.spyOn(service, 'resolveApiKey');
+    const optionsSpy = vi
+      .spyOn(service, '_sessionAgentOptions')
+      .mockRejectedValue(new Error('stop after config'));
 
     await service.handleMessageCreated({
       session_id: 1,
       type: 'user',
+      agent_sdk: 'cursor',
       model: 'composer-2.5',
       model_params: '[{"id":"thinking","value":"low"}]',
       agent_config_id: 6,
@@ -152,12 +172,18 @@ describe('CursorAgentService turn context', () => {
     });
 
     await vi.waitFor(() => {
-      expect(resolveSpy).toHaveBeenCalled();
+      expect(optionsSpy).toHaveBeenCalled();
     });
-    expect(resolveSpy.mock.calls[0][2]).toBe(6);
+    expect(optionsSpy.mock.calls[0][2]).toBe(6);
   });
 
   it('fails the review turn when the reviewer message has no model_params', async () => {
+    await ensureReviewerAgentRow(db, 1, {
+      agent_config_id: 5,
+      agent_sdk: 'cursor',
+      model: 'composer-2.5',
+      status: 'stopped',
+    });
     const service = new CursorAgentService();
     service.setup(app);
 
@@ -171,7 +197,7 @@ describe('CursorAgentService turn context', () => {
     });
 
     await vi.waitFor(() => {
-      expect(app.services['session-review'].onAgentTurnComplete).toHaveBeenCalledWith(
+      expect(app.get('reviewAgentTurn').onAgentTurnComplete).toHaveBeenCalledWith(
         expect.objectContaining({ id: 1 }),
         'failed',
         { sdk: 'cursor' }

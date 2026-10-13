@@ -19,8 +19,9 @@ import {
   sessionsService,
   queuedMessagesService,
   loopsService,
+  agentsService,
 } from '../../feathers.js';
-import { toastFeathersError } from '../../utils/toastError.jsx';
+import { toastFeathersError, toastError } from '../../utils/toastError.jsx';
 import { useRefetchOnSseReconnect } from '../../hooks/useRefetchOnSseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
@@ -57,6 +58,7 @@ import { useSessionUsage } from '../../hooks/useSessionUsage.js';
 import { schedulePayload } from '../../utils/loopSchedule.js';
 import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import { agentDisplayTitle, isAgentTurnActive } from '../../utils/sessionAgents.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
 const CHECK_COMMENTS_PROMPT_BUILDER =
@@ -105,6 +107,9 @@ export default function ChatView({
   loadingMore,
   hasMore,
   session,
+  activeAgent,
+  agents = [],
+  onSelectAgent,
   systemPrompt,
   onViewChange,
   readonly,
@@ -152,18 +157,21 @@ export default function ChatView({
   const [creatingLoop, setCreatingLoop] = useState(false);
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
-  const [composerModel, setComposerModel] = useState(session?.model ?? null);
-  const [composerModelParams, setComposerModelParams] = useState(session?.model_params ?? null);
+  const agentSource = activeAgent ?? session;
+  const isReviewerAgent = activeAgent?.agent_type === 'reviewer';
+  const [composerModel, setComposerModel] = useState(agentSource?.model ?? null);
+  const [composerModelParams, setComposerModelParams] = useState(agentSource?.model_params ?? null);
 
   useEffect(() => {
-    setComposerModel(session?.model ?? null);
-    setComposerModelParams(session?.model_params ?? null);
-  }, [session?.id, session?.model, session?.model_params]);
+    setComposerModel(agentSource?.model ?? null);
+    setComposerModelParams(agentSource?.model_params ?? null);
+  }, [activeAgent?.id, agentSource?.model, agentSource?.model_params]);
 
   const composerTurnFields = () =>
     builderMessageCreateFields(session, {
       model: composerModel,
       model_params: composerModelParams,
+      agent: activeAgent,
     });
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {
@@ -172,14 +180,15 @@ export default function ChatView({
     onModelChange?.(modelId, modelParamsJson);
   };
 
-  const isRunning = session?.status === 'running';
+  const isRunning = isAgentTurnActive(activeAgent?.status);
   const isProvisioning = session?.status === 'provisioning';
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
-  const isReviewerSession = session?.agent_type === 'reviewer';
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
-  const agentDisplayName = session?.agent_sdk
-    ? session.agent_sdk.charAt(0).toUpperCase() + session.agent_sdk.slice(1)
-    : 'Agent';
+  const agentDisplayName = activeAgent
+    ? agentDisplayTitle(activeAgent)
+    : agentSource?.agent_sdk
+      ? agentSource.agent_sdk.charAt(0).toUpperCase() + agentSource.agent_sdk.slice(1)
+      : 'Agent';
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
   const chatSessionId = session?.id;
@@ -262,6 +271,11 @@ export default function ChatView({
     [displayMessages]
   );
 
+  const agentQueue = useMemo(() => {
+    if (!activeAgent?.id) return queue;
+    return queue.filter((item) => item.agent_id === activeAgent.id);
+  }, [queue, activeAgent]);
+
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,
     sessionTurnActive: isRunning,
@@ -280,7 +294,13 @@ export default function ChatView({
     if (!session?.id || stopping) return;
     setStopping(true);
     try {
-      await sessionsService.stop(session.id);
+      if (isReviewerAgent && activeAgent?.id) {
+        await agentsService.stop({ agent_id: activeAgent.id });
+      } else {
+        await sessionsService.stop(session.id);
+      }
+    } catch (err) {
+      toastError('Failed to stop agent', err);
     } finally {
       setStopping(false);
     }
@@ -292,7 +312,7 @@ export default function ChatView({
       session_id: session.id,
       type: 'user',
       message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: text } }),
-      ...builderMessageCreateFields(session),
+      ...builderMessageCreateFields(session, { agent: activeAgent }),
     });
   };
 
@@ -364,7 +384,11 @@ export default function ChatView({
       session_id: session.id,
       type: 'user',
       message_json: messageJson,
-      ...builderMessageCreateFields(session, { model, model_params }),
+      ...builderMessageCreateFields(session, {
+        model: isReviewerAgent ? (model ?? composerModel) : model,
+        model_params: isReviewerAgent ? (model_params ?? composerModelParams) : model_params,
+        agent: activeAgent,
+      }),
       ...(force ? { force: true } : {}),
     });
   };
@@ -639,7 +663,7 @@ export default function ChatView({
               {!readonly &&
                 !isProvisioning &&
                 !isGlobalSession(session) &&
-                session?.status !== 'running' &&
+                !isRunning &&
                 session?.pr_status !== 'merged' && (
                   <div className="flex gap-2 flex-wrap py-2">
                     <ChatQuickActionButton
@@ -676,13 +700,13 @@ export default function ChatView({
                       icon={MessageSquare}
                       label="Check comments"
                       tooltip={
-                        isReviewerSession
+                        isReviewerAgent
                           ? CHECK_COMMENTS_TOOLTIP_REVIEWER
                           : CHECK_COMMENTS_TOOLTIP_BUILDER
                       }
                       onClick={() =>
                         handleQuickSend(
-                          isReviewerSession
+                          isReviewerAgent
                             ? CHECK_COMMENTS_PROMPT_REVIEWER
                             : CHECK_COMMENTS_PROMPT_BUILDER
                         )
@@ -744,9 +768,9 @@ export default function ChatView({
         {!readonly && session && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
             <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
-              {(queue.length > 0 || tiedLoops.length > 0) && (
+              {(agentQueue.length > 0 || tiedLoops.length > 0) && (
                 <QueuedScheduledDrawer
-                  queue={queue}
+                  queue={agentQueue}
                   tiedLoops={tiedLoops}
                   session={session}
                   models={models}
@@ -778,10 +802,15 @@ export default function ChatView({
                     onSubmit={handleSend}
                     placeholder={`Message ${agentDisplayName}...`}
                     sending={sending}
+                    agentName={activeAgent?.name}
+                    agentType={activeAgent?.agent_type}
+                    agents={agents}
+                    selectedAgentId={activeAgent?.id}
+                    onSelectAgent={readonly ? undefined : onSelectAgent}
                     agentConfigKey={
-                      session?.agent_config_id != null
-                        ? String(session.agent_config_id)
-                        : session?.agent_sdk
+                      agentSource?.agent_config_id != null
+                        ? String(agentSource.agent_config_id)
+                        : agentSource?.agent_sdk
                     }
                     model={composerModel}
                     params={composerModelParams}

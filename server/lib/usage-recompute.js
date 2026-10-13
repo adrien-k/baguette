@@ -1,5 +1,6 @@
 import { estimatePersistedUsageRowCostUsdSync } from './usage-row-cost.js';
 import { warmUsageModelPricingCache } from './usage-model-pricing.js';
+import { usageQueryWithAgentPricing } from './usage-agent-join.js';
 
 /** SQLite default variable limit is 999; each row uses id + cost_usd + id in IN. */
 const USAGE_UPDATE_CHUNK = 200;
@@ -72,28 +73,7 @@ function recomputeResult({ modelId, updatedRows, affectedSessions, skippedClaude
  */
 export async function recomputeUsageCosts(db, { modelId = null, dryRun = false } = {}) {
   const skippedClaudeRows = await countSkippedClaudeUsageRows(db, modelId);
-  let query = db('usage as u')
-    .join('sessions as s', 's.id', 'u.session_id')
-    .select(
-      'u.id',
-      'u.session_id',
-      'u.kind',
-      'u.model',
-      'u.agent_sdk',
-      'u.raw_token_usage',
-      'u.input_tokens',
-      'u.output_tokens',
-      'u.cache_read_tokens',
-      'u.cache_write_tokens',
-      'u.reasoning_tokens',
-      'u.total_tokens',
-      's.model as session_model',
-      's.model_params',
-      's.review_model',
-      's.review_model_params'
-    )
-    .orderBy('u.id')
-    .whereNot('u.agent_sdk', 'claude');
+  let query = usageQueryWithAgentPricing(db).orderBy('u.id').whereNot('u.agent_sdk', 'claude');
 
   if (modelId) query = query.where('u.model', modelId);
 

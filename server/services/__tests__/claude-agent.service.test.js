@@ -56,6 +56,10 @@ import { loadBaguetteConfig } from '../baguette-config.js';
 
 import { REPOS_DIR } from '../../config.js';
 import { ClaudeAgentService } from '../feathers/claude-agent.service.ts';
+import {
+  getPrimaryBuilderForSession,
+  insertSessionWithPrimaryBuilder,
+} from '../../test-utils/session-agents.js';
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -101,6 +105,7 @@ function makeNeverEndingIterable() {
  */
 function makeMockApp(db) {
   const sessionPatch = vi.fn().mockResolvedValue({});
+  const agentPatch = vi.fn().mockResolvedValue({});
   const sessionRemove = vi.fn().mockResolvedValue({});
   const sessionEmit = vi.fn();
   const messageCreate = vi.fn().mockResolvedValue({ id: 1 });
@@ -126,6 +131,7 @@ function makeMockApp(db) {
           recordClaudeUsage: vi.fn().mockResolvedValue(undefined),
           get: async (id) => db('sessions').where({ id }).first(),
         };
+      if (name === 'agents') return { patch: agentPatch };
       if (name === 'messages') return { create: messageCreate, remove: genericRemove };
       if (name === 'tasks') return { create: createTask, deleteSessionTasks };
       if (name === 'users')
@@ -134,6 +140,7 @@ function makeMockApp(db) {
     }),
     // Exposed for assertions
     _sessionPatch: sessionPatch,
+    _agentPatch: agentPatch,
     _sessionRemove: sessionRemove,
     _sessionEmit: sessionEmit,
     _messageCreate: messageCreate,
@@ -146,16 +153,14 @@ const BASE_SESSION_DATA = {
   repo_full_name: 'owner/repo',
   base_branch: 'main',
   initial_prompt: 'Fix the bug',
-  agent_sdk: 'claude',
-  model: 'sonnet',
   // Must follow REPOS_DIR/<stripped>/sessions/<id> so createCanUseTool can derive the repo dir
   session_path: path.join(REPOS_DIR, 'owner-repo', 'sessions', 'test-session'),
   repo_id: 7,
   remote_branch: null,
-  claude_session_id: null,
-  status: 'active',
+  status: 'stopped',
 };
 let BASE_SESSION_ID; // auto-generated integer id, set in beforeEach
+let BASE_BUILDER;
 
 const BASE_USER = { id: 1, github_id: 1, username: 'test' };
 
@@ -183,10 +188,13 @@ describe('ClaudeAgentService', () => {
       apiKey: 'sk-ant-test-key',
     });
     await db('repos').insert(BASE_REPO);
-    [BASE_SESSION_ID] = await db('sessions').insert({
+    BASE_SESSION_ID = await insertSessionWithPrimaryBuilder(db, {
       ...BASE_SESSION_DATA,
       agent_config_id: claudeConfigId,
+      agent_sdk: 'claude',
+      model: 'sonnet',
     });
+    BASE_BUILDER = await getPrimaryBuilderForSession(db, BASE_SESSION_ID);
 
     // Default mocks
     loadBaguetteConfig.mockResolvedValue(null);
@@ -205,8 +213,8 @@ describe('ClaudeAgentService', () => {
       });
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      const sessionState = await service.createAgentSession(sessionRow, {
-        model: sessionRow.model,
+      const sessionState = await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
       });
 
       // query() started with cwd pointing at the worktree
@@ -219,7 +227,11 @@ describe('ClaudeAgentService', () => {
       );
 
       // Status patched to 'running'
-      expect(mockApp._sessionPatch).toHaveBeenCalledWith(BASE_SESSION_ID, { status: 'running' });
+      expect(mockApp._agentPatch).toHaveBeenCalledWith(
+        BASE_BUILDER.id,
+        { status: 'running' },
+        expect.anything()
+      );
 
       // Session state returned
       expect(sessionState.sessionId).toBe(BASE_SESSION_ID);
@@ -245,7 +257,7 @@ describe('ClaudeAgentService', () => {
       });
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       expect(typeof capturedOptions.canUseTool).toBe('function');
     });
@@ -275,7 +287,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       // Wait for the background processMessages loop to finish
       await vi.waitFor(() => {
@@ -304,8 +316,8 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      const sessionState = await service.createAgentSession(sessionRow, {
-        model: sessionRow.model,
+      const sessionState = await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
       });
 
       await vi.waitFor(() => {
@@ -343,6 +355,7 @@ describe('ClaudeAgentService', () => {
       const sessionState = {
         sessionId: BASE_SESSION_ID,
         userId: BASE_USER.id,
+        agentId: BASE_BUILDER.id,
         turnChannel: 'chat',
         endTurnAwaitingUser: false,
         streamWriter: null,
@@ -374,12 +387,12 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
-        expect(mockApp._sessionPatch).toHaveBeenCalledWith(
-          BASE_SESSION_ID,
-          { status: 'completed' },
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          { status: 'completed', active_turn_id: null },
           expect.anything()
         );
       });
@@ -398,7 +411,7 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -445,14 +458,14 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
           expect.objectContaining({ type: 'system', subtype: 'task_notification' }),
           expect.anything()
         );
-        const statusPatches = mockApp._sessionPatch.mock.calls.filter(([, patch]) => patch.status);
+        const statusPatches = mockApp._agentPatch.mock.calls.filter(([, patch]) => patch.status);
         expect(statusPatches.map(([, patch]) => patch.status)).toEqual(['running', 'completed']);
       });
     });
@@ -495,14 +508,14 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
           expect.objectContaining({ type: 'assistant' }),
           expect.anything()
         );
-        const statusPatches = mockApp._sessionPatch.mock.calls.filter(([, patch]) => patch.status);
+        const statusPatches = mockApp._agentPatch.mock.calls.filter(([, patch]) => patch.status);
         expect(statusPatches.map(([, patch]) => patch.status)).toEqual(['running', 'completed']);
       });
     });
@@ -555,14 +568,14 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
         const notifCalls = mockApp._messageCreate.mock.calls.filter(
           ([msg]) => msg.subtype === 'task_notification'
         );
         expect(notifCalls).toHaveLength(3);
-        const statusPatches = mockApp._sessionPatch.mock.calls.filter(([, patch]) => patch.status);
+        const statusPatches = mockApp._agentPatch.mock.calls.filter(([, patch]) => patch.status);
         expect(statusPatches.map(([, patch]) => patch.status)).toEqual(['running', 'completed']);
       });
     });
@@ -596,12 +609,12 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
-        const patchCalls = mockApp._sessionPatch.mock.calls;
+        const patchCalls = mockApp._agentPatch.mock.calls;
         const lastStatusPatch = [...patchCalls].reverse().find(([, patch]) => patch.status);
-        expect(lastStatusPatch[1]).toEqual({ status: 'completed' });
+        expect(lastStatusPatch[1]).toEqual({ status: 'completed', active_turn_id: null });
       });
     });
   });
@@ -620,12 +633,12 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
-        expect(mockApp._sessionPatch).toHaveBeenCalledWith(
-          BASE_SESSION_ID,
-          { status: 'failed' },
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          { status: 'failed', active_turn_id: null },
           expect.anything()
         );
       });
@@ -652,12 +665,12 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => errorIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       await vi.waitFor(() => {
-        expect(mockApp._sessionPatch).toHaveBeenCalledWith(
-          BASE_SESSION_ID,
-          { status: 'failed' },
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          { status: 'failed', active_turn_id: null },
           expect.anything()
         );
       });
@@ -712,7 +725,7 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -720,6 +733,9 @@ describe('ClaudeAgentService', () => {
       const userMsg = { type: 'user', message: { role: 'user', content: 'Hi' } };
       await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        agent_type: 'builder',
+        agent_sdk: 'claude',
         type: 'user',
         message_json: JSON.stringify(userMsg),
       });
@@ -734,7 +750,7 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -748,6 +764,9 @@ describe('ClaudeAgentService', () => {
       };
       await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        agent_type: 'builder',
+        agent_sdk: 'claude',
         type: 'user',
         message_json: JSON.stringify(toolResultMsg),
       });
@@ -762,7 +781,7 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, { model: sessionRow.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -775,6 +794,9 @@ describe('ClaudeAgentService', () => {
       };
       await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        agent_type: 'builder',
+        agent_sdk: 'claude',
         type: 'user',
         subtype: 'baguette',
         message_json: JSON.stringify(baguetteMsg),
@@ -793,8 +815,12 @@ describe('ClaudeAgentService', () => {
       const userMsg = { type: 'user', message: { role: 'user', content: 'Start' } };
       await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        agent_type: 'builder',
+        agent_sdk: 'claude',
         type: 'user',
         model: 'sonnet',
+        agent_config_id: BASE_BUILDER.agent_config_id,
         message_json: JSON.stringify(userMsg),
       });
 
@@ -805,7 +831,7 @@ describe('ClaudeAgentService', () => {
     });
 
     it('starts the query with the message model and leaves the session model unchanged', async () => {
-      await db('sessions').where({ id: BASE_SESSION_ID }).update({ model: 'opus' });
+      await db('agents').where({ id: BASE_BUILDER.id }).update({ model: 'opus' });
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
         _db: mockApp.get('db'),
@@ -818,13 +844,17 @@ describe('ClaudeAgentService', () => {
 
       await service.handleMessageCreated({
         session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        agent_type: 'builder',
+        agent_sdk: 'claude',
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Start' } }),
         model: 'sonnet',
+        agent_config_id: BASE_BUILDER.agent_config_id,
       });
 
       expect(capturedOptions.model).toBe('sonnet');
-      expect((await db('sessions').where({ id: BASE_SESSION_ID }).first()).model).toBe('opus');
+      expect((await db('agents').where({ id: BASE_BUILDER.id }).first()).model).toBe('opus');
       await vi.waitFor(() => {
         expect(service.getActiveSession(BASE_SESSION_ID)).toBeUndefined();
       });
@@ -871,7 +901,7 @@ describe('ClaudeAgentService', () => {
     });
 
     it('refuses to start a turn when the session has no agent config', async () => {
-      await db('sessions').where({ id: BASE_SESSION_ID }).update({ agent_config_id: null });
+      await db('agents').where({ id: BASE_BUILDER.id }).update({ agent_config_id: null });
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
         _db: mockApp.get('db'),

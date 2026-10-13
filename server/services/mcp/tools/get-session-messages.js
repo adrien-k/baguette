@@ -20,18 +20,33 @@ export function createGetSessionMessagesTool(ctx) {
         .int()
         .optional()
         .describe('Return messages with id greater than this message id'),
+      agent_id: z
+        .number()
+        .int()
+        .optional()
+        .describe('Filter to a specific agent; defaults to the primary builder'),
     },
     handler: async (args) => {
-      const { session_id, types, afterMessage } = args;
+      const { session_id, types, afterMessage, agent_id: agentIdArg } = args;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
 
       const typeFilter = types?.length ? types : ['user', 'assistant'];
       const db = app.get('db');
+      let agentId = agentIdArg ?? null;
+      if (agentId == null) {
+        const builder = await db('agents').where({ session_id, is_primary: 1 }).first();
+        agentId = builder?.id ?? null;
+      }
       let query = db('session_messages')
-        .where({ session_id, agent_type: 'builder' })
+        .where({ session_id })
         .whereIn('type', typeFilter)
         .orderBy('id', 'asc');
+      if (agentId != null) {
+        query = query.where({ agent_id: agentId });
+      } else {
+        query = query.where({ agent_type: 'builder' });
+      }
 
       if (afterMessage != null) query = query.where('id', '>', afterMessage);
 

@@ -3,9 +3,12 @@ import { Square } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastFeathersError } from '../utils/toastError.jsx';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../utils/buttonStyles.js';
+import { isAnyAgentRunning } from '../utils/sessionAgents.js';
 
 export function isSessionStoppable(session) {
-  return !session?.archived_at && session?.status === 'running';
+  if (!session || session.archived_at) return false;
+  if (session.status === 'provisioning' || session.status === 'archiving') return true;
+  return isAnyAgentRunning(session);
 }
 
 export default function StopSession({ session }) {

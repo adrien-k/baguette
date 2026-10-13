@@ -36,12 +36,11 @@ import {
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
-import { reviewTurnKey } from './session-review.service.js';
+import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
-  channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import { sessionMessageIdentity } from './message-create-fields.js';
@@ -55,14 +54,26 @@ import {
 import { registerAgentSdk } from './agent-configs.service.js';
 import type {
   AgentApp,
+  AgentRow,
   AgentSessionRow,
   DbLike,
   MessageChannel,
   MessageRowLike,
-  QueryBuilderLike,
   TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
+import {
+  getPrimaryBuilderAgent,
+  getReviewerAgent,
+  resolveAgentRowForMessage,
+} from '../agents-db.js';
+import { patchAgentInternal } from './agents.service.js';
+import {
+  clearAgentActiveTurnId,
+  setAgentActiveTurnId,
+  setAgentTurnRunning,
+  setAgentTurnTerminal,
+} from '../agent-turn-patch.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -79,6 +90,7 @@ type TurnUsage = Omit<ReturnType<typeof emptyTurnUsage>, 'model'> & {
 type CursorSessionState = {
   isProcessing: boolean;
   userId: number;
+  agentId?: number;
   currentRun: Run | null;
   abortController?: AbortController;
   writer?: MessageStreamWriter | null;
@@ -324,20 +336,23 @@ ${body}`,
       .first()) as AgentSessionRow | undefined;
     if (!session || session.archived_at) return;
 
-    const channel: MessageChannel = channelFromAgentType(row.agent_type as string);
-    const sdk =
-      row.agent_sdk ?? (channel === 'review' ? session.review_agent_sdk : session.agent_sdk);
+    const agent = (await resolveAgentRowForMessage(this.app.get('db') as never, row as never)) as
+      AgentRow | undefined;
+    if (!agent) return;
+
+    const isReview = agent.agent_type === 'reviewer';
+    const channel: MessageChannel = isReview ? 'review' : 'chat';
+    const sdk = row.agent_sdk ?? agent.agent_sdk;
     if (sdk !== 'cursor') return;
 
-    if (channel === 'chat') {
+    if (!isReview) {
       if (session.status === 'archiving' || session.status === 'archived') return;
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
     const active = this._activeSessions.get(activeKey);
-    const activeTurnId =
-      channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+    const activeTurnId = agent.active_turn_id;
 
     if (active?.isProcessing) {
       if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
@@ -361,6 +376,7 @@ ${body}`,
       turnId: row.turn_id as number | null,
       channel,
       activeKey,
+      agent,
     };
     attachAppErrorHandler(this.app, this._runTurn(session, parsed, row, meta), {
       userId: session.user_id,
@@ -599,6 +615,7 @@ ${body}`,
       turnId?: number | null;
       channel?: MessageChannel;
       activeKey?: string | number;
+      agent?: AgentRow;
     } = {}
   ): Promise<void> {
     const sessionId = session.id;
@@ -606,18 +623,18 @@ ${body}`,
     const channel: MessageChannel = meta.channel ?? 'chat';
     const activeKey = meta.activeKey ?? sessionId;
     const turnId = meta.turnId ?? null;
+    const agent = meta.agent;
+    if (!agent) return;
     let turnFinishedOk = false;
 
-    const db = this.app.get('db') as DbLike;
     if (turnId != null) {
-      const activeField =
-        channel === 'review' ? { active_review_turn_id: turnId } : { active_chat_turn_id: turnId };
-      await db('sessions').where({ id: sessionId }).update(activeField);
+      await setAgentActiveTurnId(this.app, agent, userId, turnId);
     }
 
     const sessionState: CursorSessionState = {
       isProcessing: true,
       userId,
+      agentId: agent.id,
       currentRun: null,
       writer: null,
       turnId,
@@ -649,20 +666,17 @@ ${body}`,
       sessionState.writer = writer;
       sessionState.turnAgentConfigId = turnAgentConfigId;
       if (channel !== 'review') {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+        await setAgentTurnRunning(this.app, agent, userId);
         await this.app.service('sessions').onTurnStart(sessionId);
       }
-      const resumeAgentId =
-        channel === 'review' ? session.review_cursor_agent_id : session.cursor_agent_id;
+      const resumeAgentId = agent.cursor_agent_id;
       const reviewExtras =
         channel === 'review'
-          ? (this.app.service('session-review').peekTurnExtras(sessionId) ?? {})
+          ? (getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {})
           : null;
       const agentOptions =
         channel === 'review'
-          ? await this.app.service('session-review').buildCursorReviewAgentOptions(session, {
+          ? await getReviewAgentTurn(this.app).buildCursorReviewAgentOptions(session, agent, {
               model: turnModel.model,
               modelParams: turnModel.modelParams,
               agentConfigId: turnAgentConfigId,
@@ -670,16 +684,11 @@ ${body}`,
               extraPrompt: reviewExtras.extraPrompt,
             })
           : await this._sessionAgentOptions(session, turnModel, turnAgentConfigId);
-      const agent = await this.createOrResumeAgent(session, {
+      const cursorAgent = await this.createOrResumeAgent(session, {
         agentOptions,
         resumeAgentId,
-        persistAgentId: (agentId) => {
-          const field =
-            channel === 'review'
-              ? { review_cursor_agent_id: agentId }
-              : { cursor_agent_id: agentId };
-          return db('sessions').where({ id: sessionId }).update(field);
-        },
+        persistAgentId: (cursorId) =>
+          patchAgentInternal(this.app, agent.id, { cursor_agent_id: cursorId }, userId),
       });
       const userText = extractUserText(parsed);
       const sendOptions: Record<string, unknown> = {};
@@ -687,12 +696,12 @@ ${body}`,
         sendOptions.mode = 'plan';
       }
 
-      const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
+      const run = await this._sendWithBusyRetry(cursorAgent, session, userText, sendOptions);
       sessionState.currentRun = run;
 
       const { allFinishedOk } = await this._streamRunChainWithFollowUps(
         session,
-        agent,
+        cursorAgent,
         run,
         turnUsage,
         turnModel,
@@ -709,10 +718,10 @@ ${body}`,
         await this.app
           .service('sessions')
           .recordCursorUsage(session, turnUsage, {
-            kind: channel === 'review' ? 'review' : undefined,
             turnModel,
             patchSessionCost: true,
             agentConfigId: sessionState.turnAgentConfigId,
+            agentId: agent.id,
           })
           .catch((err) =>
             logger.warn(
@@ -722,16 +731,14 @@ ${body}`,
           );
         if (!awaitingUser) {
           if (channel === 'review') {
-            await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
               sdk: 'cursor',
               turnUsage,
               agent,
               turnModel,
             });
           } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+            await setAgentTurnTerminal(this.app, agent, userId, 'completed');
           }
         }
       }
@@ -742,16 +749,12 @@ ${body}`,
         logger.error({ sessionId, err: (err as Error).message }, 'Cursor session stream error');
         try {
           if (channel === 'review') {
-            await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'cursor',
             });
-            await this.app
-              .service('session-review')
-              ._persistStatus(session, (err as Error).message);
+            await getReviewAgentTurn(this.app)._persistStatus(session, (err as Error).message);
           } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+            await setAgentTurnTerminal(this.app, agent, userId, 'failed');
             await this._persistStatusMessage(
               sessionId,
               userId,
@@ -770,11 +773,7 @@ ${body}`,
         turnFinishedOk = true;
       }
     } finally {
-      const clearField =
-        channel === 'review' ? { active_review_turn_id: null } : { active_chat_turn_id: null };
-      await (db('sessions').where({ id: sessionId }).update(clearField) as QueryBuilderLike).catch(
-        () => {}
-      );
+      await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
       this._activeSessions.delete(activeKey);
     }
 
@@ -864,14 +863,13 @@ ${body}`,
             statusMsg = `Cursor agent encountered an error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''} Send your message again to continue in a fresh conversation.`;
           }
           if (channel === 'review') {
-            await this.app.service('session-review')._persistStatus(session, statusMsg);
-            await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+            await getReviewAgentTurn(this.app)._persistStatus(session, statusMsg);
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'cursor',
             });
           } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+            const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
+            if (builder) await setAgentTurnTerminal(this.app, builder, userId, 'failed');
             await this._persistStatusMessage(sessionId, userId, statusMsg, session, channel);
           }
           return { break: true, finishedOk: false };
@@ -952,36 +950,19 @@ ${body}`,
     return null;
   }
 
-  async _persistMessage(
-    sessionId: number,
-    userId: number,
-    message: Record<string, unknown>,
-    session: AgentSessionRow,
-    channel: MessageChannel = 'chat'
-  ) {
-    return await this.app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: message.type,
-        subtype: (message.subtype as string | undefined) ?? null,
-        uuid: (message.uuid as string | undefined) ?? null,
-        message_json: JSON.stringify(message),
-        total_cost_usd: null,
-        ...sessionMessageIdentity(session, channel === 'review' ? 'reviewer' : 'builder', {
-          agent_sdk: 'cursor',
-        }),
-      },
-      { provider: undefined, user: { id: userId } }
-    );
-  }
-
   async _persistStatusMessage(
     sessionId: number,
     userId: number,
     statusText: string,
-    session: AgentSessionRow,
+    _session: AgentSessionRow,
     channel: MessageChannel = 'chat'
   ) {
+    const db = this.app.get('db');
+    const agentRow =
+      channel === 'review'
+        ? await getReviewerAgent(db, sessionId)
+        : await getPrimaryBuilderAgent(db, sessionId);
+    if (!agentRow) return;
     const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
     await this.app.service('messages').create(
       {
@@ -989,7 +970,7 @@ ${body}`,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(session, channel === 'review' ? 'reviewer' : 'builder', {
+        ...sessionMessageIdentity(agentRow, channel === 'review' ? 'reviewer' : 'builder', {
           agent_sdk: 'cursor',
         }),
       },
@@ -1112,11 +1093,17 @@ Task: ${initialPrompt}`;
 
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
-    { channel = 'chat' }: { channel?: MessageChannel } = {}
+    { channel = 'chat', agent: agentRow }: { channel?: MessageChannel; agent?: AgentRow } = {}
   ): Promise<boolean> {
-    return channel === 'review'
-      ? Boolean(session.review_cursor_agent_id)
-      : Boolean(session.cursor_agent_id);
+    let agent = agentRow;
+    if (!agent) {
+      agent =
+        channel === 'review'
+          ? ((await getReviewerAgent(this.app.get('db'), session.id)) as AgentRow | undefined)
+          : ((await getPrimaryBuilderAgent(this.app.get('db'), session.id)) as
+              AgentRow | undefined);
+    }
+    return Boolean(agent?.cursor_agent_id);
   }
 
   usesCompactionBeforeLoopRepeat(): boolean {

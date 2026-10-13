@@ -65,7 +65,8 @@ describe('resolveEffectiveAgentDefaults', () => {
           model_params: [{ id: 'fast', value: 'true' }],
         }),
       });
-    await db('sessions').insert({
+    const { insertSessionWithPrimaryBuilder } = await import('../../test-utils/session-agents.js');
+    await insertSessionWithPrimaryBuilder(db, {
       user_id: userId,
       repo_full_name: 'a/b',
       base_branch: 'main',
@@ -121,7 +122,7 @@ describe('assertAgentConfigOnCreate reviewer defaults', () => {
     });
   });
 
-  it('applies repo reviewer defaults instead of copying the builder config', async () => {
+  it('does not apply repo reviewer defaults on session create', async () => {
     await db('user_repos').insert({
       user_id: userId,
       repo_id: repoId,
@@ -136,23 +137,9 @@ describe('assertAgentConfigOnCreate reviewer defaults', () => {
       agent_sdk: 'claude',
     };
     await assertAgentConfigOnCreate({ app, params: { user: { id: userId } }, data });
-    expect(data.review_agent_config_id).toBe(cursorConfigId);
-    expect(data.review_agent_sdk).toBe('cursor');
-    expect(data.review_model).toBe('composer');
-  });
-
-  it('leaves review fields unset when no repo or account reviewer default', async () => {
-    await db('user_repos').insert({ user_id: userId, repo_id: repoId });
-    const app = feathers();
-    app.set('db', db);
-    const data = {
-      repo_id: repoId,
-      agent_config_id: claudeConfigId,
-      agent_sdk: 'claude',
-    };
-    await assertAgentConfigOnCreate({ app, params: { user: { id: userId } }, data });
     expect(data.review_agent_config_id).toBeUndefined();
     expect(data.review_agent_sdk).toBeUndefined();
+    expect(data.review_model).toBeUndefined();
   });
 });
 
@@ -228,7 +215,8 @@ describe('resolveAgentConfigIdForRepoSdk', () => {
   });
 
   it('falls back to last session config when no user default', async () => {
-    await db('sessions').insert({
+    const { insertSessionWithPrimaryBuilder } = await import('../../test-utils/session-agents.js');
+    await insertSessionWithPrimaryBuilder(db, {
       user_id: userId,
       repo_full_name: 'org/other',
       base_branch: 'main',

@@ -1,3 +1,5 @@
+import { parseUsageAgentTypeFilter } from '../../shared/usage-agent-type.js';
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_USAGE_DAYS = 30;
 
@@ -16,7 +18,13 @@ function parseAgentConfigFilter(value) {
 /** @param {import('knex').Knex} db */
 function usageQuery(
   db,
-  { userId = null, repo = null, agentConfigId = null, kind = null, days = DEFAULT_USAGE_DAYS } = {}
+  {
+    userId = null,
+    repo = null,
+    agentConfigId = null,
+    agentType = null,
+    days = DEFAULT_USAGE_DAYS,
+  } = {}
 ) {
   const since = new Date(Date.now() - days * MS_PER_DAY).toISOString();
   const q = db('usage').where('created_at', '>=', since);
@@ -25,10 +33,8 @@ function usageQuery(
   else if (repo) q.where({ repo_full_name: repo });
   if (agentConfigId === '__none__') q.whereNull('agent_config_id');
   else if (agentConfigId != null) q.where({ agent_config_id: agentConfigId });
-  if (kind === 'review') q.where({ kind: 'review' });
-  else if (kind === 'session') {
-    q.where((b) => b.whereNull('kind').orWhere('kind', '<>', 'review'));
-  }
+  if (agentType === 'reviewer') q.where({ agent_type: 'reviewer' });
+  else if (agentType === 'builder') q.where({ agent_type: 'builder' });
   return q;
 }
 
@@ -57,12 +63,13 @@ export function parseUsageFilters(data = {}, query = {}) {
   const userId = userIdRaw != null && userIdRaw !== '' ? Number(userIdRaw) : null;
   const agentConfigId = parseAgentConfigFilter(src.agent_config_id);
   const searchRaw = src.q ?? src.query ?? '';
+  const agentType = parseUsageAgentTypeFilter(src);
   return {
     days,
     userId: Number.isFinite(userId) ? userId : null,
     repo: src.repo || null,
     agentConfigId,
-    kind: src.kind || null,
+    agentType,
     search: String(searchRaw || '').trim(),
   };
 }
@@ -98,7 +105,7 @@ export async function fetchUsageUsers(db, { days, search = '' } = {}) {
   }));
 }
 
-/** One row per (day, repo, agent_config_id, kind, model) over the requested window. */
+/** One row per (day, repo, agent_config_id, agent_type, model) over the requested window. */
 export async function fetchUsageBreakdown(db, filters) {
   const rows = await usageQuery(db, filters)
     .select(
@@ -106,7 +113,7 @@ export async function fetchUsageBreakdown(db, filters) {
       'repo_full_name',
       'agent_config_id',
       db.raw('max(agent_sdk) as agent_sdk'),
-      db.raw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END as usage_kind"),
+      'agent_type',
       'model'
     )
     .sum('cost_usd as cost_usd')
@@ -115,9 +122,7 @@ export async function fetchUsageBreakdown(db, filters) {
     .sum('cache_read_tokens as cache_read_tokens')
     .sum('cache_write_tokens as cache_write_tokens')
     .sum('total_tokens as total_tokens')
-    .groupByRaw(
-      "date(created_at), repo_full_name, agent_config_id, CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END, model"
-    )
+    .groupByRaw('date(created_at), repo_full_name, agent_config_id, agent_type, model')
     .orderBy('day', 'asc');
 
   const mapped = rows.map((r) => ({
@@ -125,7 +130,7 @@ export async function fetchUsageBreakdown(db, filters) {
     repo_full_name: r.repo_full_name,
     agent_config_id: r.agent_config_id ?? null,
     agent_sdk: r.agent_sdk || 'claude',
-    kind: r.usage_kind === 'review' ? 'review' : 'session',
+    agent_type: r.agent_type === 'reviewer' ? 'reviewer' : 'builder',
     model: r.model || '',
     cost_usd: parseFloat(r.cost_usd),
     input_tokens: Number(r.input_tokens ?? 0),

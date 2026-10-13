@@ -14,6 +14,7 @@ import { contentBlocksFromLineDraft } from '@baguette/shared/user-message-conten
  */
 export default function DiffLineComposer({
   session,
+  builderAgent,
   path,
   line,
   shortSha,
@@ -59,13 +60,15 @@ export default function DiffLineComposer({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const isRunning = session?.status === 'running';
+  const agent = builderAgent ?? null;
+  const isRunning = agent?.status === 'running' || agent?.status === 'approval';
   const isProvisioning = session?.status === 'provisioning';
   const canSendDraft = Boolean(session?.id && !sending);
   const composerTurnFields = () =>
     builderMessageCreateFields(session, {
       model: composerModel,
       model_params: composerModelParams,
+      agent,
     });
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {

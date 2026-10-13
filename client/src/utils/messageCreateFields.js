@@ -1,39 +1,22 @@
-/** Fields required by messages.create for builder chat (matches composer / session defaults). */
-export function builderMessageCreateFields(session, { model, model_params } = {}) {
-  const resolvedModel = model ?? session?.model;
-  const resolvedParams = model_params ?? session?.model_params;
+/**
+ * Fields required by messages.create (matches composer / agent defaults).
+ * Pass `agent` from the agents table when available; otherwise falls back to merged session fields.
+ */
+export function builderMessageCreateFields(session, { model, model_params, agent } = {}) {
+  const source = agent ?? session;
+  const resolvedModel = model ?? source?.model;
+  const resolvedParams = model_params ?? source?.model_params;
   if (!resolvedModel) {
     throw new Error('model is required for messages.create');
   }
+  const agentType = agent?.agent_type === 'reviewer' ? 'reviewer' : 'builder';
   const fields = {
-    agent_type: 'builder',
-    agent_sdk: session?.agent_sdk || 'claude',
+    agent_type: agentType,
+    agent_sdk: source?.agent_sdk || 'claude',
     model: resolvedModel,
   };
+  if (agent?.id != null) fields.agent_id = agent.id;
   if (resolvedParams != null) fields.model_params = resolvedParams;
+  if (source?.agent_config_id != null) fields.agent_config_id = source.agent_config_id;
   return fields;
-}
-
-/**
- * Whole review turn snapshot for session-review.start / send / reviewNewCommits:
- * the agent config and the model pair ride on the post itself (explicit, even when
- * null), so the turn is what the reviewer panel currently shows — not a session
- * fallback the post forgot to name.
- */
-export function reviewComposerAgentFields({
-  agent_sdk,
-  model,
-  model_params,
-  review_agent_config_id,
-} = {}) {
-  const resolvedModel = model != null && String(model).trim() !== '' ? String(model).trim() : null;
-  if (!resolvedModel) {
-    throw new Error('model is required to start or continue a review');
-  }
-  return {
-    agent_sdk: agent_sdk || 'claude',
-    model: resolvedModel,
-    model_params: model_params ?? null,
-    review_agent_config_id: review_agent_config_id ?? null,
-  };
 }

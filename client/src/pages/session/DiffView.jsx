@@ -37,6 +37,7 @@ import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import { useLongPressPointer } from '../../hooks/useLongPressPointer.js';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
+import { useSessionAgents } from '../../hooks/useSessionAgents.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastFeathersError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
@@ -489,6 +490,7 @@ export default function DiffView({
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
+  const { primaryBuilder } = useSessionAgents(session?.id);
   const {
     checkingUnpushed: checkingUnpushedForMerge,
     showMergeModal,
@@ -576,6 +578,7 @@ export default function DiffView({
       <DiffLineComposer
         key={`${lineComposer.path}:${lineComposer.line}:${lineComposer.change ?? ''}`}
         session={session}
+        builderAgent={primaryBuilder}
         path={lineComposer.path}
         line={lineComposer.line}
         shortSha={lineComposer.short_sha}

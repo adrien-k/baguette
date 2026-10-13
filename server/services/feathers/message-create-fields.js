@@ -1,4 +1,4 @@
-import { BadRequest, Forbidden } from '@feathersjs/errors';
+import { BadRequest } from '@feathersjs/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
@@ -14,43 +14,43 @@ function coerceAgentConfigId(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
-function agent_config_idForSession(session, agent_type) {
-  const seeded =
-    agent_type === 'reviewer'
-      ? (session.review_agent_config_id ?? session.agent_config_id)
-      : session.agent_config_id;
-  return coerceAgentConfigId(seeded);
-}
-
-function agentSdkForSession(session, agentType) {
-  if (agentType === 'reviewer') {
-    return session.review_agent_sdk || session.agent_sdk || 'claude';
-  }
-  return session.agent_sdk || 'claude';
+function agentSdkForAgent(agent) {
+  return agent.agent_sdk || 'claude';
 }
 
 /**
  * Required identity columns for session_messages / queued_messages rows.
- * Callers must supply explicit turn model via `overrides` or session defaults.
+ * `agent` is the agents table row defaults apply from.
  */
-export function sessionMessageIdentity(session, agentType, overrides = {}) {
-  if (!session) throw new BadRequest('Session not found');
-  const agent_type = normalizeAgentType(overrides.agent_type ?? agentType);
-  const { model, modelParams } = resolveTurnModel(overrides, session);
+function resolveMessageAgentId(agent, agentType) {
+  const agent_type = normalizeAgentType(agentType ?? agent.agent_type);
+  if (agent.builder_agent_id != null || agent.reviewer_agent_id != null) {
+    const id = agent_type === 'reviewer' ? agent.reviewer_agent_id : agent.builder_agent_id;
+    if (id != null) return id;
+  }
+  if (agent.agent_type && agent.session_id != null) {
+    return agent.id;
+  }
+  throw new BadRequest('Agent not found');
+}
+
+export function sessionMessageIdentity(agent, agentType, overrides = {}) {
+  if (!agent) throw new BadRequest('Agent not found');
+  const agent_type = normalizeAgentType(overrides.agent_type ?? agentType ?? agent.agent_type);
+  const { model, modelParams } = resolveTurnModel(overrides, agent);
   const agent_sdk =
     overrides.agent_sdk != null && String(overrides.agent_sdk).trim() !== ''
       ? String(overrides.agent_sdk).trim()
-      : agentSdkForSession(session, agent_type);
+      : agentSdkForAgent(agent);
   if (!model) throw new BadRequest('model is required');
-  const row = { agent_type, agent_sdk, model };
+  const agent_id = resolveMessageAgentId(agent, agent_type);
+  if (agent_id == null) throw new BadRequest('Agent not found');
+  const row = { agent_type, agent_sdk, model, agent_id };
   if (modelParams != null && agentSdkSupportsModelParams(agent_sdk)) {
     row.model_params = modelParams;
   }
-  // Turn snapshot: the row carries the agent config the turn runs with (explicit
-  // override wins; otherwise seeded from the session/channel pair).
   row.agent_config_id =
-    coerceAgentConfigId(overrides.agent_config_id) ??
-    agent_config_idForSession(session, agent_type);
+    coerceAgentConfigId(overrides.agent_config_id) ?? coerceAgentConfigId(agent.agent_config_id);
   return row;
 }
 
@@ -59,6 +59,7 @@ function assertIdentityFields(data, { requireAgentType = true } = {}) {
   if (requireAgentType && !data.agent_type) missing.push('agent_type');
   if (!data.agent_sdk || String(data.agent_sdk).trim() === '') missing.push('agent_sdk');
   if (data.model == null || String(data.model).trim() === '') missing.push('model');
+  if (data.agent_id == null) missing.push('agent_id');
   if (missing.length) {
     throw new BadRequest(`Missing required message fields: ${missing.join(', ')}`);
   }
@@ -69,14 +70,17 @@ export async function requireMessageIdentity(context) {
   const data = context.data;
   if (!data?.session_id) throw new BadRequest('session_id is required');
 
-  if (context.params?.provider && normalizeAgentType(data.agent_type) === 'reviewer') {
-    throw new Forbidden('Review messages cannot be created from the client');
+  const db = context.app.get('db');
+  if (data.agent_id == null) {
+    const primary = await db('agents')
+      .where({ session_id: data.session_id, is_primary: 1 })
+      .first();
+    if (primary) data.agent_id = primary.id;
   }
 
   assertIdentityFields(data);
   data.agent_type = normalizeAgentType(data.agent_type);
 
-  // A turn never runs on another user's config: validate explicitly provided ids.
   if (data.agent_config_id != null && data.agent_config_id !== '') {
     const configId = coerceAgentConfigId(data.agent_config_id);
     if (configId == null) {
@@ -94,6 +98,13 @@ export async function requireQueuedMessageIdentity(context) {
   if (context.method !== 'create') return context;
   const data = context.data;
   if (!data?.session_id) throw new BadRequest('session_id is required');
+  const db = context.app.get('db');
+  if (data.agent_id == null) {
+    const primary = await db('agents')
+      .where({ session_id: data.session_id, is_primary: 1 })
+      .first();
+    if (primary) data.agent_id = primary.id;
+  }
   assertIdentityFields(data);
   data.agent_type = normalizeAgentType(data.agent_type);
   return context;

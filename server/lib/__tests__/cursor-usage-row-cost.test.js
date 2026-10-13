@@ -40,7 +40,7 @@ describe('estimateCursorUsageCostUsd', () => {
     );
   });
 
-  it('uses review model fields when kind is review', () => {
+  it('uses review model fields when agent type is reviewer', () => {
     const session = {
       model: 'composer-2',
       review_model: 'gpt-5.4-nano',
@@ -56,6 +56,9 @@ describe('estimateCursorUsageCostUsd', () => {
       total_tokens: 1_000_000,
       model: null,
     };
-    expect(estimateCursorUsageCostUsd(turnUsage, session, { kind: 'review' })).toBeCloseTo(0.2, 6);
+    expect(estimateCursorUsageCostUsd(turnUsage, session, { agentType: 'reviewer' })).toBeCloseTo(
+      0.2,
+      6
+    );
   });
 });

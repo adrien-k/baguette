@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { clearUsageModelPricingCache } from '../usage-model-pricing.js';
 import { recomputeUsageCosts } from '../usage-recompute.js';
 
@@ -16,13 +16,14 @@ describe('recomputeUsageCosts', () => {
       username: 'bob',
       approved: true,
     });
-    const [sessionId] = await db('sessions').insert({
+    const sessionId = await insertTestSession(db, {
       user_id: userId,
       repo_full_name: 'acme/app',
       base_branch: 'main',
       initial_prompt: 'go',
       total_cost_usd: 0,
     });
+    const builderAgent = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
 
     await db('usage_model_pricing').insert({
       model_id: 'batch-model',
@@ -36,6 +37,7 @@ describe('recomputeUsageCosts', () => {
       {
         session_id: sessionId,
         user_id: userId,
+        agent_id: builderAgent.id,
         repo_full_name: 'acme/app',
         model: 'batch-model',
         agent_sdk: 'cursor',
@@ -47,6 +49,7 @@ describe('recomputeUsageCosts', () => {
       {
         session_id: sessionId,
         user_id: userId,
+        agent_id: builderAgent.id,
         repo_full_name: 'acme/app',
         model: 'batch-model',
         agent_sdk: 'cursor',
@@ -77,7 +80,7 @@ describe('recomputeUsageCosts', () => {
       username: 'carol',
       approved: true,
     });
-    const [sessionId] = await db('sessions').insert({
+    const sessionId = await insertTestSession(db, {
       user_id: userId,
       repo_full_name: 'acme/app',
       base_branch: 'main',

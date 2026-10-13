@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import {
   formatUsd,
-  KIND_LABELS,
+  AGENT_TYPE_LABELS,
   listSessionCostLines,
   usageModelLabel,
 } from '../../utils/usageSeries.js';
@@ -13,7 +13,7 @@ export default function ChatCostSummary({
   loading = false,
 }: {
   usage?: {
-    breakdown?: { kind?: string; model?: string; cost_usd?: number | string }[];
+    breakdown?: { agent_type?: string; model?: string; cost_usd?: number | string }[];
     totals?: { cost_usd?: number | null } | null;
   } | null;
   loading?: boolean;
@@ -45,11 +45,11 @@ export default function ChatCostSummary({
         <ul className="mt-1 space-y-0.5 pl-5">
           {lines.map((row) => (
             <li
-              key={`${row.kind}-${row.model}`}
+              key={`${row.agent_type}-${row.model}`}
               className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0 text-fg-muted"
             >
               <span className="shrink-0">
-                {(KIND_LABELS as Record<string, string>)[row.kind] ?? row.kind}
+                {(AGENT_TYPE_LABELS as Record<string, string>)[row.agent_type] ?? row.agent_type}
               </span>
               <span className="text-line" aria-hidden>
                 ·

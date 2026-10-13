@@ -2,36 +2,35 @@ import { describe, it, expect } from 'vitest';
 import { resolveTurnIdForUserCreate } from '../turn-assignment.js';
 
 describe('resolveTurnIdForUserCreate', () => {
-  const baseSession = {
+  const runningBuilder = {
+    agent_type: 'builder',
     status: 'running',
-    review_status: 'idle',
+    active_turn_id: 4,
     current_turn_id: 4,
-    active_chat_turn_id: 4,
-    active_review_turn_id: null,
   };
 
   it('allocates a new turn when idle', () => {
-    const session = { ...baseSession, status: 'active' };
+    const agent = { agent_type: 'builder', status: 'stopped', active_turn_id: null };
     const r = resolveTurnIdForUserCreate(
-      session,
+      agent,
       { type: 'user', message_json: JSON.stringify({ type: 'user', content: 'hi' }) },
-      { channel: 'chat' }
+      {}
     );
     expect(r).toEqual({ turnId: null, increment: true });
   });
 
   it('reuses active turn for steering while running', () => {
     const r = resolveTurnIdForUserCreate(
-      baseSession,
+      runningBuilder,
       { type: 'user', message_json: JSON.stringify({ type: 'user', content: 'steer' }) },
-      { channel: 'chat', force: true }
+      { force: true }
     );
     expect(r).toEqual({ turnId: 4, increment: false });
   });
 
   it('reuses active turn for baguette messages while running', () => {
     const r = resolveTurnIdForUserCreate(
-      baseSession,
+      runningBuilder,
       {
         type: 'user',
         message_json: JSON.stringify({
@@ -40,25 +39,25 @@ describe('resolveTurnIdForUserCreate', () => {
           content: 'note',
         }),
       },
-      { channel: 'chat' }
+      {}
     );
     expect(r).toEqual({ turnId: 4, increment: false });
   });
 
-  it('reuses active_review_turn_id for human follow-ups while review is running', () => {
-    const session = {
-      review_status: 'running',
-      active_review_turn_id: 4,
-      status: 'stopped',
-      active_chat_turn_id: null,
+  it('reuses active_turn_id for human follow-ups while review is running', () => {
+    const reviewer = {
+      agent_type: 'reviewer',
+      status: 'running',
+      active_turn_id: 4,
+      current_turn_id: 4,
     };
     const { turnId, increment } = resolveTurnIdForUserCreate(
-      session,
+      reviewer,
       {
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content: 'follow up' }),
       },
-      { channel: 'review' }
+      {}
     );
     expect(increment).toBe(false);
     expect(turnId).toBe(4);

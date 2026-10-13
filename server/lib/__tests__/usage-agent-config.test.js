@@ -33,7 +33,7 @@ describe('usageAgentConfigIdForTurn', () => {
     expect(
       usageAgentConfigIdForTurn(
         { agent_config_id: 5, review_agent_config_id: 9 },
-        { kind: 'review' }
+        { agentType: 'reviewer' }
       )
     ).toBe(9);
   });

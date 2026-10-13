@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
 vi.mock('../anthropic-models.js', () => ({
@@ -120,7 +120,7 @@ describe('CreateSession MCP agent_config_id', () => {
   });
 
   it('uses last session agent_config_id when omitted', async () => {
-    await db('sessions').insert({
+    await insertTestSession(db, {
       user_id: user.id,
       repo_full_name: 'acme/repo',
       base_branch: 'main',

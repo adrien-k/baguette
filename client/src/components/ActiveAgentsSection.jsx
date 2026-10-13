@@ -8,7 +8,7 @@ import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js
 import { usageRepoLabel } from '../utils/usageSeries.js';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
 
-const KIND_LABELS = { chat: 'Chat', review: 'Review' };
+const AGENT_TYPE_LABELS = { builder: 'Builder', reviewer: 'Reviewer' };
 
 function modelAndParamsLabel(model, modelParams) {
   const id = parseModelField(model);
@@ -57,7 +57,7 @@ export default function ActiveAgentsSection({
             const modelLine = modelAndParamsLabel(agent.model, agent.model_params);
 
             return (
-              <li key={`${agent.session_id}-${agent.kind}`}>
+              <li key={`${agent.session_id}-${agent.agent_type}`}>
                 <Link
                   to={sessionUrl(agent.short_id)}
                   className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 sm:px-6 py-3 hover:bg-control/40 transition-colors"
@@ -70,7 +70,9 @@ export default function ActiveAgentsSection({
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs shrink-0 sm:justify-end sm:text-right">
-                    <span className="text-fg-muted">{KIND_LABELS[agent.kind] ?? agent.kind}</span>
+                    <span className="text-fg-muted">
+                      {AGENT_TYPE_LABELS[agent.agent_type] ?? agent.agent_type}
+                    </span>
                     <span className="text-faint">
                       {agent.agent_sdk ? formatAgentSdkDisplayName(agent.agent_sdk) : '—'}
                     </span>

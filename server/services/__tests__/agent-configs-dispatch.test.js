@@ -1,19 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
 import { registerUsersService } from '../feathers/users.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import {
   registerAgentConfigsService,
   registerAgentSdk,
 } from '../feathers/agent-configs.service.js';
-import { sessionMessageIdentity } from '../feathers/message-create-fields.js';
-
 const db = createTestDb();
 
 let app;
@@ -24,6 +23,7 @@ function makeApp() {
   const application = feathers();
   application.set('db', db);
   registerSessionsService(application);
+  registerAgentsService(application);
   registerMessagesService(application);
   registerUsersService(application);
   registerReposService(application);
@@ -43,7 +43,7 @@ beforeEach(async () => {
   });
   user1 = await db('users').where({ username: 'alice' }).first();
   const configId = await insertTestAgentConfig(db, user1.id, { apiKey: 'sk-ant' });
-  [sessionId] = await db('sessions').insert({
+  sessionId = await insertTestSession(db, {
     user_id: user1.id,
     repo_full_name: 'alice/repo',
     base_branch: 'main',
@@ -72,7 +72,9 @@ describe('agent-configs dispatch', () => {
           type: 'user',
           message: { role: 'user', content: 'hello' },
         }),
-        ...sessionMessageIdentity({ agent_sdk: 'claude', model: 'sonnet' }, 'builder'),
+        agent_type: 'builder',
+        agent_sdk: 'claude',
+        model: 'sonnet',
       },
       { provider: 'rest', user: user1 }
     );

@@ -179,8 +179,8 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         title="Reviewer default"
         description={
           defaultsRepoId
-            ? 'Pre-fills the reviewer panel for sessions in this repository.'
-            : 'Pre-fills the reviewer panel when a session has no review model yet.'
+            ? 'Pre-fills the Issues reviewer for sessions in this repository.'
+            : 'Pre-fills the Issues reviewer when a session has no review model yet.'
         }
         inheritLabel={reviewerInherit}
         configId={reviewerConfigId}

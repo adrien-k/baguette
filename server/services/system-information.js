@@ -61,60 +61,46 @@ async function usageCostUsdSince(userId, sinceIso) {
   return parseFloat(row?.cost_usd ?? 0) || 0;
 }
 
-const ACTIVE_AGENT_STATUSES = ['running', 'provisioning', 'archiving'];
+const RUNNING_TURN_STATUSES = ['running', 'approval'];
 
-const ACTIVE_SESSION_COLUMNS = [
-  'sessions.id',
-  'sessions.short_id',
-  'sessions.label',
-  'sessions.repo_full_name',
-  'sessions.status',
-  'sessions.review_status',
-  'sessions.agent_sdk',
-  'sessions.model',
-  'sessions.model_params',
-  'sessions.review_agent_sdk',
-  'sessions.review_model',
-  'sessions.review_model_params',
-];
-
-function sessionAgentRow(row, kind) {
-  const isReview = kind === 'review';
+function sessionAgentRow(row) {
+  const isReview = row.agent_type === 'reviewer';
   return {
-    session_id: row.id ?? row.session_id,
+    session_id: row.session_id,
     short_id: row.short_id,
     user_id: row.user_id,
     username: row.username ?? null,
     label: row.label,
     repo_full_name: row.repo_full_name ?? '',
-    kind,
-    agent_sdk: isReview ? (row.review_agent_sdk ?? row.agent_sdk) : row.agent_sdk,
-    model: isReview ? (row.review_model ?? row.model) : row.model,
-    model_params: isReview ? (row.review_model_params ?? row.model_params) : row.model_params,
+    agent_type: isReview ? 'reviewer' : 'builder',
+    agent_sdk: row.agent_sdk,
+    model: row.model,
+    model_params: row.model_params,
   };
 }
 
 /** Running chat and review agents (all users, or one user when `userId` is set). */
 export async function getActiveAgents(userId = null, knex = db) {
-  const q = knex('sessions').whereNull('archived_at');
-  if (userId != null) q.where({ user_id: userId });
-  const rows = await q
-    .where((qb) => {
-      qb.whereIn('status', ACTIVE_AGENT_STATUSES).orWhere('review_status', 'running');
-    })
+  const q = knex('agents')
+    .join('sessions', 'sessions.id', 'agents.session_id')
     .leftJoin('users', 'users.id', 'sessions.user_id')
-    .select([...ACTIVE_SESSION_COLUMNS, 'sessions.user_id', 'users.username']);
-
-  const agents = [];
-  for (const row of rows) {
-    if (ACTIVE_AGENT_STATUSES.includes(row.status)) {
-      agents.push(sessionAgentRow(row, 'chat'));
-    }
-    if (row.review_status === 'running') {
-      agents.push(sessionAgentRow(row, 'review'));
-    }
-  }
-
+    .whereIn('agents.status', RUNNING_TURN_STATUSES)
+    .whereNull('sessions.archived_at')
+    .select(
+      'agents.agent_type',
+      'agents.agent_sdk',
+      'agents.model',
+      'agents.model_params',
+      'sessions.id as session_id',
+      'sessions.short_id',
+      'sessions.label',
+      'sessions.repo_full_name',
+      'sessions.user_id',
+      'users.username'
+    );
+  if (userId != null) q.where('sessions.user_id', userId);
+  const rows = await q;
+  const agents = rows.map(sessionAgentRow);
   agents.sort((a, b) => {
     const labelA = a.label || a.short_id || '';
     const labelB = b.label || b.short_id || '';
@@ -124,10 +110,15 @@ export async function getActiveAgents(userId = null, knex = db) {
 }
 
 async function runningSessionCounts(userId) {
-  const base = () => db('sessions').where({ user_id: userId }).whereNull('archived_at');
+  const base = () =>
+    db('agents')
+      .join('sessions', 'sessions.id', 'agents.session_id')
+      .where('sessions.user_id', userId)
+      .whereNull('sessions.archived_at')
+      .whereIn('agents.status', RUNNING_TURN_STATUSES);
   const [agentsRow, reviewersRow] = await Promise.all([
-    base().whereIn('status', ACTIVE_AGENT_STATUSES).count('* as count').first(),
-    base().where('review_status', 'running').count('* as count').first(),
+    base().where('agents.is_primary', 1).count('* as count').first(),
+    base().where('agents.agent_type', 'reviewer').count('* as count').first(),
   ]);
   return {
     running_agents: Number(agentsRow?.count ?? 0),

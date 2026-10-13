@@ -1,30 +1,50 @@
 import { isTurnEndingBaguetteTool } from '../../../../shared/baguette-mcp-tool-names.js';
 import { markAwaitingUserAfterTurnEndingTool } from '../../agent-awaiting-user.js';
-import { reviewTurnKey } from '../../feathers/session-review.service.js';
+import { getPrimaryBuilderAgent, getReviewerAgent } from '../../agents-db.js';
+import { reviewTurnKey } from '../../review-agent-turn.js';
 
-function activeSessionStateForSdk(app, sdk, sessionId) {
-  const agentService =
-    sdk === 'claude'
-      ? app.service('claude-agent')
-      : sdk === 'cursor'
-        ? app.service('cursor-agent')
-        : sdk === 'pi'
-          ? app.service('pi-agent')
-          : null;
-  if (!agentService?.getActiveSession) return null;
-  return (
-    agentService.getActiveSession(sessionId) ??
-    agentService.getActiveSession(reviewTurnKey(sessionId)) ??
-    null
-  );
+function agentServiceForSdk(app, sdk) {
+  if (sdk === 'claude') return app.service('claude-agent');
+  if (sdk === 'cursor') return app.service('cursor-agent');
+  if (sdk === 'pi') return app.service('pi-agent');
+  return null;
+}
+
+async function resolveActiveSessionState(app, sessionId) {
+  const db = app.get('db');
+  const candidates = [];
+
+  const builder = await getPrimaryBuilderAgent(db, sessionId);
+  if (builder?.agent_sdk) {
+    candidates.push({ sdk: builder.agent_sdk, keys: [sessionId], agentId: builder.id });
+  }
+  const reviewer = await getReviewerAgent(db, sessionId);
+  if (reviewer?.agent_sdk) {
+    candidates.push({
+      sdk: reviewer.agent_sdk,
+      keys: [reviewTurnKey(reviewer.id)],
+      agentId: reviewer.id,
+    });
+  }
+
+  for (const { sdk, keys, agentId } of candidates) {
+    const agentService = agentServiceForSdk(app, sdk);
+    if (!agentService?.getActiveSession) continue;
+    for (const key of keys) {
+      const state = agentService.getActiveSession(key);
+      if (state) {
+        if (!state.agentId) state.agentId = agentId;
+        return state;
+      }
+    }
+  }
+  return null;
 }
 
 async function markAwaitingUserAfterTurnEndingBaguetteTool(app, session) {
   const sessionId = session.id;
   const userId = session.user_id;
-  const row = await app.get('db')('sessions').where({ id: sessionId }).first();
-  const sdk = row?.agent_sdk ?? session.agent_sdk;
-  const sessionState = activeSessionStateForSdk(app, sdk, sessionId);
+  const sessionState = await resolveActiveSessionState(app, sessionId);
   await markAwaitingUserAfterTurnEndingTool(app, sessionId, userId, sessionState);
 }
 

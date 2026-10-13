@@ -51,7 +51,7 @@ export function useSessionCommitsToPush(session) {
     return () => {
       cancelled = true;
     };
-  }, [skip, sessionId, session?.last_reviewed_commit_sha, session?.review_status, refreshNonce]);
+  }, [skip, sessionId, session?.review_status, refreshNonce]);
 
   const refreshCommitsToPush = useCallback(async () => {
     if (skip || !sessionId) {

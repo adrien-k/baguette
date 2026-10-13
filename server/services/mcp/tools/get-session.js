@@ -26,17 +26,28 @@ export function createGetSessionTool(ctx) {
 
       const session_id = session.id;
       const db = app.get('db');
-      const { count } = await db('session_messages')
-        .where({ session_id })
-        .count('* as count')
-        .first();
+      const builder = await db('agents').where({ session_id, is_primary: 1 }).first();
+      const builderAgentId = builder?.id ?? null;
+
+      let countQuery = db('session_messages').where({ session_id });
+      if (builderAgentId != null) {
+        countQuery = countQuery.where({ agent_id: builderAgentId });
+      } else {
+        countQuery = countQuery.where({ agent_type: 'builder' });
+      }
+      const { count } = await countQuery.count('* as count').first();
       const messageCount = Number(count ?? 0);
 
-      const lastAssistant = await db('session_messages')
+      let lastAssistantQuery = db('session_messages')
         .where({ session_id })
         .whereIn('type', ['assistant'])
-        .orderBy('id', 'desc')
-        .first();
+        .orderBy('id', 'desc');
+      if (builderAgentId != null) {
+        lastAssistantQuery = lastAssistantQuery.where({ agent_id: builderAgentId });
+      } else {
+        lastAssistantQuery = lastAssistantQuery.where({ agent_type: 'builder' });
+      }
+      const lastAssistant = await lastAssistantQuery.first();
 
       const tasksService = app.service('tasks');
       const last_failed_tasks = tasksService?.listTasksForSession

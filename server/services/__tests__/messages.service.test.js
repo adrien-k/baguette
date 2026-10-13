@@ -5,10 +5,12 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession, testMessageRow } from '../../test-utils/db.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
+import { registerReviewAgentTurn } from '../review-agent-turn.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -35,6 +37,8 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
+  registerReviewAgentTurn(app);
+  registerAgentsService(app);
   app.use(
     'claude-agent',
     {
@@ -70,7 +74,7 @@ beforeEach(async () => {
   await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
   const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
-  [sessionId] = await db('sessions').insert({
+  sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_id: repo.id,
     repo_full_name: 'test/repo',
@@ -81,7 +85,7 @@ beforeEach(async () => {
     model: 'sonnet',
     model_params: '[{"id":"effort","value":"high"}]',
   });
-  [otherSessionId] = await db('sessions').insert({
+  otherSessionId = await insertTestSession(db, {
     user_id: otherUserId,
     repo_id: repo.id,
     repo_full_name: 'test/repo',
@@ -92,14 +96,12 @@ beforeEach(async () => {
     model: 'sonnet',
   });
 
-  [msgId] = await db('session_messages').insert({
-    session_id: sessionId,
-    agent_type: 'builder',
-    agent_sdk: 'claude',
-    model: 'sonnet',
-    type: 'assistant',
-    message_json: JSON.stringify({ type: 'assistant', content: 'Hello' }),
-  });
+  [msgId] = await db('session_messages').insert(
+    await testMessageRow(db, sessionId, {
+      type: 'assistant',
+      message_json: JSON.stringify({ type: 'assistant', content: 'Hello' }),
+    })
+  );
 
   app = makeApp(db);
   await app.setup();
@@ -187,7 +189,7 @@ describe('Messages service - create', () => {
   });
 
   it('stores an explicit turn model snapshot without changing the session', async () => {
-    await db('sessions').where({ id: sessionId }).update({ model: 'opus' });
+    await db('agents').where({ session_id: sessionId, is_primary: 1 }).update({ model: 'opus' });
     const msg = await app.service('messages').create(
       {
         session_id: sessionId,
@@ -202,8 +204,8 @@ describe('Messages service - create', () => {
     );
     expect(msg.model).toBe('sonnet');
     expect(msg.model_params).toBe('[{"id":"fast","value":"true"}]');
-    const session = await db('sessions').where({ id: sessionId }).first();
-    expect(session.model).toBe('opus');
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    expect(builder.model).toBe('opus');
   });
 
   it('calls sessions.onMessageCreated after create', async () => {
@@ -265,27 +267,43 @@ describe('Messages service - agent_type and queue', () => {
     expect(data[0].id).toBe(msgId);
   });
 
-  it('rejects client create with agent_type reviewer', async () => {
-    await expect(
-      app.service('messages').create(
-        {
-          session_id: sessionId,
+  it('allows client create with agent_type reviewer when agent_id is set', async () => {
+    const [reviewerId] = await db('agents').insert({
+      session_id: sessionId,
+      name: 'Reviewer',
+      agent_type: 'reviewer',
+      is_primary: 0,
+      status: 'stopped',
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      agent_config_id: (await db('agents').where({ session_id: sessionId, is_primary: 1 }).first())
+        .agent_config_id,
+      current_turn_id: 0,
+    });
+    await db('sessions').where({ id: sessionId }).update({ session_path: '/tmp/test-worktree' });
+    const result = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        agent_type: 'reviewer',
+        agent_id: reviewerId,
+        agent_sdk: 'claude',
+        model: 'sonnet',
+        message_json: JSON.stringify({
           type: 'user',
-          agent_type: 'reviewer',
-          agent_sdk: 'claude',
-          model: 'sonnet',
-          message_json: JSON.stringify({
-            type: 'user',
-            message: { role: 'user', content: 'nope' },
-          }),
-        },
-        params({ id: userId })
-      )
-    ).rejects.toThrow(/Review messages cannot be created from the client/);
+          message: { role: 'user', content: 'review follow-up' },
+        }),
+      },
+      params({ id: userId })
+    );
+    expect(result.id).toBeTruthy();
+    expect(result.agent_type).toBe('reviewer');
   });
 
   it('queues a builder user message while the session turn is running', async () => {
-    await db('sessions').where({ id: sessionId }).update({ status: 'running' });
+    await db('agents')
+      .where({ session_id: sessionId, is_primary: 1 })
+      .update({ status: 'running' });
 
     const result = await app.service('messages').create(
       {

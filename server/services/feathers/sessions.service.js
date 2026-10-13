@@ -56,7 +56,17 @@ import { isGlobalSession } from '../../../shared/session-scope.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { computeSessionGitStatus } from '../session-git-status.js';
-import { isSessionAwaitingUser } from '../agent-awaiting-user.js';
+import { isBuilderAgentAwaitingUser } from '../agent-awaiting-user.js';
+import {
+  getPrimaryBuilderAgent,
+  listAgentsForSession,
+  getReviewerAgent,
+  insertPrimaryBuilderAgent,
+  ensureReviewerAgentRow,
+} from '../agents-db.js';
+import { patchAgentInternal } from './agents.service.js';
+import { setAgentTurnTerminal } from '../agent-turn-patch.js';
+import { getReviewAgentTurn } from '../review-agent-turn.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
@@ -79,6 +89,8 @@ import { delta, diffModelUsage } from '../turn-usage.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { estimateUsageRowCostUsd } from '../../lib/usage-row-cost.js';
 import { usageAgentConfigIdForTurn } from '../../lib/usage-agent-config.js';
+import { getAgentById } from '../agents-db.js';
+import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
@@ -203,7 +215,7 @@ export class SessionsService extends KnexService {
    * left unchanged. Sessions whose agent conversation can be resumed
    * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
    * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
-   * Reviews left in `review_status: 'running'` are resumed the same way when a review agent id is stored.
+   * Reviewer agents left in `running` are resumed the same way when a SDK session id is stored on the agent row.
    *
    * Call this after `app.setup()` — restarting reaches into the agent services, which need their
    * own `setup()` to have run first.
@@ -217,9 +229,11 @@ export class SessionsService extends KnexService {
     let interrupted;
     try {
       interrupted = await db('sessions')
-        .whereIn('status', ['running'])
-        .whereNull('archived_at')
-        .select('id', 'user_id', 'agent_sdk', 'claude_session_id', 'cursor_agent_id');
+        .join('agents', 'agents.session_id', 'sessions.id')
+        .where('agents.is_primary', 1)
+        .whereIn('agents.status', ['running', 'approval'])
+        .whereNull('sessions.archived_at')
+        .select('sessions.id', 'sessions.user_id', 'agents.id as builder_agent_id');
     } catch (err) {
       logger.error(err, 'Failed to load interrupted sessions on startup');
       return counts;
@@ -254,10 +268,12 @@ export class SessionsService extends KnexService {
     const session = await this.app.get('db')('sessions').where({ id: partial.id }).first();
     if (!session) return false;
     const userParams = { user: { id: session.user_id } };
+    const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
+    if (!builder) return false;
     const agentServicePath = await agentServicePathForSession(this.app, session);
     const resumable = await this.app
       .service(agentServicePath)
-      .isInterruptedSessionResumable(session);
+      .isInterruptedSessionResumable(session, { agent: builder });
 
     if (!resumable) {
       // Nothing was ever persisted on the agent side, so there is no transcript to pick up —
@@ -279,11 +295,13 @@ export class SessionsService extends KnexService {
             message: { role: 'user', content: RESTART_PROMPT },
             title: 'Server restarted',
           }),
-          ...sessionMessageIdentity(session, 'builder'),
+          ...sessionMessageIdentity(builder, 'builder'),
         },
         { ...userParams, _skipAgentDispatch: true }
       );
-      const resumeAgent = await getAgentServiceForSession(this.app, session);
+      const resumeAgent = await getAgentServiceForSession(this.app, session, {
+        agentId: builder.id,
+      });
       if (resumeAgent?.handleMessageCreated) {
         await resumeAgent.handleMessageCreated(created);
       }
@@ -390,13 +408,15 @@ export class SessionsService extends KnexService {
   async _postStatusMessage(sessionId, userParams, status, extra = {}) {
     const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
     if (!session) return null;
+    const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
+    if (!builder) return null;
     return this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify({ type: 'system', subtype: 'status', status, ...extra }),
-        ...sessionMessageIdentity(session, 'builder'),
+        ...sessionMessageIdentity(builder, 'builder'),
       },
       userParams
     );
@@ -584,11 +604,12 @@ export class SessionsService extends KnexService {
   }
 
   async _stopReviewer(session) {
-    if (!this.app.services?.['session-review']) return;
+    const reviewTurn = getReviewAgentTurn(this.app);
+    if (!reviewTurn) return;
+    const reviewer = await getReviewerAgent(this.app.get('db'), session.id);
+    if (!reviewer || (reviewer.status !== 'running' && reviewer.status !== 'approval')) return;
     try {
-      await this.app
-        .service('session-review')
-        .stop({ session_id: session.id }, { user: { id: session.user_id } });
+      await reviewTurn.stopReviewerAgent(session, reviewer);
     } catch (err) {
       logger.warn(
         { sessionId: session.id, err: err.message },
@@ -598,9 +619,10 @@ export class SessionsService extends KnexService {
   }
 
   async _resumeInterruptedReviews() {
-    if (!this.app.services?.['session-review']) return;
+    const reviewTurn = getReviewAgentTurn(this.app);
+    if (!reviewTurn) return;
     try {
-      const reviewCounts = await this.app.service('session-review').resumeInterrupted();
+      const reviewCounts = await reviewTurn.resumeInterrupted();
       if (reviewCounts && (reviewCounts.resumed || reviewCounts.failed)) {
         logger.info(reviewCounts, 'Recovered interrupted review(s) on startup');
       }
@@ -612,6 +634,10 @@ export class SessionsService extends KnexService {
   async stop(data, params) {
     const session = params.resolvedSession;
     await this._stopAgentSession(session);
+    const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
+    if (builder) {
+      await setAgentTurnTerminal(this.app, builder, session.user_id, 'stopped');
+    }
     await this.app
       .service('sessions')
       .patch(session.id, { status: 'stopped' }, { user: { id: session.user_id } });
@@ -882,23 +908,19 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const rows = await db('usage')
       .where({ session_id: session.id })
-      .select(
-        db.raw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END as usage_kind"),
-        'model',
-        'agent_sdk'
-      )
+      .select('agent_type', 'model', 'agent_sdk')
       .sum('cost_usd as cost_usd')
       .sum('input_tokens as input_tokens')
       .sum('output_tokens as output_tokens')
       .sum('cache_read_tokens as cache_read_tokens')
       .sum('cache_write_tokens as cache_write_tokens')
       .sum('total_tokens as total_tokens')
-      .groupByRaw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END, model, agent_sdk")
-      .orderBy('usage_kind')
+      .groupByRaw('agent_type, model, agent_sdk')
+      .orderBy('agent_type')
       .orderBy('model');
 
     const breakdown = rows.map((r) => ({
-      kind: r.usage_kind === 'review' ? 'review' : 'session',
+      agent_type: normalizeUsageAgentType(r.agent_type),
       model: r.model || 'unknown',
       agent_sdk: r.agent_sdk || 'claude',
       cost_usd: parseFloat(r.cost_usd ?? 0),
@@ -1229,15 +1251,12 @@ export class SessionsService extends KnexService {
     )
       return;
 
-    if (session.status !== 'running') {
-      await this.app.service('sessions').patch(
-        sessionId,
-        { status: 'running' },
-        {
-          provider: undefined,
-          user: { id: session.user_id },
-        }
-      );
+    const builder =
+      message.agent_id != null
+        ? await db('agents').where({ id: message.agent_id }).first()
+        : await getPrimaryBuilderAgent(db, sessionId);
+    if (builder && builder.status !== 'running') {
+      await patchAgentInternal(this.app, builder.id, { status: 'running' }, session.user_id);
     }
   }
 
@@ -1247,23 +1266,17 @@ export class SessionsService extends KnexService {
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session || session.archived_at) return;
 
-    if (session.review_status !== 'running') {
-      await this.app.service('sessions').patch(
-        sessionId,
-        { review_status: 'running' },
-        {
-          provider: undefined,
-          user: { id: session.user_id },
-        }
-      );
+    const reviewer =
+      message.agent_id != null
+        ? await db('agents').where({ id: message.agent_id }).first()
+        : await getReviewerAgent(db, sessionId);
+    if (reviewer && reviewer.status !== 'running') {
+      await patchAgentInternal(this.app, reviewer.id, { status: 'running' }, session.user_id);
     }
 
-    const review = this.app.service('session-review');
-    if (review && !review._active.has(sessionId)) {
-      review._active.set(sessionId, { pending: true });
-      if (!review._turnExtras.has(sessionId)) {
-        review._turnExtras.set(sessionId, { continuation: true });
-      }
+    const review = getReviewAgentTurn(this.app);
+    if (review && !review.peekTurnExtras(sessionId)) {
+      review.setTurnExtras(sessionId, { continuation: true });
     }
   }
 
@@ -1281,7 +1294,7 @@ export class SessionsService extends KnexService {
   async recordClaudeUsage(
     session,
     result,
-    { kind, model, totalsKey, patchSessionCost, agentConfigId } = {}
+    { model, totalsKey, patchSessionCost, agentConfigId, agentId } = {}
   ) {
     if (!session || !result) return 0;
     const key = totalsKey ?? session.id;
@@ -1295,26 +1308,33 @@ export class SessionsService extends KnexService {
     if (costUpdate <= 0 && turnUsage.total_tokens <= 0) return 0;
 
     const db = this.app.get('db');
+    const agent =
+      agentId != null
+        ? await getAgentById(db, agentId)
+        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
+    const agent_type = normalizeUsageAgentType(agent?.agent_type);
+    const pricingSnapshot = agent ?? session;
 
     const row = {
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUpdate, 0),
-      agent_sdk:
-        kind === 'review'
-          ? session.review_agent_sdk || session.agent_sdk || 'claude'
-          : session.agent_sdk || 'claude',
+      agent_sdk: agent?.agent_sdk ?? session.agent_sdk ?? 'claude',
+      agent_type,
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
       cache_write_tokens: turnUsage.cache_write_tokens,
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
-      model: turnUsage.model ?? model ?? session.model ?? null,
-      agent_config_id: usageAgentConfigIdForTurn(session, { kind, agentConfigId }),
+      model: turnUsage.model ?? model ?? agent?.model ?? session.model ?? null,
+      agent_config_id: usageAgentConfigIdForTurn(pricingSnapshot, {
+        agentType: agent_type,
+        agentConfigId,
+      }),
     };
-    if (kind) row.kind = kind;
+    if (agent?.id != null) row.agent_id = agent.id;
     await db('usage').insert(row);
 
     if (patchSessionCost && costUpdate > 0) {
@@ -1341,24 +1361,36 @@ export class SessionsService extends KnexService {
   async recordCursorUsage(
     session,
     turnUsage,
-    { kind, turnModel, patchSessionCost, agentConfigId } = {}
+    { turnModel, patchSessionCost, agentConfigId, agentId } = {}
   ) {
     if (!session || !turnUsage) return 0;
 
     applyCursorUsageDerivation(turnUsage);
     const db = this.app.get('db');
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, session, { kind, turnModel });
+    const agent =
+      agentId != null
+        ? await getAgentById(db, agentId)
+        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
+    const agent_type = normalizeUsageAgentType(agent?.agent_type);
+    const pricingSnapshot = agent ?? session;
+    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot, {
+      agentType: agent_type,
+      turnModel,
+    });
 
     if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
 
-    await db('usage').insert({
+    const row = {
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUsd, 0),
       agent_sdk: 'cursor',
-      agent_config_id: usageAgentConfigIdForTurn(session, { kind, agentConfigId }),
-      kind: kind ?? null,
+      agent_type,
+      agent_config_id: usageAgentConfigIdForTurn(pricingSnapshot, {
+        agentType: agent_type,
+        agentConfigId,
+      }),
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
@@ -1366,13 +1398,10 @@ export class SessionsService extends KnexService {
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
       raw_token_usage: turnUsage.raw_token_usage,
-      model:
-        turnUsage.model ??
-        turnModel?.model ??
-        (kind === 'review' ? session.review_model : null) ??
-        session.model ??
-        null,
-    });
+      model: turnUsage.model ?? turnModel?.model ?? agent?.model ?? session.model ?? null,
+    };
+    if (agent?.id != null) row.agent_id = agent.id;
+    await db('usage').insert(row);
 
     if (!patchSessionCost || costUsd <= 0) return costUsd;
 
@@ -1395,36 +1424,45 @@ export class SessionsService extends KnexService {
   async recordPiUsage(
     session,
     turnUsage,
-    { kind, turnModel, patchSessionCost, agentConfigId } = {}
+    { turnModel, patchSessionCost, agentConfigId, agentId } = {}
   ) {
     if (!session || !turnUsage) return 0;
 
     const db = this.app.get('db');
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, session, { kind, turnModel });
+    const agent =
+      agentId != null
+        ? await getAgentById(db, agentId)
+        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
+    const agent_type = normalizeUsageAgentType(agent?.agent_type);
+    const pricingSnapshot = agent ?? session;
+    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot, {
+      agentType: agent_type,
+      turnModel,
+    });
 
     if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
 
-    await db('usage').insert({
+    const row = {
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUsd, 0),
       agent_sdk: 'pi',
-      agent_config_id: usageAgentConfigIdForTurn(session, { kind, agentConfigId }),
-      kind: kind ?? null,
+      agent_type,
+      agent_config_id: usageAgentConfigIdForTurn(pricingSnapshot, {
+        agentType: agent_type,
+        agentConfigId,
+      }),
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
       cache_write_tokens: turnUsage.cache_write_tokens,
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
-      model:
-        turnUsage.model ??
-        turnModel?.model ??
-        (kind === 'review' ? session.review_model : null) ??
-        session.model ??
-        null,
-    });
+      model: turnUsage.model ?? turnModel?.model ?? agent?.model ?? session.model ?? null,
+    };
+    if (agent?.id != null) row.agent_id = agent.id;
+    await db('usage').insert(row);
 
     if (!patchSessionCost || costUsd <= 0) return costUsd;
 
@@ -1454,9 +1492,18 @@ export class SessionsService extends KnexService {
   async onTurnComplete(sessionId) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
-    if (session?.status === 'stopped') return;
+    if (!session) return;
 
-    if (isSessionAwaitingUser(session)) {
+    const builder = await getPrimaryBuilderAgent(db, sessionId);
+    if (
+      session.status === 'stopped' &&
+      builder?.status === 'stopped' &&
+      !isBuilderAgentAwaitingUser(builder)
+    ) {
+      return;
+    }
+
+    if (isBuilderAgentAwaitingUser(builder)) {
       this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
       return;
     }
@@ -1473,7 +1520,9 @@ export class SessionsService extends KnexService {
       }
     }
 
-    await this.flushNextQueuedTurn(sessionId, 'builder');
+    if (builder?.id != null) {
+      await this.flushNextQueuedTurn(sessionId, builder.id);
+    }
 
     const after = await db('sessions').where({ id: sessionId }).first();
     if (after) {
@@ -1510,20 +1559,23 @@ export class SessionsService extends KnexService {
     );
   }
 
-  /** Flush the oldest queued turn message for this session and agent_type. */
-  async flushNextQueuedTurn(sessionId, agentType = 'builder') {
+  /** Flush the oldest queued turn message for this session and agent. */
+  async flushNextQueuedTurn(sessionId, agentId) {
+    if (agentId == null) return;
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
+    const agentRow = await db('agents').where({ id: agentId, session_id: sessionId }).first();
+    if (!agentRow) return;
     if (session) {
-      if (agentType === 'builder') {
-        await db('sessions')
-          .where({ id: sessionId })
-          .update({ active_chat_turn_id: null })
-          .catch(() => {});
-      }
+      await patchAgentInternal(
+        this.app,
+        agentRow.id,
+        { active_turn_id: null },
+        session.user_id
+      ).catch(() => {});
     }
     const queued = await db('queued_messages')
-      .where({ session_id: sessionId, kind: 'turn', agent_type: agentType })
+      .where({ session_id: sessionId, kind: 'turn', agent_id: agentId })
       .orderBy('created_at', 'asc')
       .first();
     if (!queued) return;
@@ -1535,7 +1587,8 @@ export class SessionsService extends KnexService {
         session_id: sessionId,
         type: 'user',
         message_json: queued.message_json,
-        agent_type: queued.agent_type ?? agentType,
+        agent_id: queued.agent_id ?? agentRow.id,
+        agent_type: queued.agent_type ?? agentRow.agent_type,
         agent_sdk: queued.agent_sdk,
         model: queued.model,
         ...(queued.model_params != null ? { model_params: queued.model_params } : {}),
@@ -1864,7 +1917,10 @@ async function finalizeSessionAfterProvision(app, session, params) {
   // flush the oldest now that the worktree exists. If we already created the first
   // user message from initial_prompt, wait for that turn to finish (onTurnComplete).
   if (!createdInitialPrompt) {
-    await app.service('sessions').flushNextQueuedTurn(session.id, 'builder');
+    const builder = await getPrimaryBuilderAgent(db, session.id);
+    if (builder?.id != null) {
+      await app.service('sessions').flushNextQueuedTurn(session.id, builder.id);
+    }
   }
   const latest = await db('sessions').where({ id: session.id }).first();
   if (latest?.status === PROVISIONING_STATUS) {
@@ -1918,20 +1974,23 @@ async function failSessionProvisioning(app, sessionId, user, err) {
       );
     }
     if (session && !aborted) {
-      await app.service('messages').create(
-        {
-          session_id: sessionId,
-          type: 'system',
-          subtype: 'status',
-          message_json: JSON.stringify({
+      const builder = await getPrimaryBuilderAgent(db, sessionId);
+      if (builder) {
+        await app.service('messages').create(
+          {
+            session_id: sessionId,
             type: 'system',
             subtype: 'status',
-            status: `Setup failed — ${message}`,
-          }),
-          ...sessionMessageIdentity(session, 'builder'),
-        },
-        userParams
-      );
+            message_json: JSON.stringify({
+              type: 'system',
+              subtype: 'status',
+              status: `Setup failed — ${message}`,
+            }),
+            ...sessionMessageIdentity(builder, 'builder'),
+          },
+          userParams
+        );
+      }
     }
   } catch (patchErr) {
     logger.error(
@@ -1992,7 +2051,10 @@ async function scheduleSessionProvisioning(context) {
   if (waitForProvision) {
     const outcome = await promise;
     if (outcome.error) throw outcome.error;
-    if (outcome.session) context.result = outcome.session;
+    if (outcome.session) {
+      context.result = outcome.session;
+      await mergeSessionAgentFields(context);
+    }
   }
   return context;
 }
@@ -2109,73 +2171,167 @@ function normalizeModelFields(context) {
   return context;
 }
 
-async function syncAgentConfigOnPatch(context) {
-  if (context.method !== 'patch' || !context.data) return context;
+const BUILDER_AGENT_SESSION_FIELDS = [
+  'agent_config_id',
+  'agent_sdk',
+  'model',
+  'model_params',
+  'claude_session_id',
+  'cursor_agent_id',
+  'pi_session_id',
+];
+const REVIEWER_AGENT_SESSION_FIELDS = [
+  'review_agent_config_id',
+  'review_agent_sdk',
+  'review_model',
+  'review_model_params',
+];
+const REVIEW_SESSION_FIELD_TO_AGENT = {
+  review_agent_config_id: 'agent_config_id',
+  review_agent_sdk: 'agent_sdk',
+  review_model: 'model',
+  review_model_params: 'model_params',
+};
+
+async function stashBuilderAgentFieldsOnCreate(context) {
+  const builderStash = {};
+  for (const key of BUILDER_AGENT_SESSION_FIELDS) {
+    if (context.data[key] !== undefined) {
+      builderStash[key] = context.data[key];
+      delete context.data[key];
+    }
+  }
+  context.params.primaryBuilderFields = builderStash;
+
+  for (const key of REVIEWER_AGENT_SESSION_FIELDS) {
+    delete context.data[key];
+  }
+  return context;
+}
+
+async function insertPrimaryBuilderAfterCreate(context) {
+  const session = context.result;
+  if (!session?.id) return context;
+  const db = context.app.get('db');
+  const existing = await getPrimaryBuilderAgent(db, session.id);
+  if (existing) return context;
+  const fields = context.params.primaryBuilderFields ?? {};
+  await insertPrimaryBuilderAgent(db, session.id, {
+    agent_config_id: fields.agent_config_id ?? null,
+    agent_sdk: fields.agent_sdk ?? null,
+    model: fields.model ?? null,
+    model_params: fields.model_params ?? null,
+    status: 'stopped',
+  });
+  return context;
+}
+
+async function mergeSessionAgentFields(context) {
+  const attach = async (session) => {
+    if (!session?.id) return session;
+    const db = context.app.get('db');
+    const builder = await getPrimaryBuilderAgent(db, session.id);
+    const reviewer = await getReviewerAgent(db, session.id);
+    const agentRows = await listAgentsForSession(db, session.id);
+    const out = { ...session };
+    out.agents = agentRows.map((a) => ({
+      id: a.id,
+      name: a.name,
+      agent_type: a.agent_type,
+      status: a.status,
+      is_primary: a.is_primary,
+    }));
+    if (builder) {
+      out.agent_config_id = builder.agent_config_id;
+      out.agent_sdk = builder.agent_sdk;
+      out.model = builder.model;
+      out.model_params = builder.model_params;
+      out.claude_session_id = builder.claude_session_id;
+      out.cursor_agent_id = builder.cursor_agent_id;
+      out.pi_session_id = builder.pi_session_id;
+      out.builder_agent_id = builder.id;
+    }
+    if (reviewer) {
+      out.review_agent_config_id = reviewer.agent_config_id;
+      out.review_agent_sdk = reviewer.agent_sdk;
+      out.review_model = reviewer.model;
+      out.review_model_params = reviewer.model_params;
+      out.review_status = reviewer.status;
+      out.reviewer_agent_id = reviewer.id;
+    }
+    return out;
+  };
+  const result = context.result;
+  if (!result) return context;
+  if (Array.isArray(result?.data)) {
+    context.result = { ...result, data: await Promise.all(result.data.map(attach)) };
+  } else if (Array.isArray(result)) {
+    context.result = await Promise.all(result.map(attach));
+  } else {
+    context.result = await attach(result);
+  }
+  return context;
+}
+
+async function redirectAgentFieldsOnSessionPatch(context) {
+  if (context.method !== 'patch' || context.id == null || !context.data) return context;
   const userId = context.params.user?.id;
   if (!userId) return context;
   const db = context.app.get('db');
-  if (context.data.agent_config_id != null && context.data.agent_config_id !== '') {
-    const config = await loadOwnedAgentConfig(db, Number(context.data.agent_config_id), userId);
-    context.data.agent_sdk = config.sdk;
-  }
-  if (context.data.review_agent_config_id != null && context.data.review_agent_config_id !== '') {
-    const config = await loadOwnedAgentConfig(
-      db,
-      Number(context.data.review_agent_config_id),
-      userId
-    );
-    context.data.review_agent_sdk = config.sdk;
-  }
-  return context;
-}
-
-/** Builder turns resume from provider ids; switching SDK must not reuse another provider's thread. */
-async function resetBuilderAgentIdsOnConfigChange(context) {
-  if (context.method !== 'patch' || context.id == null) return context;
-
-  const db = context.app.get('db');
-  const userId = context.params.user?.id;
-  let query = db('sessions').where({ id: context.id });
-  if (userId != null) query = query.where({ user_id: userId });
-  const session = await query.first();
-  if (!session) return context;
-
-  const nextConfigId = context.data?.agent_config_id;
-  if (nextConfigId != null && nextConfigId !== '') {
-    if (Number(nextConfigId) === Number(session.agent_config_id)) return context;
-  }
-
-  const nextSdk = context.data?.agent_sdk;
-  if (nextSdk == null || String(nextSdk).trim() === '') return context;
-  const prevSdk = session.agent_sdk || 'claude';
-  if (String(nextSdk).trim() === prevSdk) return context;
-  context.data.claude_session_id = null;
-  context.data.cursor_agent_id = null;
-  context.data.pi_session_id = null;
-  return context;
-}
-
-/** Reviewer starts from the session's SDK/model; later edits write review_* only. */
-async function seedReviewModelFromSession(context) {
-  if (context.data.review_agent_sdk === undefined && context.data.review_agent_config_id == null) {
-    const sessionSdk = context.data.agent_sdk;
-    if (sessionSdk) {
-      context.data.review_agent_sdk = sessionSdk;
+  const sessionId = context.id;
+  const builderPatch = {};
+  for (const key of BUILDER_AGENT_SESSION_FIELDS) {
+    if (context.data[key] !== undefined) {
+      builderPatch[key] = context.data[key];
+      delete context.data[key];
     }
   }
-  if (
-    context.data.review_agent_config_id == null &&
-    context.data.agent_config_id != null &&
-    context.data.review_agent_sdk === undefined
-  ) {
-    context.data.review_agent_config_id = context.data.agent_config_id;
-    context.data.review_agent_sdk = context.data.agent_sdk;
+  const reviewerPatch = {};
+  for (const key of REVIEWER_AGENT_SESSION_FIELDS) {
+    if (context.data[key] !== undefined) {
+      reviewerPatch[REVIEW_SESSION_FIELD_TO_AGENT[key]] = context.data[key];
+      delete context.data[key];
+    }
   }
-  if (context.data.review_model === undefined) {
-    context.data.review_model = context.data.model ?? null;
+  if (Object.keys(builderPatch).length) {
+    const builder = await getPrimaryBuilderAgent(db, sessionId);
+    if (builder) {
+      if (builderPatch.agent_config_id != null && builderPatch.agent_config_id !== '') {
+        const config = await loadOwnedAgentConfig(db, Number(builderPatch.agent_config_id), userId);
+        builderPatch.agent_sdk = config.sdk;
+      }
+      const prevSdk = builder.agent_sdk || 'claude';
+      const nextSdk = builderPatch.agent_sdk ?? prevSdk;
+      if (nextSdk !== prevSdk) {
+        builderPatch.claude_session_id = null;
+        builderPatch.cursor_agent_id = null;
+        builderPatch.pi_session_id = null;
+      }
+      await patchAgentInternal(context.app, builder.id, builderPatch, userId);
+    }
   }
-  if (context.data.review_model_params === undefined) {
-    context.data.review_model_params = context.data.model_params ?? null;
+  if (Object.keys(reviewerPatch).length) {
+    let reviewer = await getReviewerAgent(db, sessionId);
+    if (!reviewer) {
+      const builder = await getPrimaryBuilderAgent(db, sessionId);
+      reviewer = await ensureReviewerAgentRow(db, sessionId, {
+        agent_config_id: builder?.agent_config_id ?? null,
+        agent_sdk: builder?.agent_sdk ?? null,
+        model: builder?.model ?? null,
+        model_params: builder?.model_params ?? null,
+      });
+    }
+    if (reviewerPatch.agent_config_id != null && reviewerPatch.agent_config_id !== '') {
+      const config = await loadOwnedAgentConfig(db, Number(reviewerPatch.agent_config_id), userId);
+      reviewerPatch.agent_sdk = config.sdk;
+    }
+    await patchAgentInternal(context.app, reviewer.id, reviewerPatch, userId);
+  }
+  const redirectedAgentOnly =
+    (Object.keys(builderPatch).length > 0 || Object.keys(reviewerPatch).length > 0) &&
+    Object.keys(context.data).length === 0;
+  if (redirectedAgentOnly) {
+    context.result = await context.service.get(sessionId, context.params);
   }
   return context;
 }
@@ -2295,13 +2451,12 @@ const sessionsHooks = {
       serializePlugins,
       extractInitialFiles,
       normalizeModelFields,
-      seedReviewModelFromSession,
+      stashBuilderAgentFieldsOnCreate,
     ],
     patch: [
       requireOwnSession,
       clampAutoPushForLocalRepo,
-      syncAgentConfigOnPatch,
-      resetBuilderAgentIdsOnConfigChange,
+      redirectAgentFieldsOnSessionPatch,
       normalizeModelFields,
     ],
     getSessionByShortId: [],
@@ -2325,11 +2480,16 @@ const sessionsHooks = {
     startPreviewService: [resolveSessionFromData],
   },
   after: {
-    find: [addHasWebserver],
-    get: [refreshPrStatusAfterGet, addHasWebserver],
-    getSessionByShortId: [refreshPrStatusAfterGet, addHasWebserver],
-    create: [scheduleSessionProvisioning, addHasWebserver],
-    patch: [syncSessionSettingsAfterPatch, addHasWebserver],
+    find: [mergeSessionAgentFields, addHasWebserver],
+    get: [refreshPrStatusAfterGet, mergeSessionAgentFields, addHasWebserver],
+    getSessionByShortId: [refreshPrStatusAfterGet, mergeSessionAgentFields, addHasWebserver],
+    create: [
+      insertPrimaryBuilderAfterCreate,
+      mergeSessionAgentFields,
+      scheduleSessionProvisioning,
+      addHasWebserver,
+    ],
+    patch: [mergeSessionAgentFields, syncSessionSettingsAfterPatch, addHasWebserver],
   },
 };
 
@@ -2371,6 +2531,8 @@ async function persistSystemPrompt(context) {
 
   if (!promptAppend) return context;
 
+  const builder = await getPrimaryBuilderAgent(context.app.get('db'), session.id);
+  if (!builder) return context;
   await context.app.service('messages').create(
     {
       session_id: session.id,
@@ -2381,7 +2543,7 @@ async function persistSystemPrompt(context) {
         subtype: 'prompt',
         content: promptAppend,
       }),
-      ...sessionMessageIdentity(session, 'builder'),
+      ...sessionMessageIdentity(builder, 'builder'),
     },
     { provider: undefined, user: context.params.user }
   );
@@ -2400,13 +2562,15 @@ async function createFirstMessage(context) {
     type: 'user',
     message: { role: 'user', content },
   };
+  const builder = await getPrimaryBuilderAgent(context.app.get('db'), session.id);
+  if (!builder) return context;
   await context.app.service('messages').create(
     {
       session_id: session.id,
       type: 'user',
       force: true,
       message_json: JSON.stringify(initialSdkMessage),
-      ...sessionMessageIdentity(session, 'builder'),
+      ...sessionMessageIdentity(builder, 'builder'),
     },
     { user: context.params.user }
   );

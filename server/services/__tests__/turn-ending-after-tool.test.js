@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { createTestDb } from '../../test-utils/db.js';
+import { insertSessionWithPrimaryBuilder } from '../../test-utils/session-agents.js';
 import { CursorAgentService } from '../feathers/cursor-agent.service.ts';
 import { PiAgentService } from '../feathers/pi-agent.service.ts';
 
@@ -8,7 +9,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
   describe('CursorAgentService._runTurn', () => {
     const db = createTestDb();
     let recordCursorUsage;
-    let sessionPatch;
+    let agentPatch;
     let app;
 
     beforeEach(async () => {
@@ -24,7 +25,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         created_at: db.fn.now(),
         updated_at: db.fn.now(),
       });
-      await db('sessions').insert({
+      await insertSessionWithPrimaryBuilder(db, {
         id: 1,
         user_id: 1,
         short_id: 'te001',
@@ -40,24 +41,20 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
       });
 
       recordCursorUsage = vi.fn().mockResolvedValue(undefined);
-      sessionPatch = vi.fn().mockResolvedValue({});
+      agentPatch = vi.fn().mockResolvedValue({});
       app = {
         get: (key) => (key === 'db' ? db : undefined),
         service: (name) => {
           if (name === 'sessions') {
             return {
-              patch: sessionPatch,
+              patch: vi.fn().mockResolvedValue({}),
               onTurnStart: async () => {},
               onTurnComplete: async () => {},
               recordCursorUsage,
             };
           }
-          if (name === 'session-review') {
-            return {
-              peekTurnExtras: () => null,
-              onAgentTurnComplete: vi.fn(),
-              _persistStatus: vi.fn(),
-            };
+          if (name === 'agents') {
+            return { patch: agentPatch };
           }
           return {};
         },
@@ -79,6 +76,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
       });
 
       const session = await db('sessions').where({ id: 1 }).first();
+      const builder = await db('agents').where({ session_id: 1, is_primary: 1 }).first();
       const row = {
         model: 'composer-2.5',
         model_params: JSON.stringify([]),
@@ -92,13 +90,12 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         {
           turnId: 10,
           channel: 'chat',
+          agent: builder,
         }
       );
 
       expect(recordCursorUsage).toHaveBeenCalled();
-      const completedPatch = sessionPatch.mock.calls.find(
-        ([, data]) => data?.status === 'completed'
-      );
+      const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
       expect(completedPatch).toBeUndefined();
     });
   });
@@ -106,13 +103,13 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
   describe('PiAgentService._runTurn', () => {
     const piDb = createTestDb();
     let recordPiUsage;
-    let sessionPatch;
+    let agentPatch;
     let app;
 
     beforeEach(async () => {
       vi.clearAllMocks();
       recordPiUsage = vi.fn().mockResolvedValue(0);
-      sessionPatch = vi.fn().mockResolvedValue({});
+      agentPatch = vi.fn().mockResolvedValue({});
       await piDb('users').insert({ id: 2, github_id: 2, username: 'p' });
       await piDb('agent_configs').insert({
         id: 8,
@@ -124,7 +121,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         created_at: piDb.fn.now(),
         updated_at: piDb.fn.now(),
       });
-      await piDb('sessions').insert({
+      await insertSessionWithPrimaryBuilder(piDb, {
         id: 3,
         user_id: 2,
         short_id: 'pi001',
@@ -146,7 +143,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         service: (name) => {
           if (name === 'sessions') {
             return {
-              patch: sessionPatch,
+              patch: vi.fn().mockResolvedValue({}),
               onTurnStart: async () => {},
               onTurnComplete: async () => {},
               recordPiUsage,
@@ -159,11 +156,8 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
           if (name === 'user-repos') {
             return { find: vi.fn().mockResolvedValue([]) };
           }
-          if (name === 'session-review') {
-            return {
-              onAgentTurnComplete: vi.fn(),
-              _persistStatus: vi.fn(),
-            };
+          if (name === 'agents') {
+            return { patch: agentPatch };
           }
           if (name === 'messages') {
             return { on: vi.fn(), create: vi.fn() };
@@ -201,6 +195,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
       });
 
       const session = await piDb('sessions').where({ id: 3 }).first();
+      const builder = await piDb('agents').where({ session_id: 3, is_primary: 1 }).first();
       const row = {
         model: 'claude-haiku-4-5',
         agent_config_id: 8,
@@ -210,13 +205,11 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         session,
         { type: 'user', message: { role: 'user', content: 'hi' } },
         row,
-        { turnId: 11, channel: 'chat' }
+        { turnId: 11, channel: 'chat', agent: builder }
       );
 
       expect(recordPiUsage).toHaveBeenCalled();
-      const completedPatch = sessionPatch.mock.calls.find(
-        ([, data]) => data?.status === 'completed'
-      );
+      const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
       expect(completedPatch).toBeUndefined();
     });
   });

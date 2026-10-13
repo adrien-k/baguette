@@ -39,7 +39,28 @@ export type DbLike = {
   (table: string): QueryBuilderLike;
 };
 
-/** Sessions row subset the agent services read and write. */
+/** `agents` table row used by SDK services. */
+export type AgentRow = {
+  id: number;
+  session_id: number;
+  name: string;
+  agent_type: string;
+  is_primary: number;
+  status: string;
+  agent_config_id?: number | null;
+  agent_sdk?: string | null;
+  model?: string | null;
+  model_params?: unknown;
+  claude_session_id?: string | null;
+  cursor_agent_id?: string | null;
+  pi_session_id?: string | null;
+  current_turn_id?: number;
+  active_turn_id?: number | null;
+  initial_prompt?: string | null;
+  [key: string]: unknown;
+};
+
+/** Sessions row subset the agent services read (lifecycle + repo context). */
 export type AgentSessionRow = {
   id: number;
   user_id: number;
@@ -50,21 +71,9 @@ export type AgentSessionRow = {
   base_branch?: string | null;
   session_path?: string | null;
   absolute_session_path?: string | null;
-  model?: string | null;
-  model_params?: unknown;
   plugins?: string | null;
-  agent_sdk?: string | null;
-  agent_config_id?: number | null;
-  review_agent_sdk?: string | null;
-  review_model?: string | null;
-  claude_session_id?: string | null;
-  review_claude_session_id?: string | null;
-  cursor_agent_id?: string | null;
-  review_cursor_agent_id?: string | null;
-  pi_session_id?: string | null;
-  review_pi_session_id?: string | null;
-  active_chat_turn_id?: number | null;
-  active_review_turn_id?: number | null;
+  plan_mode?: boolean | null;
+  remote_branch?: string | null;
   agent_preferences?: string | null;
   [key: string]: unknown;
 };

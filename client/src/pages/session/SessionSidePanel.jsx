@@ -1,7 +1,7 @@
 import { X } from 'lucide-react';
 import SessionFilesPanel from './SessionFilesPanel.jsx';
 import SessionCommitsPanel from './SessionCommitsPanel.jsx';
-import ReviewAgentPanel from './ReviewAgentPanel.jsx';
+import AgentsPanel from './AgentsPanel.jsx';
 import LogsView from './LogsView.jsx';
 import TaskPanel from '../../components/TaskPanel.jsx';
 import { SIDE_PANEL_TABS } from './sessionSidePanelTabs.js';
@@ -16,10 +16,10 @@ export default function SessionSidePanel({
   sidePanelTab,
   onSidePanelTabChange,
   onClose,
-  session,
+  session: _session,
   isGlobal,
   readonly,
-  sidePanelOpen,
+  sidePanelOpen: _sidePanelOpen,
   diffFiles,
   changedFilesLoading,
   onRefreshChangedFiles,
@@ -45,11 +45,14 @@ export default function SessionSidePanel({
   loadMore,
   loadingMore,
   hasMore,
+  agentLabelById,
   sessionId,
-  showReviewerTab = false,
+  selectedAgentId,
+  onSelectAgent,
+  onReviewerCleared,
 }) {
   const filesUnavailable = isGlobal;
-  const sidePanelTabs = SIDE_PANEL_TABS.filter((tab) => tab.id !== 'reviewer' || showReviewerTab);
+  const sidePanelTabs = SIDE_PANEL_TABS;
 
   return (
     <>
@@ -98,8 +101,14 @@ export default function SessionSidePanel({
             onRefresh={onRefreshBranchCommits}
           />
         )}
-        {showReviewerTab && sidePanelTab === 'reviewer' && (
-          <ReviewAgentPanel session={session} readonly={readonly} sidePanelOpen={sidePanelOpen} />
+        {sidePanelTab === 'agents' && (
+          <AgentsPanel
+            sessionId={sessionId}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={onSelectAgent}
+            onReviewerCleared={onReviewerCleared}
+            readonly={readonly}
+          />
         )}
         {sidePanelTab === 'logs' && (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -109,6 +118,7 @@ export default function SessionSidePanel({
               loadingMore={loadingMore}
               hasMore={hasMore}
               resetKey={sessionId}
+              agentLabelById={agentLabelById}
             />
           </div>
         )}

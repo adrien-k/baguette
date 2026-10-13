@@ -129,7 +129,7 @@ class AgentConfigsService extends KnexService {
    * @param {object} row
    */
   async dispatchCreatedMessage(row) {
-    await dispatchCreatedMessageToAgents(this.app, row, 'messages');
+    await dispatchCreatedMessageToAgents(this.app, row);
   }
 
   async _ownedRow(id, userId) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestDb } from '../../server/test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../server/test-utils/db.js';
 import { backfillMessageRows } from '../2026100601_backfill-message-rows.js';
 
 const db = createTestDb();
@@ -11,7 +11,7 @@ async function seedSession(sessionShortId) {
     approved: true,
   });
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
-  const [sessionId] = await db('sessions').insert({
+  const sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_id: repoId,
     repo_full_name: 'o/r',
@@ -103,8 +103,8 @@ describe('backfill-message-rows', () => {
       stderr: '',
     });
 
-    const session = await db('sessions').where({ id: sessionId }).first();
-    expect(session.current_turn_id).toBe(1);
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    expect(builder.current_turn_id).toBe(1);
   });
 
   it('drops duplicate assistant tool_use rows that share a tool_call_id', async () => {
@@ -210,7 +210,7 @@ describe('backfill-message-rows', () => {
     expect(rows[2].turn_id).toBe(2);
     expect(rows[2].agent_type).toBe('reviewer');
 
-    const session = await db('sessions').where({ id: sessionId }).first();
-    expect(session.current_turn_id).toBe(2);
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    expect(builder.current_turn_id).toBe(2);
   });
 });

@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { CheckCircle, XCircle, X } from 'lucide-react';
 import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
-import { sessionsService } from '../feathers.js';
+import { agentsService, sessionsService } from '../feathers.js';
+import { reviewerFromSession, reviewerCompletedTransition } from '../utils/sessionAgents.js';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import { useFilters } from './FilterContext.jsx';
@@ -53,7 +54,7 @@ export function SessionsProvider({ children }) {
     initializedRef.current = true;
     sessions.forEach((s) => {
       prevStatusRef.current.set(s.id, s.status);
-      prevReviewStatusRef.current.set(s.id, s.review_status);
+      prevReviewStatusRef.current.set(s.id, reviewerFromSession(s)?.status);
     });
   }, [sessions, loading]);
 
@@ -205,14 +206,30 @@ export function SessionsProvider({ children }) {
       }
       prevStatusRef.current.set(session.id, session.status);
 
+      const nextReviewStatus = reviewerFromSession(session)?.status;
       const prevReview = prevReviewStatusRef.current.get(session.id);
-      if (prevReview !== undefined && prevReview !== session.review_status) {
-        if (session.review_status === 'completed') notifyReviewCompleted(session);
+      if (reviewerCompletedTransition(prevReview, nextReviewStatus)) {
+        notifyReviewCompleted(session);
       }
-      prevReviewStatusRef.current.set(session.id, session.review_status);
+      prevReviewStatusRef.current.set(session.id, nextReviewStatus);
     };
+
+    const onAgentPatched = (agent) => {
+      if (!agent?.session_id || agent.agent_type !== 'reviewer') return;
+      const prevReview = prevReviewStatusRef.current.get(agent.session_id);
+      if (reviewerCompletedTransition(prevReview, agent.status)) {
+        const session = sessionsRef.current.find((s) => s.id === agent.session_id);
+        if (session) notifyReviewCompleted(session);
+      }
+      prevReviewStatusRef.current.set(agent.session_id, agent.status);
+    };
+
     sessionsService.on('patched', onPatched);
-    return () => sessionsService.off('patched', onPatched);
+    agentsService.on('patched', onAgentPatched);
+    return () => {
+      sessionsService.off('patched', onPatched);
+      agentsService.off('patched', onAgentPatched);
+    };
   }, [notifyCompleted, notifyFailed, notifyReviewCompleted]);
 
   return (

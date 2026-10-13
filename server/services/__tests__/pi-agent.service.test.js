@@ -60,6 +60,10 @@ function makeApp(overrides = {}) {
   const sessionsPatch = vi.fn().mockResolvedValue({});
   const sessionsOnTurnStart = vi.fn().mockResolvedValue(undefined);
   const sessionsOnTurnComplete = vi.fn().mockResolvedValue(undefined);
+  const reviewAgentTurn = {
+    onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
+    _persistStatus: vi.fn().mockResolvedValue(undefined),
+  };
   return {
     get: vi.fn((key) => {
       if (key === 'db') {
@@ -78,6 +82,7 @@ function makeApp(overrides = {}) {
           }),
         });
       }
+      if (key === 'reviewAgentTurn') return reviewAgentTurn;
       return undefined;
     }),
     service: vi.fn((name) => {
@@ -98,12 +103,6 @@ function makeApp(overrides = {}) {
       }
       if (name === 'messages') {
         return { on: vi.fn(), create: vi.fn() };
-      }
-      if (name === 'session-review') {
-        return {
-          onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
-          _persistStatus: vi.fn().mockResolvedValue(undefined),
-        };
       }
       return {};
     }),

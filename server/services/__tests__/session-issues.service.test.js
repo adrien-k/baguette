@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerSessionIssuesService } from '../feathers/session-issues.service.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
@@ -13,6 +14,7 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
+  registerAgentsService(app);
   useClaudeAgentStub(
     app,
     {
@@ -39,7 +41,7 @@ beforeEach(async () => {
   user = await db('users').where({ username: 'alice' }).first();
   other = await db('users').where({ username: 'bob' }).first();
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
-  [sessionId] = await db('sessions').insert({
+  sessionId = await insertTestSession(db, {
     user_id: user.id,
     repo_id: repoId,
     repo_full_name: 'o/r',

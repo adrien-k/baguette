@@ -4,6 +4,7 @@ import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import logger from '../../logger.js';
 import { requireQueuedMessageIdentity } from './message-identity.js';
+import { getPrimaryBuilderAgent, getReviewerAgent } from '../agents-db.js';
 
 const SCHEDULED_DISPATCH_BATCH = 20;
 
@@ -99,15 +100,23 @@ export function registerQueuedMessagesService(app, path = 'queued-messages') {
 
 async function validateSessionOwnership(context) {
   if (!context.data.session_id) throw new BadRequest('session_id is required');
-  const session = await context.app
-    .service('sessions')
-    .get(context.data.session_id, { user: context.params.user });
-  // Seed the turn's agent config snapshot when the row doesn't carry one yet.
-  if (context.data.agent_config_id == null) {
-    context.data.agent_config_id =
-      context.data.agent_type === 'reviewer'
-        ? (session.review_agent_config_id ?? session.agent_config_id ?? null)
-        : (session.agent_config_id ?? null);
+  await context.app.service('sessions').get(context.data.session_id, {
+    user: context.params.user,
+  });
+  const db = context.app.get('db');
+  const agentRow =
+    context.data.agent_id != null
+      ? await db('agents')
+          .where({ id: context.data.agent_id, session_id: context.data.session_id })
+          .first()
+      : context.data.agent_type === 'reviewer'
+        ? await getReviewerAgent(db, context.data.session_id)
+        : await getPrimaryBuilderAgent(db, context.data.session_id);
+  if (context.data.agent_id == null && agentRow?.id) {
+    context.data.agent_id = agentRow.id;
+  }
+  if (context.data.agent_config_id == null && agentRow?.agent_config_id != null) {
+    context.data.agent_config_id = agentRow.agent_config_id;
   }
   return context;
 }

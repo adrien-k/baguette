@@ -3,9 +3,10 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
 
@@ -36,6 +37,7 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
+  registerAgentsService(app);
   useClaudeAgentStub(app, { onMessageCreated: vi.fn().mockResolvedValue(undefined) }, [
     'onMessageCreated',
   ]);
@@ -57,7 +59,7 @@ beforeEach(async () => {
   await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
   const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
-  [sessionId] = await db('sessions').insert({
+  sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_id: repo.id,
     repo_full_name: 'test/repo',
@@ -185,7 +187,9 @@ describe('scheduled dispatcher', () => {
   });
 
   it('queues into turn queue when session is running at dispatch time', async () => {
-    await db('sessions').where({ id: sessionId }).update({ status: 'running' });
+    await db('agents')
+      .where({ session_id: sessionId, is_primary: 1 })
+      .update({ status: 'running' });
     const sendAt = new Date(Date.now() - 1_000).toISOString();
     await db('queued_messages').insert({
       session_id: sessionId,

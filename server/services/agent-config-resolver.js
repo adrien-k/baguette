@@ -2,10 +2,7 @@ import { BadRequest, NotFound } from '@feathersjs/errors';
 import { throwIfAgentConfigDeleted } from './agent-config-deleted.js';
 import { decryptAgentConfigRow } from './agent-config-env.js';
 import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
-import {
-  coerceModelParams,
-  stringifyModelParamsForStorage,
-} from '../../shared/agent-session-defaults.js';
+import { coerceModelParams } from '../../shared/agent-session-defaults.js';
 
 function parseSessionModelId(modelField) {
   if (!modelField) return null;
@@ -28,23 +25,34 @@ export async function loadOwnedAgentConfig(knex, configId, userId) {
 
 async function lastUsedSessionAgentRow(db, userId, repoId = null) {
   let query = db('sessions')
-    .where({ user_id: userId })
-    .whereNull('archived_at')
-    .whereNotNull('agent_config_id');
+    .join('agents as builder', function joinBuilder() {
+      this.on('builder.session_id', 'sessions.id').andOn('builder.is_primary', db.raw('1'));
+    })
+    .leftJoin('agents as reviewer', function joinReviewer() {
+      this.on('reviewer.session_id', 'sessions.id').andOn(
+        'reviewer.agent_type',
+        db.raw("'reviewer'")
+      );
+    })
+    .where('sessions.user_id', userId)
+    .whereNull('sessions.archived_at')
+    .whereNotNull('builder.agent_config_id');
   if (repoId != null) {
-    query = query.where({ repo_id: repoId });
+    query = query.where('sessions.repo_id', repoId);
   }
   return query
-    .orderByRaw('COALESCE(last_activity_at, updated_at, created_at) DESC')
+    .orderByRaw(
+      'COALESCE(sessions.last_activity_at, sessions.updated_at, sessions.created_at) DESC'
+    )
     .select(
-      'agent_config_id',
-      'model',
-      'model_params',
-      'agent_sdk',
-      'review_agent_config_id',
-      'review_model',
-      'review_model_params',
-      'review_agent_sdk'
+      'builder.agent_config_id',
+      'builder.model',
+      'builder.model_params',
+      'builder.agent_sdk',
+      'reviewer.agent_config_id as review_agent_config_id',
+      'reviewer.model as review_model',
+      'reviewer.model_params as review_model_params',
+      'reviewer.agent_sdk as review_agent_sdk'
     )
     .first();
 }
@@ -311,36 +319,6 @@ export async function assertAgentConfigOnCreate(context) {
   const config = await loadOwnedAgentConfig(db, agentConfigId, userId);
   data.agent_config_id = agentConfigId;
   data.agent_sdk = config.sdk;
-
-  if (data.review_agent_config_id != null) {
-    const reviewId = Number(data.review_agent_config_id);
-    const reviewConfig = await loadOwnedAgentConfig(db, reviewId, userId);
-    data.review_agent_config_id = reviewId;
-    data.review_agent_sdk = reviewConfig.sdk;
-  } else if (data.review_agent_sdk !== undefined) {
-    const reviewSdk = data.review_agent_sdk;
-    const reviewId = await resolveAgentConfigIdForRepoSdk(
-      db,
-      userId,
-      data.repo_id ?? null,
-      reviewSdk,
-      { role: 'reviewer' }
-    );
-    if (reviewId) {
-      data.review_agent_config_id = reviewId;
-    }
-  } else {
-    const reviewer = await resolveEffectiveReviewerDefaults(db, userId, data.repo_id ?? null);
-    if (reviewer && (reviewer.source === 'repo' || reviewer.source === 'user')) {
-      data.review_agent_config_id = reviewer.review_agent_config_id;
-      data.review_agent_sdk = reviewer.review_agent_sdk;
-      if (reviewer.review_model != null && reviewer.review_model !== '') {
-        data.review_model = reviewer.review_model;
-      }
-      const reviewParams = stringifyModelParamsForStorage(reviewer.review_model_params);
-      if (reviewParams != null) data.review_model_params = reviewParams;
-    }
-  }
 
   return context;
 }

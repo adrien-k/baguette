@@ -15,10 +15,12 @@ function parseSessionModelId(modelField) {
 
 /** Session counts per (agent_sdk, model id) for the user. */
 export async function getModelUsageCounts(knex, userId) {
-  const rows = await knex('sessions')
-    .where({ user_id: userId })
-    .whereNull('archived_at')
-    .select('agent_sdk', 'model');
+  const rows = await knex('agents as a')
+    .join('sessions as s', 's.id', 'a.session_id')
+    .where('s.user_id', userId)
+    .whereNull('s.archived_at')
+    .where('a.is_primary', 1)
+    .select('a.agent_sdk', 'a.model');
   const counts = new Map();
   for (const row of rows) {
     const sdk = row.agent_sdk || 'claude';

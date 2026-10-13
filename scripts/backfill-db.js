@@ -90,8 +90,8 @@ export async function applySessionMessageWrites(knex, writes) {
     await deleteMessageRowsById(knex, deleteIds, trx);
     await patchMessageRows(knex, patches, trx);
     if (hasSessionTurn) {
-      await trx('sessions')
-        .where({ id: writes.sessionId })
+      await trx('agents')
+        .where({ session_id: writes.sessionId, is_primary: 1 })
         .update({ current_turn_id: writes.currentTurnId });
     }
   });

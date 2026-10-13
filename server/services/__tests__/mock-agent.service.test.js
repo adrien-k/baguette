@@ -5,9 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMockAgentService } from '../feathers/mock-agent.service.ts';
 import { MOCK_AGENT_SUMMARY_TEXT, MOCK_STANDARD_MODEL_ID } from '../../../shared/mock-agent-sdk.js';
 import { DATA_DIR } from '../../config.js';
@@ -31,6 +32,7 @@ function makeApp(dbRef) {
   const app = feathers();
   app.set('db', dbRef);
   registerSessionsService(app);
+  registerAgentsService(app);
   registerMessagesService(app);
   mountAgentConfigs(app);
   registerMockAgentService(app);
@@ -57,7 +59,7 @@ beforeEach(async () => {
   const repo = await db('repos').where({ full_name: 'local/mock-repo' }).first();
 
   const mockConfigId = await ensureTestMockConfig(db, userId);
-  [sessionId] = await db('sessions').insert({
+  sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_id: repo.id,
     repo_full_name: 'local/mock-repo',
@@ -90,7 +92,7 @@ describe('MockAgentService', () => {
   });
 
   it('runs a simulated turn when a user message is created', async () => {
-    const session = await db('sessions').where({ id: sessionId }).first();
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
     await app.service('messages').create(
       {
         session_id: sessionId,
@@ -99,15 +101,17 @@ describe('MockAgentService', () => {
           type: 'user',
           message: { role: 'user', content: 'Hello mock agent' },
         }),
-        ...sessionMessageIdentity(session, 'builder'),
+        ...sessionMessageIdentity(builder, 'builder'),
       },
       params({ id: userId })
     );
 
     await vi.waitFor(
       async () => {
-        const sessionRow = await db('sessions').where({ id: sessionId }).first();
-        expect(sessionRow.status).toBe('completed');
+        const builderRow = await db('agents')
+          .where({ session_id: sessionId, is_primary: 1 })
+          .first();
+        expect(builderRow.status).toBe('completed');
 
         const rows = await db('session_messages').where({ session_id: sessionId }).orderBy('id');
         const assistant = rows.find((r) => {

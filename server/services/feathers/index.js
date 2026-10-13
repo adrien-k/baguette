@@ -1,4 +1,5 @@
 import db from '../../db.js';
+import { registerAgentsService } from './agents.service.js';
 import { registerMessagesService } from './messages.service.js';
 import { registerSessionsService } from './sessions.service.js';
 import { registerTasksService } from './tasks.service.js';
@@ -18,7 +19,7 @@ import { registerLoopsService } from './loops.service.js';
 import { registerSessionIssuesService } from './session-issues.service.js';
 import { registerSessionTodosService } from './session-todos.service.js';
 import { registerSessionPlansService } from './session-plans.service.js';
-import { registerSessionReviewService } from './session-review.service.js';
+import { registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerUsageModelPricingService } from './usage-model-pricing.service.js';
 import { registerUsageService } from './usage.service.js';
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
@@ -29,6 +30,7 @@ const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
  */
 export function registerFeathersServices(app, sseManager) {
   registerMessagesService(app);
+  registerAgentsService(app);
   registerSessionsService(app);
   registerQueuedMessagesService(app);
   registerAgentConfigsService(app);
@@ -47,7 +49,7 @@ export function registerFeathersServices(app, sseManager) {
   registerSessionIssuesService(app);
   registerSessionTodosService(app);
   registerSessionPlansService(app);
-  registerSessionReviewService(app);
+  registerReviewAgentTurn(app);
   registerUsageModelPricingService(app);
   registerUsageService(app);
 
@@ -62,6 +64,12 @@ export function registerFeathersServices(app, sseManager) {
     app.service('messages').on(event, async (data) => {
       const session = await db('sessions').where({ id: data.session_id }).first();
       if (session) sseManager.send(session.user_id, { service: 'messages', event, data });
+    });
+
+    app.service('agents').on(event, async (data) => {
+      if (!data?.session_id) return;
+      const session = await db('sessions').where({ id: data.session_id }).first();
+      if (session) sseManager.send(session.user_id, { service: 'agents', event, data });
     });
 
     app.service('tasks').on(event, async (data) => {

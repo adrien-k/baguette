@@ -21,7 +21,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
         <SettingsSection
           title="Session defaults"
-          description="Default agent configuration and model for new sessions and the reviewer panel. Scope defaults to all repositories or a single linked repo; unset values inherit from the broader scope or your most recent session."
+          description="Default agent configuration and model for new sessions and the Issues reviewer. Scope defaults to all repositories or a single linked repo; unset values inherit from the broader scope or your most recent session."
         >
           <AgentDefaultsSection settings={settings} onSave={onSave} />
         </SettingsSection>

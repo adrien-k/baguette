@@ -1,5 +1,6 @@
 import { Bot } from 'lucide-react';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
+import { isReviewInProgressForSession } from '../../utils/sessionAgents.js';
 
 function runningTasksLabel(count) {
   if (count === 1) return '1 task running';
@@ -11,7 +12,7 @@ export default function SessionMainViewFooter({ session, onShowTasks, onShowRevi
 
   const runningTasksCount = session.running_tasks_count ?? 0;
   const showRunningTaskFooter = runningTasksCount > 0;
-  const showReviewFooter = !isGlobalSession(session) && session.review_status === 'running';
+  const showReviewFooter = !isGlobalSession(session) && isReviewInProgressForSession(session);
 
   if (!showRunningTaskFooter && !showReviewFooter) return null;
 

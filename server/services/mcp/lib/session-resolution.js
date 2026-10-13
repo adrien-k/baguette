@@ -9,8 +9,6 @@ export const SESSION_LIST_COLUMNS = [
   'base_branch',
   'local_branch',
   'remote_branch',
-  'agent_sdk',
-  'model',
   'loop_id',
   'pr_url',
   'pr_number',

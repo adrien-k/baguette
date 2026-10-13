@@ -8,7 +8,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
+import { ensureReviewerAgentRow } from '../agents-db.js';
 import { SessionsService } from '../feathers/sessions.service.js';
 import { emptyTurnUsage } from '../turn-usage.js';
 
@@ -17,6 +18,23 @@ vi.mock('../../logger.js', () => ({
 }));
 
 const db = createTestDb();
+
+async function sessionForUsage(sessionId) {
+  const session = await db('sessions').where({ id: sessionId }).first();
+  const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+  const reviewer = await db('agents')
+    .where({ session_id: sessionId, agent_type: 'reviewer' })
+    .first();
+  return {
+    ...session,
+    agent_sdk: builder?.agent_sdk,
+    model: builder?.model,
+    model_params: builder?.model_params,
+    agent_config_id: builder?.agent_config_id,
+    review_agent_sdk: reviewer?.agent_sdk,
+    review_model: reviewer?.model,
+  };
+}
 
 const modelUsage = (input, output, cacheRead = 0, cacheWrite = 0) => ({
   inputTokens: input,
@@ -40,7 +58,7 @@ const resultPayload = ({ cost, models }) => ({
 
 async function seed() {
   const [userId] = await db('users').insert({ github_id: '1', username: 'tester' });
-  const [sessionId] = await db('sessions').insert({
+  const sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_full_name: 'acme/app',
     base_branch: 'main',
@@ -215,9 +233,11 @@ describe('claude usage recording', () => {
       label: 'B',
       sdk: 'claude',
     });
-    await db('sessions').where({ id: sessionId }).update({ agent_config_id: configB });
+    await db('agents')
+      .where({ session_id: sessionId, is_primary: 1 })
+      .update({ agent_config_id: configB });
     const service = makeService();
-    const session = await db('sessions').where({ id: sessionId }).first();
+    const session = await sessionForUsage(sessionId);
 
     await service.recordClaudeUsage(
       session,
@@ -239,16 +259,25 @@ describe('claude usage recording', () => {
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } })
     );
+    const reviewer = await ensureReviewerAgentRow(db, sessionId, {
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      status: 'completed',
+    });
     await service.recordClaudeUsage(
       session,
       { total_cost_usd: 0.01, modelUsage: { 'claude-opus-5': modelUsage(10, 5) } },
-      { kind: 'review', totalsKey: `review:${sessionId}`, patchSessionCost: true }
+      {
+        totalsKey: `review:${reviewer.id}`,
+        patchSessionCost: true,
+        agentId: reviewer.id,
+      }
     );
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
-    expect(rows[0].kind).toBeNull();
-    expect(rows[1].kind).toBe('review');
+    expect(rows[0].agent_type).toBe('builder');
+    expect(rows[1].agent_type).toBe('reviewer');
     expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.01, 6);
     expect(rows[1].input_tokens).toBe(10);
     expect(rows[1].output_tokens).toBe(5);
@@ -258,7 +287,7 @@ describe('claude usage recording', () => {
 describe('cursor usage recording', () => {
   async function seedCursor(overrides = {}) {
     const [userId] = await db('users').insert({ github_id: '1', username: 'tester' });
-    const [sessionId] = await db('sessions').insert({
+    const sessionId = await insertTestSession(db, {
       user_id: userId,
       repo_full_name: 'acme/app',
       base_branch: 'main',
@@ -382,7 +411,7 @@ describe('cursor usage recording', () => {
   it('falls back to the session model when the run did not name one', async () => {
     const { sessionId } = await seedCursor({ model: 'composer-2' });
     const service = makeService();
-    const session = await db('sessions').where({ id: sessionId }).first();
+    const session = await sessionForUsage(sessionId);
     const turnUsage = { ...emptyTurnUsage(), total_tokens: 40 };
 
     await service.recordCursorUsage(session, turnUsage, { patchSessionCost: true });
@@ -393,7 +422,7 @@ describe('cursor usage recording', () => {
 });
 
 describe('sessionUsage', () => {
-  it('aggregates usage by model and session vs review kind', async () => {
+  it('aggregates usage by model and builder vs reviewer agent_type', async () => {
     const { sessionId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -406,7 +435,7 @@ describe('sessionUsage', () => {
         cost_usd: 0.1,
         agent_sdk: 'claude',
         model: 'claude-opus-5',
-        kind: null,
+        agent_type: 'builder',
         total_tokens: 100,
         input_tokens: 80,
         output_tokens: 20,
@@ -418,7 +447,7 @@ describe('sessionUsage', () => {
         cost_usd: 0.02,
         agent_sdk: 'cursor',
         model: 'composer-1',
-        kind: 'review',
+        agent_type: 'reviewer',
         total_tokens: 50,
         input_tokens: 40,
         output_tokens: 10,
@@ -429,7 +458,7 @@ describe('sessionUsage', () => {
       user: { id: session.user_id },
       resolvedSession: session,
     });
-    expect(usage.breakdown.filter((r) => r.kind === 'session')).toHaveLength(1);
-    expect(usage.breakdown.filter((r) => r.kind === 'review')).toHaveLength(1);
+    expect(usage.breakdown.filter((r) => r.agent_type === 'builder')).toHaveLength(1);
+    expect(usage.breakdown.filter((r) => r.agent_type === 'reviewer')).toHaveLength(1);
   });
 });

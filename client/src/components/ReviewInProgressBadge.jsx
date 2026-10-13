@@ -1,7 +1,9 @@
 import { ClipboardCheck } from 'lucide-react';
 
+import { isReviewInProgressForSession } from '../utils/sessionAgents.js';
+
 export function isReviewInProgress(session) {
-  return !!session && !session.archived_at && session.review_status === 'running';
+  return isReviewInProgressForSession(session);
 }
 
 const BADGE =

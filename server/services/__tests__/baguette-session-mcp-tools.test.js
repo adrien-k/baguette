@@ -3,9 +3,11 @@ import { feathers } from '@feathersjs/feathers';
 import {
   createTestDb,
   testSessionAgentDefaults,
-  testMessageIdentityDefaults,
+  insertTestSession,
+  testMessageRow,
 } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { TasksService } from '../feathers/tasks.service.js';
@@ -42,7 +44,7 @@ describe('baguette session MCP tools', () => {
     [userId] = await db('users').insert({ github_id: 99, username: 'mcp', approved: true });
     const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
     await db('user_repos').insert({ user_id: userId, repo_id: repoId });
-    [sessionId] = await db('sessions').insert({
+    sessionId = await insertTestSession(db, {
       user_id: userId,
       repo_id: repoId,
       repo_full_name: 'o/r',
@@ -55,21 +57,17 @@ describe('baguette session MCP tools', () => {
       ...testSessionAgentDefaults,
     });
     await db('session_messages').insert([
-      {
-        session_id: sessionId,
+      await testMessageRow(db, sessionId, {
         type: 'user',
         message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
-        ...testMessageIdentityDefaults,
-      },
-      {
-        session_id: sessionId,
+      }),
+      await testMessageRow(db, sessionId, {
         type: 'assistant',
         message_json: JSON.stringify({
           type: 'assistant',
           message: { role: 'assistant', content: 'hello' },
         }),
-        ...testMessageIdentityDefaults,
-      },
+      }),
     ]);
 
     app = feathers();
@@ -81,6 +79,7 @@ describe('baguette session MCP tools', () => {
       },
     });
     registerSessionsService(app);
+    registerAgentsService(app);
     useClaudeAgentStub(
       app,
       {
@@ -111,7 +110,7 @@ describe('baguette session MCP tools', () => {
   it('SearchSessions filters by remote_branch and returns each local_branch', async () => {
     const repoId = (await db('repos').where({ full_name: 'o/r' }).first()).id;
     const sharedRemote = 'feature/shared-head';
-    await db('sessions').insert({
+    await insertTestSession(db, {
       user_id: userId,
       repo_id: repoId,
       repo_full_name: 'o/r',
@@ -184,7 +183,7 @@ describe('baguette session MCP tools', () => {
   });
 
   it('CreateSessionMessage allows repo agent to post to another owned session', async () => {
-    const [otherId] = await db('sessions').insert({
+    const otherId = await insertTestSession(db, {
       user_id: userId,
       repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
       repo_full_name: 'o/r',
@@ -202,7 +201,7 @@ describe('baguette session MCP tools', () => {
   });
 
   it('CreateSessionMessage allows global agent to post to another session', async () => {
-    const [globalId] = await db('sessions').insert({
+    const globalId = await insertTestSession(db, {
       user_id: userId,
       is_global: true,
       repo_full_name: '',
@@ -214,7 +213,7 @@ describe('baguette session MCP tools', () => {
       status: 'stopped',
       ...testSessionAgentDefaults,
     });
-    const [targetId] = await db('sessions').insert({
+    const targetId = await insertTestSession(db, {
       user_id: userId,
       repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
       repo_full_name: 'o/r',

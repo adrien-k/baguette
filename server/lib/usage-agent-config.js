@@ -1,16 +1,12 @@
+import { usageConfigIdFromSnapshot } from './usage-snapshot.js';
+
 /**
- * @param {Record<string, unknown>} session
- * @param {string|null|undefined} kind
+ * @param {Record<string, unknown>} session Merged sessions API row or `agents` row (see `usage-snapshot.js`).
+ * @param {'builder'|'reviewer'|string|null|undefined} [agentType]
  * @returns {number|null}
  */
-export function usageAgentConfigIdForSession(session, kind) {
-  if (!session) return null;
-  const raw =
-    kind === 'review'
-      ? (session.review_agent_config_id ?? session.agent_config_id)
-      : session.agent_config_id;
-  const n = raw == null || raw === '' ? NaN : Number(raw);
-  return Number.isFinite(n) ? n : null;
+export function usageAgentConfigIdForSession(session, agentType) {
+  return usageConfigIdFromSnapshot(session, agentType);
 }
 
 /**
@@ -18,14 +14,14 @@ export function usageAgentConfigIdForSession(session, kind) {
  * turn started (`agentConfigId`); fall back to the session row when omitted.
  *
  * @param {Record<string, unknown>} session
- * @param {{ kind?: string|null, agentConfigId?: number|null }} [options]
+ * @param {{ agentType?: string|null, agentConfigId?: number|null }} [options]
  */
-export function usageAgentConfigIdForTurn(session, { kind, agentConfigId } = {}) {
+export function usageAgentConfigIdForTurn(session, { agentType, agentConfigId } = {}) {
   if (agentConfigId != null && agentConfigId !== '') {
     const n = Number(agentConfigId);
     if (Number.isFinite(n)) return n;
   }
-  return usageAgentConfigIdForSession(session, kind);
+  return usageAgentConfigIdForSession(session, agentType);
 }
 
 /**
@@ -34,10 +30,10 @@ export function usageAgentConfigIdForTurn(session, { kind, agentConfigId } = {})
  * never fall back to account-level credentials.
  *
  * @param {Record<string, unknown>} session
- * @param {string|null|undefined} kind
+ * @param {'builder'|'reviewer'|string|null|undefined} [agentType]
  */
-export function requireAgentConfigIdForSession(session, kind) {
-  const configId = usageAgentConfigIdForSession(session, kind);
+export function requireAgentConfigIdForSession(session, agentType) {
+  const configId = usageAgentConfigIdForSession(session, agentType);
   if (configId == null) {
     throw new Error('Agent configuration is required to run this turn');
   }
@@ -51,15 +47,25 @@ export function requireAgentConfigIdForSession(session, kind) {
  *
  * @param {Record<string, unknown>} session
  * @param {Record<string, unknown>|null|undefined} row - message / queued row
- * @param {string|null|undefined} kind
+ * @param {'builder'|'reviewer'|string|null|undefined} [agentType]
  */
-export function requireAgentConfigIdForTurn(session, row, kind) {
+export function requireAgentConfigIdForTurn(session, row, channelOrAgentType) {
   const raw = row?.agent_config_id;
   if (raw != null && raw !== '') {
     const n = Number(raw);
     if (Number.isFinite(n)) return n;
   }
-  return requireAgentConfigIdForSession(session, kind);
+  let agentType = row?.agent_type;
+  if (!agentType) {
+    if (channelOrAgentType === 'review' || channelOrAgentType === 'reviewer') {
+      agentType = 'reviewer';
+    } else if (channelOrAgentType === 'chat' || channelOrAgentType === 'builder') {
+      agentType = 'builder';
+    } else {
+      agentType = channelOrAgentType ?? 'builder';
+    }
+  }
+  return requireAgentConfigIdForSession(session, agentType);
 }
 
 /** Review start/send payload may name the config explicitly. */
@@ -69,5 +75,5 @@ export function reviewTurnAgentConfigId(session, data = {}) {
     const n = Number(raw);
     if (Number.isFinite(n)) return n;
   }
-  return usageAgentConfigIdForSession(session, 'review');
+  return usageAgentConfigIdForSession(session, 'reviewer');
 }

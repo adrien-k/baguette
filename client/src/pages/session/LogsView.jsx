@@ -19,9 +19,28 @@ import { isBaguetteUserMessage, isMcpUserMessage } from '@baguette/shared/turn-m
 import UserMessageContent, {
   userMessagePlainText,
 } from '../../components/chat/UserMessageContent.tsx';
+import AgentTypeBadge from '../../components/AgentTypeBadge.jsx';
+import { agentDisplayTitle, agentShowsTypeBadge } from '../../utils/sessionAgents.js';
 
 function formatLegacyMcpToolDisplayName(name, input) {
   return logToolDisplayName(name, input ?? {});
+}
+
+function AgentScopeBadge({ agentId, agentLabelById }) {
+  if (agentId == null || !agentLabelById) return null;
+  const info = agentLabelById.get(agentId);
+  if (!info) return null;
+  const agent = { name: info.name, agent_type: info.agent_type };
+  return (
+    <span className="flex items-center gap-1 min-w-0 max-w-full">
+      <span className="text-[10px] text-fg-muted truncate max-w-[8rem]" title={info.name}>
+        {agentDisplayTitle(agent)}
+      </span>
+      {agentShowsTypeBadge(agent) ? (
+        <AgentTypeBadge agentType={info.agent_type} className="!uppercase" />
+      ) : null}
+    </span>
+  );
 }
 
 function StatusPill({ status }) {
@@ -408,7 +427,7 @@ function MessageDetail({ msg }) {
   return <JsonBlock value={msg} maxHeight="max-h-72" />;
 }
 
-function LogMessage({ msg }) {
+function LogMessage({ msg, agentLabelById }) {
   const [expanded, setExpanded] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const { type } = msg;
@@ -441,6 +460,7 @@ function LogMessage({ msg }) {
         <div className="flex-1 min-w-0 space-y-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className={`text-xs font-semibold ${labelColor}`}>{getMessageLabel(msg)}</span>
+            <AgentScopeBadge agentId={msg.agent_id} agentLabelById={agentLabelById} />
             {showToolStatus && <StatusPill status={msg.tool_status ?? msg.status} />}
             {msg.parent_tool_use_id && <span className="text-faint text-[10px]">sub-agent</span>}
           </div>
@@ -475,7 +495,14 @@ function LogMessage({ msg }) {
   );
 }
 
-export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore, resetKey }) {
+export default function LogsView({
+  rawMessages,
+  loadMore,
+  loadingMore,
+  hasMore,
+  resetKey,
+  agentLabelById,
+}) {
   const topSentinelRef = useRef(null);
   const { scrollContainerRef, prepareLoadMore } = useStickToBottomScroll({
     resetKey,
@@ -522,7 +549,7 @@ export default function LogsView({ rawMessages, loadMore, loadingMore, hasMore, 
             </div>
           )}
           {rawMessages.map((msg, i) => (
-            <LogMessage key={msg.id ?? i} msg={msg} />
+            <LogMessage key={msg.id ?? i} msg={msg} agentLabelById={agentLabelById} />
           ))}
         </div>
       </StickToBottomScrollArea>

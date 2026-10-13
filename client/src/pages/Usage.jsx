@@ -14,7 +14,7 @@ import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { AGENT_MODEL_PRICING_DOC_URL } from '@baguette/shared/agent-model-pricing.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import {
-  KIND_LABELS,
+  AGENT_TYPE_LABELS,
   USAGE_DAY_OPTIONS,
   UNKNOWN_CONFIG_KEY,
   aggregateUsage,
@@ -266,10 +266,10 @@ export default function Usage() {
               All activity
             </FilterChip>
             <FilterChip active={kind === 'session'} onClick={() => setFilter({ kind: 'session' })}>
-              {KIND_LABELS.session}
+              {AGENT_TYPE_LABELS.builder}
             </FilterChip>
             <FilterChip active={kind === 'review'} onClick={() => setFilter({ kind: 'review' })}>
-              Review
+              {AGENT_TYPE_LABELS.reviewer}
             </FilterChip>
           </div>
         </div>
@@ -385,7 +385,7 @@ export default function Usage() {
                         : 0;
                       return (
                         <tr
-                          key={`${row.repo_full_name}:${row.agent_config_id ?? 'none'}:${row.kind}:${byModel ? row.model : ''}`}
+                          key={`${row.repo_full_name}:${row.agent_config_id ?? 'none'}:${row.agent_type}:${byModel ? row.model : ''}`}
                           className="border-b border-line/80 last:border-0"
                         >
                           <td className="px-4 sm:px-6 py-2.5 text-heading">
@@ -411,7 +411,7 @@ export default function Usage() {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-fg-muted">
-                            {KIND_LABELS[row.kind] ?? row.kind}
+                            {AGENT_TYPE_LABELS[row.agent_type] ?? row.agent_type}
                           </td>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-3">

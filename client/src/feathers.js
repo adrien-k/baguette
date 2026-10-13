@@ -69,6 +69,7 @@ export const sessionsService = createService('sessions', {
   ],
 });
 export const messagesService = createService('messages');
+export const agentsService = createService('agents', { customMethods: ['stop'] });
 export const tasksService = createService('tasks', { customMethods: ['kill', 'logs'] });
 export const reposService = createService('repos', {
   customMethods: [
@@ -105,9 +106,6 @@ export const sessionIssuesService = createService('session-issues', {
 });
 export const sessionTodosService = createService('session-todos');
 export const sessionPlansService = createService('session-plans');
-export const sessionReviewService = createService('session-review', {
-  customMethods: ['start', 'stop', 'send', 'reviewNewCommits', 'clearContext'],
-});
 export const agentConfigsService = createService('agent-configs', {
   customMethods: ['listModels', 'testConnectivity', 'lastUsed'],
 });

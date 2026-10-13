@@ -1,6 +1,7 @@
 import { Archive } from 'lucide-react';
 import { SessionStatusIcon } from './SessionCard.jsx';
 import { prListIndicatorProps } from '../utils/prStatusStyles.js';
+import { isAnyAgentRunning } from '../utils/sessionAgents.js';
 
 const SIZE_CLASS = {
   sm: 'w-3 h-3',
@@ -17,14 +18,15 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
   if (isArchived) {
     return <Archive className={`${iconSize} text-faint shrink-0`} aria-hidden />;
   }
-  if (isArchiving || session.status === 'running' || session.status === 'provisioning') {
-    return (
-      <SessionStatusIcon
-        status={isArchiving ? 'archiving' : session.status}
-        compact={size === 'sm'}
-        aria-hidden
-      />
-    );
+  const showTurnSpinner =
+    isArchiving || session.status === 'provisioning' || isAnyAgentRunning(session);
+  if (showTurnSpinner) {
+    const iconStatus = isArchiving
+      ? 'archiving'
+      : session.status === 'provisioning'
+        ? 'provisioning'
+        : 'running';
+    return <SessionStatusIcon status={iconStatus} compact={size === 'sm'} aria-hidden />;
   }
   if (hasPr) {
     const { icon: PrIcon, iconClass, title } = prListIndicatorProps(session);

@@ -7,6 +7,7 @@
  * when the user toggles to spend; all agent SDKs use estimated cost from the model pricing table.
  */
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { normalizeUsageAgentType } from '@baguette/shared/usage-agent-type.js';
 import { repoDisplayName } from './repoDisplayName.js';
 
 /** The plotted metric. Rows written before the token columns existed count as 0. */
@@ -44,12 +45,11 @@ export function parseUsageDays(value) {
   return USAGE_DAY_OPTIONS.includes(n) ? n : DEFAULT_USAGE_DAYS;
 }
 
-/** Reviewer vs session-chat. Null / `turn` / anything else counts as session. */
-function usageKindOf(row) {
-  return row?.kind === 'review' ? 'review' : 'session';
+function usageAgentTypeOf(row) {
+  return normalizeUsageAgentType(row?.agent_type ?? row?.kind);
 }
 
-export const KIND_LABELS = { session: 'Chat', review: 'Review' };
+export const AGENT_TYPE_LABELS = { builder: 'Builder', reviewer: 'Reviewer' };
 
 export function usageRepoLabel(fullName) {
   if (!fullName || fullName === '__global__') return 'Global';
@@ -82,15 +82,15 @@ export function summarizeCostByModel(breakdown) {
 
 /** Session usage rows with positive cost, one entry per model and activity kind. */
 /**
- * @param {Array<{ kind?: string, model?: string, cost_usd?: number|string }>} [breakdown]
- * @returns {Array<{ kind: string, model: string, cost_usd: number }>}
+ * @param {Array<{ agent_type?: string, model?: string, cost_usd?: number|string }>} [breakdown]
+ * @returns {Array<{ agent_type: string, model: string, cost_usd: number }>}
  */
 export function listSessionCostLines(breakdown) {
   if (!breakdown?.length) return [];
   return breakdown
     .filter((row) => Number(row.cost_usd ?? 0) > 0)
     .map((row) => ({
-      kind: row.kind === 'review' ? 'review' : 'session',
+      agent_type: usageAgentTypeOf(row),
       model: row.model || 'unknown',
       cost_usd: Number(row.cost_usd ?? 0),
     }))
@@ -132,7 +132,7 @@ export const SERIES_COLORS = [
 const OTHER_COLOR = 'bg-track';
 export const OTHER_KEY = '__other__';
 
-const KIND_COLORS = { session: SERIES_COLORS[0], review: SERIES_COLORS[2] };
+const AGENT_TYPE_COLORS = { builder: SERIES_COLORS[0], reviewer: SERIES_COLORS[2] };
 
 export const UNKNOWN_CONFIG_KEY = '__none__';
 
@@ -210,7 +210,7 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
       const key = usageConfigKey(r);
       return configColors.has(key) ? key : OTHER_KEY;
     }
-    if (dimension === 'kind') return usageKindOf(r);
+    if (dimension === 'agent_type' || dimension === 'kind') return usageAgentTypeOf(r);
     if (dimension === 'model') {
       const model = r.model || '';
       return modelColors.has(model) ? model : OTHER_KEY;
@@ -221,7 +221,9 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
   const colorOf = (key) => {
     if (key === OTHER_KEY) return OTHER_COLOR;
     if (dimension === 'config') return configColors.get(key) ?? OTHER_COLOR;
-    if (dimension === 'kind') return KIND_COLORS[key] ?? OTHER_COLOR;
+    if (dimension === 'agent_type' || dimension === 'kind') {
+      return AGENT_TYPE_COLORS[key] ?? OTHER_COLOR;
+    }
     if (dimension === 'model') return modelColors.get(key) ?? OTHER_COLOR;
     return repoColors.get(key) ?? OTHER_COLOR;
   };
@@ -239,7 +241,9 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
       return `Other (${otherRepoCount} ${otherRepoCount === 1 ? 'repo' : 'repos'})`;
     }
     if (dimension === 'config') return configTitle.get(key) ?? key;
-    if (dimension === 'kind') return KIND_LABELS[key] ?? key;
+    if (dimension === 'agent_type' || dimension === 'kind') {
+      return AGENT_TYPE_LABELS[key] ?? key;
+    }
     if (dimension === 'model') return usageModelLabel(key);
     return usageRepoLabel(key);
   };
@@ -280,18 +284,18 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
 export function aggregateUsage(rows, { byModel = false } = {}) {
   const totals = new Map();
   for (const row of rows) {
-    const kind = usageKindOf(row);
+    const agent_type = usageAgentTypeOf(row);
     const model = row.model || '';
     const configKey = usageConfigKey(row);
     const key = byModel
-      ? `${row.repo_full_name}\t${configKey}\t${kind}\t${model}`
-      : `${row.repo_full_name}\t${configKey}\t${kind}`;
+      ? `${row.repo_full_name}\t${configKey}\t${agent_type}\t${model}`
+      : `${row.repo_full_name}\t${configKey}\t${agent_type}`;
     const prev = totals.get(key) ?? {
       repo_full_name: row.repo_full_name,
       agent_config_id: row.agent_config_id ?? null,
       agent_config_label: row.agent_config_label ?? null,
       agent_sdk: row.agent_sdk,
-      kind,
+      agent_type,
       ...(byModel ? { model } : {}),
       ...EMPTY_USAGE_METRICS,
     };

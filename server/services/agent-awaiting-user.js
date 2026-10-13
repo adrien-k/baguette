@@ -1,40 +1,38 @@
-/** Session status while the agent waits for AskUserQuestions or plan confirmation. */
-const SESSION_AWAITING_USER_STATUS = 'approval';
+/** Agent turn status while waiting for AskUserQuestions or plan confirmation. */
+const AGENT_AWAITING_USER_STATUS = 'approval';
 
 /**
  * @param {import('@feathersjs/feathers').Application} app
- * @param {number} sessionId
+ * @param {number} agentId
  * @param {number} userId
  */
-async function markSessionAwaitingUser(app, sessionId, userId) {
-  if (!sessionId || !userId) return;
-  await app
-    .service('sessions')
-    .patch(
-      sessionId,
-      { status: SESSION_AWAITING_USER_STATUS },
-      { provider: undefined, user: { id: userId } }
-    );
+async function markBuilderAgentAwaitingUser(app, agentId, userId) {
+  if (!agentId || !userId) return;
+  const { patchAgentInternal } = await import('./feathers/agents.service.js');
+  await patchAgentInternal(app, agentId, { status: AGENT_AWAITING_USER_STATUS }, userId);
 }
 
 /**
- * @param {{ status?: string | null } | null | undefined} session
+ * @param {{ status?: string | null } | null | undefined} agent
  */
-export function isSessionAwaitingUser(session) {
-  return session?.status === SESSION_AWAITING_USER_STATUS;
+export function isBuilderAgentAwaitingUser(agent) {
+  return agent?.status === AGENT_AWAITING_USER_STATUS;
 }
 
 /**
- * After AskUserQuestions / CreatePlan / EditPlan: mark the session awaiting user input.
+ * After AskUserQuestions / CreatePlan / EditPlan: mark the agent awaiting user input.
  * Does not abort or cancel the agent — the model should end the turn on its own.
  *
  * @param {import('@feathersjs/feathers').Application} app
- * @param {number} sessionId
+ * @param {number} _sessionId
  * @param {number} userId
- * @param {{ endTurnAwaitingUser?: boolean } | null | undefined} sessionState
+ * @param {{ endTurnAwaitingUser?: boolean; agentId?: number } | null | undefined} sessionState
  */
-export async function markAwaitingUserAfterTurnEndingTool(app, sessionId, userId, sessionState) {
+export async function markAwaitingUserAfterTurnEndingTool(app, _sessionId, userId, sessionState) {
   if (!sessionState) return;
   sessionState.endTurnAwaitingUser = true;
-  await markSessionAwaitingUser(app, sessionId, userId);
+  const agentId = sessionState.agentId;
+  if (agentId) {
+    await markBuilderAgentAwaitingUser(app, agentId, userId);
+  }
 }

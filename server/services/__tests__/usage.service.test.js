@@ -3,7 +3,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
+import { ensureReviewerAgentRow } from '../agents-db.js';
 import { registerUsageService } from '../feathers/usage.service.js';
 
 const db = createTestDb();
@@ -21,17 +22,15 @@ let cursorConfigId;
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
 
 /** `usage.session_id` is NOT NULL, so every usage row needs an owning session. */
-async function createSession(userId, repo, { agent_config_id = null } = {}) {
-  const [row] = await db('sessions')
-    .insert({
-      user_id: userId,
-      repo_full_name: repo,
-      base_branch: 'main',
-      initial_prompt: 'test',
-      agent_config_id,
-    })
-    .returning('id');
-  return typeof row === 'object' ? row.id : row;
+async function createSession(userId, repo, { agent_config_id = null, agent_sdk = 'claude' } = {}) {
+  return insertTestSession(db, {
+    user_id: userId,
+    repo_full_name: repo,
+    base_branch: 'main',
+    initial_prompt: 'test',
+    agent_config_id,
+    agent_sdk,
+  });
 }
 
 async function insertUsage(rows) {
@@ -54,7 +53,8 @@ async function insertUsage(rows) {
       cache_read_tokens: r.cacheRead ?? 0,
       cache_write_tokens: r.cacheWrite ?? 0,
       model: r.model ?? null,
-      kind: r.kind ?? null,
+      agent_type:
+        r.agent_type ?? (r.kind === 'review' ? 'reviewer' : r.kind ? 'builder' : 'builder'),
     });
   }
 }
@@ -121,7 +121,7 @@ describe('usage.breakdown', () => {
         agent_config_id: claudeConfigId,
         agent_config_label: 'Alice Claude',
         agent_sdk: 'claude',
-        kind: 'session',
+        agent_type: 'builder',
         model: '',
         cost_usd: 1.5,
         input_tokens: 0,
@@ -272,21 +272,28 @@ describe('usage.breakdown', () => {
     ).toEqual([10, 20]);
   });
 
-  it('splits session vs review activity and honours kind=review', async () => {
+  it('splits builder vs reviewer activity and honours kind=review filter compat', async () => {
     const day = daysAgo(1);
     await insertUsage([
       { repo: 'acme/alpha', cost: 1, input: 100, output: 0, created_at: day },
-      { repo: 'acme/alpha', cost: 2, input: 50, output: 0, created_at: day, kind: 'review' },
+      {
+        repo: 'acme/alpha',
+        cost: 2,
+        input: 50,
+        output: 0,
+        created_at: day,
+        agent_type: 'reviewer',
+      },
     ]);
 
     const all = await svc.breakdown({}, params(USER));
     expect(all).toHaveLength(2);
-    expect(all.find((r) => r.kind === 'session').total_tokens).toBe(100);
-    expect(all.find((r) => r.kind === 'review').total_tokens).toBe(50);
+    expect(all.find((r) => r.agent_type === 'builder').total_tokens).toBe(100);
+    expect(all.find((r) => r.agent_type === 'reviewer').total_tokens).toBe(50);
 
     const review = await svc.breakdown({ kind: 'review' }, params(USER));
     expect(review).toHaveLength(1);
-    expect(review[0].kind).toBe('review');
+    expect(review[0].agent_type).toBe('reviewer');
     expect(review[0].total_tokens).toBe(50);
   });
 
@@ -325,7 +332,7 @@ describe('usage.usageUsers', () => {
 
 describe('usage.activeAgents', () => {
   it('returns chat and review agents for all users by default', async () => {
-    await db('sessions').insert({
+    const runningSessionId = await insertTestSession(db, {
       user_id: USER,
       short_id: 'run12345',
       label: 'Feature work',
@@ -335,11 +342,13 @@ describe('usage.activeAgents', () => {
       status: 'running',
       agent_sdk: 'claude',
       model: 'claude-sonnet-4-20250514',
-      review_status: 'running',
-      review_agent_sdk: 'cursor',
-      review_model: 'composer',
     });
-    await db('sessions').insert({
+    await ensureReviewerAgentRow(db, runningSessionId, {
+      agent_sdk: 'cursor',
+      model: 'composer',
+      status: 'running',
+    });
+    await insertTestSession(db, {
       user_id: OTHER_USER,
       short_id: 'other111',
       repo_full_name: 'acme/other',
@@ -353,14 +362,14 @@ describe('usage.activeAgents', () => {
     expect(
       rows
         .filter((r) => r.short_id === 'run12345')
-        .map((r) => r.kind)
+        .map((r) => r.agent_type)
         .sort()
-    ).toEqual(['chat', 'review']);
+    ).toEqual(['builder', 'reviewer']);
     expect(rows.every((r) => r.session_id)).toBe(true);
-    expect(rows.find((r) => r.kind === 'chat' && r.short_id === 'run12345').model).toBe(
+    expect(rows.find((r) => r.agent_type === 'builder' && r.short_id === 'run12345').model).toBe(
       'claude-sonnet-4-20250514'
     );
-    expect(rows.find((r) => r.kind === 'review').agent_sdk).toBe('cursor');
+    expect(rows.find((r) => r.agent_type === 'reviewer').agent_sdk).toBe('cursor');
 
     const scoped = await svc.activeAgents({ user_id: String(USER) }, params(USER));
     expect(scoped).toHaveLength(2);
@@ -368,7 +377,7 @@ describe('usage.activeAgents', () => {
   });
 
   it('returns an empty list when nothing is running', async () => {
-    await db('sessions').insert({
+    await insertTestSession(db, {
       user_id: USER,
       short_id: 'done1111',
       repo_full_name: 'acme/app',

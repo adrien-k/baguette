@@ -197,20 +197,20 @@ describe('buildSeries by cost metric', () => {
   });
 });
 
-describe('buildSeries by kind', () => {
-  it('stacks session vs review', () => {
+describe('buildSeries by agent_type', () => {
+  it('stacks builder vs reviewer', () => {
     const mixed = [
       row('2026-09-20', 'acme/alpha', 1, 5),
-      { ...row('2026-09-20', 'acme/alpha', 1, 3), kind: 'review' },
+      { ...row('2026-09-20', 'acme/alpha', 1, 3), agent_type: 'reviewer' },
     ];
-    const { series, byDay } = buildSeries(mixed, 'kind');
+    const { series, byDay } = buildSeries(mixed, 'agent_type');
     expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
-      ['session', 'Chat', 5],
-      ['review', 'Review', 3],
+      ['builder', 'Builder', 5],
+      ['reviewer', 'Reviewer', 3],
     ]);
     expect([...byDay.get('2026-09-20')]).toEqual([
-      ['session', 5],
-      ['review', 3],
+      ['builder', 5],
+      ['reviewer', 3],
     ]);
   });
 });
@@ -220,11 +220,11 @@ describe('aggregateUsage', () => {
     const aggregated = aggregateUsage([
       row('2026-09-20', 'acme/alpha', 1, 3),
       row('2026-09-21', 'acme/alpha', 1, 2),
-      { ...row('2026-09-21', 'acme/alpha', 1, 4), kind: 'review' },
+      { ...row('2026-09-21', 'acme/alpha', 1, 4), agent_type: 'reviewer' },
     ]);
-    expect(aggregated.map((r) => [r.repo_full_name, r.kind, r.total_tokens])).toEqual([
-      ['acme/alpha', 'session', 5],
-      ['acme/alpha', 'review', 4],
+    expect(aggregated.map((r) => [r.repo_full_name, r.agent_type, r.total_tokens])).toEqual([
+      ['acme/alpha', 'builder', 5],
+      ['acme/alpha', 'reviewer', 4],
     ]);
   });
 
@@ -284,12 +284,12 @@ describe('sumUsageMetrics', () => {
 describe('listSessionCostLines', () => {
   it('keeps session and review rows separate per model', () => {
     const rows = listSessionCostLines([
-      { model: 'claude-opus-5', cost_usd: 0.1, kind: 'session' },
-      { model: 'composer-1', cost_usd: 0.02, kind: 'review' },
-      { model: 'composer-1', cost_usd: 0, kind: 'session' },
+      { model: 'claude-opus-5', cost_usd: 0.1, agent_type: 'builder' },
+      { model: 'composer-1', cost_usd: 0.02, agent_type: 'reviewer' },
+      { model: 'composer-1', cost_usd: 0, agent_type: 'builder' },
     ]);
     expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.kind).sort()).toEqual(['review', 'session']);
+    expect(rows.map((r) => r.agent_type).sort()).toEqual(['builder', 'reviewer']);
   });
 });
 

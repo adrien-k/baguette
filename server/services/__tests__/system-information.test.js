@@ -1,21 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../db.js', () => {
-  const sessionCountChain = {
-    whereIn: () => sessionCountChain,
-    where: () => sessionCountChain,
+  const agentCountChain = {
+    join: () => agentCountChain,
+    where: () => agentCountChain,
+    whereNull: () => agentCountChain,
+    whereIn: () => agentCountChain,
     count: () => ({
       first: async () => ({ count: 2 }),
     }),
   };
   return {
     default: (table) => {
-      if (table === 'sessions') {
-        return {
-          where: () => ({
-            whereNull: () => sessionCountChain,
-          }),
-        };
+      if (table === 'agents') {
+        return agentCountChain;
       }
       return {
         where: () => ({

@@ -22,10 +22,75 @@ export const testSessionAgentDefaults = {
   model: 'sonnet',
 };
 
-export const testMessageIdentityDefaults = {
+const testMessageIdentityDefaults = {
   agent_type: 'builder',
   ...testSessionAgentDefaults,
 };
+
+const AGENT_FIELDS_ON_SESSION = new Set([
+  'agent_sdk',
+  'model',
+  'agent_config_id',
+  'model_params',
+  'claude_session_id',
+  'cursor_agent_id',
+  'pi_session_id',
+  'review_agent_config_id',
+  'review_agent_sdk',
+  'review_model',
+  'review_model_params',
+  'review_claude_session_id',
+  'review_cursor_agent_id',
+  'review_pi_session_id',
+  'review_status',
+  'review_initial_prompt',
+  'active_chat_turn_id',
+  'active_review_turn_id',
+  'current_turn_id',
+  'agent_type',
+]);
+
+/**
+ * Insert a session row and its primary builder agent (post-migration 061).
+ * Agent identity fields are stripped from the sessions insert and stored on `agents`.
+ */
+export async function insertTestSession(db, sessionFields = {}) {
+  const { insertSessionWithPrimaryBuilder } = await import('./session-agents.js');
+  const merged = { status: 'stopped', ...testSessionAgentDefaults, ...sessionFields };
+  const agentPatch = {};
+  const sessionOnly = {};
+  for (const [key, value] of Object.entries(merged)) {
+    if (AGENT_FIELDS_ON_SESSION.has(key)) {
+      if (key.startsWith('review_')) {
+        if (key === 'review_agent_config_id') agentPatch.agent_config_id = value;
+        else if (key === 'review_agent_sdk') agentPatch.agent_sdk = value;
+        else if (key === 'review_model') agentPatch.model = value;
+        else if (key === 'review_model_params') agentPatch.model_params = value;
+      } else if (key !== 'agent_type' && key !== 'review_status') {
+        agentPatch[key] = value;
+      }
+    } else {
+      sessionOnly[key] = value;
+    }
+  }
+  return insertSessionWithPrimaryBuilder(db, { ...sessionOnly, ...agentPatch });
+}
+
+async function getPrimaryBuilderAgentId(db, sessionId) {
+  const row = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+  return row?.id ?? null;
+}
+
+/** Message insert fields including `agent_id` for the session primary builder. */
+export async function testMessageRow(db, sessionId, fields = {}) {
+  const agentId = await getPrimaryBuilderAgentId(db, sessionId);
+  return {
+    session_id: sessionId,
+    agent_id: agentId,
+    ...testMessageIdentityDefaults,
+    ...fields,
+  };
+}
 
 async function createAndMigrate() {
   const db = Knex({

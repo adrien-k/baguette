@@ -3,27 +3,27 @@ import {
   parseModelParamsJson,
 } from '../../shared/agent-model-pricing.js';
 import { parseCursorRawTokenUsage } from '../../shared/cursor-token-adjustment.js';
+import { usageModelFieldsFromSnapshot } from './usage-snapshot.js';
 
 /**
- * USD estimate for a Cursor/Pi `usage` row (or live turn tokens) using session model snapshots.
+ * USD estimate for a Cursor/Pi `usage` row (or live turn tokens) using model snapshots.
  * Mirrors `sessions.recordCursorUsage` / `recordPiUsage` so recomputes match new turns.
  *
  * `input_tokens` on the row is already derived from `raw_token_usage` for Cursor; see
  * `shared/cursor-token-adjustment.js`.
  *
  * @param {Record<string, unknown>} turnUsage token fields + optional `model`
- * @param {Record<string, unknown>} session sessions row (model / review_model / *_params)
- * @param {{ kind?: string|null, turnModel?: { model?: string|null, modelParams?: unknown } }} [options]
+ * @param {Record<string, unknown>} session Merged sessions API row or `agents` row (see `usage-snapshot.js`)
+ * @param {{ agentType?: string|null, turnModel?: { model?: string|null, modelParams?: unknown } }} [options]
  * @returns {number}
  */
-export function estimateCursorUsageCostUsd(turnUsage, session, { kind, turnModel } = {}) {
-  const sessionModel = kind === 'review' ? session.review_model : session.model;
-  const sessionParamsJson =
-    kind === 'review'
-      ? (session.review_model_params ?? session.model_params)
-      : session.model_params;
+export function estimateCursorUsageCostUsd(turnUsage, session, { agentType, turnModel } = {}) {
+  const { model: sessionModel, paramsJson: sessionParamsJson } = usageModelFieldsFromSnapshot(
+    session,
+    agentType
+  );
 
-  const modelId = turnUsage?.model ?? turnModel?.model ?? sessionModel ?? session.model ?? null;
+  const modelId = turnUsage?.model ?? turnModel?.model ?? sessionModel ?? null;
 
   const paramsJson =
     turnModel?.model != null && turnModel.model !== '' ? turnModel.modelParams : sessionParamsJson;

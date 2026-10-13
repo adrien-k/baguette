@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { sessionsService } from '../feathers.js';
+import { agentsService, sessionsService } from '../feathers.js';
 import { sortSessionsForList } from '@baguette/shared/session-sort.js';
 import { sessionMatchesListQuery } from '@baguette/shared/session-list-query.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
@@ -121,16 +121,46 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
       mergeRealtime(session);
     };
 
+    const onAgentPatched = (agent) => {
+      if (!agent?.session_id) return;
+      setSessions((prev) => {
+        const idx = prev.findIndex((s) => s.id === agent.session_id);
+        if (idx < 0) return prev;
+        const session = prev[idx];
+        const agents = Array.isArray(session.agents) ? [...session.agents] : [];
+        const agentIdx = agents.findIndex((a) => a.id === agent.id);
+        const summary = {
+          id: agent.id,
+          name: agent.name,
+          agent_type: agent.agent_type,
+          status: agent.status,
+          is_primary: agent.is_primary,
+        };
+        if (agentIdx >= 0) agents[agentIdx] = summary;
+        else agents.push(summary);
+        const reviewer = agents.find((a) => a.agent_type === 'reviewer');
+        const next = {
+          ...session,
+          agents,
+          review_status: reviewer?.status ?? session.review_status,
+          reviewer_agent_id: reviewer?.id ?? session.reviewer_agent_id,
+        };
+        return sortSessionsForList(prev.map((s) => (s.id === session.id ? next : s)));
+      });
+    };
+
     sessionsService.on('created', onCreated);
     sessionsService.on('updated', onUpdated);
     sessionsService.on('patched', onPatched);
     sessionsService.on('removed', onRemoved);
+    agentsService.on('patched', onAgentPatched);
 
     return () => {
       sessionsService.off('created', onCreated);
       sessionsService.off('updated', onUpdated);
       sessionsService.off('patched', onPatched);
       sessionsService.off('removed', onRemoved);
+      agentsService.off('patched', onAgentPatched);
     };
   }, []);
 

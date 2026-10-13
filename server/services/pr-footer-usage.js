@@ -1,4 +1,5 @@
 import { parseModelParamsJson } from '../../shared/cursor-model-pricing.js';
+import { normalizeUsageAgentType } from '../../shared/usage-agent-type.js';
 
 function formatTokens(n) {
   const value = Number(n) || 0;
@@ -15,15 +16,11 @@ function formatUsd(n) {
   return `$${value.toFixed(0)}`;
 }
 
-function usageKind(row) {
-  return row.usage_kind === 'review' || row.kind === 'review' ? 'review' : 'session';
-}
-
-function cursorFastEnabled(session, kind) {
-  const paramsJson =
-    kind === 'review'
-      ? (session.review_model_params ?? session.model_params)
-      : session.model_params;
+function cursorFastEnabled(session, agentType) {
+  const isReviewer = normalizeUsageAgentType(agentType) === 'reviewer';
+  const paramsJson = isReviewer
+    ? (session.review_model_params ?? session.model_params)
+    : session.model_params;
   return parseModelParamsJson(paramsJson).fast === 'true';
 }
 
@@ -34,23 +31,19 @@ function cursorFastEnabled(session, kind) {
 async function querySessionUsageByModel(db, sessionId) {
   const rows = await db('usage')
     .where({ session_id: sessionId })
-    .select(
-      db.raw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END as usage_kind"),
-      'model',
-      'agent_sdk'
-    )
+    .select('agent_type', 'model', 'agent_sdk')
     .sum('cost_usd as cost_usd')
     .sum('input_tokens as input_tokens')
     .sum('output_tokens as output_tokens')
     .sum('cache_read_tokens as cache_read_tokens')
     .sum('cache_write_tokens as cache_write_tokens')
-    .groupByRaw("CASE WHEN kind = 'review' THEN 'review' ELSE 'session' END, model, agent_sdk")
+    .groupByRaw('agent_type, model, agent_sdk')
     .orderBy('agent_sdk')
     .orderBy('model')
-    .orderBy('usage_kind');
+    .orderBy('agent_type');
 
   return rows.map((r) => ({
-    kind: usageKind(r),
+    agent_type: normalizeUsageAgentType(r.agent_type),
     model: r.model || 'unknown',
     agent_sdk: r.agent_sdk || 'claude',
     cost_usd: parseFloat(r.cost_usd ?? 0),
@@ -71,7 +64,7 @@ export function mergeUsageForPrFooter(rows, session) {
   const merged = new Map();
 
   for (const row of rows) {
-    const fast = row.agent_sdk === 'cursor' ? cursorFastEnabled(session, row.kind) : false;
+    const fast = row.agent_sdk === 'cursor' ? cursorFastEnabled(session, row.agent_type) : false;
     const key = `${row.agent_sdk}\0${row.model}\0${fast ? '1' : '0'}`;
     const prev = merged.get(key);
     if (prev) {

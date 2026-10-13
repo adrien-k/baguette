@@ -14,6 +14,7 @@ import {
   parseCursorRawTokenUsage,
 } from '../../shared/cursor-token-adjustment.js';
 import { estimateCursorUsageCostUsd } from '../lib/cursor-usage-row-cost.js';
+import { usageQueryWithAgentPricing } from '../lib/usage-agent-join.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const db = knex(knexfile);
@@ -24,20 +25,8 @@ function reportProgress(done, total) {
 }
 
 try {
-  const candidates = await db('usage as u')
-    .join('sessions as s', 's.id', 'u.session_id')
+  const candidates = await usageQueryWithAgentPricing(db)
     .where('u.agent_sdk', 'cursor')
-    .select(
-      'u.id',
-      'u.session_id',
-      'u.kind',
-      'u.model as usage_model',
-      'u.raw_token_usage',
-      's.model as session_model',
-      's.model_params',
-      's.review_model',
-      's.review_model_params'
-    )
     .orderBy('u.id');
 
   const total = candidates.length;
@@ -58,10 +47,9 @@ try {
     }
 
     const session = {
-      model: row.session_model,
-      model_params: row.model_params,
-      review_model: row.review_model,
-      review_model_params: row.review_model_params,
+      agent_type: row.agent_type,
+      model: row.agent_model,
+      model_params: row.agent_model_params,
     };
 
     const derived = deriveCursorUsageFromRaw(raw);
@@ -69,9 +57,9 @@ try {
       ...raw,
       input_tokens: derived.input_tokens,
       total_tokens: derived.total_tokens,
-      model: row.usage_model,
+      model: row.model,
     };
-    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { kind: row.kind });
+    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { agentType: row.agent_type });
 
     if (!dryRun) {
       await db('usage').where({ id: row.id }).update({

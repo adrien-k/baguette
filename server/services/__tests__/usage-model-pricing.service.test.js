@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { BadRequest } from '@feathersjs/errors';
 import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerUsageModelPricingService } from '../feathers/usage-model-pricing.service.js';
 
 const db = createTestDb({ beforeEach, afterEach });
@@ -14,16 +14,18 @@ beforeEach(async () => {
   [user] = await db('users').insert({ github_id: '1', username: 'alice', approved: true });
   user = await db('users').where({ id: user }).first();
 
-  const [sessionId] = await db('sessions').insert({
+  const sessionId = await insertTestSession(db, {
     user_id: user.id,
     repo_full_name: 'acme/app',
     base_branch: 'main',
     initial_prompt: 'go',
   });
+  const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
 
   await db('usage').insert({
     session_id: sessionId,
     user_id: user.id,
+    agent_id: builder.id,
     repo_full_name: 'acme/app',
     model: 'unknown-model',
     agent_sdk: 'cursor',

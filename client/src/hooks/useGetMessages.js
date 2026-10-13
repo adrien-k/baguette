@@ -13,8 +13,29 @@ function normalizeMessageList(res) {
   return Array.isArray(res) ? res : (res?.data ?? []);
 }
 
-/** Page builder messages with id > afterId, optionally capped at maxId. */
-async function pageBuilderMessagesAfter(sessionId, afterId, maxId = null) {
+function messageQueryBase(sessionId, agentId, { allAgents = false } = {}) {
+  const query = { session_id: sessionId, $sort: { id: 1 }, $limit: PAGE_SIZE };
+  if (allAgents) {
+    query.include_all_agents = true;
+  } else if (agentId != null) {
+    query.agent_id = agentId;
+  } else {
+    query.agent_type = 'builder';
+  }
+  return query;
+}
+
+function findQueryFilter(sessionId, agentId, { allAgents = false } = {}) {
+  if (allAgents) {
+    return { session_id: sessionId, include_all_agents: true };
+  }
+  if (agentId != null) {
+    return { session_id: sessionId, agent_id: agentId };
+  }
+  return { session_id: sessionId, agent_type: 'builder' };
+}
+
+async function pageMessagesAfter(sessionId, agentId, afterId, maxId = null, options = {}) {
   const accumulated = [];
   let page;
   let cursor = afterId;
@@ -22,11 +43,8 @@ async function pageBuilderMessagesAfter(sessionId, afterId, maxId = null) {
     const idFilter = maxId != null ? { $gt: cursor, $lte: maxId } : { $gt: cursor };
     const res = await messagesService.find({
       query: {
-        session_id: sessionId,
-        agent_type: 'builder',
+        ...messageQueryBase(sessionId, agentId, options),
         id: idFilter,
-        $sort: { id: 1 },
-        $limit: PAGE_SIZE,
       },
     });
     page = normalizeMessageList(res);
@@ -38,13 +56,13 @@ async function pageBuilderMessagesAfter(sessionId, afterId, maxId = null) {
 }
 
 /**
- * Returns messages for a session with cursor-based pagination.
- * - Initial load: last 100 messages (newest first, then reversed for display)
- * - loadMore(): prepends the next 100 older messages
- * - Real-time created events insert by ascending id (out-of-order delivery stays sorted)
- * - SSE reconnect: reconcile patches in the loaded id window, then page in newer rows (no full reload)
+ * Returns messages for a session agent with cursor-based pagination.
+ * @param {number|null} sessionId
+ * @param {number|null} agentId - when set, load that agent's transcript
+ * @param {{ allAgents?: boolean, skip?: boolean }} [options] - allAgents: session-wide (logs); skip: do not fetch
  */
-export function useGetMessages(sessionId) {
+export function useGetMessages(sessionId, agentId = null, options = {}) {
+  const { allAgents = false, skip = false } = options;
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -68,7 +86,7 @@ export function useGetMessages(sessionId) {
   }, []);
 
   const syncMessagesOnReconnect = useCallback(async () => {
-    if (!sessionId || initialLoadFailed) return;
+    if (!sessionId || initialLoadFailed || skip) return;
     const loaded = messagesRef.current;
     if (!loaded.length) return;
 
@@ -76,18 +94,18 @@ export function useGetMessages(sessionId) {
     const maxId = Math.max(...loaded.map((m) => m.id));
 
     try {
-      const inWindow = await pageBuilderMessagesAfter(sessionId, minId - 1, maxId);
-      const newer = await pageBuilderMessagesAfter(sessionId, maxId);
+      const inWindow = await pageMessagesAfter(sessionId, agentId, minId - 1, maxId, { allAgents });
+      const newer = await pageMessagesAfter(sessionId, agentId, maxId, null, { allAgents });
       const fetched = [...inWindow, ...newer];
       setMessages((prev) => mergeSessionMessagesFromFetch(prev, fetched));
     } catch (err) {
       toastFeathersError('Failed to load new messages', err);
     }
-  }, [sessionId, initialLoadFailed]);
+  }, [sessionId, agentId, allAgents, initialLoadFailed, skip]);
 
   const refetch = useCallback(
     ({ silent = false } = {}) => {
-      if (!sessionId || initialLoadFailed) return;
+      if (!sessionId || initialLoadFailed || skip) return;
       if (silent) {
         syncMessagesOnReconnect();
         return;
@@ -101,8 +119,7 @@ export function useGetMessages(sessionId) {
       messagesService
         .find({
           query: {
-            session_id: sessionId,
-            agent_type: 'builder',
+            ...findQueryFilter(sessionId, agentId, { allAgents }),
             $sort: { id: -1 },
             $limit: PAGE_SIZE,
           },
@@ -118,13 +135,21 @@ export function useGetMessages(sessionId) {
         .catch((err) => handleLoadError(err))
         .finally(() => setLoading(false));
     },
-    [sessionId, initialLoadFailed, handleLoadError, syncMessagesOnReconnect]
+    [
+      sessionId,
+      agentId,
+      allAgents,
+      skip,
+      initialLoadFailed,
+      handleLoadError,
+      syncMessagesOnReconnect,
+    ]
   );
 
-  useRefetchOnSseReconnect(refetch, Boolean(sessionId) && !initialLoadFailed);
+  useRefetchOnSseReconnect(refetch, Boolean(sessionId) && !skip && !initialLoadFailed);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || skip) {
       setMessages([]);
       setLoading(false);
       setHasMore(false);
@@ -135,8 +160,6 @@ export function useGetMessages(sessionId) {
     let cancelled = false;
     setLoading(true);
     setInitialLoadFailed(false);
-    // Drop the previous session's messages immediately so they are never shown
-    // under the newly selected session while its history is being fetched.
     setMessages([]);
     setHasMore(false);
     oldestIdRef.current = null;
@@ -144,8 +167,7 @@ export function useGetMessages(sessionId) {
     messagesService
       .find({
         query: {
-          session_id: sessionId,
-          agent_type: 'builder',
+          ...findQueryFilter(sessionId, agentId, { allAgents }),
           $sort: { id: -1 },
           $limit: PAGE_SIZE,
         },
@@ -153,7 +175,7 @@ export function useGetMessages(sessionId) {
       .then((res) => {
         if (cancelled) return;
         const list = Array.isArray(res) ? res : (res?.data ?? []);
-        const sorted = [...list].reverse(); // oldest → newest for display
+        const sorted = [...list].reverse();
         setMessages(sorted);
         setHasMore(list.length === PAGE_SIZE);
         oldestIdRef.current = sorted[0]?.id ?? null;
@@ -166,15 +188,20 @@ export function useGetMessages(sessionId) {
         if (!cancelled) setLoading(false);
       });
 
+    const matchesScope = (message) => {
+      if (message.session_id !== sessionId) return false;
+      if (allAgents) return true;
+      if (agentId != null) return message.agent_id === agentId;
+      return message.agent_type !== 'reviewer';
+    };
+
     const onCreated = (message) => {
-      if (message.session_id !== sessionId) return;
-      if (message.agent_type === 'reviewer') return;
+      if (!matchesScope(message)) return;
       setMessages((prev) => insertSessionMessageById(prev, message));
     };
 
     const onPatched = (message) => {
-      if (message.session_id !== sessionId) return;
-      if (message.agent_type === 'reviewer') return;
+      if (!matchesScope(message)) return;
       setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
     };
 
@@ -186,25 +213,24 @@ export function useGetMessages(sessionId) {
       messagesService.off('created', onCreated);
       messagesService.off('patched', onPatched);
     };
-  }, [sessionId, handleLoadError]);
+  }, [sessionId, agentId, allAgents, skip, handleLoadError]);
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || loadingMoreRef.current || !oldestIdRef.current) return;
+    if (!hasMore || loadingMoreRef.current || !oldestIdRef.current || skip) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
 
     try {
       const res = await messagesService.find({
         query: {
-          session_id: sessionId,
-          agent_type: 'builder',
+          ...findQueryFilter(sessionId, agentId, { allAgents }),
           id: { $lt: oldestIdRef.current },
           $sort: { id: -1 },
           $limit: PAGE_SIZE,
         },
       });
       const list = Array.isArray(res) ? res : (res?.data ?? []);
-      const older = [...list].reverse(); // oldest → newest
+      const older = [...list].reverse();
       if (older.length > 0) {
         oldestIdRef.current = older[0].id;
       }
@@ -217,7 +243,7 @@ export function useGetMessages(sessionId) {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [hasMore, sessionId]);
+  }, [hasMore, sessionId, agentId, allAgents, skip]);
 
   return { messages, loading, loadingMore, hasMore, loadMore, error };
 }

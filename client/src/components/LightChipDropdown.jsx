@@ -181,7 +181,9 @@ export default function LightChipDropdown({
             } ${triggerClassName}`}
           >
             <span
-              className={`flex items-center gap-1.5 min-w-0 overflow-hidden${shrinkableTrigger ? '' : ' flex-1'}`}
+              className={`flex items-center gap-1.5 min-w-0 overflow-hidden${
+                shrinkableTrigger && !fullWidth ? '' : ' flex-1'
+              }`}
             >
               {triggerIcon ? (
                 <span className="shrink-0 flex items-center">{triggerIcon}</span>

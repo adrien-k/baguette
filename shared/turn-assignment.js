@@ -10,14 +10,14 @@ function parsePayload(messageJson) {
 }
 
 /**
- * Atomically increment sessions.current_turn_id and return the new value.
+ * Atomically increment agents.current_turn_id and return the new value.
  * @param {import('knex').Knex} db
- * @param {number} sessionId
+ * @param {number} agentId
  * @returns {Promise<number|null>}
  */
-async function allocateNextTurnId(db, sessionId) {
-  const rows = await db('sessions')
-    .where({ id: sessionId })
+async function allocateNextTurnId(db, agentId) {
+  const rows = await db('agents')
+    .where({ id: agentId })
     .increment('current_turn_id', 1)
     .returning('current_turn_id');
   if (!rows?.length) return null;
@@ -26,22 +26,20 @@ async function allocateNextTurnId(db, sessionId) {
 }
 
 /**
- * @param {object} session
+ * @param {object} agent
  * @param {object} data - messages.create data
- * @param {{ channel: 'chat' | 'review'; force?: boolean }} opts
+ * @param {{ force?: boolean }} opts
  */
-export function resolveTurnIdForUserCreate(session, data, opts) {
+export function resolveTurnIdForUserCreate(agent, data, opts) {
   const parsed = parsePayload(data.message_json);
   const normalized = normalizeUserPayloadForStorage(parsed);
   const isUserTurn =
     data.type === 'user' && (isHumanUserMessage(normalized) || isBaguetteUserMessage(normalized));
   if (!isUserTurn) return { turnId: data.turn_id ?? null, increment: false };
 
-  const running =
-    opts.channel === 'review' ? session.review_status === 'running' : session.status === 'running';
-
-  const activeTurn =
-    opts.channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+  const running = agent.status === 'running';
+  const activeTurn = agent.active_turn_id;
+  const isReviewer = agent.agent_type === 'reviewer';
 
   const steering = Boolean(opts.force) && isHumanUserMessage(normalized);
 
@@ -49,13 +47,7 @@ export function resolveTurnIdForUserCreate(session, data, opts) {
     return { turnId: activeTurn, increment: false };
   }
 
-  if (
-    running &&
-    !steering &&
-    opts.channel === 'review' &&
-    isHumanUserMessage(normalized) &&
-    activeTurn != null
-  ) {
+  if (running && !steering && isReviewer && isHumanUserMessage(normalized) && activeTurn != null) {
     return { turnId: activeTurn, increment: false };
   }
 
@@ -68,9 +60,8 @@ export function resolveTurnIdForUserCreate(session, data, opts) {
 
 /**
  * Feathers before.create hook helper.
- * @param {'chat' | 'review'} channel
  */
-export async function assignTurnOnUserMessageCreate(context, channel) {
+export async function assignTurnOnUserMessageCreate(context) {
   const data = context.data;
   if (!data?.session_id || data.type !== 'user') return context;
 
@@ -78,25 +69,35 @@ export async function assignTurnOnUserMessageCreate(context, channel) {
   const session = await db('sessions').where({ id: data.session_id }).first();
   if (!session) return context;
 
-  const { turnId, increment } = resolveTurnIdForUserCreate(session, data, {
-    channel,
+  let agent;
+  if (data.agent_id != null) {
+    agent = await db('agents').where({ id: data.agent_id, session_id: data.session_id }).first();
+  }
+  if (!agent) {
+    agent = await db('agents').where({ session_id: data.session_id, is_primary: 1 }).first();
+    if (agent) data.agent_id = agent.id;
+  }
+  if (!agent) return context;
+
+  const { turnId, increment } = resolveTurnIdForUserCreate(agent, data, {
     force: context.params._force,
   });
 
   if (increment) {
-    const allocated = await allocateNextTurnId(db, session.id);
+    const allocated = await allocateNextTurnId(db, agent.id);
     if (allocated != null) data.turn_id = allocated;
   } else if (turnId != null) {
     data.turn_id = turnId;
   }
 
-  // Seed the turn's agent config snapshot when the row doesn't carry one yet:
-  // what the row holds is what the turn runs with.
   if (data.agent_config_id == null) {
-    data.agent_config_id =
-      channel === 'review'
-        ? (session.review_agent_config_id ?? session.agent_config_id ?? null)
-        : (session.agent_config_id ?? null);
+    data.agent_config_id = agent.agent_config_id ?? null;
+  }
+  if (!data.agent_type) {
+    data.agent_type = agent.agent_type === 'reviewer' ? 'reviewer' : 'builder';
+  }
+  if (!data.agent_sdk) {
+    data.agent_sdk = agent.agent_sdk ?? 'claude';
   }
 
   const parsed = parsePayload(data.message_json);

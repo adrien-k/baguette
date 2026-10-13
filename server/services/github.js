@@ -708,41 +708,6 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
   }
 }
 
-/**
- * Resolves a ref to a short commit SHA.
- * @returns {Promise<string|null>}
- */
-export async function gitRevParseShort(worktreePath, ref = 'HEAD') {
-  try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'rev-parse', '--short', ref],
-      { maxBuffer: 256 }
-    );
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Number of commits on HEAD not reachable from sinceRef (exclusive).
- * @returns {Promise<number>}
- */
-export async function gitCommitCountSince(worktreePath, sinceRef) {
-  if (!sinceRef) return 0;
-  try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'rev-list', '--count', `${sinceRef}..HEAD`],
-      { maxBuffer: 256 }
-    );
-    return parseInt(stdout.trim(), 10) || 0;
-  } catch {
-    return 0;
-  }
-}
-
 async function mergeBaseWithBaseBranch(worktreePath, baseBranch) {
   if (!baseBranch) return null;
   let ref = `origin/${baseBranch}`;

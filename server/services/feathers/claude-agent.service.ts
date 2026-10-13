@@ -26,7 +26,7 @@ import {
   applyClaudeModelParamsToQueryInstance,
   claudeSdkOptionsFromModelParams,
 } from '../../../shared/claude-model-params.js';
-import { reviewTurnKey } from './session-review.service.js';
+import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import {
   requireAgentConfigIdForSession,
   requireAgentConfigIdForTurn,
@@ -35,7 +35,6 @@ import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
-  channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import { sessionMessageIdentity } from './message-create-fields.js';
@@ -47,6 +46,7 @@ import type { MessageStreamWriter } from '../../../shared/message-stream-writer.
 import type { SystemMessagePayload, UserMessagePayload } from '../../../shared/session-messages.ts';
 import type {
   AgentApp,
+  AgentRow,
   AgentSessionRow,
   DbLike,
   MessageChannel,
@@ -60,6 +60,18 @@ import {
   CLAUDE_AGENT_SERVICE_PATH,
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
+import {
+  getAgentById,
+  getPrimaryBuilderAgent,
+  getReviewerAgent,
+  resolveAgentRowForMessage,
+} from '../agents-db.js';
+import { patchAgentInternal } from './agents.service.js';
+import {
+  setAgentActiveTurnId,
+  setAgentTurnRunning,
+  setAgentTurnTerminal,
+} from '../agent-turn-patch.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
 
@@ -72,6 +84,7 @@ type ChannelHandle = {
 /** Mutable state for one open SDK query (chat or review channel). */
 type ClaudeAgentState = {
   sessionId: number;
+  agentId: number;
   userId: number;
   channel: ChannelHandle;
   queryInstance: Query;
@@ -210,7 +223,7 @@ export class ClaudeAgentService {
     return {
       cwd,
       env: applyClaudeAgentModelEnv(claudeEnv, resolvedModel),
-      resume: resume !== undefined ? resume || undefined : sessionRow.claude_session_id,
+      resume: resume !== undefined ? resume || undefined : undefined,
       model: resolvedModel,
       ...paramOptions,
       tools: { type: 'preset', preset: 'claude_code' },
@@ -279,12 +292,14 @@ export class ClaudeAgentService {
 
   _openQuery({
     sessionId,
+    agentId,
     userId,
     queryOptions,
     extraState = {},
     activeKey,
   }: {
     sessionId: number;
+    agentId: number;
     userId: number;
     queryOptions: ClaudeSdkOptions;
     extraState?: Partial<ClaudeAgentState>;
@@ -298,6 +313,7 @@ export class ClaudeAgentService {
     });
     const state: ClaudeAgentState = {
       sessionId,
+      agentId,
       userId,
       channel,
       queryInstance,
@@ -314,8 +330,11 @@ export class ClaudeAgentService {
    */
   async runTurn(opts: RunTurnOpts): Promise<{ turnComplete: boolean; outcome: TurnOutcome }> {
     const key = opts.activeKey ?? opts.sessionId;
+    const agentId = opts.extraState?.agentId;
+    if (agentId == null) throw new Error('agentId is required to run a Claude turn');
     const state = this._openQuery({
       sessionId: opts.sessionId,
+      agentId,
       userId: opts.userId,
       queryOptions: opts.queryOptions ?? {},
       extraState: opts.extraState,
@@ -356,23 +375,27 @@ export class ClaudeAgentService {
     if (!parsedStorage || !isDispatchableUserMessage(parsedStorage)) return;
 
     const sessionId = row.session_id;
-    const session = await this.app.service('sessions').get(sessionId);
+    const session = (await this.app.service('sessions').get(sessionId)) as AgentSessionRow | null;
     if (!session || session.archived_at) return;
 
-    const channel: MessageChannel = channelFromAgentType(row.agent_type as string);
-    const sdk =
-      row.agent_sdk ?? (channel === 'review' ? session.review_agent_sdk : session.agent_sdk);
+    const db = this.app.get('db') as DbLike;
+    const agent = (await resolveAgentRowForMessage(db as never, row as never)) as
+      AgentRow | undefined;
+    if (!agent) return;
+
+    const isReview = agent.agent_type === 'reviewer';
+    const channel: MessageChannel = isReview ? 'review' : 'chat';
+    const sdk = row.agent_sdk ?? agent.agent_sdk;
     if (sdk !== 'claude') return;
 
-    if (channel === 'chat') {
+    if (!isReview) {
       if (session.status === 'archiving' || session.status === 'archived') return;
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
     const active = this.getActiveSession(activeKey);
-    const activeTurnId =
-      channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+    const activeTurnId = agent.active_turn_id;
 
     let forSdk: Record<string, unknown> = parsedStorage as Record<string, unknown>;
     if (
@@ -417,13 +440,8 @@ export class ClaudeAgentService {
       return;
     }
 
-    const db = this.app.get('db') as DbLike;
     if (row.turn_id != null) {
-      const activeField =
-        channel === 'review'
-          ? { active_review_turn_id: row.turn_id }
-          : { active_chat_turn_id: row.turn_id };
-      await db('sessions').where({ id: sessionId }).update(activeField);
+      await setAgentActiveTurnId(this.app, agent, session.user_id, row.turn_id);
     }
 
     const turnModel = requireTurnModelFromRow(row, { sdk });
@@ -444,10 +462,9 @@ export class ClaudeAgentService {
         : null;
 
     let agentSession: ClaudeAgentState;
-    const resumeId =
-      channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
+    const resumeId = agent.claude_session_id;
     if (resumeId) {
-      const resumed = await this.ensureActiveSession(session, {
+      const resumed = await this.ensureActiveSession(session, agent, {
         model,
         modelParams,
         channel,
@@ -458,7 +475,7 @@ export class ClaudeAgentService {
       if (!resumed) return;
       agentSession = resumed;
     } else {
-      agentSession = await this.createAgentSession(session, {
+      agentSession = await this.createAgentSession(session, agent, {
         model,
         modelParams,
         channel,
@@ -473,6 +490,7 @@ export class ClaudeAgentService {
 
   async createAgentSession(
     session: AgentSessionRow,
+    agent: AgentRow,
     {
       model,
       modelParams,
@@ -482,7 +500,7 @@ export class ClaudeAgentService {
       turnAgentConfigId,
     }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
-    const sessionState = await this._startAgentLoop(session, {
+    const sessionState = await this._startAgentLoop(session, agent, {
       model,
       modelParams,
       channel,
@@ -492,7 +510,7 @@ export class ClaudeAgentService {
     });
 
     if (channel !== 'review') {
-      await this.app.service('sessions').patch(session.id, { status: 'running' });
+      await setAgentTurnRunning(this.app, agent, session.user_id);
       await this.app.service('sessions').onTurnStart(session.id);
     }
     return sessionState;
@@ -575,17 +593,15 @@ export class ClaudeAgentService {
       subtype: 'status',
       status: statusText,
     };
-    const sessionRow = await (this.app.get('db') as DbLike)('sessions')
-      .where({ id: sessionId })
-      .first();
-    if (!sessionRow) return;
+    const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
+    if (!builder) return;
     await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(sessionRow, 'builder'),
+        ...sessionMessageIdentity(builder, 'builder'),
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -627,13 +643,20 @@ export class ClaudeAgentService {
       subtype: 'baguette',
     };
 
-    const sessionRow = await db('sessions').where({ id: sessionId }).first();
-    if (!sessionRow) return;
     const channel = sessionState.turnChannel ?? 'chat';
+    let agentRow;
+    if (channel === 'review') {
+      agentRow = await getReviewerAgent(db, sessionId);
+    } else if (sessionState.agentId != null) {
+      agentRow = await getAgentById(db, sessionState.agentId);
+    } else {
+      agentRow = await getPrimaryBuilderAgent(db, sessionId);
+    }
+    if (!agentRow) return;
     const identity = sessionMessageIdentity(
-      sessionRow,
+      agentRow,
       channel === 'review' ? 'reviewer' : 'builder',
-      { agent_sdk: 'claude', model: sessionRow.model }
+      { agent_sdk: 'claude' }
     );
 
     await app.service('messages').create({
@@ -652,6 +675,7 @@ export class ClaudeAgentService {
    */
   async _startAgentLoop(
     sessionRow: AgentSessionRow,
+    agent: AgentRow,
     {
       model,
       modelParams,
@@ -662,7 +686,9 @@ export class ClaudeAgentService {
     }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
     if (!model) throw new Error('Model is required to run this turn');
-    const turnConfigId = turnAgentConfigId ?? requireAgentConfigIdForSession(sessionRow, channel);
+    const configFromAgent = agent.agent_config_id != null ? Number(agent.agent_config_id) : null;
+    const turnConfigId =
+      turnAgentConfigId ?? configFromAgent ?? requireAgentConfigIdForSession(sessionRow, channel);
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
     const sessionSettings = {
@@ -676,9 +702,9 @@ export class ClaudeAgentService {
     const claudeEnv = await getClaudeEnv(this.app, sessionRow.user_id, null, turnConfigId);
     let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
-      const extras = this.app.service('session-review').peekTurnExtras(sessionId) ?? {};
-      const resumeId = sessionRow.review_claude_session_id;
-      queryOptions = await this.app.service('session-review').buildClaudeQueryOptions(sessionRow, {
+      const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
+      const resumeId = agent.claude_session_id;
+      queryOptions = await getReviewAgentTurn(this.app).buildClaudeQueryOptions(sessionRow, agent, {
         model,
         modelParams,
         claudeEnv,
@@ -698,6 +724,7 @@ export class ClaudeAgentService {
     const absoluteSessionPath = resolveDataDirRelativePath(sessionRow.session_path) || '';
     const sessionState = this._openQuery({
       sessionId,
+      agentId: agent.id,
       userId: sessionRow.user_id,
       queryOptions,
       extraState: {
@@ -707,7 +734,7 @@ export class ClaudeAgentService {
         repoId: sessionRow.repo_id,
         token: getGithubToken(user),
         sessionSettings,
-        ...(sessionRow.claude_session_id ? { claudeSessionId: sessionRow.claude_session_id } : {}),
+        ...(agent.claude_session_id ? { claudeSessionId: agent.claude_session_id } : {}),
         streamWriter: writer ?? null,
         turnChannel: channel,
         activeKey: resolvedActiveKey,
@@ -739,13 +766,12 @@ export class ClaudeAgentService {
 
   async resumeSession(
     session: AgentSessionRow,
+    agent: AgentRow,
     { model, modelParams, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState> {
-    const resumeId =
-      channel === 'review' ? session.review_claude_session_id : session.claude_session_id;
-    if (!resumeId) throw new Error('No Claude session to resume');
+    if (!agent.claude_session_id) throw new Error('No Claude session to resume');
 
-    const sessionState = await this._startAgentLoop(session, {
+    const sessionState = await this._startAgentLoop(session, agent, {
       model,
       modelParams,
       channel,
@@ -755,7 +781,7 @@ export class ClaudeAgentService {
     });
 
     logger.info(
-      { sessionId: session.id, claudeSessionId: session.claude_session_id },
+      { sessionId: session.id, claudeSessionId: agent.claude_session_id },
       'Resumed session'
     );
 
@@ -764,6 +790,7 @@ export class ClaudeAgentService {
 
   async ensureActiveSession(
     sessionOrId: SessionOrId,
+    agent: AgentRow,
     { model, modelParams, channel, activeKey, writer, turnAgentConfigId }: StartAgentLoopOpts = {}
   ): Promise<ClaudeAgentState | null> {
     const sessionRow: AgentSessionRow | undefined =
@@ -779,7 +806,7 @@ export class ClaudeAgentService {
     if (existing) return existing;
 
     if (!this._resumePromises.has(key)) {
-      const promise = this.resumeSession(sessionRow, {
+      const promise = this.resumeSession(sessionRow, agent, {
         model,
         modelParams,
         channel,
@@ -798,6 +825,7 @@ export class ClaudeAgentService {
   /** Persist one turn's Claude usage from the final SDK `result` for this consume pass. */
   async _recordClaudeTurnUsage(
     session: AgentSessionRow,
+    agent: AgentRow,
     result: SDKMessage,
     channel: MessageChannel,
     turnAgentConfigId?: number | null
@@ -806,11 +834,11 @@ export class ClaudeAgentService {
     await this.app
       .service('sessions')
       .recordClaudeUsage(session, result, {
-        kind: isReview ? 'review' : undefined,
-        model: isReview ? (session.review_model ?? session.model) : undefined,
-        totalsKey: isReview ? reviewTurnKey(session.id) : undefined,
+        model: isReview ? (agent.model ?? undefined) : undefined,
+        totalsKey: isReview ? reviewTurnKey(agent.id) : undefined,
         patchSessionCost: true,
         agentConfigId: turnAgentConfigId,
+        agentId: agent.id,
       })
       .catch((err) =>
         logger.warn(
@@ -834,16 +862,17 @@ export class ClaudeAgentService {
           ? async (text) => {
               const session = await db('sessions').where({ id: sessionId }).first();
               if (session) {
-                await this.app.service('session-review')._persistStatus(session, text);
+                await getReviewAgentTurn(this.app)._persistStatus(session, text);
               }
             }
           : (text) => this._persistSessionStatusMessage(sessionId, userId, text),
         onInitSessionId: async (id) => {
-          const field =
-            sessionState.turnChannel === 'review'
-              ? { review_claude_session_id: id }
-              : { claude_session_id: id };
-          await db('sessions').where({ id: sessionId }).update(field);
+          await patchAgentInternal(
+            this.app,
+            sessionState.agentId,
+            { claude_session_id: id },
+            userId
+          );
           sessionState.claudeSessionId = id;
         },
         onStreamError: async () => {
@@ -851,7 +880,7 @@ export class ClaudeAgentService {
           const session = (await db('sessions').where({ id: sessionId }).first()) as
             AgentSessionRow | undefined;
           if (!session) return;
-          await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+          await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
             sdk: 'claude',
           });
         },
@@ -865,9 +894,11 @@ export class ClaudeAgentService {
     if (lastResult) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
-      if (session) {
+      const agent = (await getAgentById(db as never, sessionState.agentId)) as AgentRow | undefined;
+      if (session && agent) {
         await this._recordClaudeTurnUsage(
           session,
+          agent,
           lastResult,
           sessionState.turnChannel ?? 'chat',
           sessionState.turnAgentConfigId
@@ -879,11 +910,11 @@ export class ClaudeAgentService {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
       if (session) {
-        await this.app
-          .service('session-review')
-          .onAgentTurnComplete(session, outcome === 'completed' ? 'completed' : 'failed', {
-            sdk: 'claude',
-          });
+        await getReviewAgentTurn(this.app).onAgentTurnComplete(
+          session,
+          outcome === 'completed' ? 'completed' : 'failed',
+          { sdk: 'claude' }
+        );
       }
     }
 
@@ -891,9 +922,7 @@ export class ClaudeAgentService {
     // Usage is recorded from the last SDK result; queued follow-ups start after this.
     if (!isReview && (turnComplete || streamFailed) && !awaitingUser) {
       const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
-      await this.app
-        .service('sessions')
-        .patch(sessionId, { status: terminalStatus }, { user: { id: userId } });
+      await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
     }
 
     if (!isReview) {
@@ -982,14 +1011,15 @@ export class ClaudeAgentService {
   }
 
   async sendMessage(sessionId: number, content: string): Promise<void> {
-    const session = await this.ensureActiveSession(sessionId);
     const db = this.app.get('db') as DbLike;
-    const sessionRow = await db('sessions').where({ id: sessionId }).first();
+    const sessionRow = (await db('sessions').where({ id: sessionId }).first()) as
+      AgentSessionRow | undefined;
     if (!sessionRow) throw new Error('Session not found');
+    const builder = (await getPrimaryBuilderAgent(db, sessionId)) as AgentRow | undefined;
+    if (!builder) throw new Error('Builder agent not found');
+    const session = await this.ensureActiveSession(sessionId, builder);
 
-    await this.app
-      .service('sessions')
-      .patch(sessionId, { status: 'running' }, { user: { id: session?.userId } });
+    await setAgentTurnRunning(this.app, builder, sessionRow.user_id);
     await this.app.service('sessions').onTurnStart(sessionId);
 
     const absoluteSessionPath = resolveDataDirRelativePath(sessionRow.session_path as string);
@@ -1025,7 +1055,7 @@ export class ClaudeAgentService {
         session_id: sessionId,
         type: 'user',
         message_json: JSON.stringify({ type: 'user', content }),
-        ...sessionMessageIdentity(sessionRow, 'builder'),
+        ...sessionMessageIdentity(builder, 'builder'),
       },
       { user: { id: sessionRow.user_id } }
     );
@@ -1033,19 +1063,24 @@ export class ClaudeAgentService {
     session?.channel.push(toSdkUserMessage(content));
   }
 
-  syncSessionSettingsFromPatch(sessionId: number, sessionRow: AgentSessionRow): void {
+  syncSessionSettingsFromPatch(sessionId: number, _sessionRow: AgentSessionRow): void {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
-    const effectiveMode = claudeSdkPermissionMode(sessionRow);
-    if (session.sessionSettings) {
-      session.sessionSettings.permissionMode = effectiveMode;
-    }
-    session.queryInstance.setPermissionMode(effectiveMode);
-    session.queryInstance.setModel(sessionRow.model ?? undefined);
-    void applyClaudeModelParamsToQueryInstance(
-      session.queryInstance,
-      sessionRow.model_params
-    ).catch((err: Error) => {
+    void (async () => {
+      const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
+      if (!builder) return;
+      const sessionRow = (await (this.app.get('db') as DbLike)('sessions')
+        .where({ id: sessionId })
+        .first()) as AgentSessionRow | undefined;
+      if (!sessionRow) return;
+      const effectiveMode = claudeSdkPermissionMode(sessionRow);
+      if (session.sessionSettings) {
+        session.sessionSettings.permissionMode = effectiveMode;
+      }
+      session.queryInstance.setPermissionMode(effectiveMode);
+      session.queryInstance.setModel((builder.model as string) ?? undefined);
+      await applyClaudeModelParamsToQueryInstance(session.queryInstance, builder.model_params);
+    })().catch((err: Error) => {
       logger.warn(
         { sessionId, err: err.message },
         'claude-agent: failed to sync model params from session patch'
@@ -1142,11 +1177,17 @@ Task: ${initialPrompt}`;
 
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
-    { channel = 'chat' }: { channel?: MessageChannel } = {}
+    { channel = 'chat', agent: agentRow }: { channel?: MessageChannel; agent?: AgentRow } = {}
   ): Promise<boolean> {
-    return channel === 'review'
-      ? Boolean(session.review_claude_session_id)
-      : Boolean(session.claude_session_id);
+    const db = this.app.get('db');
+    let agent = agentRow;
+    if (!agent) {
+      agent =
+        channel === 'review'
+          ? ((await getReviewerAgent(db, session.id)) as AgentRow | undefined)
+          : ((await getPrimaryBuilderAgent(db, session.id)) as AgentRow | undefined);
+    }
+    return Boolean(agent?.claude_session_id);
   }
 
   usesCompactionBeforeLoopRepeat(): boolean {
@@ -1166,16 +1207,15 @@ Task: ${initialPrompt}`;
       return;
     }
 
-    const sessionRow = await (this.app.get('db') as DbLike)('sessions')
-      .where({ id: sessionId })
-      .first();
-    if (!sessionRow) return;
-
     const channel = sessionState.turnChannel ?? 'chat';
+    const agentRow = (await getAgentById(this.app.get('db'), sessionState.agentId)) as
+      AgentRow | undefined;
+    if (!agentRow) return;
+
     const identity = sessionMessageIdentity(
-      sessionRow,
+      agentRow,
       channel === 'review' ? 'reviewer' : 'builder',
-      { agent_sdk: 'claude', model: sessionRow.model }
+      { agent_sdk: 'claude' }
     );
 
     await app.service('messages').create(

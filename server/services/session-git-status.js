@@ -1,5 +1,5 @@
 import { resolveDataDirRelativePath } from '../config.js';
-import { gitCommitCountSince, gitCommitCountSinceBase, gitCommitsToPush } from './github.js';
+import { gitCommitCountSinceBase, gitCommitsToPush } from './github.js';
 import { isGlobalSession } from '../../shared/session-scope.js';
 
 /**
@@ -12,9 +12,6 @@ export async function computeSessionGitStatus(session) {
   const cwd = resolveDataDirRelativePath(session.session_path);
   const remoteBranch = session.remote_branch || session.local_branch;
   const commitsToPush = await gitCommitsToPush(cwd, remoteBranch);
-  const sinceReview = session.last_reviewed_commit_sha;
-  const commitsSinceReview = sinceReview
-    ? await gitCommitCountSince(cwd, sinceReview)
-    : await gitCommitCountSinceBase(cwd, session.base_branch);
+  const commitsSinceReview = await gitCommitCountSinceBase(cwd, session.base_branch);
   return { commitsToPush, commitsSinceReview };
 }

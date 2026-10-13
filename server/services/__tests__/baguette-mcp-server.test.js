@@ -175,6 +175,7 @@ function makeApp(
       where: () => chain,
       select: () => chain,
       sum: () => chain,
+      groupBy: () => chain,
       groupByRaw: () => chain,
       orderBy: () => chain,
       then(onFulfilled, onRejected) {
@@ -599,7 +600,7 @@ describe('PrUpsert', () => {
       {
         usageRows: [
           {
-            usage_kind: 'session',
+            agent_type: 'builder',
             model: 'new-model',
             agent_sdk: 'cursor',
             cost_usd: '1.50',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestDb } from '../../server/test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../server/test-utils/db.js';
 import {
   coalesceStringParts,
   collapseStreamableAssistantRun,
@@ -19,7 +19,7 @@ async function seedSession(shortId) {
     approved: true,
   });
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
-  const [sessionId] = await db('sessions').insert({
+  const sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_id: repoId,
     repo_full_name: 'o/r',

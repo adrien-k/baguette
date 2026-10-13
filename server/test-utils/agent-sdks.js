@@ -20,15 +20,12 @@ function useAgentServiceStub(app, { key, label, servicePath }, service, methods)
   mountAgentConfigs(app);
   const stub = {
     async handleMessageCreated() {},
-    async isInterruptedSessionResumable(session, { channel = 'chat' } = {}) {
+    async isInterruptedSessionResumable(_session, { agent } = {}) {
+      if (!agent) return false;
       if (key === CURSOR_AGENT_SDK_KEY) {
-        return channel === 'review'
-          ? Boolean(session?.review_cursor_agent_id)
-          : Boolean(session?.cursor_agent_id);
+        return Boolean(agent.cursor_agent_id);
       }
-      return channel === 'review'
-        ? Boolean(session?.review_claude_session_id)
-        : Boolean(session?.claude_session_id);
+      return Boolean(agent.claude_session_id);
     },
     usesCompactionBeforeLoopRepeat() {
       return key !== CURSOR_AGENT_SDK_KEY;

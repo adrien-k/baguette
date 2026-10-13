@@ -11,7 +11,7 @@ describe('mergeUsageForPrFooter', () => {
     const merged = mergeUsageForPrFooter(
       [
         {
-          kind: 'session',
+          agent_type: 'builder',
           agent_sdk: 'cursor',
           model: 'composer-2.5',
           input_tokens: 100,
@@ -21,7 +21,7 @@ describe('mergeUsageForPrFooter', () => {
           cost_usd: 0.01,
         },
         {
-          kind: 'review',
+          agent_type: 'reviewer',
           agent_sdk: 'claude',
           model: 'opus',
           input_tokens: 20,
@@ -45,7 +45,7 @@ describe('mergeUsageForPrFooter', () => {
     const merged = mergeUsageForPrFooter(
       [
         {
-          kind: 'session',
+          agent_type: 'builder',
           agent_sdk: 'cursor',
           model: 'composer-2.5',
           input_tokens: 100,
@@ -55,7 +55,7 @@ describe('mergeUsageForPrFooter', () => {
           cost_usd: 0,
         },
         {
-          kind: 'review',
+          agent_type: 'reviewer',
           agent_sdk: 'cursor',
           model: 'composer-2.5',
           input_tokens: 50,

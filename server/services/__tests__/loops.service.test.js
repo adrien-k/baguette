@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { BadRequest, NotFound } from '@feathersjs/errors';
-import { createTestDb } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerLoopsService } from '../feathers/loops.service.js';
 import {
   claudeTiedSessionLoopCompaction,
@@ -172,7 +172,7 @@ describe('Loops service', () => {
     });
 
     it('ties the loop to an existing session when session_id is set', async () => {
-      const [sessionId] = await db('sessions').insert({
+      const sessionId = await insertTestSession(db, {
         user_id: aliceId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -201,7 +201,7 @@ describe('Loops service', () => {
 
     it('exposes a loose link to the last session a loop started', async () => {
       const loop = await app.service('loops').create(loopData(), params(aliceId));
-      const [sessionId] = await db('sessions').insert({
+      const sessionId = await insertTestSession(db, {
         user_id: aliceId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -223,7 +223,7 @@ describe('Loops service', () => {
     });
 
     it('rejects tying a loop to another user’s session', async () => {
-      const [sessionId] = await db('sessions').insert({
+      const sessionId = await insertTestSession(db, {
         user_id: bobId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -304,7 +304,7 @@ describe('Loops service', () => {
     });
 
     const seedSession = async (overrides = {}) => {
-      const [id] = await db('sessions').insert({
+      const id = await insertTestSession(db, {
         user_id: aliceId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -489,7 +489,7 @@ describe('Loops service', () => {
 
   describe('runDue — single session mode', () => {
     const seedSession = async (overrides = {}) => {
-      const [id] = await db('sessions').insert({
+      const id = await insertTestSession(db, {
         user_id: aliceId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -617,6 +617,22 @@ describe('Loops service', () => {
       // Still re-armed, so the loop picks up again at its next slot.
       const row = await db('loops').where({ id: loop.id }).first();
       expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('skips the run while the tied session is provisioning or archiving', async () => {
+      for (const status of ['provisioning', 'archiving']) {
+        messagesCreate.mockClear();
+        queuedCreate.mockClear();
+        const sessionId = await seedSession({ status });
+        const loop = await makeDueSingleSessionLoop();
+        await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+
+        const results = await app.service('loops').runDue();
+
+        expect(results[0].skipped).toMatch(/provisioning or archiving/);
+        expect(messagesCreate).not.toHaveBeenCalled();
+        expect(queuedCreate).not.toHaveBeenCalled();
+      }
     });
 
     it('starts a fresh session when the tied one was archived', async () => {

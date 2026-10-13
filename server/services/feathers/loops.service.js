@@ -7,6 +7,7 @@ import logger from '../../logger.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import { getAgentServiceForSession } from '../agent-session-routing.js';
+import { getPrimaryBuilderAgent } from '../agents-db.js';
 import { loadOwnedAgentConfig, resolveAgentConfigIdForRepoSdk } from '../agent-config-resolver.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
 
@@ -138,7 +139,13 @@ class LoopsService extends KnexService {
     if (!tied || tied.archived_at) {
       return { sessionId: (await this._startSession(loop, user)).id };
     }
-    if (BUSY_SESSION_STATUSES.has(tied.status)) {
+    if (tied.status === 'provisioning' || tied.status === 'archiving') {
+      return {
+        skipped: 'Session is provisioning or archiving — skipped this occurrence',
+      };
+    }
+    const builder = await getPrimaryBuilderAgent(db, tied.id);
+    if (builder && BUSY_AGENT_STATUSES.has(builder.status)) {
       return { skipped: 'Previous run was still in progress — skipped this occurrence' };
     }
 
@@ -148,7 +155,10 @@ class LoopsService extends KnexService {
       message: { role: 'user', content: loop.prompt },
     });
     const turnModel = turnModelCreateFields(loop);
-    const identity = sessionMessageIdentity(tied, 'builder', { ...loop, ...turnModel });
+    if (!builder) {
+      return { sessionId: (await this._startSession(loop, user)).id };
+    }
+    const identity = sessionMessageIdentity(builder, 'builder', { ...loop, ...turnModel });
 
     const agent = await getAgentServiceForSession(this.app, tied);
     await agent.prepareTiedSessionLoopCompaction({
@@ -161,8 +171,8 @@ class LoopsService extends KnexService {
   }
 }
 
-/** A session in one of these is mid-turn: it cannot take a loop run right now. */
-const BUSY_SESSION_STATUSES = new Set(['running', 'approval', 'provisioning', 'archiving']);
+/** Builder agent statuses that mean a tied loop run should be skipped. */
+const BUSY_AGENT_STATUSES = new Set(['running', 'approval']);
 
 /**
  * Standalone loops, plus loops created from a session that is still active.

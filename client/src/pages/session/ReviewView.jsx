@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, CheckCircle, ChevronDown, ChevronRight, PanelRight, Square } from 'lucide-react';
+import { Bot, CheckCircle, ChevronDown, ChevronRight, Square } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+import { agentsService, messagesService, sessionIssuesService } from '../../feathers.js';
 import {
-  agentConfigsService,
-  sessionIssuesService,
-  sessionReviewService,
-  sessionsService,
-} from '../../feathers.js';
+  BAGUETTE_REVIEW_LATEST_TITLE,
+  buildReviewLatestChangesContent,
+} from '@baguette/shared/review-latest-changes-prompt.js';
+import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { toastError } from '../../utils/toastError.jsx';
 import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
@@ -19,13 +19,12 @@ import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
-import { reviewComposerAgentFields } from '../../utils/messageCreateFields.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
-import ReviewFollowUpModal from '../../components/ReviewFollowUpModal.jsx';
-import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
-import SessionModelSelect from '../../components/SessionModelSelect.jsx';
+import { useSessionAgents } from '../../hooks/useSessionAgents.js';
+import { isAgentTurnActive } from '../../utils/sessionAgents.js';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
+import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
 import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
@@ -64,30 +63,13 @@ function AllIssuesFixedMessage() {
 const REVIEW_CONTROLS_ROW_CLASS =
   'flex flex-col items-center gap-4 @min-[36rem]:flex-row @min-[36rem]:flex-nowrap @min-[36rem]:items-center @min-[36rem]:gap-2';
 
-const REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS =
-  'min-w-0 w-auto max-w-full items-center [&>div]:justify-center @min-[36rem]:w-full @min-[36rem]:flex-1 @min-[36rem]:items-stretch @min-[36rem]:[&>div]:justify-start';
-
-function ReviewerPanelLink({ onClick, label = 'Open reviewer panel', className = '' }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center justify-center gap-1.5 w-full whitespace-nowrap text-xs text-faint hover:text-secondary underline @min-[36rem]:w-auto @min-[36rem]:ml-auto shrink-0 ${className}`}
-    >
-      <PanelRight className="h-3.5 w-3.5" aria-hidden />
-      {label}
-    </button>
-  );
-}
-
 export default function ReviewView({
   session,
   readonly,
   issues,
   issuesLoading,
-  reviewerDrawerOpen = true,
-  reviewerPanelActive = false,
-  onOpenReviewer,
+  onReviewAgentStarted,
+  onSelectPrimaryBuilder,
 }) {
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
@@ -100,11 +82,9 @@ export default function ReviewView({
   const [closedExpanded, setClosedExpanded] = useState(false);
   const [closedIssues, setClosedIssues] = useState([]);
   const [closedLoading, setClosedLoading] = useState(false);
-  const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
-  const [sendingReviewFollowUp, setSendingReviewFollowUp] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [clearingReview, setClearingReview] = useState(false);
-  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
+  const { reviewer } = useSessionAgents(session?.id);
   const [savingIssueId, setSavingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
     session?.id ? `session-review-chat-${session.id}` : undefined
@@ -114,66 +94,60 @@ export default function ReviewView({
   const { configOptions, loading: configsLoading } = useAgentConfigs();
   const agentConfigOptions = configOptions;
 
-  const reviewConfigId = session?.review_agent_config_id ?? session?.agent_config_id ?? null;
+  const [reviewConfigId, setReviewConfigId] = useState(null);
+  const [reviewModel, setReviewModel] = useState('');
+  const [reviewModelParams, setReviewModelParams] = useState(null);
+  const [reviewAgentSdk, setReviewAgentSdk] = useState(null);
   const { models, stale: modelsStale } = useAgentConfigModels(reviewConfigId);
-  const reviewAgentSdk =
-    session?.review_agent_sdk ?? session?.agent_sdk ?? agentConfigOptions[0]?.sdk ?? null;
   const fallbackConfigId = agentConfigOptions[0]?.key ?? null;
-  const reviewModel = session?.review_model || session?.model || '';
-  const reviewModelParams = session?.review_model_params ?? session?.model_params ?? null;
 
   useEffect(() => {
-    if (!session?.id || readonly) return;
-    if (session.review_model != null) return;
-    if (
-      session.review_agent_config_id != null &&
-      session.agent_config_id != null &&
-      session.review_agent_config_id !== session.agent_config_id
-    ) {
-      return;
-    }
-
+    if (!session?.id) return;
     const reviewerDefaults = effectiveReviewerDefaults(linkedRepo, userSettings);
-    if (reviewerDefaults) {
-      const { configId, model, modelParams } = reviewerDefaults;
-      agentConfigsService
-        .get(configId)
-        .then((config) =>
-          sessionsService.patch(session.id, {
-            review_agent_config_id: configId,
-            review_agent_sdk: config.sdk,
-            review_model: model,
-            review_model_params: modelParams,
-          })
-        )
-        .catch((err) => toastError('Failed to initialize review model', err));
-      return;
-    }
-
-    if (session.model == null && session.model_params == null && !session.agent_config_id) return;
-    if (!fallbackConfigId && !session.agent_config_id) return;
-    const fromConfig = agentConfigOptions.find((c) => c.key === String(session.agent_config_id));
-    sessionsService
-      .patch(session.id, {
-        review_agent_config_id: session.agent_config_id ?? Number(fallbackConfigId),
-        review_agent_sdk: fromConfig?.sdk ?? session.agent_sdk,
-        review_model: session.model || null,
-        review_model_params: session.model_params ?? null,
-      })
-      .catch((err) => toastError('Failed to initialize review model', err));
+    const configId =
+      reviewer?.agent_config_id ??
+      session.review_agent_config_id ??
+      reviewerDefaults?.configId ??
+      session.agent_config_id ??
+      (fallbackConfigId ? Number(fallbackConfigId) : null);
+    const model =
+      reviewer?.model ?? session.review_model ?? reviewerDefaults?.model ?? session.model ?? '';
+    const modelParams =
+      reviewer?.model_params ??
+      session.review_model_params ??
+      reviewerDefaults?.modelParams ??
+      session.model_params ??
+      null;
+    const sdk =
+      reviewer?.agent_sdk ??
+      session.review_agent_sdk ??
+      session.agent_sdk ??
+      agentConfigOptions.find((c) => String(c.key) === String(configId))?.sdk ??
+      agentConfigOptions[0]?.sdk ??
+      null;
+    setReviewConfigId(configId);
+    setReviewModel(model || '');
+    setReviewModelParams(modelParams);
+    setReviewAgentSdk(sdk);
   }, [
     session?.id,
-    session?.review_model,
     session?.review_agent_config_id,
+    session?.review_model,
+    session?.review_model_params,
+    session?.review_agent_sdk,
+    session?.agent_config_id,
     session?.model,
     session?.model_params,
     session?.agent_sdk,
-    session?.agent_config_id,
-    readonly,
-    fallbackConfigId,
-    agentConfigOptions,
+    reviewer?.id,
+    reviewer?.agent_config_id,
+    reviewer?.model,
+    reviewer?.model_params,
+    reviewer?.agent_sdk,
     linkedRepo,
     userSettings,
+    fallbackConfigId,
+    agentConfigOptions,
   ]);
 
   const opened = issues.filter((i) => i.status === 'opened');
@@ -183,24 +157,18 @@ export default function ReviewView({
   const showClosedSection = closedCount > 0;
   const onlyClosedIssues = issues.length === 0 && showClosedSection;
   const hasVisibleIssues = issues.length > 0 || showClosedSection;
-  const isRunning = session?.review_status === 'running';
-  const reviewStatus = session?.review_status;
-  const hasReviewThread =
-    isRunning ||
-    reviewStatus === 'completed' ||
-    reviewStatus === 'failed' ||
-    reviewStatus === 'stopped';
+  const isRunning = isAgentTurnActive(reviewer?.status);
+  const hasReviewerAgent = Boolean(reviewer?.id);
+  const openReviewerChat = () => {
+    if (reviewer) onReviewAgentStarted?.(reviewer);
+  };
   const hasSdkKey =
     configsLoading ||
     !userSettings ||
     (reviewConfigId != null &&
       agentConfigOptions.some((c) => String(c.key) === String(reviewConfigId)));
-  const showStartForm = !hasReviewThread && !starting;
-  const showFollowUpPanel = hasReviewThread || isRunning;
-  const hasReview = hasReviewThread || isRunning;
-  const showReviewerPanelLink =
-    hasReview && onOpenReviewer && !(reviewerDrawerOpen && reviewerPanelActive);
-
+  const showStartForm = !readonly && !hasReviewerAgent && !isRunning;
+  const showReviewActions = !readonly && Boolean(session?.session_path);
   useEffect(() => {
     if (!hash.startsWith('#issue-') || issuesLoading) return;
     const el = document.getElementById(hash.slice(1));
@@ -270,6 +238,7 @@ export default function ReviewView({
     if (!session?.id || issue.status !== 'opened') return;
     try {
       await sessionIssuesService.askAgentToFix(issue.id);
+      onSelectPrimaryBuilder?.();
     } catch (err) {
       toastError('Failed to submit issue for a fix', err);
     }
@@ -279,6 +248,7 @@ export default function ReviewView({
     if (!session?.id || opened.length === 0) return;
     try {
       await sessionIssuesService.askAgentToFixAll({ session_id: session.id });
+      onSelectPrimaryBuilder?.();
     } catch (err) {
       toastError('Failed to submit issues for a fix', err);
     }
@@ -335,16 +305,18 @@ export default function ReviewView({
     if (!session?.id || starting || !canStartReview) return;
     setStarting(true);
     try {
-      await sessionReviewService.start({
+      const trimmedFocus = reviewUserMessage.trim();
+      const agent = await agentsService.create({
         session_id: session.id,
-        user_message: reviewUserMessage.trim(),
-        ...reviewComposerAgentFields({
-          agent_sdk: reviewAgentSdk,
-          model: reviewModel,
-          model_params: reviewModelParams,
-          review_agent_config_id: reviewConfigId,
-        }),
+        agent_type: 'reviewer',
+        agent_config_id: reviewConfigId,
+        model: reviewModel,
+        model_params: reviewModelParams,
+        initial_prompt: trimmedFocus || null,
       });
+      if (agent?.id) {
+        onReviewAgentStarted?.({ id: agent.id, name: 'Reviewer', agent_type: 'reviewer' });
+      }
     } catch (err) {
       toastError('Failed to start review', err);
     } finally {
@@ -354,17 +326,32 @@ export default function ReviewView({
 
   const handleReviewNewCommits = async () => {
     if (!session?.id || reviewingNewCommits || isRunning) return;
+    if (!reviewer?.id) {
+      toastError('Failed to review latest changes', new Error('Start a review first'));
+      return;
+    }
     setReviewingNewCommits(true);
     try {
-      await sessionReviewService.reviewNewCommits({
+      const content = buildReviewLatestChangesContent(session.base_branch);
+      const messageJson = JSON.stringify({
+        type: 'user',
+        subtype: 'baguette',
+        source: 'baguette',
+        title: BAGUETTE_REVIEW_LATEST_TITLE,
+        content,
+      });
+      await messagesService.create({
         session_id: session.id,
-        ...reviewComposerAgentFields({
-          agent_sdk: reviewAgentSdk,
+        type: 'user',
+        subtype: 'baguette',
+        message_json: messageJson,
+        ...builderMessageCreateFields(session, {
+          agent: reviewer,
           model: reviewModel,
           model_params: reviewModelParams,
-          review_agent_config_id: reviewConfigId,
         }),
       });
+      onReviewAgentStarted?.(reviewer);
     } catch (err) {
       toastError('Failed to review latest changes', err);
     } finally {
@@ -372,35 +359,11 @@ export default function ReviewView({
     }
   };
 
-  const handleSendReviewFollowUp = async (message) => {
-    if (!session?.id || sendingReviewFollowUp || isRunning) return;
-    const trimmed = typeof message === 'string' ? message.trim() : '';
-    if (!trimmed) return;
-    setSendingReviewFollowUp(true);
-    try {
-      await sessionReviewService.send({
-        session_id: session.id,
-        message: trimmed,
-        ...reviewComposerAgentFields({
-          agent_sdk: reviewAgentSdk,
-          model: reviewModel,
-          model_params: reviewModelParams,
-          review_agent_config_id: reviewConfigId,
-        }),
-      });
-      setShowFollowUpModal(false);
-    } catch (err) {
-      toastError('Failed to send follow-up message', err);
-    } finally {
-      setSendingReviewFollowUp(false);
-    }
-  };
-
   const handleStop = async () => {
-    if (!session?.id || stopping) return;
+    if (!session?.id || stopping || !reviewer?.id) return;
     setStopping(true);
     try {
-      await sessionReviewService.stop({ session_id: session.id });
+      await agentsService.stop({ agent_id: reviewer.id });
     } catch (err) {
       toastError('Failed to stop review', err);
     } finally {
@@ -408,49 +371,19 @@ export default function ReviewView({
     }
   };
 
-  const handleClearReview = async () => {
-    if (!session?.id || clearingReview || isRunning) return;
-    setClearingReview(true);
-    try {
-      await sessionReviewService.clearContext({ session_id: session.id });
-      setReviewUserMessage('');
-    } catch (err) {
-      toastError('Failed to clear reviewer chat', err);
-    } finally {
-      setClearingReview(false);
-    }
+  const handleReviewModelChange = (modelId, modelParamsJson) => {
+    setReviewModel(modelId);
+    setReviewModelParams(modelParamsJson ?? null);
   };
 
-  const handleReviewModelChange = async (modelId, modelParamsJson) => {
-    if (!session?.id || readonly) return;
-    try {
-      await sessionsService.patch(session.id, {
-        review_model: modelId,
-        review_model_params: modelParamsJson ?? null,
-      });
-    } catch (err) {
-      toastError('Failed to update review model', err);
-    }
-  };
-
-  const handleReviewConfigChange = async (configId) => {
-    if (!session?.id || readonly || !configId || String(configId) === String(reviewConfigId)) {
-      return;
-    }
+  const handleReviewConfigChange = (configId) => {
+    if (!configId || String(configId) === String(reviewConfigId)) return;
     const picked = agentConfigOptions.find((c) => c.key === String(configId));
-    try {
-      await sessionsService.patch(session.id, {
-        review_agent_config_id: Number(configId),
-        review_agent_sdk: picked?.sdk ?? undefined,
-        ...modelPatchFromConfigDefault(picked, {
-          modelKey: 'review_model',
-          paramsKey: 'review_model_params',
-          clearIfMissing: true,
-        }),
-      });
-    } catch (err) {
-      toastError('Failed to update review agent', err);
-    }
+    setReviewConfigId(Number(configId));
+    setReviewAgentSdk(picked?.sdk ?? reviewAgentSdk);
+    const patch = modelPatchFromConfigDefault(picked, { clearIfMissing: true });
+    if (patch.model !== undefined) setReviewModel(patch.model || '');
+    if (patch.model_params !== undefined) setReviewModelParams(patch.model_params);
   };
 
   useEffect(() => {
@@ -462,34 +395,6 @@ export default function ReviewView({
     handleReviewModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- default the review model once the config's list is current
   }, [models, modelsStale, reviewModel, reviewAgentSdk, readonly, session?.id]);
-
-  const followUpReviewControls = !readonly && showFollowUpPanel && !isRunning && (
-    <div className={REVIEW_CONTROLS_ROW_CLASS}>
-      <ReviewLatestChangesButton
-        disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
-        loading={reviewingNewCommits}
-        onReview={() => handleReviewNewCommits()}
-        onSendFollowUpMessage={() => setShowFollowUpModal(true)}
-        onClearReviewerChat={handleClearReview}
-      />
-      <SessionModelSelect
-        agentConfigKey={reviewConfigId != null ? String(reviewConfigId) : reviewAgentSdk}
-        model={reviewModel}
-        params={reviewModelParams}
-        models={models}
-        cursorModelPrefs={cursorModelPrefs}
-        onCursorModelPrefChange={setCursorModelPref}
-        onModelChange={handleReviewModelChange}
-        agentConfigOptions={agentConfigOptions}
-        onAgentConfigChange={handleReviewConfigChange}
-        configsLoading={configsLoading}
-        modelsLoading={modelsStale && !models.length}
-        disabled={reviewingNewCommits || sendingReviewFollowUp || clearingReview}
-        className={REVIEW_FOLLOW_UP_MODEL_SELECT_CLASS}
-      />
-      {showReviewerPanelLink && <ReviewerPanelLink onClick={onOpenReviewer} />}
-    </div>
-  );
 
   const runningReviewStatus = isRunning && (
     <div className={REVIEW_CONTROLS_ROW_CLASS}>
@@ -511,7 +416,6 @@ export default function ReviewView({
         </div>
         <p className="text-sm font-medium text-heading whitespace-nowrap">Review in progress</p>
       </div>
-      {showReviewerPanelLink && <ReviewerPanelLink onClick={onOpenReviewer} />}
     </div>
   );
 
@@ -547,6 +451,8 @@ export default function ReviewView({
                 placeholder={REVIEW_FOCUS_PLACEHOLDER}
                 disabled={readonly}
                 sending={starting}
+                agentName="Reviewer"
+                agentType="reviewer"
                 agentConfigKey={reviewConfigId != null ? String(reviewConfigId) : reviewAgentSdk}
                 model={reviewModel}
                 params={reviewModelParams}
@@ -566,9 +472,33 @@ export default function ReviewView({
         </div>
       )}
 
+      {hasReviewerAgent && !readonly && Boolean(session?.session_path) && !isRunning && (
+        <div className="shrink-0 border-b border-line bg-page">
+          <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4`}>
+            <div className="@container w-full">
+              <div className={REVIEW_CONTROLS_ROW_CLASS}>
+                <ReviewLatestChangesButton
+                  disabled={reviewingNewCommits}
+                  loading={reviewingNewCommits}
+                  onReview={handleReviewNewCommits}
+                />
+                <button
+                  type="button"
+                  onClick={openReviewerChat}
+                  className={`${SECONDARY_BUTTON_CLASS} w-full justify-center gap-2 whitespace-nowrap @min-[36rem]:w-auto @min-[36rem]:ml-auto shrink-0`}
+                >
+                  <Bot className="h-4 w-4 shrink-0 text-accent" aria-hidden />
+                  Open {reviewer?.name ?? 'reviewer'} chat
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-auto">
         <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4 space-y-4`}>
-          {showFollowUpPanel && (
+          {showReviewActions && isRunning && (
             <div className="@container w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
@@ -576,7 +506,7 @@ export default function ReviewView({
                   <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
                 </Alert>
               )}
-              {isRunning ? runningReviewStatus : followUpReviewControls}
+              {runningReviewStatus}
             </div>
           )}
           {!readonly && opened.length > 0 && (
@@ -596,6 +526,18 @@ export default function ReviewView({
             !isRunning &&
             (showStartForm ? (
               <p className="text-xs text-faint">No issues yet. Start a review to open some.</p>
+            ) : hasReviewerAgent ? (
+              <p className="text-xs text-faint">
+                No issues yet.{' '}
+                <button
+                  type="button"
+                  onClick={openReviewerChat}
+                  className={INLINE_SECONDARY_LINK_CLASS}
+                >
+                  Open reviewer chat
+                </button>{' '}
+                to run a review.
+              </p>
             ) : closedCountLoading || issuesLoading ? (
               <p className="text-xs text-faint">Loading issues…</p>
             ) : (
@@ -655,16 +597,6 @@ export default function ReviewView({
           )}
         </div>
       </div>
-
-      {showFollowUpModal && (
-        <ReviewFollowUpModal
-          submitting={sendingReviewFollowUp}
-          onCancel={() => {
-            if (!sendingReviewFollowUp) setShowFollowUpModal(false);
-          }}
-          onConfirm={handleSendReviewFollowUp}
-        />
-      )}
     </div>
   );
 }

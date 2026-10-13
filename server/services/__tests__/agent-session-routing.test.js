@@ -34,13 +34,24 @@ describe('agent-session-routing', () => {
   });
 
   it('getAgentServiceForSession routes via agent_config_id', async () => {
-    const session = {
-      id: 1,
+    const [sessionId] = await db('sessions').insert({
       user_id: userId,
+      repo_full_name: 'a/b',
+      base_branch: 'main',
+      initial_prompt: 'x',
+    });
+    await db('agents').insert({
+      session_id: sessionId,
+      name: 'Builder',
+      agent_type: 'builder',
+      is_primary: 1,
+      status: 'stopped',
       agent_config_id: configId,
       agent_sdk: 'claude',
-      repo_id: null,
-    };
+      model: 'sonnet',
+      current_turn_id: 0,
+    });
+    const session = { id: sessionId, user_id: userId, repo_id: null };
     const svc = await getAgentServiceForSession(app, session);
     expect(svc).toBe(app.service('claude-agent'));
   });
@@ -57,15 +68,35 @@ describe('agent-session-routing', () => {
       label: 'Cursor',
       service_path: 'cursor-agent',
     });
-    const session = {
-      id: 1,
+    const [sessionId] = await db('sessions').insert({
       user_id: userId,
+      repo_full_name: 'a/b',
+      base_branch: 'main',
+      initial_prompt: 'x',
+    });
+    await db('agents').insert({
+      session_id: sessionId,
+      name: 'Builder',
+      agent_type: 'builder',
+      is_primary: 1,
+      status: 'stopped',
       agent_config_id: configId,
-      review_agent_config_id: cursorId,
       agent_sdk: 'claude',
-      review_agent_sdk: 'cursor',
-      repo_id: null,
-    };
+      model: 'sonnet',
+      current_turn_id: 0,
+    });
+    await db('agents').insert({
+      session_id: sessionId,
+      name: 'Reviewer',
+      agent_type: 'reviewer',
+      is_primary: 0,
+      status: 'stopped',
+      agent_config_id: cursorId,
+      agent_sdk: 'cursor',
+      model: 'sonnet',
+      current_turn_id: 0,
+    });
+    const session = { id: sessionId, user_id: userId, repo_id: null };
     const path = await agentServicePathForSession(app, session, { review: true });
     expect(path).toBe('cursor-agent');
   });

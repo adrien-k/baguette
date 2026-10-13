@@ -3,7 +3,9 @@ import logger from '../../logger.js';
 import { requireUser, scopeBySessionUser } from './hooks.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
 import { assignTurnOnUserMessageCreate } from '../../../shared/turn-assignment.js';
-import { scopeAgentTypeDefaultFind, requireMessageIdentity } from './message-identity.js';
+import { scopeAgentDefaultFind, requireMessageIdentity } from './message-identity.js';
+import { getAgentById } from '../agents-db.js';
+import { primeReviewerUserMessageCreate } from '../reviewer-turn-prime.js';
 
 /**
  * Messages service (table: session_messages). Scoped by session; access restricted to sessions owned by params.user.
@@ -35,6 +37,7 @@ async function queueTurnMessage(context) {
       session_id: context.data.session_id,
       message_json: context.data.message_json,
       kind: 'turn',
+      agent_id: context.data.agent_id,
       agent_type: context.data.agent_type,
       agent_sdk: context.data.agent_sdk,
       model: context.data.model,
@@ -57,11 +60,12 @@ async function queueIfRunning(context) {
 
   if (context.params._force) return context;
 
-  const agentType = context.data.agent_type === 'reviewer' ? 'reviewer' : 'builder';
+  const agentId = context.data.agent_id;
+  const agent = agentId ? await getAgentById(db, agentId) : null;
+  if (!agent) return context;
+
   const queueable =
-    agentType === 'reviewer'
-      ? session.review_status === 'running'
-      : session.status === 'running' || session.status === 'provisioning';
+    agent.status === 'running' || (agent.is_primary && session.status === 'provisioning');
   if (!queueable) return context;
   return queueTurnMessage(context);
 }
@@ -91,14 +95,19 @@ async function afterCreateDispatchAgent(context) {
 }
 
 async function assignTurn(context) {
-  const channel = context.data?.agent_type === 'reviewer' ? 'review' : 'chat';
-  return assignTurnOnUserMessageCreate(context, channel);
+  return assignTurnOnUserMessageCreate(context);
 }
 
 const messagesHooks = {
   before: {
-    all: [requireUser, scopeAgentTypeDefaultFind, scopeBySessionUser],
-    create: [extractForceParam, requireMessageIdentity, assignTurn, queueIfRunning],
+    all: [requireUser, scopeAgentDefaultFind, scopeBySessionUser],
+    create: [
+      extractForceParam,
+      requireMessageIdentity,
+      assignTurn,
+      queueIfRunning,
+      (context) => primeReviewerUserMessageCreate(context.app, context),
+    ],
   },
   after: {
     create: [afterCreateNotifySessions, afterCreateDispatchAgent],

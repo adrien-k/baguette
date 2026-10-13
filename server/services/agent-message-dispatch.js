@@ -4,7 +4,8 @@ import {
   resolveTurnModel,
 } from '../../shared/turn-model.js';
 import { normalizeUserPayloadForStorage } from '../../shared/normalize-user-payload.js';
-import { getAgentServiceForSession } from './agent-session-routing.js';
+import { getAgentById } from './agents-db.js';
+import { getAgentServiceForAgent } from './agent-session-routing.js';
 import { persistTypedMessage } from './message-writer-factory.ts';
 
 /**
@@ -18,22 +19,28 @@ export function parseUserRow(row) {
   }
 }
 
-export function channelFromAgentType(agentType) {
-  return agentType === 'reviewer' ? 'review' : 'chat';
-}
-
 /**
  * Route a persisted user row to the SDK service for this session's agent config.
  * @param {import('@feathersjs/feathers').Application} app
  * @param {object} row
- * @param {'messages' | 'session-review-messages'} table
  */
-export async function dispatchCreatedMessageToAgents(app, row, table) {
+export async function dispatchCreatedMessageToAgents(app, row) {
   if (row.type !== 'user') return;
   const session = await app.get('db')('sessions').where({ id: row.session_id }).first();
   if (!session) return;
-  const review = table === 'session-review-messages' || row.agent_type === 'reviewer';
-  const agent = await getAgentServiceForSession(app, session, { review });
+  const db = app.get('db');
+  let agentRow = row.agent_id != null ? await getAgentById(db, row.agent_id) : null;
+  if (!agentRow) {
+    const review = row.agent_type === 'reviewer';
+    agentRow = await db('agents')
+      .where({
+        session_id: row.session_id,
+        ...(review ? { agent_type: 'reviewer' } : { is_primary: 1 }),
+      })
+      .first();
+  }
+  if (!agentRow) return;
+  const agent = await getAgentServiceForAgent(app, agentRow);
   if (typeof agent?.handleMessageCreated === 'function') {
     await agent.handleMessageCreated(row);
   }

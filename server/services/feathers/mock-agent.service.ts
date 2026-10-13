@@ -2,7 +2,6 @@ import logger from '../../logger.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import {
-  channelFromAgentType,
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
@@ -17,9 +16,17 @@ import {
 import { registerAgentSdk } from './agent-configs.service.js';
 import { requireAgentConfigIdForTurn } from '../../lib/usage-agent-config.js';
 import { runMockAgentTurn } from '../mock/mock-agent-turn.js';
-import { reviewTurnKey } from './session-review.service.js';
+import { reviewTurnKey } from '../review-agent-turn.js';
+import { resolveAgentRowForMessage } from '../agents-db.js';
+import {
+  clearAgentActiveTurnId,
+  setAgentActiveTurnId,
+  setAgentTurnRunning,
+  setAgentTurnTerminal,
+} from '../agent-turn-patch.js';
 import type {
   AgentApp,
+  AgentRow,
   AgentSessionRow,
   ChatTable,
   DbLike,
@@ -42,7 +49,7 @@ class MockAgentService {
     this.app = app;
   }
 
-  async handleTableMessageCreated(row: MessageRowLike, table: ChatTable) {
+  async handleTableMessageCreated(row: MessageRowLike, _table: ChatTable) {
     if (!isMockAgentSdkEnabled()) return;
     if (row.type !== 'user') return;
 
@@ -55,23 +62,22 @@ class MockAgentService {
       AgentSessionRow | undefined;
     if (!session || session.archived_at) return;
 
-    const channel: MessageChannel =
-      table === 'session-review-messages'
-        ? 'review'
-        : channelFromAgentType(row.agent_type as string);
-    const sdk =
-      row.agent_sdk ?? (channel === 'review' ? session.review_agent_sdk : session.agent_sdk);
+    const agent = (await resolveAgentRowForMessage(db, row as never)) as AgentRow | undefined;
+    if (!agent) return;
+
+    const isReview = agent.agent_type === 'reviewer';
+    const channel: MessageChannel = isReview ? 'review' : 'chat';
+    const sdk = row.agent_sdk ?? agent.agent_sdk;
     if (sdk !== MOCK_AGENT_SDK) return;
 
-    if (channel === 'chat') {
+    if (!isReview) {
       if (session.status === 'archiving' || session.status === 'archived') return;
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
     if (this._activeSessions.has(activeKey)) {
-      const activeTurnId =
-        channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+      const activeTurnId = agent.active_turn_id;
       if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
         await rejectTurnMismatch(this.app, {
           session,
@@ -93,6 +99,7 @@ class MockAgentService {
         channel,
         activeKey,
         turnAgentConfigId,
+        agent,
       }),
       { userId: session.user_id, sessionId }
     ).catch((err) => {
@@ -113,6 +120,7 @@ class MockAgentService {
       channel?: MessageChannel;
       activeKey?: string | number;
       turnAgentConfigId?: number | null;
+      agent?: AgentRow;
     }
   ) {
     const sessionId = session.id;
@@ -120,12 +128,11 @@ class MockAgentService {
     const channel: MessageChannel = meta.channel ?? 'chat';
     const activeKey = meta.activeKey ?? sessionId;
     const turnId = meta.turnId ?? null;
-    const db = this.app.get('db') as DbLike;
+    const agent = meta.agent;
+    if (!agent) return;
 
     if (turnId != null) {
-      const activeField =
-        channel === 'review' ? { active_review_turn_id: turnId } : { active_chat_turn_id: turnId };
-      await db('sessions').where({ id: sessionId }).update(activeField);
+      await setAgentActiveTurnId(this.app, agent, userId, turnId);
     }
 
     const model = turnModel.model ?? '';
@@ -149,6 +156,7 @@ class MockAgentService {
     const abortController = new AbortController();
     this._activeSessions.set(activeKey, {
       userId,
+      agentId: agent.id,
       abortController,
       turnId,
       channel,
@@ -157,9 +165,7 @@ class MockAgentService {
     let turnFinishedOk = false;
     try {
       if (channel !== 'review') {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+        await setAgentTurnRunning(this.app, agent, userId);
         await this.app.service('sessions').onTurnStart(sessionId);
       }
 
@@ -171,18 +177,14 @@ class MockAgentService {
 
       turnFinishedOk = true;
       if (channel !== 'review') {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+        await setAgentTurnTerminal(this.app, agent, userId, 'completed');
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError' && (err as Error).message !== 'Aborted') {
         handleAppError(this.app, err as Error, { userId, sessionId });
         logger.error({ sessionId, err: (err as Error).message }, 'mock-agent stream error');
         if (channel !== 'review') {
-          await this.app
-            .service('sessions')
-            .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+          await setAgentTurnTerminal(this.app, agent, userId, 'failed');
         }
         this.app.service('sessions').emit('app:error', {
           sessionId,
@@ -191,12 +193,7 @@ class MockAgentService {
         });
       }
     } finally {
-      const clearField =
-        channel === 'review' ? { active_review_turn_id: null } : { active_chat_turn_id: null };
-      await db('sessions')
-        .where({ id: sessionId })
-        .update(clearField)
-        .catch(() => {});
+      await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
       this._activeSessions.delete(activeKey);
     }
 

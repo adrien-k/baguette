@@ -26,7 +26,7 @@ import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
 import { resolvePiCredentials } from '../pi/pi-config.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
 import { lunaroutePiAdditionalExtensionPaths } from '../pi/pi-lunaroute-extension-path.js';
-import { reviewTurnKey } from './session-review.service.js';
+import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import {
   requireAgentConfigIdForTurn,
   usageAgentConfigIdForSession,
@@ -35,7 +35,6 @@ import {
   isDispatchableUserMessage,
   parseUserRow,
   rejectTurnMismatch,
-  channelFromAgentType,
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import { sessionMessageIdentity } from './message-create-fields.js';
@@ -43,16 +42,28 @@ import type { MessageStreamWriter } from '../../../shared/message-stream-writer.
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
 import type {
   AgentApp,
+  AgentRow,
   AgentSessionRow,
   DbLike,
   MessageChannel,
   MessageRowLike,
-  QueryBuilderLike,
   TiedSessionLoopCompactionArgs,
 } from './agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
 import { PI_AGENT_SDK_KEY, PI_AGENT_SDK_LABEL, PI_AGENT_SERVICE_PATH } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
+import {
+  getPrimaryBuilderAgent,
+  getReviewerAgent,
+  resolveAgentRowForMessage,
+} from '../agents-db.js';
+import { patchAgentInternal } from './agents.service.js';
+import {
+  clearAgentActiveTurnId,
+  setAgentActiveTurnId,
+  setAgentTurnRunning,
+  setAgentTurnTerminal,
+} from '../agent-turn-patch.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
 const METADATA_TIMEOUT_MS = 30_000;
@@ -60,6 +71,7 @@ const METADATA_TIMEOUT_MS = 30_000;
 type PiSessionState = {
   isProcessing: boolean;
   userId: number;
+  agentId?: number;
   piSession: PiAgentSession | null;
   abortController?: AbortController;
   writer?: MessageStreamWriter | null;
@@ -278,20 +290,23 @@ export class PiAgentService {
       .first()) as AgentSessionRow | undefined;
     if (!session || session.archived_at) return;
 
-    const channel: MessageChannel = channelFromAgentType(row.agent_type as string);
-    const sdk =
-      row.agent_sdk ?? (channel === 'review' ? session.review_agent_sdk : session.agent_sdk);
+    const agent = (await resolveAgentRowForMessage(this.app.get('db') as never, row as never)) as
+      AgentRow | undefined;
+    if (!agent) return;
+
+    const isReview = agent.agent_type === 'reviewer';
+    const channel: MessageChannel = isReview ? 'review' : 'chat';
+    const sdk = row.agent_sdk ?? agent.agent_sdk;
     if (sdk !== 'pi') return;
 
-    if (channel === 'chat') {
+    if (!isReview) {
       if (session.status === 'archiving' || session.status === 'archived') return;
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = channel === 'review' ? reviewTurnKey(sessionId) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
     const active = this._activeSessions.get(activeKey);
-    const activeTurnId =
-      channel === 'review' ? session.active_review_turn_id : session.active_chat_turn_id;
+    const activeTurnId = agent.active_turn_id;
 
     if (active?.isProcessing) {
       if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
@@ -315,6 +330,7 @@ export class PiAgentService {
       turnId: row.turn_id as number | null,
       channel,
       activeKey,
+      agent,
     };
     attachAppErrorHandler(this.app, this._runTurn(session, parsed, row, meta), {
       userId: session.user_id,
@@ -442,6 +458,7 @@ export class PiAgentService {
       turnId?: number | null;
       channel?: MessageChannel;
       activeKey?: string | number;
+      agent?: AgentRow;
     } = {}
   ): Promise<void> {
     const sessionId = session.id;
@@ -449,18 +466,18 @@ export class PiAgentService {
     const channel: MessageChannel = meta.channel ?? 'chat';
     const activeKey = meta.activeKey ?? sessionId;
     const turnId = meta.turnId ?? null;
+    const agent = meta.agent;
+    if (!agent) return;
     let turnFinishedOk = false;
 
-    const db = this.app.get('db') as DbLike;
     if (turnId != null) {
-      const activeField =
-        channel === 'review' ? { active_review_turn_id: turnId } : { active_chat_turn_id: turnId };
-      await db('sessions').where({ id: sessionId }).update(activeField);
+      await setAgentActiveTurnId(this.app, agent, userId, turnId);
     }
 
     const sessionState: PiSessionState = {
       isProcessing: true,
       userId,
+      agentId: agent.id,
       piSession: null,
       writer: null,
       turnId,
@@ -493,23 +510,20 @@ export class PiAgentService {
       sessionState.writer = writer;
       sessionState.turnAgentConfigId = turnAgentConfigId;
       if (channel !== 'review') {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'running' }, { user: { id: userId } });
+        await setAgentTurnRunning(this.app, agent, userId);
         await this.app.service('sessions').onTurnStart(sessionId);
       }
 
-      const storedPiSessionId =
-        channel === 'review' ? session.review_pi_session_id : session.pi_session_id;
+      const storedPiSessionId = agent.pi_session_id;
       const model = turnModel.model;
 
       const reviewExtras =
         channel === 'review'
-          ? (this.app.service('session-review').peekTurnExtras(sessionId) ?? {})
+          ? (getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {})
           : null;
       const agentOptions =
         channel === 'review'
-          ? await this.app.service('session-review').buildPiReviewAgentOptions(session, {
+          ? await getReviewAgentTurn(this.app).buildPiReviewAgentOptions(session, agent, {
               model,
               modelParams: turnModel.modelParams,
               agentConfigId: turnAgentConfigId,
@@ -536,13 +550,8 @@ export class PiAgentService {
         writer,
         activeKey,
         activeSessionState: sessionState,
-        persistPiSessionId: (piSessionId) => {
-          const field =
-            channel === 'review'
-              ? { review_pi_session_id: piSessionId }
-              : { pi_session_id: piSessionId };
-          return db('sessions').where({ id: sessionId }).update(field);
-        },
+        persistPiSessionId: (piSessionId) =>
+          patchAgentInternal(this.app, agent.id, { pi_session_id: piSessionId }, userId),
         persistStatus: async (text) => {
           await this._persistStatusMessage(sessionId, userId, text, session, channel);
         },
@@ -554,35 +563,31 @@ export class PiAgentService {
         await this.app
           .service('sessions')
           .recordPiUsage(session, turnUsage ?? emptyTurnUsage(), {
-            kind: channel === 'review' ? 'review' : undefined,
             turnModel,
             patchSessionCost: true,
             agentConfigId: sessionState.turnAgentConfigId,
+            agentId: agent.id,
           })
           .catch((err: Error) =>
             logger.warn({ sessionId, err: err.message }, 'pi-agent: failed to record turn usage')
           );
         if (!awaitingUser) {
           if (channel === 'review') {
-            await this.app.service('session-review').onAgentTurnComplete(session, 'completed', {
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
               sdk: 'pi',
               turnModel,
               turnUsage,
             });
           } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'completed' }, { user: { id: userId } });
+            await setAgentTurnTerminal(this.app, agent, userId, 'completed');
           }
         }
       } else if (outcome === 'failed' && channel === 'review') {
-        await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+        await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
           sdk: 'pi',
         });
       } else if (outcome === 'failed' && channel !== 'review' && !awaitingUser) {
-        await this.app
-          .service('sessions')
-          .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+        await setAgentTurnTerminal(this.app, agent, userId, 'failed');
       }
     } catch (err) {
       awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
@@ -591,16 +596,12 @@ export class PiAgentService {
         logger.error({ sessionId, err: (err as Error).message }, 'Pi session stream error');
         try {
           if (channel === 'review') {
-            await this.app.service('session-review').onAgentTurnComplete(session, 'failed', {
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'pi',
             });
-            await this.app
-              .service('session-review')
-              ._persistStatus(session, (err as Error).message);
+            await getReviewAgentTurn(this.app)._persistStatus(session, (err as Error).message);
           } else {
-            await this.app
-              .service('sessions')
-              .patch(sessionId, { status: 'failed' }, { user: { id: userId } });
+            await setAgentTurnTerminal(this.app, agent, userId, 'failed');
             if (writer) {
               await this._recordPiTurnError(writer, (err as Error).message);
             } else {
@@ -625,11 +626,7 @@ export class PiAgentService {
         turnFinishedOk = true;
       }
     } finally {
-      const clearField =
-        channel === 'review' ? { active_review_turn_id: null } : { active_chat_turn_id: null };
-      await (db('sessions').where({ id: sessionId }).update(clearField) as QueryBuilderLike).catch(
-        () => {}
-      );
+      await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
       this._activeSessions.delete(activeKey);
     }
 
@@ -682,9 +679,15 @@ export class PiAgentService {
     sessionId: number,
     userId: number,
     statusText: string,
-    session: AgentSessionRow,
+    _session: AgentSessionRow,
     channel: MessageChannel = 'chat'
   ) {
+    const db = this.app.get('db');
+    const agentRow =
+      channel === 'review'
+        ? await getReviewerAgent(db, sessionId)
+        : await getPrimaryBuilderAgent(db, sessionId);
+    if (!agentRow) return;
     const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
     await this.app.service('messages').create(
       {
@@ -692,7 +695,7 @@ export class PiAgentService {
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(session, channel === 'review' ? 'reviewer' : 'builder', {
+        ...sessionMessageIdentity(agentRow, channel === 'review' ? 'reviewer' : 'builder', {
           agent_sdk: 'pi',
         }),
       },
@@ -842,11 +845,17 @@ Task: ${initialPrompt}`;
 
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
-    { channel = 'chat' }: { channel?: MessageChannel } = {}
+    { channel = 'chat', agent: agentRow }: { channel?: MessageChannel; agent?: AgentRow } = {}
   ): Promise<boolean> {
-    return channel === 'review'
-      ? Boolean(session.review_pi_session_id)
-      : Boolean(session.pi_session_id);
+    let agent = agentRow;
+    if (!agent) {
+      agent =
+        channel === 'review'
+          ? ((await getReviewerAgent(this.app.get('db'), session.id)) as AgentRow | undefined)
+          : ((await getPrimaryBuilderAgent(this.app.get('db'), session.id)) as
+              AgentRow | undefined);
+    }
+    return Boolean(agent?.pi_session_id);
   }
 }
 

@@ -13,8 +13,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { feathers } from '@feathersjs/feathers';
 import { BadRequest, NotFound } from '@feathersjs/errors';
-import { createTestDb, testSessionAgentDefaults } from '../../test-utils/db.js';
+import { createTestDb, insertTestSession, testSessionAgentDefaults } from '../../test-utils/db.js';
 import { registerSessionsService, resolveSessionFromData } from '../feathers/sessions.service.js';
+import { registerAgentsService } from '../feathers/agents.service.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
@@ -53,6 +54,16 @@ const {
   buildSystemPromptAppend: vi.fn().mockResolvedValue('mocked builder system prompt'),
   reviewStop: vi.fn().mockResolvedValue({ ok: true }),
   resumeInterruptedReviews: vi.fn().mockResolvedValue({ resumed: 0, failed: 0 }),
+}));
+
+vi.mock('../review-agent-turn.js', () => ({
+  getReviewAgentTurn: () => ({
+    stopReviewerAgent: reviewStop,
+    resumeInterrupted: resumeInterruptedReviews,
+    peekTurnExtras: () => null,
+    setTurnExtras: vi.fn(),
+  }),
+  registerReviewAgentTurn: vi.fn(),
 }));
 
 vi.mock('child_process', () => ({
@@ -101,16 +112,12 @@ const findRunningTask = vi.fn().mockReturnValue(null);
 const tasksCreate = vi.fn(async (data) => ({ id: 42, ...data }));
 const getTask = vi.fn().mockReturnValue(null);
 
-function claudeInterruptedResumable(session, { channel = 'chat' } = {}) {
-  return channel === 'review'
-    ? Boolean(session.review_claude_session_id)
-    : Boolean(session.claude_session_id);
+function claudeInterruptedResumable(_session, { agent } = {}) {
+  return Boolean(agent?.claude_session_id);
 }
 
-function cursorInterruptedResumable(session, { channel = 'chat' } = {}) {
-  return channel === 'review'
-    ? Boolean(session.review_cursor_agent_id)
-    : Boolean(session.cursor_agent_id);
+function cursorInterruptedResumable(_session, { agent } = {}) {
+  return Boolean(agent?.cursor_agent_id);
 }
 
 function makeApp(db) {
@@ -175,12 +182,8 @@ function makeApp(db) {
   registerAgentSdk(app, { key: 'claude', label: 'Claude', servicePath: 'claude-agent' });
   registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
   app.use('users', { get: usersServiceGet }, { methods: ['get'] });
-  app.use(
-    'session-review',
-    { stop: reviewStop, resumeInterrupted: resumeInterruptedReviews },
-    { methods: ['stop', 'resumeInterrupted'] }
-  );
   registerSessionsService(app);
+  registerAgentsService(app);
   registerMessagesService(app);
   return app;
 }
@@ -195,7 +198,7 @@ async function seedUserAndSession(db, { github_id, username, shortId, sessionPat
     .ignore();
   const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
-  const [sessId] = await db('sessions').insert({
+  const sessId = await insertTestSession(db, {
     user_id: user.id,
     repo_id: repo.id,
     repo_full_name: 'test/repo',
@@ -251,12 +254,18 @@ describe('Sessions service - custom methods', () => {
 
   describe('stop', () => {
     it('stops session, updates status to stopped, returns { ok: true }', async () => {
+      const builder = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: builder.id }).update({ status: 'running', active_turn_id: 3 });
+
       const result = await app.service('sessions').stop(sessId, params({ id: userId }));
 
       expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
       expect(result).toEqual({ ok: true });
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.status).toBe('stopped');
+      const agentAfter = await db('agents').where({ id: builder.id }).first();
+      expect(agentAfter.status).toBe('stopped');
+      expect(agentAfter.active_turn_id).toBeNull();
     });
 
     it('rejects with NotFound for an unknown id', async () => {
@@ -384,7 +393,7 @@ describe('Sessions service - custom methods', () => {
     });
 
     it('returns empty commands when session has no session_path', async () => {
-      const [sessId2] = await db('sessions').insert({
+      const sessId2 = await insertTestSession(db, {
         user_id: userId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -432,7 +441,7 @@ describe('Sessions service - custom methods', () => {
     });
 
     it('returns missing when session has no session_path', async () => {
-      const [sessId2] = await db('sessions').insert({
+      const sessId2 = await insertTestSession(db, {
         user_id: userId,
         repo_full_name: 'test/repo',
         base_branch: 'main',
@@ -553,10 +562,7 @@ describe('Sessions service - custom methods', () => {
       const result = await app.service('sessions').remove(sessId, params({ id: userId }));
 
       expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
-      expect(reviewStop).toHaveBeenCalledWith(
-        { session_id: sessId },
-        expect.objectContaining({ user: { id: userId } })
-      );
+      expect(reviewStop).not.toHaveBeenCalled();
       expect(deleteSessionTasks).toHaveBeenCalledWith(sessId, expect.anything());
       expect(removeWorktree).toHaveBeenCalled();
       expect(result.id).toBe(sessId);
@@ -735,7 +741,7 @@ describe('Sessions service - custom methods', () => {
     });
 
     it('archives cursor sessions like claude sessions', async () => {
-      await db('sessions').where({ id: sessId }).update({
+      await db('agents').where({ session_id: sessId, is_primary: 1 }).update({
         agent_sdk: 'cursor',
         cursor_agent_id: 'test-cursor-agent-id',
       });
@@ -753,7 +759,7 @@ describe('Sessions service - custom methods', () => {
     it('stops and soft-deletes all non-deleted sessions for the repo', async () => {
       const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
-      const [sess2] = await db('sessions').insert({
+      const sess2 = await insertTestSession(db, {
         user_id: userId,
         repo_id: repo.id,
         repo_full_name: 'test/repo',
@@ -798,7 +804,7 @@ describe('Sessions service - custom methods', () => {
     it('archives all users sessions when no user scope is passed (global repo delete)', async () => {
       const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
-      const [otherSessId] = await db('sessions').insert({
+      const otherSessId = await insertTestSession(db, {
         user_id: otherUserId,
         repo_id: repo.id,
         repo_full_name: 'test/repo',
@@ -821,7 +827,7 @@ describe('Sessions service - custom methods', () => {
     it('archives only the scoped user sessions (repo unlink)', async () => {
       const repo = await db('repos').where({ full_name: 'test/repo' }).first();
 
-      const [otherSessId] = await db('sessions').insert({
+      const otherSessId = await insertTestSession(db, {
         user_id: otherUserId,
         repo_id: repo.id,
         repo_full_name: 'test/repo',
@@ -842,7 +848,7 @@ describe('Sessions service - custom methods', () => {
     });
 
     it('internal remove can archive another user session when provider is omitted', async () => {
-      const [otherSessId] = await db('sessions').insert({
+      const otherSessId = await insertTestSession(db, {
         user_id: otherUserId,
         repo_id: (await db('repos').where({ full_name: 'test/repo' }).first()).id,
         repo_full_name: 'test/repo',
@@ -901,7 +907,7 @@ describe('Repos service - unlink', () => {
       { user_id: otherUserId, repo_id: repoId },
     ]);
 
-    [bobSessId] = await db('sessions').insert({
+    bobSessId = await insertTestSession(db, {
       user_id: otherUserId,
       repo_id: repoId,
       repo_full_name: 'test/repo',
@@ -970,7 +976,7 @@ describe('Sessions service - find, get, create', () => {
     await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
 
-    [sessId1] = await db('sessions').insert({
+    sessId1 = await insertTestSession(db, {
       user_id: userId1,
       repo_id: repoId,
       repo_full_name: 'test/repo',
@@ -979,7 +985,7 @@ describe('Sessions service - find, get, create', () => {
       short_id: 'a1b2c3',
       status: 'active',
     });
-    [sessId2] = await db('sessions').insert({
+    sessId2 = await insertTestSession(db, {
       user_id: userId2,
       repo_id: repoId,
       repo_full_name: 'test/repo',
@@ -1027,7 +1033,7 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('supports filtering by status within the user scope', async () => {
-      await db('sessions').insert({
+      await insertTestSession(db, {
         user_id: userId1,
         repo_id: repoId,
         repo_full_name: 'test/repo',
@@ -1105,7 +1111,7 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('orders non-archived before archived, then by last activity (not pr_status)', async () => {
-      const [mergedRecentId] = await db('sessions').insert({
+      const mergedRecentId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: repoId,
         repo_full_name: 'test/repo',
@@ -1116,7 +1122,7 @@ describe('Sessions service - find, get, create', () => {
         pr_status: 'merged',
         last_activity_at: '2026-03-01T00:00:00.000Z',
       });
-      const [staleActiveId] = await db('sessions').insert({
+      const staleActiveId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: repoId,
         repo_full_name: 'test/repo',
@@ -1130,7 +1136,7 @@ describe('Sessions service - find, get, create', () => {
       await db('sessions').where({ id: sessId1 }).update({
         last_activity_at: '2026-02-01T00:00:00.000Z',
       });
-      const [archivedId] = await db('sessions').insert({
+      const archivedId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: repoId,
         repo_full_name: 'test/repo',
@@ -1155,7 +1161,7 @@ describe('Sessions service - find, get, create', () => {
       await db('sessions').where({ id: sessId1 }).update({
         archived_at: '2026-04-01T00:00:00.000Z',
       });
-      const [openId] = await db('sessions').insert({
+      const openId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: repoId,
         repo_full_name: 'test/repo',
@@ -1180,7 +1186,7 @@ describe('Sessions service - find, get, create', () => {
 
     it('excludes loop runs when include_loop_runs is false', async () => {
       await db('sessions').where({ id: sessId1 }).update({ loop_id: 7 });
-      const [plainId] = await db('sessions').insert({
+      const plainId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: repoId,
         repo_full_name: 'test/repo',
@@ -1206,7 +1212,7 @@ describe('Sessions service - find, get, create', () => {
         { user_id: userId1, repo_id: repoId, show_in_all_sessions: 1 },
         { user_id: userId1, repo_id: hiddenRepoId, show_in_all_sessions: 0 },
       ]);
-      const [hiddenSessId] = await db('sessions').insert({
+      const hiddenSessId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: hiddenRepoId,
         repo_full_name: 'test/hidden',
@@ -1221,7 +1227,7 @@ describe('Sessions service - find, get, create', () => {
       });
       const extraIds = [];
       for (let i = 0; i < 3; i++) {
-        const [id] = await db('sessions').insert({
+        const id = await insertTestSession(db, {
           user_id: userId1,
           repo_id: repoId,
           repo_full_name: 'test/repo',
@@ -1254,7 +1260,7 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('filters by is_global and repo_id', async () => {
-      const [globalId] = await db('sessions').insert({
+      const globalId = await insertTestSession(db, {
         user_id: userId1,
         repo_id: null,
         repo_full_name: '',
@@ -1413,8 +1419,8 @@ describe('Sessions service - find, get, create', () => {
         },
         params({ id: userId1 })
       );
-      const row = await db('sessions').where({ id: sessId1 }).first();
-      expect(row.model_params).toBe('[{"id":"fast","value":"false"}]');
+      const builder = await db('agents').where({ session_id: sessId1, is_primary: 1 }).first();
+      expect(builder.model_params).toBe('[{"id":"fast","value":"false"}]');
     });
 
     it('updates status on own session and returns the updated row', async () => {
@@ -1485,7 +1491,7 @@ describe('Sessions service - find, get, create', () => {
           claude_session_id: 'claude-thread-1',
           cursor_agent_id: 'cursor-thread-1',
         },
-        {}
+        params({ id: userId1 })
       );
 
       const updated = await app
@@ -1572,7 +1578,7 @@ describe('Sessions service - find, get, create', () => {
       expect(session.base_branch).toBe('main');
     });
 
-    it('copies model and sdk onto reviewer fields at create', async () => {
+    it('persists builder agent sdk and model at create', async () => {
       const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
       const cursorConfigId = await insertTestAgentConfig(db, userId1, {
         sdk: 'cursor',
@@ -1589,9 +1595,37 @@ describe('Sessions service - find, get, create', () => {
         params({ id: userId1 })
       );
 
-      expect(session.review_agent_sdk).toBe('cursor');
-      expect(session.review_model).toBe('composer-2');
-      expect(session.review_model_params).toBe('[{"id":"fast","value":"true"}]');
+      expect(session.agent_sdk).toBe('cursor');
+      expect(session.model).toBe('composer-2');
+      expect(session.model_params).toBe('[{"id":"fast","value":"true"}]');
+    });
+
+    it('does not create a reviewer agent from repo defaults on session create', async () => {
+      const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+      const cursorConfigId = await insertTestAgentConfig(db, userId1, {
+        sdk: 'cursor',
+        apiKey: 'cursor-test-key',
+      });
+      await db('user_repos').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        reviewer_default_config_id: cursorConfigId,
+        reviewer_default_model: JSON.stringify({ model: 'space-bunny-free', model_params: null }),
+      });
+
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const row = await db('sessions').where({ id: session.id }).first();
+      expect(row.review_agent_config_id).toBeUndefined();
+      expect(session.review_agent_config_id).toBeUndefined();
+      const reviewer = await db('agents')
+        .where({ session_id: session.id, agent_type: 'reviewer' })
+        .first();
+      expect(reviewer).toBeUndefined();
+      const builder = await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
+      expect(builder).toBeTruthy();
     });
 
     it('auto-generates short_id if not provided', async () => {
@@ -1667,6 +1701,9 @@ describe('Sessions service - find, get, create', () => {
 
       handler.mockClear();
 
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'completed' });
       await app.service('sessions').onTurnComplete(created.id);
 
       expect(handler).toHaveBeenCalledTimes(1);
@@ -1680,6 +1717,10 @@ describe('Sessions service - find, get, create', () => {
       const created = await app
         .service('sessions')
         .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'completed' });
 
       const sessionsSvc = app.service('sessions');
       const order = [];
@@ -1741,7 +1782,10 @@ describe('Sessions service - find, get, create', () => {
       );
 
       expect(flushSpy).toHaveBeenCalledTimes(1);
-      expect(flushSpy).toHaveBeenCalledWith(expect.any(Number), 'builder');
+      const [sessionId, agentId] = flushSpy.mock.calls[0];
+      expect(sessionId).toEqual(expect.any(Number));
+      const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+      expect(agentId).toBe(builder.id);
       flushSpy.mockRestore();
     });
 
@@ -1812,9 +1856,9 @@ describe('Sessions service - find, get, create', () => {
           created_at: new Date().toISOString(),
         });
 
-      await app
-        .service('sessions')
-        .patch(created.id, { status: 'approval' }, params({ id: userId1 }));
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'approval' });
 
       const flushSpy = vi.spyOn(app.service('sessions'), 'flushNextQueuedTurn');
       const turnHandler = vi.fn();
@@ -2208,19 +2252,16 @@ describe('Sessions service - restartInterruptedSessions', () => {
   let repoId;
 
   const seedSession = (overrides = {}) =>
-    db('sessions')
-      .insert({
-        user_id: userId,
-        repo_id: repoId,
-        repo_full_name: 'test/repo',
-        base_branch: 'main',
-        initial_prompt: 'Interrupted task',
-        short_id: Math.random().toString(16).slice(2, 10),
-        status: 'running',
-        ...testSessionAgentDefaults,
-        ...overrides,
-      })
-      .then(([id]) => id);
+    insertTestSession(db, {
+      user_id: userId,
+      repo_id: repoId,
+      repo_full_name: 'test/repo',
+      base_branch: 'main',
+      initial_prompt: 'Interrupted task',
+      short_id: Math.random().toString(16).slice(2, 10),
+      status: 'running',
+      ...overrides,
+    });
 
   const messagesFor = (sessionId) =>
     db('session_messages').where({ session_id: sessionId }).orderBy('id', 'asc');

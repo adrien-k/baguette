@@ -34,13 +34,14 @@ import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
-import { sessionsService, tasksService } from '../feathers.js';
+import { agentsService, sessionsService, tasksService } from '../feathers.js';
 import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
 } from '@baguette/shared/session-unread.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
+import { useSessionAgents } from '../hooks/useSessionAgents.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
@@ -362,13 +363,36 @@ export default function Session() {
     if (sessionFromHook?.short_id === short_id) return sessionFromHook.id;
     return sessions.find((s) => s.short_id === short_id)?.id ?? null;
   }, [isNewSessionRoute, short_id, sessionFromHook, sessions]);
+  const { agents, primaryBuilder, reviewer } = useSessionAgents(sessionId);
+  const agentParam = searchParams.get('agent');
+  const activeAgent = useMemo(() => {
+    if (!agents.length) return null;
+    const parsedId = agentParam ? Number(agentParam) : null;
+    if (parsedId != null && agents.some((a) => a.id === parsedId)) {
+      return agents.find((a) => a.id === parsedId) ?? null;
+    }
+    return primaryBuilder ?? agents[0] ?? null;
+  }, [agents, agentParam, primaryBuilder]);
   const {
     messages: hookMessages,
     loading: messagesLoading,
     loadMore,
     loadingMore,
     hasMore,
-  } = useGetMessages(sessionId);
+  } = useGetMessages(sessionId, activeAgent?.id ?? null);
+  const {
+    messages: logHookMessages,
+    loadMore: loadMoreLogs,
+    loadingMore: loadingMoreLogs,
+    hasMore: hasMoreLogs,
+  } = useGetMessages(sessionId, null, { allAgents: true });
+  const agentLabelById = useMemo(() => {
+    const map = new Map();
+    for (const agent of agents) {
+      map.set(agent.id, { name: agent.name, agent_type: agent.agent_type });
+    }
+    return map;
+  }, [agents]);
   const { tasks: tasksFromHook } = useGetTasks({ sessionId, skip: !sessionId });
   const shouldLoadSessionIssues = activeView === 'review';
   const { issues: sessionIssues, loading: sessionIssuesLoading } = useGetSessionIssues(sessionId, {
@@ -482,19 +506,35 @@ export default function Session() {
   const configCommands = useSessionConfigCommands(gitSession);
   const [showBaguetteConfigModal, setShowBaguetteConfigModal] = useState(false);
   const [error, setError] = useState(null);
-  const showReviewerSidePanelTab = useMemo(() => {
-    const s = session ?? sessionFromHook;
-    if (!sessionId || isGlobalSession(s ?? {})) return false;
-    const status = s?.review_status;
-    return (
-      status === 'running' || status === 'completed' || status === 'failed' || status === 'stopped'
-    );
-  }, [sessionId, session, sessionFromHook]);
+  const selectAgent = useCallback(
+    (agent) => {
+      if (!agent?.id) return;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('agent', String(agent.id));
+          next.set('view', 'chat');
+          next.set('panel', 'agents');
+          return next;
+        },
+        { replace: true }
+      );
+      setShowTasks(true);
+    },
+    [setSearchParams, setShowTasks]
+  );
+  const handleReviewerCleared = useCallback(() => {
+    if (primaryBuilder) selectAgent(primaryBuilder);
+  }, [primaryBuilder, selectAgent]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
 
   const rawMessages = useMemo(() => (hookMessages || []).map(parseMessageRow), [hookMessages]);
+  const logRawMessages = useMemo(
+    () => (logHookMessages || []).map(parseMessageRow),
+    [logHookMessages]
+  );
   const messages = useMemo(() => enrichChatMessages(rawMessages), [rawMessages]);
   const systemPrompt = useMemo(
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
@@ -682,19 +722,20 @@ export default function Session() {
 
   const handleModelChange = (modelId, modelParams = null) => {
     if (!session?.id) return;
-    const patch = { model: modelId };
-    if (modelParams !== null) patch.model_params = modelParams;
-    sessionsService
-      .patch(session.id, patch)
+    const patch = { model: modelId, model_params: modelParams };
+    if (!activeAgent?.id) return;
+    agentsService
+      .patch(activeAgent.id, patch)
       .catch((err) => toastFeathersError('Failed to change model', err));
   };
 
   const applyAgentConfigChange = async (configId, { clearModel = false } = {}) => {
     if (!session?.id || !configId || switchingAgentSdk) return;
     const picked = configOptions.find((c) => c.key === String(configId));
+    if (!activeAgent?.id) return;
     setSwitchingAgentSdk(true);
     try {
-      await sessionsService.patch(session.id, {
+      await agentsService.patch(activeAgent.id, {
         agent_config_id: Number(configId),
         agent_sdk: picked?.sdk ?? undefined,
         ...modelPatchFromConfigDefault(picked, { clearIfMissing: clearModel }),
@@ -709,9 +750,11 @@ export default function Session() {
 
   const handleAgentConfigChangeRequest = (configId) => {
     if (!session?.id || session?.archived_at || session?.status === 'archiving') return;
-    if (!configId || String(configId) === String(session.agent_config_id)) return;
+    const isReviewer = activeAgent?.agent_type === 'reviewer';
+    const currentConfigId = isReviewer ? session.review_agent_config_id : session.agent_config_id;
+    if (!configId || String(configId) === String(currentConfigId)) return;
     const next = configOptions.find((c) => c.key === String(configId));
-    const current = configOptions.find((c) => c.key === String(session.agent_config_id));
+    const current = configOptions.find((c) => c.key === String(currentConfigId));
     const currentSdk = current?.sdk ?? session.agent_sdk;
     const nextSdk = next?.sdk;
     if (nextSdk && currentSdk && String(nextSdk) === String(currentSdk)) {
@@ -863,11 +906,6 @@ export default function Session() {
     },
     [activeView, isNewSessionRoute, setSearchParams, setShowTasks]
   );
-
-  useEffect(() => {
-    if (showReviewerSidePanelTab || sidePanelTab !== 'reviewer') return;
-    setSidePanelTab('tasks', { openMobile: false });
-  }, [showReviewerSidePanelTab, sidePanelTab, setSidePanelTab]);
 
   const clearPanelFromUrl = useCallback(() => {
     setSearchParams(
@@ -1526,8 +1564,8 @@ export default function Session() {
               onClick={toggleSidePanel}
               className={`xl:hidden flex items-center justify-center shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                 !isNewSessionRoute &&
-                sidePanelTab === 'reviewer' &&
-                session?.review_status === 'running' &&
+                reviewer &&
+                (reviewer.status === 'running' || reviewer.status === 'approval') &&
                 !showTasks
                   ? 'text-accent motion-safe:animate-pulse'
                   : 'text-faint hover:text-heading'
@@ -1606,6 +1644,9 @@ export default function Session() {
                 loadingMore={loadingMore}
                 hasMore={hasMore}
                 session={session}
+                activeAgent={activeAgent}
+                agents={agents}
+                onSelectAgent={selectAgent}
                 systemPrompt={systemPrompt}
                 onViewChange={setView}
                 readonly={isReadonly}
@@ -1631,9 +1672,8 @@ export default function Session() {
                 readonly={isReadonly}
                 issues={sessionIssues}
                 issuesLoading={sessionIssuesLoading}
-                reviewerDrawerOpen={isXlScreen || showTasks}
-                reviewerPanelActive={isSidePanelOpen && sidePanelTab === 'reviewer'}
-                onOpenReviewer={() => setSidePanelTab('reviewer')}
+                onReviewAgentStarted={selectAgent}
+                onSelectPrimaryBuilder={() => primaryBuilder && selectAgent(primaryBuilder)}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'diff' && (
@@ -1688,7 +1728,10 @@ export default function Session() {
             <SessionMainViewFooter
               session={session}
               onShowTasks={() => setSidePanelTab('tasks')}
-              onShowReviewer={() => setSidePanelTab('reviewer')}
+              onShowReviewer={() => {
+                if (reviewer) selectAgent(reviewer);
+                else setSidePanelTab('agents');
+              }}
             />
           )}
         </div>
@@ -1703,9 +1746,7 @@ export default function Session() {
         )}
         {isSidePanelOpen && (
           <div
-            className={`flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-line bg-nav fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)] ${
-              sidePanelTab === 'reviewer' ? 'max-w-xl md:max-w-[min(85vw,100%)]' : ''
-            }`}
+            className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-line bg-nav fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)]"
             style={{ '--side-panel-w': `${sidePanelWidth}px` }}
           >
             <div
@@ -1746,12 +1787,15 @@ export default function Session() {
               onViewLogs={handleViewTaskLogs}
               onViewBaguetteConfig={handleViewBaguetteConfig}
               showBaguetteConfigLink={!isGlobalSession(session)}
-              rawMessages={rawMessages}
-              loadMore={loadMore}
-              loadingMore={loadingMore}
-              hasMore={hasMore}
+              rawMessages={logRawMessages}
+              loadMore={loadMoreLogs}
+              loadingMore={loadingMoreLogs}
+              hasMore={hasMoreLogs}
+              agentLabelById={agentLabelById}
               sessionId={sessionId}
-              showReviewerTab={showReviewerSidePanelTab}
+              selectedAgentId={activeAgent?.id}
+              onSelectAgent={selectAgent}
+              onReviewerCleared={handleReviewerCleared}
             />
           </div>
         )}

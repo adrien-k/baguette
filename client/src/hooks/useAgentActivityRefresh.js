@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react';
-import { sessionsService } from '../feathers.js';
+import { agentsService, sessionsService } from '../feathers.js';
+import { isAnyAgentRunning, isReviewInProgressForSession } from '../utils/sessionAgents.js';
 
 const CHAT_ACTIVE = new Set(['running', 'provisioning', 'archiving']);
 
 function chatAgentActive(session) {
-  return !!session && !session.archived_at && CHAT_ACTIVE.has(session.status);
+  if (!session || session.archived_at) return false;
+  if (CHAT_ACTIVE.has(session.status)) return true;
+  return isAnyAgentRunning(session);
 }
 
 function reviewAgentActive(session) {
-  return !!session && !session.archived_at && session.review_status === 'running';
+  return isReviewInProgressForSession(session);
 }
 
 function activeSlotsChanged(prev, next) {
@@ -44,16 +47,23 @@ export function useAgentActivityRefresh(reload) {
       if (chatAgentActive(session) || reviewAgentActive(session)) refresh();
     };
 
+    const onAgentPatched = (agent) => {
+      if (!agent?.session_id) return;
+      refresh();
+    };
+
     sessionsService.on('turn:start', refresh);
     sessionsService.on('turn:complete', refresh);
     sessionsService.on('patched', onPatched);
     sessionsService.on('created', onCreated);
+    agentsService.on('patched', onAgentPatched);
 
     return () => {
       sessionsService.off('turn:start', refresh);
       sessionsService.off('turn:complete', refresh);
       sessionsService.off('patched', onPatched);
       sessionsService.off('created', onCreated);
+      agentsService.off('patched', onAgentPatched);
     };
   }, [reload]);
 }
