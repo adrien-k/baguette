@@ -68,8 +68,7 @@ export default function ReviewView({
   readonly,
   issues,
   issuesLoading,
-  onReviewAgentStarted,
-  onSelectPrimaryBuilder,
+  onOpenReviewerChat,
 }) {
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
@@ -160,7 +159,7 @@ export default function ReviewView({
   const isRunning = isAgentTurnActive(reviewer?.status);
   const hasReviewerAgent = Boolean(reviewer?.id);
   const openReviewerChat = () => {
-    if (reviewer) onReviewAgentStarted?.(reviewer);
+    if (reviewer) onOpenReviewerChat?.(reviewer);
   };
   const hasSdkKey =
     configsLoading ||
@@ -238,7 +237,6 @@ export default function ReviewView({
     if (!session?.id || issue.status !== 'opened') return;
     try {
       await sessionIssuesService.askAgentToFix(issue.id);
-      onSelectPrimaryBuilder?.();
     } catch (err) {
       toastError('Failed to submit issue for a fix', err);
     }
@@ -248,7 +246,6 @@ export default function ReviewView({
     if (!session?.id || opened.length === 0) return;
     try {
       await sessionIssuesService.askAgentToFixAll({ session_id: session.id });
-      onSelectPrimaryBuilder?.();
     } catch (err) {
       toastError('Failed to submit issues for a fix', err);
     }
@@ -306,7 +303,7 @@ export default function ReviewView({
     setStarting(true);
     try {
       const trimmedFocus = reviewUserMessage.trim();
-      const agent = await agentsService.create({
+      await agentsService.create({
         session_id: session.id,
         agent_type: 'reviewer',
         agent_config_id: reviewConfigId,
@@ -314,9 +311,6 @@ export default function ReviewView({
         model_params: reviewModelParams,
         initial_prompt: trimmedFocus || null,
       });
-      if (agent?.id) {
-        onReviewAgentStarted?.({ id: agent.id, name: 'Reviewer', agent_type: 'reviewer' });
-      }
     } catch (err) {
       toastError('Failed to start review', err);
     } finally {
@@ -351,7 +345,6 @@ export default function ReviewView({
           model_params: reviewModelParams,
         }),
       });
-      onReviewAgentStarted?.(reviewer);
     } catch (err) {
       toastError('Failed to review latest changes', err);
     } finally {
@@ -416,6 +409,16 @@ export default function ReviewView({
         </div>
         <p className="text-sm font-medium text-heading whitespace-nowrap">Review in progress</p>
       </div>
+      {hasReviewerAgent && (
+        <button
+          type="button"
+          onClick={openReviewerChat}
+          className={`${SECONDARY_BUTTON_CLASS} w-full justify-center gap-2 whitespace-nowrap @min-[36rem]:w-auto @min-[36rem]:ml-auto shrink-0`}
+        >
+          <Bot className="h-4 w-4 shrink-0 text-accent" aria-hidden />
+          Open {reviewer?.name ?? 'reviewer'} chat
+        </button>
+      )}
     </div>
   );
 

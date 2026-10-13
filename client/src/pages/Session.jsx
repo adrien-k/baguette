@@ -1667,8 +1667,7 @@ export default function Session() {
                 readonly={isReadonly}
                 issues={sessionIssues}
                 issuesLoading={sessionIssuesLoading}
-                onReviewAgentStarted={selectAgent}
-                onSelectPrimaryBuilder={() => primaryBuilder && selectAgent(primaryBuilder)}
+                onOpenReviewerChat={selectAgent}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'diff' && (
