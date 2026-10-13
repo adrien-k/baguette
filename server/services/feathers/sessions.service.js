@@ -88,7 +88,8 @@ import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { estimateUsageRowCostUsd } from '../../lib/usage-row-cost.js';
-import { usageAgentConfigIdForTurn } from '../../lib/usage-agent-config.js';
+import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
+import { usagePricingSnapshotForCost } from '../../lib/usage-pricing-snapshot.js';
 import { getAgentById } from '../agents-db.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
@@ -1294,7 +1295,7 @@ export class SessionsService extends KnexService {
   async recordClaudeUsage(
     session,
     result,
-    { model, totalsKey, patchSessionCost, agentConfigId, agentId } = {}
+    { turnModel, totalsKey, patchSessionCost, agentConfigId, agentId } = {}
   ) {
     if (!session || !result) return 0;
     const key = totalsKey ?? session.id;
@@ -1313,14 +1314,14 @@ export class SessionsService extends KnexService {
         ? await getAgentById(db, agentId)
         : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
     const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = agent ?? session;
+    const snapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
 
     const row = {
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
       cost_usd: Math.max(costUpdate, 0),
-      agent_sdk: agent?.agent_sdk ?? session.agent_sdk ?? 'claude',
+      agent_sdk: agent?.agent_sdk ?? 'claude',
       agent_type,
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
@@ -1328,11 +1329,9 @@ export class SessionsService extends KnexService {
       cache_write_tokens: turnUsage.cache_write_tokens,
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
-      model: turnUsage.model ?? model ?? agent?.model ?? session.model ?? null,
-      agent_config_id: usageAgentConfigIdForTurn(pricingSnapshot, {
-        agentType: agent_type,
-        agentConfigId,
-      }),
+      model: snapshot.model,
+      model_params: snapshot.model_params,
+      agent_config_id: requireAgentConfigId(agentConfigId),
     };
     if (agent?.id != null) row.agent_id = agent.id;
     await db('usage').insert(row);
@@ -1372,11 +1371,8 @@ export class SessionsService extends KnexService {
         ? await getAgentById(db, agentId)
         : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
     const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = agent ?? session;
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot, {
-      agentType: agent_type,
-      turnModel,
-    });
+    const pricingSnapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
+    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot);
 
     if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
 
@@ -1387,10 +1383,7 @@ export class SessionsService extends KnexService {
       cost_usd: Math.max(costUsd, 0),
       agent_sdk: 'cursor',
       agent_type,
-      agent_config_id: usageAgentConfigIdForTurn(pricingSnapshot, {
-        agentType: agent_type,
-        agentConfigId,
-      }),
+      agent_config_id: requireAgentConfigId(agentConfigId),
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
@@ -1398,7 +1391,8 @@ export class SessionsService extends KnexService {
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
       raw_token_usage: turnUsage.raw_token_usage,
-      model: turnUsage.model ?? turnModel?.model ?? agent?.model ?? session.model ?? null,
+      model: pricingSnapshot.model,
+      model_params: pricingSnapshot.model_params,
     };
     if (agent?.id != null) row.agent_id = agent.id;
     await db('usage').insert(row);
@@ -1434,11 +1428,8 @@ export class SessionsService extends KnexService {
         ? await getAgentById(db, agentId)
         : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
     const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = agent ?? session;
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot, {
-      agentType: agent_type,
-      turnModel,
-    });
+    const pricingSnapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
+    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot);
 
     if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
 
@@ -1449,17 +1440,15 @@ export class SessionsService extends KnexService {
       cost_usd: Math.max(costUsd, 0),
       agent_sdk: 'pi',
       agent_type,
-      agent_config_id: usageAgentConfigIdForTurn(pricingSnapshot, {
-        agentType: agent_type,
-        agentConfigId,
-      }),
+      agent_config_id: requireAgentConfigId(agentConfigId),
       input_tokens: turnUsage.input_tokens,
       output_tokens: turnUsage.output_tokens,
       cache_read_tokens: turnUsage.cache_read_tokens,
       cache_write_tokens: turnUsage.cache_write_tokens,
       reasoning_tokens: turnUsage.reasoning_tokens,
       total_tokens: turnUsage.total_tokens,
-      model: turnUsage.model ?? turnModel?.model ?? agent?.model ?? session.model ?? null,
+      model: pricingSnapshot.model,
+      model_params: pricingSnapshot.model_params,
     };
     if (agent?.id != null) row.agent_id = agent.id;
     await db('usage').insert(row);

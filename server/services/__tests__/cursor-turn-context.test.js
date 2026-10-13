@@ -5,9 +5,9 @@ import { ensureReviewerAgentRow } from '../agents-db.js';
 import { CursorAgentService } from '../feathers/cursor-agent.service.ts';
 
 /**
- * Required turn context on Cursor: the model snapshot must come from the message row
- * (model + model_params) and credentials from the session's agent config. A row
- * missing them must fail the turn through the service's visible error path.
+ * Required turn context on Cursor: the model snapshot and credentials must come
+ * from the message row (model, model_params, agent_config_id). A row missing
+ * them must fail the turn through the service's visible error path.
  */
 describe('CursorAgentService turn context', () => {
   const db = createTestDb();
@@ -120,8 +120,7 @@ describe('CursorAgentService turn context', () => {
     });
   });
 
-  it('marks the chat turn failed when the session has no agent config', async () => {
-    await db('agents').where({ session_id: 1, is_primary: 1 }).update({ agent_config_id: null });
+  it('marks the chat turn failed when the message has no agent config', async () => {
     const service = new CursorAgentService();
     service.setup(app);
 
@@ -144,7 +143,7 @@ describe('CursorAgentService turn context', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('resolves credentials from the message row config over the session config', async () => {
+  it('resolves credentials from the message row agent_config_id', async () => {
     await db('agent_configs').insert({
       id: 6,
       user_id: 1,

@@ -56,16 +56,27 @@ const resultPayload = ({ cost, models }) => ({
   modelUsage: models,
 });
 
+async function insertTestAgentConfig(userId, sdk = 'claude') {
+  const [id] = await db('agent_configs').insert({
+    user_id: userId,
+    label: 'test',
+    sdk,
+  });
+  return id;
+}
+
 async function seed() {
   const [userId] = await db('users').insert({ github_id: '1', username: 'tester' });
+  const agentConfigId = await insertTestAgentConfig(userId);
   const sessionId = await insertTestSession(db, {
     user_id: userId,
     repo_full_name: 'acme/app',
     base_branch: 'main',
     initial_prompt: 'do a thing',
     agent_sdk: 'claude',
+    agent_config_id: agentConfigId,
   });
-  return { userId, sessionId };
+  return { userId, sessionId, agentConfigId };
 }
 
 function makeService() {
@@ -83,16 +94,22 @@ function makeService() {
 
 const usageRows = (sessionId) => db('usage').where({ session_id: sessionId }).orderBy('id');
 
+const claudeTurnModel = { model: 'sonnet', modelParams: null };
+
+function claudeRecordOpts(agentConfigId, extra = {}) {
+  return { agentConfigId, turnModel: claudeTurnModel, ...extra };
+}
+
 describe('claude usage recording', () => {
   it('records the first turn in full', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await service.recordClaudeUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200, 50, 10) } }),
-      { patchSessionCost: true }
+      claudeRecordOpts(agentConfigId, { patchSessionCost: true })
     );
 
     const rows = await usageRows(sessionId);
@@ -108,17 +125,19 @@ describe('claude usage recording', () => {
   });
 
   it('records only the increment on the second turn', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await service.recordClaudeUsage(
       session,
-      resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } })
+      resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
+      claudeRecordOpts(agentConfigId)
     );
     await service.recordClaudeUsage(
       session,
-      resultPayload({ cost: 0.3, models: { 'claude-opus-5': modelUsage(2500, 450) } })
+      resultPayload({ cost: 0.3, models: { 'claude-opus-5': modelUsage(2500, 450) } }),
+      claudeRecordOpts(agentConfigId)
     );
 
     const rows = await usageRows(sessionId);
@@ -129,19 +148,19 @@ describe('claude usage recording', () => {
   });
 
   it('keeps the session total equal to the last cumulative figure', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await service.recordClaudeUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
-      { patchSessionCost: true }
+      claudeRecordOpts(agentConfigId, { patchSessionCost: true })
     );
     await service.recordClaudeUsage(
       session,
       resultPayload({ cost: 0.3, models: { 'claude-opus-5': modelUsage(2500, 450) } }),
-      { patchSessionCost: true }
+      claudeRecordOpts(agentConfigId, { patchSessionCost: true })
     );
 
     const totals = await db('usage')
@@ -155,17 +174,19 @@ describe('claude usage recording', () => {
   });
 
   it('treats a reset counter after a resume as fresh work', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await service.recordClaudeUsage(
       session,
-      resultPayload({ cost: 0.5, models: { 'claude-opus-5': modelUsage(5000, 900) } })
+      resultPayload({ cost: 0.5, models: { 'claude-opus-5': modelUsage(5000, 900) } }),
+      claudeRecordOpts(agentConfigId)
     );
     await service.recordClaudeUsage(
       session,
-      resultPayload({ cost: 0.02, models: { 'claude-opus-5': modelUsage(100, 20) } })
+      resultPayload({ cost: 0.02, models: { 'claude-opus-5': modelUsage(100, 20) } }),
+      claudeRecordOpts(agentConfigId)
     );
 
     const rows = await usageRows(sessionId);
@@ -175,13 +196,14 @@ describe('claude usage recording', () => {
   });
 
   it('records tokens for a turn that was not billed', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await service.recordClaudeUsage(
       session,
-      resultPayload({ cost: 0, models: { 'claude-opus-5': modelUsage(800, 60) } })
+      resultPayload({ cost: 0, models: { 'claude-opus-5': modelUsage(800, 60) } }),
+      claudeRecordOpts(agentConfigId)
     );
 
     const rows = await usageRows(sessionId);
@@ -196,13 +218,21 @@ describe('claude usage recording', () => {
   });
 
   it('writes no row for a turn that moved neither cost nor tokens', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     const same = { 'claude-opus-5': modelUsage(1000, 200) };
-    await service.recordClaudeUsage(session, resultPayload({ cost: 0.12, models: same }));
-    await service.recordClaudeUsage(session, resultPayload({ cost: 0.12, models: same }));
+    await service.recordClaudeUsage(
+      session,
+      resultPayload({ cost: 0.12, models: same }),
+      claudeRecordOpts(agentConfigId)
+    );
+    await service.recordClaudeUsage(
+      session,
+      resultPayload({ cost: 0.12, models: same }),
+      claudeRecordOpts(agentConfigId)
+    );
 
     expect(await usageRows(sessionId)).toHaveLength(1);
   });
@@ -221,7 +251,7 @@ describe('claude usage recording', () => {
     expect(service._patch).not.toHaveBeenCalled();
   });
 
-  it('prefers agentConfigId snapshot over session agent_config_id on the row', async () => {
+  it('stores the passed agentConfigId on the usage row', async () => {
     const { userId, sessionId } = await seed();
     const [configA] = await db('agent_configs').insert({
       user_id: userId,
@@ -242,7 +272,7 @@ describe('claude usage recording', () => {
     await service.recordClaudeUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
-      { agentConfigId: configA }
+      claudeRecordOpts(configA)
     );
 
     const rows = await usageRows(sessionId);
@@ -251,27 +281,29 @@ describe('claude usage recording', () => {
   });
 
   it('records review usage without mixing chat running totals', async () => {
-    const { sessionId } = await seed();
+    const { sessionId, agentConfigId } = await seed();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await service.recordClaudeUsage(
       session,
-      resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } })
+      resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
+      claudeRecordOpts(agentConfigId)
     );
     const reviewer = await ensureReviewerAgentRow(db, sessionId, {
       agent_sdk: 'claude',
       model: 'sonnet',
       status: 'completed',
+      agent_config_id: agentConfigId,
     });
     await service.recordClaudeUsage(
       session,
       { total_cost_usd: 0.01, modelUsage: { 'claude-opus-5': modelUsage(10, 5) } },
-      {
+      claudeRecordOpts(agentConfigId, {
         totalsKey: `review:${reviewer.id}`,
         patchSessionCost: true,
         agentId: reviewer.id,
-      }
+      })
     );
 
     const rows = await usageRows(sessionId);
@@ -287,19 +319,21 @@ describe('claude usage recording', () => {
 describe('cursor usage recording', () => {
   async function seedCursor(overrides = {}) {
     const [userId] = await db('users').insert({ github_id: '1', username: 'tester' });
+    const agentConfigId = await insertTestAgentConfig(userId, 'cursor');
     const sessionId = await insertTestSession(db, {
       user_id: userId,
       repo_full_name: 'acme/app',
       base_branch: 'main',
       initial_prompt: 'do a thing',
       agent_sdk: 'cursor',
+      agent_config_id: agentConfigId,
       ...overrides,
     });
-    return { userId, sessionId };
+    return { userId, sessionId, agentConfigId };
   }
 
   it('estimates per-turn cost from the pricing table', async () => {
-    const { sessionId } = await seedCursor();
+    const { sessionId, agentConfigId } = await seedCursor();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
@@ -312,7 +346,11 @@ describe('cursor usage recording', () => {
       model: 'gpt-5.4-nano',
     };
 
-    await service.recordCursorUsage(session, turnUsage, { patchSessionCost: true });
+    await service.recordCursorUsage(session, turnUsage, {
+      agentConfigId,
+      turnModel: { model: 'gpt-5.4-nano', modelParams: null },
+      patchSessionCost: true,
+    });
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
@@ -329,7 +367,7 @@ describe('cursor usage recording', () => {
   });
 
   it('records zero cost when the model is not in the pricing table', async () => {
-    const { sessionId } = await seedCursor({ model: 'composer-2' });
+    const { sessionId, agentConfigId } = await seedCursor({ model: 'composer-2' });
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
@@ -339,7 +377,11 @@ describe('cursor usage recording', () => {
       model: 'composer-2',
     };
 
-    await service.recordCursorUsage(session, turnUsage, { patchSessionCost: true });
+    await service.recordCursorUsage(session, turnUsage, {
+      agentConfigId,
+      turnModel: { model: 'composer-2', modelParams: null },
+      patchSessionCost: true,
+    });
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
@@ -348,18 +390,22 @@ describe('cursor usage recording', () => {
   });
 
   it('records nothing when there are no tokens and no priced cost', async () => {
-    const { sessionId } = await seedCursor();
+    const { sessionId, agentConfigId } = await seedCursor();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordCursorUsage(session, emptyTurnUsage(), { patchSessionCost: true });
+    await service.recordCursorUsage(session, emptyTurnUsage(), {
+      agentConfigId,
+      turnModel: { model: 'gpt-5.4-nano', modelParams: null },
+      patchSessionCost: true,
+    });
 
     expect(await usageRows(sessionId)).toHaveLength(0);
     expect(service._patch).not.toHaveBeenCalled();
   });
 
   it('accumulates session total across priced turns', async () => {
-    const { sessionId } = await seedCursor();
+    const { sessionId, agentConfigId } = await seedCursor();
     const service = makeService();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
@@ -369,9 +415,14 @@ describe('cursor usage recording', () => {
       model: 'gpt-5.4-nano',
     };
 
-    await service.recordCursorUsage(session, turnUsage, { patchSessionCost: true });
+    const cursorOpts = {
+      agentConfigId,
+      turnModel: { model: 'gpt-5.4-nano', modelParams: null },
+      patchSessionCost: true,
+    };
+    await service.recordCursorUsage(session, turnUsage, cursorOpts);
     await db('sessions').where({ id: sessionId }).update({ total_cost_usd: 0.2 });
-    await service.recordCursorUsage(session, turnUsage, { patchSessionCost: true });
+    await service.recordCursorUsage(session, turnUsage, cursorOpts);
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
@@ -385,7 +436,7 @@ describe('cursor usage recording', () => {
   });
 
   it('uses turn model params for pricing, not the session snapshot', async () => {
-    const { sessionId } = await seedCursor({
+    const { sessionId, agentConfigId } = await seedCursor({
       model: 'composer-2.5',
       model_params: JSON.stringify([{ id: 'fast', value: 'false' }]),
     });
@@ -402,19 +453,28 @@ describe('cursor usage recording', () => {
       modelParams: JSON.stringify([{ id: 'fast', value: 'true' }]),
     };
 
-    await service.recordCursorUsage(session, turnUsage, { turnModel, patchSessionCost: true });
+    await service.recordCursorUsage(session, turnUsage, {
+      turnModel,
+      agentConfigId,
+      patchSessionCost: true,
+    });
 
     const rows = await usageRows(sessionId);
     expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(3, 6);
+    expect(rows[0].model_params).toBe(turnModel.modelParams);
   });
 
-  it('falls back to the session model when the run did not name one', async () => {
-    const { sessionId } = await seedCursor({ model: 'composer-2' });
+  it('stores the turn model when token usage did not name one', async () => {
+    const { sessionId, agentConfigId } = await seedCursor({ model: 'composer-2' });
     const service = makeService();
     const session = await sessionForUsage(sessionId);
     const turnUsage = { ...emptyTurnUsage(), total_tokens: 40 };
 
-    await service.recordCursorUsage(session, turnUsage, { patchSessionCost: true });
+    await service.recordCursorUsage(session, turnUsage, {
+      agentConfigId,
+      turnModel: { model: 'composer-2', modelParams: null },
+      patchSessionCost: true,
+    });
 
     const rows = await usageRows(sessionId);
     expect(rows[0].model).toBe('composer-2');

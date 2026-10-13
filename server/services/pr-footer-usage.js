@@ -16,12 +16,8 @@ function formatUsd(n) {
   return `$${value.toFixed(0)}`;
 }
 
-function cursorFastEnabled(session, agentType) {
-  const isReviewer = normalizeUsageAgentType(agentType) === 'reviewer';
-  const paramsJson = isReviewer
-    ? (session.review_model_params ?? session.model_params)
-    : session.model_params;
-  return parseModelParamsJson(paramsJson).fast === 'true';
+function cursorFastFromModelParams(modelParams) {
+  return parseModelParamsJson(modelParams).fast === 'true';
 }
 
 /**
@@ -31,13 +27,13 @@ function cursorFastEnabled(session, agentType) {
 async function querySessionUsageByModel(db, sessionId) {
   const rows = await db('usage')
     .where({ session_id: sessionId })
-    .select('agent_type', 'model', 'agent_sdk')
+    .select('agent_type', 'model', 'model_params', 'agent_sdk')
     .sum('cost_usd as cost_usd')
     .sum('input_tokens as input_tokens')
     .sum('output_tokens as output_tokens')
     .sum('cache_read_tokens as cache_read_tokens')
     .sum('cache_write_tokens as cache_write_tokens')
-    .groupByRaw('agent_type, model, agent_sdk')
+    .groupByRaw('agent_type, model, model_params, agent_sdk')
     .orderBy('agent_sdk')
     .orderBy('model')
     .orderBy('agent_type');
@@ -46,6 +42,7 @@ async function querySessionUsageByModel(db, sessionId) {
     agent_type: normalizeUsageAgentType(r.agent_type),
     model: r.model || 'unknown',
     agent_sdk: r.agent_sdk || 'claude',
+    model_params: r.model_params ?? null,
     cost_usd: parseFloat(r.cost_usd ?? 0),
     input_tokens: Number(r.input_tokens ?? 0),
     output_tokens: Number(r.output_tokens ?? 0),
@@ -55,16 +52,15 @@ async function querySessionUsageByModel(db, sessionId) {
 }
 
 /**
- * Merge usage rows that share agent_sdk, model, and Cursor fast flag (from session snapshots).
+ * Merge usage rows that share agent_sdk, model, and Cursor fast flag (from stored model_params).
  *
  * @param {ReturnType<typeof querySessionUsageByModel> extends Promise<infer T> ? T : never} rows
- * @param {Record<string, unknown>} session
  */
-export function mergeUsageForPrFooter(rows, session) {
+export function mergeUsageForPrFooter(rows) {
   const merged = new Map();
 
   for (const row of rows) {
-    const fast = row.agent_sdk === 'cursor' ? cursorFastEnabled(session, row.agent_type) : false;
+    const fast = row.agent_sdk === 'cursor' ? cursorFastFromModelParams(row.model_params) : false;
     const key = `${row.agent_sdk}\0${row.model}\0${fast ? '1' : '0'}`;
     const prev = merged.get(key);
     if (prev) {
@@ -115,5 +111,5 @@ export async function loadSessionFooterUsageLines(db, session) {
   if (!session?.id) return [];
   const rows = await querySessionUsageByModel(db, session.id);
   if (!rows.length) return [];
-  return mergeUsageForPrFooter(rows, session).map(formatPrFooterUsageLine);
+  return mergeUsageForPrFooter(rows).map(formatPrFooterUsageLine);
 }

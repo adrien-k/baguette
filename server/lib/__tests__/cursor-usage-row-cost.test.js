@@ -3,8 +3,8 @@ import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustm
 import { estimateCursorUsageCostUsd } from '../cursor-usage-row-cost.js';
 
 describe('estimateCursorUsageCostUsd', () => {
-  it('prices from usage model and session params', () => {
-    const session = {
+  it('prices from usage model and snapshot params', () => {
+    const snapshot = {
       model: 'composer-2.5',
       model_params: JSON.stringify([{ id: 'fast', value: 'false' }]),
     };
@@ -17,11 +17,11 @@ describe('estimateCursorUsageCostUsd', () => {
       total_tokens: 1_000_000,
       model: 'composer-2.5',
     };
-    expect(estimateCursorUsageCostUsd(turnUsage, session)).toBeCloseTo(0.5, 6);
+    expect(estimateCursorUsageCostUsd(turnUsage, snapshot)).toBeCloseTo(0.5, 6);
   });
 
   it('bills uncached input only when cache read is included in input', () => {
-    const session = { model: 'gpt-5.4-nano', model_params: null };
+    const snapshot = { model: 'gpt-5.4-nano', model_params: null };
     const inflated = {
       input_tokens: 1000,
       output_tokens: 0,
@@ -34,17 +34,15 @@ describe('estimateCursorUsageCostUsd', () => {
     const derived = { ...inflated };
     applyCursorUsageDerivation(derived);
     const uncached = { ...inflated, input_tokens: 30, total_tokens: 1000 };
-    expect(estimateCursorUsageCostUsd(derived, session)).toBeCloseTo(
-      estimateCursorUsageCostUsd(uncached, session),
+    expect(estimateCursorUsageCostUsd(derived, snapshot)).toBeCloseTo(
+      estimateCursorUsageCostUsd(uncached, snapshot),
       10
     );
   });
 
-  it('uses review model fields when agent type is reviewer', () => {
-    const session = {
-      model: 'composer-2',
-      review_model: 'gpt-5.4-nano',
-      review_model_params: null,
+  it('prices from the snapshot model when the turn has no model', () => {
+    const snapshot = {
+      model: 'gpt-5.4-nano',
       model_params: null,
     };
     const turnUsage = {
@@ -56,9 +54,6 @@ describe('estimateCursorUsageCostUsd', () => {
       total_tokens: 1_000_000,
       model: null,
     };
-    expect(estimateCursorUsageCostUsd(turnUsage, session, { agentType: 'reviewer' })).toBeCloseTo(
-      0.2,
-      6
-    );
+    expect(estimateCursorUsageCostUsd(turnUsage, snapshot)).toBeCloseTo(0.2, 6);
   });
 });

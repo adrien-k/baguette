@@ -46,12 +46,6 @@ try {
       continue;
     }
 
-    const session = {
-      agent_type: row.agent_type,
-      model: row.agent_model,
-      model_params: row.agent_model_params,
-    };
-
     const derived = deriveCursorUsageFromRaw(raw);
     const turnUsage = {
       ...raw,
@@ -59,7 +53,7 @@ try {
       total_tokens: derived.total_tokens,
       model: row.model,
     };
-    const costUsd = estimateCursorUsageCostUsd(turnUsage, session, { agentType: row.agent_type });
+    const costUsd = estimateCursorUsageCostUsd(turnUsage, row);
 
     if (!dryRun) {
       await db('usage').where({ id: row.id }).update({

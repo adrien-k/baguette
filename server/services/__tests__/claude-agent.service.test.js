@@ -215,6 +215,7 @@ describe('ClaudeAgentService', () => {
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
       const sessionState = await service.createAgentSession(sessionRow, BASE_BUILDER, {
         model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
       });
 
       // query() started with cwd pointing at the worktree
@@ -257,7 +258,10 @@ describe('ClaudeAgentService', () => {
       });
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       expect(typeof capturedOptions.canUseTool).toBe('function');
     });
@@ -287,7 +291,10 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       // Wait for the background processMessages loop to finish
       await vi.waitFor(() => {
@@ -318,6 +325,7 @@ describe('ClaudeAgentService', () => {
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
       const sessionState = await service.createAgentSession(sessionRow, BASE_BUILDER, {
         model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
       });
 
       await vi.waitFor(() => {
@@ -387,7 +395,10 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
@@ -411,7 +422,10 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -458,7 +472,10 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -508,7 +525,10 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
@@ -568,7 +588,10 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => mockIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         const notifCalls = mockApp._messageCreate.mock.calls.filter(
@@ -609,7 +632,10 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         const patchCalls = mockApp._agentPatch.mock.calls;
@@ -633,7 +659,10 @@ describe('ClaudeAgentService', () => {
       );
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
@@ -665,7 +694,10 @@ describe('ClaudeAgentService', () => {
       query.mockImplementation(() => errorIterable);
 
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
@@ -725,7 +757,10 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -750,7 +785,10 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -781,7 +819,10 @@ describe('ClaudeAgentService', () => {
       });
       query.mockImplementation(() => makeNeverEndingIterable());
       const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
-      await service.createAgentSession(sessionRow, BASE_BUILDER, { model: BASE_BUILDER.model });
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
 
       const active = service.getActiveSession(BASE_SESSION_ID);
       const pushSpy = vi.spyOn(active.channel, 'push');
@@ -900,8 +941,7 @@ describe('ClaudeAgentService', () => {
       expect(query).not.toHaveBeenCalled();
     });
 
-    it('refuses to start a turn when the session has no agent config', async () => {
-      await db('agents').where({ id: BASE_BUILDER.id }).update({ agent_config_id: null });
+    it('refuses to start a turn when the message has no agent config', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
         _db: mockApp.get('db'),

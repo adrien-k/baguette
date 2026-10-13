@@ -27,10 +27,7 @@ import { resolvePiCredentials } from '../pi/pi-config.js';
 import { piAgentDir, piSessionsDir, piWorktreeCwd } from '../pi/pi-session-paths.js';
 import { lunaroutePiAdditionalExtensionPaths } from '../pi/pi-lunaroute-extension-path.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
-import {
-  requireAgentConfigIdForTurn,
-  usageAgentConfigIdForSession,
-} from '../../lib/usage-agent-config.js';
+import { coerceAgentConfigId, requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import {
   isDispatchableUserMessage,
   parseUserRow,
@@ -113,29 +110,17 @@ export class PiAgentService {
 
   async resolveCredentials(
     session: AgentSessionRow,
-    channel: MessageChannel = 'chat',
+    _channel: MessageChannel = 'chat',
     agentConfigId?: number | null
   ) {
-    const config = await this.loadAgentConfig(session, channel, agentConfigId);
+    const config = await this.loadAgentConfig(session.user_id, agentConfigId);
     return resolvePiCredentials(config);
   }
 
-  /** Decrypted agent_configs row for a session (null when the session has none). */
-  private async loadAgentConfig(
-    session: {
-      agent_config_id?: number | null;
-      review_agent_config_id?: number | null;
-      user_id: number;
-    },
-    channel: MessageChannel = 'chat',
-    agentConfigId?: number | null
-  ) {
-    const configId = agentConfigId ?? usageAgentConfigIdForSession(session, channel);
-    return loadOwnedAgentConfigDecrypted(
-      configId,
-      session.user_id,
-      this.app.get('db') as DbLike as never
-    );
+  /** Decrypted agent_configs row (null when no config id). */
+  private async loadAgentConfig(userId: number, agentConfigId?: number | null) {
+    const configId = coerceAgentConfigId(agentConfigId);
+    return loadOwnedAgentConfigDecrypted(configId, userId, this.app.get('db') as DbLike as never);
   }
 
   async _buildAppendSystemPrompt(session: AgentSessionRow): Promise<string[]> {
@@ -186,7 +171,7 @@ export class PiAgentService {
       modelParams?: unknown;
       customTools?: CreateAgentSessionOptions['customTools'];
       channel?: MessageChannel;
-      /** The turn's agent config snapshot (from the message row); falls back to the session. */
+      /** The turn's agent config snapshot (from the message row). */
       agentConfigId?: number | null;
       storedPiSessionId?: string | null;
       appendSystemPrompt?: string[];
@@ -195,7 +180,8 @@ export class PiAgentService {
     await this._ensurePiDirs(session);
     const cwd = piWorktreeCwd(session);
     const agentDir = piAgentDir(session) ?? undefined;
-    const agentConfig = await this.loadAgentConfig(session, channel, agentConfigId);
+    const configId = requireAgentConfigId(agentConfigId);
+    const agentConfig = await this.loadAgentConfig(session.user_id, configId);
     const { apiKey, envVar } = resolvePiCredentials(agentConfig);
     if (!apiKey) {
       throw new Error('Pi API key is not configured for this session');
@@ -490,10 +476,9 @@ export class PiAgentService {
     let awaitingUser = false;
     try {
       // Required turn context, resolved here so failures follow the turn's error path:
-      // the model snapshot comes from the message row, credentials from the row's
-      // agent config (session fallback for legacy rows).
+      // model and agent config come from the message row.
       const turnModel = requireTurnModelFromRow(row, { sdk: 'pi' });
-      const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
+      const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
       writer =
         turnId != null
           ? createMessageStreamWriter(this.app, {
@@ -733,12 +718,7 @@ Task: ${initialPrompt}`;
     let label = '';
     let branchName = fallbackBranch;
 
-    const config = user?.id
-      ? await this.loadAgentConfig({
-          agent_config_id: session?.agent_config_id ?? null,
-          user_id: user.id,
-        })
-      : null;
+    const config = user?.id ? await this.loadAgentConfig(user.id, session?.agent_config_id) : null;
     const { apiKey, envVar } = resolvePiCredentials(config);
     if (!apiKey) {
       return { label, branchName };

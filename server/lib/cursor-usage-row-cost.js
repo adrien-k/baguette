@@ -13,21 +13,12 @@ import { usageModelFieldsFromSnapshot } from './usage-snapshot.js';
  * `shared/cursor-token-adjustment.js`.
  *
  * @param {Record<string, unknown>} turnUsage token fields + optional `model`
- * @param {Record<string, unknown>} session Merged sessions API row or `agents` row (see `usage-snapshot.js`)
- * @param {{ agentType?: string|null, turnModel?: { model?: string|null, modelParams?: unknown } }} [options]
+ * @param {Record<string, unknown>|null|undefined} pricingSnapshot Usage/turn snapshot (`model`, `model_params`)
  * @returns {number}
  */
-export function estimateCursorUsageCostUsd(turnUsage, session, { agentType, turnModel } = {}) {
-  const { model: sessionModel, paramsJson: sessionParamsJson } = usageModelFieldsFromSnapshot(
-    session,
-    agentType
-  );
-
-  const modelId = turnUsage?.model ?? turnModel?.model ?? sessionModel ?? null;
-
-  const paramsJson =
-    turnModel?.model != null && turnModel.model !== '' ? turnModel.modelParams : sessionParamsJson;
-
+export function estimateCursorUsageCostUsd(turnUsage, pricingSnapshot) {
+  const { model: snapshotModel, paramsJson } = usageModelFieldsFromSnapshot(pricingSnapshot);
+  const modelId = turnUsage?.model ?? snapshotModel ?? null;
   const priced = estimateAgentTurnCostUsd(turnUsage, modelId, parseModelParamsJson(paramsJson));
   return priced ?? 0;
 }

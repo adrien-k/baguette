@@ -29,10 +29,7 @@ import {
 } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
-import {
-  requireAgentConfigIdForTurn,
-  usageAgentConfigIdForSession,
-} from '../../lib/usage-agent-config.js';
+import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { loadModelsForSdk } from '../baguette-models-for-user.js';
 import { parseCursorModelPrefsJson } from '../agent-preferences.js';
 import { resolveCursorAgentModelParams } from '../cursor-model-params.js';
@@ -204,28 +201,20 @@ ${body}`,
 
   async resolveApiKey(
     session: AgentSessionRow,
-    channel: MessageChannel = 'chat',
+    _channel: MessageChannel = 'chat',
     agentConfigId?: number | null
   ): Promise<string | undefined> {
-    return (await this.loadAgentConfigApiKey(session, channel, agentConfigId)) || undefined;
+    return (await this.loadAgentConfigApiKey(session.user_id, agentConfigId)) || undefined;
   }
 
-  /** API key from the session's owned agent_configs row. */
+  /** API key from the owned agent_configs row for this turn (or metadata generation). */
   private async loadAgentConfigApiKey(
-    session: {
-      agent_config_id?: number | null;
-      review_agent_config_id?: number | null;
-      user_id: number;
-    },
-    channel: MessageChannel = 'chat',
+    userId: number,
     agentConfigId?: number | null
   ): Promise<string | null> {
     const db = this.app.get('db') as DbLike;
-    const configId = agentConfigId ?? usageAgentConfigIdForSession(session, channel);
-    if (configId == null) {
-      throw new Error('Agent configuration is required to run this turn');
-    }
-    const config = await loadOwnedAgentConfigDecrypted(configId, session.user_id, db as never);
+    const configId = requireAgentConfigId(agentConfigId);
+    const config = await loadOwnedAgentConfigDecrypted(configId, userId, db as never);
     return config?.api_key || null;
   }
 
@@ -258,12 +247,12 @@ ${body}`,
       modelParams?: unknown;
       apiKey?: string | undefined;
       channel?: MessageChannel;
-      /** The turn's agent config snapshot (from the message row); falls back to the session. */
+      /** The turn's agent config snapshot (from the message row). */
       agentConfigId?: number | null;
     } = {}
   ): Promise<AgentOptions> {
     const cwd = resolveDataDirRelativePath(session.session_path) || '';
-    const configId = agentConfigId ?? usageAgentConfigIdForSession(session, channel);
+    const configId = requireAgentConfigId(agentConfigId);
     const resolvedApiKey =
       apiKey !== undefined ? apiKey : await this.resolveApiKey(session, channel, configId);
     const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
@@ -646,10 +635,9 @@ ${body}`,
     let awaitingUser = false;
     try {
       // Required turn context, resolved here so failures follow the turn's error path:
-      // the model snapshot comes from the message row (params required on Cursor),
-      // credentials from the row's agent config (session fallback for legacy rows).
+      // model and agent config come from the message row (params required on Cursor).
       const turnModel = requireTurnModelFromRow(row, { sdk: 'cursor' });
-      const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
+      const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
       const writer =
         turnId != null
           ? createMessageStreamWriter(this.app, {
@@ -1008,10 +996,7 @@ Task: ${initialPrompt}`;
     let branchName = fallbackBranch;
 
     const apiKey = user?.id
-      ? await this.loadAgentConfigApiKey({
-          agent_config_id: session?.agent_config_id ?? null,
-          user_id: user.id,
-        })
+      ? await this.loadAgentConfigApiKey(user.id, session?.agent_config_id)
       : undefined;
     // Generate the label/branch with the session's selected model (and its variant params)
     // so the metadata matches the agent that will actually run the task. Sessions created

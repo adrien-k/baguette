@@ -14,7 +14,7 @@ import {
   MOCK_AGENT_SERVICE_PATH,
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
-import { requireAgentConfigIdForTurn } from '../../lib/usage-agent-config.js';
+import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { runMockAgentTurn } from '../mock/mock-agent-turn.js';
 import { reviewTurnKey } from '../review-agent-turn.js';
 import { resolveAgentRowForMessage } from '../agents-db.js';
@@ -91,7 +91,7 @@ class MockAgentService {
     }
 
     const turnModel = requireTurnModelFromRow(row, { sdk: MOCK_AGENT_SDK });
-    const turnAgentConfigId = requireAgentConfigIdForTurn(session, row, channel);
+    const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
     attachAppErrorHandler(
       this.app,
       this._runTurn(session, row, turnModel, {
