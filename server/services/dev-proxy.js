@@ -8,8 +8,19 @@ import { getClientIp } from '../lib/client-ip.js';
 import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
 import { getLoopbackHost } from './port-utils.js';
+import { HEARTBEAT_INTERVAL_MS } from './task.js';
 
 const PROXY_COOKIE = 'baguette_proxy';
+const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
 const PROXY_COOKIE_TTL = 60 * 60 * 1000; // 1 hours
 const WEBSERVER_STARTUP_TIMEOUT_MS = 60 * 1000;
 
@@ -146,7 +157,7 @@ export class DevProxy {
     }
 
     state.task?.heartbeat();
-    return this._proxyRequest(req, res, state.port, state.loopbackHost);
+    return this._proxyRequest(req, res, state.port, state.loopbackHost, state);
   }
 
   async wsDispatch(req, socket, head, handler) {
@@ -375,19 +386,80 @@ export class DevProxy {
     return signed.startsWith('s:') ? unsign(signed.slice(2), ENCRYPTION_KEY) : false;
   }
 
-  _forwardProxyResponse(proxyRes, res) {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+  _isEventStreamContentType(contentType) {
+    if (!contentType) return false;
+    const base = String(contentType).split(';')[0].trim().toLowerCase();
+    return base === 'text/event-stream';
+  }
+
+  _disableProxySocketTimeouts(req, res) {
+    for (const socket of [req?.socket, res?.socket]) {
+      socket?.setTimeout?.(0);
+    }
+  }
+
+  _applyProxyResponseHeaders(proxyRes, res) {
+    const headers = { ...proxyRes.headers };
+    for (const name of HOP_BY_HOP_RESPONSE_HEADERS) {
+      delete headers[name];
+    }
+
+    const contentType = headers['content-type'];
+    const isEventStream = this._isEventStreamContentType(contentType);
+    if (isEventStream) {
+      delete headers['content-length'];
+      headers['x-accel-buffering'] = 'no';
+      if (!headers['cache-control']) headers['cache-control'] = 'no-cache';
+    }
+
+    res.statusCode = proxyRes.statusCode;
+    for (const [key, value] of Object.entries(headers)) {
+      if (value === undefined) continue;
+      res.setHeader(key, value);
+    }
     // Upstream may send headers long before the first body chunk (SSE, slow SSR, etc.).
+    // setHeader + flushHeaders (not writeHead) so kamal-proxy sees headers immediately.
     res.flushHeaders?.();
+  }
+
+  /** Heartbeat preview task TTL while a proxied request is open (incl. waiting for upstream headers). */
+  _startProxyTaskKeepAlive(state) {
+    if (!state?.task) return () => {};
+    state.task.heartbeat();
+    const timer = setInterval(() => state.task.heartbeat(), HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }
+
+  _forwardProxyResponse(proxyRes, res, req, stopKeepAlive) {
+    this._disableProxySocketTimeouts(req, res);
+    this._applyProxyResponseHeaders(proxyRes, res);
+
+    proxyRes.on('close', stopKeepAlive);
+    res.on('close', stopKeepAlive);
+    proxyRes.on('error', (err) => {
+      stopKeepAlive();
+      logger.error({ err: err.message }, 'Dev proxy upstream response error');
+      if (!res.headersSent) {
+        res.writeHead(502);
+        res.end('Bad Gateway');
+        return;
+      }
+      res.end();
+    });
+
     proxyRes.pipe(res);
   }
 
-  _proxyRequest(req, res, port, hostname = '127.0.0.1') {
+  _proxyRequest(req, res, port, hostname = '127.0.0.1', state) {
+    this._disableProxySocketTimeouts(req, res);
+    const stopKeepAlive = this._startProxyTaskKeepAlive(state);
     const proxyReq = http.request(
       { hostname, port, path: req.url, method: req.method, headers: req.headers },
-      (proxyRes) => this._forwardProxyResponse(proxyRes, res)
+      (proxyRes) => this._forwardProxyResponse(proxyRes, res, req, stopKeepAlive)
     );
-    proxyReq.on('error', () => {
+    proxyReq.on('error', (err) => {
+      stopKeepAlive();
+      logger.error({ err: err.message }, 'Dev proxy upstream request error');
       if (!res.headersSent) res.writeHead(502);
       res.end('Bad Gateway');
     });

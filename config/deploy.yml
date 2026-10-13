@@ -35,6 +35,9 @@ deploy_timeout: 120
 # in Cloudflare's SSL/TLS setting to "Full" to enable end-to-end encryption.
 proxy:
   app_port: 3000
+  # kamal-proxy waits this long for response headers from the app (default 30s → 504).
+  # Preview dev-proxy may not forward headers until the session dev server responds (slow SSE/LLM).
+  response_timeout: 3600
   ssl:
     certificate_pem: CERTIFICATE_PEM
     private_key_pem: PRIVATE_KEY_PEM

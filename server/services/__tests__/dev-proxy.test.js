@@ -1,24 +1,81 @@
+import http from 'http';
 import { PassThrough } from 'stream';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { DevProxy } from '../dev-proxy.js';
-import { Task } from '../task.js';
+import { Task, HEARTBEAT_INTERVAL_MS } from '../task.js';
+
+describe('DevProxy._proxyRequest keep-alive', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('heartbeats immediately and on interval while waiting for upstream headers', () => {
+    vi.useFakeTimers();
+    const proxy = new DevProxy({}, []);
+    const heartbeat = vi.fn();
+    const state = { task: { heartbeat } };
+
+    const mockProxyReq = new PassThrough();
+    vi.spyOn(http, 'request').mockImplementation(() => mockProxyReq);
+
+    const req = new PassThrough();
+    const res = new PassThrough();
+    res.socket = {};
+    proxy._proxyRequest(req, res, 3000, '127.0.0.1', state);
+
+    expect(heartbeat).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    expect(heartbeat).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    expect(heartbeat).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe('DevProxy._forwardProxyResponse', () => {
   it('flushes response headers before piping the upstream body', () => {
     const proxy = new DevProxy({}, []);
     const events = [];
     const mockRes = new PassThrough();
-    mockRes.writeHead = () => events.push('headers');
+    mockRes.setHeader = () => events.push('setHeader');
     mockRes.flushHeaders = () => events.push('flush');
 
     const proxyRes = new PassThrough();
     proxyRes.statusCode = 200;
     proxyRes.headers = { 'content-type': 'text/plain' };
 
-    proxy._forwardProxyResponse(proxyRes, mockRes);
+    proxy._forwardProxyResponse(proxyRes, mockRes, { socket: {} }, () => {});
 
-    expect(events).toEqual(['headers', 'flush']);
+    expect(events).toContain('setHeader');
+    expect(events.at(-1)).toBe('flush');
     proxyRes.end('hello');
+  });
+
+  it('sets X-Accel-Buffering for SSE upstream responses', () => {
+    const proxy = new DevProxy({}, []);
+    const headers = {};
+    const mockRes = new PassThrough();
+    mockRes.setHeader = (key, value) => {
+      headers[key.toLowerCase()] = value;
+    };
+    mockRes.flushHeaders = () => {};
+
+    const proxyRes = new PassThrough();
+    proxyRes.statusCode = 200;
+    proxyRes.headers = {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'content-length': '99',
+      connection: 'keep-alive',
+    };
+
+    proxy._forwardProxyResponse(proxyRes, mockRes, { socket: {} }, () => {});
+
+    expect(headers['content-type']).toBe('text/event-stream; charset=utf-8');
+    expect(headers['content-length']).toBeUndefined();
+    expect(headers['connection']).toBeUndefined();
+    expect(headers['x-accel-buffering']).toBe('no');
   });
 });
 
