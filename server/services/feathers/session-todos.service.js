@@ -3,6 +3,7 @@ import { BadRequest } from '@feathersjs/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { assertTodoStatus } from '../session-todos.js';
+import { nextSessionItemRef } from '../session-item-ref.js';
 
 class SessionTodosService extends KnexService {
   async create(data, params) {
@@ -15,9 +16,11 @@ class SessionTodosService extends KnexService {
         throw new BadRequest(err.message);
       }
     }
+    const ref = await nextSessionItemRef(this.options.Model, 'session_todos', data.session_id);
     return super.create(
       {
         session_id: data.session_id,
+        ref,
         content,
         status: data.status ?? 'pending',
         sort_order: data.sort_order ?? 0,

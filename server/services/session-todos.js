@@ -12,6 +12,7 @@ export function assertTodoStatus(status) {
 export function serializeTodo(row) {
   return {
     id: row.id,
+    ref: row.ref,
     session_id: row.session_id,
     content: row.content,
     status: row.status,

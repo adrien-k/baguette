@@ -1,4 +1,5 @@
 import { createIssueHandlers } from '../lib/issue-handlers.js';
+import { createSessionAgentContext } from '../lib/session-agent-context.js';
 import { createCurrentSessionInfoTool } from '../lib/current-session-info.js';
 import { createCreateIssueTool } from '../tools/create-issue.js';
 import { createUpdateIssueTool } from '../tools/update-issue.js';
@@ -15,12 +16,13 @@ function loadSessionRow(session, app) {
 /** Review-tab agent MCP tools. */
 export function buildReviewerAgentTools(session, app, turnAgent = {}) {
   const h = createIssueHandlers(session, app, turnAgent);
+  const ctx = createSessionAgentContext(session, app);
   return [
     createCurrentSessionInfoTool(loadSessionRow(session, app), { readOnlySession: true }),
     createCreateIssueTool(h),
     ...buildSessionIssueReadTools(session, app),
-    createUpdateIssueTool(h),
-    createCloseIssueTool(h),
+    createUpdateIssueTool(ctx),
+    createCloseIssueTool(ctx),
   ];
 }
 

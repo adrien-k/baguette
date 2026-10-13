@@ -43,6 +43,7 @@ export function serializeIssue(row) {
   if (!row) return null;
   return {
     id: row.id,
+    ref: row.ref,
     session_id: row.session_id,
     severity: row.severity,
     title: row.title,

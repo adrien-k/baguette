@@ -1,5 +1,4 @@
 import { createSessionAgentContext } from '../lib/session-agent-context.js';
-import { createIssueHandlers } from '../lib/issue-handlers.js';
 import { createGitPullTool } from '../tools/git-pull.js';
 import { createGitFetchTool } from '../tools/git-fetch.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
@@ -36,9 +35,8 @@ import { createCreatePlanTool } from '../tools/create-plan.js';
 import { createEditPlanTool } from '../tools/edit-plan.js';
 import { createReadPlanTool } from '../tools/read-plan.js';
 
-function buildBuilderIssueTools(session, app) {
-  const h = createIssueHandlers(session, app);
-  return [createUpdateIssueStatusTool(h)];
+function buildBuilderIssueTools(ctx) {
+  return [createUpdateIssueStatusTool(ctx)];
 }
 
 /** Repo session builder MCP tools (git, PR, tasks, issues for the coding agent). */
@@ -47,15 +45,15 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
   const todoHandlers = createTodoHandlers(session, app);
   const planHandlers = createPlanHandlers(session, app);
   const tools = [
-    ...buildBuilderIssueTools(session, app),
+    ...buildBuilderIssueTools(ctx),
     createAskUserQuestionsTool(),
     createCreatePlanTool(planHandlers),
     createEditPlanTool(planHandlers),
     createReadPlanTool(planHandlers),
     createCreateTodoTool(todoHandlers),
-    createProcessTodoTool(todoHandlers),
-    createCompleteTodoTool(todoHandlers),
-    createListTodosTool(todoHandlers),
+    createProcessTodoTool(ctx),
+    createCompleteTodoTool(ctx),
+    createListTodosTool(ctx),
     createGitPullTool(ctx),
     createGitFetchTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),
@@ -86,7 +84,8 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
   return tools;
 }
 
-/** @deprecated Use buildBuilderIssueTools */
+/** @deprecated Use buildBuilderAgentTools */
 export function buildSessionAgentIssueMcpTools(session, app) {
-  return buildBuilderIssueTools(session, app);
+  const ctx = createSessionAgentContext(session, app);
+  return buildBuilderIssueTools(ctx);
 }

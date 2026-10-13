@@ -8,14 +8,22 @@ function serviceError(err) {
   throw err;
 }
 
-async function requireIssue(app, sessionId, issueId, userId) {
-  try {
-    const issue = await app.service('session-issues').get(issueId, { user: { id: userId } });
-    if (issue.session_id !== sessionId || isIssueClosed(issue)) return null;
-    return issue;
-  } catch {
-    return null;
-  }
+function parseRef(ref) {
+  const n = Number(ref);
+  if (!Number.isInteger(n) || n < 1) return null;
+  return n;
+}
+
+async function findIssueByRef(app, sessionId, ref, userId) {
+  const result = await app.service('session-issues').find({
+    query: { session_id: sessionId, ref, $limit: 1 },
+    paginate: false,
+    user: { id: userId },
+  });
+  const rows = Array.isArray(result) ? result : (result?.data ?? []);
+  const issue = rows[0];
+  if (!issue || isIssueClosed(issue)) return null;
+  return issue;
 }
 
 export function createIssueHandlers(session, app, turnAgent = {}) {
@@ -24,16 +32,8 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
   const userParams = { user: { id: userId } };
   const issueTurnAgent = issueAgentMetadataFromTurn(turnAgent);
 
-  const fetchIssues = async ({ status, session_id: sessionIdArg } = {}) => {
-    const targetSessionId = sessionIdArg ?? sessionId;
-    if (targetSessionId !== sessionId) {
-      try {
-        await app.service('sessions').get(targetSessionId, { user: { id: userId } });
-      } catch {
-        return { error: 'Session not found' };
-      }
-    }
-    const query = { session_id: targetSessionId, $sort: { id: 1 }, $limit: 100 };
+  const fetchIssues = async ({ status } = {}) => {
+    const query = { session_id: sessionId, $sort: { ref: 1 }, $limit: 100 };
     if (status != null) query.status = status;
     try {
       const result = await app.service('session-issues').find({
@@ -77,14 +77,18 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
       return ok({ issues: result.issues, count: result.issues.length });
     },
 
-    async readIssue({ issue_id }) {
-      const issue = await requireIssue(app, sessionId, issue_id, userId);
+    async readIssue({ ref }) {
+      const issueRef = parseRef(ref);
+      if (issueRef == null) return fail('Invalid issue ref');
+      const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
       return ok({ issue: serializeIssue(issue) });
     },
 
-    async updateIssue({ issue_id, severity, title, description, status }) {
-      const issue = await requireIssue(app, sessionId, issue_id, userId);
+    async updateIssue({ ref, severity, title, description, status }) {
+      const issueRef = parseRef(ref);
+      if (issueRef == null) return fail('Invalid issue ref');
+      const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
       const patch = {};
       if (severity != null) patch.severity = severity;
@@ -95,33 +99,37 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
       try {
         const updated = await app
           .service('session-issues')
-          .patch(issue_id, patch, { provider: undefined, user: { id: userId } });
+          .patch(issue.id, patch, { provider: undefined, user: { id: userId } });
         return ok({ issue: serializeIssue(updated) });
       } catch (err) {
         return serviceError(err);
       }
     },
 
-    async updateIssueStatus({ issue_id, status }) {
-      const issue = await requireIssue(app, sessionId, issue_id, userId);
+    async updateIssueStatus({ ref, status }) {
+      const issueRef = parseRef(ref);
+      if (issueRef == null) return fail('Invalid issue ref');
+      const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
       try {
         const updated = await app
           .service('session-issues')
-          .patch(issue_id, { status }, { user: { id: userId }, agentStatusUpdate: true });
+          .patch(issue.id, { status }, { user: { id: userId }, agentStatusUpdate: true });
         return ok({ issue: serializeIssue(updated) });
       } catch (err) {
         return serviceError(err);
       }
     },
 
-    async closeIssue({ issue_id }) {
-      const issue = await requireIssue(app, sessionId, issue_id, userId);
+    async closeIssue({ ref }) {
+      const issueRef = parseRef(ref);
+      if (issueRef == null) return fail('Invalid issue ref');
+      const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
       try {
         const updated = await app
           .service('session-issues')
-          .patch(issue_id, { status: 'closed' }, { provider: undefined, user: { id: userId } });
+          .patch(issue.id, { status: 'closed' }, { provider: undefined, user: { id: userId } });
         return ok({ closed: serializeIssue(updated) });
       } catch (err) {
         return serviceError(err);

@@ -6,7 +6,7 @@ Your Baguette MCP issue tools are `ListIssues`, `CreateIssue`, `ReadIssue`, `Upd
 
 ## Goal
 
-1. **Start by listing existing issues** — call `ListIssues` (no status filter, or call once per status you need) so you know what is already opened, submitted, ignored, or resolved before you read the diff.
+1. **Start by listing existing issues** — call `ListIssues` with `session_id` from `CurrentSessionInfo` (no status filter, or call once per status you need) so you know what is already opened, submitted, ignored, or resolved before you read the diff. Use each issue's `ref` (1, 2, …) with `ReadIssue`, `UpdateIssue`, and `CloseIssue`.
 2. Call **`CurrentSessionInfo`** to get branches information. Review **all changes in this worktree** (`HEAD`) against `base_branch`.
 3. Open issues for real problems with `CreateIssue` (severity, a short title, and a description with file paths).
 4. Reconcile against the issues you loaded in step 1:

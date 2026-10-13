@@ -16,8 +16,8 @@ describe('todoContentFromArgs', () => {
 });
 
 describe('todoIdFromArgs', () => {
-  it('reads nested tool id', () => {
-    expect(todoIdFromArgs({ input: { id: 7 } })).toBe(7);
+  it('reads nested tool ref', () => {
+    expect(todoIdFromArgs({ input: { ref: 7 } })).toBe(7);
   });
 });
 
@@ -36,7 +36,7 @@ describe('resolveSessionTodoForTool', () => {
     const todo = resolveSessionTodoForTool(
       'CreateTodo',
       {},
-      { todo: { id: 2, content: 'From API', status: 'pending' } }
+      { todo: { id: 2, ref: 2, content: 'From API', status: 'pending' } }
     );
     expect(todo?.content).toBe('From API');
     expect(todo?.id).toBe(2);
@@ -47,7 +47,7 @@ describe('resolveSessionTodoForTool', () => {
       'CreateTodo',
       {},
       {
-        todos: [{ id: 1, content: 'first', status: 'pending' }],
+        todos: [{ id: 1, ref: 1, content: 'first', status: 'pending' }],
       }
     );
     expect(todo?.content).toBe('first');

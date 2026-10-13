@@ -176,7 +176,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
   const issue = mcpResult?.issue;
   const severity = (issue?.severity ?? block.input?.severity) as string | undefined;
   const title = (issue?.title ?? block.input?.title ?? '(no title)') as string;
-  const issueId = issue?.id;
+  const issueRef = issue?.ref;
   const isRunning = block.result == null;
   const isError = Boolean(block.isError || mcpResult?.ok === false);
 
@@ -186,9 +186,9 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
     const params = new URLSearchParams();
     params.set('view', 'review');
     if (panel) params.set('panel', panel);
-    const hash = issueId != null ? `#issue-${issueId}` : '';
+    const hash = issueRef != null ? `#issue-${issueRef}` : '';
     return `${sessionUrl(short_id)}?${params.toString()}${hash}`;
-  }, [short_id, sessionUrl, panel, issueId]);
+  }, [short_id, sessionUrl, panel, issueRef]);
 
   return (
     <div
@@ -566,11 +566,16 @@ export default function BaguetteMcpToolBlock({
         : toolShortName === 'EditPlan'
           ? 'Plan updated'
           : 'Plan';
+    const planFailed = mcpResult?.ok === false;
+    const planErrorMessage =
+      planFailed && typeof mcpResult?.error === 'string' ? mcpResult.error : null;
     return (
       <ShowPlanBlock
         heading={heading}
         markdown={markdown}
         isRunning={result == null}
+        isError={isError || planFailed}
+        errorMessage={planErrorMessage}
         sessionId={sessionId != null ? Number(sessionId) : null}
         session={session}
         userReplied={userReplied}

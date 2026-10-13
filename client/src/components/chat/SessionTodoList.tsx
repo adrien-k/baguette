@@ -7,6 +7,7 @@ const TODO_DETAIL_PREVIEW_LINES = 4;
 
 export type SessionTodoItem = {
   id?: number;
+  ref?: number;
   content?: string;
   status?: string;
 };
@@ -78,15 +79,15 @@ export default function SessionTodoList({
       <ul className="space-y-4">
         {list.map((todo, i) => (
           <li
-            key={todo.id ?? i}
-            id={todo.id != null ? `todo-${todo.id}` : undefined}
+            key={todo.ref ?? i}
+            id={todo.ref != null ? `todo-${todo.ref}` : undefined}
             className="rounded-lg border border-line bg-inset/30 p-3 sm:p-4 space-y-2 scroll-mt-4"
           >
             <div className="flex flex-wrap items-center gap-2">
               <SessionTodoIcon status={todo.status} />
               <SessionTodoStatusBadge status={todo.status} />
-              {todo.id != null && (
-                <span className="text-[11px] font-mono text-faint">#{todo.id}</span>
+              {todo.ref != null && (
+                <span className="text-[11px] font-mono text-faint">#{todo.ref}</span>
               )}
             </div>
             <div className="text-sm text-secondary">

@@ -25,11 +25,17 @@ function nestedToolArgs(args: Record<string, unknown>): Record<string, unknown> 
   return {};
 }
 
-export function todoIdFromArgs(args: Record<string, unknown>): number | null {
-  const raw = args.id ?? nestedToolArgs(args).id;
+export function todoRefFromArgs(args: Record<string, unknown>): number | null {
+  const nested = nestedToolArgs(args);
+  const raw = args.ref ?? nested.ref;
   if (raw == null) return null;
-  const id = Number(raw);
-  return Number.isInteger(id) ? id : null;
+  const ref = Number(raw);
+  return Number.isInteger(ref) ? ref : null;
+}
+
+/** @deprecated Use todoRefFromArgs */
+export function todoIdFromArgs(args: Record<string, unknown>): number | null {
+  return todoRefFromArgs(args);
 }
 
 export function todoContentFromArgs(args: Record<string, unknown>): string | null {

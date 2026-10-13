@@ -10,7 +10,7 @@ function serviceError(err) {
 
 async function listTodosForSession(app, sessionId, userId) {
   const result = await app.service('session-todos').find({
-    query: { session_id: sessionId, $sort: { sort_order: 1, id: 1 }, $limit: 500 },
+    query: { session_id: sessionId, $sort: { sort_order: 1, ref: 1 }, $limit: 500 },
     paginate: false,
     user: { id: userId },
   });
@@ -23,10 +23,20 @@ async function listOpenTodos(app, sessionId, userId) {
   return all.filter((t) => OPEN_TODO_STATUSES.includes(t.status));
 }
 
-function parseTodoId(id) {
-  const todoId = Number(id);
-  if (!Number.isInteger(todoId)) return null;
-  return todoId;
+function parseRef(ref) {
+  const n = Number(ref);
+  if (!Number.isInteger(n) || n < 1) return null;
+  return n;
+}
+
+async function findTodoByRef(app, sessionId, ref, userId) {
+  const result = await app.service('session-todos').find({
+    query: { session_id: sessionId, ref, $limit: 1 },
+    paginate: false,
+    user: { id: userId },
+  });
+  const rows = Array.isArray(result) ? result : (result?.data ?? []);
+  return rows[0] ?? null;
 }
 
 export function createTodoHandlers(session, app) {
@@ -53,15 +63,15 @@ export function createTodoHandlers(session, app) {
       }
     },
 
-    async processTodo({ id }) {
+    async processTodo({ ref }) {
       try {
-        const todoId = parseTodoId(id);
-        if (todoId == null) return fail('Invalid todo id');
-        const existing = await app.service('session-todos').get(todoId, userParams);
-        if (Number(existing.session_id) !== Number(sessionId)) return fail('Todo not found');
+        const todoRef = parseRef(ref);
+        if (todoRef == null) return fail('Invalid todo ref');
+        const existing = await findTodoByRef(app, sessionId, todoRef, userId);
+        if (!existing) return fail('Todo not found');
         const row = await app
           .service('session-todos')
-          .patch(todoId, { status: 'in_progress' }, userParams);
+          .patch(existing.id, { status: 'in_progress' }, userParams);
         const todo = serializeTodo(row);
         const todos = await listOpenTodos(app, sessionId, userId);
         return ok({ todo, todos });
@@ -70,15 +80,15 @@ export function createTodoHandlers(session, app) {
       }
     },
 
-    async completeTodo({ id }) {
+    async completeTodo({ ref }) {
       try {
-        const todoId = parseTodoId(id);
-        if (todoId == null) return fail('Invalid todo id');
-        const existing = await app.service('session-todos').get(todoId, userParams);
-        if (Number(existing.session_id) !== Number(sessionId)) return fail('Todo not found');
+        const todoRef = parseRef(ref);
+        if (todoRef == null) return fail('Invalid todo ref');
+        const existing = await findTodoByRef(app, sessionId, todoRef, userId);
+        if (!existing) return fail('Todo not found');
         const row = await app
           .service('session-todos')
-          .patch(todoId, { status: 'completed' }, userParams);
+          .patch(existing.id, { status: 'completed' }, userParams);
         const todo = serializeTodo(row);
         const todos = await listOpenTodos(app, sessionId, userId);
         return ok({ todo, todos });

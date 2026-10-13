@@ -34,6 +34,23 @@ describe('createPlanHandlers.readPlan', () => {
     const { app } = makeApp(null);
     const h = createPlanHandlers({ id: 1, user_id: 9 }, app);
     const out = parseHandlerResult(await h.readPlan());
-    expect(out).toEqual({ ok: false, error: 'No plan yet; use CreatePlan' });
+    expect(out).toEqual({
+      ok: false,
+      error: 'No plan exists for this session; call CreatePlan first',
+    });
+  });
+});
+
+describe('createPlanHandlers.editPlan', () => {
+  it('rejects when no plan exists', async () => {
+    const { app } = makeApp(null);
+    const h = createPlanHandlers({ id: 1, user_id: 9 }, app);
+    const out = parseHandlerResult(
+      await h.editPlan({ patches: [{ old_string: 'x', new_string: 'y' }] })
+    );
+    expect(out).toEqual({
+      ok: false,
+      error: 'No plan exists for this session; call CreatePlan first',
+    });
   });
 });

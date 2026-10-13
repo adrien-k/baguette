@@ -141,6 +141,53 @@ describe('wrapBaguetteToolList', () => {
     expect(patchAgentInternal).not.toHaveBeenCalled();
   });
 
+  it('does not mark awaiting user when EditPlan fails', async () => {
+    const patch = vi.fn();
+    const sessionState = { channel: 'chat', endTurnAwaitingUser: false };
+    const app = {
+      get: (key) => {
+        if (key === 'db') {
+          return () => ({
+            where: () => ({
+              first: async () => ({ agent_sdk: 'cursor' }),
+            }),
+          });
+        }
+        return undefined;
+      },
+      service: (name) => {
+        if (name === 'sessions') return { patch };
+        if (name === 'cursor-agent') return { getActiveSession: () => sessionState };
+        return null;
+      },
+    };
+    const session = { id: 1, user_id: 2, agent_sdk: 'cursor' };
+    const failBody = {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: false,
+            error: 'No plan exists for this session; call CreatePlan first',
+          }),
+        },
+      ],
+    };
+    const tools = wrapBaguetteToolList(session, app, [
+      {
+        name: 'EditPlan',
+        description: 'plan',
+        schema: {},
+        handler: async () => failBody,
+      },
+    ]);
+
+    await tools[0].handler({ patches: [{ old_string: 'a', new_string: 'b' }] });
+
+    expect(sessionState.endTurnAwaitingUser).toBe(false);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it('does not mark awaiting user for non turn-ending tools', async () => {
     patchAgentInternal.mockClear();
     const sessionState = { channel: 'chat', endTurnAwaitingUser: false };

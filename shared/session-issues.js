@@ -8,7 +8,7 @@ const SEVERITY_RANK = Object.fromEntries(ISSUE_SEVERITY_ORDER.map((s, i) => [s, 
 /** Non-ignored: opened on top, then submitted, then resolved. Ignored sorts last. */
 const STATUS_RANK = { opened: 0, submitted: 1, resolved: 2, ignored: 3 };
 
-/** @param {{ severity?: string, status?: string, id?: number }} a @param {{ severity?: string, status?: string, id?: number }} b */
+/** @param {{ severity?: string, status?: string, id?: number, ref?: number }} a @param {{ severity?: string, status?: string, id?: number, ref?: number }} b */
 export function compareIssuesBySeverity(a, b) {
   const aIgnored = a.status === 'ignored' ? 1 : 0;
   const bIgnored = b.status === 'ignored' ? 1 : 0;
@@ -22,7 +22,7 @@ export function compareIssuesBySeverity(a, b) {
   const rb = SEVERITY_RANK[b.severity] ?? 99;
   if (ra !== rb) return ra - rb;
 
-  return (a.id ?? 0) - (b.id ?? 0);
+  return (a.ref ?? 0) - (b.ref ?? 0);
 }
 
 export function sortIssuesBySeverity(issues) {
@@ -32,9 +32,9 @@ export function sortIssuesBySeverity(issues) {
 /** User message text when asking the builder to fix a single review issue (body comes from ReadIssue). */
 export function issueFixAgentPrompt(issue, sessionId) {
   return (
-    `Fix session review issue #${issue.id}.\n\n` +
-    `Call ReadIssue with issue_id ${issue.id} (session_id ${sessionId}) for details. ` +
-    `This issue is now submitted. When the fix is complete, call UpdateIssueStatus with issue_id ${issue.id} and status "resolved".`
+    `Fix session review issue #${issue.ref}.\n\n` +
+    `Call ReadIssue with ref ${issue.ref} and session_id ${sessionId} for details. ` +
+    `This issue is now submitted. When the fix is complete, call UpdateIssueStatus with ref ${issue.ref}, session_id ${sessionId}, and status "resolved".`
   );
 }
 

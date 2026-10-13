@@ -9,6 +9,7 @@ import {
   assertIssueStatus,
   assertAgentIssueStatus,
 } from '../session-issues.js';
+import { nextSessionItemRef } from '../session-item-ref.js';
 
 function issueActionParams(params) {
   return { user: params.user, provider: params.provider };
@@ -29,9 +30,11 @@ class SessionIssuesService extends KnexService {
     }
     const title = data.title != null ? String(data.title).trim() : '';
     if (!title) throw new BadRequest('title is required');
+    const ref = await nextSessionItemRef(this.app.get('db'), 'session_issues', data.session_id);
     return super.create(
       {
         session_id: data.session_id,
+        ref,
         severity: data.severity,
         title,
         description: data.description ?? '',

@@ -42,7 +42,7 @@ export function createPlanHandlers(session, app) {
     async editPlan({ patches }) {
       try {
         const existing = await getPlanRow(app, sessionId, userId);
-        if (!existing) return fail('No plan yet; use CreatePlan');
+        if (!existing) return fail('No plan exists for this session; call CreatePlan first');
         const text = applySessionPlanPatches(existing.markdown, patches);
         const row = await app
           .service('session-plans')
@@ -56,7 +56,7 @@ export function createPlanHandlers(session, app) {
     async readPlan() {
       try {
         const existing = await getPlanRow(app, sessionId, userId);
-        if (!existing) return fail('No plan yet; use CreatePlan');
+        if (!existing) return fail('No plan exists for this session; call CreatePlan first');
         return ok({ markdown: existing.markdown });
       } catch (err) {
         return serviceError(err);

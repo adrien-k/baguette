@@ -1068,12 +1068,14 @@ describe('Sessions service - find, get, create', () => {
       await db('session_issues').insert([
         {
           session_id: sessId1,
+          ref: 1,
           severity: 'medium',
           title: 'First',
           status: 'opened',
         },
         {
           session_id: sessId1,
+          ref: 2,
           severity: 'low',
           title: 'Submitted',
           status: 'submitted',

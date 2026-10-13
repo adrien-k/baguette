@@ -276,7 +276,7 @@ export default function ReviewView({
   };
 
   const handleDeleteIssue = async (issue) => {
-    if (!window.confirm(`Delete issue #${issue.id} permanently?`)) return;
+    if (!window.confirm(`Delete issue #${issue.ref} permanently?`)) return;
     try {
       await sessionIssuesService.remove(issue.id);
     } catch (err) {

@@ -87,7 +87,7 @@ export default function SessionIssueCard({
 
   return (
     <div
-      id={`issue-${issue.id}`}
+      id={`issue-${issue.ref}`}
       className={`rounded-lg border p-4 space-y-3 scroll-mt-4 ${
         active ? 'border-strong bg-inset/60' : 'border-line opacity-70'
       }`}
@@ -155,7 +155,10 @@ export default function SessionIssueCard({
         <>
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
-              <h3 className="text-base font-semibold text-fg leading-snug">{issue.title}</h3>
+              <h3 className="text-base font-semibold text-fg leading-snug">
+                <span className="text-faint font-mono text-sm mr-1.5">#{issue.ref}</span>
+                {issue.title}
+              </h3>
               {agentSubtitle ? (
                 <p className="mt-0.5 text-xs text-faint font-normal">{agentSubtitle}</p>
               ) : null}

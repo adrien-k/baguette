@@ -8,11 +8,12 @@ import {
 describe('issue fix agent prompts', () => {
   it('does not embed issue title or description in the single-issue prompt', () => {
     const text = issueFixAgentPrompt(
-      { id: 7, severity: 'high', title: 'Leaky title', description: 'Secret body' },
+      { id: 7, ref: 3, severity: 'high', title: 'Leaky title', description: 'Secret body' },
       99
     );
-    expect(text).toContain('issue #7');
-    expect(text).toContain('ReadIssue with issue_id 7');
+    expect(text).toContain('issue #3');
+    expect(text).toContain('ReadIssue with ref 3');
+    expect(text).toContain('session_id 99');
     expect(text).not.toContain('Leaky title');
     expect(text).not.toContain('Secret body');
   });
@@ -63,11 +64,11 @@ describe('sortIssuesBySeverity', () => {
     expect(sorted.map((i) => i.id)).toEqual([2, 1]);
   });
 
-  it('breaks ties by id ascending', () => {
+  it('breaks ties by ref ascending', () => {
     const sorted = sortIssuesBySeverity([
-      { id: 10, severity: 'high' },
-      { id: 2, severity: 'high' },
+      { id: 10, ref: 10, severity: 'high' },
+      { id: 2, ref: 2, severity: 'high' },
     ]);
-    expect(sorted.map((i) => i.id)).toEqual([2, 10]);
+    expect(sorted.map((i) => i.ref)).toEqual([2, 10]);
   });
 });

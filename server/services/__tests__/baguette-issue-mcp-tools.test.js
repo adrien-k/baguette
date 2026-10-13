@@ -77,6 +77,7 @@ describe('reviewer issue MCP tools', () => {
     const read = tools.find((t) => t.name === 'ReadIssue');
     const update = tools.find((t) => t.name === 'UpdateIssue');
     const close = tools.find((t) => t.name === 'CloseIssue');
+    const sessionId = session.id;
 
     const created = parseOk(
       await create.handler({ severity: 'high', title: 'Leak', description: 'in foo.js' })
@@ -84,32 +85,47 @@ describe('reviewer issue MCP tools', () => {
     expect(created.ok).toBe(true);
     expect(created.issue.status).toBe('opened');
     expect(created.issue.agent_sdk).toBe(null);
-    const id = created.issue.id;
+    expect(created.issue.ref).toBe(1);
+    const ref = created.issue.ref;
 
-    const listed = parseOk(await list.handler({}));
+    const listed = parseOk(await list.handler({ session_id: sessionId }));
     expect(listed.count).toBe(1);
+    expect(listed.issues[0].ref).toBe(1);
 
-    const openedOnly = parseOk(await list.handler({ status: 'opened' }));
+    const openedOnly = parseOk(await list.handler({ session_id: sessionId, status: 'opened' }));
     expect(openedOnly.count).toBe(1);
 
-    const submitted = parseOk(await update.handler({ issue_id: id, status: 'submitted' }));
+    const submitted = parseOk(
+      await update.handler({ session_id: sessionId, ref, status: 'submitted' })
+    );
     expect(submitted.issue.status).toBe('submitted');
-    const submittedOnly = parseOk(await list.handler({ status: 'submitted' }));
+    const submittedOnly = parseOk(
+      await list.handler({ session_id: sessionId, status: 'submitted' })
+    );
     expect(submittedOnly.count).toBe(1);
 
-    const one = parseOk(await read.handler({ issue_id: id }));
+    const one = parseOk(await read.handler({ session_id: sessionId, ref }));
     expect(one.issue.title).toBe('Leak');
 
-    const updated = parseOk(await update.handler({ issue_id: id, status: 'resolved' }));
+    const updated = parseOk(
+      await update.handler({ session_id: sessionId, ref, status: 'resolved' })
+    );
     expect(updated.issue.status).toBe('resolved');
 
-    const closed = parseOk(await close.handler({ issue_id: id }));
+    const closed = parseOk(await close.handler({ session_id: sessionId, ref }));
     expect(closed.ok).toBe(true);
     expect(closed.closed.status).toBe('closed');
-    const after = parseOk(await list.handler({}));
+    const after = parseOk(await list.handler({ session_id: sessionId }));
     expect(after.count).toBe(0);
-    const missing = parseOk(await read.handler({ issue_id: id }));
+    const missing = parseOk(await read.handler({ session_id: sessionId, ref }));
     expect(missing.ok).toBe(false);
+  });
+
+  it('requires session_id for ListIssues', async () => {
+    const tools = buildReviewerIssueMcpTools(session, app);
+    const list = tools.find((t) => t.name === 'ListIssues');
+    const result = parseOk(await list.handler({}));
+    expect(result.ok).toBe(false);
   });
 
   it('snapshots turn agent metadata injected into MCP tools on create', async () => {
@@ -150,7 +166,9 @@ describe('session agent issue MCP tools', () => {
     ]);
 
     const listed = parseOk(
-      await tools.find((t) => t.name === 'ListIssues').handler({ status: 'opened' })
+      await tools
+        .find((t) => t.name === 'ListIssues')
+        .handler({ session_id: session.id, status: 'opened' })
     );
     expect(listed.count).toBe(1);
 
@@ -158,7 +176,8 @@ describe('session agent issue MCP tools', () => {
       await tools
         .find((t) => t.name === 'UpdateIssueStatus')
         .handler({
-          issue_id: created.issue.id,
+          session_id: session.id,
+          ref: created.issue.ref,
           status: 'resolved',
         })
     );
@@ -169,7 +188,8 @@ describe('session agent issue MCP tools', () => {
         await tools
           .find((t) => t.name === 'UpdateIssueStatus')
           .handler({
-            issue_id: created.issue.id,
+            session_id: session.id,
+            ref: created.issue.ref,
             status: 'opened',
           })
       ).content[0].text

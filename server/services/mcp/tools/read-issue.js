@@ -1,28 +1,29 @@
 import { z } from 'zod';
-import { fail } from '../lib/result.js';
-import { resolveTargetSession } from '../lib/session-resolution.js';
 import { createIssueHandlers } from '../lib/issue-handlers.js';
+import { requireMcpSession } from '../lib/require-mcp-session.js';
 
-const issueIdSchema = z.number().int().describe('Issue id');
+const issueRefSchema = z
+  .number()
+  .int()
+  .min(1)
+  .describe('Issue ref (session-relative number from ListIssues)');
 
 const DESCRIPTION =
-  'Read one session review issue by id. ' +
-  'When running inside a repo session, omit session_id to use the current session. ' +
-  'Otherwise pass session_id (from GetSession or SearchSessions).';
+  'Read one session review issue by ref. session_id is required (from CurrentSessionInfo or GetSession).';
 
 export function createReadIssueTool(ctx) {
-  const { app, userId, callerSession } = ctx;
+  const { app, userId } = ctx;
   return {
     name: 'ReadIssue',
     description: DESCRIPTION,
     schema: {
-      issue_id: issueIdSchema,
-      session_id: z.number().int().optional().describe('Session id (defaults to current session)'),
+      session_id: z.number().int().describe('Session id'),
+      ref: issueRefSchema,
     },
-    handler: async ({ issue_id, session_id }) => {
-      const session = await resolveTargetSession(app, session_id, userId, callerSession);
-      if (!session) return fail('Session not found. Provide session_id.');
-      return createIssueHandlers(session, app).readIssue({ issue_id });
+    handler: async ({ ref, session_id }) => {
+      const { session, result: sessionError } = await requireMcpSession(app, session_id, userId);
+      if (sessionError) return sessionError;
+      return createIssueHandlers(session, app).readIssue({ ref });
     },
   };
 }
