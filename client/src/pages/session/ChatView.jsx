@@ -44,6 +44,9 @@ import PrDraftToggleButton, {
   canTogglePrDraftStatus,
 } from '../../components/PrDraftToggleButton.jsx';
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
+import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
+import SessionTodoCountCard from '../../components/chat/SessionTodoCountCard.tsx';
+import { useGetSessionTodos } from '../../hooks/useGetSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
@@ -135,6 +138,10 @@ export default function ChatView({
   const [queueDrawerExpanded, setQueueDrawerExpanded] = persistentState.useState(
     'queueDrawerExpanded',
     true
+  );
+  const [todosDrawerExpanded, setTodosDrawerExpanded] = persistentState.useState(
+    'todosDrawerExpanded',
+    false
   );
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
@@ -276,6 +283,30 @@ export default function ChatView({
     if (!activeAgent?.id) return queue;
     return queue.filter((item) => item.agent_id === activeAgent.id);
   }, [queue, activeAgent]);
+
+  const { todos: sessionTodosAll } = useGetSessionTodos(chatSessionId, {
+    enabled: chatSessionId != null,
+    openOnly: false,
+  });
+
+  const sessionTodoCounts = useMemo(() => {
+    let open = 0;
+    let inProgress = 0;
+    let completed = 0;
+    for (const row of sessionTodosAll) {
+      if (row.status === 'pending') open += 1;
+      else if (row.status === 'in_progress') inProgress += 1;
+      else if (row.status === 'completed') completed += 1;
+    }
+    return { open, inProgress, completed };
+  }, [sessionTodosAll]);
+
+  const sessionTodoTotal =
+    sessionTodoCounts.open + sessionTodoCounts.inProgress + sessionTodoCounts.completed;
+
+  const toggleTodosDrawer = useCallback(() => {
+    setTodosDrawerExpanded((expanded) => !expanded);
+  }, [setTodosDrawerExpanded]);
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,
@@ -792,6 +823,14 @@ export default function ChatView({
                   onExpandedChange={setQueueDrawerExpanded}
                 />
               )}
+              {sessionTodoTotal > 0 && (
+                <SessionTodosDrawer
+                  sessionId={chatSessionId}
+                  counts={sessionTodoCounts}
+                  expanded={todosDrawerExpanded}
+                  onExpandedChange={setTodosDrawerExpanded}
+                />
+              )}
               <FileAttachmentPicker
                 className="w-full"
                 files={files}
@@ -816,6 +855,15 @@ export default function ChatView({
                     agents={agents}
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
+                    agentHeaderEnd={
+                      sessionTodoTotal > 0 ? (
+                        <SessionTodoCountCard
+                          counts={sessionTodoCounts}
+                          expanded={todosDrawerExpanded}
+                          onClick={toggleTodosDrawer}
+                        />
+                      ) : null
+                    }
                     agentConfigKey={
                       agentSource?.agent_config_id != null
                         ? String(agentSource.agent_config_id)

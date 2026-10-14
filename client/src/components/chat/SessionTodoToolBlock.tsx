@@ -6,6 +6,7 @@ import {
   todoRefFromArgs,
   type McpTodoPayload,
 } from '../../utils/sessionTodoMcpDisplay.ts';
+import { sessionTodoTitle } from '../../utils/sessionTodoDisplay.ts';
 
 const TOOL_HEADING: Record<string, string> = {
   CreateTodo: 'Todo created',
@@ -86,8 +87,13 @@ export default function SessionTodoToolBlock({
     <div
       className={`rounded-lg border overflow-hidden ${isError ? 'border-danger/60' : 'border-line'}`}
     >
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/40">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/40 flex-wrap">
         <span className="text-xs font-medium text-secondary">{heading}</span>
+        {todo && (
+          <span className="text-xs font-medium text-heading truncate max-w-[min(100%,20rem)]">
+            {sessionTodoTitle(todo)}
+          </span>
+        )}
         <SessionTodoStatusBadge status={displayStatus} />
         {todo?.ref != null && <span className="text-[11px] font-mono text-faint">#{todo.ref}</span>}
         {isRunning && !isError && (

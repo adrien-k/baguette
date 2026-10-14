@@ -7,6 +7,8 @@ import { nextSessionItemRef } from '../session-item-ref.js';
 
 class SessionTodosService extends KnexService {
   async create(data, params) {
+    const title = data.title != null ? String(data.title).trim() : '';
+    if (!title) throw new BadRequest('title is required');
     const content = data.content != null ? String(data.content).trim() : '';
     if (!content) throw new BadRequest('content is required');
     if (data.status) {
@@ -21,6 +23,7 @@ class SessionTodosService extends KnexService {
       {
         session_id: data.session_id,
         ref,
+        title,
         content,
         status: data.status ?? 'pending',
         sort_order: data.sort_order ?? 0,
@@ -36,6 +39,11 @@ class SessionTodosService extends KnexService {
       throw new BadRequest(err.message);
     }
     const patch = { ...data, updated_at: new Date().toISOString() };
+    if (patch.title !== undefined) {
+      const title = String(patch.title).trim();
+      if (!title) throw new BadRequest('title is required');
+      patch.title = title;
+    }
     if (patch.content !== undefined) {
       const content = String(patch.content).trim();
       if (!content) throw new BadRequest('content is required');
@@ -58,7 +66,7 @@ export function registerSessionTodosService(app, path = 'session-todos') {
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeBySessionUser],
-      patch: [only(['content', 'status', 'sort_order'])],
+      patch: [only(['title', 'content', 'status', 'sort_order'])],
     },
   });
 }

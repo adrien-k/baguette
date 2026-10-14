@@ -72,6 +72,7 @@ export default function AgentMessageComposer({
   agents,
   selectedAgentId,
   onSelectAgent,
+  agentHeaderEnd,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -107,53 +108,56 @@ export default function AgentMessageComposer({
   const agentHeader = showAgentHeader ? (
     <div
       className={`flex items-center gap-2 px-2 sm:px-3 pt-2 pb-1 min-w-0${
-        showAgentSwitcher ? '' : ' border-b border-line/60'
+        showAgentSwitcher && !agentHeaderEnd ? '' : ' border-b border-line/60'
       }`}
     >
-      {showAgentSwitcher ? (
-        <LightChipDropdown
-          layout="list"
-          disabled={disabled || sending}
-          value={String(selectedAgentId)}
-          onChange={(value) => {
-            const picked = sessionAgents.find((a) => String(a.id) === value);
-            if (picked) onSelectAgent(picked);
-          }}
-          options={sessionAgents.map((a) => ({
-            value: String(a.id),
-            label: agentMenuOptionLabel(a),
-            icon: <AgentTypeIcon agentType={a.agent_type} />,
-          }))}
-          selectedDisplay={{
-            icon: <AgentTypeIcon agentType={headerAgent.agent_type} />,
-            content: (
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-medium text-heading truncate">
-                  {agentDisplayTitle(headerAgent)}
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {showAgentSwitcher ? (
+          <LightChipDropdown
+            layout="list"
+            disabled={disabled || sending}
+            value={String(selectedAgentId)}
+            onChange={(value) => {
+              const picked = sessionAgents.find((a) => String(a.id) === value);
+              if (picked) onSelectAgent(picked);
+            }}
+            options={sessionAgents.map((a) => ({
+              value: String(a.id),
+              label: agentMenuOptionLabel(a),
+              icon: <AgentTypeIcon agentType={a.agent_type} />,
+            }))}
+            selectedDisplay={{
+              icon: <AgentTypeIcon agentType={headerAgent.agent_type} />,
+              content: (
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium text-heading truncate">
+                    {agentDisplayTitle(headerAgent)}
+                  </span>
+                  {agentShowsTypeBadge(headerAgent) ? (
+                    <AgentTypeBadge agentType={headerAgent.agent_type} />
+                  ) : null}
                 </span>
-                {agentShowsTypeBadge(headerAgent) ? (
-                  <AgentTypeBadge agentType={headerAgent.agent_type} />
-                ) : null}
-              </span>
-            ),
-          }}
-          ariaLabel="Switch agent"
-          shrinkableTrigger
-          triggerClassName={`gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors !h-auto min-h-0 max-w-full ${composerAgentSwitcherBadgeClass(
-            headerAgent.agent_type
-          )}`}
-        />
-      ) : (
-        <>
-          <AgentTypeIcon agentType={headerAgent.agent_type} />
-          <span className="text-xs font-medium text-heading truncate">
-            {agentDisplayTitle(headerAgent)}
-          </span>
-          {agentShowsTypeBadge(headerAgent) ? (
-            <AgentTypeBadge agentType={headerAgent.agent_type} />
-          ) : null}
-        </>
-      )}
+              ),
+            }}
+            ariaLabel="Switch agent"
+            shrinkableTrigger
+            triggerClassName={`gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors !h-auto min-h-0 max-w-full ${composerAgentSwitcherBadgeClass(
+              headerAgent.agent_type
+            )}`}
+          />
+        ) : (
+          <>
+            <AgentTypeIcon agentType={headerAgent.agent_type} />
+            <span className="text-xs font-medium text-heading truncate">
+              {agentDisplayTitle(headerAgent)}
+            </span>
+            {agentShowsTypeBadge(headerAgent) ? (
+              <AgentTypeBadge agentType={headerAgent.agent_type} />
+            ) : null}
+          </>
+        )}
+      </div>
+      {agentHeaderEnd ? <div className="shrink-0 ml-auto">{agentHeaderEnd}</div> : null}
     </div>
   ) : null;
 

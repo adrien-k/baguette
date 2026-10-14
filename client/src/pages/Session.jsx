@@ -1711,7 +1711,7 @@ export default function Session() {
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'plan' && (
-              <PlanView session={session} />
+              <PlanView session={session} readonly={isReadonly} />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'details' && (
               <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />

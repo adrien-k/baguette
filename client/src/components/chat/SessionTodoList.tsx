@@ -1,6 +1,7 @@
 import { CheckSquare2, Loader2, Square } from 'lucide-react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
+import { sessionTodoHasBody, sessionTodoTitle } from '../../utils/sessionTodoDisplay.ts';
 
 /** Collapsed preview length for todo bodies on the Plan tab. */
 const TODO_DETAIL_PREVIEW_LINES = 4;
@@ -8,6 +9,7 @@ const TODO_DETAIL_PREVIEW_LINES = 4;
 export type SessionTodoItem = {
   id?: number;
   ref?: number;
+  title?: string | null;
   content?: string;
   status?: string;
 };
@@ -66,11 +68,10 @@ export default function SessionTodoList({
   todos?: unknown;
   variant?: 'compact' | 'detail';
 }) {
-  const list = (Array.isArray(todos) ? todos : []).filter(
-    (todo) =>
-      typeof (todo as SessionTodoItem).content === 'string' &&
-      (todo as SessionTodoItem).content!.trim()
-  ) as SessionTodoItem[];
+  const list = (Array.isArray(todos) ? todos : []).filter((todo) => {
+    const row = todo as SessionTodoItem;
+    return sessionTodoHasBody(row) || Boolean(sessionTodoTitle(row));
+  }) as SessionTodoItem[];
 
   if (list.length === 0) return null;
 
@@ -90,11 +91,14 @@ export default function SessionTodoList({
                 <span className="text-[11px] font-mono text-faint">#{todo.ref}</span>
               )}
             </div>
-            <div className="text-sm text-secondary">
-              <CollapsibleMarkdown previewLines={TODO_DETAIL_PREVIEW_LINES} simpleToggle>
-                {todo.content!.trim()}
-              </CollapsibleMarkdown>
-            </div>
+            <h3 className="text-sm font-medium text-heading">{sessionTodoTitle(todo)}</h3>
+            {sessionTodoHasBody(todo) && (
+              <div className="text-sm text-secondary">
+                <CollapsibleMarkdown previewLines={TODO_DETAIL_PREVIEW_LINES} simpleToggle>
+                  {todo.content!.trim()}
+                </CollapsibleMarkdown>
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -109,11 +113,16 @@ export default function SessionTodoList({
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <SessionTodoStatusBadge status={todo.status} />
+              <span className="text-xs font-medium text-heading truncate">
+                {sessionTodoTitle(todo)}
+              </span>
             </div>
-            <SessionTodoMarkdown
-              content={todo.content!.trim()}
-              className="text-xs text-secondary"
-            />
+            {sessionTodoHasBody(todo) && (
+              <SessionTodoMarkdown
+                content={todo.content!.trim()}
+                className="text-xs text-secondary"
+              />
+            )}
           </div>
         </div>
       ))}

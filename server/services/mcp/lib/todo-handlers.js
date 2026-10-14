@@ -45,11 +45,12 @@ export function createTodoHandlers(session, app) {
   const userParams = { user: { id: userId } };
 
   return {
-    async createTodo({ content }) {
+    async createTodo({ title, content }) {
       try {
         const row = await app.service('session-todos').create(
           {
             session_id: sessionId,
+            title,
             content,
             status: 'pending',
           },

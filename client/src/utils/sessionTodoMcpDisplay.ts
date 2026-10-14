@@ -48,6 +48,16 @@ export function todoContentFromArgs(args: Record<string, unknown>): string | nul
   return null;
 }
 
+export function todoTitleFromArgs(args: Record<string, unknown>): string | null {
+  if (typeof args.title === 'string' && args.title.trim()) {
+    return args.title.trim();
+  }
+  const nested = nestedToolArgs(args);
+  const t = nested.title;
+  if (typeof t === 'string' && t.trim()) return t.trim();
+  return null;
+}
+
 function todoFromTodosList(
   toolName: string,
   mcpResult: McpTodoPayload | null
@@ -83,8 +93,9 @@ export function resolveSessionTodoForTool(
   }
 
   const content = todoContentFromArgs(args);
+  const title = todoTitleFromArgs(args);
   if (toolName === 'CreateTodo' && content) {
-    return { content, status: displayStatus };
+    return { content, title: title ?? undefined, status: displayStatus };
   }
 
   return null;

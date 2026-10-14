@@ -3,7 +3,29 @@ import {
   resolveSessionTodoForTool,
   todoContentFromArgs,
   todoIdFromArgs,
+  todoTitleFromArgs,
 } from '../sessionTodoMcpDisplay.ts';
+import { sessionTodoTitle } from '../sessionTodoDisplay.ts';
+
+describe('todoTitleFromArgs', () => {
+  it('reads flat title', () => {
+    expect(todoTitleFromArgs({ title: '  Ship it  ' })).toBe('Ship it');
+  });
+
+  it('reads nested input.title', () => {
+    expect(todoTitleFromArgs({ input: { title: 'Nested' } })).toBe('Nested');
+  });
+});
+
+describe('sessionTodoTitle', () => {
+  it('uses stored title when set', () => {
+    expect(sessionTodoTitle({ title: 'Short', content: 'Long body' })).toBe('Short');
+  });
+
+  it('falls back to first content line', () => {
+    expect(sessionTodoTitle({ content: '## Heading\nDetails' })).toBe('## Heading');
+  });
+});
 
 describe('todoContentFromArgs', () => {
   it('reads flat content', () => {
@@ -25,10 +47,11 @@ describe('resolveSessionTodoForTool', () => {
   it('uses args.content after completion when result todo is missing', () => {
     const todo = resolveSessionTodoForTool(
       'CreateTodo',
-      { content: '## Step 1\nDo thing' },
+      { title: 'Step 1', content: '## Step 1\nDo thing' },
       { ok: true, todos: [] }
     );
     expect(todo?.content).toContain('Step 1');
+    expect(todo?.title).toBe('Step 1');
     expect(todo?.status).toBe('pending');
   });
 
