@@ -4,8 +4,8 @@ export const ALL_REPOS = '__all__';
 /** URL segment for the in-app “new session” form (`…/sessions/new`). */
 export const NEW_SESSION_ROUTE_ID = 'new';
 
-export function isNewSessionRouteId(shortId) {
-  return shortId === NEW_SESSION_ROUTE_ID;
+export function isNewSessionRouteId(routeValue) {
+  return routeValue === NEW_SESSION_ROUTE_ID;
 }
 /** Navbar / dashboard: sessions that are not tied to a single repository. */
 export const GLOBAL_SCOPE = '__global__';
@@ -70,12 +70,12 @@ export function loopEditUrlForScope(loopId, scope) {
 }
 
 export function sessionHref(session, { fromAllSessions } = {}) {
-  if (!session?.short_id) return '/';
-  if (fromAllSessions) return `/sessions/${session.short_id}`;
+  if (!session?.id) return '/';
+  if (fromAllSessions) return `/sessions/${session.id}`;
   if (isGlobalSession(session) || !session.repo_id) {
-    return `/global/sessions/${session.short_id}`;
+    return `/global/sessions/${session.id}`;
   }
-  return `/repos/${session.repo_id}/sessions/${session.short_id}`;
+  return `/repos/${session.repo_id}/sessions/${session.id}`;
 }
 
 /**

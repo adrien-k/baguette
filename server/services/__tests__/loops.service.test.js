@@ -194,7 +194,6 @@ describe('Loops service', () => {
       expect(loop.session_link).toBe('strong');
       expect(loop.tied_session).toMatchObject({
         id: sessionId,
-        short_id: 'tied01',
         label: 'Tied session',
       });
     });
@@ -217,7 +216,6 @@ describe('Loops service', () => {
       expect(got.session_link).toBe('weak');
       expect(got.tied_session).toMatchObject({
         id: sessionId,
-        short_id: 'spawn1',
         label: 'Spawned session',
       });
     });

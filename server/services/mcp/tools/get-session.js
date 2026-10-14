@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
-import { resolveOwnedSession, summarizeAssistantMessage } from '../lib/session-resolution.js';
+import { requireOwnedSessionById, summarizeAssistantMessage } from '../lib/session-resolution.js';
 import { collectLastFailedTasks } from '../lib/task-helpers.js';
 
 export function createGetSessionTool(ctx) {
@@ -9,20 +9,16 @@ export function createGetSessionTool(ctx) {
     name: 'GetSession',
     description:
       'Get one session with details, message count, initial_prompt, and the most recent assistant message. ' +
-      'Accepts session_id or short_id (other MCP tools use session_id only).',
+      'Accepts session_id (other MCP tools use session_id too).',
     schema: {
-      session_id: z.number().int().optional().describe('Session numeric id'),
-      short_id: z
-        .string()
-        .optional()
-        .describe('Session short id (8 hex characters, from URLs and CurrentSessionInfo)'),
+      session_id: z.number().int().describe('Session numeric id'),
     },
     handler: async (args) => {
-      if (args.session_id == null && !args.short_id?.trim()) {
-        return fail('Provide session_id or short_id');
+      if (args.session_id == null) {
+        return fail('Provide session_id');
       }
-      const session = await resolveOwnedSession(app, args, userId);
-      if (!session) return fail('Session not found');
+      const { session, error } = await requireOwnedSessionById(app, args.session_id, userId);
+      if (!session) return fail(error);
 
       const session_id = session.id;
       const db = app.get('db');

@@ -118,7 +118,7 @@ export default function RunningTasksDropdown() {
                           </div>
                           {session && (
                             <span className="text-[11px] text-faint truncate block mt-0.5">
-                              {session.label || session.short_id}
+                              {session.label || `Session #${session.id}`}
                             </span>
                           )}
                         </div>
@@ -147,7 +147,6 @@ export default function RunningTasksDropdown() {
             return s
               ? {
                   id: s.id,
-                  short_id: s.short_id,
                   label: s.label,
                   repo_full_name: s.repo_full_name,
                 }

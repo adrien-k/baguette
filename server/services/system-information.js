@@ -67,7 +67,6 @@ function sessionAgentRow(row) {
   const isReview = row.agent_type === 'reviewer';
   return {
     session_id: row.session_id,
-    short_id: row.short_id,
     user_id: row.user_id,
     username: row.username ?? null,
     label: row.label,
@@ -92,7 +91,6 @@ export async function getActiveAgents(userId = null, knex = db) {
       'agents.model',
       'agents.model_params',
       'sessions.id as session_id',
-      'sessions.short_id',
       'sessions.label',
       'sessions.repo_full_name',
       'sessions.user_id',
@@ -102,8 +100,8 @@ export async function getActiveAgents(userId = null, knex = db) {
   const rows = await q;
   const agents = rows.map(sessionAgentRow);
   agents.sort((a, b) => {
-    const labelA = a.label || a.short_id || '';
-    const labelB = b.label || b.short_id || '';
+    const labelA = a.label || `Session #${a.session_id}`;
+    const labelB = b.label || `Session #${b.session_id}`;
     return labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
   });
   return agents;

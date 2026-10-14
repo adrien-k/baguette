@@ -53,7 +53,6 @@ export const sessionsService = createService('sessions', {
     'diff',
     'changedFiles',
     'sessionGitStatus',
-    'getSessionByShortId',
     'sessionUsage',
     'branchCommits',
     'shas',

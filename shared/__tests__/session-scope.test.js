@@ -77,16 +77,14 @@ describe('new session route id', () => {
 
 describe('sessionHref', () => {
   it('uses the unscoped path from All sessions', () => {
-    expect(sessionHref({ short_id: 'abc', repo_id: 3 }, { fromAllSessions: true })).toBe(
-      '/sessions/abc'
-    );
-    expect(sessionHref({ short_id: 'abc', is_global: true }, { fromAllSessions: true })).toBe(
-      '/sessions/abc'
+    expect(sessionHref({ id: 12, repo_id: 3 }, { fromAllSessions: true })).toBe('/sessions/12');
+    expect(sessionHref({ id: 12, is_global: true }, { fromAllSessions: true })).toBe(
+      '/sessions/12'
     );
   });
 
   it('uses repo or global paths otherwise', () => {
-    expect(sessionHref({ short_id: 'abc', repo_id: 3 })).toBe('/repos/3/sessions/abc');
-    expect(sessionHref({ short_id: 'abc', is_global: true })).toBe('/global/sessions/abc');
+    expect(sessionHref({ id: 12, repo_id: 3 })).toBe('/repos/3/sessions/12');
+    expect(sessionHref({ id: 12, is_global: true })).toBe('/global/sessions/12');
   });
 });

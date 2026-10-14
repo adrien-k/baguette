@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
 import { requestNotificationPermission } from '../utils/notifications.js';
-import { useSessionNotifications } from '../hooks/useSessionNotifications.js';
+import { useSessionNotifications } from '../hooks/useSessionNotifications.jsx';
 import { useFilters } from './FilterContext.jsx';
 import { useRepoContext } from './RepoContext.jsx';
 import { sessionsListQueryFromPath } from '@baguette/shared/session-list-query.js';

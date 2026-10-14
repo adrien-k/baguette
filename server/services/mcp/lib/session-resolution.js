@@ -1,6 +1,5 @@
 export const SESSION_LIST_COLUMNS = [
   'id',
-  'short_id',
   'label',
   'status',
   'repo_id',
@@ -21,22 +20,19 @@ export const SESSION_LIST_COLUMNS = [
 
 async function requireSession(app, sessionId, userId) {
   try {
-    return await app.service('sessions').get(sessionId, { user: { id: userId } });
+    const session = await app.service('sessions').get(sessionId, { user: { id: userId } });
+    // `short_id` is internal (branch/worktree naming only) — never exposed to agents.
+    if (!session) return null;
+    const { short_id: _shortId, ...rest } = session;
+    return rest;
   } catch {
     return null;
   }
 }
 
-export async function resolveOwnedSession(app, { session_id, short_id }, userId) {
-  if (session_id != null) {
-    return requireSession(app, session_id, userId);
-  }
-  const trimmed = short_id?.trim();
-  if (!trimmed) return null;
-  const db = app.get('db');
-  const row = await db('sessions').where({ user_id: userId, short_id: trimmed }).first();
-  if (!row) return null;
-  return requireSession(app, row.id, userId);
+export async function resolveOwnedSession(app, { session_id }, userId) {
+  if (session_id == null) return null;
+  return requireSession(app, session_id, userId);
 }
 
 export async function resolveTargetSession(app, session_id, userId, callerSession) {

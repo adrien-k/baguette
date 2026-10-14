@@ -214,7 +214,6 @@ export function createCreateSessionTool(ctx) {
         });
         return ok({
           sessionId: session.id,
-          shortId: session.short_id,
           sessionPath: `/sessions/${session.id}`,
           message: `Session created: /sessions/${session.id}`,
         });

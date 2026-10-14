@@ -55,10 +55,22 @@ export function registerFeathersServices(app, sseManager) {
 
   app.service('sessions').registerActivityMessageListeners(app);
 
+  /** `short_id` is internal (branch/worktree/docker naming) — never sent to clients. */
+  const stripSessionShortId = (data) => {
+    if (!data || typeof data !== 'object' || data.short_id == null) return data;
+    const { short_id: _shortId, ...rest } = data;
+    return rest;
+  };
+
   // Route service CRUD events to the right SSE connections
   for (const event of CRUD_EVENTS) {
     app.service('sessions').on(event, (data) => {
-      if (data?.user_id) sseManager.send(data.user_id, { service: 'sessions', event, data });
+      if (data?.user_id)
+        sseManager.send(data.user_id, {
+          service: 'sessions',
+          event,
+          data: stripSessionShortId(data),
+        });
     });
 
     app.service('messages').on(event, async (data) => {

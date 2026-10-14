@@ -58,7 +58,7 @@ describe('CreateSession MCP agent_config_id', () => {
     user = await db('users').where({ username: 'mcp-user' }).first();
     claudeConfigId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });
 
-    createSpy = vi.fn().mockResolvedValue({ id: 42, short_id: 'abc12345' });
+    createSpy = vi.fn().mockResolvedValue({ id: 42 });
     app = {
       get: () => db,
       service: (name) => {

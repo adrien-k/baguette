@@ -80,7 +80,21 @@ describe('extractSessionIdFromHost', () => {
     expect(extractSessionIdFromHost('localhost:3000')).toBeNull();
   });
 
-  it('requires at least 4 hex chars for shortId', () => {
+  it('accepts lowercase alphanumeric (non-hex) shortIds', () => {
+    expect(extractSessionIdFromHost('session-wxyz9.preview.example.com')).toEqual({
+      shortId: 'wxyz9',
+      serviceName: null,
+    });
+  });
+
+  it('matches host headers case-insensitively', () => {
+    expect(extractSessionIdFromHost('SESSION-ABCD12.preview.example.com')).toEqual({
+      shortId: 'abcd12',
+      serviceName: null,
+    });
+  });
+
+  it('requires at least 4 chars for shortId', () => {
     expect(extractSessionIdFromHost('session-abc.example.com')).toBeNull();
     expect(extractSessionIdFromHost('session-abcd.example.com')).not.toBeNull();
   });

@@ -59,11 +59,13 @@ export function getServicePreviewHost(shortId, serviceName) {
  * Extract session shortId (and optional service name) from a Host header.
  * Returns { shortId, serviceName } or null if not a session subdomain.
  * serviceName is null for the portal / single-service subdomain.
+ * Short ids are lowercase alphanumerics; older sessions carry 8-char hex ids,
+ * both matched by `[a-z0-9]{4,}`.
  */
 export function extractSessionIdFromHost(host) {
-  const match = host.match(
-    new RegExp(`^${SESSION_PREFIX}([a-f0-9]{4,})(?:-([a-z0-9][a-z0-9-]*))?\\.`)
-  );
+  const match = String(host)
+    .toLowerCase()
+    .match(new RegExp(`^${SESSION_PREFIX}([a-z0-9]{4,})(?:-([a-z0-9][a-z0-9-]*))?\\.`));
   if (!match) return null;
   return { shortId: match[1], serviceName: match[2] ?? null };
 }

@@ -122,7 +122,7 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
 
   const isRunning = isTaskRunTimerActive(task.status);
   const endLabel = taskStatusEndLabel(task.status, task.exitCode);
-  const sessionPath = session?.short_id ? sessionUrl(session.short_id) : null;
+  const sessionPath = session?.id != null ? sessionUrl(session.id) : null;
 
   return (
     <div

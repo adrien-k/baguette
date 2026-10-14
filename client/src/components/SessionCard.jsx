@@ -77,7 +77,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
 
   return (
     <SessionCardLayout
-      onClick={() => navigate(sessionUrl(session.short_id))}
+      onClick={() => navigate(sessionUrl(session.id))}
       accentClassName={STATUS_ACCENT[session.status] ?? 'border-l-strong'}
       dimmed={isArchived || isArchiving}
       repo={

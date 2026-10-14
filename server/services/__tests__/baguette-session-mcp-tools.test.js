@@ -140,13 +140,7 @@ describe('baguette session MCP tools', () => {
     expect(out.message_count).toBe(2);
     expect(out.initial_prompt).toBe('Please fix login');
     expect(out.last_assistant_message.message.content).toBe('hello');
-  });
-
-  it('GetSession accepts short_id instead of session_id', async () => {
-    const get = tools.find((t) => t.name === 'GetSession');
-    const out = parseOk(await get.handler({ short_id: 'abcd' }));
-    expect(out.session.id).toBe(sessionId);
-    expect(out.session.short_id).toBe('abcd');
+    expect(out.session.short_id).toBeUndefined();
   });
 
   it('GetSessionMessage supports byte ranges', async () => {

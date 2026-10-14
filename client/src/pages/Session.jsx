@@ -260,7 +260,7 @@ function MiniSessionEntry({
   const isArchived = !!s.archived_at;
   const isArchiving = !isArchived && s.status === 'archiving';
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
-  const isCurrent = s.short_id === currentId;
+  const isCurrent = String(s.id) === String(currentId);
   const title = s.label || (isGlobalSession(s) ? 'Global session' : s.repo_full_name) || 'Session';
   const promptPreview = sessionListPromptPreview(s);
   const showRepo = showRepoDetails && !hideRepoBadge;
@@ -273,7 +273,7 @@ function MiniSessionEntry({
     >
       <div className="flex items-center gap-2">
         <SessionListIndicator session={s} />
-        <Link to={sessionUrl(s.short_id)} className="flex-1 min-w-0 leading-snug text-left">
+        <Link to={sessionUrl(s.id)} className="flex-1 min-w-0 leading-snug text-left">
           {showRepo && (
             <span className="block truncate">
               <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
@@ -323,10 +323,10 @@ function isGlobalSessionDisabledView(viewId) {
 }
 
 const SESSION_VIEWS = [...BASE_VIEWS, PREVIEW_VIEW, PLAN_VIEW, DETAILS_VIEW];
-function nextVisibleSession({ sessions, short_id, session, repoId, fromAllSessions }) {
+function nextVisibleSession({ sessions, sessionId, session, repoId, fromAllSessions }) {
   return sessions.find((s) => {
     if (
-      s.short_id === short_id ||
+      String(s.id) === String(sessionId) ||
       s.archived_at ||
       s.status === 'archiving' ||
       s.status === 'archived'
@@ -340,9 +340,9 @@ function nextVisibleSession({ sessions, short_id, session, repoId, fromAllSessio
 }
 
 export default function Session() {
-  const { short_id, repoId } = useParams();
+  const { id: routeSessionId, repoId } = useParams();
   const { pathname } = useLocation();
-  const isNewSessionRoute = isNewSessionRouteId(short_id);
+  const isNewSessionRoute = isNewSessionRouteId(routeSessionId);
   const fromAllSessions = isAllSessionsPath(pathname);
   const isGlobalSessionsRoute = pathname.startsWith('/global/');
   const { homeUrl, sessionUrl, loopEditUrl, showRepoDetails } = useFilterRoutes();
@@ -357,12 +357,12 @@ export default function Session() {
     session: sessionFromHook,
     loading: sessionLoading,
     error: sessionLoadError,
-  } = useGetSession(isNewSessionRoute ? null : short_id);
+  } = useGetSession(isNewSessionRoute ? null : routeSessionId);
   const sessionId = useMemo(() => {
-    if (isNewSessionRoute || !short_id) return null;
-    if (sessionFromHook?.short_id === short_id) return sessionFromHook.id;
-    return sessions.find((s) => s.short_id === short_id)?.id ?? null;
-  }, [isNewSessionRoute, short_id, sessionFromHook, sessions]);
+    if (isNewSessionRoute || !routeSessionId) return null;
+    const parsed = Number(routeSessionId);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [isNewSessionRoute, routeSessionId]);
   const { agents, primaryBuilder, reviewer } = useSessionAgents(sessionId);
   const agentParam = searchParams.get('agent');
   const activeAgent = useMemo(() => {
@@ -544,7 +544,7 @@ export default function Session() {
   // When switching sessions the resolved session (and therefore the messages keyed off
   // its id) lags behind the URL for a few renders. Treat that window as loading so the
   // chat shows a loader instead of the previous session's conversation.
-  const switchingSession = !!short_id && !isNewSessionRoute && session?.short_id !== short_id;
+  const switchingSession = !!sessionId && !isNewSessionRoute && session?.id !== sessionId;
   const chatLoading = switchingSession || messagesLoading;
 
   // If loadMore produced only hidden/filtered messages, keep pulling until something visible appears
@@ -581,9 +581,9 @@ export default function Session() {
       }
       return;
     }
-    const fromList = sessions.find((s) => s.short_id === short_id);
+    const fromList = sessions.find((s) => String(s.id) === String(routeSessionId));
     if (fromList) setSession(fromList);
-  }, [sessionFromHook, isNewSessionRoute, sessions, short_id]);
+  }, [sessionFromHook, isNewSessionRoute, sessions, routeSessionId]);
 
   useEffect(() => {
     if (session) setHeaderSnapshot(session);
@@ -601,7 +601,7 @@ export default function Session() {
 
   useEffect(() => {
     setCreateSessionError(null);
-  }, [short_id]);
+  }, [routeSessionId]);
 
   const tasks = useMemo(
     () =>
@@ -669,13 +669,13 @@ export default function Session() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (isNewSessionRoute || !short_id || sessionLoading || sessionFromHook) return;
+    if (isNewSessionRoute || !routeSessionId || sessionLoading || sessionFromHook) return;
     if (!sessionLoadError || isFeathersNotFound(sessionLoadError)) return;
     toastError('Failed to load session', sessionLoadError);
     navigate(homeUrl);
   }, [
     isNewSessionRoute,
-    short_id,
+    routeSessionId,
     sessionLoading,
     sessionFromHook,
     sessionLoadError,
@@ -685,7 +685,7 @@ export default function Session() {
 
   useEffect(() => {
     if (isNewSessionRoute || sessionLoading || !sessionFromHook?.id) return;
-    if (sessionFromHook.short_id !== short_id) return;
+    if (String(sessionFromHook.id) !== String(routeSessionId)) return;
     if (!sessionNeedsLastViewedUpdate(sessionFromHook)) return;
     const activityAt = sessionActivityAt(sessionFromHook);
     sessionsService.patch(sessionFromHook.id, { last_viewed_at: activityAt }).catch(() => {});
@@ -693,12 +693,11 @@ export default function Session() {
     isNewSessionRoute,
     sessionLoading,
     sessionFromHook?.id,
-    sessionFromHook?.short_id,
     sessionFromHook?.last_activity_at,
     sessionFromHook?.last_viewed_at,
     sessionFromHook?.updated_at,
     sessionFromHook?.created_at,
-    short_id,
+    routeSessionId,
   ]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
@@ -1065,7 +1064,7 @@ export default function Session() {
     try {
       const created = await sessionsService.create(params);
       setNewSessionFormKey((k) => k + 1);
-      navigate(sessionUrl(created.short_id));
+      navigate(sessionUrl(created.id));
       return true;
     } catch (err) {
       setCreateSessionError(err?.message ?? 'Failed to create session');
@@ -1087,7 +1086,7 @@ export default function Session() {
       { replace: true }
     );
     setShowTasks(true);
-  }, [short_id, viewParam, setSearchParams, setShowTasks]);
+  }, [routeSessionId, viewParam, setSearchParams, setShowTasks]);
 
   useEffect(() => {
     if (panelParam === 'preview') {
@@ -1124,7 +1123,7 @@ export default function Session() {
       setShowTasks(true);
     }
   }, [
-    short_id,
+    routeSessionId,
     activeView,
     panelParam,
     viewParam,
@@ -1139,11 +1138,11 @@ export default function Session() {
     if (isNewSessionRoute || !session) return sessions;
     const readonly =
       !!session.archived_at || session.status === 'archiving' || session.status === 'archived';
-    if (readonly && !sessions.some((s) => s.short_id === short_id)) {
+    if (readonly && !sessions.some((s) => String(s.id) === String(routeSessionId))) {
       return sortSessionsForList([session, ...sessions.filter((s) => s.id !== session.id)]);
     }
     return sessions;
-  }, [session, sessions, short_id, isNewSessionRoute]);
+  }, [session, sessions, routeSessionId, isNewSessionRoute]);
 
   const hideSessionListRepo = useMemo(() => {
     const keys = new Set(
@@ -1157,11 +1156,11 @@ export default function Session() {
     const first = sidebarSessions.find(
       (s) => !s.archived_at && s.status !== 'archiving' && s.status !== 'archived'
     );
-    if (first) navigate(sessionUrl(first.short_id));
+    if (first) navigate(sessionUrl(first.id));
     else navigate(homeUrl);
   };
 
-  const awaitingSession = !isNewSessionRoute && Boolean(short_id) && !session;
+  const awaitingSession = !isNewSessionRoute && Boolean(routeSessionId) && !session;
   const headerSession = session ?? headerSnapshot;
   const headerOpen = Boolean(session) && !isNewSessionRoute;
   const headerTransitionClass = headerAnimate
@@ -1189,7 +1188,7 @@ export default function Session() {
       requestAnimationFrame(scrollActiveViewTabIntoView);
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeView, isNewSessionRoute, short_id, viewTabStripKey, scrollActiveViewTabIntoView]);
+  }, [activeView, isNewSessionRoute, routeSessionId, viewTabStripKey, scrollActiveViewTabIntoView]);
 
   const isSidePanelOpen = !isNewSessionRoute && (isXlScreen || showTasks);
 
@@ -1289,12 +1288,12 @@ export default function Session() {
   const suppressOpenSessionUnread =
     !isNewSessionRoute &&
     !sessionLoading &&
-    sessionFromHook?.short_id === short_id &&
+    String(sessionFromHook?.id ?? '') === String(routeSessionId) &&
     sessionNeedsLastViewedUpdate(sessionFromHook);
 
   const sessionNotFound =
     !isNewSessionRoute &&
-    short_id &&
+    routeSessionId &&
     !sessionLoading &&
     !sessionFromHook &&
     isFeathersNotFound(sessionLoadError);
@@ -1456,19 +1455,21 @@ export default function Session() {
                 <MiniSessionEntry
                   key={s.id}
                   session={s}
-                  currentId={isNewSessionRoute ? null : short_id}
+                  currentId={isNewSessionRoute ? null : routeSessionId}
                   hideRepoBadge={hideSessionListRepo}
-                  suppressUnreadWhenOpen={s.short_id === short_id && suppressOpenSessionUnread}
+                  suppressUnreadWhenOpen={
+                    String(s.id) === String(routeSessionId) && suppressOpenSessionUnread
+                  }
                   onArchive={(archived) => {
-                    if (archived.short_id !== short_id || showArchived) return;
+                    if (String(archived.id) !== String(routeSessionId) || showArchived) return;
                     const firstSession = nextVisibleSession({
                       sessions,
-                      short_id,
+                      sessionId: routeSessionId,
                       session,
                       repoId,
                       fromAllSessions,
                     });
-                    navigate(firstSession ? sessionUrl(firstSession.short_id) : homeUrl);
+                    navigate(firstSession ? sessionUrl(firstSession.id) : homeUrl);
                   }}
                 />
               ))}
@@ -1845,7 +1846,6 @@ export default function Session() {
           task={tasks.find((t) => t.id === activeTaskModal)}
           session={{
             id: session.id,
-            short_id: session.short_id,
             label: session.label,
             repo_full_name: session.repo_full_name,
           }}

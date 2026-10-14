@@ -68,7 +68,7 @@ export function createSlackHelpers(ctx) {
 
   /** Slack messages carry their origin so a human can jump from the thread to the session. */
   const withSlackFooter = (text, s) =>
-    `${text}\n\n_via <${sessionUrl(s)}|baguette> · ${describeAgent(s)} · session ${s.short_id || s.id}_`;
+    `${text}\n\n_via <${sessionUrl(s)}|baguette> · ${describeAgent(s)} · session ${s.id}_`;
 
   return {
     slackAppHint,

@@ -209,7 +209,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/global/sessions/:short_id"
+              path="/global/sessions/:id"
               element={
                 <ProtectedRoute>
                   <Session />
@@ -257,7 +257,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/sessions/:short_id"
+              path="/sessions/:id"
               element={
                 <ProtectedRoute>
                   <Session />
@@ -295,7 +295,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/repos/:repoId/sessions/:short_id"
+              path="/repos/:repoId/sessions/:id"
               element={
                 <ProtectedRoute>
                   <Session />

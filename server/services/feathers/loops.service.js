@@ -529,7 +529,7 @@ async function attachTiedSessions(context) {
   const rows = await context.app
     .get('db')('sessions')
     .whereIn('id', ids)
-    .select('id', 'short_id', 'label', 'repo_id', 'repo_full_name', 'is_global');
+    .select('id', 'label', 'repo_id', 'repo_full_name', 'is_global');
   const byId = new Map(
     rows.map((s) => [s.id, { ...s, is_global: !!s.is_global, repo_id: s.repo_id ?? null }])
   );

@@ -361,19 +361,19 @@ describe('usage.activeAgents', () => {
     expect(rows).toHaveLength(3);
     expect(
       rows
-        .filter((r) => r.short_id === 'run12345')
+        .filter((r) => r.session_id === runningSessionId)
         .map((r) => r.agent_type)
         .sort()
     ).toEqual(['builder', 'reviewer']);
     expect(rows.every((r) => r.session_id)).toBe(true);
-    expect(rows.find((r) => r.agent_type === 'builder' && r.short_id === 'run12345').model).toBe(
-      'claude-sonnet-4-20250514'
-    );
+    expect(
+      rows.find((r) => r.agent_type === 'builder' && r.session_id === runningSessionId).model
+    ).toBe('claude-sonnet-4-20250514');
     expect(rows.find((r) => r.agent_type === 'reviewer').agent_sdk).toBe('cursor');
 
     const scoped = await svc.activeAgents({ user_id: String(USER) }, params(USER));
     expect(scoped).toHaveLength(2);
-    expect(scoped.every((r) => r.short_id === 'run12345')).toBe(true);
+    expect(scoped.every((r) => r.session_id === runningSessionId)).toBe(true);
   });
 
   it('returns an empty list when nothing is running', async () => {

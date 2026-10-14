@@ -12,7 +12,7 @@ import {
 
 /**
  * Routes for the current picker scope (All sessions, Global, or a repo).
- * `sessionUrl` takes a session short_id; `loopEditUrl` takes a loop id.
+ * `sessionUrl` takes a session id (or the 'new' route segment); `loopEditUrl` takes a loop id.
  */
 export function useFilterRoutes() {
   const { pathname } = useLocation();

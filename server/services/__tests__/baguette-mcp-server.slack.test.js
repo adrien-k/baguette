@@ -149,7 +149,7 @@ describe('SlackPostMessage', () => {
     expect(text).toContain('Build is green');
     expect(text).toContain('https://baguette.test/sessions/1');
     expect(text).toContain('Claude claude-opus-5');
-    expect(text).toContain('session abc123');
+    expect(text).toContain('session 1');
   });
 
   it('resolves a channel name to an id', async () => {

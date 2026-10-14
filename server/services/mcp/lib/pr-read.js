@@ -9,7 +9,6 @@ import { getOpenPRByNumber, splitPrBody } from '../../github.js';
 export async function readPrForSession(app, session) {
   const result = {
     session_id: session.id,
-    short_id: session.short_id ?? null,
     pr_url: session.pr_url ?? null,
     pr_number: session.pr_number ?? null,
     branch: session.remote_branch || session.local_branch || null,

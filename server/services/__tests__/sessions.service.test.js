@@ -11,10 +11,15 @@
  *     Uses a stub messages service so createFirstMessage stays isolated.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import crypto from 'crypto';
 import { feathers } from '@feathersjs/feathers';
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { createTestDb, insertTestSession, testSessionAgentDefaults } from '../../test-utils/db.js';
-import { registerSessionsService, resolveSessionFromData } from '../feathers/sessions.service.js';
+import {
+  generateSessionShortId,
+  registerSessionsService,
+  resolveSessionFromData,
+} from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
@@ -1097,48 +1102,6 @@ describe('Sessions service - find, get, create', () => {
       expect(data[0].id).toBe(sessId1);
     });
 
-    it('getSessionByShortId returns session with open_issues_count and running_tasks_count', async () => {
-      await db('session_issues').insert([
-        {
-          session_id: sessId1,
-          ref: 1,
-          severity: 'medium',
-          title: 'First',
-          status: 'opened',
-        },
-        {
-          session_id: sessId1,
-          ref: 2,
-          severity: 'low',
-          title: 'Submitted',
-          status: 'submitted',
-        },
-      ]);
-      app.service('tasks').find = async (findParams) => {
-        if (findParams.query?.session_id === sessId1 && findParams.query?.status === 'running') {
-          return [{ id: 1, session_id: sessId1, status: 'running' }];
-        }
-        return [];
-      };
-
-      const session = await app
-        .service('sessions')
-        .getSessionByShortId({ short_id: 'a1b2c3' }, params({ id: userId1 }));
-
-      expect(session.id).toBe(sessId1);
-      expect(session.short_id).toBe('a1b2c3');
-      expect(session.open_issues_count).toBe(1);
-      expect(session.running_tasks_count).toBe(1);
-    });
-
-    it('getSessionByShortId rejects unknown short_id', async () => {
-      await expect(
-        app
-          .service('sessions')
-          .getSessionByShortId({ short_id: 'missing1' }, params({ id: userId1 }))
-      ).rejects.toThrow(NotFound);
-    });
-
     it('rejects when not authenticated', async () => {
       await expect(app.service('sessions').find({ query: {}, provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
@@ -1663,14 +1626,61 @@ describe('Sessions service - find, get, create', () => {
       expect(builder).toBeTruthy();
     });
 
+    it('generates 6-char lowercase alphanumeric short ids', () => {
+      for (let i = 0; i < 30; i += 1) {
+        expect(generateSessionShortId()).toMatch(/^[a-z0-9]{6}$/);
+      }
+    });
+
     it('auto-generates short_id if not provided', async () => {
       const data = sessionData({ repo_id: repoId });
       delete data.short_id;
 
       const session = await app.service('sessions').create(data, params({ id: userId1 }));
 
-      expect(session.short_id).toBeTruthy();
-      expect(session.short_id).toHaveLength(8);
+      // short_id is internal — never returned to clients, but stored for name derivation.
+      expect(session.short_id).toBeUndefined();
+      const row = await db('sessions').where({ id: session.id }).first();
+      expect(row.short_id).toMatch(/^[a-z0-9]{6}$/);
+    });
+
+    it('regenerates the short_id when a random candidate is already taken', async () => {
+      const takenShortId = 'zz9xk2';
+      await insertTestSession(db, {
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'taken id',
+        short_id: takenShortId,
+        status: 'stopped',
+      });
+
+      const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+      const takenBytes = [...takenShortId].map((c) => alphabet.indexOf(c));
+      const realRandomBytes = crypto.randomBytes.bind(crypto);
+      let drawn = 0;
+      const randomBytesSpy = vi.spyOn(crypto, 'randomBytes').mockImplementation((count) => {
+        const buf = realRandomBytes(count);
+        // Reproduce the taken id over the first candidate's 5 one-byte draws,
+        // then fall through to the real RNG for the retry attempt.
+        for (let i = 0; i < count && drawn < takenBytes.length; i += 1) {
+          buf[i] = takenBytes[drawn];
+          drawn += 1;
+        }
+        return buf;
+      });
+
+      try {
+        const session = await app
+          .service('sessions')
+          .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+        const row = await db('sessions').where({ id: session.id }).first();
+        expect(row.short_id).toMatch(/^[a-z0-9]{6}$/);
+        expect(row.short_id).not.toBe(takenShortId);
+      } finally {
+        randomBytesSpy.mockRestore();
+      }
     });
 
     it('ignores user_id in data and always uses the authenticated user', async () => {
@@ -1999,8 +2009,9 @@ describe('Sessions service - find, get, create', () => {
       expect(userMsgCall).toBeUndefined();
       expect(session.status).toBe('stopped');
       expect(generateSessionMetadata).not.toHaveBeenCalled();
-      expect(session.label).toBe(`New session (${session.short_id})`);
-      expect(session.remote_branch).toBe(`task-${session.short_id}`);
+      expect(session.label).toBe(`New session #${session.id}`);
+      const savedRow = await db('sessions').where({ id: session.id }).first();
+      expect(session.remote_branch).toBe(`task-${savedRow.short_id}`);
     });
 
     it('does not generate metadata for a global session without initial_prompt', async () => {
@@ -2013,7 +2024,7 @@ describe('Sessions service - find, get, create', () => {
 
       expect(session.is_global).toBe(true);
       expect(generateSessionMetadata).not.toHaveBeenCalled();
-      expect(session.label).toBe(`New session (${session.short_id})`);
+      expect(session.label).toBe(`New session #${session.id}`);
     });
 
     it('rejects when not authenticated', async () => {
@@ -2046,14 +2057,15 @@ describe('Sessions service - find, get, create', () => {
         params({ id: userId1 })
       );
 
+      const savedRow = await db('sessions').where({ id: session.id }).first();
       expect(createWorktree).toHaveBeenCalledWith(
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/foo',
         expect.any(String),
         null,
-        { localBranch: `feature/foo-${session.short_id}`, baseBranch: 'develop' }
+        { localBranch: `feature/foo-${savedRow.short_id}`, baseBranch: 'develop' }
       );
-      expect(session.local_branch).toBe(`feature/foo-${session.short_id}`);
+      expect(session.local_branch).toBe(`feature/foo-${savedRow.short_id}`);
       expect(session.remote_branch).toBe('feature/foo');
       expect(session.base_branch).toBe('develop');
       expect(session.pr_number).toBe(42);
@@ -2112,9 +2124,10 @@ describe('Sessions service - find, get, create', () => {
         params({ id: userId1 })
       );
 
+      const savedRow = await db('sessions').where({ id: session.id }).first();
       expect(session.base_branch).toBe('mainline');
       expect(session.pr_number).toBeNull();
-      expect(session.local_branch).toBe(`feature/bar-${session.short_id}`);
+      expect(session.local_branch).toBe(`feature/bar-${savedRow.short_id}`);
       expect(session.remote_branch).toBe('feature/bar');
       expect(session.label).toBe('Continuing: feature/bar');
       expect(generateSessionMetadata).not.toHaveBeenCalled();
@@ -2123,7 +2136,7 @@ describe('Sessions service - find, get, create', () => {
         'feature/bar',
         expect.any(String),
         null,
-        { localBranch: `feature/bar-${session.short_id}`, baseBranch: 'mainline' }
+        { localBranch: `feature/bar-${savedRow.short_id}`, baseBranch: 'mainline' }
       );
     });
 
@@ -2224,13 +2237,14 @@ describe('Sessions service - find, get, create', () => {
         params({ id: userId1 })
       );
 
-      expect(session.local_branch).toBe(`feature/taken-${session.short_id}`);
+      const savedRow = await db('sessions').where({ id: session.id }).first();
+      expect(session.local_branch).toBe(`feature/taken-${savedRow.short_id}`);
       expect(session.remote_branch).toBe('feature/taken');
       expect(session.local_branch).not.toBe('feature/taken-a1b2c3');
       expect(createWorktree).toHaveBeenCalledWith(
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/taken',
-        session.short_id,
+        savedRow.short_id,
         null,
         expect.objectContaining({ localBranch: session.local_branch })
       );
@@ -2264,7 +2278,8 @@ describe('Sessions service - find, get, create', () => {
         params({ id: userId1 })
       );
       expect(session.remote_branch).toBe('feature/retry');
-      expect(session.local_branch).toBe(`feature/retry-${session.short_id}`);
+      const savedRow = await db('sessions').where({ id: session.id }).first();
+      expect(session.local_branch).toBe(`feature/retry-${savedRow.short_id}`);
       expect(session.status).not.toBe('failed');
     });
 

@@ -41,7 +41,7 @@ export function useSessionNotifications(sessions, loading) {
   }, [sessions, loading]);
 
   const { sessionUrl } = useFilterRoutes();
-  const sessionPath = useCallback((session) => sessionUrl(session.short_id), [sessionUrl]);
+  const sessionPath = useCallback((session) => sessionUrl(session.id), [sessionUrl]);
 
   const isCurrentSession = useCallback(
     (session) => locationRef.current.pathname === sessionPath(session),

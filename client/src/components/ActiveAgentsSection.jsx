@@ -50,7 +50,7 @@ export default function ActiveAgentsSection({
       ) : (
         <ul className="divide-y divide-line/80">
           {agents.map((agent) => {
-            const sessionTitle = agent.label || `Session ${agent.short_id}`;
+            const sessionTitle = agent.label || `Session #${agent.session_id}`;
             const repoLabel = agent.repo_full_name
               ? repoDisplayName(agent.repo_full_name)
               : usageRepoLabel(agent.repo_full_name);
@@ -59,7 +59,7 @@ export default function ActiveAgentsSection({
             return (
               <li key={`${agent.session_id}-${agent.agent_type}`}>
                 <Link
-                  to={sessionUrl(agent.short_id)}
+                  to={sessionUrl(agent.session_id)}
                   className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 sm:px-6 py-3 hover:bg-control/40 transition-colors"
                 >
                   <div className="min-w-0 flex-1">

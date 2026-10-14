@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-const SHORT_ID_RE = /^[a-f0-9]{8}$/i;
-
 /**
  * Pi's tool runtime often passes JSON arguments as strings. Normalize before Zod parse.
  * @param {Record<string, unknown>|null|undefined} raw
@@ -11,10 +9,7 @@ export function normalizeMcpParamsForPi(raw) {
 
   if (p.session_id != null && typeof p.session_id === 'string') {
     const s = p.session_id.trim();
-    if (SHORT_ID_RE.test(s)) {
-      p.short_id = s;
-      delete p.session_id;
-    } else if (/^\d+$/.test(s)) {
+    if (/^\d+$/.test(s)) {
       p.session_id = Number(s);
     }
   }

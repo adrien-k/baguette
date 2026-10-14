@@ -42,7 +42,7 @@ export function createSessionAgentContext(session, app, { slackApps = [] } = {})
   };
 
   const withSessionHeader = (body, s) => {
-    const sessionId = s?.short_id || s?.id;
+    const sessionId = s?.id;
     return `*Posted by baguette - ${describeAgent(s)}, session ${sessionId}:*\n\n${body}`;
   };
 

@@ -579,7 +579,7 @@ export class SessionsService extends KnexService {
       .whereNull('archived_at')
       .update({ archived_at: archivedAt, session_path: null, status: ARCHIVED_STATUS });
     const updated = await db('sessions').where({ id: sessionId }).first();
-    this.emit('patched', updated);
+    this.emit('patched', withoutShortId(updated));
   }
 
   /**
@@ -883,28 +883,6 @@ export class SessionsService extends KnexService {
   async sessionGitStatus(_data, params) {
     const session = params.resolvedSession;
     return computeSessionGitStatus(session);
-  }
-
-  async getSessionByShortId(data, params) {
-    const shortId = typeof data?.short_id === 'string' ? data.short_id.trim() : '';
-    if (!shortId) throw new BadRequest('short_id is required');
-    const userId = params.user?.id;
-    const db = this.app.get('db');
-    const row = await db('sessions').where({ short_id: shortId, user_id: userId }).first();
-    if (!row) throw new NotFound('Session not found');
-    const [openIssues, runningTasksList] = await Promise.all([
-      db('session_issues').where({ session_id: row.id, status: 'opened' }).count('* as count'),
-      this.app.service('tasks').find({
-        query: { session_id: row.id, status: 'running' },
-        user: params.user,
-      }),
-    ]);
-    const running_tasks_count = Array.isArray(runningTasksList) ? runningTasksList.length : 0;
-    return {
-      ...row,
-      open_issues_count: Number(openIssues[0]?.count ?? 0),
-      running_tasks_count,
-    };
   }
 
   async sessionUsage(_data, params) {
@@ -1258,7 +1236,7 @@ export class SessionsService extends KnexService {
     }
 
     const updated = await db('sessions').where({ id: session.id }).first();
-    this.emit('patched', updated);
+    this.emit('patched', withoutShortId(updated));
 
     return { ok: true };
   }
@@ -1655,11 +1633,41 @@ async function sessionRepoIsLocal(app, session) {
   return isLocalRepo(repo ?? session.repo_full_name);
 }
 
-async function ensureShortId(context) {
-  if (!context.data.short_id) {
-    context.data.short_id = crypto.randomBytes(4).toString('hex');
+/**
+ * Lowercase alphanumeric (base36). 6 chars ≈ 2.2B combinations — on par with the
+ * 8-char hex ids, easier to read in derived names. Lowercase-only because short_ids
+ * are embedded in case-insensitive hostnames (preview subdomains), docker
+ * container/volume names, and git branch suffixes.
+ */
+const SHORT_ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
+const SHORT_ID_LENGTH = 6;
+const SHORT_ID_MAX_ATTEMPTS = 10;
+
+/** Random lowercase alphanumeric id — uniform over base36 (rejects bytes ≥ 7·36). */
+export function generateSessionShortId() {
+  const chars = [];
+  while (chars.length < SHORT_ID_LENGTH) {
+    const byte = crypto.randomBytes(1)[0];
+    if (byte < 252) chars.push(SHORT_ID_ALPHABET[byte % SHORT_ID_ALPHABET.length]);
   }
-  return context;
+  return chars.join('');
+}
+
+async function ensureShortId(context) {
+  if (context.data.short_id) return context;
+  const db = context.app?.get('db');
+  // short_ids persist for the DB's lifetime (archived rows keep theirs, and they are
+  // embedded in pushed branch names), so a fresh id must not collide with any old one.
+  // The short_id UNIQUE constraint is the last-resort guard behind these attempts.
+  for (let attempt = 0; attempt < SHORT_ID_MAX_ATTEMPTS; attempt += 1) {
+    const candidate = generateSessionShortId();
+    const existing = db ? await db('sessions').where({ short_id: candidate }).first() : null;
+    if (!existing) {
+      context.data.short_id = candidate;
+      return context;
+    }
+  }
+  throw new Error('Could not generate a unique session short_id');
 }
 
 function seedLastActivityOnCreate(context) {
@@ -1742,8 +1750,8 @@ function hasInitialPrompt(prompt) {
   return typeof prompt === 'string' && prompt.trim().length > 0;
 }
 
-function defaultSessionLabelWithoutPrompt(shortId) {
-  return `New session (${shortId})`;
+function defaultSessionLabelWithoutPrompt(sessionId) {
+  return `New session #${sessionId}`;
 }
 
 function taskBranchForShortId(branchPrefix, shortId) {
@@ -1773,7 +1781,7 @@ async function provisionGlobalSession(app, session, params) {
     }
     if (!patch.label) patch.label = 'Global session';
   } else {
-    patch.label = defaultSessionLabelWithoutPrompt(session.short_id);
+    patch.label = defaultSessionLabelWithoutPrompt(session.id);
   }
   return await app.service('sessions').patch(session.id, patch, userParams);
 }
@@ -1868,7 +1876,7 @@ async function provisionSessionEnvironment(app, session, params) {
         logger.error(err, 'Metadata generation error (non-fatal)');
       }
     } else {
-      patch.label = defaultSessionLabelWithoutPrompt(shortId);
+      patch.label = defaultSessionLabelWithoutPrompt(session.id);
       if (!requestedBranchName && !session.remote_branch) {
         remoteName = fallbackBranch;
       }
@@ -1961,7 +1969,7 @@ async function markSessionSetupFailed(app, sessionId) {
     await db('sessions').where({ id: sessionId }).update({ status: 'failed' });
   }
   const updated = await db('sessions').where({ id: sessionId }).first();
-  if (updated) app.service('sessions').emit('patched', updated);
+  if (updated) app.service('sessions').emit('patched', withoutShortId(updated));
 }
 
 /** Row still `provisioning` after the in-memory job ended — unblock archive / UI. */
@@ -1975,7 +1983,7 @@ async function unstickProvisioningSessionRow(app, sessionId) {
     logger.error({ err, sessionId }, 'Failed to unstick provisioning session status');
   }
   const updated = await db('sessions').where({ id: sessionId }).first();
-  if (updated) app.service('sessions').emit('patched', updated);
+  if (updated) app.service('sessions').emit('patched', withoutShortId(updated));
 }
 
 async function failSessionProvisioning(app, sessionId, user, err) {
@@ -2095,7 +2103,14 @@ export async function resolveSessionFromData(context) {
   return context;
 }
 
-async function withHasWebserver(session) {
+/** Internal identifier — derived names (branch, worktree, docker) only, never sent to clients. */
+function withoutShortId(session) {
+  if (!session || session.short_id == null) return session;
+  const { short_id: _shortId, ...rest } = session;
+  return rest;
+}
+
+async function withHasWebserver(session, { forExternalClient = false } = {}) {
   if (!session) return session;
   const resolvedPath = resolveDataDirRelativePath(session.session_path);
   const absoluteSessionPath = resolvedPath
@@ -2105,7 +2120,7 @@ async function withHasWebserver(session) {
   const hasPreview = sessionHasPreviewConfig(config);
   const previewServices =
     hasPreview && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
-  return {
+  const shaped = {
     ...session,
     absolute_session_path: absoluteSessionPath ?? null,
     preview_url: hasPreview && getSessionPreviewUrl(session, config),
@@ -2119,17 +2134,20 @@ async function withHasWebserver(session) {
         ? getCodeserverUrl(absoluteSessionPath)
         : null,
   };
+  return forExternalClient ? withoutShortId(shaped) : shaped;
 }
 
 async function addHasWebserver(context) {
   const result = context.result;
   if (!result) return context;
+  const forExternalClient = !!context.params?.provider;
+  const shape = (session) => withHasWebserver(session, { forExternalClient });
   if (Array.isArray(result?.data)) {
-    context.result = { ...result, data: await Promise.all(result.data.map(withHasWebserver)) };
+    context.result = { ...result, data: await Promise.all(result.data.map(shape)) };
   } else if (Array.isArray(result)) {
-    context.result = await Promise.all(result.map(withHasWebserver));
+    context.result = await Promise.all(result.map(shape));
   } else {
-    context.result = await withHasWebserver(result);
+    context.result = await shape(result);
   }
   return context;
 }
@@ -2386,7 +2404,6 @@ export function registerSessionsService(app, path = 'sessions') {
       'diff',
       'changedFiles',
       'sessionGitStatus',
-      'getSessionByShortId',
       'sessionUsage',
       'branchCommits',
       'shas',
@@ -2482,7 +2499,6 @@ const sessionsHooks = {
       redirectAgentFieldsOnSessionPatch,
       normalizeModelFields,
     ],
-    getSessionByShortId: [],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
     baguetteYaml: [resolveSessionFromData],
@@ -2510,7 +2526,6 @@ const sessionsHooks = {
   after: {
     find: [mergeSessionAgentFields, addHasWebserver],
     get: [refreshPrStatusAfterGet, mergeSessionAgentFields, addHasWebserver],
-    getSessionByShortId: [refreshPrStatusAfterGet, mergeSessionAgentFields, addHasWebserver],
     create: [
       insertPrimaryBuilderAfterCreate,
       mergeSessionAgentFields,

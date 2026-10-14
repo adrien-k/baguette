@@ -23,7 +23,6 @@ function buildCurrentSessionInfo(sessionRow, { readOnlySession = false } = {}) {
     return {
       is_global: true,
       session_id: sessionRow.id,
-      short_id: sessionRow.short_id ?? null,
       label: sessionRow.label ?? null,
       repos_path: sessionPath,
       working_directory_restrictions: GLOBAL_REPOS_RESTRICTIONS,
@@ -38,7 +37,6 @@ function buildCurrentSessionInfo(sessionRow, { readOnlySession = false } = {}) {
   const info = {
     is_global: false,
     session_id: sessionRow.id,
-    short_id: sessionRow.short_id ?? null,
     label: sessionRow.label ?? null,
     pr_description: sessionRow.pr_description ?? null,
     repo_full_name: sessionRow.repo_full_name ?? null,

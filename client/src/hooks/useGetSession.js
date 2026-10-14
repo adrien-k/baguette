@@ -2,10 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { sessionsService, sessionIssuesService, tasksService } from '../feathers.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
-function sessionMatches(session, sessionId) {
-  if (!session || sessionId == null || sessionId === '') return false;
-  return session.short_id === sessionId || String(session.id) === String(sessionId);
-}
+const normalizeId = (sessionId) =>
+  sessionId == null || sessionId === '' || sessionId === 'new' ? null : sessionId;
 
 function mergeSessionPatch(prev, updated) {
   if (!prev) return updated;
@@ -24,28 +22,28 @@ function paginateTotal(res) {
 }
 
 /**
- * Returns a single session by short_id via getSessionByShortId (includes open_issues_count
- * and running_tasks_count). Updates in realtime (patched, removed, task/issue counts).
+ * Returns a single session by id (includes open_issues_count and running_tasks_count
+ * fetched alongside the session). Updates in realtime (patched, removed, task/issue counts).
  */
-export function useGetSession(shortId) {
+export function useGetSession(sessionId) {
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
   const [loadedFor, setLoadedFor] = useState(null);
   const sessionIdRef = useRef(null);
 
-  const refreshCounts = useCallback(async (sessionId) => {
-    if (!sessionId) return;
+  const refreshCounts = useCallback(async (id) => {
+    if (!id) return;
     try {
       const [issuesRes, tasksRes] = await Promise.all([
         sessionIssuesService.find({
-          query: { session_id: sessionId, status: 'opened', $limit: 0 },
+          query: { session_id: id, status: 'opened', $limit: 0 },
         }),
         tasksService.find({
-          query: { session_id: sessionId, status: 'running', $limit: 0 },
+          query: { session_id: id, status: 'running', $limit: 0 },
         }),
       ]);
       setSession((prev) => {
-        if (!prev || prev.id !== sessionId) return prev;
+        if (!prev || prev.id !== id) return prev;
         return {
           ...prev,
           open_issues_count: paginateTotal(issuesRes),
@@ -63,55 +61,57 @@ export function useGetSession(shortId) {
 
   const refetch = useCallback(
     (_opts) => {
-      if (!shortId) return;
+      const id = normalizeId(sessionId);
+      if (!id) return;
       sessionsService
-        .getSessionByShortId({ short_id: shortId })
+        .get(id)
         .then((s) => {
           setSession(s);
           setError(null);
-          setLoadedFor(shortId);
+          setLoadedFor(id);
+          void refreshCounts(s.id);
         })
         .catch((err) => {
           setError(err);
           setSession(null);
-          setLoadedFor(shortId);
+          setLoadedFor(id);
         });
     },
-    [shortId]
+    [sessionId, refreshCounts]
   );
 
-  useRefetchOnSseReconnect(refetch, Boolean(shortId));
+  useRefetchOnSseReconnect(refetch, normalizeId(sessionId) != null);
 
   useEffect(() => {
-    if (!shortId) {
+    const id = normalizeId(sessionId);
+    if (!id) {
       setError(null);
       return;
     }
     let cancelled = false;
 
     sessionsService
-      .getSessionByShortId({ short_id: shortId })
+      .get(id)
       .then((s) => {
         if (cancelled) return;
         setSession(s);
         setError(null);
-        setLoadedFor(shortId);
+        setLoadedFor(id);
+        void refreshCounts(s.id);
       })
       .catch((err) => {
         if (cancelled) return;
         setError(err);
         setSession(null);
-        setLoadedFor(shortId);
+        setLoadedFor(id);
       });
 
     const onPatched = (updated) => {
-      const matches = updated.short_id === shortId || String(updated.id) === String(shortId);
-      if (!matches) return;
+      if (String(updated.id) !== String(id)) return;
       setSession((prev) => mergeSessionPatch(prev, updated));
     };
     const onRemoved = (removed) => {
-      const matches = removed.short_id === shortId || String(removed.id) === String(shortId);
-      if (!matches) return;
+      if (String(removed.id) !== String(id)) return;
       if (removed.archived_at) {
         setSession((prev) => mergeSessionPatch(prev, removed));
       }
@@ -125,20 +125,20 @@ export function useGetSession(shortId) {
       sessionsService.off('patched', onPatched);
       sessionsService.off('removed', onRemoved);
     };
-  }, [shortId]);
+  }, [sessionId, refreshCounts]);
 
   useEffect(() => {
-    const sessionId = sessionIdRef.current;
-    if (!sessionId) return;
+    const currentId = sessionIdRef.current;
+    if (!currentId) return;
 
-    const forThisSession = (row) => row?.session_id === sessionId;
+    const forThisSession = (row) => String(row?.session_id) === String(currentId);
     const onIssueChange = (row) => {
       if (!forThisSession(row)) return;
-      void refreshCounts(sessionId);
+      void refreshCounts(Number(currentId));
     };
     const onTaskChange = (row) => {
       if (!forThisSession(row)) return;
-      void refreshCounts(sessionId);
+      void refreshCounts(Number(currentId));
     };
 
     sessionIssuesService.on('created', onIssueChange);
@@ -158,8 +158,10 @@ export function useGetSession(shortId) {
     };
   }, [session?.id, refreshCounts]);
 
-  const loading = Boolean(shortId) && loadedFor !== shortId;
-  const matched = sessionMatches(session, shortId);
+  const loading = Boolean(normalizeId(sessionId)) && loadedFor !== normalizeId(sessionId);
+  const requestedId = normalizeId(sessionId);
+  const matched =
+    Boolean(session) && requestedId != null && String(session.id) === String(requestedId);
 
   return { session: matched ? session : null, loading, error };
 }

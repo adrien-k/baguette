@@ -57,7 +57,7 @@ function LoopSessionLink({ loop }) {
   if (!session) return null;
 
   const strong = loop.session_link === 'strong';
-  const label = session.label || `Session ${session.short_id}`;
+  const label = session.label || `Session #${session.id}`;
   const tooltip = strong
     ? `${SINGLE_SESSION_TOOLTIP} This loop was created from that session and will stop when it is archived.`
     : SINGLE_SESSION_TOOLTIP;
@@ -65,7 +65,7 @@ function LoopSessionLink({ loop }) {
   return (
     <Tooltip content={tooltip} wrap>
       <Link
-        to={sessionUrl(session.short_id)}
+        to={sessionUrl(session.id)}
         aria-label={tooltip}
         className={`${BADGE} hover:text-heading hover:border-faint`}
       >
