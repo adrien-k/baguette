@@ -7,7 +7,7 @@ import {
   rejectTurnMismatch,
 } from '../agent-message-dispatch.js';
 import { requireTurnModelFromRow } from '../../../shared/turn-model.js';
-import { isMockAgentSdkEnabled } from '../../../shared/mock-agent-sdk.js';
+import { isMockAgentSdkEnabled, mockUserPromptText } from '../../../shared/mock-agent-sdk.js';
 import {
   MOCK_AGENT_SDK,
   MOCK_AGENT_SDK_LABEL,
@@ -18,7 +18,7 @@ import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { runMockAgentTurn, runMockReviewerTurn } from '../mock/mock-agent-turn.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { issueAgentMetadataFromTurn } from '../session-issues.js';
-import { resolveAgentRowForMessage } from '../agents-db.js';
+import { builderChatActiveKey, resolveAgentRowForMessage } from '../agents-db.js';
 import {
   clearAgentActiveTurnId,
   setAgentActiveTurnId,
@@ -56,6 +56,7 @@ class MockAgentService {
 
     const parsed = parseUserRow(row);
     if (!parsed || !isDispatchableUserMessage(parsed)) return;
+    const userPrompt = mockUserPromptText(parsed);
 
     const sessionId = row.session_id;
     const db = this.app.get('db') as DbLike;
@@ -76,7 +77,7 @@ class MockAgentService {
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
     if (this._activeSessions.has(activeKey)) {
       const activeTurnId = agent.active_turn_id;
       if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
@@ -101,6 +102,7 @@ class MockAgentService {
         activeKey,
         turnAgentConfigId,
         agent,
+        userPrompt,
       }),
       { userId: session.user_id, sessionId }
     ).catch((err) => {
@@ -122,6 +124,7 @@ class MockAgentService {
       activeKey?: string | number;
       turnAgentConfigId?: number | null;
       agent?: AgentRow;
+      userPrompt?: string;
     }
   ) {
     const sessionId = session.id;
@@ -199,6 +202,10 @@ class MockAgentService {
           session,
           writer,
           abortSignal: abortController.signal,
+          userPrompt: meta.userPrompt ?? '',
+          app: this.app,
+          userId,
+          turnId,
         });
       }
 
@@ -236,7 +243,7 @@ class MockAgentService {
     } else if (turnFinishedOk && !isReview) {
       await this.app
         .service('sessions')
-        .onTurnComplete(sessionId)
+        .onTurnComplete(sessionId, agent.id)
         .catch((err) => {
           logger.warn(
             { sessionId, err: (err as Error).message },

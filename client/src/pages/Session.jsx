@@ -496,7 +496,22 @@ export default function Session() {
     setScrollToDiffFile(pendingSidebarDiffFile);
     setPendingSidebarDiffFile(null);
   }, [sessionDiffFileByFile, sessionDiffLoading, pendingSidebarDiffFile]);
-  const { models, stale: modelsStale } = useAgentConfigModels(gitSession?.agent_config_id);
+
+  const composerAgentConfigId = useMemo(() => {
+    if (!activeAgent) return gitSession?.agent_config_id;
+    if (activeAgent.agent_type === 'reviewer') {
+      return activeAgent.agent_config_id ?? session?.review_agent_config_id;
+    }
+    return activeAgent.agent_config_id ?? gitSession?.agent_config_id;
+  }, [
+    activeAgent?.id,
+    activeAgent?.agent_type,
+    activeAgent?.agent_config_id,
+    gitSession?.agent_config_id,
+    session?.review_agent_config_id,
+  ]);
+
+  const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { pushing, beginLocalPush, endLocalPush } = useSessionPushInProgress(gitSession?.id);
   const [showPushModal, setShowPushModal] = useState(false);
@@ -750,7 +765,9 @@ export default function Session() {
   const handleAgentConfigChangeRequest = (configId) => {
     if (!session?.id || session?.archived_at || session?.status === 'archiving') return;
     const isReviewer = activeAgent?.agent_type === 'reviewer';
-    const currentConfigId = isReviewer ? session.review_agent_config_id : session.agent_config_id;
+    const currentConfigId = isReviewer
+      ? (activeAgent?.agent_config_id ?? session.review_agent_config_id)
+      : (activeAgent?.agent_config_id ?? session.agent_config_id);
     if (!configId || String(configId) === String(currentConfigId)) return;
     const next = configOptions.find((c) => c.key === String(configId));
     const current = configOptions.find((c) => c.key === String(currentConfigId));
@@ -773,15 +790,18 @@ export default function Session() {
     void applyAgentConfigChange(pendingAgentConfigId, { clearModel: true });
   };
 
+  const composerModelForDefaults = activeAgent?.model ?? gitSession?.model;
+  const composerSdkForDefaults = activeAgent?.agent_sdk ?? gitSession?.agent_sdk;
+
   useEffect(() => {
     if (!gitSession?.id || modelsStale || !models.length) return;
-    const current = gitSession.model;
+    const current = composerModelForDefaults;
     if (current && models.some((m) => m.id === current)) return;
     const fallback = defaultModelForSdk(models);
     if (!fallback) return;
     handleModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once the config's list is current
-  }, [gitSession?.id, gitSession?.agent_sdk, gitSession?.model, models, modelsStale]);
+  }, [gitSession?.id, composerSdkForDefaults, composerModelForDefaults, models, modelsStale]);
 
   // Named .baguette.yaml task: the server resolves the command, ports and dependencies.
   const handleTaskStart = (taskKey) => {

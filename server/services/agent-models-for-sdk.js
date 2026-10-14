@@ -13,7 +13,8 @@ import { listPiModels } from './pi-models.js';
 export async function listModelsForAgentConfig(sdk, config, { refresh = false, user = null } = {}) {
   if (sdk === 'mock') {
     if (!isMockAgentSdkEnabled()) return { models: [], rejected_models: [] };
-    return { models: listMockModels(), rejected_models: [] };
+    const catalogKey = config?.api_key?.trim() || '';
+    return { models: listMockModels(catalogKey), rejected_models: [] };
   }
   if (!config?.api_key) return { models: [], rejected_models: [] };
   switch (sdk) {

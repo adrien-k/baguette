@@ -12,7 +12,6 @@ import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
-import { useRepoContext } from '../../context/RepoContext.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
@@ -29,15 +28,7 @@ import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
-/** Repo-scoped reviewer defaults win over account settings (matches server resolver). */
-function effectiveReviewerDefaults(linkedRepo, userSettings) {
-  if (linkedRepo?.reviewer_default_config_id != null) {
-    return {
-      configId: linkedRepo.reviewer_default_config_id,
-      model: linkedRepo.reviewer_default_model?.model ?? null,
-      modelParams: linkedRepo.reviewer_default_model?.model_params ?? null,
-    };
-  }
+function effectiveReviewerDefaults(userSettings) {
   if (userSettings?.reviewer_default_config_id != null) {
     return {
       configId: userSettings.reviewer_default_config_id,
@@ -73,8 +64,6 @@ export default function ReviewView({
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
   const { currentUser: userSettings } = useCurrentUser();
-  const { repos = [] } = useRepoContext() ?? {};
-  const linkedRepo = session?.repo_id != null ? repos.find((r) => r.id === session.repo_id) : null;
   const [starting, setStarting] = useState(false);
   const [closedCount, setClosedCount] = useState(0);
   const [closedCountLoading, setClosedCountLoading] = useState(false);
@@ -102,7 +91,7 @@ export default function ReviewView({
 
   useEffect(() => {
     if (!session?.id) return;
-    const reviewerDefaults = effectiveReviewerDefaults(linkedRepo, userSettings);
+    const reviewerDefaults = effectiveReviewerDefaults(userSettings);
     const configId =
       reviewer?.agent_config_id ??
       session.review_agent_config_id ??
@@ -143,7 +132,6 @@ export default function ReviewView({
     reviewer?.model,
     reviewer?.model_params,
     reviewer?.agent_sdk,
-    linkedRepo,
     userSettings,
     fallbackConfigId,
     agentConfigOptions,

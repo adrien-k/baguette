@@ -29,32 +29,6 @@ describe('resolveEffectiveAgentDefaults', () => {
     });
   });
 
-  it('prefers stored repo defaults over account defaults', async () => {
-    const [repoId] = await db('repos').insert({
-      full_name: 'org/scoped',
-      repo_path: '/tmp/scoped',
-    });
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      agent_default_config_id: claudeConfigId,
-      agent_default_model: JSON.stringify({ model: 'haiku', model_params: null }),
-    });
-    await db('users')
-      .where({ id: userId })
-      .update({
-        agent_default_config_id: cursorConfigId,
-        agent_default_model: JSON.stringify({ model: 'composer', model_params: null }),
-      });
-
-    const resolved = await resolveEffectiveAgentDefaults(db, userId, repoId);
-    expect(resolved).toMatchObject({
-      agent_config_id: claudeConfigId,
-      model: 'haiku',
-      source: 'repo',
-    });
-  });
-
   it('prefers stored user defaults over last session', async () => {
     await db('users')
       .where({ id: userId })
@@ -103,7 +77,6 @@ describe('resolveEffectiveAgentDefaults', () => {
 describe('assertAgentConfigOnCreate reviewer defaults', () => {
   let userId;
   let claudeConfigId;
-  let cursorConfigId;
   let repoId;
 
   beforeEach(async () => {
@@ -111,24 +84,14 @@ describe('assertAgentConfigOnCreate reviewer defaults', () => {
     const user = await db('users').where({ username: 'create-user' }).first();
     userId = user.id;
     claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant' });
-    cursorConfigId = await insertTestAgentConfig(db, userId, {
-      sdk: 'cursor',
-      apiKey: 'cursor-key',
-      apiKeyEnvVar: null,
-    });
     [repoId] = await db('repos').insert({
       full_name: 'org/review-repo',
       repo_path: '/tmp/review-repo',
     });
   });
 
-  it('does not apply repo reviewer defaults on session create', async () => {
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      reviewer_default_config_id: cursorConfigId,
-      reviewer_default_model: JSON.stringify({ model: 'composer', model_params: null }),
-    });
+  it('does not apply reviewer defaults on session create', async () => {
+    await db('user_repos').insert({ user_id: userId, repo_id: repoId });
     const app = feathers();
     app.set('db', db);
     const data = {
@@ -167,34 +130,7 @@ describe('resolveAgentConfigIdForRepoSdk', () => {
     });
   });
 
-  it('uses repo default config before account default', async () => {
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      agent_default_config_id: claudeA,
-    });
-    await db('users').where({ id: userId }).update({ agent_default_config_id: claudeB });
-    const resolved = await resolveAgentConfigIdForRepoSdk(db, userId, repoId, 'claude');
-    expect(resolved).toBe(claudeA);
-  });
-
-  it('uses account default when repo default is for a different sdk', async () => {
-    const cursorConfigId = await insertTestAgentConfig(db, userId, {
-      sdk: 'cursor',
-      apiKey: 'cursor-key',
-      apiKeyEnvVar: null,
-    });
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      agent_default_config_id: claudeA,
-    });
-    await db('users').where({ id: userId }).update({ agent_default_config_id: cursorConfigId });
-    const resolved = await resolveAgentConfigIdForRepoSdk(db, userId, repoId, 'cursor');
-    expect(resolved).toBe(cursorConfigId);
-  });
-
-  it('uses agent default config when repo has no default', async () => {
+  it('uses account default config when linked repo has no stored default', async () => {
     await db('user_repos').insert({ user_id: userId, repo_id: repoId });
     await db('users').where({ id: userId }).update({ agent_default_config_id: claudeB });
     const resolved = await resolveAgentConfigIdForRepoSdk(db, userId, repoId, 'claude');

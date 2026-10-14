@@ -57,6 +57,8 @@ import type {
 } from './agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
 import {
+  builderChatActiveKey,
+  getAgentById,
   getPrimaryBuilderAgent,
   getReviewerAgent,
   resolveAgentRowForMessage,
@@ -336,7 +338,7 @@ ${body}`,
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
     const active = this._activeSessions.get(activeKey);
     const activeTurnId = agent.active_turn_id;
 
@@ -372,7 +374,10 @@ ${body}`,
     });
   }
 
-  async _prepareGlobalRulesDir(session: AgentSessionRow): Promise<string | null> {
+  async _prepareGlobalRulesDir(
+    session: AgentSessionRow,
+    agent?: AgentRow | null
+  ): Promise<string | null> {
     if (!session.session_path) return null;
     const absoluteCwd = resolveDataDirRelativePath(session.session_path);
     const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
@@ -381,7 +386,7 @@ ${body}`,
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agentPrompt }
+      { agentPrompt, agent }
     );
     return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',
@@ -450,9 +455,10 @@ ${body}`,
   async _sessionAgentOptions(
     session: AgentSessionRow,
     turnModel: { model?: string | null; modelParams?: unknown } = {},
-    agentConfigId?: number | null
+    agentConfigId?: number | null,
+    agent?: AgentRow | null
   ) {
-    const baguetteRulesDir = await this._prepareGlobalRulesDir(session);
+    const baguetteRulesDir = await this._prepareGlobalRulesDir(session, agent);
     const pluginDirs = await this._getPluginDirs(session);
     return this.buildAgentOptions(session, {
       dirs: [baguetteRulesDir, ...pluginDirs].filter((d): d is string => Boolean(d)),
@@ -669,7 +675,7 @@ ${body}`,
               continuation: !!resumeAgentId || Boolean(reviewExtras.continuation),
               extraPrompt: reviewExtras.extraPrompt,
             })
-          : await this._sessionAgentOptions(session, turnModel, turnAgentConfigId);
+          : await this._sessionAgentOptions(session, turnModel, turnAgentConfigId, agent);
       const cursorAgent = await this.createOrResumeAgent(session, {
         agentOptions,
         resumeAgentId,
@@ -746,7 +752,8 @@ ${body}`,
               userId,
               (err as Error).message,
               session,
-              channel
+              channel,
+              agent.id
             );
           }
         } catch {
@@ -765,7 +772,7 @@ ${body}`,
 
     if (turnFinishedOk && channel !== 'review') {
       try {
-        await this.app.service('sessions').onTurnComplete(sessionId);
+        await this.app.service('sessions').onTurnComplete(sessionId, agent.id);
       } catch (err) {
         logger.warn(
           { sessionId, err: (err as Error).message },
@@ -855,9 +862,20 @@ ${body}`,
               sdk: 'cursor',
             });
           } else {
-            const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
-            if (builder) await setAgentTurnTerminal(this.app, builder, userId, 'failed');
-            await this._persistStatusMessage(sessionId, userId, statusMsg, session, channel);
+            const agentId = sessionState?.agentId;
+            const agentRow =
+              agentId != null ? await getAgentById(this.app.get('db'), agentId) : null;
+            if (agentRow) {
+              await setAgentTurnTerminal(this.app, agentRow, userId, 'failed');
+            }
+            await this._persistStatusMessage(
+              sessionId,
+              userId,
+              statusMsg,
+              session,
+              channel,
+              sessionState?.agentId
+            );
           }
           return { break: true, finishedOk: false };
         }
@@ -942,13 +960,18 @@ ${body}`,
     userId: number,
     statusText: string,
     _session: AgentSessionRow,
-    channel: MessageChannel = 'chat'
+    channel: MessageChannel = 'chat',
+    builderAgentId?: number | null
   ) {
     const db = this.app.get('db');
-    const agentRow =
-      channel === 'review'
-        ? await getReviewerAgent(db, sessionId)
-        : await getPrimaryBuilderAgent(db, sessionId);
+    let agentRow;
+    if (channel === 'review') {
+      agentRow = await getReviewerAgent(db, sessionId);
+    } else if (builderAgentId != null) {
+      agentRow = await getAgentById(db, builderAgentId);
+    } else {
+      agentRow = await getPrimaryBuilderAgent(db, sessionId);
+    }
     if (!agentRow) return;
     const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
     await this.app.service('messages').create(

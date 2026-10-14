@@ -50,7 +50,11 @@ import {
   resolveRepoPath,
   resolveDataDirRelativePath,
 } from '../../config.js';
-import { agentServicePathForSession, getAgentServiceForSession } from '../agent-session-routing.js';
+import {
+  agentServicePathForSession,
+  getAgentServiceForAgent,
+  getAgentServiceForSession,
+} from '../agent-session-routing.js';
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
@@ -58,6 +62,7 @@ import { stringifyModelParamsForStorage } from '../../../shared/agent-session-de
 import { computeSessionGitStatus } from '../session-git-status.js';
 import { isBuilderAgentAwaitingUser } from '../agent-awaiting-user.js';
 import {
+  builderChatActiveKey,
   getPrimaryBuilderAgent,
   listAgentsForSession,
   getReviewerAgent,
@@ -493,7 +498,7 @@ export class SessionsService extends KnexService {
           );
       }
 
-      await this._stopAgentSession(session);
+      await this._stopAllBuilderAgents(session);
       await this._stopReviewer(session);
       await this._runCleanupAndFinalize(session);
       return await this.options.Model('sessions').where({ id }).first();
@@ -602,9 +607,35 @@ export class SessionsService extends KnexService {
     }
   }
 
-  async _stopAgentSession(session) {
-    const agent = await getAgentServiceForSession(this.app, session);
-    return agent.stopSession(session.id);
+  async _stopAllBuilderAgents(session) {
+    const db = this.app.get('db');
+    const agents = await listAgentsForSession(db, session.id);
+    for (const agent of agents) {
+      if (agent.agent_type !== 'builder') continue;
+      const active = agent.status === 'running' || agent.status === 'approval';
+      try {
+        if (agent.is_primary) {
+          const svc = await getAgentServiceForSession(this.app, session);
+          await svc.stopSession(session.id);
+        } else if (active) {
+          const svc = await getAgentServiceForAgent(this.app, agent);
+          const activeKey = builderChatActiveKey(agent);
+          if (typeof svc.stopTurn === 'function') {
+            await svc.stopTurn(activeKey);
+          } else if (typeof svc.stopSession === 'function') {
+            await svc.stopSession(activeKey);
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          { sessionId: session.id, agentId: agent.id, err: err.message },
+          'Failed to stop builder agent on session teardown'
+        );
+      }
+      if (active) {
+        await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
+      }
+    }
   }
 
   async _stopReviewer(session) {
@@ -637,7 +668,7 @@ export class SessionsService extends KnexService {
 
   async stop(data, params) {
     const session = params.resolvedSession;
-    await this._stopAgentSession(session);
+    await this._stopAllBuilderAgents(session);
     const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
     if (builder) {
       await setAgentTurnTerminal(this.app, builder, session.user_id, 'stopped');
@@ -1490,21 +1521,32 @@ export class SessionsService extends KnexService {
     }
   }
 
-  async onTurnComplete(sessionId) {
+  async onTurnComplete(sessionId, agentId = null) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
 
-    const builder = await getPrimaryBuilderAgent(db, sessionId);
-    if (
-      session.status === 'stopped' &&
-      builder?.status === 'stopped' &&
-      !isBuilderAgentAwaitingUser(builder)
-    ) {
+    let agent;
+    if (agentId != null) {
+      agent = await getAgentById(db, agentId);
+      if (!agent || agent.session_id !== sessionId) return;
+    } else {
+      agent = await getPrimaryBuilderAgent(db, sessionId);
+    }
+
+    if (agent?.is_primary) {
+      if (
+        session.status === 'stopped' &&
+        agent.status === 'stopped' &&
+        !isBuilderAgentAwaitingUser(agent)
+      ) {
+        return;
+      }
+    } else if (agent && agent.status === 'stopped' && !isBuilderAgentAwaitingUser(agent)) {
       return;
     }
 
-    if (isBuilderAgentAwaitingUser(builder)) {
+    if (isBuilderAgentAwaitingUser(agent)) {
       this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
       return;
     }
@@ -1521,8 +1563,8 @@ export class SessionsService extends KnexService {
       }
     }
 
-    if (builder?.id != null) {
-      await this.flushNextQueuedTurn(sessionId, builder.id);
+    if (agent?.id != null) {
+      await this.flushNextQueuedTurn(sessionId, agent.id);
     }
 
     const after = await db('sessions').where({ id: sessionId }).first();
@@ -1947,9 +1989,10 @@ async function finalizeSessionAfterProvision(app, session, params) {
   // flush the oldest now that the worktree exists. If we already created the first
   // user message from initial_prompt, wait for that turn to finish (onTurnComplete).
   if (!createdInitialPrompt) {
-    const builder = await getPrimaryBuilderAgent(db, session.id);
-    if (builder?.id != null) {
-      await app.service('sessions').flushNextQueuedTurn(session.id, builder.id);
+    const agents = await listAgentsForSession(db, session.id);
+    for (const agent of agents) {
+      if (agent.agent_type !== 'builder') continue;
+      await app.service('sessions').flushNextQueuedTurn(session.id, agent.id);
     }
   }
   const latest = await db('sessions').where({ id: session.id }).first();
@@ -2276,10 +2319,12 @@ async function mergeSessionAgentFields(context) {
     const out = { ...session };
     out.agents = agentRows.map((a) => ({
       id: a.id,
+      ref: a.ref,
       name: a.name,
       agent_type: a.agent_type,
       status: a.status,
       is_primary: a.is_primary,
+      subagent: Boolean(a.subagent),
     }));
     if (builder) {
       out.agent_config_id = builder.agent_config_id;

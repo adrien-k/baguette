@@ -1,13 +1,12 @@
 import { z } from 'zod';
+import { stringifyModelParamsForStorage } from '../../../../shared/agent-session-defaults.js';
 import { resolveCursorModelParams } from '../../../../shared/model-variants.js';
 import { resolveClaudeAgentModelParams } from '../../claude-model-params.js';
 import { resolvePiAgentModelParams } from '../../pi-model-params.js';
 import { parseCursorModelPrefsJson } from '../../agent-preferences.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
-import {
-  loadOwnedAgentConfig,
-  resolveEffectiveAgentDefaults,
-} from '../../agent-config-resolver.js';
+import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
+import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
 import { ok, fail } from '../lib/result.js';
 
 /** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
@@ -28,9 +27,10 @@ export function createCreateSessionTool(ctx) {
     name: 'CreateSession',
     description:
       'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
-      'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch and ListModels with agent_config_id + model. ' +
+      'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch. ' +
+      'Optional preset_model_id from ListPresetModels, else Settings → Agent session defaults. ' +
       'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
-      'Omitted agent_config_id uses your saved agent defaults or your most recent session’s configuration when available. Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).',
+      'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).',
     schema: {
       repo_id: z
         .number()
@@ -52,13 +52,11 @@ export function createCreateSessionTool(ctx) {
         .optional()
         .describe('Start a global session in the shared repos folder (no git/PR tools)'),
       initial_prompt: z.string().describe('Initial user prompt for the agent'),
-      agent_config_id: z
+      preset_model_id: z
         .number()
         .int()
         .optional()
-        .describe('Agent configuration id from Settings → Agent (default: last session config)'),
-      model: z.string().optional().describe('Model id from ListModels for the chosen config'),
-      variant_index: z.number().int().optional().describe('Cursor variant index from ListModels'),
+        .describe('Preset model id from ListPresetModels'),
       create_new_branch: z
         .boolean()
         .optional()
@@ -73,9 +71,7 @@ export function createCreateSessionTool(ctx) {
       branch,
       is_global = false,
       initial_prompt,
-      agent_config_id: agentConfigIdArg,
-      model: modelArg,
-      variant_index: variantIndexArg,
+      preset_model_id,
       create_new_branch = true,
       branch_name,
       auto_push = true,
@@ -113,30 +109,19 @@ export function createCreateSessionTool(ctx) {
       }
 
       const db = app.get('db');
-      let agentConfigId = agentConfigIdArg ?? null;
-      let model = modelArg ?? null;
-      let defaultModelParams;
-      if (agentConfigId == null || model == null) {
-        const effective = await resolveEffectiveAgentDefaults(
-          db,
-          userId,
-          is_global ? null : repo_id
-        );
-        if (agentConfigId == null) agentConfigId = effective?.agent_config_id ?? null;
-        if (!model && effective?.model) model = effective.model;
-        if (variantIndexArg == null && effective?.model_params?.length) {
-          defaultModelParams = effective.model_params;
-        }
-      }
-      if (agentConfigId == null) {
-        return fail(
-          'agent_config_id is required. Add an agent configuration in Settings → Agent or pass agent_config_id explicitly.'
-        );
+      let resolved;
+      try {
+        resolved = await resolveMcpBuilderModel(db, userId, {
+          preset_model_id: preset_model_id ?? null,
+          repo_id: is_global ? null : repo_id,
+        });
+      } catch (err) {
+        return fail(err.message);
       }
 
       let config;
       try {
-        config = await loadOwnedAgentConfig(db, agentConfigId, userId);
+        config = await loadOwnedAgentConfig(db, resolved.agent_config_id, userId);
       } catch (err) {
         return fail(err.message);
       }
@@ -146,52 +131,44 @@ export function createCreateSessionTool(ctx) {
         return fail(`Agent SDK "${agent_sdk}" is not available for this configuration.`);
       }
 
-      const prefs = parseCursorModelPrefsJson(fullUser.agent_preferences);
-      let modelParams;
-      if (model) {
+      let modelParams = stringifyModelParamsForStorage(resolved.model_params);
+      if (!modelParams && resolved.model) {
+        const prefs = parseCursorModelPrefsJson(fullUser.agent_preferences);
         try {
           const models = await loadModelsForSdk(fullUser, agent_sdk, null, app, {
-            agentConfigId,
+            agentConfigId: resolved.agent_config_id,
           });
-          if (!models.some((m) => m.id === model)) {
-            return fail(`Unknown ${agent_sdk} model "${model}". Call ListModels first.`);
-          }
+          let resolvedParams;
           if (agent_sdk === 'cursor') {
-            modelParams =
-              defaultModelParams ??
-              resolveCursorModelParams({
-                models,
-                modelId: model,
-                modelParamsJson: undefined,
-                variantIndex: variantIndexArg,
-                cursorModelPrefs: prefs,
-              });
+            resolvedParams = resolveCursorModelParams({
+              models,
+              modelId: resolved.model,
+              modelParamsJson: undefined,
+              cursorModelPrefs: prefs,
+            });
           } else if (agent_sdk === 'claude') {
-            modelParams =
-              defaultModelParams ??
-              resolveClaudeAgentModelParams({
-                models,
-                modelId: model,
-                modelParams: undefined,
-                cursorModelPrefs: prefs,
-              });
+            resolvedParams = resolveClaudeAgentModelParams({
+              models,
+              modelId: resolved.model,
+              modelParams: undefined,
+              cursorModelPrefs: prefs,
+            });
           } else if (agent_sdk === 'pi') {
-            modelParams =
-              defaultModelParams ??
-              resolvePiAgentModelParams({
-                models,
-                modelId: model,
-                modelParams: undefined,
-              });
+            resolvedParams = resolvePiAgentModelParams({
+              models,
+              modelId: resolved.model,
+              modelParams: undefined,
+            });
           }
-        } catch (err) {
-          return fail(err.message);
+          modelParams = stringifyModelParamsForStorage(resolvedParams);
+        } catch {
+          // Model list unavailable — session still starts with model id only (no variant params).
         }
       }
 
       const payload = {
         initial_prompt,
-        agent_config_id: agentConfigId,
+        agent_config_id: resolved.agent_config_id,
         agent_sdk,
       };
       if (is_global) {
@@ -202,7 +179,7 @@ export function createCreateSessionTool(ctx) {
         payload.create_new_branch = create_new_branch;
         payload.auto_push = auto_push;
       }
-      if (model) payload.model = model;
+      payload.model = resolved.model;
       if (modelParams) payload.model_params = modelParams;
       if (!is_global && branch_name) payload.branch_name = branch_name;
       if (plugins?.length) payload.plugins = plugins;

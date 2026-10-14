@@ -6,8 +6,6 @@ import { feathers } from '@feathersjs/feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerUserReposService } from '../feathers/user-repos.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
-import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
-
 vi.mock('../anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue({
     models: [{ id: 'sonnet', display_name: 'Sonnet' }],
@@ -98,22 +96,6 @@ describe('UserRepos service - show_in_all_sessions', () => {
       .patch(userRepo1.id, { show_in_all_sessions: false }, params(user1));
     const row = await db('user_repos').where({ id: userRepo1.id }).first();
     expect(row.show_in_all_sessions).toBe(0);
-  });
-});
-
-describe('UserRepos service - patch agent defaults', () => {
-  it('stores agent_default_config_id and model on the link', async () => {
-    const configId = await insertTestAgentConfig(db, user1.id);
-    const result = await app.service('user-repos').patch(
-      userRepo1.id,
-      {
-        agent_default_config_id: configId,
-        agent_default_model: { model: 'sonnet', model_params: null },
-      },
-      params(user1)
-    );
-    expect(result.agent_default_config_id).toBe(configId);
-    expect(result.agent_default_model).toEqual({ model: 'sonnet', model_params: null });
   });
 });
 

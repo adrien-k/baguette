@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { loopPatchSchema } from '../lib/loop-schemas.js';
+import { applyLoopPresetModel } from '../lib/apply-loop-preset-model.js';
 
 export function createCreateLoopTool(ctx) {
   const { app, userId } = ctx;
@@ -18,6 +19,7 @@ export function createCreateLoopTool(ctx) {
     },
     handler: async (data) => {
       try {
+        await applyLoopPresetModel(app, userId, data);
         const loop = await app.service('loops').create(data, userParams);
         return ok({ loop });
       } catch (err) {

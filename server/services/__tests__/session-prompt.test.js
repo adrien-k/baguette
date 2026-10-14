@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
-import { buildSystemPromptAppend, buildReviewSystemPromptAppend } from '../session-prompt.js';
+import {
+  buildSystemPromptAppend,
+  buildReviewSystemPromptAppend,
+  loadFullSecondaryBuilderPromptTemplate,
+} from '../session-prompt.js';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -134,6 +138,33 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('```mermaid');
     expect(result).toContain('messages');
     expect(result).toContain('plan');
+  });
+
+  it('uses primary end-of-turn shipping instructions for the primary builder', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session, { agent: { is_primary: 1 } });
+    expect(result).toContain('End-of-turn shipping');
+    expect(result).toContain('UpdateSession');
+  });
+
+  it('uses secondary-builder restrictions for non-primary builders', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session, { agent: { is_primary: 0 } });
+    expect(result).toContain('Secondary builder role');
+    expect(result).toContain('Do **not** call **`UpdateSession`**');
+    expect(result).not.toContain('End-of-turn shipping (required every turn)');
+    expect(result).not.toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).not.toContain('spawning sub-agents');
+    expect(result).not.toContain('Baguette repo configuration');
+    expect(result).not.toContain('ConfigRepoPrompt');
+  });
+
+  it('loadFullSecondaryBuilderPromptTemplate includes secondary role rules', async () => {
+    const result = await loadFullSecondaryBuilderPromptTemplate();
+    expect(result).toContain('Secondary builder role');
+    expect(result).not.toContain('End-of-turn shipping (required every turn)');
+    expect(result).not.toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).not.toContain('Baguette repo configuration');
   });
 
   it('uses the light global prompt for is_global sessions', async () => {

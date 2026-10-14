@@ -18,9 +18,11 @@ export const loopPatchSchema = {
   create_new_branch: z.boolean().optional(),
   auto_push: z.boolean().optional(),
   single_session: z.boolean().optional(),
-  agent_sdk: z.enum(['claude', 'cursor', 'pi']).optional(),
-  model: z.string().optional(),
-  model_params: z.string().optional(),
+  preset_model_id: z
+    .number()
+    .int()
+    .optional()
+    .describe('Preset model id from ListPresetModels (else session defaults)'),
   plugins: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
   is_global: z.boolean().optional(),

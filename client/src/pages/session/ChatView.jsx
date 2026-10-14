@@ -39,6 +39,7 @@ import ChatQuickActionButton, {
 } from '../../components/chat/ChatQuickActionButton.tsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
+import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
 import PrDraftToggleButton, {
   canTogglePrDraftStatus,
@@ -61,7 +62,11 @@ import { useSessionUsage } from '../../hooks/useSessionUsage.js';
 import { schedulePayload } from '../../utils/loopSchedule.js';
 import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
-import { agentDisplayTitle, isAgentTurnActive } from '../../utils/sessionAgents.js';
+import {
+  agentDisplayTitle,
+  isAgentTurnActive,
+  isSubagentBuilder,
+} from '../../utils/sessionAgents.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
 const CHECK_COMMENTS_PROMPT_BUILDER =
@@ -189,6 +194,9 @@ export default function ChatView({
 
   const isRunning = isAgentTurnActive(activeAgent?.status);
   const isProvisioning = session?.status === 'provisioning';
+  const activeSubagent = isSubagentBuilder(activeAgent);
+  const showMessageComposer = !activeSubagent;
+  const showSessionChatFooterExtras = !activeAgent || Boolean(Number(activeAgent.is_primary));
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
@@ -326,7 +334,9 @@ export default function ChatView({
     if (!session?.id || stopping) return;
     setStopping(true);
     try {
-      if (isReviewerAgent && activeAgent?.id) {
+      const stopSingleAgent =
+        activeAgent?.id && (isReviewerAgent || !Number(activeAgent.is_primary));
+      if (stopSingleAgent) {
         await agentsService.stop({ agent_id: activeAgent.id });
       } else {
         await sessionsService.stop(session.id);
@@ -698,6 +708,7 @@ export default function ChatView({
                 </div>
               )}
               {!readonly &&
+                showSessionChatFooterExtras &&
                 !isProvisioning &&
                 !isGlobalSession(session) &&
                 !isRunning &&
@@ -784,7 +795,7 @@ export default function ChatView({
                     />
                   </div>
                 )}
-              {session && !isRunning && !isProvisioning && (
+              {session && showSessionChatFooterExtras && !isRunning && !isProvisioning && (
                 <ChatCostSummary usage={sessionUsage} loading={sessionUsageLoading} />
               )}
               {runningBashDock.length > 0 && (
@@ -805,7 +816,36 @@ export default function ChatView({
           </div>
         )}
 
-        {!readonly && session && (
+        {!readonly && session && !showMessageComposer && activeSubagent && (
+          <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
+            <div className={`w-full ${CHAT_COLUMN_CLASS}`}>
+              <div className="rounded-lg border border-strong bg-control overflow-hidden">
+                <p className="px-3 pt-2.5 pb-1 text-xs text-faint text-center">
+                  This agent only accepts new messages via MCP. Switch to another agent to chat in
+                  Baguette.
+                </p>
+                <div className="px-2 sm:px-3 pb-2 pt-0.5">
+                  <SessionModelSelect
+                    agentConfigKey={
+                      agentSource?.agent_config_id != null
+                        ? String(agentSource.agent_config_id)
+                        : agentSource?.agent_sdk
+                    }
+                    model={composerModel}
+                    params={composerModelParams}
+                    models={models}
+                    agentConfigOptions={agentConfigOptions}
+                    configsLoading={configsLoading}
+                    modelsLoading={modelsLoading}
+                    disabled
+                    className="min-w-0"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {!readonly && session && showMessageComposer && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
             <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
               {(agentQueue.length > 0 || tiedLoops.length > 0) && (

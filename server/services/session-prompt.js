@@ -15,14 +15,28 @@ async function renderBasePromptForSession(agentPrompt = '', sessionPath = null) 
   return base + extra;
 }
 
-export async function buildSystemPromptAppend(sessionRow, { agentPrompt = '' } = {}) {
+/** @param {{ is_primary?: number | boolean | null }} [agent] */
+function isPrimaryBuilderAgent(agent) {
+  if (!agent) return true;
+  return Boolean(Number(agent.is_primary));
+}
+
+export async function buildSystemPromptAppend(sessionRow, { agentPrompt = '', agent = null } = {}) {
   if (isGlobalSession(sessionRow)) {
     return loadPrompt('global-prompt', {});
   }
 
   const sessionPath = sessionRow?.session_path ?? null;
+  const rolePromptName = isPrimaryBuilderAgent(agent)
+    ? 'primary-builder-role-prompt'
+    : 'secondary-builder-role-prompt';
+  const primary = isPrimaryBuilderAgent(agent);
+  const builderRolePrompt = await loadPrompt(rolePromptName, {});
+  const repoConfigPrompt = primary ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
   return loadPrompt('build-prompt', {
     base_prompt: await renderBasePromptForSession(agentPrompt, sessionPath),
+    builder_role_prompt: builderRolePrompt,
+    repo_config_prompt: repoConfigPrompt,
   });
 }
 
@@ -31,11 +45,26 @@ async function loadBaseSessionPromptTemplate() {
   return loadPrompt('base-prompt', {});
 }
 
-/** Full build-prompt.md for Settings with base-prompt.md embedded (no user extension). */
+/** Full build-prompt.md for Settings (primary builder; no user extension). */
 export async function loadFullSessionPromptTemplate() {
   const basePrompt = await loadBaseSessionPromptTemplate();
+  const builderRolePrompt = await loadPrompt('primary-builder-role-prompt', {});
+  const repoConfigPrompt = await loadPrompt('build-prompt-repo-config-prompt', {});
   return loadPrompt('build-prompt', {
     base_prompt: basePrompt,
+    builder_role_prompt: builderRolePrompt,
+    repo_config_prompt: repoConfigPrompt,
+  });
+}
+
+/** Full build-prompt.md for Settings (secondary / extra builders; no user extension). */
+export async function loadFullSecondaryBuilderPromptTemplate() {
+  const basePrompt = await loadBaseSessionPromptTemplate();
+  const builderRolePrompt = await loadPrompt('secondary-builder-role-prompt', {});
+  return loadPrompt('build-prompt', {
+    base_prompt: basePrompt,
+    builder_role_prompt: builderRolePrompt,
+    repo_config_prompt: '',
   });
 }
 

@@ -22,7 +22,6 @@ import {
   ensureLocalClone,
   toStrippedName,
 } from '../github.js';
-import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { requireUser } from './hooks.js';
 import { getGithubToken } from '../agent-settings.js';
@@ -72,11 +71,7 @@ class ReposService extends KnexService {
         'user_repos.id as user_repo_id',
         'user_repos.agent_prompt',
         'user_repos.review_prompt',
-        'user_repos.show_in_all_sessions',
-        'user_repos.agent_default_config_id',
-        'user_repos.agent_default_model',
-        'user_repos.reviewer_default_config_id',
-        'user_repos.reviewer_default_model'
+        'user_repos.show_in_all_sessions'
       )
       .whereNull('repos.deleted_at')
       .orderBy('repos.full_name');
@@ -109,8 +104,6 @@ class ReposService extends KnexService {
       session_count: countMap[r.id] ?? 0,
       exists_on_fs: existsOnFs[i],
       show_in_all_sessions: r.show_in_all_sessions !== 0 && r.show_in_all_sessions !== false,
-      agent_default_model: parseAgentDefaultModelJson(r.agent_default_model),
-      reviewer_default_model: parseAgentDefaultModelJson(r.reviewer_default_model),
     }));
   }
 

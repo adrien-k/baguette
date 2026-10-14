@@ -79,6 +79,7 @@ class QueuedMessagesService extends KnexService {
         agent_sdk: data.agent_sdk,
         model: data.model,
         ...(data.model_params != null ? { model_params: data.model_params } : {}),
+        ...(data.agent_config_id != null ? { agent_config_id: data.agent_config_id } : {}),
       },
       { user: params.user }
     );

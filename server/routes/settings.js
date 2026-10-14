@@ -4,6 +4,7 @@ import { githubFetch } from '../services/github-api.js';
 import { asyncHandler } from '../lib/app-error-handler.js';
 import {
   loadFullSessionPromptTemplate,
+  loadFullSecondaryBuilderPromptTemplate,
   loadFullReviewPromptTemplate,
 } from '../services/session-prompt.js';
 import { getNavbarSystemInformation, getSystemInfo } from '../services/system-information.js';
@@ -15,11 +16,12 @@ export default function createSettingsRoutes(requireAuth) {
     '/api/settings/prompt-templates',
     requireAuth,
     asyncHandler(async (_req, res) => {
-      const [session, review] = await Promise.all([
+      const [session, secondary_builder, review] = await Promise.all([
         loadFullSessionPromptTemplate(),
+        loadFullSecondaryBuilderPromptTemplate(),
         loadFullReviewPromptTemplate(),
       ]);
-      res.json({ session, review });
+      res.json({ session, secondary_builder, review });
     })
   );
 

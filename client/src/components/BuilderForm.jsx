@@ -655,7 +655,7 @@ export default function BuilderForm({
         {!isLoop && (
           <div className="flex flex-wrap items-baseline justify-end gap-2 mb-1">
             <Link
-              to="/settings?tab=prompts#settings-prompt-session"
+              to="/settings?tab=prompts#settings-prompt-builder"
               target="_blank"
               rel="noopener noreferrer"
               className={INLINE_SECONDARY_LINK_CLASS}

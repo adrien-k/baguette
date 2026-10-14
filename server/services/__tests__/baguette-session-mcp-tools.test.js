@@ -6,6 +6,7 @@ import {
   insertTestSession,
   testMessageRow,
 } from '../../test-utils/db.js';
+import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
@@ -42,6 +43,13 @@ describe('baguette session MCP tools', () => {
 
   beforeEach(async () => {
     [userId] = await db('users').insert({ github_id: 99, username: 'mcp', approved: true });
+    const claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant-test' });
+    await db('users')
+      .where({ id: userId })
+      .update({
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+      });
     const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
     await db('user_repos').insert({ user_id: userId, repo_id: repoId });
     sessionId = await insertTestSession(db, {
@@ -174,6 +182,40 @@ describe('baguette session MCP tools', () => {
     expect(parsed.content).toBe('ping');
     expect(parsed.source).toBe('mcp');
     expect(row.subtype).toBe('mcp');
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    expect(row.model).toBe(primary.model);
+  });
+
+  it('CreateSessionMessage uses target agent model without Settings builder defaults', async () => {
+    await db('users').where({ id: userId }).update({
+      agent_default_config_id: null,
+      agent_default_model: null,
+    });
+    const altConfigId = await insertTestAgentConfig(db, userId, {
+      apiKey: 'sk-ant-alt',
+      label: 'Alt',
+    });
+    const [extraAgentId] = await db('agents').insert({
+      session_id: sessionId,
+      ref: 2,
+      name: 'Extra',
+      agent_type: 'builder',
+      is_primary: 0,
+      status: 'stopped',
+      agent_config_id: altConfigId,
+      agent_sdk: 'claude',
+      model: 'opus',
+      model_params: null,
+      current_turn_id: 0,
+    });
+    const create = tools.find((t) => t.name === 'CreateSessionMessage');
+    const out = parseOk(
+      await create.handler({ session_id: sessionId, text: 'follow-up', agent_ref: 2 })
+    );
+    const row = await db('session_messages').where({ id: out.message_id }).first();
+    expect(row.agent_id).toBe(extraAgentId);
+    expect(row.model).toBe('opus');
+    expect(row.agent_config_id).toBe(altConfigId);
   });
 
   it('CreateSessionMessage schedules with send_at', async () => {

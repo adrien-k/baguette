@@ -19,8 +19,8 @@ import { isBaguetteUserMessage, isMcpUserMessage } from '@baguette/shared/turn-m
 import UserMessageContent, {
   userMessagePlainText,
 } from '../../components/chat/UserMessageContent.tsx';
-import AgentTypeBadge from '../../components/AgentTypeBadge.jsx';
-import { agentDisplayTitle, agentShowsTypeBadge } from '../../utils/sessionAgents.js';
+import AgentTypeIcon from '../../components/AgentTypeIcon.jsx';
+import { agentDisplayTitle } from '../../utils/sessionAgents.js';
 
 function formatLegacyMcpToolDisplayName(name, input) {
   return logToolDisplayName(name, input ?? {});
@@ -33,12 +33,10 @@ function AgentScopeBadge({ agentId, agentLabelById }) {
   const agent = { name: info.name, agent_type: info.agent_type };
   return (
     <span className="flex items-center gap-1 min-w-0 max-w-full">
+      <AgentTypeIcon agentType={info.agent_type} className="w-3 h-3" />
       <span className="text-[10px] text-fg-muted truncate max-w-[8rem]" title={info.name}>
         {agentDisplayTitle(agent)}
       </span>
-      {agentShowsTypeBadge(agent) ? (
-        <AgentTypeBadge agentType={info.agent_type} className="!uppercase" />
-      ) : null}
     </span>
   );
 }

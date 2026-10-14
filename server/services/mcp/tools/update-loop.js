@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { loopPatchSchema } from '../lib/loop-schemas.js';
+import { applyLoopPresetModel } from '../lib/apply-loop-preset-model.js';
 
 export function createUpdateLoopTool(ctx) {
   const { app, userId } = ctx;
@@ -15,6 +16,9 @@ export function createUpdateLoopTool(ctx) {
     },
     handler: async ({ loop_id, ...patch }) => {
       try {
+        if (patch.preset_model_id != null) {
+          await applyLoopPresetModel(app, userId, patch);
+        }
         const loop = await app.service('loops').patch(loop_id, patch, userParams);
         return ok({ loop });
       } catch (err) {

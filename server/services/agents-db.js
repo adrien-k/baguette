@@ -2,6 +2,7 @@
  * DB helpers for `agents` rows (internal — Feathers service owns external API).
  */
 import { BadRequest } from '@feathersjs/errors';
+import { nextSessionItemRef } from './session-item-ref.js';
 
 export async function getPrimaryBuilderAgent(db, sessionId) {
   return db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
@@ -13,6 +14,10 @@ export async function getReviewerAgent(db, sessionId) {
 
 export async function getAgentById(db, agentId) {
   return db('agents').where({ id: agentId }).first();
+}
+
+export async function getAgentBySessionRef(db, sessionId, ref) {
+  return db('agents').where({ session_id: sessionId, ref }).first();
 }
 
 /**
@@ -35,6 +40,13 @@ export async function listAgentsForSession(db, sessionId) {
   return db('agents').where({ session_id: sessionId }).orderBy('id', 'asc');
 }
 
+/** In-memory SDK session key for a builder chat turn (primary uses session id). */
+export function builderChatActiveKey(agent) {
+  if (!agent?.id) throw new BadRequest('Agent not found');
+  if (agent.is_primary) return agent.session_id;
+  return agent.id;
+}
+
 /**
  * @param {import('knex').Knex} db
  * @param {number} sessionId
@@ -47,8 +59,10 @@ export async function listAgentsForSession(db, sessionId) {
  * }} fields
  */
 export async function insertPrimaryBuilderAgent(db, sessionId, fields) {
+  const ref = await nextSessionItemRef(db, 'agents', sessionId);
   const [id] = await db('agents').insert({
     session_id: sessionId,
+    ref,
     name: 'Builder',
     agent_type: 'builder',
     is_primary: 1,
@@ -69,8 +83,10 @@ export async function ensureReviewerAgentRow(db, sessionId, fields) {
   const existing = await getReviewerAgent(db, sessionId);
   if (existing) return existing;
 
+  const ref = await nextSessionItemRef(db, 'agents', sessionId);
   const [id] = await db('agents').insert({
     session_id: sessionId,
+    ref,
     name: 'Reviewer',
     agent_type: 'reviewer',
     is_primary: 0,

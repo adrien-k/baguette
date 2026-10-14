@@ -11,6 +11,7 @@ import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { registerReviewAgentTurn } from '../review-agent-turn.js';
+import { buildMcpUserMessageJson } from '../mcp/lib/session-resolution.js';
 
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -342,6 +343,48 @@ describe('Messages service - agent_id scoping and queue', () => {
     );
     expect(result.id).toBeTruthy();
     expect(result.agent_id).toBe(reviewerId);
+  });
+
+  it('queues an extra builder MCP message while the session is provisioning', async () => {
+    await db('sessions').where({ id: sessionId }).update({ status: 'provisioning' });
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const [extraBuilderId] = await db('agents').insert({
+      session_id: sessionId,
+      ref: 2,
+      name: 'Extra',
+      agent_type: 'builder',
+      is_primary: 0,
+      status: 'stopped',
+      subagent: 1,
+      agent_sdk: primary.agent_sdk,
+      model: primary.model,
+      model_params: primary.model_params,
+      agent_config_id: primary.agent_config_id,
+      current_turn_id: 0,
+    });
+
+    const result = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        subtype: 'mcp',
+        message_json: buildMcpUserMessageJson('during provision'),
+        agent_id: extraBuilderId,
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+      },
+      params({ id: userId })
+    );
+
+    expect(result).toEqual({ queued: true });
+    const queued = await db('queued_messages').where({
+      session_id: sessionId,
+      agent_id: extraBuilderId,
+      kind: 'turn',
+    });
+    expect(queued).toHaveLength(1);
   });
 
   it('queues a builder user message while the session turn is running', async () => {

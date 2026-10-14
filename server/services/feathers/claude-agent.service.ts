@@ -58,6 +58,7 @@ import {
 } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
 import {
+  builderChatActiveKey,
   getAgentById,
   getPrimaryBuilderAgent,
   getReviewerAgent,
@@ -248,12 +249,14 @@ export class ClaudeAgentService {
       allowedTools,
       model,
       modelParams,
+      agent,
     }: {
       claudeEnv: Record<string, string>;
       canUseTool?: CanUseTool;
       allowedTools?: string[];
       model?: string | null;
       modelParams?: unknown;
+      agent?: AgentRow | null;
     }
   ): Promise<ClaudeSdkOptions> {
     let pluginRows: Array<Record<string, unknown>> = [];
@@ -276,7 +279,7 @@ export class ClaudeAgentService {
       sessionRow.user_id,
       sessionRow.repo_id
     );
-    const systemPrompt = await buildSystemPromptAppend(sessionRow, { agentPrompt });
+    const systemPrompt = await buildSystemPromptAppend(sessionRow, { agentPrompt, agent });
     return this.buildQueryOptions(sessionRow, {
       claudeEnv,
       systemPrompt,
@@ -392,7 +395,7 @@ export class ClaudeAgentService {
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
     const active = this.getActiveSession(activeKey);
     const activeTurnId = agent.active_turn_id;
 
@@ -712,6 +715,7 @@ export class ClaudeAgentService {
         allowedTools,
         model,
         modelParams,
+        agent,
       });
     }
 
@@ -926,7 +930,7 @@ export class ClaudeAgentService {
       const shouldCompleteTurn = awaitingUser || (turnComplete && outcome === 'completed');
       if (shouldCompleteTurn) {
         try {
-          await this.app.service('sessions').onTurnComplete(sessionId);
+          await this.app.service('sessions').onTurnComplete(sessionId, sessionState.agentId);
         } catch (err) {
           logger.warn({ sessionId, err: (err as Error).message }, 'Failed to send queued message');
         }

@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth.jsx';
-import { useRepoContext } from '../../context/RepoContext.jsx';
-import { usersService, userReposService } from '../../feathers.js';
+import { usersService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import DefaultAgentPicker from '../../components/settings/DefaultAgentPicker.jsx';
+import SubagentDefaultPicker from '../../components/settings/SubagentDefaultPicker.jsx';
+import {
+  SUBAGENT_DEFAULT_INHERIT,
+  normalizeSubagentDefaultMode,
+} from '@baguette/shared/subagent-default-mode.js';
 import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
-import { RepoScopeAside } from './repoScopeDropdown.jsx';
 
 export default function AgentDefaultsSection({ settings, onSave }) {
   const { user } = useAuth();
-  const { repos, refetch: refetchRepos } = useRepoContext();
   const { configOptions, loading: configsLoading } = useAgentConfigs();
-
-  const [defaultsRepoId, setDefaultsRepoId] = useState('');
 
   const [agentConfigId, setAgentConfigId] = useState(null);
   const [agentModel, setAgentModel] = useState(null);
@@ -23,50 +23,43 @@ export default function AgentDefaultsSection({ settings, onSave }) {
   const [reviewerModel, setReviewerModel] = useState(null);
   const [reviewerModelParamsJson, setReviewerModelParamsJson] = useState(null);
 
+  const [subagentMode, setSubagentMode] = useState(SUBAGENT_DEFAULT_INHERIT);
+  const [subagentConfigId, setSubagentConfigId] = useState(null);
+  const [subagentModel, setSubagentModel] = useState(null);
+  const [subagentModelParamsJson, setSubagentModelParamsJson] = useState(null);
+
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const repoById = useCallback((id) => repos.find((r) => String(r.id) === String(id)), [repos]);
-
-  const hydrateFromScope = useCallback(() => {
+  const hydrateFromSettings = useCallback(() => {
     if (!settings) return;
-    if (!defaultsRepoId) {
-      setAgentConfigId(settings.agent_default_config_id ?? null);
-      setAgentModel(settings.agent_default_model?.model ?? null);
-      setAgentModelParamsJson(
-        settings.agent_default_model?.model_params?.length
-          ? JSON.stringify(settings.agent_default_model.model_params)
-          : null
-      );
-      setReviewerConfigId(settings.reviewer_default_config_id ?? null);
-      setReviewerModel(settings.reviewer_default_model?.model ?? null);
-      setReviewerModelParamsJson(
-        settings.reviewer_default_model?.model_params?.length
-          ? JSON.stringify(settings.reviewer_default_model.model_params)
-          : null
-      );
-      return;
-    }
-    const r = repoById(defaultsRepoId);
-    setAgentConfigId(r?.agent_default_config_id ?? null);
-    setAgentModel(r?.agent_default_model?.model ?? null);
+    setAgentConfigId(settings.agent_default_config_id ?? null);
+    setAgentModel(settings.agent_default_model?.model ?? null);
     setAgentModelParamsJson(
-      r?.agent_default_model?.model_params?.length
-        ? JSON.stringify(r.agent_default_model.model_params)
+      settings.agent_default_model?.model_params?.length
+        ? JSON.stringify(settings.agent_default_model.model_params)
         : null
     );
-    setReviewerConfigId(r?.reviewer_default_config_id ?? null);
-    setReviewerModel(r?.reviewer_default_model?.model ?? null);
+    setReviewerConfigId(settings.reviewer_default_config_id ?? null);
+    setReviewerModel(settings.reviewer_default_model?.model ?? null);
     setReviewerModelParamsJson(
-      r?.reviewer_default_model?.model_params?.length
-        ? JSON.stringify(r.reviewer_default_model.model_params)
+      settings.reviewer_default_model?.model_params?.length
+        ? JSON.stringify(settings.reviewer_default_model.model_params)
         : null
     );
-  }, [settings, defaultsRepoId, repoById]);
+    setSubagentMode(normalizeSubagentDefaultMode(settings.subagent_default_mode));
+    setSubagentConfigId(settings.subagent_default_config_id ?? null);
+    setSubagentModel(settings.subagent_default_model?.model ?? null);
+    setSubagentModelParamsJson(
+      settings.subagent_default_model?.model_params?.length
+        ? JSON.stringify(settings.subagent_default_model.model_params)
+        : null
+    );
+  }, [settings]);
 
   useEffect(() => {
-    hydrateFromScope();
-  }, [hydrateFromScope]);
+    hydrateFromSettings();
+  }, [hydrateFromSettings]);
 
   const buildModelPayload = (model, paramsJson) => {
     if (!model) return null;
@@ -82,25 +75,12 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     return { model, model_params };
   };
 
-  const patchDefaultsScope = async (fields) => {
-    if (!user?.id) return;
-    if (!defaultsRepoId) {
-      const updated = await usersService.patch(user.id, fields);
-      onSave(updated);
-      return;
-    }
-    const r = repoById(defaultsRepoId);
-    if (!r?.user_repo_id) throw new Error('Repository not linked');
-    await userReposService.patch(r.user_repo_id, fields);
-    await refetchRepos();
-  };
-
   const handleSave = async () => {
     if (!user?.id) return;
     setSaving(true);
     setSaved(false);
     try {
-      await patchDefaultsScope({
+      const updated = await usersService.patch(user.id, {
         agent_default_config_id: agentConfigId,
         agent_default_model: agentConfigId
           ? buildModelPayload(agentModel, agentModelParamsJson)
@@ -109,7 +89,14 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         reviewer_default_model: reviewerConfigId
           ? buildModelPayload(reviewerModel, reviewerModelParamsJson)
           : null,
+        subagent_default_mode: subagentMode,
+        subagent_default_config_id: subagentMode === 'config' ? subagentConfigId : null,
+        subagent_default_model:
+          subagentMode === 'config' && subagentConfigId
+            ? buildModelPayload(subagentModel, subagentModelParamsJson)
+            : null,
       });
+      onSave(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -124,13 +111,17 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     setSaving(true);
     setSaved(false);
     try {
-      await patchDefaultsScope({
+      const updated = await usersService.patch(user.id, {
         agent_default_config_id: null,
         agent_default_model: null,
         reviewer_default_config_id: null,
         reviewer_default_model: null,
+        subagent_default_mode: SUBAGENT_DEFAULT_INHERIT,
+        subagent_default_config_id: null,
+        subagent_default_model: null,
       });
-      hydrateFromScope();
+      onSave(updated);
+      hydrateFromSettings();
     } catch (err) {
       toastError('Failed to clear agent defaults', err);
     } finally {
@@ -138,35 +129,16 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     }
   };
 
-  const builderInherit = defaultsRepoId
-    ? 'Inherit account builder default'
-    : "Use last session's model";
-  const reviewerInherit = defaultsRepoId
-    ? 'Inherit account reviewer default'
-    : "Use session's model";
-
   if (configsLoading) {
     return <p className="text-sm text-faint">Loading configurations…</p>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <RepoScopeAside
-          id="agent-defaults-repo-scope"
-          value={defaultsRepoId}
-          onChange={setDefaultsRepoId}
-          repos={repos}
-        />
-      </div>
       <DefaultAgentPicker
         title="Builder default"
-        description={
-          defaultsRepoId
-            ? 'Pre-fills new sessions for this repository when you omit agent_config_id.'
-            : 'Pre-fills the dashboard builder and MCP CreateSession when you omit agent_config_id.'
-        }
-        inheritLabel={builderInherit}
+        description="Pre-fills the dashboard builder and MCP CreateSession when you omit agent_config_id."
+        inheritLabel="Use last session's model"
         configId={agentConfigId}
         onConfigIdChange={setAgentConfigId}
         model={agentModel}
@@ -177,18 +149,26 @@ export default function AgentDefaultsSection({ settings, onSave }) {
       />
       <DefaultAgentPicker
         title="Reviewer default"
-        description={
-          defaultsRepoId
-            ? 'Pre-fills the Issues reviewer for sessions in this repository.'
-            : 'Pre-fills the Issues reviewer when a session has no review model yet.'
-        }
-        inheritLabel={reviewerInherit}
+        description="Pre-fills the Issues reviewer when a session has no review model yet."
+        inheritLabel="Use session's model"
         configId={reviewerConfigId}
         onConfigIdChange={setReviewerConfigId}
         model={reviewerModel}
         modelParamsJson={reviewerModelParamsJson}
         onModelChange={setReviewerModel}
         onModelParamsJsonChange={setReviewerModelParamsJson}
+        configOptions={configOptions}
+      />
+      <SubagentDefaultPicker
+        description="How MCP StartBuilderAgent resolves models."
+        mode={subagentMode}
+        onModeChange={setSubagentMode}
+        configId={subagentConfigId}
+        onConfigIdChange={setSubagentConfigId}
+        model={subagentModel}
+        modelParamsJson={subagentModelParamsJson}
+        onModelChange={setSubagentModel}
+        onModelParamsJsonChange={setSubagentModelParamsJson}
         configOptions={configOptions}
       />
       <div className="flex flex-wrap items-center gap-3">

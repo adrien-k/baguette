@@ -274,7 +274,34 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
           />
         </Field>
       ) : null}
-      {sdk !== 'mock' ? (
+      {sdk === 'mock' ? (
+        <Field
+          label="Mock catalog key"
+          hint="Optional. Use mock-catalog-alt for the alternate dev model list."
+        >
+          <MaskedSecretInput
+            maskedValue={config?.api_key ?? null}
+            placeholder="mock-catalog-alt"
+            onChange={(val, dirty) => {
+              setApiKey(val);
+              setApiKeyDirty(dirty);
+            }}
+          />
+        </Field>
+      ) : null}
+      {sdk !== 'mock' && sdk !== 'cursor' ? (
+        <Field label="API key">
+          <MaskedSecretInput
+            maskedValue={config?.api_key ?? null}
+            placeholder={secretPlaceholder}
+            onChange={(val, dirty) => {
+              setApiKey(val);
+              setApiKeyDirty(dirty);
+            }}
+          />
+        </Field>
+      ) : null}
+      {sdk === 'cursor' ? (
         <Field label="API key">
           <MaskedSecretInput
             maskedValue={config?.api_key ?? null}

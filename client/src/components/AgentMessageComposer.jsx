@@ -4,12 +4,11 @@ import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
 import ButtonWithOptions from './ButtonWithOptions.jsx';
 import { SPLIT_GROUP_CLASS, SPLIT_PRIMARY_CLASS } from './splitButtonStyles.js';
 import LightChipDropdown from './LightChipDropdown.jsx';
-import AgentTypeBadge from './AgentTypeBadge.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import {
   agentDisplayTitle,
   agentMenuOptionLabel,
-  agentShowsTypeBadge,
+  isSubagentBuilder,
 } from '../utils/sessionAgents.js';
 
 const COMPOSER_SUBMIT_SUBTITLE_CLASS =
@@ -124,18 +123,18 @@ export default function AgentMessageComposer({
             options={sessionAgents.map((a) => ({
               value: String(a.id),
               label: agentMenuOptionLabel(a),
-              icon: <AgentTypeIcon agentType={a.agent_type} />,
+              icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
             }))}
             selectedDisplay={{
-              icon: <AgentTypeIcon agentType={headerAgent.agent_type} />,
+              icon: (
+                <AgentTypeIcon
+                  agentType={headerAgent.agent_type}
+                  subagent={isSubagentBuilder(headerAgent)}
+                />
+              ),
               content: (
-                <span className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-medium text-heading truncate">
-                    {agentDisplayTitle(headerAgent)}
-                  </span>
-                  {agentShowsTypeBadge(headerAgent) ? (
-                    <AgentTypeBadge agentType={headerAgent.agent_type} />
-                  ) : null}
+                <span className="text-xs font-medium text-heading truncate">
+                  {agentDisplayTitle(headerAgent)}
                 </span>
               ),
             }}
@@ -147,13 +146,13 @@ export default function AgentMessageComposer({
           />
         ) : (
           <>
-            <AgentTypeIcon agentType={headerAgent.agent_type} />
+            <AgentTypeIcon
+              agentType={headerAgent.agent_type}
+              subagent={isSubagentBuilder(headerAgent)}
+            />
             <span className="text-xs font-medium text-heading truncate">
               {agentDisplayTitle(headerAgent)}
             </span>
-            {agentShowsTypeBadge(headerAgent) ? (
-              <AgentTypeBadge agentType={headerAgent.agent_type} />
-            ) : null}
           </>
         )}
       </div>

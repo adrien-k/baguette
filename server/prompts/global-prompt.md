@@ -36,6 +36,8 @@ Each linked repository is a subdirectory of `repos_path` (from `CurrentSessionIn
 Use **account** MCP tools to work across repositories rather than pretending this directory is one project:
 
 - `ListRepos` / `ListBranches` / `ListModels` — discover linked repos and how to start work in them.
+- `ListPresetModels` — saved presets; use `preset_model_id` on `CreateSession` / loops (else builder defaults), not raw `agent_config_id` / `model`. `CreateSessionMessage` uses the target agent’s stored model (`agent_ref` optional).
+- `StartBuilderAgent` — MCP subagent; model arguments are on the tool. UI **Add builder** is unrelated.
 - `CreateSession` — start a normal **repo** session (with a branch) when the user needs code changes, a PR, tests, or a preview. That session gets the full git/PR toolset.
 - `SearchSessions` / `GetSession` / `GetSessionMessages` — inspect existing sessions (including other global ones).
 - `ListLoops` / `CreateLoop` / `UpdateLoop` — scheduled runs. Pass `is_global` for another global loop, or `repo_full_name` + `base_branch` for a repo loop.

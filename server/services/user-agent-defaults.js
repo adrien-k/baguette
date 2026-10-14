@@ -5,12 +5,22 @@ import {
 } from '../../shared/agent-default-model.js';
 import { loadOwnedAgentConfig } from './agent-config-resolver.js';
 import { validateAgentSessionDefaults } from './agent-session-defaults.js';
+import {
+  SUBAGENT_DEFAULT_CONFIG,
+  SUBAGENT_DEFAULT_INHERIT,
+  SUBAGENT_DEFAULT_MODE_VALUES,
+  SUBAGENT_DEFAULT_PRESET,
+  normalizeSubagentDefaultMode,
+} from '../../shared/subagent-default-mode.js';
 
 const DEFAULT_PATCH_KEYS = [
   'agent_default_config_id',
   'agent_default_model',
   'reviewer_default_config_id',
   'reviewer_default_model',
+  'subagent_default_mode',
+  'subagent_default_config_id',
+  'subagent_default_model',
 ];
 
 async function normalizeModelPatch(raw, configId, user, app) {
@@ -117,6 +127,54 @@ async function normalizeAgentDefaultsPatch(context) {
     data.reviewer_default_model = null;
   }
 
+  if (data.subagent_default_mode !== undefined) {
+    if (data.subagent_default_mode == null || data.subagent_default_mode === '') {
+      data.subagent_default_mode = SUBAGENT_DEFAULT_INHERIT;
+    } else {
+      const mode = normalizeSubagentDefaultMode(data.subagent_default_mode);
+      if (!SUBAGENT_DEFAULT_MODE_VALUES.includes(mode)) {
+        throw new BadRequest('subagent_default_mode must be inherit, config, or preset');
+      }
+      data.subagent_default_mode = mode;
+    }
+  }
+
+  let subagentConfigId =
+    data.subagent_default_config_id !== undefined
+      ? data.subagent_default_config_id == null
+        ? null
+        : Number(data.subagent_default_config_id)
+      : existing.subagent_default_config_id;
+
+  const subagentMode = normalizeSubagentDefaultMode(
+    data.subagent_default_mode !== undefined
+      ? data.subagent_default_mode
+      : existing.subagent_default_mode
+  );
+
+  if (subagentMode === SUBAGENT_DEFAULT_INHERIT || subagentMode === SUBAGENT_DEFAULT_PRESET) {
+    if (data.subagent_default_mode !== undefined) {
+      data.subagent_default_config_id = null;
+      data.subagent_default_model = null;
+    }
+    subagentConfigId = null;
+  } else if (data.subagent_default_config_id !== undefined && subagentConfigId != null) {
+    await loadOwnedAgentConfig(context.app.get('db'), subagentConfigId, user.id);
+  }
+
+  if (data.subagent_default_model !== undefined && subagentMode === SUBAGENT_DEFAULT_CONFIG) {
+    data.subagent_default_model = await normalizeModelPatch(
+      data.subagent_default_model,
+      subagentConfigId,
+      user,
+      context.app
+    );
+  }
+
+  if (data.subagent_default_config_id !== undefined) {
+    data.subagent_default_config_id = subagentConfigId;
+  }
+
   if (data.agent_default_model !== undefined) {
     data.agent_default_model = await normalizeModelPatch(
       data.agent_default_model,
@@ -145,9 +203,5 @@ async function normalizeAgentDefaultsPatch(context) {
 }
 
 export async function normalizeUserAgentDefaultsPatch(context) {
-  return normalizeAgentDefaultsPatch(context);
-}
-
-export async function normalizeUserRepoAgentDefaultsPatch(context) {
   return normalizeAgentDefaultsPatch(context);
 }

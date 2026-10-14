@@ -4,7 +4,7 @@ import { decryptAgentConfigRow } from './agent-config-env.js';
 import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
 import { coerceModelParams } from '../../shared/agent-session-defaults.js';
 
-function parseSessionModelId(modelField) {
+export function parseSessionModelId(modelField) {
   if (!modelField) return null;
   try {
     const parsed = JSON.parse(modelField);
@@ -82,50 +82,6 @@ function reviewerFieldsFromSessionRow(row) {
   };
 }
 
-async function repoDefaultAgentFields(db, userId, repoId) {
-  if (repoId == null) return null;
-  const link = await db('user_repos')
-    .where({ user_id: userId, repo_id: repoId })
-    .select('agent_default_config_id', 'agent_default_model')
-    .first();
-  if (!link?.agent_default_config_id) return null;
-  const config = await db('agent_configs')
-    .where({ id: link.agent_default_config_id, user_id: userId })
-    .whereNull('deleted_at')
-    .first();
-  if (!config) return null;
-  const { model, model_params } = parseAgentDefaultModelJson(link.agent_default_model);
-  return {
-    agent_config_id: link.agent_default_config_id,
-    agent_sdk: config.sdk,
-    model,
-    model_params,
-    source: 'repo',
-  };
-}
-
-async function repoDefaultReviewerFields(db, userId, repoId) {
-  if (repoId == null) return null;
-  const link = await db('user_repos')
-    .where({ user_id: userId, repo_id: repoId })
-    .select('reviewer_default_config_id', 'reviewer_default_model')
-    .first();
-  if (!link?.reviewer_default_config_id) return null;
-  const config = await db('agent_configs')
-    .where({ id: link.reviewer_default_config_id, user_id: userId })
-    .whereNull('deleted_at')
-    .first();
-  if (!config) return null;
-  const { model, model_params } = parseAgentDefaultModelJson(link.reviewer_default_model);
-  return {
-    review_agent_config_id: link.reviewer_default_config_id,
-    review_agent_sdk: config.sdk,
-    review_model: model,
-    review_model_params: model_params,
-    source: 'repo',
-  };
-}
-
 async function userDefaultAgentFields(db, userId) {
   const user = await db('users')
     .where({ id: userId })
@@ -168,10 +124,35 @@ async function userDefaultReviewerFields(db, userId) {
   };
 }
 
-/** Builder prefill: repo defaults, account defaults, then last session (repo-scoped when repoId set). */
+/** Account session defaults only. No last-used session fallback. */
+export async function resolveExplicitBuilderDefaults(db, userId, _repoId = null) {
+  const fromUser = await userDefaultAgentFields(db, userId);
+  if (fromUser?.agent_config_id && fromUser.model) {
+    return {
+      agent_config_id: fromUser.agent_config_id,
+      agent_sdk: fromUser.agent_sdk,
+      model: fromUser.model,
+      model_params: fromUser.model_params ?? null,
+    };
+  }
+  return null;
+}
+
+/** Account subagent default for MCP StartBuilderAgent. */
+export async function resolveEffectiveSubagentDefaultSettings(db, userId, _repoId = null) {
+  const user = await db('users')
+    .where({ id: userId })
+    .select('subagent_default_mode', 'subagent_default_config_id', 'subagent_default_model')
+    .first();
+  return {
+    mode: user?.subagent_default_mode ?? null,
+    config_id: user?.subagent_default_config_id ?? null,
+    model_json: user?.subagent_default_model ?? null,
+  };
+}
+
+/** Builder prefill: account defaults, then last session (repo-scoped when repoId set). */
 export async function resolveEffectiveAgentDefaults(db, userId, repoId = null) {
-  const fromRepo = await repoDefaultAgentFields(db, userId, repoId);
-  if (fromRepo) return fromRepo;
   const fromUser = await userDefaultAgentFields(db, userId);
   if (fromUser) return fromUser;
   let row = await lastUsedSessionAgentRow(db, userId, repoId);
@@ -184,10 +165,8 @@ export async function resolveEffectiveAgentDefaults(db, userId, repoId = null) {
   return fields;
 }
 
-/** Reviewer prefill: repo defaults, account defaults, then last session (repo-scoped when repoId set). */
+/** Reviewer prefill: account defaults, then last session (repo-scoped when repoId set). */
 async function resolveEffectiveReviewerDefaults(db, userId, repoId = null) {
-  const fromRepo = await repoDefaultReviewerFields(db, userId, repoId);
-  if (fromRepo) return fromRepo;
   const fromUser = await userDefaultReviewerFields(db, userId);
   if (fromUser) return fromUser;
   let row = await lastUsedSessionAgentRow(db, userId, repoId);
@@ -242,20 +221,8 @@ export async function resolveAgentConfigIdForRepoSdk(
     .where({ id: userId })
     .select('agent_default_config_id', 'reviewer_default_config_id')
     .first();
-  let link = null;
-  if (repoId != null) {
-    link = await knex('user_repos')
-      .where({ user_id: userId, repo_id: repoId })
-      .select('agent_default_config_id', 'reviewer_default_config_id')
-      .first();
-  }
-  const repoDefaultId =
-    role === 'reviewer' ? link?.reviewer_default_config_id : link?.agent_default_config_id;
   const userDefaultId =
     role === 'reviewer' ? user?.reviewer_default_config_id : user?.agent_default_config_id;
-  if (repoDefaultId != null && configIds.has(repoDefaultId)) {
-    return repoDefaultId;
-  }
   if (userDefaultId != null && configIds.has(userDefaultId)) {
     return userDefaultId;
   }

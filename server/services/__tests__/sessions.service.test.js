@@ -1598,18 +1598,18 @@ describe('Sessions service - find, get, create', () => {
       expect(session.model_params).toBe('[{"id":"fast","value":"true"}]');
     });
 
-    it('does not create a reviewer agent from repo defaults on session create', async () => {
+    it('does not create a reviewer agent from account defaults on session create', async () => {
       const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
       const cursorConfigId = await insertTestAgentConfig(db, userId1, {
         sdk: 'cursor',
         apiKey: 'cursor-test-key',
       });
-      await db('user_repos').insert({
-        user_id: userId1,
-        repo_id: repoId,
-        reviewer_default_config_id: cursorConfigId,
-        reviewer_default_model: JSON.stringify({ model: 'space-bunny-free', model_params: null }),
-      });
+      await db('users')
+        .where({ id: userId1 })
+        .update({
+          reviewer_default_config_id: cursorConfigId,
+          reviewer_default_model: JSON.stringify({ model: 'space-bunny-free', model_params: null }),
+        });
 
       const session = await app
         .service('sessions')
@@ -1817,20 +1817,22 @@ describe('Sessions service - find, get, create', () => {
       flushSpy.mockRestore();
     });
 
-    it('flushes queued turns after provision when there is no initial prompt', async () => {
+    it('flushes queued turns for every builder after provision when there is no initial prompt', async () => {
       const sessionsSvc = app.service('sessions');
       const flushSpy = vi.spyOn(sessionsSvc, 'flushNextQueuedTurn');
 
-      await sessionsSvc.create(
+      const created = await sessionsSvc.create(
         sessionData({ repo_id: repoId, initial_prompt: '' }),
         params({ id: userId1 })
       );
 
-      expect(flushSpy).toHaveBeenCalledTimes(1);
-      const [sessionId, agentId] = flushSpy.mock.calls[0];
-      expect(sessionId).toEqual(expect.any(Number));
-      const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
-      expect(agentId).toBe(builder.id);
+      const builders = await db('agents')
+        .where({ session_id: created.id, agent_type: 'builder' })
+        .orderBy('id', 'asc');
+      expect(flushSpy).toHaveBeenCalledTimes(builders.length);
+      for (const builder of builders) {
+        expect(flushSpy).toHaveBeenCalledWith(created.id, builder.id);
+      }
       flushSpy.mockRestore();
     });
 

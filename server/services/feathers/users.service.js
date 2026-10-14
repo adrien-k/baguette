@@ -100,6 +100,7 @@ function formatUserExternal(context) {
     user.agent_preferences = parseCursorModelPrefsJson(user.agent_preferences);
     user.agent_default_model = parseAgentDefaultModelJson(user.agent_default_model);
     user.reviewer_default_model = parseAgentDefaultModelJson(user.reviewer_default_model);
+    user.subagent_default_model = parseAgentDefaultModelJson(user.subagent_default_model);
     return user;
   };
   if (Array.isArray(context.result)) {

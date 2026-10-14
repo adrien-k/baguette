@@ -42,7 +42,7 @@ function parseMcpToolResult(result) {
   return result;
 }
 
-describe('CreateSession MCP agent_config_id', () => {
+describe('CreateSession MCP model defaults', () => {
   let app;
   let user;
   let claudeConfigId;
@@ -119,7 +119,7 @@ describe('CreateSession MCP agent_config_id', () => {
     );
   });
 
-  it('uses last session agent_config_id when omitted', async () => {
+  it('does not fall back to last session when user defaults are unset', async () => {
     await insertTestSession(db, {
       user_id: user.id,
       repo_full_name: 'acme/repo',
@@ -131,50 +131,50 @@ describe('CreateSession MCP agent_config_id', () => {
 
     const tools = buildBaguetteAccountToolList({ id: user.id }, app);
     const createSession = tools.find((t) => t.name === 'CreateSession');
-    await createSession.handler({
-      repo_id: 1,
-      base_branch: 'main',
-      initial_prompt: 'hello',
-    });
-    expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ agent_config_id: claudeConfigId }),
-      expect.any(Object)
+    const result = parseMcpToolResult(
+      await createSession.handler({
+        repo_id: 1,
+        base_branch: 'main',
+        initial_prompt: 'hello',
+      })
     );
+    expect(result?.ok).toBe(false);
+    expect(createSpy).not.toHaveBeenCalled();
   });
 
-  it('requires agent_config_id when no prior session exists', async () => {
-    await db('agent_configs').delete();
-    const prevVitest = process.env.VITEST;
-    delete process.env.VITEST;
-    try {
-      const tools = buildBaguetteAccountToolList({ id: user.id }, app);
-      const createSession = tools.find((t) => t.name === 'CreateSession');
-      const result = parseMcpToolResult(
-        await createSession.handler({
-          repo_id: 1,
-          base_branch: 'main',
-          initial_prompt: 'hello',
-        })
-      );
-      expect(result?.ok).toBe(false);
-      expect(String(result?.error ?? result?.message ?? '')).toMatch(/agent_config_id/i);
-    } finally {
-      if (prevVitest !== undefined) process.env.VITEST = prevVitest;
-    }
+  it('requires session defaults or preset_model_id when none configured', async () => {
+    const tools = buildBaguetteAccountToolList({ id: user.id }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    const result = parseMcpToolResult(
+      await createSession.handler({
+        repo_id: 1,
+        base_branch: 'main',
+        initial_prompt: 'hello',
+      })
+    );
+    expect(result?.ok).toBe(false);
+    expect(String(result?.error ?? result?.message ?? '')).toMatch(/Session defaults/i);
+    expect(createSpy).not.toHaveBeenCalled();
   });
 
-  it('keeps explicit agent_config_id and model', async () => {
+  it('uses preset_model_id when provided', async () => {
+    const [presetId] = await db('agent_model_presets').insert({
+      user_id: user.id,
+      description: 'Test preset',
+      agent_config_id: claudeConfigId,
+      model: 'sonnet',
+    });
+
     const tools = buildBaguetteAccountToolList({ id: user.id }, app);
     const createSession = tools.find((t) => t.name === 'CreateSession');
     await createSession.handler({
       repo_id: 1,
       base_branch: 'main',
       initial_prompt: 'hello',
-      agent_config_id: claudeConfigId,
-      model: 'sonnet',
+      preset_model_id: presetId,
     });
     expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ agent_config_id: claudeConfigId }),
+      expect.objectContaining({ agent_config_id: claudeConfigId, model: 'sonnet' }),
       expect.any(Object)
     );
   });

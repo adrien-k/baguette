@@ -47,6 +47,8 @@ import { directPromptTiedSessionLoopCompaction } from './loop-compaction.ts';
 import { PI_AGENT_SDK_KEY, PI_AGENT_SDK_LABEL, PI_AGENT_SERVICE_PATH } from '../agent-sdk-meta.js';
 import { registerAgentSdk } from './agent-configs.service.js';
 import {
+  builderChatActiveKey,
+  getAgentById,
   getPrimaryBuilderAgent,
   getReviewerAgent,
   resolveAgentRowForMessage,
@@ -120,7 +122,10 @@ export class PiAgentService {
     return loadOwnedAgentConfigDecrypted(configId, userId, this.app.get('db') as DbLike as never);
   }
 
-  async _buildAppendSystemPrompt(session: AgentSessionRow): Promise<string[]> {
+  async _buildAppendSystemPrompt(
+    session: AgentSessionRow,
+    agent?: AgentRow | null
+  ): Promise<string[]> {
     if (!session.session_path) return [];
     const absoluteCwd = resolveDataDirRelativePath(session.session_path);
     const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
@@ -129,7 +134,7 @@ export class PiAgentService {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agentPrompt }
+      { agentPrompt, agent }
     );
     return systemPrompt ? [systemPrompt] : [];
   }
@@ -163,6 +168,7 @@ export class PiAgentService {
       agentConfigId,
       storedPiSessionId,
       appendSystemPrompt,
+      agent,
     }: {
       model?: string | null;
       modelParams?: unknown;
@@ -172,6 +178,7 @@ export class PiAgentService {
       agentConfigId?: number | null;
       storedPiSessionId?: string | null;
       appendSystemPrompt?: string[];
+      agent?: AgentRow | null;
     } = {}
   ): Promise<PiBuildAgentOptionsResult> {
     await this._ensurePiDirs(session);
@@ -186,7 +193,8 @@ export class PiAgentService {
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
     const modelId = model ?? null;
     const settingsManager = SettingsManager.create(cwd, agentDir);
-    const systemAppend = appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session));
+    const systemAppend =
+      appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session, agent));
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir: agentDir ?? cwd,
@@ -287,7 +295,7 @@ export class PiAgentService {
       if (session.repo_full_name && !session.session_path) return;
     }
 
-    const activeKey = isReview ? reviewTurnKey(agent.id) : sessionId;
+    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
     const active = this._activeSessions.get(activeKey);
     const activeTurnId = agent.active_turn_id;
 
@@ -519,6 +527,7 @@ export class PiAgentService {
               channel,
               agentConfigId: turnAgentConfigId,
               storedPiSessionId: storedPiSessionId as string | null | undefined,
+              agent,
             });
 
       const userText = extractUserText(parsed);
@@ -536,7 +545,7 @@ export class PiAgentService {
         persistPiSessionId: (piSessionId) =>
           patchAgentInternal(this.app, agent.id, { pi_session_id: piSessionId }, userId),
         persistStatus: async (text) => {
-          await this._persistStatusMessage(sessionId, userId, text, session, channel);
+          await this._persistStatusMessage(sessionId, userId, text, session, channel, agent.id);
         },
       });
 
@@ -593,7 +602,8 @@ export class PiAgentService {
                 userId,
                 (err as Error).message,
                 session,
-                channel
+                channel,
+                agent.id
               );
               this.app.service('sessions').emit('app:error', {
                 sessionId,
@@ -615,7 +625,7 @@ export class PiAgentService {
 
     if (turnFinishedOk && channel !== 'review') {
       try {
-        await this.app.service('sessions').onTurnComplete(sessionId);
+        await this.app.service('sessions').onTurnComplete(sessionId, agent.id);
       } catch (err) {
         logger.warn(
           { sessionId, err: (err as Error).message },
@@ -663,13 +673,18 @@ export class PiAgentService {
     userId: number,
     statusText: string,
     _session: AgentSessionRow,
-    channel: MessageChannel = 'chat'
+    channel: MessageChannel = 'chat',
+    builderAgentId?: number | null
   ) {
     const db = this.app.get('db');
-    const agentRow =
-      channel === 'review'
-        ? await getReviewerAgent(db, sessionId)
-        : await getPrimaryBuilderAgent(db, sessionId);
+    let agentRow;
+    if (channel === 'review') {
+      agentRow = await getReviewerAgent(db, sessionId);
+    } else if (builderAgentId != null) {
+      agentRow = await getAgentById(db, builderAgentId);
+    } else {
+      agentRow = await getPrimaryBuilderAgent(db, sessionId);
+    }
     if (!agentRow) return;
     const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
     await this.app.service('messages').create(

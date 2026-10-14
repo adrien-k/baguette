@@ -5,6 +5,7 @@ import { MESSAGES_PAGINATE } from '../../config.js';
 import { assignTurnOnUserMessageCreate } from '../../../shared/turn-assignment.js';
 import { scopeAgentDefaultFind, requireMessageIdentity } from './message-identity.js';
 import { getAgentById } from '../agents-db.js';
+import { rejectNonMcpMessageToSubagentBuilder } from '../agent-subagent-messages.js';
 import { primeReviewerUserMessageCreate } from '../reviewer-turn-prime.js';
 
 /**
@@ -64,7 +65,8 @@ async function queueIfRunning(context) {
   if (!agent) return context;
 
   const queueable =
-    agent.status === 'running' || (agent.is_primary && session.status === 'provisioning');
+    agent.status === 'running' ||
+    (session.status === 'provisioning' && agent.agent_type === 'builder');
   if (!queueable) return context;
   return queueTurnMessage(context);
 }
@@ -103,6 +105,7 @@ const messagesHooks = {
     create: [
       extractForceParam,
       requireMessageIdentity,
+      rejectNonMcpMessageToSubagentBuilder,
       assignTurn,
       queueIfRunning,
       (context) => primeReviewerUserMessageCreate(context.app, context),

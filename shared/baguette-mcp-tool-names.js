@@ -4,6 +4,8 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'ListRepos',
   'ListBranches',
   'ListModels',
+  'ListPresetModels',
+  'StartBuilderAgent',
   'CreateSession',
   'SearchSessions',
   'GetSession',

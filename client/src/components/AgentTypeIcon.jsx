@@ -1,13 +1,16 @@
-import { Bot, ClipboardCheck } from 'lucide-react';
+import { Bot, ClipboardCheck, Network } from 'lucide-react';
 
 const ICON_CLASS = 'w-3.5 h-3.5 shrink-0';
 
-/** Small icon distinguishing builder vs reviewer agents. */
-export default function AgentTypeIcon({ agentType, className = '' }) {
+/** Small icon distinguishing builder vs reviewer vs subagent builders. */
+export default function AgentTypeIcon({ agentType, subagent = false, className = '' }) {
   if (agentType === 'reviewer') {
     return (
       <ClipboardCheck className={`${ICON_CLASS} text-violet-300 ${className}`} strokeWidth={2} />
     );
+  }
+  if (subagent) {
+    return <Network className={`${ICON_CLASS} text-cyan-300 ${className}`} strokeWidth={2} />;
   }
   return <Bot className={`${ICON_CLASS} text-accent ${className}`} strokeWidth={2} />;
 }

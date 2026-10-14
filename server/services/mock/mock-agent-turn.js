@@ -4,9 +4,20 @@ import { join } from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
 import {
   MOCK_AGENT_SUMMARY_TEXT,
+  MOCK_E2E_QUICK_TURN_PROMPT,
+  MOCK_E2E_QUICK_TURN_SUMMARY,
+  MOCK_E2E_SUBAGENT_NAME,
+  MOCK_E2E_SUBAGENT_PRESET_DESCRIPTION,
+  MOCK_E2E_SUBAGENT_SUMMARY,
   MOCK_REVIEW_ISSUES,
   MOCK_REVIEWER_SUMMARY_TEXT,
+  mockAgentScenarioForPrompt,
 } from '../../../shared/mock-agent-sdk.js';
+import {
+  SUBAGENT_DEFAULT_PRESET,
+  normalizeSubagentDefaultMode,
+} from '../../../shared/subagent-default-mode.js';
+import { resolveEffectiveSubagentDefaultSettings } from '../agent-config-resolver.js';
 
 function parseNonNegativeMs(raw, fallback) {
   if (raw != null && raw !== '') {
@@ -102,10 +113,122 @@ async function runMockTool(writer, abortSignal, { callId, name, args, rawResult,
 }
 
 /**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockQuickTurn({ writer, abortSignal }) {
+  await writer.appendThinking('E2E quick mock turn…');
+  await delay(mockStepDelayMs(), abortSignal);
+  await writer.appendAssistantText(MOCK_E2E_QUICK_TURN_SUMMARY);
+  await writer.flushAssistant();
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+}
+
+/**
+ * Primary builder turn: real StartBuilderAgent (MCP flag) for e2e session-agent coverage.
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSignal, turnId }) {
+  await writer.appendThinking('Calling StartBuilderAgent for e2e…');
+  await delay(mockStepDelayMs(), abortSignal);
+
+  const callId =
+    turnId != null ? `mock-mcp-start-builder-${turnId}` : `mock-mcp-start-builder-${Date.now()}`;
+  const toolArgs = {
+    name: MOCK_E2E_SUBAGENT_NAME,
+    initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
+  };
+  await writer.startTool(callId, 'mcp__baguette__StartBuilderAgent', toolArgs);
+  try {
+    const db = app.get('db');
+    const settings = await resolveEffectiveSubagentDefaultSettings(db, userId);
+    const mode = normalizeSubagentDefaultMode(settings.mode);
+    let preset_model_id;
+    if (mode === SUBAGENT_DEFAULT_PRESET) {
+      const preset = await db('agent_model_presets')
+        .where({ user_id: userId })
+        .where('description', 'like', `%${MOCK_E2E_SUBAGENT_PRESET_DESCRIPTION}%`)
+        .orderBy('id', 'asc')
+        .first();
+      if (!preset) {
+        throw new Error('No e2e subagent preset configured');
+      }
+      preset_model_id = preset.id;
+    }
+    const result = await app.service('agents').startBuilderAgent(
+      {
+        session_id: session.id,
+        name: MOCK_E2E_SUBAGENT_NAME,
+        initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
+        wait_for_completion: false,
+        ...(preset_model_id != null ? { preset_model_id } : {}),
+      },
+      { user: { id: userId }, provider: 'rest', _mcpStartBuilder: true }
+    );
+    await writer.completeTool(callId, {
+      name: 'mcp__baguette__StartBuilderAgent',
+      args: toolArgs,
+      rawResult: JSON.stringify({
+        ok: true,
+        agent_id: result.agent_id,
+        ref: result.ref,
+        status: result.status,
+        session_id: result.session_id,
+      }),
+      isError: false,
+    });
+  } catch (err) {
+    if (err?.message === 'Aborted') throw err;
+    await writer.completeTool(callId, {
+      name: 'mcp__baguette__StartBuilderAgent',
+      args: toolArgs,
+      rawResult: { content: err?.message ?? 'StartBuilderAgent failed' },
+      isError: true,
+    });
+    throw err;
+  }
+  await delay(mockStepDelayMs(), abortSignal);
+
+  await writer.appendAssistantText(MOCK_E2E_SUBAGENT_SUMMARY);
+  await writer.flushAssistant();
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+}
+
+/**
  * Deterministic dev-only turn exercising every agent tool kind in chat.
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
-export async function runMockAgentTurn({ session, writer, abortSignal }) {
+export async function runMockAgentTurn({
+  session,
+  writer,
+  abortSignal,
+  userPrompt = '',
+  app,
+  userId,
+  turnId = null,
+}) {
+  const scenario = mockAgentScenarioForPrompt(userPrompt);
+  if (scenario === 'quick') {
+    await runMockQuickTurn({ writer, abortSignal });
+    return;
+  }
+  if (scenario === 'subagent-e2e') {
+    if (!app || userId == null) {
+      throw new Error('subagent-e2e mock turn requires app and userId');
+    }
+    await runMockSubagentE2eTurn({ app, session, userId, writer, abortSignal, turnId });
+    return;
+  }
+
   const cwd = resolveDataDirRelativePath(session.session_path);
   if (!cwd) {
     throw new Error('Session worktree is not ready');

@@ -15,14 +15,6 @@ When the user asks for follow-up work in a **new session** that should stack on 
 After **`CurrentSessionInfo`**, treat `session_path` as the repo root. Before git or other repo-local shell commands, confirm your cwd matches `session_path` (e.g. compare `pwd`); if it does not, `cd` to `session_path` or pass it as the shell tool's `working_directory`.
 **CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**
 
-# GitHub CLI
-
-The session shell does **not** include the GitHub CLI (`gh`). Do not run `gh pr …`, `gh api …`, or other `gh` commands — they are not installed and will fail.
-
-For GitHub and pull-request work, use Baguette MCP tools instead (for example `PrRead`, `PrComments`, `PrWorkflows`, `PrWorkflowLogs`, `ListGithubPrs`, `GitPull`, `GitFetch`). Local `git` in the worktree is fine for status, diff, commit, and merge; authenticated remotes and the GitHub API go through MCP. Baguette pushes and syncs the PR after each turn when auto-push is enabled.
-
-When spawning sub-agents (via the Agent tool), you MUST pass along the working directory instruction: tell them the `session_path` from `CurrentSessionInfo`, that they must `cd` there (or set shell `working_directory`) before repo/git commands if not already in it, and that they must follow the same `working_directory_restrictions`.
-
 # Git Diff
 
 Use the Bash tool to run `git diff` and related commands directly. For accurate diffs that show only the changes introduced by this branch, compute the merge-base first (use `base_branch` from `CurrentSessionInfo`):

@@ -1,4 +1,9 @@
-/** @typedef {{ id: number; name?: string; agent_type?: string; status?: string; is_primary?: number | boolean }} SessionAgentSummary */
+/** @typedef {{ id: number; ref?: number; name?: string; agent_type?: string; status?: string; is_primary?: number | boolean }} SessionAgentSummary */
+
+function agentRefPrefix(agent) {
+  if (agent?.ref == null) return '';
+  return `#${agent.ref} `;
+}
 
 /**
  * Agents embedded on session DTOs from the server (`mergeSessionAgentFields`).
@@ -27,7 +32,7 @@ export function reviewerFromSession(session) {
   return null;
 }
 
-export function agentTypeLabel(agentType) {
+function agentTypeLabel(agentType) {
   return agentType === 'reviewer' ? 'Reviewer' : 'Builder';
 }
 
@@ -49,22 +54,46 @@ export function agentDisplayTitle(agent) {
   return name || typeLabel;
 }
 
-/** Show the type pill when the name is not redundant with agent_type. */
-export function agentShowsTypeBadge(agent) {
-  if (!agent?.agent_type) return false;
-  return !agentNameMatchesType(agent.name, agent.agent_type);
-}
-
 /** Menu row label when switching agents. */
 export function agentMenuOptionLabel(agent) {
   const typeLabel = agentTypeLabel(agent.agent_type);
-  if (agentNameMatchesType(agent.name, agent.agent_type)) return typeLabel;
-  const name = agent.name?.trim();
-  return name ? `${name} (${typeLabel})` : typeLabel;
+  let label;
+  if (agentNameMatchesType(agent.name, agent.agent_type)) {
+    label = typeLabel;
+  } else {
+    const name = agent.name?.trim();
+    label = name ? `${name} (${typeLabel})` : typeLabel;
+  }
+  const prefix = agentRefPrefix(agent);
+  return prefix ? `${prefix}${label}` : label;
 }
 
 export function isAgentTurnActive(status) {
   return status === 'running' || status === 'approval';
+}
+
+export function isPrimaryAgent(agent) {
+  return Boolean(agent && Number(agent.is_primary) === 1);
+}
+
+/** Stable list order for agents panel and switchers (ref ascending, then id). */
+export function sortSessionAgentsByRefAsc(agents) {
+  return [...agents].sort((a, b) => {
+    const ar = a.ref ?? Number.MAX_SAFE_INTEGER;
+    const br = b.ref ?? Number.MAX_SAFE_INTEGER;
+    if (ar !== br) return ar - br;
+    return (a.id ?? 0) - (b.id ?? 0);
+  });
+}
+
+/** MCP StartBuilderAgent builders (subagent flag on the agents row). */
+export function isSubagentBuilder(agent) {
+  return agent?.agent_type === 'builder' && Boolean(Number(agent?.subagent));
+}
+
+/** Agent turn finished or idle — safe to remove (server also enforces). */
+export function canRemoveAgentWhenIdle(agent) {
+  return agent != null && !Number(agent.is_primary) && !isAgentTurnActive(agent.status);
 }
 
 export function isAnyAgentRunning(session) {

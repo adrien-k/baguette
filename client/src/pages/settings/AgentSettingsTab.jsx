@@ -1,6 +1,7 @@
 import CursorModelPreferencesSection from '../../components/CursorModelPreferencesSection.jsx';
 import AgentConfigsList from './AgentConfigsList.jsx';
 import AgentDefaultsSection from './AgentDefaultsSection.jsx';
+import AgentPresetModelsSection from './AgentPresetModelsSection.jsx';
 import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
 
 export default function AgentSettingsTab({ settings, onSave }) {
@@ -24,6 +25,13 @@ export default function AgentSettingsTab({ settings, onSave }) {
           description="Default agent configuration and model for new sessions and the Issues reviewer. Scope defaults to all repositories or a single linked repo; unset values inherit from the broader scope or your most recent session."
         >
           <AgentDefaultsSection settings={settings} onSave={onSave} />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Preset models"
+          description="Favorite agent configuration, model, and parameters with a short description. MCP tools reference these by id instead of raw model fields."
+        >
+          <AgentPresetModelsSection />
         </SettingsSection>
 
         <SettingsSection

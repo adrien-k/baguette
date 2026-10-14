@@ -5,11 +5,43 @@ import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { dispatchReviewerAfterCreate } from '../reviewer-turn-prime.js';
-import { getAgentById } from '../agents-db.js';
+import { builderChatActiveKey, getAgentById } from '../agents-db.js';
+import { getAgentServiceForAgent } from '../agent-session-routing.js';
+import { setAgentTurnTerminal } from '../agent-turn-patch.js';
+import { resolveMcpStartBuilderModel } from '../agent-mcp-model-resolver.js';
+import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
+import {
+  buildMcpUserMessageJson,
+  summarizeAssistantMessage,
+} from '../mcp/lib/session-resolution.js';
+import { nextSessionItemRef } from '../session-item-ref.js';
+
+function isAgentsRefUniqueViolation(err) {
+  const msg = String(err?.message ?? '');
+  return (
+    msg.includes('agents_session_id_ref_idx') || msg.includes('UNIQUE constraint failed: agents')
+  );
+}
 
 class AgentsService extends KnexService {
   setup(app) {
     this.app = app;
+  }
+
+  async create(data, params) {
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const payload = attempt === 0 ? data : { ...data, ref: undefined };
+        return await super.create(payload, params);
+      } catch (err) {
+        if (attempt < maxAttempts - 1 && isAgentsRefUniqueViolation(err)) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new BadRequest('Failed to allocate agent ref');
   }
 
   async stop(data, params) {
@@ -24,10 +56,99 @@ class AgentsService extends KnexService {
       await this.app
         .service('sessions')
         .stop({ id: session.id }, { ...params, resolvedSession: session });
+    } else if (agent.agent_type === 'builder') {
+      const agentService = await getAgentServiceForAgent(this.app, agent);
+      const activeKey = builderChatActiveKey(agent);
+      if (typeof agentService.stopTurn === 'function') {
+        await agentService.stopTurn(activeKey);
+      } else if (typeof agentService.stopSession === 'function') {
+        await agentService.stopSession(activeKey);
+      }
+      await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
     } else {
       throw new BadRequest('Cannot stop this agent');
     }
     return { ok: true, agent_id: agent.id };
+  }
+
+  async startBuilderAgent(data, params) {
+    const sessionId = Number(data?.session_id);
+    const name = data?.name != null ? String(data.name).trim() : '';
+    const initialPrompt = data?.initial_prompt != null ? String(data.initial_prompt).trim() : '';
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    if (!name) throw new BadRequest('name is required');
+    if (!initialPrompt) throw new BadRequest('initial_prompt is required');
+
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    const resolved = await resolveMcpStartBuilderModel(this.app.get('db'), params.user.id, {
+      session_id: sessionId,
+      preset_model_id: data.preset_model_id ?? null,
+      repo_id: session.repo_id ?? null,
+    });
+
+    const modelParamsStored = stringifyModelParamsForStorage(resolved.model_params);
+
+    const subagent = params._mcpStartBuilder === true;
+    const agent = await this.create(
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        name,
+        agent_config_id: resolved.agent_config_id,
+        model: resolved.model,
+        model_params: modelParamsStored,
+        initial_prompt: initialPrompt,
+      },
+      { ...params, provider: 'rest', _subagent: subagent }
+    );
+
+    const message_json = buildMcpUserMessageJson(initialPrompt);
+
+    try {
+      await this.app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'user',
+          subtype: 'mcp',
+          message_json,
+          agent_id: agent.id,
+          agent_sdk: resolved.agent_sdk,
+          model: resolved.model,
+          ...(modelParamsStored != null ? { model_params: modelParamsStored } : {}),
+          agent_config_id: resolved.agent_config_id,
+        },
+        { user: params.user, provider: 'rest' }
+      );
+    } catch (err) {
+      await this.remove(agent.id, { user: params.user, provider: undefined });
+      throw err;
+    }
+
+    const waitForCompletion = data.wait_for_completion !== false;
+    if (!waitForCompletion) {
+      const fresh = await getAgentById(this.app.get('db'), agent.id);
+      return {
+        agent_id: agent.id,
+        ref: agent.ref,
+        status: fresh?.status ?? agent.status,
+        session_id: sessionId,
+      };
+    }
+
+    const finalAgent = await waitForAgentTurnEnd(this.app.get('db'), agent.id);
+    const lastAssistant = await this.app
+      .get('db')('session_messages')
+      .where({ session_id: sessionId, agent_id: agent.id, type: 'assistant' })
+      .orderBy('id', 'desc')
+      .first();
+
+    return {
+      agent_id: finalAgent.id,
+      ref: finalAgent.ref,
+      status: finalAgent.status,
+      session_id: sessionId,
+      last_assistant_message: summarizeAssistantMessage(lastAssistant),
+    };
   }
 }
 
@@ -86,6 +207,42 @@ async function pickCreateFields(context) {
   return context;
 }
 
+async function applySubagentFlagOnCreate(context) {
+  if (context.method !== 'create') return context;
+  if (context.params?._subagent) {
+    context.data.subagent = 1;
+  }
+  return context;
+}
+
+async function allocateAgentRef(context) {
+  if (context.method !== 'create' || context.data?.ref != null) return context;
+  const sessionId = context.data?.session_id;
+  if (!sessionId) return context;
+  context.data.ref = await nextSessionItemRef(context.app.get('db'), 'agents', sessionId);
+  return context;
+}
+
+/** Extra builders default to the primary builder's config, model, and params. */
+async function inheritPrimaryBuilderDefaults(context) {
+  if (context.method !== 'create' || context.data?.agent_type !== 'builder') return context;
+  const sessionId = context.data?.session_id;
+  if (!sessionId) return context;
+  const db = context.app.get('db');
+  const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+  if (!primary) return context;
+  if (context.data.agent_config_id == null) {
+    context.data.agent_config_id = primary.agent_config_id;
+  }
+  if (context.data.model == null || String(context.data.model).trim() === '') {
+    context.data.model = primary.model;
+  }
+  if (context.data.model_params === undefined) {
+    context.data.model_params = primary.model_params;
+  }
+  return context;
+}
+
 async function validateCreate(context) {
   const { session_id, agent_type, agent_config_id, model } = context.data;
   if (!session_id || !agent_type || agent_config_id == null) {
@@ -99,8 +256,14 @@ async function validateCreate(context) {
   }
   const db = context.app.get('db');
   if (agent_type === 'builder') {
-    const existing = await db('agents').where({ session_id, is_primary: 1 }).first();
-    if (existing) throw new BadRequest('Session already has a primary builder');
+    const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
+    if (existingPrimary) {
+      const name = context.data.name?.trim();
+      if (!name) throw new BadRequest('name is required for an additional builder agent');
+      context.data.is_primary = 0;
+    } else {
+      context.data.is_primary = 1;
+    }
   }
   if (agent_type === 'reviewer') {
     const existing = await db('agents').where({ session_id, agent_type: 'reviewer' }).first();
@@ -108,8 +271,12 @@ async function validateCreate(context) {
   }
   const config = await loadOwnedAgentConfig(db, Number(agent_config_id), context.params.user.id);
   context.data.agent_sdk = config.sdk;
-  context.data.name = context.data.name || (agent_type === 'reviewer' ? 'Reviewer' : 'Builder');
-  context.data.is_primary = agent_type === 'builder' ? 1 : 0;
+  if (!context.data.name) {
+    context.data.name = agent_type === 'reviewer' ? 'Reviewer' : 'Builder';
+  }
+  if (agent_type === 'reviewer') {
+    context.data.is_primary = 0;
+  }
   context.data.status = context.data.status ?? 'stopped';
   context.data.current_turn_id = 0;
   if (context.data.initial_prompt != null && typeof context.data.initial_prompt === 'string') {
@@ -180,6 +347,9 @@ const agentsHooks = {
     create: [
       pickCreateFields,
       stashReviewerCreateExtras,
+      applySubagentFlagOnCreate,
+      allocateAgentRef,
+      inheritPrimaryBuilderDefaults,
       validateCreate,
       normalizeModelParams,
       resolveSdkOnConfigChange,
@@ -201,7 +371,7 @@ export function registerAgentsService(app, path = 'agents') {
     paginate: { default: 50, max: 100 },
   };
   app.use(path, new AgentsService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'stop'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'stop', 'startBuilderAgent'],
   });
   app.service(path).hooks(agentsHooks);
 }

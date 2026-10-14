@@ -18,13 +18,15 @@ export default function PromptsSettingsTab({ settings, onSave }) {
   const { user } = useAuth();
   const { repos, refetch: refetchRepos } = useRepoContext();
   const { hash } = useLocation();
-  const sessionCardRef = useRef(null);
+  const builderCardRef = useRef(null);
+  const secondaryBuilderCardRef = useRef(null);
   const reviewCardRef = useRef(null);
 
   const [promptsRepoId, setPromptsRepoId] = useState('');
   const [agentPrompt, setAgentPrompt] = useState('');
   const [reviewPrompt, setReviewPrompt] = useState('');
   const [fullSessionPrompt, setFullSessionPrompt] = useState('');
+  const [fullSecondaryBuilderPrompt, setFullSecondaryBuilderPrompt] = useState('');
   const [fullReviewPrompt, setFullReviewPrompt] = useState('');
   const [sessionSaving, setSessionSaving] = useState(false);
   const [sessionSaved, setSessionSaved] = useState(false);
@@ -52,9 +54,15 @@ export default function PromptsSettingsTab({ settings, onSave }) {
   useEffect(() => {
     if (!settings) return;
     const scrollReview = hash === '#settings-prompt-review';
-    const scrollSession = hash === '#settings-prompt-session';
-    if (!scrollReview && !scrollSession) return;
-    const target = scrollReview ? reviewCardRef : sessionCardRef;
+    const scrollBuilder =
+      hash === '#settings-prompt-session' || hash === '#settings-prompt-builder';
+    const scrollSecondary = hash === '#settings-prompt-secondary-builder';
+    if (!scrollReview && !scrollBuilder && !scrollSecondary) return;
+    const target = scrollReview
+      ? reviewCardRef
+      : scrollSecondary
+        ? secondaryBuilderCardRef
+        : builderCardRef;
     const timer = window.setTimeout(() => {
       target.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -65,6 +73,7 @@ export default function PromptsSettingsTab({ settings, onSave }) {
     apiFetch('/api/settings/prompt-templates')
       .then((d) => {
         setFullSessionPrompt(d.session || '');
+        setFullSecondaryBuilderPrompt(d.secondary_builder || '');
         setFullReviewPrompt(d.review || '');
       })
       .catch(() => {});
@@ -95,7 +104,7 @@ export default function PromptsSettingsTab({ settings, onSave }) {
       await patchPromptScope({ agent_prompt: agentPrompt });
       flashSaved(setSessionSaved);
     } catch (err) {
-      toastError('Failed to save session instructions', err);
+      toastError('Failed to save builder instructions', err);
     } finally {
       setSessionSaving(false);
     }
@@ -114,15 +123,15 @@ export default function PromptsSettingsTab({ settings, onSave }) {
     }
   };
 
-  const sessionExtraLabel = promptsRepoId
-    ? 'Repository session instructions'
-    : 'Additional session instructions';
+  const builderExtraLabel = promptsRepoId
+    ? 'Repository builder instructions'
+    : 'Additional builder instructions';
   const reviewExtraLabel = promptsRepoId
     ? 'Repository review instructions'
     : 'Additional review instructions';
 
   const scopedRepoName = promptsRepoId ? repoById(promptsRepoId)?.full_name : null;
-  const sessionPlaceholder = scopedRepoName
+  const builderPlaceholder = scopedRepoName
     ? `Special instructions for ${scopedRepoName}…`
     : 'Special instructions for all your repos…';
   const reviewPlaceholder = scopedRepoName
@@ -132,7 +141,7 @@ export default function PromptsSettingsTab({ settings, onSave }) {
   return (
     <div>
       <SettingsTabHeader title="Prompts">
-        Extend built-in system prompts for session agents and code review. Scope defaults to all
+        Extend built-in system prompts for builder agents and code review. Scope defaults to all
         your repositories or a single linked repo.
       </SettingsTabHeader>
 
@@ -146,11 +155,14 @@ export default function PromptsSettingsTab({ settings, onSave }) {
       </div>
 
       <div className="space-y-4">
-        <div ref={sessionCardRef} id="settings-prompt-session" className="scroll-mt-6">
-          <SettingsSection title="Session agent">
+        <div ref={builderCardRef} id="settings-prompt-builder" className="scroll-mt-6">
+          <SettingsSection title="Builder agent">
+            <p className="text-sm text-faint mb-3">
+              Primary (Main) builder: owns commits, session title, and PR description updates.
+            </p>
             <div>
               <label className="block text-sm font-medium text-heading mb-1">
-                Built-in session prompt
+                Built-in builder prompt
               </label>
               <div className="w-full bg-page border border-line rounded-lg px-3 py-2 min-h-[28rem] max-h-[50vh] overflow-auto cursor-default">
                 {fullSessionPrompt ? (
@@ -162,14 +174,14 @@ export default function PromptsSettingsTab({ settings, onSave }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-heading mb-1">
-                {sessionExtraLabel}
+                {builderExtraLabel}
               </label>
               <textarea
                 value={agentPrompt}
                 onChange={(e) => setAgentPrompt(e.target.value)}
                 rows={8}
                 className={`${INPUT_CLASS} font-mono min-h-32`}
-                placeholder={sessionPlaceholder}
+                placeholder={builderPlaceholder}
               />
             </div>
             <SettingsSaveRow
@@ -177,6 +189,33 @@ export default function PromptsSettingsTab({ settings, onSave }) {
               saved={sessionSaved}
               onSave={handleSaveSessionPrompt}
             />
+          </SettingsSection>
+        </div>
+
+        <div
+          ref={secondaryBuilderCardRef}
+          id="settings-prompt-secondary-builder"
+          className="scroll-mt-6"
+        >
+          <SettingsSection title="Secondary builder agent">
+            <p className="text-sm text-faint mb-3">
+              Extra builders (Agents panel Add builder) and MCP StartBuilderAgent subagents. They
+              share the worktree with Main; built-in rules limit session updates and commits unless
+              the task says otherwise. Additional instructions above apply to every builder,
+              including secondaries.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-heading mb-1">
+                Built-in secondary builder prompt
+              </label>
+              <div className="w-full bg-page border border-line rounded-lg px-3 py-2 min-h-[28rem] max-h-[50vh] overflow-auto cursor-default">
+                {fullSecondaryBuilderPrompt ? (
+                  <MarkdownContent>{fullSecondaryBuilderPrompt}</MarkdownContent>
+                ) : (
+                  <p className="text-xs text-faint">Loading…</p>
+                )}
+              </div>
+            </div>
           </SettingsSection>
         </div>
 

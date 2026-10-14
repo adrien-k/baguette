@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { feathers } from '@feathersjs/feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
+import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMockAgentService } from '../feathers/mock-agent.service.ts';
@@ -14,10 +15,18 @@ import { registerSessionIssuesService } from '../feathers/session-issues.service
 import { registerReviewAgentTurn } from '../review-agent-turn.js';
 import {
   MOCK_AGENT_SUMMARY_TEXT,
+  MOCK_E2E_QUICK_TURN_PROMPT,
+  MOCK_E2E_QUICK_TURN_SUMMARY,
+  MOCK_E2E_SUBAGENT_NAME,
+  MOCK_E2E_SUBAGENT_PROMPT,
+  MOCK_E2E_SUBAGENT_SUMMARY,
   MOCK_REVIEW_ISSUES,
   MOCK_REVIEWER_SUMMARY_TEXT,
+  MOCK_SECONDARY_MODEL_ID,
   MOCK_STANDARD_MODEL_ID,
 } from '../../../shared/mock-agent-sdk.js';
+import { stringifyAgentDefaultModel } from '../../../shared/agent-default-model.js';
+import { SUBAGENT_DEFAULT_CONFIG } from '../../../shared/subagent-default-mode.js';
 import { DATA_DIR } from '../../config.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { ensureTestMockConfig } from '../../test-utils/agent-configs.js';
@@ -42,6 +51,7 @@ function makeApp(dbRef) {
   registerReviewAgentTurn(app);
   registerAgentsService(app);
   registerMessagesService(app);
+  registerQueuedMessagesService(app);
   registerSessionIssuesService(app);
   mountAgentConfigs(app);
   registerMockAgentService(app);
@@ -230,5 +240,316 @@ describe('MockAgentService', () => {
       }
     });
     expect(summary).toBeTruthy();
+  }, 15_000);
+
+  it('startBuilderAgent runs a turn and returns the last assistant message', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await db('users')
+      .where({ id: userId })
+      .update({
+        agent_default_config_id: primary.agent_config_id,
+        agent_default_model: JSON.stringify({ model: MOCK_STANDARD_MODEL_ID, model_params: null }),
+      });
+
+    const result = await app.service('agents').startBuilderAgent(
+      {
+        session_id: sessionId,
+        name: 'MCP helper',
+        initial_prompt: 'Run via startBuilderAgent',
+        wait_for_completion: true,
+      },
+      params({ id: userId })
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.ref).toBeGreaterThan(0);
+    expect(result.last_assistant_message).toBeTruthy();
+  }, 20_000);
+
+  it('startBuilderAgent queues the initial prompt while the session is provisioning', async () => {
+    await db('sessions').where({ id: sessionId }).update({
+      status: 'provisioning',
+      session_path: null,
+    });
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await db('users')
+      .where({ id: userId })
+      .update({
+        agent_default_config_id: primary.agent_config_id,
+        agent_default_model: JSON.stringify({ model: MOCK_STANDARD_MODEL_ID, model_params: null }),
+      });
+
+    const result = await app.service('agents').startBuilderAgent(
+      {
+        session_id: sessionId,
+        name: 'Provision subagent',
+        initial_prompt: 'Start during provisioning',
+        wait_for_completion: false,
+      },
+      { ...params({ id: userId }), _mcpStartBuilder: true }
+    );
+
+    const userMsgs = await db('session_messages').where({
+      session_id: sessionId,
+      agent_id: result.agent_id,
+      type: 'user',
+    });
+    expect(userMsgs).toHaveLength(0);
+    const queued = await db('queued_messages').where({
+      session_id: sessionId,
+      agent_id: result.agent_id,
+      kind: 'turn',
+    });
+    expect(queued).toHaveLength(1);
+    const parsed = JSON.parse(queued[0].message_json);
+    expect(parsed.subtype).toBe('mcp');
+  }, 20_000);
+
+  it('startBuilderAgent subagent blocks Baguette UI messages', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await db('users')
+      .where({ id: userId })
+      .update({
+        agent_default_config_id: primary.agent_config_id,
+        agent_default_model: JSON.stringify({ model: MOCK_STANDARD_MODEL_ID, model_params: null }),
+      });
+
+    const result = await app.service('agents').startBuilderAgent(
+      {
+        session_id: sessionId,
+        name: 'MCP-only',
+        initial_prompt: 'Readonly builder',
+        wait_for_completion: false,
+      },
+      { ...params({ id: userId }), _mcpStartBuilder: true }
+    );
+
+    const row = await db('agents').where({ id: result.agent_id }).first();
+    expect(row.subagent).toBe(1);
+
+    await expect(
+      app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'user',
+          message_json: JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: 'blocked' },
+          }),
+          ...sessionMessageIdentity(row),
+        },
+        { provider: 'rest', user: { id: userId } }
+      )
+    ).rejects.toThrow(/MCP/i);
+  }, 20_000);
+
+  it('runs a quick turn for the e2e prompt phrase', async () => {
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: MOCK_E2E_QUICK_TURN_PROMPT },
+        }),
+        ...sessionMessageIdentity(builder),
+      },
+      params({ id: userId })
+    );
+
+    await vi.waitFor(
+      async () => {
+        const row = await db('agents').where({ id: builder.id }).first();
+        expect(row.status).toBe('completed');
+        const msgs = await db('session_messages').where({ agent_id: builder.id });
+        const hit = msgs.some((r) => {
+          try {
+            const p = JSON.parse(r.message_json);
+            return p.blocks?.some(
+              (b) => b.type === 'text' && b.text?.includes(MOCK_E2E_QUICK_TURN_SUMMARY)
+            );
+          } catch {
+            return false;
+          }
+        });
+        expect(hit).toBe(true);
+      },
+      { timeout: 10_000 }
+    );
+  }, 15_000);
+
+  it('starts a read-only MCP subagent when prompted with the e2e phrase', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: MOCK_E2E_SUBAGENT_PROMPT },
+        }),
+        ...sessionMessageIdentity(primary),
+      },
+      params({ id: userId })
+    );
+
+    await vi.waitFor(
+      async () => {
+        const primaryRow = await db('agents').where({ id: primary.id }).first();
+        expect(primaryRow.status).toBe('completed');
+        const sub = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+        expect(sub).toBeTruthy();
+        expect(sub.status).toBe('completed');
+        expect(sub.model).toBe(primary.model);
+        const primaryMsgs = await db('session_messages').where({ agent_id: primary.id });
+        const summary = primaryMsgs.some((r) => {
+          try {
+            const p = JSON.parse(r.message_json);
+            return p.blocks?.[0]?.text?.includes(MOCK_E2E_SUBAGENT_SUMMARY);
+          } catch {
+            return false;
+          }
+        });
+        expect(summary).toBe(true);
+      },
+      { timeout: 15_000 }
+    );
+  }, 20_000);
+
+  it('startBuilderAgent can be called twice with the same name after delete', async () => {
+    const start = () =>
+      app.service('agents').startBuilderAgent(
+        {
+          session_id: sessionId,
+          name: MOCK_E2E_SUBAGENT_NAME,
+          initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
+          wait_for_completion: true,
+        },
+        { ...params({ id: userId }), _mcpStartBuilder: true }
+      );
+
+    const first = await start();
+    await app.service('agents').remove(first.agent_id, params({ id: userId }));
+    const second = await start();
+    const row = await db('agents').where({ id: second.agent_id }).first();
+    expect(row.status).toBe('completed');
+  }, 20_000);
+
+  it('starts a second MCP subagent after delete when subagent default is config', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await db('users')
+      .where({ id: userId })
+      .update({
+        subagent_default_mode: SUBAGENT_DEFAULT_CONFIG,
+        subagent_default_config_id: primary.agent_config_id,
+        subagent_default_model: stringifyAgentDefaultModel({
+          model: MOCK_SECONDARY_MODEL_ID,
+          model_params: null,
+        }),
+      });
+
+    const sendSubagentPrompt = () =>
+      app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'user',
+          message_json: JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: MOCK_E2E_SUBAGENT_PROMPT },
+          }),
+          ...sessionMessageIdentity(primary),
+        },
+        params({ id: userId })
+      );
+
+    await sendSubagentPrompt();
+    await vi.waitFor(
+      async () => {
+        const primaryRow = await db('agents').where({ id: primary.id }).first();
+        expect(primaryRow.status).toBe('completed');
+        const sub = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+        expect(sub).toBeTruthy();
+        expect(sub.status).toBe('completed');
+      },
+      { timeout: 15_000 }
+    );
+    const first = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+    await app.service('agents').remove(first.id, params({ id: userId }));
+
+    await vi.waitFor(
+      async () => {
+        const row = await db('agents').where({ id: primary.id }).first();
+        expect(row.status).toBe('completed');
+      },
+      { timeout: 15_000 }
+    );
+
+    await sendSubagentPrompt();
+    await vi.waitFor(
+      async () => {
+        const sub = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+        expect(sub).toBeTruthy();
+        expect(sub.status).toBe('completed');
+        expect(sub.model).toBe(MOCK_SECONDARY_MODEL_ID);
+      },
+      { timeout: 15_000 }
+    );
+  }, 25_000);
+
+  it('creates extra builder with primary session config when only name is provided', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const extra = await app.service('agents').create(
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        name: 'Helper',
+      },
+      params({ id: userId })
+    );
+    expect(extra.is_primary).toBe(0);
+    expect(extra.agent_config_id).toBe(primary.agent_config_id);
+    expect(extra.model).toBe(primary.model);
+  });
+
+  it('runs a turn on an additional builder without disturbing the primary', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const extra = await app.service('agents').create(
+      {
+        session_id: sessionId,
+        agent_type: 'builder',
+        agent_config_id: primary.agent_config_id,
+        model: MOCK_STANDARD_MODEL_ID,
+        name: 'Helper',
+      },
+      params({ id: userId })
+    );
+
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'Secondary builder turn' },
+        }),
+        ...sessionMessageIdentity(extra),
+      },
+      params({ id: userId })
+    );
+
+    await vi.waitFor(
+      async () => {
+        const extraRow = await db('agents').where({ id: extra.id }).first();
+        expect(extraRow.status).toBe('completed');
+        const primaryRow = await db('agents').where({ id: primary.id }).first();
+        expect(primaryRow.status).not.toBe('running');
+      },
+      { timeout: 10_000 }
+    );
+
+    const extraMessages = await db('session_messages').where({ agent_id: extra.id });
+    expect(extraMessages.some((r) => r.type === 'assistant')).toBe(true);
   }, 15_000);
 });

@@ -17,7 +17,7 @@ export function useSessionAgents(sessionId) {
     }
     setLoading(true);
     agentsService
-      .find({ query: { session_id: sessionId, $sort: { id: 1 }, $limit: 10 } })
+      .find({ query: { session_id: sessionId, $sort: { ref: 1 }, $limit: 100 } })
       .then((res) => setAgents(normalizeList(res)))
       .catch((err) => toastFeathersError('Failed to load agents', err))
       .finally(() => setLoading(false));
