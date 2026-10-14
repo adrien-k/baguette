@@ -4,6 +4,7 @@ import {
   mapClaudeCodeSdkModelToListEntry,
   normalizeClaudeCodePickerModelId,
 } from '../claude-code-model-list.js';
+import { claudeCodeModelDisplayName } from '../claude-code-model-display.js';
 
 describe('claudeCodePickerModelId', () => {
   it('uses value, not resolvedModel', () => {
@@ -39,17 +40,17 @@ describe('mapClaudeCodeSdkModelToListEntry', () => {
     const entry = mapClaudeCodeSdkModelToListEntry(
       {
         value: 'sonnet',
-        resolvedModel: 'claude-sonnet-5',
+        resolvedModel: 'claude-sonnet-5-5',
         displayName: 'Sonnet',
         description: 'Sonnet 5 · Efficient',
       },
-      ({ displayName }) => displayName
+      claudeCodeModelDisplayName
     );
     expect(entry).toEqual({
       id: 'sonnet',
-      display_name: 'Sonnet',
+      display_name: 'Sonnet 5.5',
       description: 'Sonnet 5 · Efficient',
-      resolved_model: 'claude-sonnet-5',
+      resolved_model: 'claude-sonnet-5-5',
     });
   });
 });

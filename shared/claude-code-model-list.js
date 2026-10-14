@@ -31,7 +31,7 @@ export function normalizeClaudeCodePickerModelId(modelId, pickerIds) {
 
 /**
  * @param {{ value?: string, displayName?: string, description?: string | null, resolvedModel?: string }} row
- * @param {(row: { displayName?: string, description?: string | null }) => string} displayNameFn
+ * @param {(row: { value?: string, displayName?: string, description?: string | null, resolvedModel?: string }) => string} displayNameFn
  */
 export function mapClaudeCodeSdkModelToListEntry(row, displayNameFn) {
   const id = claudeCodePickerModelId(row);
@@ -41,6 +41,8 @@ export function mapClaudeCodeSdkModelToListEntry(row, displayNameFn) {
     display_name: displayNameFn({
       displayName: row.displayName,
       description: row.description,
+      resolvedModel: row.resolvedModel,
+      value: row.value,
     }),
     description: row.description ?? null,
     resolved_model: row.resolvedModel ?? null,

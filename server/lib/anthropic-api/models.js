@@ -1,4 +1,5 @@
 import { anthropicApiRequest } from './client.js';
+import { claudeCodeModelDisplayName } from '../../../shared/claude-code-model-display.js';
 import { attachClaudeModelVariants } from '../../../shared/claude-model-variants.js';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -28,13 +29,21 @@ export async function listAnthropicApiModels(config, options = {}) {
   }
   const rows = Array.isArray(data?.data) ? data.data : [];
   const models = rows
-    .map((m) =>
-      attachClaudeModelVariants({
-        id: m.id ?? m.name,
-        display_name: m.display_name ?? m.name ?? m.id,
-        description: null,
-      })
-    )
+    .map((m) => {
+      const id = m.id ?? m.name;
+      const rawName = m.display_name ?? m.name ?? id;
+      const display_name = claudeCodeModelDisplayName({
+        displayName: rawName,
+        description: m.description ?? null,
+        resolvedModel: id,
+        value: id,
+      });
+      return attachClaudeModelVariants({
+        id,
+        display_name: display_name || rawName,
+        description: m.description ?? null,
+      });
+    })
     .filter((m) => typeof m.id === 'string' && m.id);
   if (!models.length) throw new Error('Gateway returned no models');
   return models;

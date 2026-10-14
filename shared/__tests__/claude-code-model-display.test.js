@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { claudeCodeModelDisplayName } from '../claude-code-model-display.js';
+import {
+  claudeCodeModelDisplayName,
+  displayNameFromClaudeWireModelId,
+} from '../claude-code-model-display.js';
 
 describe('claudeCodeModelDisplayName', () => {
   it('appends version from description headline for family aliases', () => {
@@ -46,5 +49,33 @@ describe('claudeCodeModelDisplayName', () => {
 
   it('falls back to displayName without description', () => {
     expect(claudeCodeModelDisplayName({ displayName: 'Sonnet', description: null })).toBe('Sonnet');
+  });
+
+  it('uses resolvedModel for patch versions when description only has major', () => {
+    expect(
+      claudeCodeModelDisplayName({
+        displayName: 'Sonnet',
+        description: 'Sonnet 5 · Efficient for routine tasks · $2/$10 per Mtok',
+        resolvedModel: 'claude-sonnet-5-5',
+      })
+    ).toBe('Sonnet 5.5');
+  });
+
+  it('uses resolvedModel when description is missing', () => {
+    expect(
+      claudeCodeModelDisplayName({
+        displayName: 'Sonnet',
+        description: null,
+        resolvedModel: 'claude-sonnet-5-5',
+      })
+    ).toBe('Sonnet 5.5');
+  });
+});
+
+describe('displayNameFromClaudeWireModelId', () => {
+  it('formats Anthropic wire ids', () => {
+    expect(displayNameFromClaudeWireModelId('claude-sonnet-5-5')).toBe('Sonnet 5.5');
+    expect(displayNameFromClaudeWireModelId('claude-opus-5[1m]')).toBe('Opus 5 with 1M context');
+    expect(displayNameFromClaudeWireModelId('claude-haiku-4-5')).toBe('Haiku 4.5');
   });
 });
