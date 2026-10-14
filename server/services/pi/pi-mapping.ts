@@ -2,8 +2,10 @@ import { planMarkdownFromToolInput } from '../../../shared/plan-markdown.ts';
 import type {
   AnyToolResult,
   MessageOp,
+  ToolArgsByKind,
   ToolCallKind,
   ToolCallPayload,
+  ToolResultByKind,
 } from '../../../shared/message-types.ts';
 import { mapCursorToolArgs, mapCursorToolResult } from '../cursor/cursor-mapping.ts';
 import {
@@ -55,6 +57,67 @@ function asInput(args: unknown): Record<string, unknown> {
     return args as Record<string, unknown>;
   }
   return {};
+}
+
+function isDict(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function str(value: unknown, fallback = ''): string {
+  if (value == null) return fallback;
+  return String(value);
+}
+
+function strOrNull(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value);
+  return s === '' ? null : s;
+}
+
+/** Pi edit tools return unified diff text under `details.diff` (or `details.patch`). */
+function piEditDiffFromResult(raw: unknown): string | null {
+  if (!isDict(raw)) return null;
+  const details = isDict(raw.details) ? raw.details : null;
+  if (!details) return null;
+  return strOrNull(details.diff ?? details.patch);
+}
+
+function mapPiEditToolArgs(input: Record<string, unknown>): ToolArgsByKind['edit'] {
+  const path = str(input.path ?? input.file_path);
+  // Pi's native shape is `edits[]` with oldText/newText; UI reads result.diff for that case.
+  if (Array.isArray(input.edits) && input.edits.length > 0) {
+    return { path, old_string: null, new_string: null };
+  }
+  return {
+    path,
+    old_string: strOrNull(input.oldText ?? input.old_string),
+    new_string: strOrNull(input.newText ?? input.new_string),
+  };
+}
+
+export function mapPiToolArgs<K extends ToolCallKind>(
+  kind: K,
+  toolName: string,
+  input: Record<string, unknown> = {}
+): ToolArgsByKind[K] {
+  if (kind === 'edit') {
+    return mapPiEditToolArgs(input) as ToolArgsByKind[K];
+  }
+  return mapCursorToolArgs(kind, toolName, input);
+}
+
+export function mapPiToolResult(
+  kind: ToolCallKind,
+  rawResult: unknown,
+  opts: { isError?: boolean } = {}
+): AnyToolResult {
+  const result = mapCursorToolResult(kind, rawResult, opts);
+  if (kind !== 'edit') return result;
+  const piDiff = piEditDiffFromResult(rawResult);
+  if (!piDiff) return result;
+  const editResult = result as ToolResultByKind['edit'];
+  if (editResult.diff) return result;
+  return { ...editResult, diff: piDiff };
 }
 
 export function piTurnResultOps(status: 'ok' | 'error', error_message: string | null): MessageOp[] {
@@ -156,7 +219,7 @@ export function piBuildToolCallStart(
     started_at: startedAt,
     ended_at: null,
     result: null,
-    args: mapCursorToolArgs(kind, name, args),
+    args: mapPiToolArgs(kind, name, args),
   } as ToolCallPayload;
 }
 
@@ -185,8 +248,8 @@ export function piBuildToolCallComplete(
     name: canonicalizePiToolName(finalName),
     status,
     ended_at: opts.endedAt ?? new Date().toISOString(),
-    args: mapCursorToolArgs(kind, finalName, opts.args ?? (prev.args as Record<string, unknown>)),
-    result: mapCursorToolResult(kind, opts.rawResult, {
+    args: mapPiToolArgs(kind, finalName, opts.args ?? (prev.args as Record<string, unknown>)),
+    result: mapPiToolResult(kind, opts.rawResult, {
       isError: opts.is_error,
     }) as AnyToolResult,
   } as ToolCallPayload;
