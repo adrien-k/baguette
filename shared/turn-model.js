@@ -16,6 +16,11 @@ export function isMcpUserMessage(parsed) {
   return parsed?.type === 'user' && (parsed.source === 'mcp' || parsed.subtype === 'mcp');
 }
 
+/** User or MCP message that can be steered into the active turn (`force` on messages.create). */
+export function isSteerableUserMessage(parsed) {
+  return isHumanUserMessage(parsed) || isMcpUserMessage(parsed);
+}
+
 /** User-typed chat message (not Baguette-injected, not a tool-result carrier). */
 export function isHumanUserMessage(parsed) {
   if (parsed?.type !== 'user') return false;
@@ -32,10 +37,10 @@ export function isHumanUserMessage(parsed) {
   return false;
 }
 
-/** User or Baguette-injected message that starts a new agent turn. */
-function isTurnStartingUserMessage(msg) {
+/** User, Baguette-injected, or MCP message that starts a new agent turn. */
+export function isTurnStartingUserMessage(msg) {
   if (msg?.type !== 'user') return false;
-  return isHumanUserMessage(msg) || isBaguetteUserMessage(msg);
+  return isHumanUserMessage(msg) || isBaguetteUserMessage(msg) || isMcpUserMessage(msg);
 }
 
 /**

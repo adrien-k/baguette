@@ -207,4 +207,33 @@ describe('PiAgentService', () => {
     expect(mockPiSession.steer).toHaveBeenCalledWith('steer me');
     expect(runTurnSpy).not.toHaveBeenCalled();
   });
+
+  it('handleMessageCreated steers MCP messages when force and streaming', async () => {
+    const service = new PiAgentService();
+    service.app = makeApp();
+    mockPiSession.isStreaming = true;
+    service._activeSessions.set(1, {
+      isProcessing: true,
+      userId: 2,
+      piSession: mockPiSession,
+    });
+    const runTurnSpy = vi.spyOn(service, '_runTurn').mockResolvedValue(undefined);
+    await service.handleMessageCreated({
+      id: 12,
+      type: 'user',
+      session_id: 1,
+      agent_id: 1,
+      agent_sdk: 'pi',
+      turn_id: 4,
+      force: true,
+      message_json: JSON.stringify({
+        type: 'user',
+        source: 'mcp',
+        content: 'mcp steer',
+        subtype: 'mcp',
+      }),
+    });
+    expect(mockPiSession.steer).toHaveBeenCalledWith('mcp steer');
+    expect(runTurnSpy).not.toHaveBeenCalled();
+  });
 });

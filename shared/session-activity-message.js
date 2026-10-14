@@ -1,4 +1,4 @@
-import { isBaguetteUserMessage, isHumanUserMessage } from './turn-model.js';
+import { isTurnStartingUserMessage } from './turn-model.js';
 
 /**
  * Whether a new message row should bump `last_activity_at`.
@@ -15,5 +15,5 @@ export function messageCountsAsSessionActivity(row) {
   } catch {
     return false;
   }
-  return isHumanUserMessage(parsed) || isBaguetteUserMessage(parsed);
+  return isTurnStartingUserMessage(parsed);
 }

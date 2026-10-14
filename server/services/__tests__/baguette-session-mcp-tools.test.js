@@ -158,6 +158,19 @@ describe('baguette session MCP tools', () => {
     expect(out.message_json).toContain('hello');
   });
 
+  it('CreateSessionMessage rejects empty or whitespace-only text', async () => {
+    const create = tools.find((t) => t.name === 'CreateSessionMessage');
+    for (const text of ['', '   ']) {
+      const out = parseResult(await create.handler({ session_id: sessionId, text }));
+      expect(out.ok).toBe(false);
+    }
+    const count = await db('session_messages')
+      .where({ session_id: sessionId, type: 'user' })
+      .count('id as c')
+      .first();
+    expect(Number(count.c)).toBe(1);
+  });
+
   it('CreateSessionMessage sends immediately when session is idle', async () => {
     const create = tools.find((t) => t.name === 'CreateSessionMessage');
     const out = parseOk(await create.handler({ session_id: sessionId, text: 'ping' }));

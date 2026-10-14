@@ -94,6 +94,15 @@ describe('findLastTurnStartIndex', () => {
     ];
     expect(findLastTurnStartIndex(messages)).toBe(3);
   });
+
+  it('returns the latest MCP user message index', () => {
+    const messages = [
+      { type: 'user', message: { role: 'user', content: 'first' } },
+      { type: 'assistant', message: { content: [] } },
+      { type: 'user', source: 'mcp', content: 'scheduled hello', subtype: 'mcp' },
+    ];
+    expect(findLastTurnStartIndex(messages)).toBe(2);
+  });
 });
 
 describe('isHumanUserMessage', () => {

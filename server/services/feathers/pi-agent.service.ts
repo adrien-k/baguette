@@ -16,10 +16,7 @@ import { processPiSessionStream, type PiTurnUsage } from '../pi/pi-sdk-turn.ts';
 import { piTurnResultOps } from '../pi/pi-mapping.ts';
 import { emptyTurnUsage } from '../turn-usage.js';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
-import {
-  isHumanUserMessage as isHumanUserMessageShared,
-  requireTurnModelFromRow,
-} from '../../../shared/turn-model.js';
+import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createPiModelRuntime, resolvePiSessionModel } from '../pi-models.js';
 import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
@@ -305,7 +302,7 @@ export class PiAgentService {
         });
         return;
       }
-      if (row.force && active.piSession?.isStreaming && isHumanUserMessageShared(parsed)) {
+      if (row.force && active.piSession?.isStreaming && isSteerableUserMessage(parsed)) {
         const text = extractUserText(parsed);
         if (text) void active.piSession.steer(text).catch(() => {});
       }

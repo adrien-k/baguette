@@ -11,10 +11,11 @@ export function createCreateSessionMessageTool(ctx) {
       'IMPORTANT: Do not use this tool unless the user explicitly asks you to send or schedule a message to a session. ' +
       'Send a user message to a session now, or schedule it with send_at (ISO timestamp in the future). ' +
       'You may post to any of your sessions (session_id must belong to your account). ' +
-      'Immediate sends while the agent is running are queued for the next turn, like the UI Send button.',
+      'Immediate sends while the agent is running are queued for the next turn, like the UI Send button. ' +
+      'Set force to deliver into the active turn now (steering), same as force-send in chat.',
     schema: {
       session_id: z.number().int().describe('Target session id'),
-      text: z.string().describe('User message text'),
+      text: z.string().trim().min(1).describe('User message text (non-empty)'),
       send_at: z
         .string()
         .optional()
@@ -23,15 +24,17 @@ export function createCreateSessionMessageTool(ctx) {
         .boolean()
         .optional()
         .describe(
-          'When sending immediately: start a new turn even if the agent is already running'
+          'When sending immediately while the agent is already running: steer into the active turn instead of queueing for the next turn'
         ),
     },
     handler: async (args) => {
       const { session_id, text, send_at, force } = args;
+      const body = String(text ?? '').trim();
+      if (!body) return fail('text is required');
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
 
-      const message_json = buildMcpUserMessageJson(text);
+      const message_json = buildMcpUserMessageJson(body);
       const userParams = { provider: 'rest', user: { id: userId } };
       const db = app.get('db');
       const builder = await db('agents').where({ session_id, is_primary: 1 }).first();

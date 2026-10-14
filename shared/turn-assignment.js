@@ -1,4 +1,9 @@
-import { isBaguetteUserMessage, isHumanUserMessage } from './turn-model.js';
+import {
+  isBaguetteUserMessage,
+  isHumanUserMessage,
+  isSteerableUserMessage,
+  isTurnStartingUserMessage,
+} from './turn-model.js';
 import { normalizeUserPayloadForStorage } from './normalize-user-payload.js';
 
 function parsePayload(messageJson) {
@@ -33,15 +38,14 @@ async function allocateNextTurnId(db, agentId) {
 export function resolveTurnIdForUserCreate(agent, data, opts) {
   const parsed = parsePayload(data.message_json);
   const normalized = normalizeUserPayloadForStorage(parsed);
-  const isUserTurn =
-    data.type === 'user' && (isHumanUserMessage(normalized) || isBaguetteUserMessage(normalized));
+  const isUserTurn = data.type === 'user' && isTurnStartingUserMessage(normalized);
   if (!isUserTurn) return { turnId: data.turn_id ?? null, increment: false };
 
   const running = agent.status === 'running';
   const activeTurn = agent.active_turn_id;
   const isReviewer = agent.agent_type === 'reviewer';
 
-  const steering = Boolean(opts.force) && isHumanUserMessage(normalized);
+  const steering = Boolean(opts.force) && isSteerableUserMessage(normalized);
 
   if (running && steering && activeTurn != null) {
     return { turnId: activeTurn, increment: false };

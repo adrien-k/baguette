@@ -63,6 +63,27 @@ describe('agent-configs dispatch', () => {
     expect(configs.servicePathForSdk('claude')).toBe('claude-agent');
   });
 
+  it('routes MCP user messages to the session config SDK', async () => {
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        subtype: 'mcp',
+        message_json: JSON.stringify({
+          type: 'user',
+          source: 'mcp',
+          content: 'hello',
+          subtype: 'mcp',
+        }),
+        agent_type: 'builder',
+        agent_sdk: 'claude',
+        model: 'sonnet',
+      },
+      { provider: 'rest', user: user1 }
+    );
+    expect(app._handleMessageCreated).toHaveBeenCalled();
+  });
+
   it('routes created user messages to the session config SDK', async () => {
     await app.service('messages').create(
       {

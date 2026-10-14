@@ -23,10 +23,7 @@ import {
   type CursorStreamUsageCallback,
 } from '../cursor/cursor-sdk-turn.ts';
 import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
-import {
-  isHumanUserMessage as isHumanUserMessageShared,
-  requireTurnModelFromRow,
-} from '../../../shared/turn-model.js';
+import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
@@ -354,7 +351,7 @@ ${body}`,
         });
         return;
       }
-      if (row.force && active.currentRun?.steer && isHumanUserMessageShared(parsed)) {
+      if (row.force && active.currentRun?.steer && isSteerableUserMessage(parsed)) {
         const text = extractUserText(parsed);
         if (text) active.currentRun.steer(text).catch(() => {});
       }

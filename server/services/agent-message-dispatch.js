@@ -1,8 +1,4 @@
-import {
-  isBaguetteUserMessage,
-  isHumanUserMessage,
-  resolveTurnModel,
-} from '../../shared/turn-model.js';
+import { isTurnStartingUserMessage, resolveTurnModel } from '../../shared/turn-model.js';
 import { normalizeUserPayloadForStorage } from '../../shared/normalize-user-payload.js';
 import { getAgentById } from './agents-db.js';
 import { getAgentServiceForAgent } from './agent-session-routing.js';
@@ -72,5 +68,5 @@ export async function rejectTurnMismatch(app, { session, row, channel, activeTur
  * @param {object} parsed
  */
 export function isDispatchableUserMessage(parsed) {
-  return isHumanUserMessage(parsed) || isBaguetteUserMessage(parsed);
+  return isTurnStartingUserMessage(parsed);
 }
