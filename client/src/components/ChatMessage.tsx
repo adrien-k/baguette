@@ -157,7 +157,6 @@ function TypedMessage({
         <PlanReviewBlock
           markdown={message.markdown}
           sessionId={sessionId}
-          session={session}
           userReplied={userReplied}
         />
       );

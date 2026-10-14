@@ -59,6 +59,7 @@ export const sessionsService = createService('sessions', {
     'shas',
     'showDiff',
     'getPlan',
+    'createDefaultBuilderMessage',
     'merge',
     'setPrDraft',
     'push',

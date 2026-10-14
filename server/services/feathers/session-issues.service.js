@@ -3,8 +3,6 @@ import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { issueFixAgentPrompt, issuesFixAllAgentPrompt } from '../../../shared/session-issues.js';
-import { sessionMessageIdentity } from './message-create-fields.js';
-import { getPrimaryBuilderAgent } from '../agents-db.js';
 import {
   assertIssueSeverity,
   assertIssueStatus,
@@ -71,23 +69,14 @@ class SessionIssuesService extends KnexService {
   }
 
   async _postBuilderFixMessage(session, text, params) {
-    const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
-    if (!builder) throw new BadRequest('Agent not found');
-    const identity = sessionMessageIdentity(builder);
     const content = String(text ?? '').trim();
     if (!content) throw new BadRequest('message is required');
-    return this.app.service('messages').create(
-      {
-        session_id: session.id,
-        type: 'user',
-        message_json: JSON.stringify({
-          type: 'user',
-          message: { role: 'user', content },
-        }),
-        ...identity,
-      },
-      { user: params.user, provider: params.provider }
-    );
+    return this.app
+      .service('sessions')
+      .createDefaultBuilderMessage(
+        { id: session.id, content },
+        { user: params.user, provider: params.provider }
+      );
   }
 
   async askAgentToFix(issueId, params) {

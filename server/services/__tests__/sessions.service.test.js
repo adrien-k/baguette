@@ -287,6 +287,37 @@ describe('Sessions service - custom methods', () => {
     });
   });
 
+  // ── createDefaultBuilderMessage ────────────────────────────────────────────
+
+  describe('createDefaultBuilderMessage', () => {
+    it('creates a user message with primary builder identity', async () => {
+      const builder = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: builder.id }).update({ model: 'test-model' });
+
+      const result = await app
+        .service('sessions')
+        .createDefaultBuilderMessage(
+          { id: sessId, content: 'Proceed with the plan.' },
+          params({ id: userId })
+        );
+
+      expect(result.type).toBe('user');
+      expect(result.agent_id).toBe(builder.id);
+      expect(result.model).toBe('test-model');
+      const parsed = JSON.parse(result.message_json);
+      const text = parsed.content ?? parsed.message?.content;
+      expect(text).toBe('Proceed with the plan.');
+    });
+
+    it('rejects empty content', async () => {
+      await expect(
+        app
+          .service('sessions')
+          .createDefaultBuilderMessage({ id: sessId, content: '   ' }, params({ id: userId }))
+      ).rejects.toThrow(BadRequest);
+    });
+  });
+
   // ── merge ──────────────────────────────────────────────────────────────────
 
   describe('merge', () => {

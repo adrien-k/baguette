@@ -1,15 +1,13 @@
 import { useState } from 'react';
 import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
-import { messagesService } from '../../feathers.js';
+import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 export default function ShowPlanBlock({
   heading = 'Plan ready for review',
   markdown,
   sessionId,
-  session,
   userReplied = false,
   isRunning = false,
   isError = false,
@@ -18,7 +16,6 @@ export default function ShowPlanBlock({
   heading?: string;
   markdown?: string | null;
   sessionId?: number | null;
-  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
   isRunning?: boolean;
   isError?: boolean;
@@ -30,11 +27,9 @@ export default function ShowPlanBlock({
     if (sessionId == null) return;
     setLoading(true);
     try {
-      await messagesService.create({
-        session_id: sessionId,
-        type: 'user',
-        message_json: JSON.stringify({ type: 'user', content: text }),
-        ...builderMessageCreateFields(session ?? {}),
+      await sessionsService.createDefaultBuilderMessage({
+        id: sessionId,
+        content: text,
       });
     } catch (err) {
       toastError('Failed to send message', err);

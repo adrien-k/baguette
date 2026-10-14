@@ -15,6 +15,14 @@ function agentSdkForAgent(agent) {
   return agent.agent_sdk || 'claude';
 }
 
+/** Standard user turn payload stored in `message_json` (composer / plan buttons). */
+export function buildUserTurnMessageJson(content) {
+  return JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: String(content) },
+  });
+}
+
 /**
  * Resolve `agent_id` for a session message create; defaults to the primary builder.
  * @param {import('knex').Knex} db

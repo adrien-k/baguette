@@ -308,7 +308,6 @@ function ToolCallSwitch({
         <PlanReviewBlock
           markdown={message.args.plan}
           sessionId={sessionId}
-          session={session}
           userReplied={userReplied}
         />
       );
@@ -331,7 +330,6 @@ function ToolCallSwitch({
           isError={isError}
           startedAt={startedAt}
           sessionId={sessionId}
-          session={session}
           userReplied={userReplied}
         />
       );
