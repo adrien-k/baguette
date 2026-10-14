@@ -22,6 +22,8 @@ import { registerReposService } from '../feathers/repos.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { registerAgentSdk } from '../feathers/agent-configs.service.js';
 import {
+  BAGUETTE_DESCRIPTION_MARKER,
+  BAGUETTE_FOOTER_MARKER,
   createWorktree,
   getOpenPR,
   getPRStatus,
@@ -2058,6 +2060,43 @@ describe('Sessions service - find, get, create', () => {
       expect(session.pr_url).toBe('https://github.com/test/repo/pull/42');
       expect(session.label).toBe('Feature PR');
       expect(generateSessionMetadata).not.toHaveBeenCalled();
+    });
+
+    it('create_new_branch=false strips baguette PR markers into pr_description', async () => {
+      const prBody = [
+        'Reviewer notes',
+        '',
+        BAGUETTE_DESCRIPTION_MARKER,
+        '---',
+        '',
+        '## Summary',
+        '- Agent write-up',
+        '',
+        '---',
+        '',
+        BAGUETTE_FOOTER_MARKER,
+        '',
+        '_cursor / `gpt-5` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0_',
+      ].join('\n');
+      getOpenPR.mockResolvedValueOnce({
+        number: 7,
+        html_url: 'https://github.com/test/repo/pull/7',
+        title: 'Feature PR',
+        base_ref: 'main',
+        draft: false,
+        body: prBody,
+      });
+
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      expect(session.pr_description).toBe('## Summary\n- Agent write-up');
     });
 
     it('create_new_branch=false uses default_branch as diff base when no open PR', async () => {

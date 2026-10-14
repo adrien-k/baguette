@@ -1830,7 +1830,7 @@ async function provisionSessionEnvironment(app, session, params) {
         pr_number: openPr.number,
         pr_status: openPr.draft ? 'draft' : 'open',
         label: openPr.title,
-        pr_description: openPr.body ?? null,
+        pr_description: openPr.body == null ? null : splitPrBody(openPr.body).baguetteContent,
       });
     } else {
       patch.base_branch = defaultForDiff;
