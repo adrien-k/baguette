@@ -208,7 +208,7 @@ tasks:
    - **SQLite or other files in the worktree**: isolation is usually the file path (e.g. `.data/app.sqlite3` per worktree).
    - For tests with docker Postgres, a separate fixed name (e.g. `app_test`) is enough; with shared Postgres, use `myapp_test_${{ baguette.session.short_id }}`.
 
-6. **Write (or update) the `.baguette.yaml` file** at the project root with the configuration. Put Baguette-specific scripts under **`.baguette/scripts/`**. Only create or update **`.baguette/instructions.md`** if the user explicitly asks for persistent repo agent guidance — do not add it proactively during onboarding.
+6. **Write (or update) the `.baguette.yaml` file** at the project root with the configuration. Put Baguette-specific scripts under **`.baguette/scripts/`**. Optional agent prompt extensions live under **`.baguette/agents/`** (`builder.md`, `reviewer.md`, `subagent.md`) — only add those if the user asks for repo-specific prompt text.
 
 7. **Validate the setup**:
    - Attempt to run the `session.init` commands you wrote to verify they succeed

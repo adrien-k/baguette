@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Type } from 'typebox';
 import {
   GLOBAL_SESSION_EXCLUDED_MCP_TOOLS,
+  SUBAGENT_EXCLUDED_MCP_TOOLS,
   isGlobalSession,
 } from '../../../shared/session-scope.js';
 import { loadConfiguredSlackApps } from './lib/slack.js';
@@ -19,7 +20,7 @@ import { wrapBaguetteToolList } from './lib/wrap-baguette-tool-handler.js';
  *
  * Slack tools are included only when at least one Slack app has a bot token.
  */
-async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
+async function buildBaguetteToolList(session, app, { slackApps = [], agent = null } = {}) {
   let baseTools = [];
   try {
     const owner = await app.service('users').get(session.user_id, {});
@@ -30,17 +31,21 @@ async function buildBaguetteToolList(session, app, { slackApps = [] } = {}) {
 
   const tools = [...baseTools, ...buildBuilderAgentTools(session, app, { slackApps })];
 
-  const wrapped = wrapBaguetteToolList(session, app, tools);
+  let wrapped = wrapBaguetteToolList(session, app, tools);
   if (isGlobalSession(session)) {
     const excluded = new Set(GLOBAL_SESSION_EXCLUDED_MCP_TOOLS);
-    return wrapped.filter((t) => !excluded.has(t.name));
+    wrapped = wrapped.filter((t) => !excluded.has(t.name));
+  }
+  if (agent?.agent_type === 'subagent') {
+    const excluded = new Set(SUBAGENT_EXCLUDED_MCP_TOOLS);
+    wrapped = wrapped.filter((t) => !excluded.has(t.name));
   }
   return wrapped;
 }
 
-export async function buildBaguetteMcpServer(session, app) {
+export async function buildBaguetteMcpServer(session, app, { agent = null } = {}) {
   const slackApps = await loadConfiguredSlackApps(app);
-  const toolList = await buildBaguetteToolList(session, app, { slackApps });
+  const toolList = await buildBaguetteToolList(session, app, { slackApps, agent });
   return createSdkMcpServer({
     name: 'baguette',
     tools: toolList.map(({ name, description, schema, handler }) =>
@@ -59,9 +64,9 @@ function toolListToCursorCustomTools(toolList) {
   );
 }
 
-export async function buildCursorCustomTools(session, app) {
+export async function buildCursorCustomTools(session, app, { agent = null } = {}) {
   const slackApps = await loadConfiguredSlackApps(app);
-  const toolList = await buildBaguetteToolList(session, app, { slackApps });
+  const toolList = await buildBaguetteToolList(session, app, { slackApps, agent });
   return toolListToCursorCustomTools(toolList);
 }
 
@@ -112,12 +117,12 @@ function toolListToPiCustomTools(toolList) {
   );
 }
 
-export async function buildPiCustomTools(session, app, { channel = 'chat' } = {}) {
+export async function buildPiCustomTools(session, app, { channel = 'chat', agent = null } = {}) {
   if (channel === 'review') {
     return buildReviewerPiCustomTools(session, app);
   }
   const slackApps = await loadConfiguredSlackApps(app);
-  const toolList = await buildBaguetteToolList(session, app, { slackApps });
+  const toolList = await buildBaguetteToolList(session, app, { slackApps, agent });
   return toolListToPiCustomTools(toolList);
 }
 

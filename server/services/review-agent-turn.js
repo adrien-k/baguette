@@ -3,7 +3,6 @@ import logger from '../logger.js';
 import { getAllowedCommandsFromUser } from './agent-settings.js';
 import { buildReviewSystemPromptAppend } from './session-prompt.js';
 import { getEffectiveReviewPrompt } from './effective-user-prompts.js';
-import { combinePromptExtensions } from '../../shared/agent-prompts.js';
 import {
   buildReviewerMcpServer,
   buildReviewerCursorCustomTools,
@@ -260,11 +259,7 @@ class ReviewAgentTurn {
   }
 
   async _userReviewPrompt(session, extraPrompt) {
-    const base = await getEffectiveReviewPrompt(this.app, session.user_id, session.repo_id);
-    if (extraPrompt != null && String(extraPrompt).trim()) {
-      return combinePromptExtensions(base, extraPrompt);
-    }
-    return base;
+    return getEffectiveReviewPrompt(session.session_path, extraPrompt);
   }
 
   async _prepareReviewPrompt(session, reviewer, extraPrompt, continuation) {

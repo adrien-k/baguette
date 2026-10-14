@@ -91,7 +91,7 @@ export default function SubagentDefaultPicker({
       {normalizedMode === SUBAGENT_DEFAULT_CONFIG ? (
         <DefaultAgentPicker
           title="Subagent configuration"
-          description="Used for MCP StartBuilderAgent when subagent default is Configuration."
+          description="Used for MCP StartSubagent when subagent default is Configuration."
           inheritLabel="Select a configuration"
           configId={configId}
           onConfigIdChange={onConfigIdChange}

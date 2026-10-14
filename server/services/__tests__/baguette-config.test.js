@@ -24,9 +24,7 @@ import {
   interpolateEnvTaskPorts,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
-  loadBaguetteInstructions,
   CONFIG_FILENAME,
-  INSTRUCTIONS_REL_PATH,
 } from '../baguette-config.js';
 
 describe('getScriptBlock', () => {
@@ -519,24 +517,29 @@ describe('readBaguetteConfigRaw', () => {
   });
 });
 
-describe('loadBaguetteInstructions', () => {
+describe('loadBaguetteAgentPrompt', () => {
   let tmpDir;
 
   beforeEach(async () => {
-    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-instr-'));
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-agent-prompt-'));
   });
 
   afterEach(async () => {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('reads .baguette/instructions.md', async () => {
-    await fs.promises.mkdir(path.join(tmpDir, '.baguette'), { recursive: true });
-    await fs.promises.writeFile(path.join(tmpDir, INSTRUCTIONS_REL_PATH), 'Use tabs.\n');
-    expect(await loadBaguetteInstructions(tmpDir)).toBe('Use tabs.');
+  it('reads .baguette/agents/builder.md', async () => {
+    await fs.promises.mkdir(path.join(tmpDir, '.baguette', 'agents'), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(tmpDir, '.baguette', 'agents', 'builder.md'),
+      'Use vitest.\n'
+    );
+    const { loadBaguetteAgentPrompt } = await import('../baguette-config.js');
+    expect(await loadBaguetteAgentPrompt(tmpDir, 'builder')).toBe('Use vitest.');
   });
 
-  it('returns null when instructions file is missing', async () => {
-    expect(await loadBaguetteInstructions(tmpDir)).toBeNull();
+  it('returns null when the role file is missing', async () => {
+    const { loadBaguetteAgentPrompt } = await import('../baguette-config.js');
+    expect(await loadBaguetteAgentPrompt(tmpDir, 'reviewer')).toBeNull();
   });
 });

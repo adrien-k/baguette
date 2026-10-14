@@ -8,10 +8,10 @@ import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 
 const BASE_DESCRIPTION =
-  'Create a non-primary MCP builder in a session, run its initial prompt, and wait for the turn to finish. ' +
+  'Create a subagent (`agent_type` subagent) in a session, run its initial prompt, and wait for the turn to finish. ' +
   'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. ';
 
-function startBuilderAgentDescription(mode) {
+function startSubagentDescription(mode) {
   if (mode === SUBAGENT_DEFAULT_PRESET) {
     return (
       BASE_DESCRIPTION +
@@ -27,10 +27,10 @@ function startBuilderAgentDescription(mode) {
   );
 }
 
-function startBuilderAgentSchema(mode) {
+function startSubagentSchema(mode) {
   const base = {
     session_id: z.number().int().describe('Target session id'),
-    name: z.string().describe('Display name for the new builder agent'),
+    name: z.string().describe('Display name for the new subagent'),
     initial_prompt: z.string().describe('First user message that starts the agent turn'),
   };
   if (mode === SUBAGENT_DEFAULT_PRESET) {
@@ -45,21 +45,21 @@ function startBuilderAgentSchema(mode) {
   return base;
 }
 
-export function createStartBuilderAgentTool(ctx) {
+export function createStartSubagentTool(ctx) {
   const { app, userId, userParams, user } = ctx;
   const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
 
   return {
-    name: 'StartBuilderAgent',
-    description: startBuilderAgentDescription(mode),
-    schema: startBuilderAgentSchema(mode),
+    name: 'StartSubagent',
+    description: startSubagentDescription(mode),
+    schema: startSubagentSchema(mode),
     handler: async (args) => {
       const { session_id, name, initial_prompt, preset_model_id } = args;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
 
       try {
-        const result = await app.service('agents').startBuilderAgent(
+        const result = await app.service('agents').startSubagent(
           {
             session_id,
             name,
@@ -69,7 +69,7 @@ export function createStartBuilderAgentTool(ctx) {
               : {}),
             wait_for_completion: true,
           },
-          { ...userParams, _mcpStartBuilder: true }
+          userParams
         );
         return ok(result);
       } catch (err) {

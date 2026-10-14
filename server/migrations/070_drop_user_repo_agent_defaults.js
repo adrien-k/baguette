@@ -1,6 +1,6 @@
 /**
  * Remove per-repo builder/reviewer/subagent defaults; account defaults on users remain.
- * Uses native SQLite DROP COLUMN (see CLAUDE.md).
+ * Uses native SQLite DROP COLUMN (see AGENTS.md).
  */
 const USER_REPO_AGENT_DEFAULT_COLS = [
   'agent_default_config_id',

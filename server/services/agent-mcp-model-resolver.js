@@ -18,7 +18,7 @@ export const MCP_BUILDER_MODEL_SETTINGS_ERROR =
   'Configure a default agent configuration and model under Settings → Agent (Session defaults), or add a preset model there and pass its id with preset_model_id.';
 
 export const MCP_SUBAGENT_PRESET_REQUIRED_ERROR =
-  'Subagent default is Preset: pass preset_model_id on StartBuilderAgent (use ListPresetModels to choose one for the task).';
+  'Subagent default is Preset: pass preset_model_id on StartSubagent (use ListPresetModels to choose one for the task).';
 
 const MCP_SUBAGENT_CONFIG_SETTINGS_ERROR =
   'Configure subagent default configuration and model under Settings → Agent, or set subagent default to Inherit from session.';
@@ -56,12 +56,12 @@ export async function resolveMcpBuilderModel(db, userId, { preset_model_id, repo
 }
 
 /**
- * Resolve model fields for MCP/UI StartBuilderAgent (subagent defaults + session inherit).
+ * Resolve model fields for MCP/UI StartSubagent (subagent defaults + session inherit).
  * @param {import('knex').Knex} db
  * @param {number} userId
  * @param {{ session_id: number, preset_model_id?: number | null, repo_id?: number | null }} opts
  */
-export async function resolveMcpStartBuilderModel(
+export async function resolveMcpStartSubagentModel(
   db,
   userId,
   { session_id, preset_model_id, repo_id } = {}

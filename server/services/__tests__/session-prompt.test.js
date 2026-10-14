@@ -3,18 +3,16 @@ import { createTestDb } from '../../test-utils/db.js';
 import {
   buildSystemPromptAppend,
   buildReviewSystemPromptAppend,
-  loadFullSecondaryBuilderPromptTemplate,
+  loadFullSubagentPromptTemplate,
 } from '../session-prompt.js';
 
-// ── Mocks ─────────────────────────────────────────────────────────────────────
-
-const { loadBaguetteInstructions } = vi.hoisted(() => ({
-  loadBaguetteInstructions: vi.fn().mockResolvedValue(null),
+const { loadBaguetteAgentPrompt } = vi.hoisted(() => ({
+  loadBaguetteAgentPrompt: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../baguette-config.js', () => ({
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
-  loadBaguetteInstructions,
+  loadBaguetteAgentPrompt,
   interpolateEnv: vi.fn(),
   getScriptBlock: vi.fn(),
 }));
@@ -26,8 +24,6 @@ vi.mock('../../config.js', async (importOriginal) => {
     resolveDataDirRelativePath: vi.fn((p) => p || ''),
   };
 });
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const db = createTestDb();
 
@@ -57,8 +53,6 @@ async function seedSession(fields = {}) {
 
   return db('sessions').where({ id }).first();
 }
-
-// ── buildSystemPromptAppend ───────────────────────────────────────────────────
 
 describe('buildSystemPromptAppend', () => {
   it('returns a non-empty string that points agents at CurrentSessionInfo', async () => {
@@ -103,30 +97,21 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('baguette_config_notice');
   });
 
-  it('appends user agent_prompt to the base prompt block', async () => {
+  it('appends repo builder.md to the base prompt block', async () => {
+    loadBaguetteAgentPrompt.mockResolvedValueOnce('Always add unit tests.');
     const session = await seedSession({ base_branch: 'main', session_path: '/tmp/wt' });
     session.absolute_session_path = '/tmp/wt';
-    const result = await buildSystemPromptAppend(session, {
-      agentPrompt: 'Always add unit tests.',
-    });
+    const result = await buildSystemPromptAppend(session);
     expect(result).toContain('Always add unit tests');
     expect(result).toContain('Additional instructions');
-    expect(loadBaguetteInstructions).toHaveBeenCalledWith('/tmp/wt');
+    expect(loadBaguetteAgentPrompt).toHaveBeenCalledWith('/tmp/wt', 'builder');
   });
 
-  it('includes .baguette/instructions.md in additional instructions', async () => {
-    loadBaguetteInstructions.mockResolvedValueOnce('Prefer pnpm.');
-    const session = await seedSession({ session_path: '/tmp/wt' });
-    const result = await buildSystemPromptAppend(session, { agentPrompt: 'Ship small PRs.' });
-    expect(result).toContain('Prefer pnpm.');
-    expect(result).toContain('Ship small PRs.');
-  });
-
-  it('documents .baguette scripts and instructions paths in the base prompt', async () => {
+  it('documents .baguette scripts and agents paths in the base prompt', async () => {
     const session = await seedSession();
     const result = await buildSystemPromptAppend(session);
     expect(result).toContain('`./.baguette/scripts/`');
-    expect(result).toContain('`./.baguette/instructions.md`');
+    expect(result).toContain('./.baguette/agents/');
     expect(result).toContain('unless the user explicitly asks');
     expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
   });
@@ -140,28 +125,30 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('plan');
   });
 
-  it('uses primary end-of-turn shipping instructions for the primary builder', async () => {
+  it('uses builder end-of-turn shipping for extra builders', async () => {
     const session = await seedSession();
-    const result = await buildSystemPromptAppend(session, { agent: { is_primary: 1 } });
+    const result = await buildSystemPromptAppend(session, {
+      agent: { is_primary: 0, agent_type: 'builder' },
+    });
     expect(result).toContain('End-of-turn shipping');
     expect(result).toContain('UpdateSession');
+    expect(result).not.toContain('Subagent role');
   });
 
-  it('uses secondary-builder restrictions for non-primary builders', async () => {
-    const session = await seedSession();
-    const result = await buildSystemPromptAppend(session, { agent: { is_primary: 0 } });
-    expect(result).toContain('Secondary builder role');
-    expect(result).toContain('Do **not** call **`UpdateSession`**');
+  it('uses subagent role prompt for subagent agents', async () => {
+    const session = await seedSession({ session_path: '/tmp/wt' });
+    const result = await buildSystemPromptAppend(session, { agent: { agent_type: 'subagent' } });
+    expect(result).toContain('Subagent role');
+    expect(result).toContain('StartSubagent');
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
-    expect(result).not.toContain('does **not** include the GitHub CLI (`gh`)');
-    expect(result).not.toContain('spawning sub-agents');
     expect(result).not.toContain('Baguette repo configuration');
-    expect(result).not.toContain('ConfigRepoPrompt');
+    expect(result).toContain('do **not** have `UpdateSession`');
+    expect(loadBaguetteAgentPrompt).toHaveBeenCalledWith('/tmp/wt', 'subagent');
   });
 
-  it('loadFullSecondaryBuilderPromptTemplate includes secondary role rules', async () => {
-    const result = await loadFullSecondaryBuilderPromptTemplate();
-    expect(result).toContain('Secondary builder role');
+  it('loadFullSubagentPromptTemplate includes subagent role rules', async () => {
+    const result = await loadFullSubagentPromptTemplate();
+    expect(result).toContain('Subagent role');
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
     expect(result).not.toContain('does **not** include the GitHub CLI (`gh`)');
     expect(result).not.toContain('Baguette repo configuration');

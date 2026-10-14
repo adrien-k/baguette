@@ -33,7 +33,9 @@ export function reviewerFromSession(session) {
 }
 
 function agentTypeLabel(agentType) {
-  return agentType === 'reviewer' ? 'Reviewer' : 'Builder';
+  if (agentType === 'reviewer') return 'Reviewer';
+  if (agentType === 'subagent') return 'Subagent';
+  return 'Builder';
 }
 
 /** True when stored name is just the default type label (e.g. "Builder" / "builder"). */
@@ -86,9 +88,9 @@ export function sortSessionAgentsByRefAsc(agents) {
   });
 }
 
-/** MCP StartBuilderAgent builders (subagent flag on the agents row). */
+/** MCP StartSubagent agents (`agent_type` subagent). */
 export function isSubagentBuilder(agent) {
-  return agent?.agent_type === 'builder' && Boolean(Number(agent?.subagent));
+  return agent?.agent_type === 'subagent';
 }
 
 /** Agent turn finished or idle — safe to remove (server also enforces). */

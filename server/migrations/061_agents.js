@@ -1,6 +1,6 @@
 /**
  * Move per-turn agent state off `sessions` into `agents`. Messages and queued
- * turns reference `agent_id`. Use native SQLite ADD/DROP COLUMN (see CLAUDE.md).
+ * turns reference `agent_id`. Use native SQLite ADD/DROP COLUMN (see AGENTS.md).
  */
 
 async function dropColumnIfExists(knex, table, column) {

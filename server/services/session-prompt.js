@@ -1,43 +1,46 @@
 import loadPrompt from '../prompts/loadPrompt.js';
 import { isGlobalSession } from '../../shared/session-scope.js';
 import { combinePromptExtensions } from '../../shared/agent-prompts.js';
-import { loadBaguetteInstructions } from './baguette-config.js';
+import { loadBaguetteAgentPrompt } from './baguette-config.js';
+
+/** @param {{ agent_type?: string | null }} [agent] */
+function buildPromptRole(agent) {
+  if (agent?.agent_type === 'subagent') return 'subagent';
+  return 'builder';
+}
 
 /**
  * Builds the full system prompt append string for a builder session.
  * Returns the rendered build-prompt.md template with all variables substituted.
  */
-async function renderBasePromptForSession(agentPrompt = '', sessionPath = null) {
+async function renderBasePromptForSession(sessionPath, role) {
   const base = await loadPrompt('base-prompt', {});
-  const repoInstructions = sessionPath ? await loadBaguetteInstructions(sessionPath) : null;
-  const combined = combinePromptExtensions(agentPrompt, repoInstructions ?? '');
+  const roleExtension = sessionPath ? await loadBaguetteAgentPrompt(sessionPath, role) : null;
+  const combined = combinePromptExtensions(roleExtension ?? '');
   const extra = combined ? `\n\n## Additional instructions\n\n${combined}\n` : '';
   return base + extra;
 }
 
-/** @param {{ is_primary?: number | boolean | null }} [agent] */
-function isPrimaryBuilderAgent(agent) {
-  if (!agent) return true;
-  return Boolean(Number(agent.is_primary));
-}
-
-export async function buildSystemPromptAppend(sessionRow, { agentPrompt = '', agent = null } = {}) {
+export async function buildSystemPromptAppend(sessionRow, { agent = null } = {}) {
   if (isGlobalSession(sessionRow)) {
     return loadPrompt('global-prompt', {});
   }
 
   const sessionPath = sessionRow?.session_path ?? null;
-  const rolePromptName = isPrimaryBuilderAgent(agent)
-    ? 'primary-builder-role-prompt'
-    : 'secondary-builder-role-prompt';
-  const primary = isPrimaryBuilderAgent(agent);
+  const role = buildPromptRole(agent);
+  const rolePromptName = role === 'subagent' ? 'subagent-role-prompt' : 'builder-role-prompt';
   const builderRolePrompt = await loadPrompt(rolePromptName, {});
-  const repoConfigPrompt = primary ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
-  return loadPrompt('build-prompt', {
-    base_prompt: await renderBasePromptForSession(agentPrompt, sessionPath),
+  const repoConfigPrompt =
+    role === 'builder' ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
+  const buildTemplate = role === 'subagent' ? 'subagent-build-prompt' : 'build-prompt';
+  const templateVars = {
+    base_prompt: await renderBasePromptForSession(sessionPath, role),
     builder_role_prompt: builderRolePrompt,
-    repo_config_prompt: repoConfigPrompt,
-  });
+  };
+  if (buildTemplate === 'build-prompt') {
+    templateVars.repo_config_prompt = repoConfigPrompt;
+  }
+  return loadPrompt(buildTemplate, templateVars);
 }
 
 /** Uninterpolated base-prompt.md for Settings (readonly base). */
@@ -45,10 +48,10 @@ async function loadBaseSessionPromptTemplate() {
   return loadPrompt('base-prompt', {});
 }
 
-/** Full build-prompt.md for Settings (primary builder; no user extension). */
+/** Full build-prompt.md for Settings (builder; no repo extension). */
 export async function loadFullSessionPromptTemplate() {
   const basePrompt = await loadBaseSessionPromptTemplate();
-  const builderRolePrompt = await loadPrompt('primary-builder-role-prompt', {});
+  const builderRolePrompt = await loadPrompt('builder-role-prompt', {});
   const repoConfigPrompt = await loadPrompt('build-prompt-repo-config-prompt', {});
   return loadPrompt('build-prompt', {
     base_prompt: basePrompt,
@@ -57,14 +60,13 @@ export async function loadFullSessionPromptTemplate() {
   });
 }
 
-/** Full build-prompt.md for Settings (secondary / extra builders; no user extension). */
-export async function loadFullSecondaryBuilderPromptTemplate() {
+/** Full build-prompt.md for Settings (subagent; no repo extension). */
+export async function loadFullSubagentPromptTemplate() {
   const basePrompt = await loadBaseSessionPromptTemplate();
-  const builderRolePrompt = await loadPrompt('secondary-builder-role-prompt', {});
-  return loadPrompt('build-prompt', {
+  const builderRolePrompt = await loadPrompt('subagent-role-prompt', {});
+  return loadPrompt('subagent-build-prompt', {
     base_prompt: basePrompt,
     builder_role_prompt: builderRolePrompt,
-    repo_config_prompt: '',
   });
 }
 
@@ -72,9 +74,10 @@ export async function loadFullSecondaryBuilderPromptTemplate() {
  * System prompt append for a one-off review turn (not a session agent).
  */
 export async function buildReviewSystemPromptAppend(sessionRow, userReviewPrompt = '') {
-  const extra = userReviewPrompt?.trim()
-    ? `## Additional review instructions\n\n${userReviewPrompt.trim()}\n`
-    : '';
+  const sessionPath = sessionRow?.session_path ?? null;
+  const repoReview = sessionPath ? await loadBaguetteAgentPrompt(sessionPath, 'reviewer') : null;
+  const combined = combinePromptExtensions(repoReview ?? '', userReviewPrompt?.trim() ?? '');
+  const extra = combined ? `## Additional review instructions\n\n${combined}\n` : '';
   return loadPrompt('review-prompt', {
     user_review_prompt: extra,
     base_prompt: await loadPrompt('base-prompt', {}),

@@ -1,6 +1,6 @@
 /**
  * Replace `usage.kind` with `usage.agent_type` (`builder` | `reviewer`).
- * Native SQLite ADD/DROP COLUMN — no table rebuild (see CLAUDE.md).
+ * Native SQLite ADD/DROP COLUMN — no table rebuild (see AGENTS.md).
  */
 export async function up(knex) {
   if (!(await knex.schema.hasColumn('usage', 'agent_type'))) {

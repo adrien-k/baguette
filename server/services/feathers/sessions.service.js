@@ -89,7 +89,6 @@ import {
 } from '../session-env.js';
 import { getGithubToken } from '../agent-settings.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
 import { estimateUsageRowCostUsd } from '../../lib/usage-row-cost.js';
@@ -611,7 +610,7 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const agents = await listAgentsForSession(db, session.id);
     for (const agent of agents) {
-      if (agent.agent_type !== 'builder') continue;
+      if (agent.agent_type !== 'builder' && agent.agent_type !== 'subagent') continue;
       const active = agent.status === 'running' || agent.status === 'approval';
       try {
         if (agent.is_primary) {
@@ -1991,7 +1990,7 @@ async function finalizeSessionAfterProvision(app, session, params) {
   if (!createdInitialPrompt) {
     const agents = await listAgentsForSession(db, session.id);
     for (const agent of agents) {
-      if (agent.agent_type !== 'builder') continue;
+      if (agent.agent_type !== 'builder' && agent.agent_type !== 'subagent') continue;
       await app.service('sessions').flushNextQueuedTurn(session.id, agent.id);
     }
   }
@@ -2324,7 +2323,6 @@ async function mergeSessionAgentFields(context) {
       agent_type: a.agent_type,
       status: a.status,
       is_primary: a.is_primary,
-      subagent: Boolean(a.subagent),
     }));
     if (builder) {
       out.agent_config_id = builder.agent_config_id;
@@ -2614,8 +2612,7 @@ async function persistSystemPrompt(context) {
   if (!session) return context;
   if (!session.repo_full_name && !isGlobalSession(session)) return context;
 
-  const agentPrompt = await getEffectiveAgentPrompt(context.app, session.user_id, session.repo_id);
-  const promptAppend = await buildSystemPromptAppend(session, { agentPrompt });
+  const promptAppend = await buildSystemPromptAppend(session);
 
   if (!promptAppend) return context;
 

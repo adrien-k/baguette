@@ -171,12 +171,13 @@ async function waitForPrimaryBuilderIdle(page) {
 /** Primary builder MCP subagent phrase; waits for a new summary line and subagent row. */
 export async function sendSubagentPromptAndWait(page) {
   await waitForPrimaryBuilderIdle(page);
-  const summariesBefore = await page.getByText(MOCK_E2E_SUBAGENT_SUMMARY).count();
   await selectAgentInPanel(page, 'Main');
+  const summaryLocator = page.getByText(MOCK_E2E_SUBAGENT_SUMMARY);
+  const summariesBefore = await summaryLocator.count();
   await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
-  await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toHaveCount(summariesBefore + 1, {
-    timeout: 120_000,
-  });
+  await expect
+    .poll(async () => summaryLocator.count(), { timeout: 120_000 })
+    .toBeGreaterThan(summariesBefore);
   await openSessionAgentsPanel(page);
   const row = page.locator('li').filter({ hasText: MOCK_E2E_SUBAGENT_NAME }).last();
   await expect(row).toBeVisible({ timeout: 120_000 });

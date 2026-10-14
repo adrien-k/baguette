@@ -53,7 +53,7 @@ describe('isSubagentBuilder', () => {
   it('is true only for MCP read-only non-primary builders', () => {
     expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 1 })).toBe(false);
     expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(false);
-    expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 0, subagent: 1 })).toBe(true);
+    expect(isSubagentBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(true);
     expect(isSubagentBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
   });
 });

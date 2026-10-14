@@ -36,7 +36,9 @@ function AgentListRow({
   const showClearReviewer =
     !readonly && agent.agent_type === 'reviewer' && canRemoveAgentWhenIdle(agent);
   const showDeleteBuilder =
-    !readonly && agent.agent_type === 'builder' && canRemoveAgentWhenIdle(agent);
+    !readonly &&
+    (agent.agent_type === 'builder' || agent.agent_type === 'subagent') &&
+    canRemoveAgentWhenIdle(agent);
   const showStop = !readonly && isAgentTurnActive(agent.status);
   const busy = actionAgentId === agent.id;
 

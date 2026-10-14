@@ -20,9 +20,9 @@ export async function rejectNonMcpMessageToSubagentBuilder(context) {
   const agentId = context.data.agent_id;
   if (!agentId) return context;
   const agent = await getAgentById(context.app.get('db'), agentId);
-  if (agent?.subagent) {
+  if (agent?.agent_type === 'subagent') {
     throw new BadRequest(
-      'This agent only accepts new messages via MCP (StartBuilderAgent or CreateSessionMessage).'
+      'This agent only accepts new messages via MCP (StartSubagent or CreateSessionMessage).'
     );
   }
   return context;

@@ -1,6 +1,6 @@
 /**
- * Subagent default for MCP StartBuilderAgent (account-level on users).
- * Uses native SQLite ADD COLUMN (see CLAUDE.md).
+ * Subagent default for MCP StartSubagent (account-level on users).
+ * Uses native SQLite ADD COLUMN (see AGENTS.md).
  */
 export async function up(knex) {
   const userCols = [

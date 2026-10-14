@@ -69,8 +69,6 @@ class ReposService extends KnexService {
         'repos.origin',
         'repos.created_at',
         'user_repos.id as user_repo_id',
-        'user_repos.agent_prompt',
-        'user_repos.review_prompt',
         'user_repos.show_in_all_sessions'
       )
       .whereNull('repos.deleted_at')

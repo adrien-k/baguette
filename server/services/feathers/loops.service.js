@@ -416,7 +416,7 @@ async function requireOwnLoop(context) {
 /**
  * Clear `sessions.loop_id` before the loop row is removed. SQLite could do the same with
  * `REFERENCES loops(id) ON DELETE SET NULL`, but migration 020 left the column without an FK
- * so `loops` / `sessions` migrations are not coupled (see that migration and CLAUDE.md).
+ * so `loops` / `sessions` migrations are not coupled (see that migration and AGENTS.md).
  */
 async function clearSessionLoopReferences(context) {
   const loopId = context.id;

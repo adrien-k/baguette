@@ -129,20 +129,20 @@ async function runMockQuickTurn({ writer, abortSignal }) {
 }
 
 /**
- * Primary builder turn: real StartBuilderAgent (MCP flag) for e2e session-agent coverage.
+ * Primary builder turn: real StartSubagent (MCP flag) for e2e session-agent coverage.
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
 async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSignal, turnId }) {
-  await writer.appendThinking('Calling StartBuilderAgent for e2e…');
+  await writer.appendThinking('Calling StartSubagent for e2e…');
   await delay(mockStepDelayMs(), abortSignal);
 
   const callId =
-    turnId != null ? `mock-mcp-start-builder-${turnId}` : `mock-mcp-start-builder-${Date.now()}`;
+    turnId != null ? `mock-mcp-start-subagent-${turnId}` : `mock-mcp-start-subagent-${Date.now()}`;
   const toolArgs = {
     name: MOCK_E2E_SUBAGENT_NAME,
     initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
   };
-  await writer.startTool(callId, 'mcp__baguette__StartBuilderAgent', toolArgs);
+  await writer.startTool(callId, 'mcp__baguette__StartSubagent', toolArgs);
   try {
     const db = app.get('db');
     const settings = await resolveEffectiveSubagentDefaultSettings(db, userId);
@@ -159,7 +159,7 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
       }
       preset_model_id = preset.id;
     }
-    const result = await app.service('agents').startBuilderAgent(
+    const result = await app.service('agents').startSubagent(
       {
         session_id: session.id,
         name: MOCK_E2E_SUBAGENT_NAME,
@@ -167,10 +167,10 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
         wait_for_completion: false,
         ...(preset_model_id != null ? { preset_model_id } : {}),
       },
-      { user: { id: userId }, provider: 'rest', _mcpStartBuilder: true }
+      { user: { id: userId }, provider: 'rest' }
     );
     await writer.completeTool(callId, {
-      name: 'mcp__baguette__StartBuilderAgent',
+      name: 'mcp__baguette__StartSubagent',
       args: toolArgs,
       rawResult: JSON.stringify({
         ok: true,
@@ -184,9 +184,9 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
   } catch (err) {
     if (err?.message === 'Aborted') throw err;
     await writer.completeTool(callId, {
-      name: 'mcp__baguette__StartBuilderAgent',
+      name: 'mcp__baguette__StartSubagent',
       args: toolArgs,
-      rawResult: { content: err?.message ?? 'StartBuilderAgent failed' },
+      rawResult: { content: err?.message ?? 'StartSubagent failed' },
       isError: true,
     });
     throw err;

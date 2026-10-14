@@ -82,6 +82,30 @@ export function sessionHref(session, { fromAllSessions } = {}) {
  * Git / PR / current-repo MCP tools that do not apply when the agent cwd is the
  * shared `repos/` folder rather than a single worktree.
  */
+/** MCP tools omitted for `agent_type` subagent (delegated work; no session shipping or PR ownership). */
+export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
+  'UpdateSession',
+  'UpdateIssueStatus',
+  'CreatePlan',
+  'EditPlan',
+  'StartSubagent',
+  'CreateSession',
+  'CreateLoop',
+  'UpdateLoop',
+  'DeleteLoop',
+  'ConfigRepoPrompt',
+  'PrComment',
+  'PrReview',
+  'PrMarkCommentViewed',
+  'PrComments',
+  'PrWorkflows',
+  'PrWorkflowLogs',
+  'AddGithubLabel',
+  'ListGithubPrs',
+  'GetGithubPr',
+  'ListGithubTags',
+];
+
 export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   'GitPull',
   'GitPush',

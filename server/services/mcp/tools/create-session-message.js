@@ -48,8 +48,8 @@ export function createCreateSessionMessageTool(ctx) {
       if (agent_ref != null) {
         agent = await getAgentBySessionRef(db, session_id, agent_ref);
         if (!agent) return fail('Agent not found');
-        if (agent.agent_type !== 'builder') {
-          return fail('Only builder agents accept messages');
+        if (agent.agent_type !== 'builder' && agent.agent_type !== 'subagent') {
+          return fail('Only builder and subagent agents accept messages');
         }
       } else {
         agent = await db('agents').where({ session_id, is_primary: 1 }).first();

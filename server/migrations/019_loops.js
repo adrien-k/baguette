@@ -30,7 +30,7 @@ export async function up(knex) {
     t.timestamp('last_run_at');
     t.timestamp('next_run_at');
     // No FK: a session row can be hard-removed, and a foreign key to `sessions` would make
-    // any future rebuild of that table fail (see CLAUDE.md on SQLite migrations).
+    // any future rebuild of that table fail (see AGENTS.md on SQLite migrations).
     t.integer('last_session_id');
     t.text('last_error');
     t.timestamp('created_at').defaultTo(knex.fn.now());

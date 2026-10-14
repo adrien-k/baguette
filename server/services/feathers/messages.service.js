@@ -66,7 +66,8 @@ async function queueIfRunning(context) {
 
   const queueable =
     agent.status === 'running' ||
-    (session.status === 'provisioning' && agent.agent_type === 'builder');
+    (session.status === 'provisioning' &&
+      (agent.agent_type === 'builder' || agent.agent_type === 'subagent'));
   if (!queueable) return context;
   return queueTurnMessage(context);
 }

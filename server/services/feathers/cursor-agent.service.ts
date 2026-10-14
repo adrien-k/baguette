@@ -15,7 +15,6 @@ import logger from '../../logger.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { addTokenUsage, emptyTurnUsage } from '../turn-usage.js';
 import {
   processCursorRunStream,
@@ -238,6 +237,7 @@ ${body}`,
       apiKey,
       channel = 'chat',
       agentConfigId,
+      agent,
     }: {
       customTools?: unknown;
       settingSources?: string[];
@@ -248,13 +248,15 @@ ${body}`,
       channel?: MessageChannel;
       /** The turn's agent config snapshot (from the message row). */
       agentConfigId?: number | null;
+      agent?: AgentRow | null;
     } = {}
   ): Promise<AgentOptions> {
     const cwd = resolveDataDirRelativePath(session.session_path) || '';
     const configId = requireAgentConfigId(agentConfigId);
     const resolvedApiKey =
       apiKey !== undefined ? apiKey : await this.resolveApiKey(session, channel, configId);
-    const resolvedTools = customTools ?? (await buildCursorCustomTools(session, this.app));
+    const resolvedTools =
+      customTools ?? (await buildCursorCustomTools(session, this.app, { agent }));
     const store = await this.openSessionStore(session);
     const agentOptions = {
       apiKey: resolvedApiKey,
@@ -380,13 +382,12 @@ ${body}`,
   ): Promise<string | null> {
     if (!session.session_path) return null;
     const absoluteCwd = resolveDataDirRelativePath(session.session_path);
-    const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
     const systemPrompt = await buildSystemPromptAppend(
       {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agentPrompt, agent }
+      { agent }
     );
     return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',
@@ -465,6 +466,7 @@ ${body}`,
       model: turnModel.model ?? null,
       modelParams: turnModel.modelParams ?? null,
       agentConfigId,
+      agent,
     });
   }
 

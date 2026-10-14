@@ -99,14 +99,7 @@ describe('UserRepos service - show_in_all_sessions', () => {
   });
 });
 
-describe('UserRepos service - patch prompts', () => {
-  it('stores agent_prompt on the link', async () => {
-    const result = await app
-      .service('user-repos')
-      .patch(userRepo1.id, { agent_prompt: 'Be concise.' }, params(user1));
-    expect(result.agent_prompt).toBe('Be concise.');
-  });
-
+describe('UserRepos service - patch', () => {
   it('rejects credential fields', async () => {
     await expect(
       app
@@ -125,9 +118,9 @@ describe('UserRepos service - patch prompts', () => {
 
     const result = await app
       .service('user-repos')
-      .patch(userRepo1.id, { review_prompt: 'Review carefully.' }, params(user1));
+      .patch(userRepo1.id, { show_in_all_sessions: true }, params(user1));
     expect(result.id).toBe(userRepo1.id);
-    expect(result.review_prompt).toBe('Review carefully.');
+    expect(Number(result.show_in_all_sessions)).toBe(1);
   });
 });
 

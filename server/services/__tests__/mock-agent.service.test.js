@@ -242,7 +242,7 @@ describe('MockAgentService', () => {
     expect(summary).toBeTruthy();
   }, 15_000);
 
-  it('startBuilderAgent runs a turn and returns the last assistant message', async () => {
+  it('startSubagent runs a turn and returns the last assistant message', async () => {
     const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
     await db('users')
       .where({ id: userId })
@@ -251,11 +251,11 @@ describe('MockAgentService', () => {
         agent_default_model: JSON.stringify({ model: MOCK_STANDARD_MODEL_ID, model_params: null }),
       });
 
-    const result = await app.service('agents').startBuilderAgent(
+    const result = await app.service('agents').startSubagent(
       {
         session_id: sessionId,
         name: 'MCP helper',
-        initial_prompt: 'Run via startBuilderAgent',
+        initial_prompt: 'Run via startSubagent',
         wait_for_completion: true,
       },
       params({ id: userId })
@@ -266,7 +266,7 @@ describe('MockAgentService', () => {
     expect(result.last_assistant_message).toBeTruthy();
   }, 20_000);
 
-  it('startBuilderAgent queues the initial prompt while the session is provisioning', async () => {
+  it('startSubagent queues the initial prompt while the session is provisioning', async () => {
     await db('sessions').where({ id: sessionId }).update({
       status: 'provisioning',
       session_path: null,
@@ -279,14 +279,14 @@ describe('MockAgentService', () => {
         agent_default_model: JSON.stringify({ model: MOCK_STANDARD_MODEL_ID, model_params: null }),
       });
 
-    const result = await app.service('agents').startBuilderAgent(
+    const result = await app.service('agents').startSubagent(
       {
         session_id: sessionId,
         name: 'Provision subagent',
         initial_prompt: 'Start during provisioning',
         wait_for_completion: false,
       },
-      { ...params({ id: userId }), _mcpStartBuilder: true }
+      params({ id: userId })
     );
 
     const userMsgs = await db('session_messages').where({
@@ -305,7 +305,7 @@ describe('MockAgentService', () => {
     expect(parsed.subtype).toBe('mcp');
   }, 20_000);
 
-  it('startBuilderAgent subagent blocks Baguette UI messages', async () => {
+  it('startSubagent subagent blocks Baguette UI messages', async () => {
     const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
     await db('users')
       .where({ id: userId })
@@ -314,18 +314,18 @@ describe('MockAgentService', () => {
         agent_default_model: JSON.stringify({ model: MOCK_STANDARD_MODEL_ID, model_params: null }),
       });
 
-    const result = await app.service('agents').startBuilderAgent(
+    const result = await app.service('agents').startSubagent(
       {
         session_id: sessionId,
         name: 'MCP-only',
         initial_prompt: 'Readonly builder',
         wait_for_completion: false,
       },
-      { ...params({ id: userId }), _mcpStartBuilder: true }
+      params({ id: userId })
     );
 
     const row = await db('agents').where({ id: result.agent_id }).first();
-    expect(row.subagent).toBe(1);
+    expect(row.agent_type).toBe('subagent');
 
     await expect(
       app.service('messages').create(
@@ -399,7 +399,9 @@ describe('MockAgentService', () => {
       async () => {
         const primaryRow = await db('agents').where({ id: primary.id }).first();
         expect(primaryRow.status).toBe('completed');
-        const sub = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+        const sub = await db('agents')
+          .where({ session_id: sessionId, agent_type: 'subagent' })
+          .first();
         expect(sub).toBeTruthy();
         expect(sub.status).toBe('completed');
         expect(sub.model).toBe(primary.model);
@@ -418,16 +420,16 @@ describe('MockAgentService', () => {
     );
   }, 20_000);
 
-  it('startBuilderAgent can be called twice with the same name after delete', async () => {
+  it('startSubagent can be called twice with the same name after delete', async () => {
     const start = () =>
-      app.service('agents').startBuilderAgent(
+      app.service('agents').startSubagent(
         {
           session_id: sessionId,
           name: MOCK_E2E_SUBAGENT_NAME,
           initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
           wait_for_completion: true,
         },
-        { ...params({ id: userId }), _mcpStartBuilder: true }
+        params({ id: userId })
       );
 
     const first = await start();
@@ -469,13 +471,17 @@ describe('MockAgentService', () => {
       async () => {
         const primaryRow = await db('agents').where({ id: primary.id }).first();
         expect(primaryRow.status).toBe('completed');
-        const sub = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+        const sub = await db('agents')
+          .where({ session_id: sessionId, agent_type: 'subagent' })
+          .first();
         expect(sub).toBeTruthy();
         expect(sub.status).toBe('completed');
       },
       { timeout: 15_000 }
     );
-    const first = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+    const first = await db('agents')
+      .where({ session_id: sessionId, agent_type: 'subagent' })
+      .first();
     await app.service('agents').remove(first.id, params({ id: userId }));
 
     await vi.waitFor(
@@ -489,7 +495,9 @@ describe('MockAgentService', () => {
     await sendSubagentPrompt();
     await vi.waitFor(
       async () => {
-        const sub = await db('agents').where({ session_id: sessionId, subagent: 1 }).first();
+        const sub = await db('agents')
+          .where({ session_id: sessionId, agent_type: 'subagent' })
+          .first();
         expect(sub).toBeTruthy();
         expect(sub.status).toBe('completed');
         expect(sub.model).toBe(MOCK_SECONDARY_MODEL_ID);

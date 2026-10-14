@@ -5,7 +5,7 @@ import {
   MCP_BUILDER_MODEL_SETTINGS_ERROR,
   MCP_SUBAGENT_PRESET_REQUIRED_ERROR,
   resolveMcpBuilderModel,
-  resolveMcpStartBuilderModel,
+  resolveMcpStartSubagentModel,
 } from '../agent-mcp-model-resolver.js';
 import {
   SUBAGENT_DEFAULT_CONFIG,
@@ -65,7 +65,7 @@ describe('resolveMcpBuilderModel', () => {
   });
 });
 
-describe('resolveMcpStartBuilderModel', () => {
+describe('resolveMcpStartSubagentModel', () => {
   let userId;
   let configId;
   let sessionId;
@@ -92,7 +92,7 @@ describe('resolveMcpStartBuilderModel', () => {
   });
 
   it('inherits the session primary builder by default', async () => {
-    const resolved = await resolveMcpStartBuilderModel(db, userId, { session_id: sessionId });
+    const resolved = await resolveMcpStartSubagentModel(db, userId, { session_id: sessionId });
     expect(resolved.model).toBe(MOCK_STANDARD_MODEL_ID);
   });
 
@@ -107,7 +107,7 @@ describe('resolveMcpStartBuilderModel', () => {
           model_params: null,
         }),
       });
-    const resolved = await resolveMcpStartBuilderModel(db, userId, { session_id: sessionId });
+    const resolved = await resolveMcpStartSubagentModel(db, userId, { session_id: sessionId });
     expect(resolved.model).toBe(MOCK_SECONDARY_MODEL_ID);
   });
 
@@ -116,7 +116,7 @@ describe('resolveMcpStartBuilderModel', () => {
       .where({ id: userId })
       .update({ subagent_default_mode: SUBAGENT_DEFAULT_PRESET });
     await expect(
-      resolveMcpStartBuilderModel(db, userId, { session_id: sessionId })
+      resolveMcpStartSubagentModel(db, userId, { session_id: sessionId })
     ).rejects.toThrow(MCP_SUBAGENT_PRESET_REQUIRED_ERROR);
   });
 
@@ -127,7 +127,7 @@ describe('resolveMcpStartBuilderModel', () => {
       agent_config_id: configId,
       model: MOCK_SECONDARY_MODEL_ID,
     });
-    const resolved = await resolveMcpStartBuilderModel(db, userId, {
+    const resolved = await resolveMcpStartSubagentModel(db, userId, {
       session_id: sessionId,
       preset_model_id: presetId,
     });

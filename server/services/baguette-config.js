@@ -7,7 +7,14 @@ import { dockerBuildImageTag, dockerContainerHostname } from './docker-session.j
 
 const BAGUETTE_DIR = '.baguette';
 export const CONFIG_FILENAME = '.baguette.yaml';
-export const INSTRUCTIONS_REL_PATH = path.join(BAGUETTE_DIR, 'instructions.md');
+const AGENT_PROMPT_ROLES = new Set(['builder', 'reviewer', 'subagent']);
+
+function agentPromptRelPath(role) {
+  if (!AGENT_PROMPT_ROLES.has(role)) {
+    throw new Error(`Invalid agent prompt role: ${role}`);
+  }
+  return path.join(BAGUETTE_DIR, 'agents', `${role}.md`);
+}
 
 function parseBaguetteConfigYaml(raw, sourceLabel) {
   const content = yaml.load(raw);
@@ -63,21 +70,23 @@ export async function readBaguetteConfigRaw(sessionPath) {
 }
 
 /**
- * Repository-specific agent instructions from `.baguette/instructions.md`.
+ * Repository-specific agent prompt extension from `.baguette/agents/{role}.md`.
  * @param {string|null|undefined} sessionPath
+ * @param {'builder'|'reviewer'|'subagent'} role
  * @returns {Promise<string|null>}
  */
-export async function loadBaguetteInstructions(sessionPath) {
+export async function loadBaguetteAgentPrompt(sessionPath, role) {
   const absoluteSessionPath = resolveDataDirRelativePath(sessionPath);
   if (!absoluteSessionPath) return null;
-  const instructionsPath = path.join(absoluteSessionPath, INSTRUCTIONS_REL_PATH);
+  const relPath = agentPromptRelPath(role);
+  const filePath = path.join(absoluteSessionPath, relPath);
   try {
-    const text = await fs.promises.readFile(instructionsPath, 'utf8');
+    const text = await fs.promises.readFile(filePath, 'utf8');
     const trimmed = text.trim();
     return trimmed || null;
   } catch (err) {
     if (err.code === 'ENOENT') return null;
-    logger.error(err, 'Failed to load %s', INSTRUCTIONS_REL_PATH);
+    logger.error(err, 'Failed to load %s', relPath);
     return null;
   }
 }

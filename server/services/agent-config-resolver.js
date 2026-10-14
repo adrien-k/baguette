@@ -138,7 +138,7 @@ export async function resolveExplicitBuilderDefaults(db, userId, _repoId = null)
   return null;
 }
 
-/** Account subagent default for MCP StartBuilderAgent. */
+/** Account subagent default for MCP StartSubagent. */
 export async function resolveEffectiveSubagentDefaultSettings(db, userId, _repoId = null) {
   const user = await db('users')
     .where({ id: userId })

@@ -237,13 +237,13 @@ function makeApp(
   return { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
 
-async function buildServer(sessionOverrides = {}, appOpts = {}) {
+async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null } = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
   const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
     sessionRow,
     appOpts
   );
-  await buildBaguetteMcpServer(sessionRow, app);
+  await buildBaguetteMcpServer(sessionRow, app, { agent });
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
@@ -282,6 +282,17 @@ describe('builder MCP tool registry', () => {
     expect(names).not.toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
     expect(names).toContain('UpdateSession');
+  });
+
+  it('omits session-shipping tools for subagent turns', async () => {
+    const { tools } = await buildServer({}, {}, { agent: { agent_type: 'subagent' } });
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('UpdateSession');
+    expect(names).not.toContain('CreatePlan');
+    expect(names).not.toContain('StartSubagent');
+    expect(names).toContain('CurrentSessionInfo');
+    expect(names).toContain('PrRead');
+    expect(names).toContain('RunTask');
   });
 });
 

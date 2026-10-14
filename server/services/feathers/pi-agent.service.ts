@@ -11,7 +11,6 @@ import logger from '../../logger.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { buildPiCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { processPiSessionStream, type PiTurnUsage } from '../pi/pi-sdk-turn.ts';
 import { piTurnResultOps } from '../pi/pi-mapping.ts';
 import { emptyTurnUsage } from '../turn-usage.js';
@@ -128,13 +127,12 @@ export class PiAgentService {
   ): Promise<string[]> {
     if (!session.session_path) return [];
     const absoluteCwd = resolveDataDirRelativePath(session.session_path);
-    const agentPrompt = await getEffectiveAgentPrompt(this.app, session.user_id, session.repo_id);
     const systemPrompt = await buildSystemPromptAppend(
       {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agentPrompt, agent }
+      { agent }
     );
     return systemPrompt ? [systemPrompt] : [];
   }
@@ -203,7 +201,8 @@ export class PiAgentService {
       additionalExtensionPaths: lunaroutePiAdditionalExtensionPaths(envVar),
     });
     await resourceLoader.reload();
-    const resolvedTools = customTools ?? (await buildPiCustomTools(session, this.app, { channel }));
+    const resolvedTools =
+      customTools ?? (await buildPiCustomTools(session, this.app, { channel, agent }));
     const sessionManager = this._openSessionManager(session, storedPiSessionId);
     const options: PiBuildAgentOptionsResult = {
       cwd,

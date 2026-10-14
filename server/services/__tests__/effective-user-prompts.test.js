@@ -1,51 +1,41 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
-import { createTestDb } from '../../test-utils/db.js';
-import { getEffectiveAgentPrompt, getEffectiveReviewPrompt } from '../effective-user-prompts.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { getEffectiveReviewPrompt } from '../effective-user-prompts.js';
 
-const db = createTestDb();
-
-describe('effective-user-prompts', () => {
-  let app;
-  let userId;
-  let repoId;
+describe('getEffectiveReviewPrompt', () => {
+  let tmpDir;
 
   beforeEach(async () => {
-    app = feathers();
-    app.set('db', db);
-    const [uid] = await db('users').insert({
-      github_id: 99,
-      username: 'prompt-user',
-      approved: true,
-      agent_prompt: 'Global agent',
-      review_prompt: 'Global review',
-    });
-    userId = uid;
-    const [rid] = await db('repos').insert({
-      full_name: 'o/r',
-      stripped_name: 'o-r',
-      repo_path: '/tmp/r',
-    });
-    repoId = rid;
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      agent_prompt: 'Repo agent',
-      review_prompt: 'Repo review',
-    });
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-review-prompt-'));
   });
 
-  it('combines user and repo agent prompts', async () => {
-    const text = await getEffectiveAgentPrompt(app, userId, repoId);
-    expect(text).toBe('Global agent\n\nRepo agent');
+  afterEach(async () => {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('combines user and repo review prompts', async () => {
-    const text = await getEffectiveReviewPrompt(app, userId, repoId);
-    expect(text).toBe('Global review\n\nRepo review');
+  it('returns empty when no repo file and no extra prompt', async () => {
+    expect(await getEffectiveReviewPrompt(tmpDir)).toBe('');
   });
 
-  it('uses only user prompts when repo_id is null', async () => {
-    expect(await getEffectiveAgentPrompt(app, userId, null)).toBe('Global agent');
+  it('reads .baguette/agents/reviewer.md', async () => {
+    await fs.promises.mkdir(path.join(tmpDir, '.baguette', 'agents'), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(tmpDir, '.baguette', 'agents', 'reviewer.md'),
+      'Check SQL.\n'
+    );
+    expect(await getEffectiveReviewPrompt(tmpDir)).toBe('Check SQL.');
+  });
+
+  it('combines repo file with extra review instructions', async () => {
+    await fs.promises.mkdir(path.join(tmpDir, '.baguette', 'agents'), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(tmpDir, '.baguette', 'agents', 'reviewer.md'),
+      'Repo review'
+    );
+    const text = await getEffectiveReviewPrompt(tmpDir, 'One-off extra');
+    expect(text).toContain('Repo review');
+    expect(text).toContain('One-off extra');
   });
 });

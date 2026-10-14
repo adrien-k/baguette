@@ -160,7 +160,7 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         configOptions={configOptions}
       />
       <SubagentDefaultPicker
-        description="How MCP StartBuilderAgent resolves models."
+        description="How MCP StartSubagent resolves models."
         mode={subagentMode}
         onModeChange={setSubagentMode}
         configId={subagentConfigId}

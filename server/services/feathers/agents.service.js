@@ -8,7 +8,7 @@ import { dispatchReviewerAfterCreate } from '../reviewer-turn-prime.js';
 import { builderChatActiveKey, getAgentById } from '../agents-db.js';
 import { getAgentServiceForAgent } from '../agent-session-routing.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
-import { resolveMcpStartBuilderModel } from '../agent-mcp-model-resolver.js';
+import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
 import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
 import {
   buildMcpUserMessageJson,
@@ -56,7 +56,7 @@ class AgentsService extends KnexService {
       await this.app
         .service('sessions')
         .stop({ id: session.id }, { ...params, resolvedSession: session });
-    } else if (agent.agent_type === 'builder') {
+    } else if (agent.agent_type === 'builder' || agent.agent_type === 'subagent') {
       const agentService = await getAgentServiceForAgent(this.app, agent);
       const activeKey = builderChatActiveKey(agent);
       if (typeof agentService.stopTurn === 'function') {
@@ -71,7 +71,7 @@ class AgentsService extends KnexService {
     return { ok: true, agent_id: agent.id };
   }
 
-  async startBuilderAgent(data, params) {
+  async startSubagent(data, params) {
     const sessionId = Number(data?.session_id);
     const name = data?.name != null ? String(data.name).trim() : '';
     const initialPrompt = data?.initial_prompt != null ? String(data.initial_prompt).trim() : '';
@@ -80,7 +80,7 @@ class AgentsService extends KnexService {
     if (!initialPrompt) throw new BadRequest('initial_prompt is required');
 
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
-    const resolved = await resolveMcpStartBuilderModel(this.app.get('db'), params.user.id, {
+    const resolved = await resolveMcpStartSubagentModel(this.app.get('db'), params.user.id, {
       session_id: sessionId,
       preset_model_id: data.preset_model_id ?? null,
       repo_id: session.repo_id ?? null,
@@ -88,18 +88,17 @@ class AgentsService extends KnexService {
 
     const modelParamsStored = stringifyModelParamsForStorage(resolved.model_params);
 
-    const subagent = params._mcpStartBuilder === true;
     const agent = await this.create(
       {
         session_id: sessionId,
-        agent_type: 'builder',
+        agent_type: 'subagent',
         name,
         agent_config_id: resolved.agent_config_id,
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
       },
-      { ...params, provider: 'rest', _subagent: subagent }
+      { ...params, provider: 'rest' }
     );
 
     const message_json = buildMcpUserMessageJson(initialPrompt);
@@ -207,14 +206,6 @@ async function pickCreateFields(context) {
   return context;
 }
 
-async function applySubagentFlagOnCreate(context) {
-  if (context.method !== 'create') return context;
-  if (context.params?._subagent) {
-    context.data.subagent = 1;
-  }
-  return context;
-}
-
 async function allocateAgentRef(context) {
   if (context.method !== 'create' || context.data?.ref != null) return context;
   const sessionId = context.data?.session_id;
@@ -225,7 +216,10 @@ async function allocateAgentRef(context) {
 
 /** Extra builders default to the primary builder's config, model, and params. */
 async function inheritPrimaryBuilderDefaults(context) {
-  if (context.method !== 'create' || context.data?.agent_type !== 'builder') return context;
+  const agentType = context.data?.agent_type;
+  if (context.method !== 'create' || (agentType !== 'builder' && agentType !== 'subagent')) {
+    return context;
+  }
   const sessionId = context.data?.session_id;
   if (!sessionId) return context;
   const db = context.app.get('db');
@@ -248,14 +242,18 @@ async function validateCreate(context) {
   if (!session_id || !agent_type || agent_config_id == null) {
     throw new BadRequest('session_id, agent_type, and agent_config_id are required');
   }
-  if (agent_type !== 'builder' && agent_type !== 'reviewer') {
-    throw new BadRequest('agent_type must be builder or reviewer');
+  if (agent_type !== 'builder' && agent_type !== 'reviewer' && agent_type !== 'subagent') {
+    throw new BadRequest('agent_type must be builder, reviewer, or subagent');
   }
   if (agent_type === 'reviewer' && (model == null || String(model).trim() === '')) {
     throw new BadRequest('model is required for reviewer');
   }
   const db = context.app.get('db');
-  if (agent_type === 'builder') {
+  if (agent_type === 'subagent') {
+    const name = context.data.name?.trim();
+    if (!name) throw new BadRequest('name is required for a subagent');
+    context.data.is_primary = 0;
+  } else if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
     if (existingPrimary) {
       const name = context.data.name?.trim();
@@ -272,7 +270,13 @@ async function validateCreate(context) {
   const config = await loadOwnedAgentConfig(db, Number(agent_config_id), context.params.user.id);
   context.data.agent_sdk = config.sdk;
   if (!context.data.name) {
-    context.data.name = agent_type === 'reviewer' ? 'Reviewer' : 'Builder';
+    if (agent_type === 'reviewer') {
+      context.data.name = 'Reviewer';
+    } else if (agent_type === 'subagent') {
+      context.data.name = 'Subagent';
+    } else {
+      context.data.name = 'Builder';
+    }
   }
   if (agent_type === 'reviewer') {
     context.data.is_primary = 0;
@@ -347,7 +351,6 @@ const agentsHooks = {
     create: [
       pickCreateFields,
       stashReviewerCreateExtras,
-      applySubagentFlagOnCreate,
       allocateAgentRef,
       inheritPrimaryBuilderDefaults,
       validateCreate,
@@ -371,7 +374,7 @@ export function registerAgentsService(app, path = 'agents') {
     paginate: { default: 50, max: 100 },
   };
   app.use(path, new AgentsService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'stop', 'startBuilderAgent'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'stop', 'startSubagent'],
   });
   app.service(path).hooks(agentsHooks);
 }

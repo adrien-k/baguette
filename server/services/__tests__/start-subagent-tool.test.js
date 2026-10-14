@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { SUBAGENT_DEFAULT_PRESET } from '../../../shared/subagent-default-mode.js';
-import { createStartBuilderAgentTool } from '../mcp/tools/start-builder-agent.js';
+import { createStartSubagentTool } from '../mcp/tools/start-subagent.js';
 
 function schemaRequiredKeys(user) {
-  const tool = createStartBuilderAgentTool({
+  const tool = createStartSubagentTool({
     app: {},
     userId: 1,
     userParams: {},
@@ -14,14 +14,14 @@ function schemaRequiredKeys(user) {
   return json.required ?? [];
 }
 
-describe('createStartBuilderAgentTool schema', () => {
+describe('createStartSubagentTool schema', () => {
   it('requires preset_model_id when subagent default is preset', () => {
     const required = schemaRequiredKeys({ subagent_default_mode: SUBAGENT_DEFAULT_PRESET });
     expect(required).toContain('preset_model_id');
   });
 
   it('omits preset_model_id from schema when subagent default is inherit', () => {
-    const tool = createStartBuilderAgentTool({
+    const tool = createStartSubagentTool({
       app: {},
       userId: 1,
       userParams: {},
@@ -31,7 +31,7 @@ describe('createStartBuilderAgentTool schema', () => {
   });
 
   it('omits preset_model_id from schema when subagent default is config', () => {
-    const tool = createStartBuilderAgentTool({
+    const tool = createStartSubagentTool({
       app: {},
       userId: 1,
       userParams: {},

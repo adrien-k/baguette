@@ -5,7 +5,7 @@ import { createListReposTool } from '../tools/list-repos.js';
 import { createListBranchesTool } from '../tools/list-branches.js';
 import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
-import { createStartBuilderAgentTool } from '../tools/start-builder-agent.js';
+import { createStartSubagentTool } from '../tools/start-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
@@ -60,7 +60,7 @@ export function buildBaseAgentTools(user, app, { callerSession = null } = {}) {
     createListBranchesTool(ctx),
     createListModelsTool(ctx),
     createListPresetModelsTool(ctx),
-    createStartBuilderAgentTool(ctx),
+    createStartSubagentTool(ctx),
     createCreateSessionTool(ctx),
     ...sessionToolsFromContext(ctx),
     ...loopToolsFromContext(ctx),

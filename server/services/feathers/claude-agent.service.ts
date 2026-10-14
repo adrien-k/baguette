@@ -17,7 +17,6 @@ import { applyClaudeAgentModelEnv, getClaudeEnv } from '../session-env.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createMessageChannel } from '../message-channel.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { getEffectiveAgentPrompt } from '../effective-user-prompts.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from '../../claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
@@ -198,9 +197,11 @@ export class ClaudeAgentService {
       canUseTool,
       plugins,
       claudeEnv,
+      agent,
     }: {
       systemPrompt?: string;
       mcpServer?: ClaudeSdkOptions['mcpServers'];
+      agent?: AgentRow | null;
       allowedTools?: string[];
       permissionMode?: PermissionMode;
       settingSources?: SettingSource[];
@@ -218,7 +219,8 @@ export class ClaudeAgentService {
     const resolvedModel = model;
     const cwd =
       resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
-    const resolvedMcp = mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app));
+    const resolvedMcp =
+      mcpServer ?? (await buildBaguetteMcpServer(sessionRow, this.app, { agent }));
     const paramOptions = claudeSdkOptionsFromModelParams(modelParams);
     return {
       cwd,
@@ -274,12 +276,7 @@ export class ClaudeAgentService {
       type: 'local' as const,
       path: resolveDataDirRelativePath(p.local_path as string) ?? '',
     }));
-    const agentPrompt = await getEffectiveAgentPrompt(
-      this.app,
-      sessionRow.user_id,
-      sessionRow.repo_id
-    );
-    const systemPrompt = await buildSystemPromptAppend(sessionRow, { agentPrompt, agent });
+    const systemPrompt = await buildSystemPromptAppend(sessionRow, { agent });
     return this.buildQueryOptions(sessionRow, {
       claudeEnv,
       systemPrompt,
@@ -289,6 +286,7 @@ export class ClaudeAgentService {
       plugins,
       model,
       modelParams,
+      agent,
     });
   }
 

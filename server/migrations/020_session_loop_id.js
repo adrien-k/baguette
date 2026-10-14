@@ -1,7 +1,7 @@
 export async function up(knex) {
   await knex.schema.alterTable('sessions', (t) => {
     // No FK: deleting a loop must not be blocked by (or cascade into) the sessions it produced,
-    // and a foreign key here would stress any future rebuild of `loops` (see CLAUDE.md).
+    // and a foreign key here would stress any future rebuild of `loops` (see AGENTS.md).
     t.integer('loop_id').nullable();
   });
 }

@@ -70,7 +70,7 @@ export const sessionsService = createService('sessions', {
 });
 export const messagesService = createService('messages');
 export const agentsService = createService('agents', {
-  customMethods: ['stop', 'startBuilderAgent'],
+  customMethods: ['stop', 'startSubagent'],
 });
 export const tasksService = createService('tasks', { customMethods: ['kill', 'logs'] });
 export const reposService = createService('repos', {

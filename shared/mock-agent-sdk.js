@@ -32,9 +32,9 @@ export const MOCK_E2E_SUBAGENT_PRESET_DESCRIPTION = 'e2e subagent preset';
 export const MOCK_E2E_QUICK_TURN_PROMPT = 'e2e quick mock turn';
 export const MOCK_E2E_QUICK_TURN_SUMMARY = 'E2E quick mock turn complete.';
 
-/** E2e: primary builder simulates MCP StartBuilderAgent when user sends this phrase. */
+/** E2e: primary builder simulates MCP StartSubagent when user sends this phrase. */
 export const MOCK_E2E_SUBAGENT_PROMPT = 'create a subagent for e2e tests';
-export const MOCK_E2E_SUBAGENT_SUMMARY = 'E2E subagent started via MCP (StartBuilderAgent).';
+export const MOCK_E2E_SUBAGENT_SUMMARY = 'E2E subagent started via MCP (StartSubagent).';
 export const MOCK_E2E_SUBAGENT_NAME = 'E2E MCP subagent';
 
 /**

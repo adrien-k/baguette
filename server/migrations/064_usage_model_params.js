@@ -1,6 +1,6 @@
 /**
  * Snapshot model_params on usage rows so pricing survives agent deletion.
- * Native SQLite ADD COLUMN — no table rebuild (see CLAUDE.md).
+ * Native SQLite ADD COLUMN — no table rebuild (see AGENTS.md).
  */
 export async function up(knex) {
   if (!(await knex.schema.hasColumn('usage', 'model_params'))) {
