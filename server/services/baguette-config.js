@@ -430,13 +430,15 @@ export function getAvailableTasks(baguetteConfig) {
 /**
  * Build the full list of available commands from a baguette config.
  * Backward-compatible wrapper around getAvailableTasks().
- * Returns an array of { label, run, ports?, description?, confirm? }.
+ * Returns an array of { label, run, ports?, depends_on?, description?, confirm? }.
  */
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
   return Object.entries(tasks)
     .filter(([_, t]) => t && !t.internal && (typeof t.run === 'string' || t.type === 'docker'))
     .map(([key, t]) => {
+      const dependsOn =
+        Array.isArray(t.depends_on) && t.depends_on.length > 0 ? { depends_on: t.depends_on } : {};
       if (t.type === 'docker') {
         return {
           label: key,
@@ -444,6 +446,7 @@ export function getAvailableCommands(baguetteConfig) {
           image: t.container?.image,
           ...(t.container?.build ? { build: t.container.build } : {}),
           ...(t.ports?.length ? { ports: t.ports } : {}),
+          ...dependsOn,
           ...(t.confirm ? { confirm: true } : {}),
           ...(t.description ? { description: t.description } : {}),
         };
@@ -452,6 +455,7 @@ export function getAvailableCommands(baguetteConfig) {
         label: key,
         run: t.run,
         ...(t.ports?.length ? { ports: t.ports } : {}),
+        ...dependsOn,
         ...(t.confirm ? { confirm: true } : {}),
         ...(t.description ? { description: t.description } : {}),
       };

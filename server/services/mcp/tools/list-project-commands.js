@@ -10,7 +10,7 @@ export function createListProjectCommandsTool(ctx) {
   return {
     name: 'ListProjectCommands',
     description:
-      'List available project commands defined in .baguette.yaml (tests, linters, migrations, etc.).',
+      'List available project commands defined in .baguette.yaml (tests, linters, migrations, etc.). Each command may include `depends_on` (task keys from `depends-on` in the config). RunTask starts and awaits those dependencies automatically — do not start them separately.',
     schema: {},
     handler: async () => {
       let cfg;

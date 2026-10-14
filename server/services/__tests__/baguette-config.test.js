@@ -432,6 +432,35 @@ describe('getAvailableCommands', () => {
     });
     expect(commands.map((c) => c.label)).toEqual(['run-tests']);
   });
+
+  it('includes depends_on when a task declares depends-on', () => {
+    const commands = getAvailableCommands({
+      session: {
+        tasks: {
+          postgres: {
+            type: 'docker',
+            container: { image: 'postgres:16' },
+          },
+          'run-tests': {
+            run: 'pnpm test',
+            'depends-on': ['postgres'],
+          },
+        },
+      },
+    });
+    expect(commands).toEqual([
+      {
+        label: 'postgres',
+        type: 'docker',
+        image: 'postgres:16',
+      },
+      {
+        label: 'run-tests',
+        run: 'pnpm test',
+        depends_on: ['postgres'],
+      },
+    ]);
+  });
 });
 
 describe('loadBaguetteConfig', () => {
