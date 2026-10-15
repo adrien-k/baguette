@@ -662,7 +662,6 @@ ${body}`,
               model: turnModel.model,
               modelParams: turnModel.modelParams,
               agentConfigId: turnAgentConfigId,
-              continuation: !!resumeAgentId || Boolean(reviewExtras.continuation),
               extraPrompt: reviewExtras.extraPrompt,
             })
           : await this._sessionAgentOptions(session, turnModel, turnAgentConfigId, agent);

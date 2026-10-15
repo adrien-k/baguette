@@ -19,7 +19,6 @@ export async function dispatchReviewerAfterCreate(app, agent, session, createDat
   const reviewTurn = getReviewAgentTurn(app);
   reviewTurn.setTurnExtras(session.id, {
     extraPrompt: createData.extra_prompt,
-    continuation: false,
   });
   app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(agent.id));
   await patchAgentInternal(
@@ -56,7 +55,7 @@ export async function dispatchReviewerAfterCreate(app, agent, session, createDat
   });
 }
 
-/** Before persisting a reviewer user message: continuation extras + running state. */
+/** Before persisting a reviewer user message: mark the reviewer running for this turn. */
 export async function primeReviewerUserMessageCreate(app, context) {
   if (context.result?.queued) return context;
   const data = context.data;
@@ -69,16 +68,6 @@ export async function primeReviewerUserMessageCreate(app, context) {
   await assertSessionCanReview(session);
   if (agent.status === 'running') return context;
 
-  const hasThread = Boolean(
-    await db('session_messages')
-      .where({ session_id: session.id, agent_id: agent.id })
-      .whereIn('type', ['user', 'assistant'])
-      .first()
-  );
-  const reviewTurn = getReviewAgentTurn(app);
-  reviewTurn.setTurnExtras(session.id, {
-    continuation: hasThread || Boolean(agent.claude_session_id || agent.cursor_agent_id),
-  });
   await patchAgentInternal(
     app,
     agent.id,

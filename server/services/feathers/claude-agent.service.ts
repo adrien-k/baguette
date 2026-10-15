@@ -205,7 +205,7 @@ export class ClaudeAgentService {
       allowedTools?: string[];
       permissionMode?: PermissionMode;
       settingSources?: SettingSource[];
-      resume?: string | boolean;
+      resume?: string;
       model?: string | null;
       modelParams?: unknown;
       canUseTool?: CanUseTool;
@@ -225,7 +225,7 @@ export class ClaudeAgentService {
     return {
       cwd,
       env: applyClaudeAgentModelEnv(claudeEnv, resolvedModel),
-      resume: resume !== undefined ? resume || undefined : undefined,
+      resume,
       model: resolvedModel,
       ...paramOptions,
       tools: { type: 'preset', preset: 'claude_code' },
@@ -286,6 +286,7 @@ export class ClaudeAgentService {
       plugins,
       model,
       modelParams,
+      ...(agent?.claude_session_id ? { resume: agent.claude_session_id } : {}),
       agent,
     });
   }
@@ -699,12 +700,10 @@ export class ClaudeAgentService {
     let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
       const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
-      const resumeId = agent.claude_session_id;
       queryOptions = await getReviewAgentTurn(this.app).buildClaudeQueryOptions(sessionRow, agent, {
         model,
         modelParams,
         claudeEnv,
-        continuation: !!resumeId || Boolean(extras.continuation),
         extraPrompt: extras.extraPrompt,
       });
     } else {

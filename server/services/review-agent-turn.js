@@ -72,6 +72,10 @@ function reviewerRowIdentity(agent, data = {}, agentSdk = null) {
   });
 }
 
+function reviewerHasStoredSession(agent) {
+  return Boolean(agent?.claude_session_id || agent?.cursor_agent_id || agent?.pi_session_id);
+}
+
 function reviewTurnAgentMetadata(agentSdk, { model, modelParams }) {
   const supportsParams = agentSdk === 'cursor' || agentSdk === 'claude' || agentSdk === 'pi';
   return {
@@ -112,7 +116,7 @@ const REVIEW_RESTART_PROMPT =
 
 class ReviewAgentTurn {
   constructor() {
-    /** @type {Map<number, { extraPrompt?: string, continuation?: boolean }>} */
+    /** @type {Map<number, { extraPrompt?: string }>} */
     this._turnExtras = new Map();
   }
 
@@ -136,18 +140,17 @@ class ReviewAgentTurn {
   async buildClaudeQueryOptions(
     session,
     agent,
-    { model, modelParams, claudeEnv, continuation = false, extraPrompt } = {}
+    { model, modelParams, claudeEnv, extraPrompt } = {}
   ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt, continuation);
+    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt);
     const resolvedParams = modelParams !== undefined ? modelParams : (agent?.model_params ?? null);
     const turnAgent = reviewTurnAgentMetadata('claude', { model, modelParams: resolvedParams });
-    const resumeId = continuation ? agent?.claude_session_id : null;
     return await this.app.service('claude-agent').buildQueryOptions(session, {
       systemPrompt,
       mcpServer: buildReviewerMcpServer(session, this.app, turnAgent),
       allowedTools: REVIEWER_ALLOWED_TOOLS,
       settingSources: [],
-      resume: resumeId,
+      ...(agent?.claude_session_id ? { resume: agent.claude_session_id } : {}),
       model,
       modelParams: resolvedParams,
       permissionMode: 'acceptEdits',
@@ -158,9 +161,9 @@ class ReviewAgentTurn {
   async buildPiReviewAgentOptions(
     session,
     agent,
-    { model, modelParams, agentConfigId, continuation = false, extraPrompt } = {}
+    { model, modelParams, agentConfigId, extraPrompt } = {}
   ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt, continuation);
+    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt);
     const resolvedParams = modelParams !== undefined ? modelParams : (agent?.model_params ?? null);
     const turnAgent = reviewTurnAgentMetadata('pi', { model, modelParams: resolvedParams });
     const piAgent = this.app.service('pi-agent');
@@ -170,7 +173,7 @@ class ReviewAgentTurn {
       agentConfigId,
       channel: 'review',
       customTools: buildReviewerPiCustomTools(session, this.app, turnAgent),
-      storedPiSessionId: continuation ? agent?.pi_session_id : null,
+      storedPiSessionId: agent?.pi_session_id,
       appendSystemPrompt: systemPrompt ? [systemPrompt] : [],
     });
   }
@@ -178,9 +181,9 @@ class ReviewAgentTurn {
   async buildCursorReviewAgentOptions(
     session,
     agent,
-    { model, modelParams, agentConfigId, continuation = false, extraPrompt } = {}
+    { model, modelParams, agentConfigId, extraPrompt } = {}
   ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt, continuation);
+    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt);
     const cursorAgent = this.app.service('cursor-agent');
     const rulesRoot = await cursorAgent.writePromptRule(session, 'review', {
       description: 'Baguette review rules (always applied)',
@@ -215,7 +218,6 @@ class ReviewAgentTurn {
 
   /** Called when a queued review follow-up is about to dispatch after the prior turn ended. */
   async _beginQueuedReviewTurn(session) {
-    this._turnExtras.set(session.id, { continuation: true });
     const reviewer = await getReviewerAgent(this.app.get('db'), session.id);
     if (reviewer) {
       await patchAgentInternal(this.app, reviewer.id, { status: 'running' }, session.user_id);
@@ -262,10 +264,10 @@ class ReviewAgentTurn {
     return getEffectiveReviewPrompt(session.session_path, extraPrompt);
   }
 
-  async _prepareReviewPrompt(session, reviewer, extraPrompt, continuation) {
+  async _prepareReviewPrompt(session, reviewer, extraPrompt) {
     const userPrompt = await this._userReviewPrompt(session, extraPrompt);
     const systemPrompt = await buildReviewSystemPromptAppend(session, userPrompt);
-    if (!continuation && reviewer) {
+    if (reviewer && !reviewerHasStoredSession(reviewer)) {
       await this._persist(session, reviewer, {
         type: 'system',
         subtype: 'prompt',
@@ -384,7 +386,6 @@ class ReviewAgentTurn {
       const activeReviewer = reviewer ?? (await getReviewerAgent(db, session.id));
       if (!activeReviewer) return false;
       await this._persistStatus(session, 'Server restarted — resuming review');
-      this._turnExtras.set(session.id, { continuation: true });
       await this._persist(session, activeReviewer, {
         type: 'user',
         subtype: 'baguette',

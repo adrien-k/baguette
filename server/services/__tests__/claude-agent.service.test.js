@@ -203,6 +203,40 @@ describe('ClaudeAgentService', () => {
     query.mockImplementation(() => makeAsyncIterable([]));
   });
 
+  describe('buildQueryOptions', () => {
+    it('passes the stored claude_session_id as resume on a chat query', async () => {
+      await db('agents').where({ id: BASE_BUILDER.id }).update({
+        claude_session_id: 'claude-sess-abc',
+      });
+      const builder = await db('agents').where({ id: BASE_BUILDER.id }).first();
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, builder, {
+        model: builder.model,
+        turnAgentConfigId: builder.agent_config_id,
+      });
+      expect(query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({ resume: 'claude-sess-abc' }),
+        })
+      );
+    });
+
+    it('omits resume when the caller does not pass a session id', async () => {
+      const service = new ClaudeAgentService();
+      service.setup(mockApp);
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      const options = await service.buildQueryOptions(sessionRow, {
+        claudeEnv: { ANTHROPIC_API_KEY: 'key' },
+        model: 'sonnet',
+      });
+      expect(options.resume).toBeUndefined();
+    });
+  });
+
   // ── 1. Session creation ────────────────────────────────────────────────────
 
   describe('createAgentSession', () => {

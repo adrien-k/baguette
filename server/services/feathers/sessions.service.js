@@ -1360,11 +1360,6 @@ export class SessionsService extends KnexService {
     if (reviewer && reviewer.status !== 'running') {
       await patchAgentInternal(this.app, reviewer.id, { status: 'running' }, session.user_id);
     }
-
-    const review = getReviewAgentTurn(this.app);
-    if (review && !review.peekTurnExtras(sessionId)) {
-      review.setTurnExtras(sessionId, { continuation: true });
-    }
   }
 
   /**

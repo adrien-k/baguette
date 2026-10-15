@@ -506,7 +506,6 @@ export class PiAgentService {
               model,
               modelParams: turnModel.modelParams,
               agentConfigId: turnAgentConfigId,
-              continuation: !!storedPiSessionId || Boolean(reviewExtras?.continuation),
               extraPrompt: reviewExtras?.extraPrompt,
             })
           : await this.buildAgentOptions(session, {
