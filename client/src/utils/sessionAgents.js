@@ -99,12 +99,25 @@ export function canRemoveAgentWhenIdle(agent) {
 }
 
 export function isAnyAgentRunning(session) {
+  return countActiveAgentsForSession(session) > 0;
+}
+
+/** Agents with an active turn (`running` or `approval`) on this session. */
+export function countActiveAgentsForSession(session) {
+  if (!session || session.archived_at) return 0;
   const agents = sessionAgents(session);
   if (agents.length > 0) {
-    return agents.some((a) => isAgentTurnActive(a.status));
+    return agents.filter((a) => isAgentTurnActive(a.status)).length;
   }
-  if (session?.review_status && isAgentTurnActive(session.review_status)) return true;
-  return session?.status === 'running';
+  let count = 0;
+  if (session.review_status && isAgentTurnActive(session.review_status)) count += 1;
+  if (session.status === 'running') count += 1;
+  return count;
+}
+
+export function activeAgentsRunningLabel(count) {
+  if (count === 1) return '1 agent running';
+  return `${count} agents running`;
 }
 
 export function isReviewInProgressForSession(session) {

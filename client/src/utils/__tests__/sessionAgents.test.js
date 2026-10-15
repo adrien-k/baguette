@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  activeAgentsRunningLabel,
   agentDisplayTitle,
   agentMenuOptionLabel,
   agentNameMatchesType,
+  countActiveAgentsForSession,
   isPrimaryAgent,
   isSubagentBuilder,
   sortSessionAgentsByRefAsc,
@@ -46,6 +48,34 @@ describe('agent display labels', () => {
   it('prefixes menu label with session ref when present', () => {
     const agent = { ref: 3, name: 'Builder', agent_type: 'builder' };
     expect(agentMenuOptionLabel(agent)).toBe('#3 Builder');
+  });
+});
+
+describe('countActiveAgentsForSession', () => {
+  it('counts agents with running or approval status', () => {
+    const session = {
+      agents: [
+        { id: 1, status: 'running' },
+        { id: 2, status: 'idle' },
+        { id: 3, status: 'approval' },
+        { id: 4, status: 'running' },
+      ],
+    };
+    expect(countActiveAgentsForSession(session)).toBe(3);
+  });
+
+  it('returns 0 for archived sessions', () => {
+    expect(
+      countActiveAgentsForSession({
+        archived_at: '2026-01-01',
+        agents: [{ id: 1, status: 'running' }],
+      })
+    ).toBe(0);
+  });
+
+  it('formats running label', () => {
+    expect(activeAgentsRunningLabel(1)).toBe('1 agent running');
+    expect(activeAgentsRunningLabel(3)).toBe('3 agents running');
   });
 });
 

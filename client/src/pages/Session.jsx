@@ -1747,10 +1747,7 @@ export default function Session() {
             <SessionMainViewFooter
               session={session}
               onShowTasks={() => setSidePanelTab('tasks')}
-              onShowReviewer={() => {
-                if (reviewer) selectAgent(reviewer);
-                else setSidePanelTab('agents');
-              }}
+              onShowAgents={() => setSidePanelTab('agents')}
             />
           )}
         </div>

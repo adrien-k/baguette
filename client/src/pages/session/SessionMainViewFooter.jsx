@@ -1,20 +1,23 @@
 import { Bot } from 'lucide-react';
-import { isGlobalSession } from '@baguette/shared/session-scope.js';
-import { isReviewInProgressForSession } from '../../utils/sessionAgents.js';
+import {
+  activeAgentsRunningLabel,
+  countActiveAgentsForSession,
+} from '../../utils/sessionAgents.js';
 
 function runningTasksLabel(count) {
   if (count === 1) return '1 task running';
   return `${count} tasks running`;
 }
 
-export default function SessionMainViewFooter({ session, onShowTasks, onShowReviewer }) {
+export default function SessionMainViewFooter({ session, onShowTasks, onShowAgents }) {
   if (!session) return null;
 
   const runningTasksCount = session.running_tasks_count ?? 0;
   const showRunningTaskFooter = runningTasksCount > 0;
-  const showReviewFooter = !isGlobalSession(session) && isReviewInProgressForSession(session);
+  const activeAgentsCount = countActiveAgentsForSession(session);
+  const showAgentsFooter = activeAgentsCount > 0;
 
-  if (!showRunningTaskFooter && !showReviewFooter) return null;
+  if (!showRunningTaskFooter && !showAgentsFooter) return null;
 
   return (
     <div className="shrink-0 border-t border-line bg-nav flex items-center gap-1 min-w-0 px-3 sm:px-4 py-0.5">
@@ -31,16 +34,16 @@ export default function SessionMainViewFooter({ session, onShowTasks, onShowRevi
           </span>
         </button>
       )}
-      {showReviewFooter && (
+      {showAgentsFooter && (
         <button
           type="button"
-          onClick={onShowReviewer}
+          onClick={onShowAgents}
           className="flex cursor-pointer items-center gap-1.5 shrink-0 rounded px-1.5 py-1 ml-auto hover:bg-control/50 transition-colors"
-          title="Review in progress"
+          title="Show agents"
         >
           <Bot className="w-3.5 h-3.5 text-accent motion-safe:animate-pulse" aria-hidden />
           <span className="text-[11px] font-medium text-heading whitespace-nowrap">
-            Review in progress
+            {activeAgentsRunningLabel(activeAgentsCount)}
           </span>
         </button>
       )}
