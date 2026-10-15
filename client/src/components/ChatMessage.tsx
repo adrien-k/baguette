@@ -169,7 +169,6 @@ function TypedMessage({
           message={message}
           sessionPath={sessionPath}
           sessionId={sessionId ?? undefined}
-          session={session}
           userReplied={userReplied}
         />
       );

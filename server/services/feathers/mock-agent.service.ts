@@ -198,7 +198,7 @@ class MockAgentService {
             ),
         });
       } else {
-        await runMockAgentTurn({
+        const turnMeta = await runMockAgentTurn({
           session,
           writer,
           abortSignal: abortController.signal,
@@ -207,11 +207,13 @@ class MockAgentService {
           userId,
           turnId,
         });
+        turnFinishedOk = true;
+        const terminalStatus = turnMeta?.awaitingUser ? 'approval' : 'completed';
+        await setAgentTurnTerminal(this.app, agent, userId, terminalStatus);
       }
 
-      turnFinishedOk = true;
-      if (!isReview) {
-        await setAgentTurnTerminal(this.app, agent, userId, 'completed');
+      if (isReview) {
+        turnFinishedOk = true;
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError' && (err as Error).message !== 'Aborted') {

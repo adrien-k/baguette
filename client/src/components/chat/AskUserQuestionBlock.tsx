@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { messagesService } from '../../feathers.js';
+import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 
 export type AskUserQuestion = {
   question: string;
@@ -48,12 +47,10 @@ function isAnswerComplete(questions: AskUserQuestion[], answers: AnswerState[]):
 export default function AskUserQuestionBlock({
   questions: questionsProp,
   sessionId,
-  session,
   userReplied = false,
 }: {
   questions?: AskUserQuestion[] | null;
   sessionId?: number | null;
-  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   const questions = questionsProp ?? [];
@@ -64,19 +61,17 @@ export default function AskUserQuestionBlock({
   );
   const [loading, setLoading] = useState(false);
 
-  const sendMsg = (text: string, answers: { question: string; value: string }[]) =>
-    messagesService.create({
-      session_id: sessionId,
-      type: 'user',
+  const sendMsg = async (text: string, answers: { question: string; value: string }[]) => {
+    if (sessionId == null) {
+      throw new Error('Session is not available');
+    }
+    await sessionsService.createDefaultBuilderMessage({
+      id: sessionId,
+      content: text,
       subtype: 'ask_user_answer',
-      message_json: JSON.stringify({
-        type: 'user',
-        subtype: 'ask_user_answer',
-        content: text,
-        answers,
-      }),
-      ...builderMessageCreateFields(session ?? {}),
+      answers,
     });
+  };
 
   const toggle = (i: number, label: string) => {
     setAnswers((prev) => {

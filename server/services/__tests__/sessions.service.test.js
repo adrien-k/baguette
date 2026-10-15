@@ -323,6 +323,43 @@ describe('Sessions service - custom methods', () => {
           .createDefaultBuilderMessage({ id: sessId, content: '   ' }, params({ id: userId }))
       ).rejects.toThrow(BadRequest);
     });
+
+    it('creates ask_user_answer with structured answers', async () => {
+      const builder = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      const answers = [{ question: 'Pick one', value: 'A' }];
+
+      const result = await app.service('sessions').createDefaultBuilderMessage(
+        {
+          id: sessId,
+          content: '**Pick one**: A',
+          subtype: 'ask_user_answer',
+          answers,
+        },
+        params({ id: userId })
+      );
+
+      expect(result.type).toBe('user');
+      expect(result.subtype).toBe('ask_user_answer');
+      expect(result.agent_id).toBe(builder.id);
+      const parsed = JSON.parse(result.message_json);
+      expect(parsed.subtype).toBe('ask_user_answer');
+      expect(parsed.content).toBe('**Pick one**: A');
+      expect(parsed.answers).toEqual(answers);
+    });
+
+    it('rejects malformed ask_user_answer rows', async () => {
+      await expect(
+        app.service('sessions').createDefaultBuilderMessage(
+          {
+            id: sessId,
+            content: '**Q**: A',
+            subtype: 'ask_user_answer',
+            answers: [{}],
+          },
+          params({ id: userId })
+        )
+      ).rejects.toThrow();
+    });
   });
 
   // ── merge ──────────────────────────────────────────────────────────────────

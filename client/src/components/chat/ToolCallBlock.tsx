@@ -228,13 +228,11 @@ export default function ToolCallBlock({
   message,
   sessionPath,
   sessionId,
-  session,
   userReplied = false,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
   sessionId?: number;
-  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   if (message._hidden) return null;
@@ -244,7 +242,6 @@ export default function ToolCallBlock({
       message={message}
       sessionPath={sessionPath}
       sessionId={sessionId}
-      session={session}
       userReplied={userReplied}
     />
   );
@@ -258,13 +255,11 @@ function ToolCallSwitch({
   message,
   sessionPath,
   sessionId,
-  session,
   userReplied,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
   sessionId?: number;
-  session?: { agent_sdk?: string | null; model?: string | null; model_params?: unknown } | null;
   userReplied?: boolean;
 }) {
   const isError = message.status === 'error';
@@ -299,7 +294,6 @@ function ToolCallSwitch({
         <AskUserQuestionBlock
           questions={message.args.questions as AskUserQuestion[]}
           sessionId={sessionId}
-          session={session}
           userReplied={userReplied}
         />
       );

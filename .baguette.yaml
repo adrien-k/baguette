@@ -5,6 +5,10 @@ config:
       # Hardcoded for local preview sessions only — not used in production.
       DATA_DIR: './.data'
       ENCRYPTION_KEY: 'baguette-local-preview-encryption-key-not-for-prod'
+      # Mock agent SDK (server + Vite client); same as e2e/start-dev.sh — preview/dogfood only.
+      ENABLE_MOCK_AGENT: 'true'
+      MOCK_AGENT_SLEEP_MS: '0'
+      MOCK_AGENT_STEP_DELAY_MS: '200'
       DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
       PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
       SOCKET_PATH: '/_baguette/ws/${{ baguette.session.short_id }}'

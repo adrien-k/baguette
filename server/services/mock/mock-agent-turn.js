@@ -3,12 +3,16 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
 import {
-  MOCK_AGENT_SUMMARY_TEXT,
+  mockAgentFullTurnClosingMessage,
   MOCK_E2E_QUICK_TURN_PROMPT,
   MOCK_E2E_QUICK_TURN_SUMMARY,
   MOCK_E2E_SUBAGENT_NAME,
   MOCK_E2E_SUBAGENT_PRESET_DESCRIPTION,
   MOCK_E2E_SUBAGENT_SUMMARY,
+  MOCK_E2E_ASK_ANSWER_SUMMARY,
+  MOCK_E2E_ASK_QUESTION_TEXT,
+  MOCK_E2E_PLAN_MARKDOWN,
+  MOCK_E2E_PLAN_RUN_SUMMARY,
   MOCK_REVIEW_ISSUES,
   MOCK_REVIEWER_SUMMARY_TEXT,
   mockAgentScenarioForPrompt,
@@ -126,6 +130,86 @@ async function runMockQuickTurn({ writer, abortSignal }) {
     error_message: null,
     total_cost_usd: 0,
   });
+  return {};
+}
+
+const MOCK_E2E_ASK_OPTIONS = [
+  { label: 'Plan flow', description: 'Exercise CreatePlan UI' },
+  { label: 'Ask flow', description: 'Exercise AskUserQuestions UI' },
+];
+
+/**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockPlanCreateTurn({ writer, abortSignal }) {
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-e2e-create-plan',
+    name: 'mcp__baguette__CreatePlan',
+    args: { markdown: MOCK_E2E_PLAN_MARKDOWN },
+    rawResult: JSON.stringify({ ok: true, markdown: MOCK_E2E_PLAN_MARKDOWN }),
+  });
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+  return { awaitingUser: true };
+}
+
+/**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockPlanRunTurn({ writer }) {
+  await writer.appendAssistantText(MOCK_E2E_PLAN_RUN_SUMMARY);
+  await writer.flushAssistant();
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+  return {};
+}
+
+/**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockAskQuestionTurn({ writer, abortSignal }) {
+  const questions = [
+    {
+      question: MOCK_E2E_ASK_QUESTION_TEXT,
+      options: MOCK_E2E_ASK_OPTIONS,
+    },
+  ];
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-e2e-ask-user',
+    name: 'mcp__baguette__AskUserQuestions',
+    args: { questions },
+    rawResult: JSON.stringify({ ok: true, questions }),
+  });
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+  return { awaitingUser: true };
+}
+
+/**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockAskAnswerTurn({ writer }) {
+  await writer.appendAssistantText(MOCK_E2E_ASK_ANSWER_SUMMARY);
+  await writer.flushAssistant();
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+  return {};
 }
 
 /**
@@ -201,11 +285,13 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
     error_message: null,
     total_cost_usd: 0,
   });
+  return {};
 }
 
 /**
  * Deterministic dev-only turn exercising every agent tool kind in chat.
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ * @returns {Promise<{ awaitingUser?: boolean }>}
  */
 export async function runMockAgentTurn({
   session,
@@ -218,15 +304,25 @@ export async function runMockAgentTurn({
 }) {
   const scenario = mockAgentScenarioForPrompt(userPrompt);
   if (scenario === 'quick') {
-    await runMockQuickTurn({ writer, abortSignal });
-    return;
+    return runMockQuickTurn({ writer, abortSignal });
   }
   if (scenario === 'subagent-e2e') {
     if (!app || userId == null) {
       throw new Error('subagent-e2e mock turn requires app and userId');
     }
-    await runMockSubagentE2eTurn({ app, session, userId, writer, abortSignal, turnId });
-    return;
+    return runMockSubagentE2eTurn({ app, session, userId, writer, abortSignal, turnId });
+  }
+  if (scenario === 'plan-create') {
+    return runMockPlanCreateTurn({ writer, abortSignal });
+  }
+  if (scenario === 'plan-run') {
+    return runMockPlanRunTurn({ writer, abortSignal });
+  }
+  if (scenario === 'ask-question') {
+    return runMockAskQuestionTurn({ writer, abortSignal });
+  }
+  if (scenario === 'ask-answer') {
+    return runMockAskAnswerTurn({ writer, abortSignal });
   }
 
   const cwd = resolveDataDirRelativePath(session.session_path);
@@ -357,30 +453,6 @@ export async function runMockAgentTurn({
   });
 
   await runMockTool(writer, abortSignal, {
-    callId: 'mock-ask-user',
-    name: 'AskUserQuestion',
-    args: {
-      questions: [
-        {
-          question: 'Which mock tool block should we highlight in the screenshot?',
-          header: 'Demo',
-          options: [
-            { label: 'Bash', description: 'Pinned shell dock' },
-            { label: 'MCP', description: 'Baguette MCP card' },
-          ],
-        },
-      ],
-    },
-    rawResult: { status: 'ok' },
-  });
-
-  if (abortSignal?.aborted) throw new Error('Aborted');
-  await writer.persistPlan(
-    '# Mock agent plan\n\n1. Run every canonical tool kind\n2. Emit plan row (not a tool_call)\n3. Summarize in chat\n'
-  );
-  await delay(mockStepDelayMs(), abortSignal);
-
-  await runMockTool(writer, abortSignal, {
     callId: 'mock-mcp-show-diff',
     name: 'mcp__baguette__ShowDiff',
     args: {
@@ -405,7 +477,7 @@ export async function runMockAgentTurn({
   });
 
   await delay(mockStepDelayMs(), abortSignal);
-  await writer.appendAssistantText(MOCK_AGENT_SUMMARY_TEXT);
+  await writer.appendAssistantText(mockAgentFullTurnClosingMessage());
   await writer.flushAssistant();
   await writer.persistTurnResult({
     type: 'turn_result',
@@ -413,6 +485,7 @@ export async function runMockAgentTurn({
     error_message: null,
     total_cost_usd: 0,
   });
+  return {};
 }
 
 /**

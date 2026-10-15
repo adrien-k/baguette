@@ -1,5 +1,17 @@
 export const MOCK_AGENT_SUMMARY_TEXT =
-  'Simulated turn complete — exercised every tool kind (files, shell, todos, task, questions, plan, MCP, generic).';
+  'Simulated turn complete — exercised file, shell, todo, task, MCP, and generic tools.';
+
+/** Closing assistant text for the default (non–custom-prompt) mock builder turn. */
+export function mockAgentFullTurnClosingMessage() {
+  return `${MOCK_AGENT_SUMMARY_TEXT}
+
+**Custom prompts** (send as your user message to exercise other flows):
+
+- \`${MOCK_E2E_QUICK_TURN_PROMPT}\` — short turn (no tool tour)
+- \`${MOCK_E2E_SUBAGENT_PROMPT}\` — StartSubagent via MCP
+- \`${MOCK_E2E_CREATE_PLAN_PROMPT}\` — CreatePlan UI; then **Run the plan** or reply \`Proceed with the plan.\`
+- \`${MOCK_E2E_ASK_QUESTION_PROMPT}\` — AskUserQuestions UI; pick an option to submit answers`;
+}
 
 export const MOCK_REVIEWER_SUMMARY_TEXT =
   'Mock review complete — filed sample issues for UI and e2e coverage.';
@@ -37,6 +49,16 @@ export const MOCK_E2E_SUBAGENT_PROMPT = 'create a subagent for e2e tests';
 export const MOCK_E2E_SUBAGENT_SUMMARY = 'E2E subagent started via MCP (StartSubagent).';
 export const MOCK_E2E_SUBAGENT_NAME = 'E2E MCP subagent';
 
+/** E2e: CreatePlan MCP + “Run the plan” follow-up. */
+export const MOCK_E2E_CREATE_PLAN_PROMPT = 'e2e mock create a plan';
+export const MOCK_E2E_PLAN_MARKDOWN = '# E2E mock plan\n\n1. First step\n2. Second step\n';
+export const MOCK_E2E_PLAN_RUN_SUMMARY = 'E2E mock plan run complete.';
+
+/** E2e: AskUserQuestions MCP + inline answer follow-up. */
+export const MOCK_E2E_ASK_QUESTION_PROMPT = 'e2e mock ask me a question';
+export const MOCK_E2E_ASK_QUESTION_TEXT = 'Which e2e path should we take?';
+export const MOCK_E2E_ASK_ANSWER_SUMMARY = 'E2E mock question answer received.';
+
 /**
  * @param {object | null | undefined} parsed - normalized user payload (`normalizeUserPayloadForStorage`)
  */
@@ -62,11 +84,15 @@ export function mockUserPromptText(parsed) {
   return '';
 }
 
-/** @returns {'full' | 'quick' | 'subagent-e2e'} */
+/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer'} */
 export function mockAgentScenarioForPrompt(promptText) {
   const text = (promptText ?? '').trim().toLowerCase();
   if (text.includes(MOCK_E2E_SUBAGENT_PROMPT.toLowerCase())) return 'subagent-e2e';
   if (text.includes(MOCK_E2E_QUICK_TURN_PROMPT.toLowerCase())) return 'quick';
+  if (text.includes(MOCK_E2E_CREATE_PLAN_PROMPT.toLowerCase())) return 'plan-create';
+  if (text === 'proceed with the plan.') return 'plan-run';
+  if (text.includes(MOCK_E2E_ASK_QUESTION_PROMPT.toLowerCase())) return 'ask-question';
+  if (text.includes(MOCK_E2E_ASK_QUESTION_TEXT.toLowerCase())) return 'ask-answer';
   return 'full';
 }
 

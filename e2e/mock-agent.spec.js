@@ -1,7 +1,11 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { test, expect } from '@playwright/test';
-import { MOCK_AGENT_SUMMARY_TEXT, MOCK_REVIEW_ISSUES } from '../shared/mock-agent-sdk.js';
+import {
+  MOCK_AGENT_SUMMARY_TEXT,
+  MOCK_E2E_CREATE_PLAN_PROMPT,
+  MOCK_REVIEW_ISSUES,
+} from '../shared/mock-agent-sdk.js';
 import { createLocalRepo, devLogin, startMockBuilderSession } from './helpers.js';
 
 test.describe('mock agent chat', () => {
@@ -12,12 +16,12 @@ test.describe('mock agent chat', () => {
     await startMockBuilderSession(page, repoId);
 
     await expect(page.getByText('Exercise the mock agent for e2e')).toBeVisible();
-    await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByRole('heading', { name: 'Mock agent plan' })).toBeVisible();
-    await expect(page.getByText('ShowDiff').first()).toBeVisible();
-
     const workGroup = page.getByRole('button', { name: /Worked for .* · \d+ calls/ });
+    await expect(workGroup).toBeVisible({ timeout: 120_000 });
     await workGroup.click();
+    await expect(page.getByText('ShowDiff').first()).toBeVisible();
+    await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible();
+    await expect(page.getByText(MOCK_E2E_CREATE_PLAN_PROMPT)).toBeVisible();
     await expect(page.getByText('Exercise every tool kind').first()).toBeVisible();
     await expect(
       page

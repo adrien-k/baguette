@@ -23,6 +23,16 @@ export function buildUserTurnMessageJson(content) {
   });
 }
 
+/** AskUserQuestions reply payload (inline answers UI). */
+export function buildAskUserAnswerMessageJson(content, answers = []) {
+  return JSON.stringify({
+    type: 'user',
+    subtype: 'ask_user_answer',
+    content: String(content),
+    answers,
+  });
+}
+
 /**
  * Resolve `agent_id` for a session message create; defaults to the primary builder.
  * @param {import('knex').Knex} db

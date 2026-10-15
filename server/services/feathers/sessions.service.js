@@ -100,7 +100,11 @@ import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
 import { readSessionPlanMarkdown } from '../session-plan.js';
-import { buildUserTurnMessageJson, sessionMessageIdentity } from './message-create-fields.js';
+import {
+  buildAskUserAnswerMessageJson,
+  buildUserTurnMessageJson,
+  sessionMessageIdentity,
+} from './message-create-fields.js';
 import { hooks as schemaHooks } from '@feathersjs/schema';
 import { createDefaultBuilderMessageDataValidator } from './schemas/create-default-builder-message.schema.js';
 import { normalizeCreateDefaultBuilderMessageData } from './hooks/normalize-create-default-builder-message.js';
@@ -1014,10 +1018,15 @@ export class SessionsService extends KnexService {
     const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
     if (!builder) throw new BadRequest('Agent not found');
 
+    const messageJson =
+      data.subtype === 'ask_user_answer'
+        ? buildAskUserAnswerMessageJson(data.content, data.answers ?? [])
+        : buildUserTurnMessageJson(data.content);
+
     const payload = {
       session_id: session.id,
       type: 'user',
-      message_json: buildUserTurnMessageJson(data.content),
+      message_json: messageJson,
       ...sessionMessageIdentity(builder),
     };
     if (data.subtype) payload.subtype = data.subtype;
