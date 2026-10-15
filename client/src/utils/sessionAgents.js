@@ -70,8 +70,14 @@ export function agentMenuOptionLabel(agent) {
   return prefix ? `${prefix}${label}` : label;
 }
 
+/** Agent is executing a turn (streaming tools / model output). */
 export function isAgentTurnActive(status) {
-  return status === 'running' || status === 'approval';
+  return status === 'running';
+}
+
+/** Turn ended on AskUserQuestions / CreatePlan / EditPlan — waiting on the user. */
+export function isAgentAwaitingUser(status) {
+  return status === 'approval';
 }
 
 export function isPrimaryAgent(agent) {
@@ -102,7 +108,7 @@ export function isAnyAgentRunning(session) {
   return countActiveAgentsForSession(session) > 0;
 }
 
-/** Agents with an active turn (`running` or `approval`) on this session. */
+/** Agents currently executing a turn on this session. */
 export function countActiveAgentsForSession(session) {
   if (!session || session.archived_at) return 0;
   const agents = sessionAgents(session);
@@ -110,9 +116,44 @@ export function countActiveAgentsForSession(session) {
     return agents.filter((a) => isAgentTurnActive(a.status)).length;
   }
   let count = 0;
-  if (session.review_status && isAgentTurnActive(session.review_status)) count += 1;
+  if (session.review_status === 'running') count += 1;
   if (session.status === 'running') count += 1;
   return count;
+}
+
+export function isAnyAgentAwaitingUser(session) {
+  if (!session || session.archived_at) return false;
+  const agents = sessionAgents(session);
+  if (agents.length > 0) {
+    return agents.some((a) => isAgentAwaitingUser(a.status));
+  }
+  return session.status === 'approval' || session.review_status === 'approval';
+}
+
+/** Merge a realtime `agents` service patch into a session DTO (embedded `agents` list). */
+export function applyAgentPatchToSession(session, agent) {
+  if (!session?.id || !agent?.session_id || session.id !== agent.session_id) {
+    return session;
+  }
+  const agents = Array.isArray(session.agents) ? [...session.agents] : [];
+  const agentIdx = agents.findIndex((a) => a.id === agent.id);
+  const summary = {
+    id: agent.id,
+    ref: agent.ref,
+    name: agent.name,
+    agent_type: agent.agent_type,
+    status: agent.status,
+    is_primary: agent.is_primary,
+  };
+  if (agentIdx >= 0) agents[agentIdx] = { ...agents[agentIdx], ...summary };
+  else agents.push(summary);
+  const reviewer = agents.find((a) => a.agent_type === 'reviewer');
+  return {
+    ...session,
+    agents,
+    review_status: reviewer?.status ?? session.review_status,
+    reviewer_agent_id: reviewer?.id ?? session.reviewer_agent_id,
+  };
 }
 
 export function activeAgentsRunningLabel(count) {

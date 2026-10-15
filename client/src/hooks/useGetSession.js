@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { sessionsService, sessionIssuesService, tasksService } from '../feathers.js';
+import { agentsService, sessionsService, sessionIssuesService, tasksService } from '../feathers.js';
+import { applyAgentPatchToSession } from '../utils/sessionAgents.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const normalizeId = (sessionId) =>
@@ -120,13 +121,20 @@ export function useGetSession(sessionId) {
       setLoadedFor(null);
     };
 
+    const onAgentPatched = (agent) => {
+      if (String(agent?.session_id) !== String(id)) return;
+      setSession((prev) => applyAgentPatchToSession(prev, agent));
+    };
+
     sessionsService.on('patched', onPatched);
     sessionsService.on('removed', onRemoved);
+    agentsService.on('patched', onAgentPatched);
 
     return () => {
       cancelled = true;
       sessionsService.off('patched', onPatched);
       sessionsService.off('removed', onRemoved);
+      agentsService.off('patched', onAgentPatched);
     };
   }, [sessionId, refreshCounts]);
 
