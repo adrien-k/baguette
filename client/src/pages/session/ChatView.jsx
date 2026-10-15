@@ -177,13 +177,7 @@ export default function ChatView({
       return activeAgent.agent_config_id ?? session?.review_agent_config_id;
     }
     return activeAgent.agent_config_id ?? session?.agent_config_id;
-  }, [
-    activeAgent?.id,
-    activeAgent?.agent_type,
-    activeAgent?.agent_config_id,
-    session?.agent_config_id,
-    session?.review_agent_config_id,
-  ]);
+  }, [activeAgent, session?.agent_config_id, session?.review_agent_config_id]);
   const { configOptions: agentConfigOptions, loading: configsLoading } = useAgentConfigs();
   const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
   const modelsLoading = modelsStale && !models.length;
@@ -243,7 +237,7 @@ export default function ChatView({
     }
     const load = () => {
       loopsService
-        .find({ query: { session_id: session.id, single_session: true, $limit: 50 } })
+        .find({ query: { session_id: chatSessionId, single_session: true, $limit: 50 } })
         .then((d) => setTiedLoops(d.data ?? d))
         .catch(() => {});
     };
@@ -455,7 +449,7 @@ export default function ChatView({
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore, hasMore]);
+  }, [handleLoadMore, hasMore, scrollContainerRef]);
 
   const buildContent = async (text, filesToSend) => {
     if (filesToSend.length) {

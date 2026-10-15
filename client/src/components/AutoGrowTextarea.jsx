@@ -1,4 +1,11 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from 'react';
 
 function maxHeightPxFor(el, { maxHeightPx, maxLines }) {
   if (maxHeightPx != null) return maxHeightPx;
@@ -63,30 +70,33 @@ const AutoGrowTextarea = forwardRef(function AutoGrowTextarea(
   const lastSyncedHeightRef = useRef(-1);
   useImperativeHandle(forwardedRef, () => innerRef.current);
 
-  const applySync = (el) => {
-    if (!el) return;
-    const next = syncHeight(
-      el,
-      {
-        maxLines,
-        maxHeightPx,
-        minHeightPx: keepManualResize ? userMinHeightRef.current : 0,
-      },
-      { value, placeholder, fitPlaceholderWhenEmpty }
-    );
-    lastSyncedHeightRef.current = next;
-  };
+  const applySync = useCallback(
+    (el) => {
+      if (!el) return;
+      const next = syncHeight(
+        el,
+        {
+          maxLines,
+          maxHeightPx,
+          minHeightPx: keepManualResize ? userMinHeightRef.current : 0,
+        },
+        { value, placeholder, fitPlaceholderWhenEmpty }
+      );
+      lastSyncedHeightRef.current = next;
+    },
+    [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]
+  );
 
   useLayoutEffect(() => {
     applySync(innerRef.current);
-  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]);
+  }, [applySync]);
 
   useEffect(() => {
     const el = innerRef.current;
     if (!el || !String(value ?? '').trim()) return;
     const id = requestAnimationFrame(() => applySync(el));
     return () => cancelAnimationFrame(id);
-  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]);
+  }, [applySync, value]);
 
   useEffect(() => {
     const el = innerRef.current;
@@ -94,7 +104,7 @@ const AutoGrowTextarea = forwardRef(function AutoGrowTextarea(
     const ro = new ResizeObserver(() => applySync(el));
     ro.observe(el);
     return () => ro.disconnect();
-  }, [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]);
+  }, [applySync, fitPlaceholderWhenEmpty, placeholder]);
 
   useEffect(() => {
     const el = innerRef.current;

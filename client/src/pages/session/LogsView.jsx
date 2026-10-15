@@ -524,7 +524,7 @@ export default function LogsView({
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore, hasMore]);
+  }, [handleLoadMore, hasMore, scrollContainerRef]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">

@@ -684,16 +684,7 @@ export default function Session() {
     if (!sessionNeedsLastViewedUpdate(sessionFromHook)) return;
     const activityAt = sessionActivityAt(sessionFromHook);
     sessionsService.patch(sessionFromHook.id, { last_viewed_at: activityAt }).catch(() => {});
-  }, [
-    isNewSessionRoute,
-    sessionLoading,
-    sessionFromHook?.id,
-    sessionFromHook?.last_activity_at,
-    sessionFromHook?.last_viewed_at,
-    sessionFromHook?.updated_at,
-    sessionFromHook?.created_at,
-    routeSessionId,
-  ]);
+  }, [isNewSessionRoute, sessionLoading, sessionFromHook, routeSessionId]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot, CheckCircle, ChevronDown, ChevronRight, Square } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { agentsService, messagesService, sessionIssuesService } from '../../feathers.js';
@@ -162,7 +162,7 @@ export default function ReviewView({
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [hash, issuesLoading, issues]);
 
-  const refreshClosedCount = () => {
+  const refreshClosedCount = useCallback(() => {
     if (!session?.id) {
       setClosedCount(0);
       setClosedCountLoading(false);
@@ -177,11 +177,11 @@ export default function ReviewView({
       })
       .catch(() => {})
       .finally(() => setClosedCountLoading(false));
-  };
+  }, [session]);
 
   useEffect(() => {
     refreshClosedCount();
-  }, [session?.id]);
+  }, [refreshClosedCount]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -195,7 +195,7 @@ export default function ReviewView({
     };
     sessionIssuesService.on('patched', onIssueClosed);
     return () => sessionIssuesService.off('patched', onIssueClosed);
-  }, [session?.id]);
+  }, [session?.id, refreshClosedCount]);
 
   const loadClosedIssues = async () => {
     if (!session?.id || closedLoading) return;

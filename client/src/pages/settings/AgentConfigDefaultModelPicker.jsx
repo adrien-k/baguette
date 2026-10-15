@@ -39,7 +39,7 @@ export default function AgentConfigDefaultModelPicker({
   useEffect(() => {
     if (!isDraft) return;
     setDraftPicker(localStateFromConfigDefault(config));
-  }, [isDraft, config?.default_model]);
+  }, [isDraft, config]);
 
   const loadModels = useCallback(
     async (refresh = false, overrides = {}) => {
