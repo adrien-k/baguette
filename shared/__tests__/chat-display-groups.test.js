@@ -86,6 +86,52 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(prUpsert)).toBe(false);
   });
 
+  it('does not collapse CreatePlan into a surrounding Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'tool_call',
+        kind: 'mcp',
+        name: 'mcp__baguette__CreatePlan',
+        args: { tool: 'CreatePlan', markdown: '# Plan' },
+        id: 'plan',
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.kind).toBe('mcp');
+  });
+
+  it('does not collapse AskUserQuestions (ask_user) into a Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'tool_call',
+        kind: 'ask_user',
+        name: 'AskUserQuestions',
+        args: { questions: [{ question: 'Pick one', options: [{ label: 'A' }] }] },
+        id: 'ask',
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.kind).toBe('ask_user');
+  });
+
   it('treats CreateIssue as a regular work tool (not a group boundary)', () => {
     const createIssue = {
       type: 'assistant',
