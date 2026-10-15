@@ -138,8 +138,9 @@ export async function addManualBuilderAgent(page, name) {
   await ensureSidePanelVisible(page);
   await openSessionAgentsPanel(page);
   await page.getByRole('button', { name: 'Add builder' }).click();
-  await page.getByPlaceholder('e.g. Research').fill(name);
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  const nameInput = page.getByPlaceholder('e.g. Research');
+  await nameInput.fill(name);
+  await nameInput.press('Enter');
   await expect(page.locator('li').filter({ hasText: name })).toBeVisible({ timeout: 30_000 });
 }
 

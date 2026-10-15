@@ -237,7 +237,13 @@ export default function AgentsPanel({
 
   const addBuilderForm =
     !readonly && showAddForm ? (
-      <div className="space-y-2 rounded-lg border border-line bg-control/30 p-2 mx-2 mb-2">
+      <form
+        className="space-y-2 rounded-lg border border-line bg-control/30 p-2 mx-2 mb-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleAddBuilder();
+        }}
+      >
         <label className="block space-y-1">
           <span className="text-[11px] font-medium text-faint">Name</span>
           <input
@@ -247,6 +253,7 @@ export default function AgentsPanel({
             className="w-full rounded-md border border-line bg-control px-2 py-1.5 text-sm"
             placeholder="e.g. Research"
             autoFocus
+            disabled={adding}
           />
         </label>
         <p className="text-[11px] text-faint">
@@ -262,15 +269,14 @@ export default function AgentsPanel({
             Cancel
           </button>
           <button
-            type="button"
+            type="submit"
             className={`${PRIMARY_BUTTON_SIZED} flex-1 justify-center`}
             disabled={adding || !name.trim()}
-            onClick={handleAddBuilder}
           >
             {adding ? 'Adding…' : 'Add'}
           </button>
         </div>
-      </div>
+      </form>
     ) : null;
 
   return (

@@ -11,7 +11,7 @@ export default function DeleteAgentConfirmModal({ agent, onConfirm, onCancel, lo
       <ModalHeader title="Delete agent?" onClose={onCancel} disabled={loading} />
       <p className={`text-sm ${TEXT_SECONDARY} mb-4`}>
         Remove <span className="font-medium text-heading">{label}</span> from this session? This
-        cannot be undone.
+        cannot be undone. Usage for this agent stays on the Usage page.
       </p>
       <ModalActions>
         <button type="button" onClick={onCancel} disabled={loading} className={GHOST_BUTTON_CLASS}>
