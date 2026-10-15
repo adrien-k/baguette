@@ -1,5 +1,5 @@
 import { BadRequest, NotFound } from '@feathersjs/errors';
-import { sortSessionTodosAsc } from '@baguette/shared/session-todo-sort.js';
+import { sortSessionTodosAsc } from '../../../../shared/session-todo-sort.js';
 import { ok, fail } from './result.js';
 import { serializeTodo, OPEN_TODO_STATUSES } from '../../session-todos.js';
 
