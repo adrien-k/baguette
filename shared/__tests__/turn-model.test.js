@@ -106,8 +106,9 @@ describe('findLastTurnStartIndex', () => {
 });
 
 describe('isHumanUserMessage', () => {
-  it('rejects baguette and tool-result user messages', () => {
+  it('rejects baguette, loop, and tool-result user messages', () => {
     expect(isHumanUserMessage({ type: 'user', source: 'baguette' })).toBe(false);
+    expect(isHumanUserMessage({ type: 'user', source: 'loop' })).toBe(false);
     expect(
       isHumanUserMessage({
         type: 'user',

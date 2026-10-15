@@ -39,13 +39,15 @@ export type MessageWriterOpts = {
   agentType: 'claude' | 'cursor' | 'pi' | 'mock';
   model: string;
   modelParams?: unknown;
+  agentConfigId?: number | null;
 };
 
 function messageIdentityFromWriter(
   agentId: number,
   agentSdk: 'claude' | 'cursor' | 'pi' | 'mock',
   model: string,
-  modelParams?: unknown
+  modelParams?: unknown,
+  agentConfigId?: number | null
 ) {
   return {
     agent_id: agentId,
@@ -54,6 +56,7 @@ function messageIdentityFromWriter(
     ...(modelParams != null && agentSdkSupportsModelParams(agentSdk)
       ? { model_params: modelParams }
       : {}),
+    ...(agentConfigId != null ? { agent_config_id: agentConfigId } : {}),
   };
 }
 
@@ -67,7 +70,8 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
     opts.agentId,
     opts.agentType,
     opts.model,
-    opts.modelParams
+    opts.modelParams,
+    opts.agentConfigId
   );
   const logPath = agentEventLogPath({
     sessionId: opts.sessionId,
@@ -158,6 +162,7 @@ export type TypedMessageOpts = {
   agentSdk?: 'claude' | 'cursor' | 'pi' | 'mock';
   model: string;
   modelParams?: unknown;
+  agentConfigId?: number | null;
 };
 
 /**
@@ -170,7 +175,13 @@ export async function persistTypedMessage(
   payload: SessionMessagePayload
 ) {
   const agentSdk = opts.agentSdk ?? 'claude';
-  const identity = messageIdentityFromWriter(opts.agentId, agentSdk, opts.model, opts.modelParams);
+  const identity = messageIdentityFromWriter(
+    opts.agentId,
+    agentSdk,
+    opts.model,
+    opts.modelParams,
+    opts.agentConfigId
+  );
   const row = dbRowFromPayload(opts.sessionId, opts.turnId ?? null, payload, identity);
   return app.service('messages').create(row, {
     provider: undefined,

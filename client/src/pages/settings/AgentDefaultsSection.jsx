@@ -13,7 +13,7 @@ import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
 
 export default function AgentDefaultsSection({ settings, onSave }) {
   const { user } = useAuth();
-  const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { loading: configsLoading } = useAgentConfigs();
 
   const [agentConfigId, setAgentConfigId] = useState(null);
   const [agentModel, setAgentModel] = useState(null);
@@ -145,7 +145,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         modelParamsJson={agentModelParamsJson}
         onModelChange={setAgentModel}
         onModelParamsJsonChange={setAgentModelParamsJson}
-        configOptions={configOptions}
       />
       <DefaultAgentPicker
         title="Reviewer default"
@@ -157,7 +156,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         modelParamsJson={reviewerModelParamsJson}
         onModelChange={setReviewerModel}
         onModelParamsJsonChange={setReviewerModelParamsJson}
-        configOptions={configOptions}
       />
       <SubagentDefaultPicker
         description="How MCP StartSubagent resolves models."
@@ -169,7 +167,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         modelParamsJson={subagentModelParamsJson}
         onModelChange={setSubagentModel}
         onModelParamsJsonChange={setSubagentModelParamsJson}
-        configOptions={configOptions}
       />
       <div className="flex flex-wrap items-center gap-3">
         <SettingsSaveRow saving={saving} saved={saved} onSave={handleSave} />

@@ -11,6 +11,11 @@ export function isBaguetteUserMessage(parsed) {
   return parsed?.type === 'user' && (parsed.source === 'baguette' || parsed.subtype === 'baguette');
 }
 
+/** User message from a session loop run (same collapsed UI as Baguette). */
+export function isLoopUserMessage(parsed) {
+  return parsed?.type === 'user' && (parsed.source === 'loop' || parsed.subtype === 'loop');
+}
+
 /** User message injected via Baguette MCP (CreateSessionMessage, etc.). */
 export function isMcpUserMessage(parsed) {
   return parsed?.type === 'user' && (parsed.source === 'mcp' || parsed.subtype === 'mcp');
@@ -26,6 +31,7 @@ export function isHumanUserMessage(parsed) {
   if (parsed?.type !== 'user') return false;
   if (parsed.legacy_tool_result_carrier) return false;
   if (isBaguetteUserMessage(parsed)) return false;
+  if (isLoopUserMessage(parsed)) return false;
   if (isMcpUserMessage(parsed)) return false;
   if (typeof parsed.content === 'string') return true;
   if (Array.isArray(parsed.content)) {
@@ -40,7 +46,12 @@ export function isHumanUserMessage(parsed) {
 /** User, Baguette-injected, or MCP message that starts a new agent turn. */
 export function isTurnStartingUserMessage(msg) {
   if (msg?.type !== 'user') return false;
-  return isHumanUserMessage(msg) || isBaguetteUserMessage(msg) || isMcpUserMessage(msg);
+  return (
+    isHumanUserMessage(msg) ||
+    isBaguetteUserMessage(msg) ||
+    isLoopUserMessage(msg) ||
+    isMcpUserMessage(msg)
+  );
 }
 
 /**
@@ -124,7 +135,9 @@ export function attachSessionTurnModelFields(data, session) {
   } catch {
     return data;
   }
-  if (!isHumanUserMessage(parsed) && !isBaguetteUserMessage(parsed)) return data;
+  if (!isHumanUserMessage(parsed) && !isBaguetteUserMessage(parsed) && !isLoopUserMessage(parsed)) {
+    return data;
+  }
   const sessionPair = readTurnModelPair(session);
   if (sessionPair.model) data.model = sessionPair.model;
   if (sessionPair.modelParams != null) data.model_params = sessionPair.modelParams;

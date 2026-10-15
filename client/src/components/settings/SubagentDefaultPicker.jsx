@@ -9,6 +9,7 @@ import {
   normalizeSubagentDefaultMode,
 } from '@baguette/shared/subagent-default-mode.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 
 const MODE_OPTIONS = [
   {
@@ -39,8 +40,8 @@ export default function SubagentDefaultPicker({
   modelParamsJson,
   onModelChange,
   onModelParamsJsonChange,
-  configOptions,
 }) {
+  const { configOptions } = useAgentConfigs();
   const normalizedMode = normalizeSubagentDefaultMode(mode);
   const [presets, setPresets] = useState([]);
   const [presetsLoading, setPresetsLoading] = useState(false);
@@ -99,7 +100,6 @@ export default function SubagentDefaultPicker({
           modelParamsJson={modelParamsJson}
           onModelChange={onModelChange}
           onModelParamsJsonChange={onModelParamsJsonChange}
-          configOptions={configOptions}
           allowInherit={false}
         />
       ) : null}

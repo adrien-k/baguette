@@ -5,6 +5,7 @@ import { DEFAULT_PAGINATE } from '../../config.js';
 import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-schedule.js';
 import logger from '../../logger.js';
 import { turnModelCreateFields } from '../../../shared/turn-model.js';
+import { buildLoopUserMessageJson } from '../../../shared/loop-user-message.js';
 import { sessionMessageIdentity } from './message-create-fields.js';
 import { getAgentServiceForSession } from '../agent-session-routing.js';
 import { getPrimaryBuilderAgent } from '../agents-db.js';
@@ -150,9 +151,8 @@ class LoopsService extends KnexService {
     }
 
     const userParams = { user: { id: loop.user_id } };
-    const promptMessage = JSON.stringify({
-      type: 'user',
-      message: { role: 'user', content: loop.prompt },
+    const promptMessage = buildLoopUserMessageJson(loop.prompt, {
+      title: loop.name?.trim() || 'Loop run',
     });
     const turnModel = turnModelCreateFields(loop);
     if (!builder) {

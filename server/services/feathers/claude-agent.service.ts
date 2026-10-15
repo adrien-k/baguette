@@ -459,6 +459,7 @@ export class ClaudeAgentService {
             agentType: 'claude',
             model: model ?? session.model ?? '',
             modelParams,
+            agentConfigId: turnAgentConfigId,
           })
         : null;
 
@@ -1210,7 +1211,12 @@ Task: ${initialPrompt}`;
       AgentRow | undefined;
     if (!agentRow) return;
 
-    const identity = sessionMessageIdentity(agentRow, { agent_sdk: 'claude' });
+    const identity = sessionMessageIdentity(agentRow, {
+      agent_sdk: 'claude',
+      agent_config_id: sessionState.turnAgentConfigId,
+      model: sessionState.turnModel?.model,
+      model_params: sessionState.turnModel?.modelParams,
+    });
 
     await app.service('messages').create(
       {

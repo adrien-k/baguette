@@ -8,7 +8,7 @@ import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
 import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 
-function PresetFormModal({ open, preset, onClose, onSaved, configOptions }) {
+function PresetFormModal({ open, preset, onClose, onSaved }) {
   const [description, setDescription] = useState('');
   const [configId, setConfigId] = useState(null);
   const [model, setModel] = useState(null);
@@ -75,7 +75,6 @@ function PresetFormModal({ open, preset, onClose, onSaved, configOptions }) {
           modelParamsJson={modelParamsJson}
           onModelChange={setModel}
           onModelParamsJsonChange={setModelParamsJson}
-          configOptions={configOptions}
           allowInherit={false}
         />
       </div>
@@ -192,7 +191,6 @@ export default function AgentPresetModelsSection() {
       <PresetFormModal
         open={modalOpen}
         preset={editing}
-        configOptions={configOptions}
         onClose={() => {
           setModalOpen(false);
           setEditing(null);

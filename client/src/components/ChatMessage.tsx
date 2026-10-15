@@ -1,4 +1,8 @@
-import type { ChatMessageView, TypedMessageView } from '@baguette/shared/session-messages.ts';
+import type {
+  ChatMessageView,
+  MessageViewMeta,
+  TypedMessageView,
+} from '@baguette/shared/session-messages.ts';
 import UserMessageContent, { userMessagePlainText } from './chat/UserMessageContent.tsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import CollapsibleMarkdown from './chat/CollapsibleMarkdown.tsx';
@@ -8,10 +12,15 @@ import BaguetteBlock from './chat/BaguetteBlock.tsx';
 import PlanReviewBlock from './chat/PlanReviewBlock.tsx';
 import AskUserAnswerBlock from './chat/AskUserAnswerBlock.tsx';
 import CopyButton from './chat/CopyButton.tsx';
-import { isHumanUserMessage, isMcpUserMessage } from '@baguette/shared/turn-model.js';
+import {
+  isHumanUserMessage,
+  isLoopUserMessage,
+  isMcpUserMessage,
+} from '@baguette/shared/turn-model.js';
+import InjectedUserTurnBlock from './chat/InjectedUserTurnBlock.jsx';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
-import { messageModelLabel } from '../utils/messageModelLabel.js';
+import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
 
 export type ChatMessageProps = {
   message: ChatMessageView;
@@ -21,27 +30,56 @@ export type ChatMessageProps = {
   agentName?: string;
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
-  models?: { id?: string; label?: string; name?: string }[];
-  session?: { model?: string | null; model_params?: unknown } | null;
+  agentType?: string | null;
   pinnedRunningBashIds?: Set<string>;
 };
 
+function UserMessageModelBadge({
+  message,
+  agentType,
+}: {
+  message: MessageViewMeta & {
+    model?: string | null;
+    model_params?: unknown;
+  };
+  agentType: ChatMessageProps['agentType'];
+}) {
+  return (
+    <MessageTurnModelBadge
+      agentType={agentType}
+      model={message.model}
+      modelParams={message.model_params}
+      agentConfigId={message.agent_config_id}
+      className="text-faint font-normal text-xs text-right"
+    />
+  );
+}
+
 function TypedUserMessage({
   message,
-  models,
-  session,
+  agentType,
 }: {
   message: TypedMessageView & { type: 'user' };
-  models: ChatMessageProps['models'];
-  session: ChatMessageProps['session'];
+  agentType: ChatMessageProps['agentType'];
 }) {
   const isBaguette = message.source === 'baguette' || message.subtype === 'baguette';
   if (isBaguette) {
-    return <BaguetteBlock message={message} models={models} session={session} />;
+    return <BaguetteBlock message={message} agentType={agentType} />;
+  }
+
+  if (isLoopUserMessage(message)) {
+    return (
+      <InjectedUserTurnBlock
+        label="Loop"
+        defaultTitle="Loop run"
+        message={message}
+        agentType={agentType}
+      />
+    );
   }
 
   if (isMcpUserMessage(message)) {
-    return <McpAgentBlock message={message} />;
+    return <McpAgentBlock message={message} agentType={agentType} />;
   }
 
   if (message.subtype === 'ask_user_answer') {
@@ -49,18 +87,23 @@ function TypedUserMessage({
     const userText = userMessagePlainText(message);
     return (
       <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
+        <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="shrink-0">You</span>
+            {message.created_at && (
+              <MessageTimestamp
+                createdAt={message.created_at}
+                className="text-faint font-normal shrink-0"
+              />
+            )}
+          </div>
+          <UserMessageModelBadge message={message} agentType={agentType} />
+        </div>
         <AskUserAnswerBlock answers={answers} fallbackText={userText} />
       </div>
     );
   }
 
-  const turnModelLabel = isHumanUserMessage(message)
-    ? messageModelLabel({
-        model: message.model,
-        modelParams: message.model_params,
-        models,
-      })
-    : null;
   const userText = userMessagePlainText(message);
   return (
     <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
@@ -75,10 +118,8 @@ function TypedUserMessage({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 min-w-0">
-          {turnModelLabel && (
-            <span className="text-faint font-normal truncate max-w-[12rem] sm:max-w-xs text-right">
-              {turnModelLabel}
-            </span>
+          {isHumanUserMessage(message) && (
+            <UserMessageModelBadge message={message} agentType={agentType} />
           )}
           {userText && <CopyButton text={userText} />}
         </div>
@@ -140,17 +181,18 @@ function SystemMessage({ message }: { message: TypedMessageView & { type: 'syste
   return <div className="text-xs text-faint text-center py-1">{label}</div>;
 }
 
-function TypedMessage({
-  message,
-  isLatestMessage,
-  sessionPath,
-  sessionId,
-  agentName = 'Agent',
-  models,
-  session,
-  pinnedRunningBashIds,
-  userReplied,
-}: Omit<ChatMessageProps, 'message'> & { message: TypedMessageView; userReplied: boolean }) {
+function TypedMessage(
+  props: Omit<ChatMessageProps, 'message'> & { message: TypedMessageView; userReplied: boolean }
+) {
+  const {
+    message,
+    isLatestMessage,
+    sessionPath,
+    sessionId,
+    agentName = 'Agent',
+    pinnedRunningBashIds,
+    userReplied,
+  } = props;
   switch (message.type) {
     case 'plan':
       return (
@@ -208,7 +250,7 @@ function TypedMessage({
     }
 
     case 'user':
-      return <TypedUserMessage message={message} models={models} session={session} />;
+      return <TypedUserMessage message={message} agentType={props.agentType} />;
 
     case 'turn_result': {
       const isError = message.status === 'error';
@@ -248,9 +290,11 @@ export default function ChatMessage(props: ChatMessageProps) {
 
   const userReplied = (() => {
     if (!allMessages || messageIndex == null) return false;
-    return allMessages
-      .slice(messageIndex + 1)
-      .some((m) => isHumanUserMessage(m) && (m as { source?: string }).source !== 'baguette');
+    return allMessages.slice(messageIndex + 1).some((m) => {
+      if (!isHumanUserMessage(m)) return false;
+      const source = (m as { source?: string }).source;
+      return source !== 'baguette' && source !== 'loop';
+    });
   })();
 
   return (

@@ -73,6 +73,7 @@ function sessionAgentRow(row) {
     repo_full_name: row.repo_full_name ?? '',
     agent_type: isReview ? 'reviewer' : 'builder',
     agent_sdk: row.agent_sdk,
+    agent_config_id: row.agent_config_id ?? null,
     model: row.model,
     model_params: row.model_params,
   };
@@ -88,6 +89,7 @@ export async function getActiveAgents(userId = null, knex = db) {
     .select(
       'agents.agent_type',
       'agents.agent_sdk',
+      'agents.agent_config_id',
       'agents.model',
       'agents.model_params',
       'sessions.id as session_id',

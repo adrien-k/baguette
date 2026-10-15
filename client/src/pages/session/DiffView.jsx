@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 
 const FINE_POINTER_HOVER_QUERY = '(hover: hover) and (pointer: fine)';
 
@@ -38,6 +38,9 @@ import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import { useLongPressPointer } from '../../hooks/useLongPressPointer.js';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { useSessionAgents } from '../../hooks/useSessionAgents.js';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
+import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastFeathersError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
@@ -488,16 +491,29 @@ export default function DiffView({
   scrollToFile,
   onScrolledToFile,
   readonly,
-  models,
   onModelChange,
   onAgentConfigChange,
-  agentConfigOptions,
-  configsLoading = false,
-  modelsLoading = false,
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
   const { primaryBuilder } = useSessionAgents(session?.id);
+  const composerAgentConfigId = useMemo(
+    () => primaryBuilder?.agent_config_id ?? session?.agent_config_id,
+    [primaryBuilder?.agent_config_id, session?.agent_config_id]
+  );
+  const { configOptions: agentConfigOptions, loading: configsLoading } = useAgentConfigs();
+  const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
+  const modelsLoading = modelsStale && !models.length;
+
+  useEffect(() => {
+    if (!session?.id || modelsStale || !models.length || !primaryBuilder?.id) return;
+    const current = primaryBuilder.model;
+    if (current && models.some((m) => m.id === current)) return;
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    onModelChange?.(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once the config's list is current
+  }, [session?.id, primaryBuilder?.id, primaryBuilder?.model, models, modelsStale]);
   const {
     checkingUnpushed: checkingUnpushedForMerge,
     showMergeModal,

@@ -145,6 +145,9 @@ describe('MockAgentService', () => {
           }
         });
         expect(assistant).toBeTruthy();
+        expect(assistant.agent_config_id).toBe(builder.agent_config_id);
+        const turnRows = rows.filter((r) => r.type !== 'user');
+        expect(turnRows.every((r) => r.agent_config_id === builder.agent_config_id)).toBe(true);
       },
       { timeout: 10_000 }
     );

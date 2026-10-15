@@ -33,7 +33,6 @@ import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
-import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { agentsService, sessionsService, tasksService } from '../feathers.js';
 import {
   sessionActivityAt,
@@ -58,7 +57,6 @@ import PushConfirmModal from '../components/PushConfirmModal.jsx';
 import SwitchAgentSdkConfirmModal from '../components/SwitchAgentSdkConfirmModal.jsx';
 import TaskConfirmModal from '../components/TaskConfirmModal.jsx';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
-import { defaultModelForSdk, paramsJsonForModelChange } from '../utils/models.js';
 import { modelPatchFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import ChatView from './session/ChatView.jsx';
 import DiffView from './session/DiffView.jsx';
@@ -449,7 +447,7 @@ export default function Session() {
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
-  const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { configOptions } = useAgentConfigs();
   const {
     commits: branchCommits,
     loading: branchCommitsLoading,
@@ -494,21 +492,6 @@ export default function Session() {
     setPendingSidebarDiffFile(null);
   }, [sessionDiffFileByFile, sessionDiffLoading, pendingSidebarDiffFile]);
 
-  const composerAgentConfigId = useMemo(() => {
-    if (!activeAgent) return gitSession?.agent_config_id;
-    if (activeAgent.agent_type === 'reviewer') {
-      return activeAgent.agent_config_id ?? session?.review_agent_config_id;
-    }
-    return activeAgent.agent_config_id ?? gitSession?.agent_config_id;
-  }, [
-    activeAgent?.id,
-    activeAgent?.agent_type,
-    activeAgent?.agent_config_id,
-    gitSession?.agent_config_id,
-    session?.review_agent_config_id,
-  ]);
-
-  const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { pushing, beginLocalPush, endLocalPush } = useSessionPushInProgress(gitSession?.id);
   const [showPushModal, setShowPushModal] = useState(false);
@@ -786,19 +769,6 @@ export default function Session() {
     if (!pendingAgentConfigId) return;
     void applyAgentConfigChange(pendingAgentConfigId, { clearModel: true });
   };
-
-  const composerModelForDefaults = activeAgent?.model ?? gitSession?.model;
-  const composerSdkForDefaults = activeAgent?.agent_sdk ?? gitSession?.agent_sdk;
-
-  useEffect(() => {
-    if (!gitSession?.id || modelsStale || !models.length) return;
-    const current = composerModelForDefaults;
-    if (current && models.some((m) => m.id === current)) return;
-    const fallback = defaultModelForSdk(models);
-    if (!fallback) return;
-    handleModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once the config's list is current
-  }, [gitSession?.id, composerSdkForDefaults, composerModelForDefaults, models, modelsStale]);
 
   // Named .baguette.yaml task: the server resolves the command, ports and dependencies.
   const handleTaskStart = (taskKey) => {
@@ -1669,12 +1639,8 @@ export default function Session() {
                 systemPrompt={systemPrompt}
                 onViewChange={setView}
                 readonly={isReadonly}
-                models={models}
                 onModelChange={handleModelChange}
                 onAgentConfigChange={handleAgentConfigChangeRequest}
-                agentConfigOptions={configOptions}
-                configsLoading={configsLoading}
-                modelsLoading={modelsStale && !models.length}
                 onAutoPushChange={handleAutoPushChange}
                 autoPushDisabled={sessionIsLocalRepo}
                 autoPush={sessionAutoPushOn}
@@ -1718,12 +1684,8 @@ export default function Session() {
                 scrollToFile={scrollToDiffFile}
                 onScrolledToFile={clearScrollToDiffFile}
                 readonly={isReadonly}
-                models={models}
                 onModelChange={handleModelChange}
                 onAgentConfigChange={handleAgentConfigChangeRequest}
-                agentConfigOptions={configOptions}
-                configsLoading={configsLoading}
-                modelsLoading={modelsStale && !models.length}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
               />

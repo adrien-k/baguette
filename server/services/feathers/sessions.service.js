@@ -101,6 +101,10 @@ import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
 import { readSessionPlanMarkdown } from '../session-plan.js';
 import {
+  buildLoopUserMessageJson,
+  loopUserRowSubtypeFromMessageJson,
+} from '../../../shared/loop-user-message.js';
+import {
   buildAskUserAnswerMessageJson,
   buildUserTurnMessageJson,
   sessionMessageIdentity,
@@ -1664,10 +1668,12 @@ export class SessionsService extends KnexService {
     await this.app.service('queued-messages').remove(queued.id, {
       user: { id: queued.user_id },
     });
+    const loopSubtype = loopUserRowSubtypeFromMessageJson(queued.message_json);
     await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'user',
+        ...(loopSubtype ? { subtype: loopSubtype } : {}),
         message_json: queued.message_json,
         agent_id: queued.agent_id ?? agentRow.id,
         agent_sdk: queued.agent_sdk,
@@ -2680,21 +2686,35 @@ async function createFirstMessage(context) {
   const initialPrompt = session.initial_prompt;
   if (!hasInitialPrompt(initialPrompt)) return context;
   const initialFiles = context.params.initialFiles;
-  const content = initialFiles?.length
-    ? [{ type: 'text', text: initialPrompt }, ...initialFiles]
-    : initialPrompt;
-  const initialSdkMessage = {
-    type: 'user',
-    message: { role: 'user', content },
-  };
   const builder = await getPrimaryBuilderAgent(context.app.get('db'), session.id);
   if (!builder) return context;
+
+  let messageJson;
+  let subtype = null;
+  if (session.loop_id && !initialFiles?.length) {
+    const db = context.app.get('db');
+    const loop = await db('loops').where({ id: session.loop_id }).first();
+    messageJson = buildLoopUserMessageJson(initialPrompt, {
+      title: loop?.name?.trim() || 'Loop run',
+    });
+    subtype = 'loop';
+  } else {
+    const content = initialFiles?.length
+      ? [{ type: 'text', text: initialPrompt }, ...initialFiles]
+      : initialPrompt;
+    messageJson = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content },
+    });
+  }
+
   await context.app.service('messages').create(
     {
       session_id: session.id,
       type: 'user',
       force: true,
-      message_json: JSON.stringify(initialSdkMessage),
+      subtype,
+      message_json: messageJson,
       ...sessionMessageIdentity(builder),
     },
     { user: context.params.user }

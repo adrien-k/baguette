@@ -34,7 +34,6 @@ function IssueDescription({ description }) {
 
 export default function SessionIssueCard({
   issue,
-  models = [],
   readonly,
   saving,
   onStatusChange,
@@ -82,7 +81,6 @@ export default function SessionIssueCard({
     agent_sdk: issue.agent_sdk,
     model: issue.model,
     model_params: issue.model_params,
-    models,
   });
 
   return (

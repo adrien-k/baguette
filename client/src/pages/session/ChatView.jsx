@@ -67,6 +67,9 @@ import {
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
+import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 
 /** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
 const CHECK_COMMENTS_PROMPT_BUILDER =
@@ -121,15 +124,11 @@ export default function ChatView({
   systemPrompt,
   onViewChange,
   readonly,
-  models,
   onModelChange,
   onAutoPushChange,
   autoPushDisabled = false,
   autoPush: autoPushProp,
   onAgentConfigChange,
-  agentConfigOptions,
-  configsLoading = false,
-  modelsLoading = false,
   cursorModelPrefs,
   onCursorModelPrefChange,
   commitsToPush = 0,
@@ -172,6 +171,22 @@ export default function ChatView({
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
   const agentSource = activeAgent ?? session;
+  const composerAgentConfigId = useMemo(() => {
+    if (!activeAgent) return session?.agent_config_id;
+    if (activeAgent.agent_type === 'reviewer') {
+      return activeAgent.agent_config_id ?? session?.review_agent_config_id;
+    }
+    return activeAgent.agent_config_id ?? session?.agent_config_id;
+  }, [
+    activeAgent?.id,
+    activeAgent?.agent_type,
+    activeAgent?.agent_config_id,
+    session?.agent_config_id,
+    session?.review_agent_config_id,
+  ]);
+  const { configOptions: agentConfigOptions, loading: configsLoading } = useAgentConfigs();
+  const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
+  const modelsLoading = modelsStale && !models.length;
   const isReviewerAgent = activeAgent?.agent_type === 'reviewer';
   const [composerModel, setComposerModel] = useState(agentSource?.model ?? null);
   const [composerModelParams, setComposerModelParams] = useState(agentSource?.model_params ?? null);
@@ -193,6 +208,16 @@ export default function ChatView({
     setComposerModelParams(modelParamsJson ?? null);
     onModelChange?.(modelId, modelParamsJson);
   };
+
+  useEffect(() => {
+    if (!session?.id || modelsStale || !models.length) return;
+    const current = agentSource?.model;
+    if (current && models.some((m) => m.id === current)) return;
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    handleComposerModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- default model once the config's list is current
+  }, [session?.id, agentSource?.agent_sdk, agentSource?.model, models, modelsStale]);
 
   const isRunning = isAgentTurnActive(activeAgent?.status);
   const isProvisioning = session?.status === 'provisioning';
@@ -669,7 +694,7 @@ export default function ChatView({
                     sessionPath={session.absolute_session_path}
                     sessionId={session.id}
                     agentName={agentDisplayName}
-                    models={models}
+                    agentType={activeAgent?.agent_type}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 ) : (
@@ -682,8 +707,7 @@ export default function ChatView({
                     agentName={agentDisplayName}
                     messageIndex={item.index}
                     allMessages={displayMessages}
-                    models={models}
-                    session={session}
+                    agentType={activeAgent?.agent_type}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 )
@@ -879,7 +903,7 @@ export default function ChatView({
                   queue={agentQueue}
                   tiedLoops={tiedLoops}
                   session={session}
-                  models={models}
+                  agentType={activeAgent?.agent_type}
                   onDelete={handleQueueDelete}
                   onSendNow={handleQueueSendNow}
                   onEdit={handleQueueEdit}

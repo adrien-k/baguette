@@ -22,6 +22,7 @@ import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
 import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
 import { CurrentUserProvider } from './context/CurrentUserContext.jsx';
+import { AgentConfigProvider } from './context/AgentConfigContext.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 import { MENU_ITEM_CLASS, NAV_CLASS, PAGE_BG } from './utils/ui.js';
 
@@ -372,14 +373,16 @@ function AppContent() {
   }
 
   return (
-    <FilterProvider>
-      <RepoProvider>
-        <SessionsProvider>
-          <GitHubBadCredentialsListener />
-          {routes}
-        </SessionsProvider>
-      </RepoProvider>
-    </FilterProvider>
+    <AgentConfigProvider>
+      <FilterProvider>
+        <RepoProvider>
+          <SessionsProvider>
+            <GitHubBadCredentialsListener />
+            {routes}
+          </SessionsProvider>
+        </RepoProvider>
+      </FilterProvider>
+    </AgentConfigProvider>
   );
 }
 

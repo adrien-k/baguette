@@ -483,6 +483,7 @@ export class PiAgentService {
               agentType: 'pi',
               model: turnModel.model ?? '',
               modelParams: turnModel.modelParams,
+              agentConfigId: turnAgentConfigId,
             })
           : null;
       sessionState.writer = writer;

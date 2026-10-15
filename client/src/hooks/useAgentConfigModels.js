@@ -1,42 +1,21 @@
-import { useEffect, useState } from 'react';
-import { fetchAgentConfigModels } from '../utils/fetchAgentSdkModels.js';
-import { isAgentConfigModelsStale } from '../utils/agentConfigModelsStale.js';
+import { useEffect } from 'react';
+import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 
 /**
- * Model list for an agent config. The list is stale as soon as `configId` changes
- * (or while disabled) until a fetch for that id completes.
+ * Model list for an agent config (shared cache). Stale until fetch completes or on error (not stuck loading).
  */
 export function useAgentConfigModels(configId, { enabled = true } = {}) {
-  const [models, setModels] = useState([]);
-  const [loadedForId, setLoadedForId] = useState(null);
+  const { ensureModels, getModels, modelsStatus } = useAgentConfigContext();
 
   useEffect(() => {
-    if (!enabled || configId == null || configId === '') {
-      setModels([]);
-      setLoadedForId(null);
-      return;
-    }
-    setLoadedForId(null);
-    setModels([]);
-    let cancelled = false;
-    fetchAgentConfigModels({ agentConfigId: Number(configId) })
-      .then(({ models: list }) => {
-        if (cancelled) return;
-        setModels(list);
-        setLoadedForId(configId);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setModels([]);
-        setLoadedForId(configId);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [configId, enabled]);
+    if (!enabled || configId == null || configId === '') return;
+    ensureModels(configId);
+  }, [configId, enabled, ensureModels]);
 
-  return {
-    models,
-    stale: !enabled || isAgentConfigModelsStale(loadedForId, configId),
-  };
+  const status = modelsStatus(configId);
+  const models = getModels(configId);
+  const stale =
+    !enabled || configId == null || configId === '' || status === 'idle' || status === 'loading';
+
+  return { models, stale };
 }

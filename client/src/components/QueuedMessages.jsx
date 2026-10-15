@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Clock, Pencil, Trash2, Send, Check, X } from 'lucide-react';
 import { resolveTurnModel } from '@baguette/shared/turn-model.js';
-import { messageModelLabel } from '../utils/messageModelLabel.js';
+import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
 import {
   queuedMessageHasAttachments,
   readQueuedMessageBlocks,
@@ -12,7 +12,7 @@ import UserMessageContent from './chat/UserMessageContent.tsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
 import { formatMonthDayTime } from '../utils/dates.js';
 
-function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
+function QueuedItem({ item, session, agentType, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
@@ -23,7 +23,7 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
   const isScheduled = item.kind === 'scheduled';
   const sendAtLabel = isScheduled ? formatMonthDayTime(item.send_at) || null : null;
   const { model, modelParams } = resolveTurnModel(item, session);
-  const turnModelLabel = messageModelLabel({ model, modelParams, models });
+  const agentConfigId = item.agent_config_id ?? null;
 
   const startEdit = () => {
     setEditText(text);
@@ -48,11 +48,13 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
           {isScheduled ? (sendAtLabel ? `Sends ${sendAtLabel}` : 'Scheduled') : 'Queued'}
           {hasFiles && <span className="text-faint"> · with attachment</span>}
         </span>
-        {turnModelLabel && (
-          <span className="text-faint font-normal truncate max-w-[12rem] sm:max-w-xs shrink-0 ml-auto">
-            {turnModelLabel}
-          </span>
-        )}
+        <MessageTurnModelBadge
+          agentType={agentType}
+          model={model}
+          modelParams={modelParams}
+          agentConfigId={agentConfigId}
+          className="text-faint font-normal shrink-0 ml-auto"
+        />
       </div>
 
       {editing ? (
@@ -140,19 +142,11 @@ function QueuedItem({ item, session, models, onDelete, onSendNow, onEdit }) {
  * @param {object} props
  * @param {Array<Record<string, unknown>>} props.queue
  * @param {Record<string, unknown>|null} [props.session]
- * @param {Array<{ id?: string, label?: string, name?: string }>} [props.models]
  * @param {(id: number) => unknown} [props.onDelete]
  * @param {(id: number) => unknown} [props.onSendNow]
  * @param {(id: number, messageJson: string) => unknown} [props.onEdit]
  */
-export default function QueuedMessages({
-  queue,
-  session,
-  models = [],
-  onDelete,
-  onSendNow,
-  onEdit,
-}) {
+export default function QueuedMessages({ queue, session, agentType, onDelete, onSendNow, onEdit }) {
   if (!queue.length) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -161,7 +155,7 @@ export default function QueuedMessages({
           key={item.id}
           item={item}
           session={session}
-          models={models}
+          agentType={agentType}
           onDelete={onDelete}
           onSendNow={onSendNow}
           onEdit={onEdit}

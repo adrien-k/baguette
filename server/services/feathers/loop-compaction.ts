@@ -10,6 +10,7 @@ export async function directPromptTiedSessionLoopCompaction(
     {
       session_id: sessionId,
       type: 'user',
+      subtype: 'loop',
       message_json: promptMessageJson,
       ...identity,
     },

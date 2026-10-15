@@ -273,7 +273,6 @@ export default function ReviewView({
     <SessionIssueCard
       key={issue.id}
       issue={issue}
-      models={models}
       readonly={readonly || archived}
       saving={savingIssueId === issue.id}
       onStatusChange={handleIssueStatus}

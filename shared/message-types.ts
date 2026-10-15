@@ -165,8 +165,8 @@ export type UserContentBlock = { type: 'text'; text: string } | FileReferenceBlo
 export type UserMessagePayload = {
   type: 'user';
   content: string | UserContentBlock[];
-  /** `baguette` = typed in the UI; `mcp` = injected by an MCP tool; absent = provider echo. */
-  source?: 'baguette' | 'mcp';
+  /** `baguette` / `loop` / `mcp` = injected; absent = provider echo or composer. */
+  source?: 'baguette' | 'loop' | 'mcp';
   title?: string;
   /** `null` is allowed to mirror the nullable `session_messages.subtype` column. */
   subtype?: string | null;

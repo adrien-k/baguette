@@ -55,6 +55,7 @@ export async function rejectTurnMismatch(app, { session, row, channel, activeTur
       agentSdk: row.agent_sdk ?? undefined,
       model: model ?? session.model,
       modelParams,
+      agentConfigId: row.agent_config_id ?? null,
     },
     {
       type: 'system',

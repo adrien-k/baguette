@@ -27,13 +27,25 @@ export function normalizeUserPayloadForStorage(parsed) {
     }
     return { type: 'user', source: 'mcp', content, subtype: 'mcp' };
   }
-  if (parsed?.type === 'user' && typeof parsed.content === 'string') return parsed;
+  if (parsed?.type === 'user' && typeof parsed.content === 'string') {
+    if (parsed.source === 'loop' || parsed.subtype === 'loop') {
+      const out = { type: 'user', content: parsed.content, source: 'loop', subtype: 'loop' };
+      if (parsed.title) out.title = parsed.title;
+      return out;
+    }
+    return parsed;
+  }
   if (parsed?.type === 'user' && Array.isArray(parsed.content)) {
     const out = { type: 'user', content: parsed.content };
     if (parsed.source === 'baguette' || parsed.subtype === 'baguette') {
       out.source = 'baguette';
       if (parsed.title) out.title = parsed.title;
       out.subtype = 'baguette';
+    }
+    if (parsed.source === 'loop' || parsed.subtype === 'loop') {
+      out.source = 'loop';
+      if (parsed.title) out.title = parsed.title;
+      out.subtype = 'loop';
     }
     return out;
   }
@@ -57,6 +69,11 @@ export function normalizeUserPayloadForStorage(parsed) {
     out.source = 'baguette';
     if (parsed.title) out.title = parsed.title;
     out.subtype = 'baguette';
+  }
+  if (parsed.source === 'loop' || parsed.subtype === 'loop') {
+    out.source = 'loop';
+    if (parsed.title) out.title = parsed.title;
+    out.subtype = 'loop';
   }
   return out;
 }

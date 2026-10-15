@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import SessionModelSelect from '../SessionModelSelect.jsx';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { defaultModelForSdk } from '../../utils/models.js';
 import { localStateFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
@@ -15,10 +16,10 @@ export default function DefaultAgentPicker({
   modelParamsJson,
   onModelChange,
   onModelParamsJsonChange,
-  configOptions,
   excludeConfigId = null,
   allowInherit = true,
 }) {
+  const { configOptions } = useAgentConfigs();
   const options =
     excludeConfigId != null
       ? configOptions.filter((c) => Number(c.key) !== Number(excludeConfigId))

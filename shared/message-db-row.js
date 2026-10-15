@@ -6,7 +6,7 @@
  * @param {number} sessionId
  * @param {number|null} turnId
  * @param {object} payload
- * @param {{ agent_id?: number, agent_sdk?: string | null, model?: string | null, model_params?: unknown }} [identity]
+ * @param {{ agent_id?: number, agent_sdk?: string | null, model?: string | null, model_params?: unknown, agent_config_id?: number | null }} [identity]
  */
 export function dbRowFromPayload(sessionId, turnId, payload, identity = {}) {
   const row = {
@@ -17,6 +17,7 @@ export function dbRowFromPayload(sessionId, turnId, payload, identity = {}) {
     ...(identity.agent_sdk ? { agent_sdk: identity.agent_sdk } : {}),
     ...(identity.model ? { model: identity.model } : {}),
     ...(identity.model_params != null ? { model_params: identity.model_params } : {}),
+    ...(identity.agent_config_id != null ? { agent_config_id: identity.agent_config_id } : {}),
   };
 
   switch (payload.type) {

@@ -25,8 +25,11 @@ const queuedRemove = vi.fn(async (id) => ({ id }));
 const params = (userId) => ({ provider: 'rest', user: { id: userId } });
 
 /** Content of the nth `messages.create` / `queued-messages.create` call. */
-const sentContent = (mock, index = 0) =>
-  JSON.parse(mock.mock.calls[index][0].message_json).message.content;
+const sentContent = (mock, index = 0) => {
+  const parsed = JSON.parse(mock.mock.calls[index][0].message_json);
+  if (typeof parsed.content === 'string') return parsed.content;
+  return parsed.message?.content;
+};
 
 function makeApp(db) {
   const app = feathers();

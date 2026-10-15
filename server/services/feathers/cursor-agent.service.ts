@@ -642,6 +642,7 @@ ${body}`,
               agentType: 'cursor',
               model: turnModel.model ?? '',
               modelParams: turnModel.modelParams,
+              agentConfigId: turnAgentConfigId,
             })
           : null;
       sessionState.writer = writer;
@@ -802,6 +803,7 @@ ${body}`,
         agentType: 'cursor',
         model: turnModel.model ?? '',
         modelParams: turnModel.modelParams,
+        agentConfigId: sessionState?.turnAgentConfigId,
       });
 
     const { abortSignal, onUsage: onUsageOverride, onStatus: onStatusOverride } = streamOpts;

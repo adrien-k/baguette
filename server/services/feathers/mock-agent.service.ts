@@ -152,6 +152,7 @@ class MockAgentService {
             agentType: 'mock',
             model,
             modelParams: turnModel.modelParams,
+            agentConfigId: meta.turnAgentConfigId,
           })
         : null;
     if (!writer) {

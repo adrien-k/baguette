@@ -3,20 +3,9 @@ import { Link } from 'react-router-dom';
 import { Bot } from 'lucide-react';
 import { useActiveAgents } from '../hooks/useActiveAgents.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
-import { parseModelField } from '../utils/models.js';
-import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { usageRepoLabel } from '../utils/usageSeries.js';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
-
-const AGENT_TYPE_LABELS = { builder: 'Builder', reviewer: 'Reviewer' };
-
-function modelAndParamsLabel(model, modelParams) {
-  const id = parseModelField(model);
-  if (!id && !modelParams) return '—';
-  if (!modelParams) return id;
-  if (!id) return modelParams;
-  return `${id} · ${modelParams}`;
-}
+import AgentTurnModelLabel from './AgentTurnModelLabel.jsx';
 
 export default function ActiveAgentsSection({
   id = 'active-agents',
@@ -54,7 +43,6 @@ export default function ActiveAgentsSection({
             const repoLabel = agent.repo_full_name
               ? repoDisplayName(agent.repo_full_name)
               : usageRepoLabel(agent.repo_full_name);
-            const modelLine = modelAndParamsLabel(agent.model, agent.model_params);
 
             return (
               <li key={`${agent.session_id}-${agent.agent_type}`}>
@@ -69,19 +57,13 @@ export default function ActiveAgentsSection({
                       {repoLabel}
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs shrink-0 sm:justify-end sm:text-right">
-                    <span className="text-fg-muted">
-                      {AGENT_TYPE_LABELS[agent.agent_type] ?? agent.agent_type}
-                    </span>
-                    <span className="text-faint">
-                      {agent.agent_sdk ? formatAgentSdkDisplayName(agent.agent_sdk) : '—'}
-                    </span>
-                    <span
-                      className="text-fg-muted font-mono truncate max-w-[14rem] sm:max-w-md"
-                      title={modelLine}
-                    >
-                      {modelLine}
-                    </span>
+                  <div className="sm:justify-end sm:text-right">
+                    <AgentTurnModelLabel
+                      agentType={agent.agent_type}
+                      agentConfigId={agent.agent_config_id}
+                      model={agent.model}
+                      modelParams={agent.model_params}
+                    />
                   </div>
                 </Link>
               </li>
