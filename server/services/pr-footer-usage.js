@@ -52,7 +52,7 @@ async function querySessionUsageByModel(db, sessionId) {
 }
 
 /**
- * Merge usage rows that share agent_sdk, model, and Cursor fast flag (from stored model_params).
+ * Merge usage rows that share agent type, agent_sdk, model, and Cursor fast flag (from stored model_params).
  *
  * @param {ReturnType<typeof querySessionUsageByModel> extends Promise<infer T> ? T : never} rows
  */
@@ -60,8 +60,9 @@ export function mergeUsageForPrFooter(rows) {
   const merged = new Map();
 
   for (const row of rows) {
+    const agent_type = normalizeUsageAgentType(row.agent_type);
     const fast = row.agent_sdk === 'cursor' ? cursorFastFromModelParams(row.model_params) : false;
-    const key = `${row.agent_sdk}\0${row.model}\0${fast ? '1' : '0'}`;
+    const key = `${agent_type}\0${row.agent_sdk}\0${row.model}\0${fast ? '1' : '0'}`;
     const prev = merged.get(key);
     if (prev) {
       prev.input_tokens += row.input_tokens;
@@ -71,6 +72,7 @@ export function mergeUsageForPrFooter(rows) {
       prev.cost_usd += row.cost_usd;
     } else {
       merged.set(key, {
+        agent_type,
         agent_sdk: row.agent_sdk,
         model: row.model,
         fast,
@@ -83,13 +85,39 @@ export function mergeUsageForPrFooter(rows) {
     }
   }
 
-  return [...merged.values()].sort((a, b) => {
-    const sdk = a.agent_sdk.localeCompare(b.agent_sdk);
-    if (sdk !== 0) return sdk;
-    const model = a.model.localeCompare(b.model);
-    if (model !== 0) return model;
-    return Number(b.fast) - Number(a.fast);
-  });
+  return [...merged.values()];
+}
+
+/**
+ * @param {ReturnType<typeof mergeUsageForPrFooter>} rows
+ * @returns {string[]}
+ */
+export function formatPrFooterUsageLines(rows) {
+  if (!rows.length) return [];
+
+  const byType = new Map();
+  for (const row of rows) {
+    const list = byType.get(row.agent_type) ?? [];
+    list.push(row);
+    byType.set(row.agent_type, list);
+  }
+
+  const sections = [...byType.entries()]
+    .map(([agentType, typeRows]) => {
+      const totalCost = typeRows.reduce((sum, row) => sum + row.cost_usd, 0);
+      const detailRows = [...typeRows].sort((a, b) => b.cost_usd - a.cost_usd);
+      return { agentType, totalCost, detailRows };
+    })
+    .sort((a, b) => b.totalCost - a.totalCost);
+
+  const lines = [];
+  for (const { agentType, totalCost, detailRows } of sections) {
+    lines.push(`${agentType} · Cost: ${formatUsd(totalCost)}`);
+    for (const row of detailRows) {
+      lines.push(`  ${formatPrFooterUsageLine(row)}`);
+    }
+  }
+  return lines;
 }
 
 export function formatPrFooterUsageLine(row) {
@@ -111,5 +139,5 @@ export async function loadSessionFooterUsageLines(db, session) {
   if (!session?.id) return [];
   const rows = await querySessionUsageByModel(db, session.id);
   if (!rows.length) return [];
-  return mergeUsageForPrFooter(rows).map(formatPrFooterUsageLine);
+  return formatPrFooterUsageLines(mergeUsageForPrFooter(rows));
 }

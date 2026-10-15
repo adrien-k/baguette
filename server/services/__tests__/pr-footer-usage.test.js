@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { mergeUsageForPrFooter, formatPrFooterUsageLine } from '../pr-footer-usage.js';
+import {
+  mergeUsageForPrFooter,
+  formatPrFooterUsageLine,
+  formatPrFooterUsageLines,
+} from '../pr-footer-usage.js';
 
 const builderFastParams = JSON.stringify([{ id: 'fast', value: 'true' }]);
 const reviewerSlowParams = JSON.stringify([{ id: 'fast', value: 'false' }]);
@@ -38,6 +42,35 @@ describe('mergeUsageForPrFooter', () => {
     expect(claude.fast).toBe(false);
   });
 
+  it('does not merge builder and reviewer rows with the same sdk, model, and fast flag', () => {
+    const merged = mergeUsageForPrFooter([
+      {
+        agent_type: 'builder',
+        agent_sdk: 'claude',
+        model: 'opus',
+        model_params: null,
+        input_tokens: 100,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: 0.1,
+      },
+      {
+        agent_type: 'reviewer',
+        agent_sdk: 'claude',
+        model: 'opus',
+        model_params: null,
+        input_tokens: 50,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: 0.05,
+      },
+    ]);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((r) => r.agent_type).sort()).toEqual(['builder', 'reviewer']);
+  });
+
   it('splits cursor rows when fast differs between builder and reviewer snapshots', () => {
     const merged = mergeUsageForPrFooter([
       {
@@ -66,6 +99,72 @@ describe('mergeUsageForPrFooter', () => {
     expect(merged).toHaveLength(2);
     expect(merged.some((r) => r.fast)).toBe(true);
     expect(merged.some((r) => !r.fast)).toBe(true);
+  });
+});
+
+describe('formatPrFooterUsageLines', () => {
+  it('groups rows by agent type with an aggregated cost header per type', () => {
+    const lines = formatPrFooterUsageLines(
+      mergeUsageForPrFooter([
+        {
+          agent_type: 'builder',
+          agent_sdk: 'claude',
+          model: 'opus',
+          model_params: null,
+          input_tokens: 100,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: 0.1,
+        },
+        {
+          agent_type: 'reviewer',
+          agent_sdk: 'claude',
+          model: 'opus',
+          model_params: null,
+          input_tokens: 50,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: 0.05,
+        },
+      ])
+    );
+    expect(lines[0]).toBe('builder · Cost: $0.10');
+    expect(lines[1]).toContain('claude / `opus`');
+    expect(lines[2]).toBe('reviewer · Cost: $0.05');
+    expect(lines[3]).toContain('claude / `opus`');
+  });
+
+  it('orders agent types by aggregated cost descending', () => {
+    const lines = formatPrFooterUsageLines(
+      mergeUsageForPrFooter([
+        {
+          agent_type: 'builder',
+          agent_sdk: 'claude',
+          model: 'opus',
+          model_params: null,
+          input_tokens: 10,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: 0.01,
+        },
+        {
+          agent_type: 'reviewer',
+          agent_sdk: 'claude',
+          model: 'opus',
+          model_params: null,
+          input_tokens: 100,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: 0.5,
+        },
+      ])
+    );
+    expect(lines[0]).toBe('reviewer · Cost: $0.50');
+    expect(lines[2]).toBe('builder · Cost: $0.01');
   });
 });
 
