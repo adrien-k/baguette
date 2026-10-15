@@ -352,7 +352,9 @@ describe('Sessions service - custom methods', () => {
 
     it('returns merge success when archive is requested even if archive fails', async () => {
       const sessionsSvc = app.service('sessions');
-      vi.spyOn(sessionsSvc, 'remove').mockRejectedValueOnce(new BadRequest('Session is archiving'));
+      vi.spyOn(sessionsSvc, 'archive').mockRejectedValueOnce(
+        new BadRequest('Session is archiving')
+      );
 
       const result = await sessionsSvc.merge({ id: sessId, archive: true }, params({ id: userId }));
       expect(result).toEqual({ ok: true, merged: true, archived: true });
@@ -557,7 +559,7 @@ describe('Sessions service - custom methods', () => {
 
   // ── remove ─────────────────────────────────────────────────────────────────
 
-  describe('remove', () => {
+  describe('archive', () => {
     it('closes a draft PR on GitHub when close_pr is set', async () => {
       await db('sessions').where({ id: sessId }).update({
         pr_number: 42,
@@ -566,7 +568,7 @@ describe('Sessions service - custom methods', () => {
       });
       closePR.mockClear();
 
-      await app.service('sessions').remove(sessId, {
+      await app.service('sessions').archive(sessId, {
         ...params({ id: userId }),
         query: { close_pr: true },
       });
@@ -585,7 +587,7 @@ describe('Sessions service - custom methods', () => {
       });
 
       await expect(
-        app.service('sessions').remove(sessId, {
+        app.service('sessions').archive(sessId, {
           ...params({ id: userId }),
           query: { close_pr: true },
         })
@@ -597,7 +599,7 @@ describe('Sessions service - custom methods', () => {
     });
 
     it('stops agent, archives session, returns the session row', async () => {
-      const result = await app.service('sessions').remove(sessId, params({ id: userId }));
+      const result = await app.service('sessions').archive(sessId, params({ id: userId }));
 
       expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
       expect(reviewStop).not.toHaveBeenCalled();
@@ -637,7 +639,7 @@ describe('Sessions service - custom methods', () => {
         },
       ]);
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
 
       const types = await db('session_messages')
         .where({ session_id: sessId })
@@ -666,7 +668,7 @@ describe('Sessions service - custom methods', () => {
         auto_push: false,
       });
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
 
       expect(await db('loops').where({ session_id: sessId })).toEqual([]);
     });
@@ -691,7 +693,7 @@ describe('Sessions service - custom methods', () => {
         auto_push: false,
       });
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
 
       const loops = await db('loops').where({ id: loopId });
       expect(loops).toHaveLength(1);
@@ -705,7 +707,7 @@ describe('Sessions service - custom methods', () => {
         expect(row.status).toBe('archiving');
       });
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
     });
 
     it('rejects a second archive while one is in progress', async () => {
@@ -716,13 +718,13 @@ describe('Sessions service - custom methods', () => {
       removeWorktree.mockImplementationOnce(() => removing);
 
       try {
-        const first = app.service('sessions').remove(sessId, params({ id: userId }));
+        const first = app.service('sessions').archive(sessId, params({ id: userId }));
         await vi.waitFor(async () => {
           const row = await db('sessions').where({ id: sessId }).first();
           expect(row.status).toBe('archiving');
         });
         await expect(
-          app.service('sessions').remove(sessId, params({ id: userId }))
+          app.service('sessions').archive(sessId, params({ id: userId }))
         ).rejects.toThrow(/already being archived/);
         resolveRemove();
         await first;
@@ -734,7 +736,7 @@ describe('Sessions service - custom methods', () => {
     it('archives when the session is still marked provisioning', async () => {
       await db('sessions').where({ id: sessId }).update({ status: 'provisioning' });
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
 
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();
@@ -749,7 +751,7 @@ describe('Sessions service - custom methods', () => {
         status: 'stopped',
       });
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
 
       expect(removeWorktree).toHaveBeenCalledWith(
         expect.objectContaining({ id: sessId, short_id: 'deadbeef', session_path: null }),
@@ -762,18 +764,18 @@ describe('Sessions service - custom methods', () => {
 
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
-        app.service('sessions').remove(99999, params({ id: userId }))
+        app.service('sessions').archive(99999, params({ id: userId }))
       ).rejects.instanceOf(NotFound);
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
-        app.service('sessions').remove(sessId, params({ id: otherUserId }))
+        app.service('sessions').archive(sessId, params({ id: otherUserId }))
       ).rejects.instanceOf(NotFound);
     });
 
     it('rejects when not authenticated', async () => {
-      await expect(app.service('sessions').remove(sessId, { provider: 'rest' })).rejects.toThrow(
+      await expect(app.service('sessions').archive(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
     });
@@ -784,7 +786,7 @@ describe('Sessions service - custom methods', () => {
         cursor_agent_id: 'test-cursor-agent-id',
       });
 
-      await app.service('sessions').remove(sessId, params({ id: userId }));
+      await app.service('sessions').archive(sessId, params({ id: userId }));
 
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeTruthy();
@@ -885,7 +887,7 @@ describe('Sessions service - custom methods', () => {
       expect(stopSession).not.toHaveBeenCalledWith(otherSessId, expect.anything());
     });
 
-    it('internal remove can archive another user session when provider is omitted', async () => {
+    it('internal archive can archive another user session when provider is omitted', async () => {
       const otherSessId = await insertTestSession(db, {
         user_id: otherUserId,
         repo_id: (await db('repos').where({ full_name: 'test/repo' }).first()).id,
@@ -897,10 +899,53 @@ describe('Sessions service - custom methods', () => {
         session_path: null,
       });
 
-      await app.service('sessions').remove(otherSessId, { user: { id: userId } });
+      await app.service('sessions').archive(otherSessId);
 
       const row = await db('sessions').where({ id: otherSessId }).first();
       expect(row.archived_at).toBeTruthy();
+    });
+  });
+
+  describe('remove (permanent delete)', () => {
+    it('removes an archived session but keeps usage rows', async () => {
+      const builderId = await db('agents')
+        .where({ session_id: sessId, is_primary: 1 })
+        .first()
+        .then((r) => r.id);
+
+      await db('session_messages').insert({
+        session_id: sessId,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', content: 'hi' }),
+        agent_id: builderId,
+      });
+
+      const [usageId] = await db('usage').insert({
+        session_id: sessId,
+        user_id: userId,
+        repo_full_name: 'test/repo',
+        cost_usd: 1.25,
+        agent_id: builderId,
+      });
+
+      await app.service('sessions').archive(sessId, params({ id: userId }));
+
+      await app.service('sessions').remove(sessId, params({ id: userId }));
+
+      expect(await db('sessions').where({ id: sessId }).first()).toBeUndefined();
+      expect(await db('session_messages').where({ session_id: sessId })).toEqual([]);
+      expect(await db('agents').where({ session_id: sessId })).toEqual([]);
+      const usage = await db('usage').where({ id: usageId }).first();
+      expect(usage).toBeTruthy();
+      expect(usage.session_id).toBeNull();
+      expect(usage.agent_id).toBeNull();
+      expect(Number(usage.cost_usd)).toBe(1.25);
+    });
+
+    it('rejects when the session is not archived', async () => {
+      await expect(app.service('sessions').remove(sessId, params({ id: userId }))).rejects.toThrow(
+        /Archive the session/
+      );
     });
   });
 });
@@ -2328,7 +2373,7 @@ describe('Sessions service - find, get, create', () => {
           syncProvision: false,
         });
 
-        await app.service('sessions').remove(session.id, params({ id: userId1 }));
+        await app.service('sessions').archive(session.id, params({ id: userId1 }));
 
         const row = await db('sessions').where({ id: session.id }).first();
         expect(row.archived_at).toBeTruthy();

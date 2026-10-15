@@ -62,6 +62,7 @@ export const sessionsService = createService('sessions', {
     'merge',
     'setPrDraft',
     'push',
+    'archive',
     'restore',
     'getPrDetails',
     'previewStatus',

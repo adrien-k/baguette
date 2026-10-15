@@ -20,7 +20,7 @@ export default function ArchiveSession({ session, onArchive }) {
     setArchiving(true);
     try {
       const query = closePr ? { close_pr: true } : {};
-      await sessionsService.remove(session.id, { query });
+      await sessionsService.archive(session.id, { query });
       setPendingConfirm(false);
       onArchive?.();
     } catch (err) {

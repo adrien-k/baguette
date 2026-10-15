@@ -1177,6 +1177,17 @@ export default function Session() {
     else navigate(homeUrl);
   };
 
+  const handleSessionDeletedPermanently = useCallback(() => {
+    const firstSession = nextVisibleSession({
+      sessions,
+      sessionId: routeSessionId,
+      session,
+      repoId,
+      fromAllSessions,
+    });
+    navigate(firstSession ? sessionUrl(firstSession.id) : homeUrl);
+  }, [sessions, routeSessionId, session, repoId, fromAllSessions, navigate, sessionUrl, homeUrl]);
+
   const awaitingSession = !isNewSessionRoute && Boolean(routeSessionId) && !session;
   const headerSession = session ?? headerSnapshot;
   const headerOpen = Boolean(session) && !isNewSessionRoute;
@@ -1672,6 +1683,7 @@ export default function Session() {
                 commitsToPush={commitsToPush}
                 onPush={handlePush}
                 pushing={pushing}
+                onDeletePermanently={handleSessionDeletedPermanently}
               />
             )}
             {!isNewSessionRoute && !awaitingSession && session && activeView === 'review' && (

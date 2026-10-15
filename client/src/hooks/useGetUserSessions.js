@@ -117,8 +117,16 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
     const onUpdated = (session) => mergeRealtime(session);
     const onPatched = (session) => mergeRealtime(session);
     const onRemoved = (session) => {
-      if (!session?.archived_at) return;
-      mergeRealtime(session);
+      if (!session?.id) return;
+      if (session.archived_at) {
+        mergeRealtime(session);
+        return;
+      }
+      setSessions((prev) => {
+        if (!prev.some((s) => s.id === session.id)) return prev;
+        skipRef.current = Math.max(0, skipRef.current - 1);
+        return sortSessionsForList(prev.filter((s) => s.id !== session.id));
+      });
     };
 
     const onAgentPatched = (agent) => {

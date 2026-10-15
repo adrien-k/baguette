@@ -114,7 +114,10 @@ export function useGetSession(sessionId) {
       if (String(removed.id) !== String(id)) return;
       if (removed.archived_at) {
         setSession((prev) => mergeSessionPatch(prev, removed));
+        return;
       }
+      setSession(null);
+      setLoadedFor(null);
     };
 
     sessionsService.on('patched', onPatched);

@@ -146,7 +146,7 @@ export class SessionsService extends KnexService {
     this._provisioningBySessionId = new Map();
     /** Session ids whose in-flight provisioning should not finalize (user is archiving). */
     this._provisioningAbortSessionIds = new Set();
-    /** Session ids currently in `remove()` — a second archive is rejected. */
+    /** Session ids currently in `archive()` — a second archive is rejected. */
     this._archivePendingSessionIds = new Set();
   }
 
@@ -460,17 +460,21 @@ export class SessionsService extends KnexService {
     }
     const sessions = await query;
     for (const session of sessions) {
-      await this.remove(session.id);
+      await this.archive(session.id, params);
     }
   }
 
-  async remove(id, params) {
-    const query = this.options.Model('sessions').where({ id });
-    if (params?.provider) {
-      query.where({ user_id: params?.user?.id });
+  async archive(data, params = {}) {
+    const id = params.resolvedSession?.id ?? data?.id ?? data;
+    let session = params.resolvedSession;
+    if (!session) {
+      const query = this.options.Model('sessions').where({ id });
+      if (params?.provider) {
+        query.where({ user_id: params?.user?.id });
+      }
+      session = await query.first();
+      if (!session) throw new NotFound('Session not found');
     }
-    let session = await query.first();
-    if (!session) throw new NotFound('Session not found');
     if (session.archived_at) throw new BadRequest('Session already archived');
     if (session.status === PROVISIONING_STATUS) {
       this._provisioningAbortSessionIds.add(id);
@@ -1057,7 +1061,7 @@ export class SessionsService extends KnexService {
         { provider: undefined, user: { id: session.user_id } }
       );
     if (data?.archive) {
-      void this.remove(session.id, params).catch((err) => {
+      void this.archive(session.id, params).catch((err) => {
         logger.warn({ sessionId: session.id, err: err?.message }, 'Archive after merge failed');
       });
     }
@@ -1269,6 +1273,47 @@ export class SessionsService extends KnexService {
     this.emit('patched', withoutShortId(updated));
 
     return { ok: true };
+  }
+
+  async remove(id, params = {}) {
+    const query = this.options.Model('sessions').where({ id });
+    if (params?.provider) {
+      query.where({ user_id: params?.user?.id });
+    }
+    const session = await query.first();
+    if (!session) throw new NotFound('Session not found');
+    if (!session.archived_at) {
+      throw new BadRequest('Archive the session before deleting it permanently');
+    }
+    if (session.status === ARCHIVING_STATUS) {
+      throw new BadRequest('Session is still archiving');
+    }
+
+    const db = this.app.get('db');
+    const sessionId = session.id;
+    const agentIds = await db('agents').where({ session_id: sessionId }).pluck('id');
+
+    await db.transaction(async (trx) => {
+      if (agentIds.length) {
+        await trx('usage').whereIn('agent_id', agentIds).update({ agent_id: null });
+      }
+      await trx('usage').where({ session_id: sessionId }).update({ session_id: null });
+      await trx('queued_messages').where({ session_id: sessionId }).delete();
+      await trx('session_messages').where({ session_id: sessionId }).delete();
+      await trx('session_issues').where({ session_id: sessionId }).delete();
+      await trx('session_todos').where({ session_id: sessionId }).delete();
+      await trx('session_plans').where({ session_id: sessionId }).delete();
+      await trx('agents').where({ session_id: sessionId }).delete();
+      await trx('loops').where({ session_id: sessionId }).update({ session_id: null });
+      await trx('loops').where({ last_session_id: sessionId }).update({ last_session_id: null });
+      await trx('sessions').where({ id: sessionId }).delete();
+    });
+
+    this.app.service('tasks').deleteSessionTasks(sessionId);
+    this._lastResultTotals.delete(sessionId);
+
+    this.emit('removed', { id: sessionId });
+    return { ok: true, id: sessionId };
   }
 
   async onMessageCreated(message) {
@@ -2456,6 +2501,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'merge',
       'setPrDraft',
       'push',
+      'archive',
       'restore',
       'getPrDetails',
       'previewStatus',
@@ -2561,6 +2607,7 @@ const sessionsHooks = {
     merge: [resolveSessionFromData],
     setPrDraft: [resolveSessionFromData],
     push: [resolveSessionFromData],
+    archive: [resolveSessionFromData],
     restore: [resolveSessionFromData],
     getPrDetails: [resolveSessionFromData],
     previewStatus: [resolveSessionFromData],

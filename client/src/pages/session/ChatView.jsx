@@ -8,6 +8,7 @@ import {
   GitCompare,
   ClipboardCheck,
   RotateCcw,
+  Trash2,
   ChevronRight,
   ChevronDown,
   Terminal,
@@ -134,6 +135,7 @@ export default function ChatView({
   commitsToPush = 0,
   onPush,
   pushing = false,
+  onDeletePermanently,
 }) {
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
@@ -162,6 +164,7 @@ export default function ChatView({
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
   const [restoring, setRestoring] = useState(false);
+  const [deletingPermanently, setDeletingPermanently] = useState(false);
   const [queue, setQueue] = useState([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
@@ -366,6 +369,23 @@ export default function ChatView({
       toastFeathersError('Failed to restore session', err);
     } finally {
       setRestoring(false);
+    }
+  };
+
+  const handleDeletePermanently = async () => {
+    if (!session?.id || deletingPermanently) return;
+    const confirmed = window.confirm(
+      'Permanently delete this session? Usage history will be kept. This cannot be undone.'
+    );
+    if (!confirmed) return;
+    setDeletingPermanently(true);
+    try {
+      await sessionsService.remove(session.id);
+      onDeletePermanently?.();
+    } catch (err) {
+      toastFeathersError('Failed to delete session permanently', err);
+    } finally {
+      setDeletingPermanently(false);
     }
   };
 
@@ -693,11 +713,22 @@ export default function ChatView({
                     <button
                       type="button"
                       onClick={handleRestore}
-                      disabled={restoring}
+                      disabled={restoring || deletingPermanently}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-control-hover disabled:opacity-50 border border-strong rounded-lg text-xs text-secondary transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       {restoring ? 'Restoring…' : 'Restore'}
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Remove this session and its chat history. Usage records are kept.">
+                    <button
+                      type="button"
+                      onClick={handleDeletePermanently}
+                      disabled={deletingPermanently || restoring}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-control hover:bg-danger/20 disabled:opacity-50 border border-strong rounded-lg text-xs text-danger transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {deletingPermanently ? 'Deleting…' : 'Delete permanently'}
                     </button>
                   </Tooltip>
                 </div>
