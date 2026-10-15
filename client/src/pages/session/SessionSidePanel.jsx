@@ -45,6 +45,7 @@ export default function SessionSidePanel({
   loadMore,
   loadingMore,
   hasMore,
+  chatOpen,
   agentLabelById,
   sessionId,
   selectedAgentId,
@@ -117,6 +118,7 @@ export default function SessionSidePanel({
               loadMore={loadMore}
               loadingMore={loadingMore}
               hasMore={hasMore}
+              chatOpen={chatOpen}
               resetKey={sessionId}
               agentLabelById={agentLabelById}
             />

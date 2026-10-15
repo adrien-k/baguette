@@ -377,12 +377,7 @@ export default function Session() {
     loadingMore,
     hasMore,
   } = useGetMessages(sessionId, activeAgent?.id ?? null);
-  const {
-    messages: logHookMessages,
-    loadMore: loadMoreLogs,
-    loadingMore: loadingMoreLogs,
-    hasMore: hasMoreLogs,
-  } = useGetMessages(sessionId, null, { allAgents: true });
+  const chatViewOpen = activeView === 'chat';
   const agentLabelById = useMemo(() => {
     const map = new Map();
     for (const agent of agents) {
@@ -526,10 +521,6 @@ export default function Session() {
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
 
   const rawMessages = useMemo(() => (hookMessages || []).map(parseMessageRow), [hookMessages]);
-  const logRawMessages = useMemo(
-    () => (logHookMessages || []).map(parseMessageRow),
-    [logHookMessages]
-  );
   const messages = useMemo(() => enrichChatMessages(rawMessages), [rawMessages]);
   const systemPrompt = useMemo(
     () => rawMessages.find((m) => m.type === 'system' && m.subtype === 'prompt')?.content,
@@ -1756,10 +1747,11 @@ export default function Session() {
               onViewLogs={handleViewTaskLogs}
               onViewBaguetteConfig={handleViewBaguetteConfig}
               showBaguetteConfigLink={!isGlobalSession(session)}
-              rawMessages={logRawMessages}
-              loadMore={loadMoreLogs}
-              loadingMore={loadingMoreLogs}
-              hasMore={hasMoreLogs}
+              rawMessages={rawMessages}
+              loadMore={loadMore}
+              loadingMore={loadingMore}
+              hasMore={hasMore}
+              chatOpen={chatViewOpen}
               agentLabelById={agentLabelById}
               sessionId={sessionId}
               selectedAgentId={activeAgent?.id}

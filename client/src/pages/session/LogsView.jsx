@@ -498,22 +498,24 @@ export default function LogsView({
   loadMore,
   loadingMore,
   hasMore,
+  chatOpen = true,
   resetKey,
   agentLabelById,
 }) {
   const topSentinelRef = useRef(null);
   const { scrollContainerRef, prepareLoadMore } = useStickToBottomScroll({
     resetKey,
-    contentLength: rawMessages.length,
+    contentLength: chatOpen ? rawMessages.length : 0,
   });
 
   const handleLoadMore = useCallback(() => {
-    if (!hasMore || loadingMore) return;
+    if (!chatOpen || !hasMore || loadingMore) return;
     prepareLoadMore();
     loadMore();
-  }, [hasMore, loadMore, loadingMore, prepareLoadMore]);
+  }, [chatOpen, hasMore, loadMore, loadingMore, prepareLoadMore]);
 
   useEffect(() => {
+    if (!chatOpen) return;
     const container = scrollContainerRef.current;
     if (!container || !topSentinelRef.current || !hasMore) return;
     const observer = new IntersectionObserver(
@@ -524,7 +526,15 @@ export default function LogsView({
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore, hasMore, scrollContainerRef]);
+  }, [chatOpen, handleLoadMore, hasMore, scrollContainerRef]);
+
+  if (!chatOpen) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+        <p className="text-faint text-sm text-center">Open an agent chat to see its logs.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">

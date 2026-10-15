@@ -13,27 +13,22 @@ function normalizeMessageList(res) {
   return Array.isArray(res) ? res : (res?.data ?? []);
 }
 
-function messageQueryBase(sessionId, agentId, { allAgents = false } = {}) {
+function messageQueryBase(sessionId, agentId) {
   const query = { session_id: sessionId, $sort: { id: 1 }, $limit: PAGE_SIZE };
-  if (allAgents) {
-    query.include_all_agents = true;
-  } else if (agentId != null) {
+  if (agentId != null) {
     query.agent_id = agentId;
   }
   return query;
 }
 
-function findQueryFilter(sessionId, agentId, { allAgents = false } = {}) {
-  if (allAgents) {
-    return { session_id: sessionId, include_all_agents: true };
-  }
+function findQueryFilter(sessionId, agentId) {
   if (agentId != null) {
     return { session_id: sessionId, agent_id: agentId };
   }
   return { session_id: sessionId };
 }
 
-async function pageMessagesAfter(sessionId, agentId, afterId, maxId = null, options = {}) {
+async function pageMessagesAfter(sessionId, agentId, afterId, maxId = null) {
   const accumulated = [];
   let page;
   let cursor = afterId;
@@ -41,7 +36,7 @@ async function pageMessagesAfter(sessionId, agentId, afterId, maxId = null, opti
     const idFilter = maxId != null ? { $gt: cursor, $lte: maxId } : { $gt: cursor };
     const res = await messagesService.find({
       query: {
-        ...messageQueryBase(sessionId, agentId, options),
+        ...messageQueryBase(sessionId, agentId),
         id: idFilter,
       },
     });
@@ -57,10 +52,10 @@ async function pageMessagesAfter(sessionId, agentId, afterId, maxId = null, opti
  * Returns messages for a session agent with cursor-based pagination.
  * @param {number|null} sessionId
  * @param {number|null} agentId - when set, load that agent's transcript
- * @param {{ allAgents?: boolean, skip?: boolean }} [options] - allAgents: session-wide (logs); skip: do not fetch
+ * @param {{ skip?: boolean }} [options]
  */
 export function useGetMessages(sessionId, agentId = null, options = {}) {
-  const { allAgents = false, skip = false } = options;
+  const { skip = false } = options;
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -92,14 +87,14 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
     const maxId = Math.max(...loaded.map((m) => m.id));
 
     try {
-      const inWindow = await pageMessagesAfter(sessionId, agentId, minId - 1, maxId, { allAgents });
-      const newer = await pageMessagesAfter(sessionId, agentId, maxId, null, { allAgents });
+      const inWindow = await pageMessagesAfter(sessionId, agentId, minId - 1, maxId);
+      const newer = await pageMessagesAfter(sessionId, agentId, maxId, null);
       const fetched = [...inWindow, ...newer];
       setMessages((prev) => mergeSessionMessagesFromFetch(prev, fetched));
     } catch (err) {
       toastFeathersError('Failed to load new messages', err);
     }
-  }, [sessionId, agentId, allAgents, initialLoadFailed, skip]);
+  }, [sessionId, agentId, initialLoadFailed, skip]);
 
   const refetch = useCallback(
     ({ silent = false } = {}) => {
@@ -117,7 +112,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
       messagesService
         .find({
           query: {
-            ...findQueryFilter(sessionId, agentId, { allAgents }),
+            ...findQueryFilter(sessionId, agentId),
             $sort: { id: -1 },
             $limit: PAGE_SIZE,
           },
@@ -133,15 +128,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
         .catch((err) => handleLoadError(err))
         .finally(() => setLoading(false));
     },
-    [
-      sessionId,
-      agentId,
-      allAgents,
-      skip,
-      initialLoadFailed,
-      handleLoadError,
-      syncMessagesOnReconnect,
-    ]
+    [sessionId, agentId, skip, initialLoadFailed, handleLoadError, syncMessagesOnReconnect]
   );
 
   useRefetchOnSseReconnect(refetch, Boolean(sessionId) && !skip && !initialLoadFailed);
@@ -165,7 +152,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
     messagesService
       .find({
         query: {
-          ...findQueryFilter(sessionId, agentId, { allAgents }),
+          ...findQueryFilter(sessionId, agentId),
           $sort: { id: -1 },
           $limit: PAGE_SIZE,
         },
@@ -188,7 +175,6 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
 
     const matchesScope = (message) => {
       if (message.session_id !== sessionId) return false;
-      if (allAgents) return true;
       if (agentId != null) return message.agent_id === agentId;
       return true;
     };
@@ -211,7 +197,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
       messagesService.off('created', onCreated);
       messagesService.off('patched', onPatched);
     };
-  }, [sessionId, agentId, allAgents, skip, handleLoadError]);
+  }, [sessionId, agentId, skip, handleLoadError]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current || !oldestIdRef.current || skip) return;
@@ -221,7 +207,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
     try {
       const res = await messagesService.find({
         query: {
-          ...findQueryFilter(sessionId, agentId, { allAgents }),
+          ...findQueryFilter(sessionId, agentId),
           id: { $lt: oldestIdRef.current },
           $sort: { id: -1 },
           $limit: PAGE_SIZE,
@@ -241,7 +227,7 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [hasMore, sessionId, agentId, allAgents, skip]);
+  }, [hasMore, sessionId, agentId, skip]);
 
   return { messages, loading, loadingMore, hasMore, loadMore, error };
 }
