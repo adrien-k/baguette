@@ -309,7 +309,8 @@ export default function SessionModelSelect({
 
   const showClear = Boolean(nullPlaceholder && onClear && !isUnset);
 
-  const waitingForConfigs = configsLoading && Boolean(onAgentConfigChange);
+  const waitingForConfigs =
+    configsLoading && Boolean(onAgentConfigChange) && !agentConfigOptions?.length;
   const waitingForModels = modelsLoading && !isUnset;
   const showLoadingPlaceholder = waitingForConfigs || waitingForModels;
 
