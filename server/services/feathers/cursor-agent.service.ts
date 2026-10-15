@@ -21,7 +21,7 @@ import {
   type CursorStreamStatusCallback,
   type CursorStreamUsageCallback,
 } from '../cursor/cursor-sdk-turn.ts';
-import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
+import { extractUserTextFromUserPayload } from '../../../shared/user-message-content.js';
 import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
@@ -105,19 +105,6 @@ type StreamOneRunOpts = {
 };
 
 type StreamOneRunResult = { finishedOk: boolean; hasBackgroundTask: boolean };
-
-function extractUserText(parsed: unknown): string {
-  const p = parsed as {
-    content?: unknown;
-    message?: { content?: unknown };
-  };
-  if (typeof p.content === 'string') return p.content;
-  if (Array.isArray(p.content)) return expandUserContentForAgent(p.content);
-  const content = p.message?.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return expandUserContentForAgent(content);
-  return '';
-}
 
 export class CursorAgentService {
   app!: AgentApp;
@@ -356,7 +343,7 @@ ${body}`,
         return;
       }
       if (row.force && active.currentRun?.steer && isSteerableUserMessage(parsed)) {
-        const text = extractUserText(parsed);
+        const text = extractUserTextFromUserPayload(parsed);
         if (text) active.currentRun.steer(text).catch(() => {});
       }
       return;
@@ -684,7 +671,7 @@ ${body}`,
         persistAgentId: (cursorId) =>
           patchAgentInternal(this.app, agent.id, { cursor_agent_id: cursorId }, userId),
       });
-      const userText = extractUserText(parsed);
+      const userText = extractUserTextFromUserPayload(parsed);
       const sendOptions: Record<string, unknown> = {};
       if (session.plan_mode) {
         sendOptions.mode = 'plan';

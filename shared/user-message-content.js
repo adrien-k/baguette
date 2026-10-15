@@ -17,6 +17,17 @@ export function createFileReferenceBlock(path, line, { short_sha, change } = {})
   return block;
 }
 
+/** Flatten stored or legacy user message JSON into prompt text (Pi, Cursor, steer). */
+export function extractUserTextFromUserPayload(parsed) {
+  if (!parsed || parsed.type !== 'user') return '';
+  if (typeof parsed.content === 'string') return parsed.content;
+  if (Array.isArray(parsed.content)) return expandUserContentForAgent(parsed.content);
+  const content = parsed.message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return expandUserContentForAgent(content);
+  return '';
+}
+
 /** Plain text for copy buttons and simple display. */
 export function expandUserContentForAgent(content) {
   if (typeof content === 'string') return content;

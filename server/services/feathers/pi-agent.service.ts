@@ -14,7 +14,7 @@ import { buildSystemPromptAppend } from '../session-prompt.js';
 import { processPiSessionStream, type PiTurnUsage } from '../pi/pi-sdk-turn.ts';
 import { piTurnResultOps } from '../pi/pi-mapping.ts';
 import { emptyTurnUsage } from '../turn-usage.js';
-import { expandUserContentForAgent } from '../../../shared/user-message-content.js';
+import { extractUserTextFromUserPayload } from '../../../shared/user-message-content.js';
 import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createPiModelRuntime, resolvePiSessionModel } from '../pi-models.js';
@@ -84,18 +84,6 @@ export type PiBuildAgentOptionsResult = CreateAgentSessionOptions & {
   piApiKey?: string | null;
   piAgentConfig?: Record<string, unknown> | null;
 };
-
-function extractUserText(parsed: unknown): string {
-  const p = parsed as {
-    content?: unknown;
-    message?: { content?: unknown };
-  };
-  if (typeof p.content === 'string') return p.content;
-  const content = p.message?.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return expandUserContentForAgent(content);
-  return '';
-}
 
 export class PiAgentService {
   app!: AgentApp;
@@ -310,7 +298,7 @@ export class PiAgentService {
         return;
       }
       if (row.force && active.piSession?.isStreaming && isSteerableUserMessage(parsed)) {
-        const text = extractUserText(parsed);
+        const text = extractUserTextFromUserPayload(parsed);
         if (text) void active.piSession.steer(text).catch(() => {});
       }
       return;
@@ -529,7 +517,7 @@ export class PiAgentService {
               agent,
             });
 
-      const userText = extractUserText(parsed);
+      const userText = extractUserTextFromUserPayload(parsed);
       if (!writer) {
         throw new Error('pi-agent: missing turn writer');
       }

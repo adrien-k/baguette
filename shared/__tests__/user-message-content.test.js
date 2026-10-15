@@ -3,10 +3,29 @@ import {
   contentBlocksFromLineDraft,
   createFileReferenceBlock,
   expandUserContentForAgent,
+  extractUserTextFromUserPayload,
   normalizeUserMessageForAgentSdk,
 } from '../user-message-content.js';
 
 describe('user-message-content', () => {
+  it('extractUserTextFromUserPayload expands stored diff-line content arrays', () => {
+    const stored = {
+      type: 'user',
+      content: [
+        {
+          type: 'file_reference',
+          path: 'client/src/Foo.tsx',
+          line: 4,
+          change: 'removed',
+        },
+        { type: 'text', text: 'Do you see this?' },
+      ],
+    };
+    expect(extractUserTextFromUserPayload(stored)).toBe(
+      '@client/src/Foo.tsx:4 change: removed\n\nDo you see this?'
+    );
+  });
+
   it('formats file_reference for agents', () => {
     expect(createFileReferenceBlock('src/a.js', 12)).toEqual({
       type: 'file_reference',

@@ -32,17 +32,23 @@ export default function DiffLineComposer({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [composerModel, setComposerModel] = useState(session?.model ?? null);
-  const [composerModelParams, setComposerModelParams] = useState(session?.model_params ?? null);
+  const agentSource = builderAgent ?? session;
+  const [composerModel, setComposerModel] = useState(agentSource?.model ?? null);
+  const [composerModelParams, setComposerModelParams] = useState(agentSource?.model_params ?? null);
 
   useEffect(() => {
     setInput('');
   }, [path, line, shortSha, change]);
 
   useEffect(() => {
-    setComposerModel(session?.model ?? null);
-    setComposerModelParams(session?.model_params ?? null);
-  }, [session?.id, session?.model, session?.model_params]);
+    setComposerModel(agentSource?.model ?? null);
+    setComposerModelParams(agentSource?.model_params ?? null);
+  }, [
+    agentSource?.id,
+    agentSource?.model,
+    agentSource?.model_params,
+    agentSource?.agent_config_id,
+  ]);
 
   useEffect(() => {
     const el = document.getElementById('diff-line-composer');
@@ -166,7 +172,9 @@ export default function DiffLineComposer({
         placeholder="Add a note for the agent…"
         sending={sending}
         agentConfigKey={
-          session?.agent_config_id != null ? String(session.agent_config_id) : session?.agent_sdk
+          agentSource?.agent_config_id != null
+            ? String(agentSource.agent_config_id)
+            : agentSource?.agent_sdk
         }
         model={composerModel}
         params={composerModelParams}

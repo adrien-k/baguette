@@ -162,17 +162,20 @@ function buildSideBySideRows(lines) {
 const NUM_CLS = 'w-10 shrink-0 text-right text-faint select-none pr-2 border-r border-line';
 const DIFF_LINE_CONTENT_CLS = `px-2 flex-1 ${DIFF_LINE_WRAP_CLASS}`;
 
+/** Which side of the diff the comment targets (`before` = old file, `after` = new file). */
 function lineRefFromRow(row, filePath) {
   if (row.type === 'hunk') return null;
-  if (row.type === 'added' && row.newNum) {
-    return { path: filePath, line: row.newNum, change: 'added' };
-  }
   if (row.type === 'removed' && row.oldNum) {
-    return { path: filePath, line: row.oldNum, change: 'removed' };
+    return { path: filePath, line: row.oldNum, side: 'before', change: 'removed' };
   }
-  const line = row.newNum ?? row.oldNum;
-  if (!line) return null;
-  return { path: filePath, line };
+  if (row.type === 'added' && row.newNum) {
+    return { path: filePath, line: row.newNum, side: 'after', change: 'added' };
+  }
+  if (row.type === 'context') {
+    if (row.newNum) return { path: filePath, line: row.newNum, side: 'after' };
+    if (row.oldNum) return { path: filePath, line: row.oldNum, side: 'before' };
+  }
+  return null;
 }
 
 function DiffCodeRow({ rowClass, onOpenComposer, active, longPressLineToComment, children }) {
@@ -214,9 +217,11 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, longPressLineToComment,
   );
 }
 
-function isLineActive(active, filePath, line, change) {
+function isLineActive(active, filePath, line, side) {
   if (!active || active.path !== filePath || Number(active.line) !== Number(line)) return false;
-  if (active.change != null && change != null) return active.change === change;
+  if (active.side != null || side != null) {
+    return active.side === side;
+  }
   return true;
 }
 
@@ -248,7 +253,7 @@ function InlineDiff({
           );
         }
         const ref = lineRefFromRow(row, filePath);
-        const active = ref ? isLineActive(activeLine, filePath, ref.line, ref.change) : false;
+        const active = ref ? isLineActive(activeLine, filePath, ref.line, ref.side) : false;
         const openComposer = onLineReference ? () => sendRef(row) : undefined;
         let body;
         if (row.type === 'removed') {
@@ -311,8 +316,8 @@ function SideBySideDiff({
   longPressLineToComment,
 }) {
   const rows = buildSideBySideRows(lines);
-  const sendRef = (line, change) => {
-    if (line?.num) onLineReference?.({ path: filePath, line: line.num, change });
+  const sendRef = (line, side, change) => {
+    if (line?.num) onLineReference?.({ path: filePath, line: line.num, side, change });
   };
   return (
     <div className={`font-mono text-xs leading-5 ${DIFF_FILE_BODY_CLASS}`}>
@@ -325,13 +330,11 @@ function SideBySideDiff({
             </div>
           );
         }
-        const leftChange = row.type === 'change' ? 'removed' : undefined;
-        const rightChange = row.type === 'change' ? 'added' : undefined;
         const leftActive = row.left?.num
-          ? isLineActive(activeLine, filePath, row.left.num, leftChange)
+          ? isLineActive(activeLine, filePath, row.left.num, 'before')
           : false;
         const rightActive = row.right?.num
-          ? isLineActive(activeLine, filePath, row.right.num, rightChange)
+          ? isLineActive(activeLine, filePath, row.right.num, 'after')
           : false;
         const showComposer = leftActive || rightActive;
         const leftCell =
@@ -339,7 +342,9 @@ function SideBySideDiff({
             row.left ? (
               <DiffCodeRow
                 rowClass={DIFF_REMOVED_ROW}
-                onOpenComposer={onLineReference ? () => sendRef(row.left, 'removed') : undefined}
+                onOpenComposer={
+                  onLineReference ? () => sendRef(row.left, 'before', 'removed') : undefined
+                }
                 active={leftActive}
                 longPressLineToComment={longPressLineToComment}
               >
@@ -355,7 +360,7 @@ function SideBySideDiff({
           ) : (
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
-              onOpenComposer={onLineReference ? () => sendRef(row.left) : undefined}
+              onOpenComposer={onLineReference ? () => sendRef(row.left, 'before') : undefined}
               active={leftActive}
               longPressLineToComment={longPressLineToComment}
             >
@@ -368,7 +373,9 @@ function SideBySideDiff({
             row.right ? (
               <DiffCodeRow
                 rowClass={DIFF_ADDED_ROW}
-                onOpenComposer={onLineReference ? () => sendRef(row.right, 'added') : undefined}
+                onOpenComposer={
+                  onLineReference ? () => sendRef(row.right, 'after', 'added') : undefined
+                }
                 active={rightActive}
                 longPressLineToComment={longPressLineToComment}
               >
@@ -384,7 +391,7 @@ function SideBySideDiff({
           ) : (
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
-              onOpenComposer={onLineReference ? () => sendRef(row.right) : undefined}
+              onOpenComposer={onLineReference ? () => sendRef(row.right, 'after') : undefined}
               active={rightActive}
               longPressLineToComment={longPressLineToComment}
             >
@@ -568,7 +575,7 @@ export default function DiffView({
       prev &&
       prev.path === next.path &&
       Number(prev.line) === Number(next.line) &&
-      prev.change === next.change
+      prev.side === next.side
         ? null
         : next
     );
@@ -576,7 +583,7 @@ export default function DiffView({
   const lineComposerEl =
     lineComposer && canComment ? (
       <DiffLineComposer
-        key={`${lineComposer.path}:${lineComposer.line}:${lineComposer.change ?? ''}`}
+        key={`${lineComposer.path}:${lineComposer.side}:${lineComposer.line}`}
         session={session}
         builderAgent={primaryBuilder}
         path={lineComposer.path}
