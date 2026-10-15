@@ -29,21 +29,10 @@ export default function ArchiveSession({ session, onArchive }) {
     }
   };
 
-  const startConfirm = async (e) => {
+  const startConfirm = (e) => {
     e.stopPropagation();
-    if (blocked || checking || pendingConfirm) return;
-
+    if (blocked || pendingConfirm) return;
     setPendingConfirm(true);
-    setChecking(true);
-    try {
-      const commitsToPush = await fetchSessionCommitsToPush(session);
-      setUnpushedCount(commitsToPush);
-    } catch (err) {
-      toastError('Failed to check git status', err);
-      setPendingConfirm(false);
-    } finally {
-      setChecking(false);
-    }
   };
 
   const dismissConfirm = () => {
@@ -72,6 +61,17 @@ export default function ArchiveSession({ session, onArchive }) {
   const handleConfirm = async (e) => {
     e.stopPropagation();
     if (blocked || checking) return;
+
+    setChecking(true);
+    try {
+      const commitsToPush = await fetchSessionCommitsToPush(session);
+      setUnpushedCount(commitsToPush);
+    } catch (err) {
+      toastError('Failed to check git status', err);
+      setChecking(false);
+      return;
+    }
+    setChecking(false);
 
     const closePr = hasDraftPr;
     await performArchive({ closePr });
