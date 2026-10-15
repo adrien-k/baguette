@@ -453,16 +453,12 @@ export async function runMockAgentTurn({
   });
 
   await runMockTool(writer, abortSignal, {
-    callId: 'mock-mcp-show-diff',
-    name: 'mcp__baguette__ShowDiff',
-    args: {
-      path: notesRel,
-      description: 'Preview notes diff for reviewers',
-    },
+    callId: 'mock-mcp-config-repo',
+    name: 'mcp__baguette__ConfigRepoPrompt',
+    args: {},
     rawResult: JSON.stringify({
       ok: true,
-      path: notesRel,
-      message: 'Mock ShowDiff result',
+      prompt: 'Mock config repo prompt snippet',
     }),
   });
 

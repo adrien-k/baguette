@@ -20,7 +20,6 @@ import { createTaskStatusTool } from '../tools/task-status.js';
 import { createKillTaskTool } from '../tools/kill-task.js';
 import { createReadTaskOutputTool } from '../tools/read-task-output.js';
 import { createConfigRepoPromptTool } from '../tools/config-repo-prompt.js';
-import { createShowDiffTool } from '../tools/show-diff.js';
 import { createUploadImageTool } from '../tools/upload-image.js';
 import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
@@ -75,7 +74,6 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
     createKillTaskTool(ctx),
     createReadTaskOutputTool(ctx),
     createConfigRepoPromptTool(ctx),
-    createShowDiffTool(ctx),
     createUploadImageTool(ctx),
   ];
   if (slackApps.length) {

@@ -167,7 +167,6 @@ describe('cursorToolKindFromName', () => {
       AskUserQuestions: 'ask_user',
       ExitPlanMode: 'exit_plan',
       createPlan: 'exit_plan',
-      ShowDiff: 'mcp',
       CreateTodo: 'mcp',
       ProcessTodo: 'mcp',
       CompleteTodo: 'mcp',

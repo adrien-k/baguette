@@ -1038,20 +1038,6 @@ export class SessionsService extends KnexService {
     });
   }
 
-  async showDiff(data, params) {
-    const session = params.resolvedSession;
-    if (!session?.session_path || isGlobalSession(session)) return { path: data.path, diff: '' };
-    const cwd = resolveDataDirRelativePath(session.session_path);
-    try {
-      const diff = await gitDiff(cwd, session.base_branch, {
-        filePath: data.path,
-      });
-      return { path: data.path, diff };
-    } catch (err) {
-      return { path: data.path, diff: '', error: err.message };
-    }
-  }
-
   async merge(data, params) {
     const session = params.resolvedSession;
     if (!session?.pr_number) throw new BadRequest('No PR to merge');
@@ -2504,7 +2490,6 @@ export function registerSessionsService(app, path = 'sessions') {
       'sessionUsage',
       'branchCommits',
       'shas',
-      'showDiff',
       'getPlan',
       'createDefaultBuilderMessage',
       'merge',
@@ -2606,7 +2591,6 @@ const sessionsHooks = {
     sessionUsage: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
-    showDiff: [resolveSessionFromData],
     getPlan: [resolveSessionFromData],
     createDefaultBuilderMessage: [
       normalizeCreateDefaultBuilderMessageData,

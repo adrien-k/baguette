@@ -1288,16 +1288,6 @@ describe('ReadTaskOutput', () => {
   });
 });
 
-describe('ShowDiff', () => {
-  it('returns ok: true with path and no diff content', async () => {
-    const { tools } = await buildServer();
-    const result = parseResult(await callTool(tools, 'ShowDiff', { path: 'src/foo.js' }));
-    expect(result.ok).toBe(true);
-    expect(result.path).toBe('src/foo.js');
-    expect(result.diff).toBeUndefined();
-  });
-});
-
 describe('ConfigRepoPrompt', () => {
   it('calls loadPrompt and returns combined prompt text', async () => {
     const { tools } = await buildServer();

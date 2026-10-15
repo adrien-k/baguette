@@ -32,6 +32,8 @@ export async function buildSystemPromptAppend(sessionRow, { agent = null } = {})
   const builderRolePrompt = await loadPrompt(rolePromptName, {});
   const repoConfigPrompt =
     role === 'builder' ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
+  const builderEndOfTurnPrompt =
+    role === 'builder' ? await loadPrompt('builder-end-of-turn-prompt', {}) : '';
   const buildTemplate = role === 'subagent' ? 'subagent-build-prompt' : 'build-prompt';
   const templateVars = {
     base_prompt: await renderBasePromptForSession(sessionPath, role),
@@ -39,6 +41,7 @@ export async function buildSystemPromptAppend(sessionRow, { agent = null } = {})
   };
   if (buildTemplate === 'build-prompt') {
     templateVars.repo_config_prompt = repoConfigPrompt;
+    templateVars.builder_end_of_turn_prompt = builderEndOfTurnPrompt;
   }
   return loadPrompt(buildTemplate, templateVars);
 }
@@ -53,10 +56,12 @@ export async function loadFullSessionPromptTemplate() {
   const basePrompt = await loadBaseSessionPromptTemplate();
   const builderRolePrompt = await loadPrompt('builder-role-prompt', {});
   const repoConfigPrompt = await loadPrompt('build-prompt-repo-config-prompt', {});
+  const builderEndOfTurnPrompt = await loadPrompt('builder-end-of-turn-prompt', {});
   return loadPrompt('build-prompt', {
     base_prompt: basePrompt,
     builder_role_prompt: builderRolePrompt,
     repo_config_prompt: repoConfigPrompt,
+    builder_end_of_turn_prompt: builderEndOfTurnPrompt,
   });
 }
 

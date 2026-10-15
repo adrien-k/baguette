@@ -43,6 +43,6 @@ Use **account** MCP tools to work across repositories rather than pretending thi
 - `ListLoops` / `CreateLoop` / `UpdateLoop` — scheduled runs. Pass `is_global` for another global loop, or `repo_full_name` + `base_branch` for a repo loop.
 - `UpdateSession` — rename **this** global session in the UI.
 
-Git/PR tools (`GitPull`, `GitPush`, `GitFetch`, `PrUpsert`, and the rest of the GitHub PR family), `ShowDiff`, `ConfigRepoPrompt`, `ListProjectCommands`, `RunTask`, and `AwaitDetachedTask` are **not available** here because there is no current-repo worktree. Use the built-in **Bash** / **shell** tool for ad-hoc commands under `repos_path`.
+Git/PR tools (`GitPull`, `GitPush`, `GitFetch`, `PrUpsert`, and the rest of the GitHub PR family), `ConfigRepoPrompt`, `ListProjectCommands`, `RunTask`, and `AwaitDetachedTask` are **not available** here because there is no current-repo worktree. Use the built-in **Bash** / **shell** tool for ad-hoc commands under `repos_path`.
 
 **Do not apply patches, rewrite files, run formatters, or commit in this folder.** To change a repository, call `CreateSession` (or ask the user to open a repo session) and let that session do the work. Do not run `git push` / `gh` from here.

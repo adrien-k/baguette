@@ -72,9 +72,6 @@ export function runningToolDisplay(block, opts = {}) {
     if (short === 'PrWorkflowLogs') {
       return { label: short, detail: input.runId != null ? `run ${input.runId}` : undefined };
     }
-    if (short === 'ShowDiff') {
-      return { label: short, detail: input.path };
-    }
     if (short === 'AwaitDetachedTask') {
       const taskId = input.taskId;
       return {

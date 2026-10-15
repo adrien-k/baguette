@@ -19,7 +19,7 @@ test.describe('mock agent chat', () => {
     const workGroup = page.getByRole('button', { name: /Worked for .* · \d+ calls/ });
     await expect(workGroup).toBeVisible({ timeout: 120_000 });
     await workGroup.click();
-    await expect(page.getByText('ShowDiff').first()).toBeVisible();
+    await expect(page.getByText('ConfigRepoPrompt').first()).toBeVisible();
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible();
     await expect(page.getByText(MOCK_E2E_CREATE_PLAN_PROMPT)).toBeVisible();
     await expect(page.getByText('Exercise every tool kind').first()).toBeVisible();

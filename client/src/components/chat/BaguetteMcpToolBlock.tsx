@@ -2,9 +2,7 @@ import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { sessionsService } from '../../feathers.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
-import { DIFF_LINE_WRAP_CLASS, DIFF_SCROLL_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
@@ -230,137 +228,6 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
   );
 }
 
-// ─── ShowDiffBlock (private — only used by BaguetteMcpToolBlock) ──────────────
-
-function ShowDiffBlock({
-  path: filePath,
-  sessionId,
-}: {
-  path: string;
-  sessionId?: number | string | null;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [diff, setDiff] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!sessionId || !filePath) return;
-    // Custom service methods are registered at runtime and missing from feathers' types.
-    (
-      sessionsService as unknown as {
-        showDiff(args: {
-          id: number | string;
-          path: string;
-        }): Promise<{ error?: string; diff?: string }>;
-      }
-    )
-      .showDiff({ id: sessionId, path: filePath })
-      .then((res: { error?: string; diff?: string }) => {
-        if (res.error) setError(res.error);
-        setDiff(res.diff ?? '');
-      })
-      .catch((err: { message?: string }) => {
-        setError(err?.message ?? 'Failed to load diff');
-        setDiff('');
-      });
-  }, [sessionId, filePath]);
-
-  if (diff === null && !error) {
-    return (
-      <div className="rounded-lg border border-strong bg-nav p-3 text-xs text-faint">
-        Loading diff for <span className="text-fg-muted font-mono">{filePath}</span>…
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-800/50 bg-nav p-3 text-xs">
-        <span className="text-fg-muted font-mono">{filePath}</span>
-        <span className="ml-2 text-danger">{error}</span>
-      </div>
-    );
-  }
-
-  const lines = (diff || '').split('\n');
-  type DiffHunk = { header: string; lines: string[] };
-  const hunks: DiffHunk[] = [];
-  let current: DiffHunk | null = null;
-
-  for (const line of lines) {
-    if (line.startsWith('@@')) {
-      if (current) hunks.push(current);
-      current = { header: line, lines: [] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current) hunks.push(current);
-
-  const PREVIEW_LINES = 12;
-  const allLines = hunks.flatMap((h) => [
-    { type: 'hunk' as const, text: h.header },
-    ...h.lines.map((l) => ({ type: 'line' as const, text: l })),
-  ]);
-  const preview = allLines.slice(0, PREVIEW_LINES);
-  const shown = expanded ? allLines : preview;
-  const hasMore = allLines.length > PREVIEW_LINES;
-
-  if (!diff || diff === '(no diff)') {
-    return (
-      <div className="rounded-lg border border-strong bg-nav text-xs font-mono overflow-hidden">
-        <div className="px-3 py-2 flex items-center gap-2 border-b border-strong bg-control/50">
-          <span className="text-fg-muted">diff</span>
-          <span className="text-fg">{filePath}</span>
-        </div>
-        <div className="px-3 py-2 text-faint italic">No changes</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-strong bg-nav text-xs font-mono overflow-hidden">
-      <div className="px-3 py-2 flex items-center gap-2 border-b border-strong bg-control/50">
-        <span className="text-fg-muted">diff</span>
-        <span className="text-fg truncate">{filePath}</span>
-      </div>
-      <div className={DIFF_SCROLL_WRAP_CLASS}>
-        <pre className={`px-3 py-2 leading-5 ${DIFF_LINE_WRAP_CLASS}`}>
-          {shown.map((l, i) => {
-            if (l.type === 'hunk') {
-              return (
-                <div key={i} className={`text-cyan-500/80 ${DIFF_LINE_WRAP_CLASS}`}>
-                  {l.text}
-                </div>
-              );
-            }
-            const ch = l.text[0];
-            const cls =
-              ch === '+'
-                ? 'text-green-400 bg-green-950/30'
-                : ch === '-'
-                  ? 'text-danger bg-red-950/30'
-                  : 'text-fg-muted';
-            return (
-              <div key={i} className={`${cls} ${DIFF_LINE_WRAP_CLASS}`}>
-                {l.text || ' '}
-              </div>
-            );
-          })}
-        </pre>
-      </div>
-      {hasMore && (
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="w-full px-3 py-1.5 text-xs text-faint hover:text-secondary hover:bg-control/50 border-t border-strong transition-colors text-left"
-        >
-          {expanded ? '↑ Show less' : `↓ Show all ${allLines.length} lines`}
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ─── UploadImageBlock ─────────────────────────────────────────────────────────
 
 function UploadImageBlock({
@@ -573,21 +440,6 @@ export default function BaguetteMcpToolBlock({
 
   if (toolShortName === 'CreateIssue') {
     return <CreateIssueBlock block={{ result, isError, input: args }} />;
-  }
-
-  if (toolShortName === 'ShowDiff') {
-    return (
-      <div>
-        <QuietToolBlock
-          icon="⚙"
-          label="ShowDiff"
-          detail={args.path as string | undefined}
-          isError={isError}
-          input={args}
-        />
-        <ShowDiffBlock path={(args.path as string | undefined) ?? ''} sessionId={sessionId} />
-      </div>
-    );
   }
 
   if (toolShortName === 'PrUpsert') {

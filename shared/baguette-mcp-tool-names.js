@@ -45,7 +45,6 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'KillTask',
   'ReadTaskOutput',
   'ConfigRepoPrompt',
-  'ShowDiff',
   'UploadImage',
   'SlackPostMessage',
   'CreateTodo',
