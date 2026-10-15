@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { sortSessionTodosAsc } from '@baguette/shared/session-todo-sort.js';
 import { sessionTodosService } from '../feathers.js';
 
 const OPEN_TODO_STATUSES = new Set(['pending', 'in_progress']);
@@ -15,10 +16,10 @@ export function useGetSessionTodos(sessionId, { enabled = true, openOnly = true 
     setLoading(true);
     sessionTodosService
       .find({
-        query: { session_id: sessionId, $sort: { sort_order: 1, id: 1 }, $limit: 500 },
+        query: { session_id: sessionId, $sort: { sort_order: 1, ref: 1 }, $limit: 500 },
       })
       .then((res) => {
-        const rows = res.data ?? [];
+        const rows = sortSessionTodosAsc(res.data ?? []);
         setTodos(openOnly ? rows.filter((row) => OPEN_TODO_STATUSES.has(row.status)) : rows);
       })
       .catch(() => setTodos([]))

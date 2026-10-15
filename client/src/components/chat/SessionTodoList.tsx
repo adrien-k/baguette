@@ -1,4 +1,5 @@
 import { CheckSquare2, Loader2, Square } from 'lucide-react';
+import { sortSessionTodosAsc } from '@baguette/shared/session-todo-sort.js';
 import MarkdownContent from '../MarkdownContent.jsx';
 import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
 import { sessionTodoHasBody, sessionTodoTitle } from '../../utils/sessionTodoDisplay.ts';
@@ -12,6 +13,7 @@ export type SessionTodoItem = {
   title?: string | null;
   content?: string;
   status?: string;
+  sort_order?: number;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -68,10 +70,12 @@ export default function SessionTodoList({
   todos?: unknown;
   variant?: 'compact' | 'detail';
 }) {
-  const list = (Array.isArray(todos) ? todos : []).filter((todo) => {
-    const row = todo as SessionTodoItem;
-    return sessionTodoHasBody(row) || Boolean(sessionTodoTitle(row));
-  }) as SessionTodoItem[];
+  const list = sortSessionTodosAsc(
+    (Array.isArray(todos) ? todos : []).filter((todo) => {
+      const row = todo as SessionTodoItem;
+      return sessionTodoHasBody(row) || Boolean(sessionTodoTitle(row));
+    }) as SessionTodoItem[]
+  );
 
   if (list.length === 0) return null;
 

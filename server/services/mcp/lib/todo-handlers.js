@@ -1,4 +1,5 @@
 import { BadRequest, NotFound } from '@feathersjs/errors';
+import { sortSessionTodosAsc } from '@baguette/shared/session-todo-sort.js';
 import { ok, fail } from './result.js';
 import { serializeTodo, OPEN_TODO_STATUSES } from '../../session-todos.js';
 
@@ -15,7 +16,7 @@ async function listTodosForSession(app, sessionId, userId) {
     user: { id: userId },
   });
   const rows = Array.isArray(result) ? result : (result?.data ?? []);
-  return rows.map(serializeTodo);
+  return sortSessionTodosAsc(rows.map(serializeTodo));
 }
 
 async function listOpenTodos(app, sessionId, userId) {

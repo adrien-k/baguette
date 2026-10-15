@@ -66,7 +66,6 @@ import PreviewView from './session/PreviewView.jsx';
 import ReviewView from './session/ReviewView.jsx';
 import DetailsView from './session/DetailsView.jsx';
 import PlanView from './session/PlanView.jsx';
-import { useGetSessionTodos } from '../hooks/useGetSessionTodos.js';
 import SessionSidePanel from './session/SessionSidePanel.jsx';
 import SessionMainViewFooter from './session/SessionMainViewFooter.jsx';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
@@ -405,8 +404,6 @@ export default function Session() {
     }
     return session?.open_issues_count ?? 0;
   }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
-  const { todos: sessionTodos } = useGetSessionTodos(sessionId, { enabled: sessionId != null });
-  const planTabTodoCount = sessionTodos.length;
   const [prInfo, setPrInfo] = useState(null);
   const [showTasks, setShowTasks] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
@@ -1545,11 +1542,6 @@ export default function Session() {
                       {id === 'review' && openIssuesTabCount > 0 && (
                         <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
                           {openIssuesTabCount}
-                        </span>
-                      )}
-                      {id === 'plan' && planTabTodoCount > 0 && (
-                        <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
-                          {planTabTodoCount}
                         </span>
                       )}
                     </button>
