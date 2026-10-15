@@ -46,7 +46,6 @@ import PrDraftToggleButton, {
 } from '../../components/PrDraftToggleButton.jsx';
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
-import SessionTodoCountCard from '../../components/chat/SessionTodoCountCard.tsx';
 import { useGetSessionTodos } from '../../hooks/useGetSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
@@ -311,10 +310,6 @@ export default function ChatView({
 
   const sessionTodoTotal =
     sessionTodoCounts.open + sessionTodoCounts.inProgress + sessionTodoCounts.completed;
-
-  const toggleTodosDrawer = useCallback(() => {
-    setTodosDrawerExpanded((expanded) => !expanded);
-  }, [setTodosDrawerExpanded]);
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,
@@ -895,15 +890,6 @@ export default function ChatView({
                     agents={agents}
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
-                    agentHeaderEnd={
-                      sessionTodoTotal > 0 ? (
-                        <SessionTodoCountCard
-                          counts={sessionTodoCounts}
-                          expanded={todosDrawerExpanded}
-                          onClick={toggleTodosDrawer}
-                        />
-                      ) : null
-                    }
                     agentConfigKey={
                       agentSource?.agent_config_id != null
                         ? String(agentSource.agent_config_id)

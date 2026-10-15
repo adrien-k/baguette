@@ -136,8 +136,8 @@ export default function SessionTodosPanel({
     return <SessionTodoList todos={openTodos} variant="detail" />;
   };
 
-  const renderCompletedList = () => {
-    if (!completedExpanded || completedTodos.length === 0) return null;
+  const renderCompletedList = (showList) => {
+    if (!showList || completedTodos.length === 0) return null;
     if (editable && listProps) {
       return <EditableTodoList todos={completedTodos} {...listProps} />;
     }
@@ -150,6 +150,8 @@ export default function SessionTodosPanel({
 
   const isEmpty = openTodos.length === 0 && completedTodos.length === 0;
   const showCompletedSection = completedTodos.length > 0;
+  const allTodosCompleted = openTodos.length === 0 && completedTodos.length > 0;
+  const showCompletedToggle = showCompletedSection && !allTodosCompleted;
 
   return (
     <div className="space-y-6">
@@ -224,7 +226,8 @@ export default function SessionTodosPanel({
       {isEmpty && !showAddForm && <p className="text-sm text-faint">{emptyMessage}</p>}
 
       {renderOpenList()}
-      {showCompletedSection && (
+      {allTodosCompleted && renderCompletedList(true)}
+      {showCompletedToggle && (
         <section className={`space-y-4 ${openTodos.length > 0 ? 'border-t border-line pt-4' : ''}`}>
           <button
             type="button"
@@ -238,7 +241,7 @@ export default function SessionTodosPanel({
             )}
             Completed ({completedTodos.length})
           </button>
-          {renderCompletedList()}
+          {renderCompletedList(completedExpanded)}
         </section>
       )}
     </div>
