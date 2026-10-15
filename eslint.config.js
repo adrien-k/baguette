@@ -6,6 +6,9 @@ import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import prettierConfig from 'eslint-config-prettier';
 import tseslint from 'typescript-eslint';
 
+/** Full-module graph scan for unused exports; enable via `pnpm run lint:exports` (CI). */
+const checkUnusedExports = process.env.ESLINT_CHECK_UNUSED_EXPORTS === '1';
+
 /** Paths whose exports are consumed outside static import analysis (app entrypoints, config). */
 const unusedExportIgnorePaths = [
   'eslint.config.js',
@@ -16,6 +19,8 @@ const unusedExportIgnorePaths = [
   'client/vite.config.js',
   // Knex loads migration up/down by convention, not static imports.
   'server/migrations',
+  // Pi loads this extension entry via jiti at runtime.
+  'server/pi/extensions/lunaroute-chat',
 ];
 
 const importXUnusedExportSettings = {
@@ -61,40 +66,51 @@ export default [
     },
   },
 
-  // Scoped `src` graphs — a single repo-wide scan false-positives on cross-root default exports.
-  {
-    files: ['server/**/*.{js,ts}', 'scripts/**/*.js', 'knexfile.js', 'vitest.config.js'],
-    plugins: {
-      'import-x': importX,
-    },
-    settings: importXUnusedExportSettings,
-    rules: {
-      'import-x/no-unused-modules': unusedExportRuleOptions(
-        ['./server', './shared', './scripts', './client/src', 'knexfile.js', 'vitest.config.js'],
-        []
-      ),
-    },
-  },
-  // Shared is consumed via `@baguette/shared/*` aliases; unused-export analysis false-positives there.
-  {
-    files: ['shared/**/*.{js,ts}'],
-    rules: {
-      'import-x/no-unused-modules': 'off',
-    },
-  },
-  {
-    files: ['client/src/**/*.{js,jsx,ts,tsx}'],
-    plugins: {
-      'import-x': importX,
-    },
-    settings: importXUnusedExportSettings,
-    rules: {
-      'import-x/no-unused-modules': unusedExportRuleOptions(
-        ['./client/src', './shared'],
-        ['client/src/main.jsx']
-      ),
-    },
-  },
+  ...(checkUnusedExports
+    ? [
+        // Scoped `src` graphs — a single repo-wide scan false-positives on cross-root default exports.
+        {
+          files: ['server/**/*.{js,ts}', 'scripts/**/*.js', 'knexfile.js', 'vitest.config.js'],
+          plugins: {
+            'import-x': importX,
+          },
+          settings: importXUnusedExportSettings,
+          rules: {
+            'import-x/no-unused-modules': unusedExportRuleOptions(
+              [
+                './server',
+                './shared',
+                './scripts',
+                './client/src',
+                'knexfile.js',
+                'vitest.config.js',
+              ],
+              []
+            ),
+          },
+        },
+        // Shared is consumed via `@baguette/shared/*` aliases; unused-export analysis false-positives there.
+        {
+          files: ['shared/**/*.{js,ts}'],
+          rules: {
+            'import-x/no-unused-modules': 'off',
+          },
+        },
+        {
+          files: ['client/src/**/*.{js,jsx,ts,tsx}'],
+          plugins: {
+            'import-x': importX,
+          },
+          settings: importXUnusedExportSettings,
+          rules: {
+            'import-x/no-unused-modules': unusedExportRuleOptions(
+              ['./client/src', './shared'],
+              ['client/src/main.jsx']
+            ),
+          },
+        },
+      ]
+    : []),
 
   // Server + shared (Node.js ESM, plain JS)
   {

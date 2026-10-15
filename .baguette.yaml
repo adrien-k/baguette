@@ -20,6 +20,9 @@ config:
         ports: [E2E_PORT]
       lint:
         run: pnpm run lint
+      lint-exports:
+        run: pnpm run lint:exports
+        description: Scans the full JS/TS module graph resolver — typically ~45–60s and high CPU/RAM
       migrate-dev-environment:
         run: pnpm run migrate
       dev-data:load:

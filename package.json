@@ -16,15 +16,17 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:watch": "vitest",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint",
+    "lint:exports": "ESLINT_CHECK_UNUSED_EXPORTS=1 eslint . --cache --cache-location node_modules/.cache/eslint-exports",
+    "lint:ci": "\"$npm_execpath\" run lint && \"$npm_execpath\" run lint:exports",
+    "lint:fix": "eslint . --fix --cache --cache-location node_modules/.cache/eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "fix": "\"$npm_execpath\" run lint:fix && \"$npm_execpath\" run format",
     "prepare": "husky || true"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": "eslint --fix",
+    "*.{js,jsx,ts,tsx}": "eslint --fix --cache --cache-location node_modules/.cache/eslint",
     "*": "prettier --write --ignore-unknown"
   },
   "dependencies": {

@@ -2,7 +2,6 @@
  * Baguette chat-only LunaRoute Pi extension (no MCP web/image/convert tools).
  * API keys come from Baguette agent config via OAuth credential seeding in `pi-models.js`.
  */
-/* eslint-disable import-x/no-unused-modules -- Pi loads this entry via jiti at runtime. */
 import { VERSION, type ExtensionAPI, type ProviderConfig } from '@earendil-works/pi-coding-agent';
 import { LUNAROUTE_PROVIDER } from './constants.js';
 import { buildAttributionHeaders, newSessionId, resolveApi, resolveRoutingUrl } from './env.js';
