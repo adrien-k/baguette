@@ -30,23 +30,19 @@ export type ChatMessageProps = {
   agentName?: string;
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
-  agentType?: string | null;
   pinnedRunningBashIds?: Set<string>;
 };
 
 function UserMessageModelBadge({
   message,
-  agentType,
 }: {
   message: MessageViewMeta & {
     model?: string | null;
     model_params?: unknown;
   };
-  agentType: ChatMessageProps['agentType'];
 }) {
   return (
     <MessageTurnModelBadge
-      agentType={agentType}
       model={message.model}
       modelParams={message.model_params}
       agentConfigId={message.agent_config_id}
@@ -55,31 +51,18 @@ function UserMessageModelBadge({
   );
 }
 
-function TypedUserMessage({
-  message,
-  agentType,
-}: {
-  message: TypedMessageView & { type: 'user' };
-  agentType: ChatMessageProps['agentType'];
-}) {
+function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'user' } }) {
   const isBaguette = message.source === 'baguette' || message.subtype === 'baguette';
   if (isBaguette) {
-    return <BaguetteBlock message={message} agentType={agentType} />;
+    return <BaguetteBlock message={message} />;
   }
 
   if (isLoopUserMessage(message)) {
-    return (
-      <InjectedUserTurnBlock
-        label="Loop"
-        defaultTitle="Loop run"
-        message={message}
-        agentType={agentType}
-      />
-    );
+    return <InjectedUserTurnBlock label="Loop" defaultTitle="Loop run" message={message} />;
   }
 
   if (isMcpUserMessage(message)) {
-    return <McpAgentBlock message={message} agentType={agentType} />;
+    return <McpAgentBlock message={message} />;
   }
 
   if (message.subtype === 'ask_user_answer') {
@@ -97,7 +80,7 @@ function TypedUserMessage({
               />
             )}
           </div>
-          <UserMessageModelBadge message={message} agentType={agentType} />
+          <UserMessageModelBadge message={message} />
         </div>
         <AskUserAnswerBlock answers={answers} fallbackText={userText} />
       </div>
@@ -118,9 +101,7 @@ function TypedUserMessage({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 min-w-0">
-          {isHumanUserMessage(message) && (
-            <UserMessageModelBadge message={message} agentType={agentType} />
-          )}
+          {isHumanUserMessage(message) && <UserMessageModelBadge message={message} />}
           {userText && <CopyButton text={userText} />}
         </div>
       </div>
@@ -250,7 +231,7 @@ function TypedMessage(
     }
 
     case 'user':
-      return <TypedUserMessage message={message} agentType={props.agentType} />;
+      return <TypedUserMessage message={message} />;
 
     case 'turn_result': {
       const isError = message.status === 'error';

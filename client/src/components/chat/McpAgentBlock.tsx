@@ -13,13 +13,7 @@ type McpUserMessage = {
 };
 
 /** User message injected via Baguette MCP (`source` / `subtype` `mcp`). */
-export default function McpAgentBlock({
-  message,
-  agentType,
-}: {
-  message: McpUserMessage;
-  agentType?: string | null;
-}) {
+export default function McpAgentBlock({ message }: { message: McpUserMessage }) {
   const userText = message.content ?? '';
 
   return (
@@ -33,7 +27,6 @@ export default function McpAgentBlock({
         )}
         <span className="ml-auto flex items-center gap-2 shrink-0">
           <MessageTurnModelBadge
-            agentType={agentType}
             model={message.model}
             modelParams={message.model_params}
             agentConfigId={message.agent_config_id}

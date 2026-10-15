@@ -688,7 +688,6 @@ export default function ChatView({
                     sessionPath={session.absolute_session_path}
                     sessionId={session.id}
                     agentName={agentDisplayName}
-                    agentType={activeAgent?.agent_type}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 ) : (
@@ -701,7 +700,6 @@ export default function ChatView({
                     agentName={agentDisplayName}
                     messageIndex={item.index}
                     allMessages={displayMessages}
-                    agentType={activeAgent?.agent_type}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 )
@@ -897,7 +895,6 @@ export default function ChatView({
                   queue={agentQueue}
                   tiedLoops={tiedLoops}
                   session={session}
-                  agentType={activeAgent?.agent_type}
                   onDelete={handleQueueDelete}
                   onSendNow={handleQueueSendNow}
                   onEdit={handleQueueEdit}

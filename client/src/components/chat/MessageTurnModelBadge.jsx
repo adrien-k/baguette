@@ -2,7 +2,6 @@ import AgentTurnModelLabel from '../AgentTurnModelLabel.jsx';
 
 /** Turn model indicator on chat / queue rows. */
 export default function MessageTurnModelBadge({
-  agentType,
   model,
   modelParams,
   agentConfigId,
@@ -10,7 +9,6 @@ export default function MessageTurnModelBadge({
 }) {
   return (
     <AgentTurnModelLabel
-      agentType={agentType}
       agentConfigId={agentConfigId}
       model={model}
       modelParams={modelParams}

@@ -11,7 +11,7 @@ import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 
 /**
- * Inline: agent type · config logo · model name (no params).
+ * Inline: agent type (when passed) · config logo · model name (no params).
  * Hover: config label, SDK, full model + variant, params.
  */
 export default function AgentTurnModelLabel({
