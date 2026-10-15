@@ -125,7 +125,7 @@ type ToolCallCommon = {
   type: 'tool_call';
   /**
    * Provider-scoped call id. The DB unique key on `session_messages` is
-   * `(session_id, tool_call_id, tool_started_at)`: the same `tool_call_id`
+   * `(agent_id, tool_call_id, tool_started_at)`: the same `tool_call_id`
    * can be re-used across separate tool invocations within a session (the
    * Cursor SDK does this), but a single in-flight call maps to one row.
    */
