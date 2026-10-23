@@ -7,12 +7,14 @@ import {
   isLoopsPath,
   loopEditUrlForScope,
   loopsHomeUrlForScope,
+  NEW_LOOP_ROUTE_ID,
+  NEW_SESSION_ROUTE_ID,
   sessionUrlForScope,
 } from '@baguette/shared/session-scope.js';
 
 /**
  * Routes for the current picker scope (All sessions, Global, or a repo).
- * `sessionUrl` takes a session id (or the 'new' route segment); `loopEditUrl` takes a loop id.
+ * `sessionUrl` / `loopEditUrl` take a record id; `sessionNewUrl` / `loopNewUrl` open the create forms.
  */
 export function useFilterRoutes() {
   const { pathname } = useLocation();
@@ -34,7 +36,18 @@ export function useFilterRoutes() {
   const loopsHomeUrl = loopsHomeUrlForScope(scope);
   const showRepoDetails = fromAllSessions || selectedRepo === ALL_REPOS;
   const sessionUrl = useCallback((sessionId) => sessionUrlForScope(sessionId, scope), [scope]);
+  const sessionNewUrl = useCallback(() => sessionUrlForScope(NEW_SESSION_ROUTE_ID, scope), [scope]);
   const loopEditUrl = useCallback((loopId) => loopEditUrlForScope(loopId, scope), [scope]);
+  const loopNewUrl = useCallback(() => loopEditUrlForScope(NEW_LOOP_ROUTE_ID, scope), [scope]);
 
-  return { showRepoDetails, homeUrl, loopsHomeUrl, isLoopsView, sessionUrl, loopEditUrl };
+  return {
+    showRepoDetails,
+    homeUrl,
+    loopsHomeUrl,
+    isLoopsView,
+    sessionUrl,
+    sessionNewUrl,
+    loopEditUrl,
+    loopNewUrl,
+  };
 }

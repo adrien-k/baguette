@@ -5,9 +5,13 @@ import {
   isAllSessionsPath,
   isLoopsPath,
   isNewSessionRouteId,
+  isSessionHomePathname,
   loopEditUrlForScope,
   loopsHomeUrlForScope,
+  NEW_LOOP_ROUTE_ID,
   NEW_SESSION_ROUTE_ID,
+  isLoopHomePathname,
+  isNewLoopRouteId,
   sessionHref,
   sessionUrlForScope,
 } from '../session-scope.js';
@@ -57,6 +61,34 @@ describe('homeUrlForScope / sessionUrlForScope', () => {
     expect(sessionUrlForScope('abc', scope)).toBe('/repos/3/sessions/abc');
     expect(loopsHomeUrlForScope(scope)).toBe('/repos/3/loops');
     expect(loopEditUrlForScope(9, scope)).toBe('/repos/3/loops/9');
+  });
+});
+
+describe('isSessionHomePathname', () => {
+  it('matches session workspace home paths only', () => {
+    expect(isSessionHomePathname('/')).toBe(true);
+    expect(isSessionHomePathname('/global')).toBe(true);
+    expect(isSessionHomePathname('/repos/3')).toBe(true);
+    expect(isSessionHomePathname('/sessions/1')).toBe(false);
+    expect(isSessionHomePathname('/loops')).toBe(false);
+    expect(isSessionHomePathname('/repos/3/sessions/1')).toBe(false);
+  });
+});
+
+describe('loop home and new loop route', () => {
+  it('matches loop workspace home paths', () => {
+    expect(isLoopHomePathname('/loops')).toBe(true);
+    expect(isLoopHomePathname('/global/loops')).toBe(true);
+    expect(isLoopHomePathname('/repos/3/loops')).toBe(true);
+    expect(isLoopHomePathname('/loops/9')).toBe(false);
+  });
+
+  it('recognizes new loop URL segment', () => {
+    expect(NEW_LOOP_ROUTE_ID).toBe('new');
+    expect(isNewLoopRouteId('new')).toBe(true);
+    expect(
+      loopEditUrlForScope('new', { fromAllSessions: true, selectedRepo: '__all__', repoId: 3 })
+    ).toBe('/loops/new');
   });
 });
 

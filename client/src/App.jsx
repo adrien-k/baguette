@@ -5,8 +5,6 @@ import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined, Monitor } from 'lucide-react';
 import NavbarTasksAndStats from './components/NavbarTasksAndStats.jsx';
 import Login from './pages/Login.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-
 const System = lazy(() => import('./pages/System.jsx'));
 const Session = lazy(() => import('./pages/Session.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
@@ -193,9 +191,7 @@ function AppRoutes() {
               path="/"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -203,9 +199,7 @@ function AppRoutes() {
               path="/global"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -221,9 +215,7 @@ function AppRoutes() {
               path="/loops"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -231,9 +223,7 @@ function AppRoutes() {
               path="/loops/:loopId"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -241,9 +231,7 @@ function AppRoutes() {
               path="/global/loops"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -251,9 +239,7 @@ function AppRoutes() {
               path="/global/loops/:loopId"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -269,9 +255,7 @@ function AppRoutes() {
               path="/repos/:repoId"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -279,9 +263,7 @@ function AppRoutes() {
               path="/repos/:repoId/loops"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -289,9 +271,7 @@ function AppRoutes() {
               path="/repos/:repoId/loops/:loopId"
               element={
                 <ProtectedRoute>
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <Dashboard />
-                  </div>
+                  <Session />
                 </ProtectedRoute>
               }
             />

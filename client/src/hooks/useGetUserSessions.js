@@ -119,10 +119,6 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
     const onPatched = (session) => mergeRealtime(session);
     const onRemoved = (session) => {
       if (!session?.id) return;
-      if (session.archived_at) {
-        mergeRealtime(session);
-        return;
-      }
       setSessions((prev) => {
         if (!prev.some((s) => s.id === session.id)) return prev;
         skipRef.current = Math.max(0, skipRef.current - 1);

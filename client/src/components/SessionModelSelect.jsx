@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { ParamPrefClearButton } from './ComposerParamControls.jsx';
 import LightChipDropdown from './LightChipDropdown.jsx';
@@ -18,6 +18,7 @@ import {
 } from '../utils/models.js';
 import { prefKeyForParamId, prefValueFromParamValue } from '../utils/agentPreferences.js';
 import { hasAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
@@ -132,20 +133,6 @@ function SessionModelSelectLoadingTrigger() {
       <ChevronDown className="h-3 w-3 shrink-0 text-faint/40" strokeWidth={2.5} aria-hidden />
     </div>
   );
-}
-
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = () => setMatches(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return matches;
 }
 
 /**

@@ -113,10 +113,6 @@ export function useGetSession(sessionId) {
     };
     const onRemoved = (removed) => {
       if (String(removed.id) !== String(id)) return;
-      if (removed.archived_at) {
-        setSession((prev) => mergeSessionPatch(prev, removed));
-        return;
-      }
       setSession(null);
       setLoadedFor(null);
     };

@@ -73,7 +73,7 @@ export default function SessionSidePanel({
         <button
           type="button"
           onClick={onClose}
-          className="xl:hidden text-faint hover:text-fg-muted transition-colors p-1 shrink-0 mr-1"
+          className="md:hidden text-faint hover:text-fg-muted transition-colors p-1 shrink-0 mr-1"
           title="Hide side panel"
         >
           <X className="w-3.5 h-3.5" aria-hidden />

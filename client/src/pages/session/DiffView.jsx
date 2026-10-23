@@ -1,20 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 
 const FINE_POINTER_HOVER_QUERY = '(hover: hover) and (pointer: fine)';
-
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = (e) => setMatches(e.matches);
-    setMatches(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return matches;
-}
 
 /** Comment button hidden until line hover (desktop) or tap (touch). */
 const DIFF_LINE_COMMENT_BTN_VISIBILITY =
