@@ -67,6 +67,7 @@ import {
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
+import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usageSeries.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
@@ -219,6 +220,23 @@ export default function ChatView({
   const showMessageComposer = !activeSubagent;
   const showSessionChatFooterExtras = !activeAgent || Boolean(Number(activeAgent.is_primary));
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
+  const costByAgentId = useMemo(
+    () => usageCostByAgentId(sessionUsage?.by_agent),
+    [sessionUsage?.by_agent]
+  );
+  const sessionCostUsd = Number(sessionUsage?.totals?.cost_usd ?? 0);
+  const agentUsageCostLabel = useCallback(
+    (agent) => {
+      if (!agent?.id) return null;
+      return formatAgentUsageCostLabel({
+        isPrimary: Boolean(Number(agent.is_primary)),
+        agentCost: costByAgentId.get(agent.id) ?? 0,
+        sessionCost: sessionCostUsd,
+      });
+    },
+    [costByAgentId, sessionCostUsd]
+  );
+  const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
   const agentDisplayName = activeAgent
@@ -936,6 +954,14 @@ export default function ChatView({
                     agents={agents}
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
+                    agentOptionCostLabel={agentUsageCostLabel}
+                    agentHeaderEnd={
+                      activeAgentCostLabel ? (
+                        <span className="text-[11px] tabular-nums text-faint">
+                          {activeAgentCostLabel}
+                        </span>
+                      ) : null
+                    }
                     agentConfigKey={
                       agentSource?.agent_config_id != null
                         ? String(agentSource.agent_config_id)

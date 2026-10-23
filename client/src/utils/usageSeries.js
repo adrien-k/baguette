@@ -97,6 +97,34 @@ export function listSessionCostLines(breakdown) {
     .sort((a, b) => b.cost_usd - a.cost_usd);
 }
 
+/** @param {Array<{ agent_id?: number, cost_usd?: number|string }>} [byAgent] */
+export function usageCostByAgentId(byAgent) {
+  const map = new Map();
+  for (const row of byAgent ?? []) {
+    if (row.agent_id == null) continue;
+    const id = Number(row.agent_id);
+    map.set(id, (map.get(id) ?? 0) + Number(row.cost_usd ?? 0));
+  }
+  return map;
+}
+
+/**
+ * Cost line for an agent row (agents panel / composer). Primary builders show agent + session totals.
+ * @returns {string|null}
+ */
+export function formatAgentUsageCostLabel({ isPrimary, agentCost, sessionCost }) {
+  const agent = Number(agentCost) || 0;
+  const session = Number(sessionCost) || 0;
+  if (isPrimary) {
+    if (agent <= 0 && session <= 0) return null;
+    const agentPart = `Agent ${formatUsd(agent)}`;
+    const sessionPart = `Session ${formatUsd(session)}`;
+    return `${agentPart} · ${sessionPart}`;
+  }
+  if (agent <= 0) return null;
+  return formatUsd(agent);
+}
+
 const EMPTY_USAGE_METRICS = {
   total_tokens: 0,
   input_tokens: 0,

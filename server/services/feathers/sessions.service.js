@@ -965,7 +965,19 @@ export class SessionsService extends KnexService {
       { total_tokens: 0, cost_usd: 0, input_tokens: 0, output_tokens: 0 }
     );
 
-    return { totals, breakdown };
+    const agentCostRows = await db('usage')
+      .where({ session_id: session.id })
+      .whereNotNull('agent_id')
+      .select('agent_id')
+      .sum('cost_usd as cost_usd')
+      .groupBy('agent_id');
+
+    const by_agent = agentCostRows.map((r) => ({
+      agent_id: r.agent_id,
+      cost_usd: parseFloat(r.cost_usd ?? 0),
+    }));
+
+    return { totals, breakdown, by_agent };
   }
 
   async branchCommits(_data, params) {

@@ -10,6 +10,7 @@ import {
   SERIES_COLORS,
   OTHER_KEY,
   listSessionCostLines,
+  formatAgentUsageCostLabel,
   summarizeCostByModel,
   usageConfigKey,
   usageConfigLabel,
@@ -318,6 +319,23 @@ describe('formatUsd', () => {
     expect(formatUsd(0)).toBe('$0');
     expect(formatUsd(0.0042)).toBe('$0.0042');
     expect(formatUsd(1.5)).toBe('$1.50');
+  });
+});
+
+describe('formatAgentUsageCostLabel', () => {
+  it('shows agent and session cost for the primary builder', () => {
+    expect(formatAgentUsageCostLabel({ isPrimary: true, agentCost: 0.1, sessionCost: 0.25 })).toBe(
+      'Agent $0.10 · Session $0.25'
+    );
+  });
+
+  it('shows only agent cost for secondary agents', () => {
+    expect(formatAgentUsageCostLabel({ isPrimary: false, agentCost: 0.02, sessionCost: 1 })).toBe(
+      '$0.02'
+    );
+    expect(formatAgentUsageCostLabel({ isPrimary: false, agentCost: 0, sessionCost: 1 })).toBe(
+      null
+    );
   });
 });
 

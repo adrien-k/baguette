@@ -16,6 +16,8 @@ import AgentMainBadge from '../../components/AgentMainBadge.jsx';
 import ClearReviewerChatConfirmModal from '../../components/ClearReviewerChatConfirmModal.jsx';
 import DeleteAgentConfirmModal from '../../components/DeleteAgentConfirmModal.jsx';
 import { PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
+import { useSessionUsage } from '../../hooks/useSessionUsage.js';
+import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usageSeries.js';
 
 function statusLabel(status) {
   if (!status) return '—';
@@ -27,6 +29,7 @@ function AgentListRow({
   selected,
   readonly,
   actionAgentId,
+  costLabel,
   onSelectAgent,
   onRequestClearReviewer,
   onStopAgent,
@@ -64,7 +67,17 @@ function AgentListRow({
             </span>
             {isPrimaryAgent(agent) ? <AgentMainBadge /> : null}
           </div>
-          <p className="text-[11px] text-faint mt-0.5">{statusLabel(agent.status)}</p>
+          <p className="text-[11px] text-faint mt-0.5">
+            {statusLabel(agent.status)}
+            {costLabel ? (
+              <>
+                <span className="text-line mx-1" aria-hidden>
+                  ·
+                </span>
+                <span className="tabular-nums">{costLabel}</span>
+              </>
+            ) : null}
+          </p>
         </button>
         {showStop && (
           <button
@@ -124,6 +137,16 @@ export default function AgentsPanel({
   readonly,
 }) {
   const { agents, loading } = useSessionAgents(sessionId);
+  const { usage } = useSessionUsage(sessionId);
+  const costByAgentId = useMemo(() => usageCostByAgentId(usage?.by_agent), [usage?.by_agent]);
+  const sessionCostUsd = Number(usage?.totals?.cost_usd ?? 0);
+
+  const costLabelForAgent = (agent) =>
+    formatAgentUsageCostLabel({
+      isPrimary: isPrimaryAgent(agent),
+      agentCost: costByAgentId.get(agent.id) ?? 0,
+      sessionCost: sessionCostUsd,
+    });
   const [actionAgentId, setActionAgentId] = useState(null);
   const [pendingClearAgent, setPendingClearAgent] = useState(null);
   const [pendingDeleteAgent, setPendingDeleteAgent] = useState(null);
@@ -310,6 +333,7 @@ export default function AgentsPanel({
                   selected={selectedAgentId != null && Number(selectedAgentId) === agent.id}
                   readonly={readonly}
                   actionAgentId={actionAgentId}
+                  costLabel={costLabelForAgent(agent)}
                   onSelectAgent={onSelectAgent}
                   onRequestClearReviewer={requestClearReviewer}
                   onStopAgent={handleStopAgent}
@@ -336,6 +360,7 @@ export default function AgentsPanel({
                     selected={selectedAgentId != null && Number(selectedAgentId) === agent.id}
                     readonly={readonly}
                     actionAgentId={actionAgentId}
+                    costLabel={costLabelForAgent(agent)}
                     onSelectAgent={onSelectAgent}
                     onRequestClearReviewer={requestClearReviewer}
                     onStopAgent={handleStopAgent}

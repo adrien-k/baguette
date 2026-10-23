@@ -241,9 +241,6 @@ function TypedMessage(
             className={`text-center text-xs opacity-70 ${isError ? 'text-danger' : 'text-success'}`}
           >
             <span className="font-medium">{isError ? 'Error' : 'Completed'}</span>
-            {message.total_cost_usd != null && (
-              <span className="ml-2 text-faint">(${message.total_cost_usd.toFixed(4)})</span>
-            )}
           </div>
           {isError && message.error_message && (
             <div className="mt-1 text-fg-muted text-xs">
