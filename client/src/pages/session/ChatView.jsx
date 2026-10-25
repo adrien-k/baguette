@@ -64,6 +64,7 @@ import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
+  agentTitleFromPrompt,
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
@@ -224,17 +225,12 @@ export default function ChatView({
     () => usageCostByAgentId(sessionUsage?.by_agent),
     [sessionUsage?.by_agent]
   );
-  const sessionCostUsd = Number(sessionUsage?.totals?.cost_usd ?? 0);
   const agentUsageCostLabel = useCallback(
     (agent) => {
       if (!agent?.id) return null;
-      return formatAgentUsageCostLabel({
-        isPrimary: Boolean(Number(agent.is_primary)),
-        agentCost: costByAgentId.get(agent.id) ?? 0,
-        sessionCost: sessionCostUsd,
-      });
+      return formatAgentUsageCostLabel({ agentCost: costByAgentId.get(agent.id) ?? 0 });
     },
-    [costByAgentId, sessionCostUsd]
+    [costByAgentId]
   );
   const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
@@ -474,7 +470,11 @@ export default function ChatView({
     return text;
   };
 
-  const sendMessage = async (messageJson, { force = false, model, model_params } = {}) => {
+  const sendMessage = async (
+    messageJson,
+    { force = false, model, model_params, agent: agentOverride } = {}
+  ) => {
+    const targetAgent = agentOverride ?? activeAgent;
     await messagesService.create({
       session_id: session.id,
       type: 'user',
@@ -482,7 +482,7 @@ export default function ChatView({
       ...builderMessageCreateFields(session, {
         model: isReviewerAgent ? (model ?? composerModel) : model,
         model_params: isReviewerAgent ? (model_params ?? composerModelParams) : model_params,
-        agent: activeAgent,
+        agent: targetAgent,
       }),
       ...(force ? { force: true } : {}),
     });
@@ -594,6 +594,58 @@ export default function ChatView({
       toastFeathersError('Failed to create loop', err);
     } finally {
       setCreatingLoop(false);
+    }
+  };
+
+  const showStartSubagentOption =
+    !readonly && showMessageComposer && activeAgent?.agent_type !== 'reviewer';
+
+  const handleStartSubagentBuilder = async () => {
+    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    const text = input.trim();
+    setError(null);
+    setFileError(null);
+    const filesToSend = files;
+    setFiles([]);
+    setSending(true);
+    let content;
+    try {
+      content = await buildContent(text, filesToSend);
+    } catch (err) {
+      setFileError(err?.message ?? 'Failed to read attached files');
+      setInput(text);
+      setFiles(filesToSend);
+      setSending(false);
+      return;
+    }
+    const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
+    let newAgent;
+    try {
+      newAgent = await agentsService.create({
+        session_id: session.id,
+        agent_type: 'builder',
+        name: agentTitleFromPrompt(text),
+      });
+    } catch (err) {
+      setInput(text);
+      setFiles(filesToSend);
+      toastFeathersError('Failed to start subagent', err);
+      setSending(false);
+      return;
+    }
+    if (newAgent?.id != null) {
+      onSelectAgent?.(newAgent);
+    }
+    try {
+      await sendMessage(messageJson, { ...composerTurnFields(), agent: newAgent });
+      setInput('');
+      persistentState.clear();
+    } catch (err) {
+      setInput(text);
+      setFiles(filesToSend);
+      toastFeathersError('Failed to send message', err);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -1010,14 +1062,27 @@ export default function ChatView({
                         onPreset={handleSchedulePreset}
                         onCustomSchedule={openScheduleModal}
                         extraItems={
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={openRegularlyModal}
-                            className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
-                          >
-                            Send regularly
-                          </button>
+                          <>
+                            {showStartSubagentOption ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={!canSendDraft}
+                                onClick={() => void handleStartSubagentBuilder()}
+                                className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                Start subagent
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={openRegularlyModal}
+                              className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
+                            >
+                              Send regularly
+                            </button>
+                          </>
                         }
                       />
                     }

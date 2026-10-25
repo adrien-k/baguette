@@ -15,6 +15,7 @@ import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import AgentMessageComposer from './AgentMessageComposer.jsx';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
@@ -117,6 +118,8 @@ export default function BuilderForm({
   const repoFullName = allowRepoChoice ? (isGlobal ? null : targetScope) : repoFullNameProp;
   const linkedRepo = repos.find((r) => r.full_name === repoFullName);
   const localRepo = !isGlobal && Boolean(repoFullName) && isLocalRepo(linkedRepo ?? repoFullName);
+  /** Below md (default + sm): three-line composer so wrapped placeholders stay visible. */
+  const isBelowMd = useMediaQuery('(max-width: 767px)');
   const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '', {
     persistWhen: hasPromptText,
   });
@@ -456,6 +459,8 @@ export default function BuilderForm({
       skipColumn
       formClassName=""
       resizable
+      rows={isBelowMd ? 3 : 1}
+      fitPlaceholderWhenEmpty={isBelowMd}
       value={initialPrompt}
       onChange={setInitialPrompt}
       onSubmit={handleComposerSubmit}

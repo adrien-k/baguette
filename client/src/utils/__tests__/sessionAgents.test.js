@@ -11,7 +11,18 @@ import {
   isPrimaryAgent,
   isSubagentBuilder,
   sortSessionAgentsByRefAsc,
+  agentTitleFromPrompt,
 } from '../sessionAgents.js';
+
+describe('agentTitleFromPrompt', () => {
+  it('uses the first four words', () => {
+    expect(agentTitleFromPrompt('one two three four five')).toBe('one two three four');
+  });
+
+  it('falls back to Builder for empty prompts', () => {
+    expect(agentTitleFromPrompt('   ')).toBe('Builder');
+  });
+});
 
 describe('agent display labels', () => {
   it('treats default names as matching agent type', () => {

@@ -109,20 +109,13 @@ export function usageCostByAgentId(byAgent) {
 }
 
 /**
- * Cost line for an agent row (agents panel / composer). Primary builders show agent + session totals.
+ * Per-agent cost for agents panel rows and composer chrome (parentheses, agent only).
  * @returns {string|null}
  */
-export function formatAgentUsageCostLabel({ isPrimary, agentCost, sessionCost }) {
+export function formatAgentUsageCostLabel({ agentCost }) {
   const agent = Number(agentCost) || 0;
-  const session = Number(sessionCost) || 0;
-  if (isPrimary) {
-    if (agent <= 0 && session <= 0) return null;
-    const agentPart = `Agent ${formatUsd(agent)}`;
-    const sessionPart = `Session ${formatUsd(session)}`;
-    return `${agentPart} · ${sessionPart}`;
-  }
   if (agent <= 0) return null;
-  return formatUsd(agent);
+  return `(${formatUsd(agent)})`;
 }
 
 const EMPTY_USAGE_METRICS = {

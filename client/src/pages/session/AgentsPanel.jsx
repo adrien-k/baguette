@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Loader2, Plus, Square, Trash2 } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Loader2, Pencil, Square, Trash2 } from 'lucide-react';
 import { useSessionAgents } from '../../hooks/useSessionAgents.js';
 import { agentsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
@@ -15,7 +15,6 @@ import AgentTypeIcon from '../../components/AgentTypeIcon.jsx';
 import AgentMainBadge from '../../components/AgentMainBadge.jsx';
 import ClearReviewerChatConfirmModal from '../../components/ClearReviewerChatConfirmModal.jsx';
 import DeleteAgentConfirmModal from '../../components/DeleteAgentConfirmModal.jsx';
-import { PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { useSessionUsage } from '../../hooks/useSessionUsage.js';
 import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usageSeries.js';
 
@@ -30,12 +29,23 @@ function AgentListRow({
   readonly,
   actionAgentId,
   costLabel,
+  renaming,
+  renameValue,
+  renameSaving,
   onSelectAgent,
+  onStartRename,
+  onRenameChange,
+  onCommitRename,
+  onCancelRename,
   onRequestClearReviewer,
   onStopAgent,
   onRequestDeleteAgent,
 }) {
   const subagent = isSubagentBuilder(agent);
+  const canRename =
+    !readonly &&
+    !isPrimaryAgent(agent) &&
+    (agent.agent_type === 'builder' || agent.agent_type === 'subagent');
   const showClearReviewer =
     !readonly && agent.agent_type === 'reviewer' && canRemoveAgentWhenIdle(agent);
   const showDeleteBuilder =
@@ -62,23 +72,53 @@ function AgentListRow({
             {agent.ref != null ? (
               <span className="text-faint font-mono text-[11px] shrink-0">#{agent.ref}</span>
             ) : null}
-            <span className="text-sm font-medium text-heading truncate">
-              {agentDisplayTitle(agent)}
-            </span>
+            {renaming ? (
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => onRenameChange?.(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onCommitRename?.(agent);
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancelRename?.();
+                  }
+                }}
+                onBlur={() => onCommitRename?.(agent)}
+                disabled={renameSaving}
+                className="flex-1 min-w-0 rounded border border-line bg-control px-1.5 py-0.5 text-sm text-heading"
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span className="text-sm font-medium text-heading truncate">
+                {agentDisplayTitle(agent)}
+              </span>
+            )}
             {isPrimaryAgent(agent) ? <AgentMainBadge /> : null}
           </div>
           <p className="text-[11px] text-faint mt-0.5">
             {statusLabel(agent.status)}
-            {costLabel ? (
-              <>
-                <span className="text-line mx-1" aria-hidden>
-                  ·
-                </span>
-                <span className="tabular-nums">{costLabel}</span>
-              </>
-            ) : null}
+            {costLabel ? <span className="tabular-nums">{` ${costLabel}`}</span> : null}
           </p>
         </button>
+        {canRename && !renaming && (
+          <button
+            type="button"
+            title="Rename agent"
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              onStartRename?.(agent);
+            }}
+            className="shrink-0 px-2 text-faint hover:text-heading disabled:opacity-50"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
         {showStop && (
           <button
             type="button"
@@ -139,20 +179,16 @@ export default function AgentsPanel({
   const { agents, loading } = useSessionAgents(sessionId);
   const { usage } = useSessionUsage(sessionId);
   const costByAgentId = useMemo(() => usageCostByAgentId(usage?.by_agent), [usage?.by_agent]);
-  const sessionCostUsd = Number(usage?.totals?.cost_usd ?? 0);
 
   const costLabelForAgent = (agent) =>
-    formatAgentUsageCostLabel({
-      isPrimary: isPrimaryAgent(agent),
-      agentCost: costByAgentId.get(agent.id) ?? 0,
-      sessionCost: sessionCostUsd,
-    });
+    formatAgentUsageCostLabel({ agentCost: costByAgentId.get(agent.id) ?? 0 });
   const [actionAgentId, setActionAgentId] = useState(null);
   const [pendingClearAgent, setPendingClearAgent] = useState(null);
   const [pendingDeleteAgent, setPendingDeleteAgent] = useState(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [renamingAgentId, setRenamingAgentId] = useState(null);
+  const renamingAgentIdRef = useRef(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
 
   const mainAgents = useMemo(
     () => sortSessionAgentsByRefAsc(agents.filter((a) => !isSubagentBuilder(a))),
@@ -226,27 +262,37 @@ export default function AgentsPanel({
     }
   };
 
-  const handleAddBuilder = async () => {
-    if (!sessionId || adding) return;
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
+  const startRename = (agent) => {
+    if (readonly || isPrimaryAgent(agent)) return;
+    renamingAgentIdRef.current = agent.id;
+    setRenamingAgentId(agent.id);
+    setRenameValue(agent.name?.trim() || agentDisplayTitle(agent));
+  };
 
-    setAdding(true);
+  const cancelRename = () => {
+    if (renameSaving) return;
+    renamingAgentIdRef.current = null;
+    setRenamingAgentId(null);
+    setRenameValue('');
+  };
+
+  const commitRename = async (agent) => {
+    if (!sessionId || renameSaving || renamingAgentId !== agent.id) return;
+    const trimmed = renameValue.trim();
+    const current = agent.name?.trim() || '';
+    const targetId = agent.id;
+    if (!trimmed || trimmed === current) {
+      if (renamingAgentIdRef.current === targetId) cancelRename();
+      return;
+    }
+    setRenameSaving(true);
     try {
-      const agent = await agentsService.create({
-        session_id: sessionId,
-        agent_type: 'builder',
-        name: trimmedName,
-      });
-      setShowAddForm(false);
-      setName('');
-      if (agent?.id != null) {
-        onSelectAgent?.(agent);
-      }
+      await agentsService.patch(targetId, { name: trimmed });
+      if (renamingAgentIdRef.current === targetId) cancelRename();
     } catch (err) {
-      toastError('Failed to add builder agent', err);
+      toastError('Failed to rename agent', err);
     } finally {
-      setAdding(false);
+      setRenameSaving(false);
     }
   };
 
@@ -258,72 +304,12 @@ export default function AgentsPanel({
     );
   }
 
-  const addBuilderForm =
-    !readonly && showAddForm ? (
-      <form
-        className="space-y-2 rounded-lg border border-line bg-control/30 p-2 mx-2 mb-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void handleAddBuilder();
-        }}
-      >
-        <label className="block space-y-1">
-          <span className="text-[11px] font-medium text-faint">Name</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-line bg-control px-2 py-1.5 text-sm"
-            placeholder="e.g. Research"
-            autoFocus
-            disabled={adding}
-          />
-        </label>
-        <p className="text-[11px] text-faint">
-          Uses this session&apos;s agent and model. Send the first message from the composer.
-        </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="flex-1 rounded-md border border-line px-2 py-1.5 text-xs text-faint hover:text-heading"
-            onClick={() => setShowAddForm(false)}
-            disabled={adding}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className={`${PRIMARY_BUTTON_SIZED} flex-1 justify-center`}
-            disabled={adding || !name.trim()}
-          >
-            {adding ? 'Adding…' : 'Add'}
-          </button>
-        </div>
-      </form>
-    ) : null;
-
   return (
     <>
       {agents.length === 0 ? (
         <p className="px-3 py-4 text-xs text-faint">No agents for this session yet.</p>
       ) : (
         <div className="flex flex-col min-h-0 flex-1 overflow-y-auto">
-          <div className="shrink-0">
-            {!readonly && !showAddForm && (
-              <div className="p-2 border-b border-line/60">
-                <button
-                  type="button"
-                  className={`${PRIMARY_BUTTON_SIZED} w-full justify-center`}
-                  onClick={() => setShowAddForm(true)}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add builder
-                </button>
-              </div>
-            )}
-            {addBuilderForm}
-          </div>
-
           {mainAgents.length > 0 && (
             <ul className="flex flex-col gap-1 p-2">
               {mainAgents.map((agent) => (
@@ -334,7 +320,14 @@ export default function AgentsPanel({
                   readonly={readonly}
                   actionAgentId={actionAgentId}
                   costLabel={costLabelForAgent(agent)}
+                  renaming={renamingAgentId === agent.id}
+                  renameValue={renameValue}
+                  renameSaving={renameSaving}
                   onSelectAgent={onSelectAgent}
+                  onStartRename={startRename}
+                  onRenameChange={setRenameValue}
+                  onCommitRename={commitRename}
+                  onCancelRename={cancelRename}
                   onRequestClearReviewer={requestClearReviewer}
                   onStopAgent={handleStopAgent}
                   onRequestDeleteAgent={requestDeleteAgent}
@@ -361,7 +354,14 @@ export default function AgentsPanel({
                     readonly={readonly}
                     actionAgentId={actionAgentId}
                     costLabel={costLabelForAgent(agent)}
+                    renaming={renamingAgentId === agent.id}
+                    renameValue={renameValue}
+                    renameSaving={renameSaving}
                     onSelectAgent={onSelectAgent}
+                    onStartRename={startRename}
+                    onRenameChange={setRenameValue}
+                    onCommitRename={commitRename}
+                    onCancelRename={cancelRename}
                     onRequestClearReviewer={requestClearReviewer}
                     onStopAgent={handleStopAgent}
                     onRequestDeleteAgent={requestDeleteAgent}

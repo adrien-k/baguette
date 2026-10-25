@@ -65,6 +65,7 @@ export default function AgentMessageComposer({
   autoFocus = false,
   resizable = false,
   rows = 1,
+  fitPlaceholderWhenEmpty = false,
   hint,
   agentName,
   agentType,
@@ -126,7 +127,7 @@ export default function AgentMessageComposer({
               const base = agentMenuOptionLabel(a);
               return {
                 value: String(a.id),
-                label: costLabel ? `${base} · ${costLabel}` : base,
+                label: costLabel ? `${base} ${costLabel}` : base,
                 icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
               };
             })}
@@ -205,6 +206,7 @@ export default function AgentMessageComposer({
         canSubmit={hasDraft && !submitDisabled}
         disabled={disabled || sending}
         placeholder={placeholder}
+        fitPlaceholderWhenEmpty={fitPlaceholderWhenEmpty}
         autoFocus={autoFocus}
         className={
           resizable
