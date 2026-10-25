@@ -186,7 +186,14 @@ export function useGetMessages(sessionId, agentId = null, options = {}) {
 
     const onPatched = (message) => {
       if (!matchesScope(message)) return;
-      setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === message.id);
+        if (idx === -1) return insertSessionMessageById(prev, message);
+        if (prev[idx] === message) return prev;
+        const next = [...prev];
+        next[idx] = message;
+        return next;
+      });
     };
 
     messagesService.on('created', onCreated);

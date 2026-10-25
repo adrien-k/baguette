@@ -421,6 +421,7 @@ export default function BaguetteMcpToolBlock({
     const markdownFromArgs =
       typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '';
     const markdown = markdownFromResult || (toolShortName === 'CreatePlan' ? markdownFromArgs : '');
+    const interactive = args.interactive !== false;
     const heading = toolShortName === 'CreatePlan' ? 'Plan created' : 'Plan updated';
     const planFailed = mcpResult?.ok === false;
     const planErrorMessage =
@@ -434,6 +435,7 @@ export default function BaguetteMcpToolBlock({
         errorMessage={planErrorMessage}
         sessionId={sessionId != null ? Number(sessionId) : null}
         userReplied={userReplied}
+        interactive={interactive}
       />
     );
   }

@@ -1,4 +1,4 @@
-import { isTurnEndingBaguetteTool } from '../../../../shared/baguette-mcp-tool-names.js';
+import { baguetteToolPausesForUserAfterSuccess } from '../../../../shared/baguette-mcp-tool-names.js';
 import { baguetteMcpToolSucceeded } from '../../baguette-mcp-tool-result.js';
 import { markAwaitingUserAfterTurnEndingTool } from '../../agent-awaiting-user.js';
 import { getPrimaryBuilderAgent, getReviewerAgent } from '../../agents-db.js';
@@ -52,7 +52,7 @@ async function markAwaitingUserAfterTurnEndingBaguetteTool(app, session) {
 function wrapBaguetteToolHandler(session, app, name, handler) {
   return async (args) => {
     const result = await handler(args);
-    if (isTurnEndingBaguetteTool(name) && baguetteMcpToolSucceeded(result)) {
+    if (baguetteToolPausesForUserAfterSuccess(name, args) && baguetteMcpToolSucceeded(result)) {
       await markAwaitingUserAfterTurnEndingBaguetteTool(app, session);
     }
     return result;

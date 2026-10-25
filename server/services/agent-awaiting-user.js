@@ -20,7 +20,7 @@ export function isBuilderAgentAwaitingUser(agent) {
 }
 
 /**
- * After AskUserQuestions / CreatePlan / EditPlan: mark the agent awaiting user input.
+ * After AskUserQuestions / CreatePlan / EditPlan (when interactive is not false): mark the agent awaiting user input.
  * Does not abort or cancel the agent — the model should end the turn on its own.
  *
  * @param {import('@feathersjs/feathers').Application} app

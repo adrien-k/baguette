@@ -9,6 +9,7 @@ export default function ShowPlanBlock({
   markdown,
   sessionId,
   userReplied = false,
+  interactive = true,
   isRunning = false,
   isError = false,
   errorMessage = null,
@@ -17,6 +18,8 @@ export default function ShowPlanBlock({
   markdown?: string | null;
   sessionId?: number | null;
   userReplied?: boolean;
+  /** When false, plan is informational only (no Run/Refine actions). */
+  interactive?: boolean;
   isRunning?: boolean;
   isError?: boolean;
   errorMessage?: string | null;
@@ -65,7 +68,7 @@ export default function ShowPlanBlock({
           <p className="text-sm text-faint italic">No plan content yet.</p>
         )}
       </div>
-      {!userReplied && !isError && (
+      {interactive && !userReplied && !isError && (
         <div className="px-3 sm:px-4 pb-4 pt-1 flex flex-wrap gap-2">
           <button
             type="button"

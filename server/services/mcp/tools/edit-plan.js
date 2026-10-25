@@ -12,13 +12,19 @@ export function createEditPlanTool(h) {
   return {
     name: 'EditPlan',
     description:
-      'Patch the session plan stored in the database. Send one or more { old_string, new_string } edits; the server applies them to the saved plan in order—do not resend the full plan markdown. Summarize in patches; reference todos by ref or title. Shows the updated plan in chat; end your turn right after this tool returns—no follow-up message (if required, say only “Plan updated.”). Requires CreatePlan first.',
+      'Patch the session plan stored in the database. Send one or more { old_string, new_string } edits; the server applies them to the saved plan in order—do not resend the full plan markdown. Summarize in patches; reference todos by ref or title. Shows the updated plan in chat. When `interactive` is true (default), pause for user review—end your turn right after this tool returns with no follow-up message (if required, say only “Plan updated.”). Set `interactive: false` to keep running in the same turn. Requires CreatePlan first.',
     schema: {
       patches: z
         .array(planPatchSchema)
         .min(1)
         .describe(
           'Ordered patches against the stored plan. Copy old_string exactly from the current plan (e.g. from ReadPlan or a prior CreatePlan result).'
+        ),
+      interactive: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true (default), pause for user approval (“Run the plan”). When false, persist the plan and continue the turn without waiting.'
         ),
     },
     handler: h.editPlan,

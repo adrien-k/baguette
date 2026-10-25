@@ -111,6 +111,40 @@ describe('wrapBaguetteToolList', () => {
     expect(patchAgentInternal).toHaveBeenCalledWith(app, 99, { status: 'approval' }, 7);
   });
 
+  it('does not pause for user when CreatePlan uses interactive false', async () => {
+    patchAgentInternal.mockClear();
+    const sessionState = { channel: 'chat', endTurnAwaitingUser: false };
+    const builder = { id: 5, agent_sdk: 'cursor', agent_type: 'builder', session_id: 42 };
+    const app = {
+      get: (key) => {
+        if (key === 'db') {
+          return makeDb({ sessionRow: { id: 42 }, builder, reviewer: null });
+        }
+        return undefined;
+      },
+      service: (name) => {
+        if (name === 'cursor-agent') {
+          return { getActiveSession: () => sessionState };
+        }
+        return null;
+      },
+    };
+    const session = { id: 42, user_id: 7 };
+    const tools = wrapBaguetteToolList(session, app, [
+      {
+        name: 'CreatePlan',
+        description: 'plan',
+        schema: {},
+        handler: async () => ({ ok: true }),
+      },
+    ]);
+
+    await tools[0].handler({ markdown: '# Plan', interactive: false });
+
+    expect(sessionState.endTurnAwaitingUser).toBe(false);
+    expect(patchAgentInternal).not.toHaveBeenCalled();
+  });
+
   it('does not patch approval when no active agent session exists', async () => {
     patchAgentInternal.mockClear();
     const builder = { id: 5, agent_sdk: 'cursor', agent_type: 'builder', session_id: 42 };

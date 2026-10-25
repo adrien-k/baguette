@@ -20,7 +20,9 @@ import {
   MOCK_E2E_SUBAGENT_NAME,
   MOCK_E2E_SUBAGENT_PROMPT,
   MOCK_E2E_SUBAGENT_SUMMARY,
+  MOCK_E2E_CREATE_PLAN_NON_INTERACTIVE_PROMPT,
   MOCK_E2E_CREATE_PLAN_PROMPT,
+  MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY,
   MOCK_E2E_PLAN_RUN_SUMMARY,
   MOCK_E2E_ASK_QUESTION_PROMPT,
   MOCK_REVIEW_ISSUES,
@@ -221,6 +223,53 @@ describe('MockAgentService', () => {
     });
     expect(createPlan).toBeTruthy();
     expect(JSON.parse(createPlan.message_json).args.markdown).toContain('E2E mock plan');
+  });
+
+  it('completes turn after non-interactive CreatePlan e2e prompt', async () => {
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: MOCK_E2E_CREATE_PLAN_NON_INTERACTIVE_PROMPT },
+        }),
+        ...sessionMessageIdentity(builder),
+      },
+      params({ id: userId })
+    );
+
+    await vi.waitFor(
+      async () => {
+        const builderRow = await db('agents')
+          .where({ session_id: sessionId, is_primary: 1 })
+          .first();
+        expect(builderRow.status).toBe('completed');
+        const rows = await db('session_messages').where({ session_id: sessionId }).orderBy('id');
+        const createPlan = rows.find((r) => {
+          if (r.type !== 'tool_call') return false;
+          const p = JSON.parse(r.message_json);
+          return p.kind === 'mcp' && p.args?.tool === 'CreatePlan';
+        });
+        expect(createPlan).toBeTruthy();
+        const planArgs = JSON.parse(createPlan.message_json).args;
+        expect(planArgs.interactive).toBe(false);
+        const assistant = rows.find((r) => {
+          try {
+            const p = JSON.parse(r.message_json);
+            return (
+              p.type === 'assistant' &&
+              p.blocks?.[0]?.text?.includes(MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY)
+            );
+          } catch {
+            return false;
+          }
+        });
+        expect(assistant).toBeTruthy();
+      },
+      { timeout: 10_000 }
+    );
   });
 
   it('completes plan-run follow-up after Proceed with the plan', async () => {
