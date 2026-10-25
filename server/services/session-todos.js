@@ -1,6 +1,6 @@
 const TODO_STATUSES = ['pending', 'in_progress', 'completed'];
 
-/** Todos with these statuses are returned by ListTodos (open items for the agent). */
+/** Pending and in_progress — open work (e.g. `todos` on CreateTodo/UpdateTodo/DeleteTodo responses). */
 export const OPEN_TODO_STATUSES = ['pending', 'in_progress'];
 
 export function assertTodoStatus(status) {

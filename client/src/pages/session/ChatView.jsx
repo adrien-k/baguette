@@ -331,25 +331,22 @@ export default function ChatView({
     return queue.filter((item) => item.agent_id === activeAgent.id);
   }, [queue, activeAgent]);
 
-  const { todos: sessionTodosAll } = useGetSessionTodos(chatSessionId, {
+  const { todos: sessionOpenTodos } = useGetSessionTodos(chatSessionId, {
     enabled: chatSessionId != null,
-    openOnly: false,
+    openOnly: true,
   });
 
   const sessionTodoCounts = useMemo(() => {
     let open = 0;
     let inProgress = 0;
-    let completed = 0;
-    for (const row of sessionTodosAll) {
+    for (const row of sessionOpenTodos) {
       if (row.status === 'pending') open += 1;
       else if (row.status === 'in_progress') inProgress += 1;
-      else if (row.status === 'completed') completed += 1;
     }
-    return { open, inProgress, completed };
-  }, [sessionTodosAll]);
+    return { open, inProgress };
+  }, [sessionOpenTodos]);
 
-  const sessionTodoTotal =
-    sessionTodoCounts.open + sessionTodoCounts.inProgress + sessionTodoCounts.completed;
+  const sessionTodoTotal = sessionTodoCounts.open + sessionTodoCounts.inProgress;
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,

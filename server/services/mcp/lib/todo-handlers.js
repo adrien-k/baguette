@@ -65,15 +65,20 @@ export function createTodoHandlers(session, app) {
       }
     },
 
-    async processTodo({ ref }) {
+    async updateTodo({ ref, status, title, content }) {
       try {
         const todoRef = parseRef(ref);
         if (todoRef == null) return fail('Invalid todo ref');
+        if (status === undefined && title === undefined && content === undefined) {
+          return fail('Pass at least one of status, title, or content to update');
+        }
         const existing = await findTodoByRef(app, sessionId, todoRef, userId);
         if (!existing) return fail('Todo not found');
-        const row = await app
-          .service('session-todos')
-          .patch(existing.id, { status: 'in_progress' }, userParams);
+        const patch = {};
+        if (status !== undefined) patch.status = status;
+        if (title !== undefined) patch.title = title;
+        if (content !== undefined) patch.content = content;
+        const row = await app.service('session-todos').patch(existing.id, patch, userParams);
         const todo = serializeTodo(row);
         const todos = await listOpenTodos(app, sessionId, userId);
         return ok({ todo, todos });
@@ -82,18 +87,30 @@ export function createTodoHandlers(session, app) {
       }
     },
 
-    async completeTodo({ ref }) {
+    async deleteTodos({ refs }) {
       try {
-        const todoRef = parseRef(ref);
-        if (todoRef == null) return fail('Invalid todo ref');
-        const existing = await findTodoByRef(app, sessionId, todoRef, userId);
-        if (!existing) return fail('Todo not found');
-        const row = await app
-          .service('session-todos')
-          .patch(existing.id, { status: 'completed' }, userParams);
-        const todo = serializeTodo(row);
+        const rawRefs = Array.isArray(refs) ? refs : [];
+        const uniqueRefs = [];
+        for (const raw of rawRefs) {
+          const todoRef = parseRef(raw);
+          if (todoRef == null) return fail('Invalid todo ref');
+          if (!uniqueRefs.includes(todoRef)) uniqueRefs.push(todoRef);
+        }
+        if (uniqueRefs.length === 0) return fail('Pass at least one todo ref to delete');
+
+        const toDelete = [];
+        for (const todoRef of uniqueRefs) {
+          const existing = await findTodoByRef(app, sessionId, todoRef, userId);
+          if (!existing) return fail(`Todo not found: #${todoRef}`);
+          toDelete.push(existing);
+        }
+        const deleted = [];
+        for (const existing of toDelete) {
+          deleted.push(serializeTodo(existing));
+          await app.service('session-todos').remove(existing.id, userParams);
+        }
         const todos = await listOpenTodos(app, sessionId, userId);
-        return ok({ todo, todos });
+        return ok({ deleted, todos });
       } catch (err) {
         return serviceError(err);
       }
@@ -101,7 +118,7 @@ export function createTodoHandlers(session, app) {
 
     async listTodos() {
       try {
-        const todos = await listOpenTodos(app, sessionId, userId);
+        const todos = await listTodosForSession(app, sessionId, userId);
         return ok({ todos });
       } catch (err) {
         return serviceError(err);

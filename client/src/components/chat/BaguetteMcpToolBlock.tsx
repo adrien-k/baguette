@@ -402,8 +402,8 @@ export default function BaguetteMcpToolBlock({
 
   if (
     toolShortName === 'CreateTodo' ||
-    toolShortName === 'ProcessTodo' ||
-    toolShortName === 'CompleteTodo'
+    toolShortName === 'UpdateTodo' ||
+    toolShortName === 'DeleteTodo'
   ) {
     return (
       <SessionTodoToolBlock

@@ -4,50 +4,59 @@ import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import {
   resolveSessionTodoForTool,
   todoRefFromArgs,
+  todoRefsFromArgs,
+  updateTodoStatusOnlyHeading,
   type McpTodoPayload,
 } from '../../utils/sessionTodoMcpDisplay.ts';
 import { sessionTodoTitle } from '../../utils/sessionTodoDisplay.ts';
 
 const TOOL_HEADING: Record<string, string> = {
   CreateTodo: 'Todo created',
-  ProcessTodo: 'Todo in progress',
-  CompleteTodo: 'Todo completed',
+  UpdateTodo: 'Todo updated',
+  DeleteTodo: 'Todos deleted',
 };
 
 const DISPLAY_STATUS: Record<string, string> = {
   CreateTodo: 'pending',
-  ProcessTodo: 'in_progress',
-  CompleteTodo: 'completed',
 };
 
 function SessionTodoStatusLine({
   toolName,
   args,
   result,
-  isError = false,
+  showError = false,
+  headingOverride,
+  refs,
 }: {
-  toolName: 'ProcessTodo' | 'CompleteTodo';
+  toolName: 'UpdateTodo' | 'DeleteTodo';
   args: Record<string, unknown>;
   result?: unknown;
-  isError?: boolean;
+  showError?: boolean;
+  headingOverride?: string;
+  refs?: number[];
 }) {
   const { short_id } = useParams();
   const { sessionUrl } = useFilterRoutes();
   const isRunning = result == null;
-  const ref = todoRefFromArgs(args);
-  const heading = TOOL_HEADING[toolName] ?? toolName;
+  const refList = refs ?? (todoRefFromArgs(args) != null ? [todoRefFromArgs(args)!] : []);
+  const heading = headingOverride ?? TOOL_HEADING[toolName] ?? toolName;
+  const firstRef = refList[0];
   const planTo =
     short_id != null
-      ? `${sessionUrl(short_id)}?view=plan${ref != null ? `#todo-${ref}` : ''}`
+      ? `${sessionUrl(short_id)}?view=plan${firstRef != null ? `#todo-${firstRef}` : ''}`
       : null;
 
   return (
     <div className="text-xs font-mono py-0.5 pl-1 flex items-center gap-1.5 text-faint flex-wrap">
       <span>↳</span>
-      <span className={isError ? 'text-red-700' : ''}>{heading}</span>
-      {ref != null && <span className="text-faint tabular-nums">#{ref}</span>}
-      {isError && <span className="text-red-700">[error]</span>}
-      {isRunning && !isError && (
+      <span className={showError ? 'text-red-700' : ''}>{heading}</span>
+      {refList.map((ref) => (
+        <span key={ref} className="text-faint tabular-nums">
+          #{ref}
+        </span>
+      ))}
+      {showError && <span className="text-red-700">[error]</span>}
+      {isRunning && !showError && (
         <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
       )}
       {planTo && (
@@ -66,15 +75,38 @@ export default function SessionTodoToolBlock({
   result,
   isError = false,
 }: {
-  toolName: 'CreateTodo' | 'ProcessTodo' | 'CompleteTodo';
+  toolName: 'CreateTodo' | 'UpdateTodo' | 'DeleteTodo';
   args: Record<string, unknown>;
   mcpResult: McpTodoPayload | null;
   result?: unknown;
   isError?: boolean;
 }) {
-  if (toolName === 'ProcessTodo' || toolName === 'CompleteTodo') {
+  const toolFailed = mcpResult?.ok === false;
+  const showError = isError || toolFailed;
+
+  const statusOnlyHeading = toolName === 'UpdateTodo' ? updateTodoStatusOnlyHeading(args) : null;
+
+  if (toolName === 'DeleteTodo') {
     return (
-      <SessionTodoStatusLine toolName={toolName} args={args} result={result} isError={isError} />
+      <SessionTodoStatusLine
+        toolName={toolName}
+        args={args}
+        result={result}
+        showError={showError}
+        refs={todoRefsFromArgs(args)}
+      />
+    );
+  }
+
+  if (toolName === 'UpdateTodo' && statusOnlyHeading) {
+    return (
+      <SessionTodoStatusLine
+        toolName={toolName}
+        args={args}
+        result={result}
+        showError={showError}
+        headingOverride={statusOnlyHeading}
+      />
     );
   }
 
@@ -85,7 +117,7 @@ export default function SessionTodoToolBlock({
 
   return (
     <div
-      className={`rounded-lg border overflow-hidden ${isError ? 'border-danger/60' : 'border-line'}`}
+      className={`rounded-lg border overflow-hidden ${showError ? 'border-danger/60' : 'border-line'}`}
     >
       <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/40 flex-wrap">
         <span className="text-xs font-medium text-secondary">{heading}</span>
@@ -96,10 +128,10 @@ export default function SessionTodoToolBlock({
         )}
         <SessionTodoStatusBadge status={displayStatus} />
         {todo?.ref != null && <span className="text-[11px] font-mono text-faint">#{todo.ref}</span>}
-        {isRunning && !isError && (
+        {isRunning && !showError && (
           <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0 ml-auto" />
         )}
-        {isError && <span className="text-danger text-xs font-medium ml-auto">error</span>}
+        {showError && <span className="text-danger text-xs font-medium ml-auto">error</span>}
       </div>
       <div className="px-3 sm:px-4 py-3">
         {todo?.content?.trim() ? (

@@ -7,7 +7,7 @@ export function createListTodosTool(ctx) {
   return {
     name: 'ListTodos',
     description:
-      'List session todos that are open (pending or in progress). session_id is required. Use ref from the list with ProcessTodo or CompleteTodo.',
+      'List all session todos (pending, in_progress, and completed). session_id is required. Prefer the pending and in_progress items when deciding what to work on next. Use ref from the list with UpdateTodo or DeleteTodo.',
     schema: {
       session_id: z.number().int().describe('Session id'),
     },
