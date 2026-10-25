@@ -15,7 +15,6 @@ import {
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useSessionAgents } from '../hooks/useSessionAgents.js';
-import { shouldShowIssuesTabCleanCheck } from '../utils/sessionAgents.js';
 import { useGetTasks } from '../hooks/useGetTasks.js';
 import { useGetSessionIssues } from '../hooks/useGetSessionIssues.js';
 import { useSessionBranchCommits } from '../hooks/useSessionBranchCommits.js';
@@ -178,10 +177,6 @@ export default function Session() {
     }
     return session?.open_issues_count ?? 0;
   }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
-  const showIssuesTabCleanCheck = useMemo(
-    () => shouldShowIssuesTabCleanCheck({ reviewer, openIssuesCount: openIssuesTabCount }),
-    [reviewer, openIssuesTabCount]
-  );
   const [prInfo, setPrInfo] = useState(null);
   const [showTasks, setShowTasks] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
@@ -1140,7 +1135,6 @@ export default function Session() {
             activeView={activeView}
             onViewTabClick={handleViewTabClick}
             openIssuesTabCount={openIssuesTabCount}
-            showIssuesTabCleanCheck={showIssuesTabCleanCheck}
             toggleSidePanel={toggleSidePanel}
             showTasks={showTasks}
             reviewer={reviewer}
