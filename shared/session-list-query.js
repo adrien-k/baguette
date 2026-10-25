@@ -18,12 +18,12 @@ export function queryFlagDisabled(value) {
 
 /**
  * Feathers query for the dashboard / session sidebar list.
- * Scope comes from the URL; archived and loop-run toggles from filter state.
+ * Scope comes from the URL; archived sessions and loop runs are always included.
  */
-export function sessionsListQueryFromPath(pathname, { showArchived, showLoopRuns } = {}) {
+export function sessionsListQueryFromPath(pathname) {
   const query = {
-    include_archived: !!showArchived,
-    include_loop_runs: showLoopRuns !== false,
+    include_archived: true,
+    include_loop_runs: true,
   };
   const scopePath = agentsScopePathFromPathname(pathname);
   if (!scopePath || isAllSessionsPath(pathname)) {

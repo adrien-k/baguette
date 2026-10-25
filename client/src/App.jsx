@@ -13,7 +13,6 @@ const Onboarding = lazy(() => import('./pages/Onboarding.jsx'));
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider } from './context/RepoContext.jsx';
 import { useFilterRoutes } from './hooks/useFilterRoutes.js';
-import { FilterProvider } from './context/FilterContext.jsx';
 import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
@@ -354,14 +353,12 @@ function AppContent() {
 
   return (
     <AgentConfigProvider>
-      <FilterProvider>
-        <RepoProvider>
-          <SessionsProvider>
-            <GitHubBadCredentialsListener />
-            {routes}
-          </SessionsProvider>
-        </RepoProvider>
-      </FilterProvider>
+      <RepoProvider>
+        <SessionsProvider>
+          <GitHubBadCredentialsListener />
+          {routes}
+        </SessionsProvider>
+      </RepoProvider>
     </AgentConfigProvider>
   );
 }

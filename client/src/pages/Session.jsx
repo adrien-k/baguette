@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams, useLocation } from 'react-rout
 import { Loader2 } from 'lucide-react';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
-import { useFilters } from '../context/FilterContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
@@ -99,7 +98,6 @@ export default function Session() {
     refetch: refetchSessions,
   } = useSessionsContext();
   const { selectedRepo, setSelectedRepo, repos } = useRepoContext();
-  const { showArchived } = useFilters();
 
   const loopsQuery = useMemo(() => {
     if (!isLoopsView) return null;
@@ -1019,31 +1017,6 @@ export default function Session() {
 
   const clearScrollToDiffFile = useCallback(() => setScrollToDiffFile(null), []);
 
-  const handleSessionArchived = useCallback(
-    (archived) => {
-      if (String(archived.id) !== String(routeSessionId) || showArchived) return;
-      const firstSession = nextVisibleSession({
-        sessions,
-        sessionId: routeSessionId,
-        session,
-        repoId,
-        fromAllSessions,
-      });
-      navigate(firstSession ? sessionUrl(firstSession.id) : homeUrl);
-    },
-    [
-      routeSessionId,
-      showArchived,
-      sessions,
-      session,
-      repoId,
-      fromAllSessions,
-      navigate,
-      sessionUrl,
-      homeUrl,
-    ]
-  );
-
   const suppressOpenSessionUnread =
     !isNewSessionRoute &&
     !sessionLoading &&
@@ -1144,7 +1117,6 @@ export default function Session() {
           isNewSessionRoute={isNewSessionRoute}
           hideSessionListRepo={hideSessionListRepo}
           suppressOpenSessionUnread={suppressOpenSessionUnread}
-          onSessionArchived={handleSessionArchived}
           hasMoreSessions={hasMoreSessions}
           sessionsLength={sessions.length}
           onLoadMoreSessions={loadMoreSessions}

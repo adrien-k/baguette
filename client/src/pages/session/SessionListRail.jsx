@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { MessageSquare, Plus, Repeat } from 'lucide-react';
 import MiniLoopEntry from '../../components/MiniLoopEntry.jsx';
 import MiniSessionEntry from '../../components/MiniSessionEntry.jsx';
-import SessionListFilters from '../../components/SessionListFilters.jsx';
 export default function SessionListRail({
   sessionsSidebarElRef,
   mobilePreferList,
@@ -30,7 +29,6 @@ export default function SessionListRail({
   isNewSessionRoute,
   hideSessionListRepo,
   suppressOpenSessionUnread,
-  onSessionArchived,
   hasMoreSessions,
   sessionsLength,
   onLoadMoreSessions,
@@ -148,7 +146,6 @@ export default function SessionListRail({
                   suppressUnreadWhenOpen={
                     String(s.id) === String(routeSessionId) && suppressOpenSessionUnread
                   }
-                  onArchive={onSessionArchived}
                 />
               ))}
               {hasMoreSessions && sessionsLength > 0 && (
@@ -162,7 +159,6 @@ export default function SessionListRail({
             </>
           )}
         </div>
-        {!isLoopsView && <SessionListFilters />}
       </div>
     </div>
   );
