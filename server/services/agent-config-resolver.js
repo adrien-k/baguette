@@ -1,7 +1,7 @@
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { throwIfAgentConfigDeleted } from './agent-config-deleted.js';
 import { decryptAgentConfigRow } from './agent-config-env.js';
-import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
+import { resolveAccountDefaultModel } from '../../shared/agent-default-model.js';
 import { coerceModelParams } from '../../shared/agent-session-defaults.js';
 
 export function parseSessionModelId(modelField) {
@@ -93,7 +93,10 @@ async function userDefaultAgentFields(db, userId) {
     .whereNull('deleted_at')
     .first();
   if (!config) return null;
-  const { model, model_params } = parseAgentDefaultModelJson(user.agent_default_model);
+  const { model, model_params } = resolveAccountDefaultModel(
+    user.agent_default_model,
+    config.default_model
+  );
   return {
     agent_config_id: user.agent_default_config_id,
     agent_sdk: config.sdk,
@@ -114,7 +117,10 @@ async function userDefaultReviewerFields(db, userId) {
     .whereNull('deleted_at')
     .first();
   if (!config) return null;
-  const { model, model_params } = parseAgentDefaultModelJson(user.reviewer_default_model);
+  const { model, model_params } = resolveAccountDefaultModel(
+    user.reviewer_default_model,
+    config.default_model
+  );
   return {
     review_agent_config_id: user.reviewer_default_config_id,
     review_agent_sdk: config.sdk,

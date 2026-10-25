@@ -29,6 +29,26 @@ describe('resolveEffectiveAgentDefaults', () => {
     });
   });
 
+  it('falls back to agent config default_model when account default has config only', async () => {
+    await db('agent_configs')
+      .where({ id: cursorConfigId })
+      .update({
+        default_model: JSON.stringify({ model: 'composer', model_params: null }),
+      });
+    await db('users').where({ id: userId }).update({
+      agent_default_config_id: cursorConfigId,
+      agent_default_model: null,
+    });
+
+    const resolved = await resolveEffectiveAgentDefaults(db, userId);
+    expect(resolved).toMatchObject({
+      agent_config_id: cursorConfigId,
+      agent_sdk: 'cursor',
+      model: 'composer',
+      source: 'user',
+    });
+  });
+
   it('prefers stored user defaults over last session', async () => {
     await db('users')
       .where({ id: userId })

@@ -1,6 +1,6 @@
 import { BadRequest, NotFound } from '@feathersjs/errors';
 import { coerceModelParams } from '../../shared/agent-session-defaults.js';
-import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
+import { resolveAccountDefaultModel } from '../../shared/agent-default-model.js';
 import {
   SUBAGENT_DEFAULT_CONFIG,
   SUBAGENT_DEFAULT_PRESET,
@@ -82,7 +82,10 @@ export async function resolveMcpStartSubagentModel(
       throw new BadRequest(MCP_SUBAGENT_CONFIG_SETTINGS_ERROR);
     }
     const config = await loadOwnedAgentConfig(db, configId, userId);
-    const { model, model_params } = parseAgentDefaultModelJson(settings.model_json);
+    const { model, model_params } = resolveAccountDefaultModel(
+      settings.model_json,
+      config.default_model
+    );
     if (!model) {
       throw new BadRequest(MCP_SUBAGENT_CONFIG_SETTINGS_ERROR);
     }

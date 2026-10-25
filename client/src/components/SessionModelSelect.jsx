@@ -181,11 +181,13 @@ export default function SessionModelSelect({
   );
   const orderedParamIds = orderedParamIdsFromVariants(variants);
 
-  const modelTriggerLabel = isUnset
-    ? typeof nullPlaceholder === 'string'
-      ? nullPlaceholder
-      : 'Choose agent…'
-    : selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
+  let modelTriggerLabel;
+  if (isUnset) {
+    modelTriggerLabel = typeof nullPlaceholder === 'string' ? nullPlaceholder : 'Choose agent…';
+  } else {
+    modelTriggerLabel =
+      selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
+  }
 
   const pricingKnown =
     !usesAgentPricingTable ||
