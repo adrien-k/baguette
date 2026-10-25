@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { CheckCircle, PanelLeft, PanelRight } from 'lucide-react';
 import Tooltip from '../../components/Tooltip.jsx';
 import { LOOP_VIEWS } from './loopWorkspaceViews.js';
 import {
@@ -22,6 +22,7 @@ export default function SessionViewTabs({
   activeView,
   onViewTabClick,
   openIssuesTabCount,
+  showIssuesTabCleanCheck,
   toggleSidePanel,
   showTasks,
   reviewer,
@@ -90,6 +91,12 @@ export default function SessionViewTabs({
                       <span className="min-w-4 h-4 px-1 rounded-full bg-brand text-on-brand text-[10px] font-bold leading-4">
                         {openIssuesTabCount}
                       </span>
+                    )}
+                    {id === 'review' && showIssuesTabCleanCheck && (
+                      <CheckCircle
+                        className="w-3.5 h-3.5 shrink-0 text-success"
+                        aria-label="No open issues"
+                      />
                     )}
                   </button>
                 );

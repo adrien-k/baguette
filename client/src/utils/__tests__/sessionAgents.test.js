@@ -11,6 +11,7 @@ import {
   isPrimaryAgent,
   isSubagentBuilder,
   sortSessionAgentsByRefAsc,
+  shouldShowIssuesTabCleanCheck,
   agentTitleFromPrompt,
 } from '../sessionAgents.js';
 
@@ -107,6 +108,48 @@ describe('countActiveAgentsForSession', () => {
   it('formats running label', () => {
     expect(activeAgentsRunningLabel(1)).toBe('1 agent running');
     expect(activeAgentsRunningLabel(3)).toBe('3 agents running');
+  });
+});
+
+describe('shouldShowIssuesTabCleanCheck', () => {
+  it('is false when there are opened issues or no reviewer', () => {
+    expect(
+      shouldShowIssuesTabCleanCheck({
+        reviewer: { status: 'completed' },
+        openIssuesCount: 2,
+      })
+    ).toBe(false);
+    expect(shouldShowIssuesTabCleanCheck({ reviewer: null, openIssuesCount: 0 })).toBe(false);
+  });
+
+  it('is false while the reviewer turn is active', () => {
+    expect(
+      shouldShowIssuesTabCleanCheck({
+        reviewer: { status: 'running' },
+        openIssuesCount: 0,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowIssuesTabCleanCheck({
+        reviewer: { status: 'approval' },
+        openIssuesCount: 0,
+      })
+    ).toBe(false);
+  });
+
+  it('is true when review finished with no opened issues', () => {
+    expect(
+      shouldShowIssuesTabCleanCheck({
+        reviewer: { status: 'completed' },
+        openIssuesCount: 0,
+      })
+    ).toBe(true);
+    expect(
+      shouldShowIssuesTabCleanCheck({
+        reviewer: { status: 'stopped' },
+        openIssuesCount: 0,
+      })
+    ).toBe(true);
   });
 });
 

@@ -183,3 +183,15 @@ export function isReviewInProgressForSession(session) {
 export function reviewerCompletedTransition(prevStatus, nextStatus) {
   return prevStatus !== undefined && prevStatus !== nextStatus && nextStatus === 'completed';
 }
+
+/**
+ * Issues tab green check: review has run (reviewer exists), is idle, and no opened issues.
+ * @param {{ reviewer?: { status?: string } | null, openIssuesCount: number }} opts
+ */
+export function shouldShowIssuesTabCleanCheck({ reviewer, openIssuesCount }) {
+  if (openIssuesCount > 0) return false;
+  if (!reviewer) return false;
+  const status = reviewer.status;
+  if (isAgentTurnActive(status) || isAgentAwaitingUser(status)) return false;
+  return true;
+}
