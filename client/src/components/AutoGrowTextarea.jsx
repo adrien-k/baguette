@@ -7,10 +7,19 @@ import {
   useRef,
 } from 'react';
 
+/** Pixel line-height. Hidden or not-yet-laid-out textareas can report a unitless ratio. */
+function lineHeightPx(style) {
+  const fontSize = parseFloat(style.fontSize);
+  const fontPx = Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 16;
+  const parsed = parseFloat(style.lineHeight);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fontPx * 1.25;
+  if (parsed < fontPx / 2) return parsed * fontPx;
+  return parsed;
+}
+
 function maxHeightPxFor(el, { maxHeightPx, maxLines }) {
   if (maxHeightPx != null) return maxHeightPx;
-  const lineHeight = parseInt(getComputedStyle(el).lineHeight, 10) || 20;
-  return lineHeight * maxLines;
+  return lineHeightPx(getComputedStyle(el)) * maxLines;
 }
 
 function measureContentHeight(el, { value, placeholder, fitPlaceholderWhenEmpty }) {
@@ -40,27 +49,28 @@ function resetHeightForMeasure(el) {
   el.style.height = '0px';
 }
 
-/** Declared `rows` minimum height from computed styles (never mutates `value`). */
-function intrinsicRowsHeightPx(el) {
+/**
+ * Declared `rows` minimum border-box height from computed styles.
+ * Does not read or write inline height — a collapsed layout (client navigation,
+ * display:none) must not turn the floor into a sub-line scrollHeight.
+ */
+function intrinsicRowsHeightPx(el, rowCount) {
   const style = getComputedStyle(el);
-  const lineHeight = parseFloat(style.lineHeight);
-  const lh = Number.isFinite(lineHeight) ? lineHeight : 20;
+  const lh = lineHeightPx(style);
   const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
   const border =
     (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
-  const rowCount = Math.max(1, Number(el.rows) || 1);
-  const fromStyle = rowCount * lh + padding + border;
-  if (el.offsetHeight > 0) return fromStyle;
-  resetHeightForMeasure(el);
-  const fallback = el.scrollHeight;
-  return fallback > 0 ? fallback : fromStyle;
+  const rowsN = Math.max(1, Number(rowCount) || Number(el.rows) || 1);
+  return Math.ceil(rowsN * lh + padding + border);
 }
 
 function syncHeight(el, limits, fitOpts = {}) {
   if (!el) return 0;
   const maxPx = maxHeightPxFor(el, limits);
-  const rowsFloorPx = intrinsicRowsHeightPx(el);
+  const rowsFloorPx = intrinsicRowsHeightPx(el, limits.rowCount);
   const minPx = Math.max(limits.minHeightPx ?? 0, rowsFloorPx);
+  // Keep the rows floor even if a later pass writes height: 0 while the field is hidden.
+  el.style.minHeight = `${rowsFloorPx}px`;
   resetHeightForMeasure(el);
   el.style.overflowY = 'hidden';
 
@@ -105,31 +115,57 @@ const AutoGrowTextarea = forwardRef(function AutoGrowTextarea(
         {
           maxLines,
           maxHeightPx,
+          rowCount: rows,
           minHeightPx: keepManualResize ? userMinHeightRef.current : 0,
         },
         { value, placeholder, fitPlaceholderWhenEmpty }
       );
       lastSyncedHeightRef.current = next;
     },
-    [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize]
+    [value, placeholder, fitPlaceholderWhenEmpty, maxLines, maxHeightPx, keepManualResize, rows]
   );
 
   useLayoutEffect(() => {
     applySync(innerRef.current);
   }, [applySync]);
 
+  // Empty new-session/loop composers never change `value`, so a measurement taken
+  // while the field is still in the previous route's layout would otherwise stick.
   useEffect(() => {
     const el = innerRef.current;
-    if (!el || !String(value ?? '').trim()) return;
+    if (!el) return;
     const id = requestAnimationFrame(() => applySync(el));
     return () => cancelAnimationFrame(id);
-  }, [applySync, value]);
+  }, [applySync]);
+
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    let lastWidth = el.offsetWidth;
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      const width = el.offsetWidth;
+      const becameVisible = lastWidth <= 0 && width > 0;
+      lastWidth = width;
+      if (!becameVisible) return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => applySync(el));
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  }, [applySync]);
 
   useEffect(() => {
     const el = innerRef.current;
     if (!el || !keepManualResize) return;
     const ro = new ResizeObserver(() => {
       const h = el.offsetHeight;
+      // A hidden or not-yet-laid-out field reports 0. Do not treat that as a user drag
+      // and do not write height: 0 — that sticks after navigating onto the form.
+      if (h <= 0 || el.offsetWidth <= 0) return;
       if (isProgrammaticHeight(h, lastSyncedHeightRef.current)) return;
       const floor = intrinsicRowsHeightPx(el);
       if (floor > 0 && h < floor - 1) {
