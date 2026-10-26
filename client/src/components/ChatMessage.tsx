@@ -4,7 +4,6 @@ import type {
   TypedMessageView,
 } from '@baguette/shared/session-messages.ts';
 import UserMessageContent, { userMessagePlainText } from './chat/UserMessageContent.tsx';
-import MarkdownContent from './MarkdownContent.jsx';
 import CollapsibleMarkdown from './chat/CollapsibleMarkdown.tsx';
 import ThinkingBlock from './chat/ThinkingBlock.tsx';
 import ToolCallBlock from './chat/ToolCallBlock.tsx';
@@ -21,6 +20,7 @@ import InjectedUserTurnBlock from './chat/InjectedUserTurnBlock.jsx';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
+import TurnErrorMessage from './chat/TurnErrorMessage.tsx';
 
 export type ChatMessageProps = {
   message: ChatMessageView;
@@ -235,19 +235,17 @@ function TypedMessage(
 
     case 'turn_result': {
       const isError = message.status === 'error';
-      return (
-        <>
-          <div
-            className={`text-center text-xs opacity-70 ${isError ? 'text-danger' : 'text-success'}`}
-          >
-            <span className="font-medium">{isError ? 'Error' : 'Completed'}</span>
+      if (isError && message.error_message) {
+        return (
+          <div className="flex justify-center px-2">
+            <TurnErrorMessage errorMessage={message.error_message} />
           </div>
-          {isError && message.error_message && (
-            <div className="mt-1 text-fg-muted text-xs">
-              <MarkdownContent>{message.error_message}</MarkdownContent>
-            </div>
-          )}
-        </>
+        );
+      }
+      return (
+        <div className="text-center text-xs opacity-70 text-success">
+          <span className="font-medium">Completed</span>
+        </div>
       );
     }
 
