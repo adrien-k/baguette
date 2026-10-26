@@ -59,11 +59,13 @@ export function createStartSubagentTool(ctx) {
       if (error) return fail(error);
 
       try {
+        const parentAgentId = ctx.callerAgent?.id ?? null;
         const result = await app.service('agents').startSubagent(
           {
             session_id,
             name,
             initial_prompt,
+            ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
             ...(mode === SUBAGENT_DEFAULT_PRESET && preset_model_id != null
               ? { preset_model_id }
               : {}),

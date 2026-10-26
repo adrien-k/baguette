@@ -53,8 +53,8 @@ export function buildSessionIssueReadTools(session, app) {
 }
 
 /** Account- and cross-session MCP tools (external MCP + in-session base layer). */
-export function buildBaseAgentTools(user, app, { callerSession = null } = {}) {
-  const ctx = createAccountContext(user, app, { callerSession });
+export function buildBaseAgentTools(user, app, { callerSession = null, callerAgent = null } = {}) {
+  const ctx = createAccountContext(user, app, { callerSession, callerAgent });
   return [
     createListReposTool(ctx),
     createListBranchesTool(ctx),

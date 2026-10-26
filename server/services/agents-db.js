@@ -40,6 +40,14 @@ export async function listAgentsForSession(db, sessionId) {
   return db('agents').where({ session_id: sessionId }).orderBy('id', 'asc');
 }
 
+/** Running or awaiting-approval subagents spawned by `parentAgentId` via StartSubagent. */
+export async function listActiveChildAgents(db, parentAgentId) {
+  return db('agents')
+    .where({ parent_agent_id: parentAgentId })
+    .whereIn('status', ['running', 'approval'])
+    .orderBy('id', 'asc');
+}
+
 /** In-memory SDK session key for a builder chat turn (primary uses session id). */
 export function builderChatActiveKey(agent) {
   if (!agent?.id) throw new BadRequest('Agent not found');

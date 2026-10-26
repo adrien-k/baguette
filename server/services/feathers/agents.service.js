@@ -5,7 +5,7 @@ import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { dispatchReviewerAfterCreate } from '../reviewer-turn-prime.js';
-import { builderChatActiveKey, getAgentById } from '../agents-db.js';
+import { builderChatActiveKey, getAgentById, listActiveChildAgents } from '../agents-db.js';
 import { getAgentServiceForAgent } from '../agent-session-routing.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
@@ -15,6 +15,20 @@ import {
   summarizeAssistantMessage,
 } from '../mcp/lib/session-resolution.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
+
+async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
+  if (parentAgentId == null || parentAgentId === '') return null;
+  const id = Number(parentAgentId);
+  if (!Number.isFinite(id)) throw new BadRequest('Invalid parent_agent_id');
+  const parent = await getAgentById(db, id);
+  if (!parent || parent.session_id !== sessionId) {
+    throw new BadRequest('parent_agent_id not found in session');
+  }
+  if (parent.agent_type === 'reviewer') {
+    throw new BadRequest('Cannot attach subagent to reviewer parent');
+  }
+  return id;
+}
 
 function isAgentsRefUniqueViolation(err) {
   const msg = String(err?.message ?? '');
@@ -48,6 +62,21 @@ class AgentsService extends KnexService {
     const agentId = Number(data?.agent_id);
     if (!Number.isFinite(agentId)) throw new BadRequest('agent_id is required');
     const agent = await this.get(agentId, { user: params.user });
+    await this._stopActiveChildAgents(agent, params);
+    await this._stopSingleAgent(agent, params);
+    return { ok: true, agent_id: agent.id };
+  }
+
+  async _stopActiveChildAgents(agent, params) {
+    const db = this.app.get('db');
+    const children = await listActiveChildAgents(db, agent.id);
+    for (const child of children) {
+      await this._stopActiveChildAgents(child, params);
+      await this._stopSingleAgent(child, params);
+    }
+  }
+
+  async _stopSingleAgent(agent, params) {
     const session = await this.app.service('sessions').get(agent.session_id, { user: params.user });
     const reviewTurn = getReviewAgentTurn(this.app);
     if (agent.agent_type === 'reviewer') {
@@ -64,7 +93,6 @@ class AgentsService extends KnexService {
     } else {
       throw new BadRequest('Cannot stop this agent');
     }
-    return { ok: true, agent_id: agent.id };
   }
 
   async startSubagent(data, params) {
@@ -76,7 +104,13 @@ class AgentsService extends KnexService {
     if (!initialPrompt) throw new BadRequest('initial_prompt is required');
 
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
-    const resolved = await resolveMcpStartSubagentModel(this.app.get('db'), params.user.id, {
+    const db = this.app.get('db');
+    const parentAgentId = await resolveStartSubagentParentId(
+      db,
+      sessionId,
+      data.parent_agent_id ?? null
+    );
+    const resolved = await resolveMcpStartSubagentModel(db, params.user.id, {
       session_id: sessionId,
       preset_model_id: data.preset_model_id ?? null,
       repo_id: session.repo_id ?? null,
@@ -93,6 +127,7 @@ class AgentsService extends KnexService {
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
+        ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
       },
       { ...params, provider: 'rest' }
     );
@@ -163,6 +198,7 @@ const CREATE_FIELDS = [
   'model_params',
   'initial_prompt',
   'name',
+  'parent_agent_id',
 ];
 
 async function stashReviewerCreateExtras(context) {
@@ -249,7 +285,17 @@ async function validateCreate(context) {
     const name = context.data.name?.trim();
     if (!name) throw new BadRequest('name is required for a subagent');
     context.data.is_primary = 0;
-  } else if (agent_type === 'builder') {
+    if (context.data.parent_agent_id != null) {
+      context.data.parent_agent_id = await resolveStartSubagentParentId(
+        db,
+        session_id,
+        context.data.parent_agent_id
+      );
+    }
+  } else {
+    delete context.data.parent_agent_id;
+  }
+  if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
     if (existingPrimary) {
       const name = context.data.name?.trim();

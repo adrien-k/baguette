@@ -284,12 +284,14 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
       }
       preset_model_id = preset.id;
     }
+    const parentAgent = await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
     const result = await app.service('agents').startSubagent(
       {
         session_id: session.id,
         name: MOCK_E2E_SUBAGENT_NAME,
         initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
         wait_for_completion: false,
+        ...(parentAgent?.id != null ? { parent_agent_id: parentAgent.id } : {}),
         ...(preset_model_id != null ? { preset_model_id } : {}),
       },
       { user: { id: userId }, provider: 'rest' }

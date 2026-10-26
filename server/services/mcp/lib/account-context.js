@@ -1,7 +1,7 @@
 /**
  * Account-scoped context for MCP tools (repos, sessions, loops).
  */
-export function createAccountContext(user, app, { callerSession = null } = {}) {
+export function createAccountContext(user, app, { callerSession = null, callerAgent = null } = {}) {
   const userId = user.id;
   const userParams = { provider: undefined, user: { id: userId } };
 
@@ -34,6 +34,7 @@ export function createAccountContext(user, app, { callerSession = null } = {}) {
     userParams,
     app,
     callerSession,
+    callerAgent,
     requireRepoAccess,
     loadRepoWithKeys,
   };

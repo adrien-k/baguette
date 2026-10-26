@@ -43,6 +43,7 @@ import {
 
 const {
   stopSession,
+  stopTurn,
   syncSessionSettingsFromPatch,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -52,6 +53,7 @@ const {
   resumeInterruptedReviews,
 } = vi.hoisted(() => ({
   stopSession: vi.fn().mockResolvedValue(undefined),
+  stopTurn: vi.fn().mockResolvedValue(undefined),
   syncSessionSettingsFromPatch: vi.fn(),
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   readBaguetteConfigRaw: vi.fn().mockResolvedValue({ missing: true }),
@@ -154,6 +156,7 @@ function makeApp(db) {
     'claude-agent',
     {
       stopSession,
+      stopTurn,
       handleMessageCreated: claudeHandleMessageCreated,
       syncSessionSettingsFromPatch,
       generateSessionMetadata,
@@ -162,6 +165,7 @@ function makeApp(db) {
     {
       methods: [
         'stopSession',
+        'stopTurn',
         'handleMessageCreated',
         'syncSessionSettingsFromPatch',
         'generateSessionMetadata',
@@ -343,7 +347,7 @@ describe('Sessions service - custom methods', () => {
         .stop({ agent_id: primary.id }, params({ id: userId }));
 
       expect(result).toEqual({ ok: true, agent_id: primary.id });
-      expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
+      expect(stopTurn).toHaveBeenCalledWith(sessId, expect.anything());
       const primaryAfter = await db('agents').where({ id: primary.id }).first();
       expect(primaryAfter.status).toBe('stopped');
       expect(primaryAfter.active_turn_id).toBeNull();
@@ -352,6 +356,39 @@ describe('Sessions service - custom methods', () => {
       expect(extraAfter.active_turn_id).toBe(1);
       const sessionAfter = await db('sessions').where({ id: sessId }).first();
       expect(sessionAfter.status).toBe('active');
+    });
+
+    it('stops active subagents spawned by the stopped parent agent', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: primary.id }).update({ status: 'running', active_turn_id: 1 });
+      const [subId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Child subagent',
+        agent_type: 'subagent',
+        is_primary: 0,
+        status: 'running',
+        parent_agent_id: primary.id,
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 1,
+        active_turn_id: 1,
+      });
+
+      const result = await app
+        .service('agents')
+        .stop({ agent_id: primary.id }, params({ id: userId }));
+
+      expect(result).toEqual({ ok: true, agent_id: primary.id });
+      expect(stopTurn).toHaveBeenCalledWith(subId, expect.anything());
+      expect(stopTurn).toHaveBeenCalledWith(sessId, expect.anything());
+      const subAfter = await db('agents').where({ id: subId }).first();
+      expect(subAfter.status).toBe('stopped');
+      expect(subAfter.active_turn_id).toBeNull();
+      const primaryAfter = await db('agents').where({ id: primary.id }).first();
+      expect(primaryAfter.status).toBe('stopped');
     });
   });
 
