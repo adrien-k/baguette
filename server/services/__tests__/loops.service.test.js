@@ -15,8 +15,15 @@ import {
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerAgentSdk } from '../feathers/agent-configs.service.js';
+import { getPRStatus } from '../github.js';
+
+vi.mock('../github.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, getPRStatus: vi.fn() };
+});
 
 const sessionsCreate = vi.fn(async (data) => ({ id: 77, ...data }));
+const sessionsPatch = vi.fn(async (id, data) => ({ id, ...data }));
 const usersGet = vi.fn(async (id) => ({ id, access_token: 'gh-token' }));
 const messagesCreate = vi.fn(async (data) => ({ id: 1, ...data }));
 const queuedCreate = vi.fn(async (data) => ({ id: 2, ...data }));
@@ -34,7 +41,11 @@ const sentContent = (mock, index = 0) => {
 function makeApp(db) {
   const app = feathers();
   app.set('db', db);
-  app.use('sessions', { create: sessionsCreate }, { methods: ['create'] });
+  app.use(
+    'sessions',
+    { create: sessionsCreate, patch: sessionsPatch },
+    { methods: ['create', 'patch'] }
+  );
   app.use('users', { get: usersGet }, { methods: ['get'] });
   app.use('messages', { create: messagesCreate }, { methods: ['create'] });
   app.use(
@@ -607,13 +618,14 @@ describe('Loops service', () => {
     });
 
     it('skips the run while the tied session is mid-turn', async () => {
-      const sessionId = await seedSession({ status: 'running' });
+      const sessionId = await seedSession({ status: 'running', pr_number: 12, pr_status: 'open' });
       const loop = await makeDueSingleSessionLoop();
       await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
 
       const results = await app.service('loops').runDue();
 
       expect(results[0].skipped).toMatch(/still in progress/);
+      expect(getPRStatus).not.toHaveBeenCalled();
       expect(messagesCreate).not.toHaveBeenCalled();
       expect(queuedCreate).not.toHaveBeenCalled();
       // Still re-armed, so the loop picks up again at its next slot.
@@ -648,6 +660,74 @@ describe('Loops service', () => {
       expect(messagesCreate).not.toHaveBeenCalled();
       const row = await db('loops').where({ id: loop.id }).first();
       expect(row.session_id).toBe(77);
+    });
+
+    it('starts a fresh session when the tied session PR was merged or closed', async () => {
+      for (const pr_status of ['merged', 'closed']) {
+        sessionsCreate.mockClear();
+        messagesCreate.mockClear();
+        getPRStatus.mockClear();
+        const sessionId = await seedSession({ pr_number: 12, pr_status });
+        const loop = await makeDueSingleSessionLoop();
+        await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+
+        await app.service('loops').runDue();
+
+        expect(getPRStatus).not.toHaveBeenCalled();
+        expect(sessionsCreate).toHaveBeenCalledOnce();
+        expect(messagesCreate).not.toHaveBeenCalled();
+        const row = await db('loops').where({ id: loop.id }).first();
+        expect(row.session_id).toBe(77);
+      }
+    });
+
+    it('starts a fresh session when GitHub reports the tied PR was merged', async () => {
+      const sessionId = await seedSession({ pr_number: 12, pr_status: 'open' });
+      const loop = await makeDueSingleSessionLoop();
+      await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+      getPRStatus.mockResolvedValueOnce('merged');
+
+      await app.service('loops').runDue();
+
+      expect(getPRStatus).toHaveBeenCalledWith('gh-token', 'test/repo', 12);
+      expect(sessionsPatch).toHaveBeenCalledWith(
+        sessionId,
+        { pr_status: 'merged' },
+        expect.objectContaining({ user: { id: aliceId } })
+      );
+      expect(sessionsCreate).toHaveBeenCalledOnce();
+      expect(messagesCreate).not.toHaveBeenCalled();
+    });
+
+    it('starts a fresh session when GitHub reports the tied PR was closed', async () => {
+      const sessionId = await seedSession({ pr_number: 12, pr_status: 'open' });
+      const loop = await makeDueSingleSessionLoop();
+      await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+      getPRStatus.mockResolvedValueOnce('closed');
+
+      await app.service('loops').runDue();
+
+      expect(getPRStatus).toHaveBeenCalledWith('gh-token', 'test/repo', 12);
+      expect(sessionsPatch).toHaveBeenCalledWith(
+        sessionId,
+        { pr_status: 'closed' },
+        expect.objectContaining({ user: { id: aliceId } })
+      );
+      expect(sessionsCreate).toHaveBeenCalledOnce();
+      expect(messagesCreate).not.toHaveBeenCalled();
+    });
+
+    it('compacts in the tied session when GitHub PR status refresh fails', async () => {
+      const sessionId = await seedSession({ pr_number: 12, pr_status: 'open' });
+      const loop = await makeDueSingleSessionLoop();
+      await db('loops').where({ id: loop.id }).update({ session_id: sessionId });
+      getPRStatus.mockRejectedValueOnce(new Error('rate limited'));
+
+      const results = await app.service('loops').runDue();
+
+      expect(results).toEqual([{ loop_id: loop.id, session_id: sessionId }]);
+      expect(sessionsCreate).not.toHaveBeenCalled();
+      expect(sentContent(messagesCreate)).toBe('/compact');
     });
 
     it('does not run a session-created loop whose session is archived', async () => {

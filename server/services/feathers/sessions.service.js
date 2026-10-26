@@ -27,7 +27,6 @@ import {
   markPRReady,
   markPRDraft,
   closePR,
-  getPRStatus,
   upsertPR,
   createWorktree,
   configureWorktreeGitIdentity,
@@ -88,6 +87,7 @@ import {
   interpolateTaskConfigValue,
 } from '../session-env.js';
 import { getGithubToken } from '../agent-settings.js';
+import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
@@ -2633,25 +2633,16 @@ const sessionsHooks = {
 };
 
 function refreshPrStatusInBackground(app, session) {
-  if (!session?.pr_number || session.pr_status === 'merged') return;
+  if (
+    !session?.pr_number ||
+    storedPrStatusSkipsGithubRefresh(session.pr_status, { treatStoredClosedAsTerminal: false })
+  ) {
+    return;
+  }
   app
     .service('users')
     .get(session.user_id, {})
-    .then((user) => {
-      const token = getGithubToken(user);
-      if (!token) return;
-      return getPRStatus(token, session.repo_full_name, session.pr_number).then((pr_status) => {
-        if (pr_status !== session.pr_status) {
-          app
-            .service('sessions')
-            .patch(
-              session.id,
-              { pr_status },
-              { provider: undefined, user: { id: session.user_id } }
-            );
-        }
-      });
-    })
+    .then((user) => resolveSessionPrStatus(app, session, user))
     .catch(() => {});
 }
 
