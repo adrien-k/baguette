@@ -7,10 +7,12 @@ import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 export default function PlanReviewBlock({
   markdown,
   sessionId,
+  agentId,
   userReplied = false,
 }: {
   markdown?: string | null;
   sessionId?: number | null;
+  agentId?: number | null;
   userReplied?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
@@ -22,6 +24,7 @@ export default function PlanReviewBlock({
       await sessionsService.createDefaultBuilderMessage({
         id: sessionId,
         content: 'Proceed with the plan.',
+        ...(agentId != null ? { agent_id: agentId } : {}),
       });
     } catch (err) {
       toastError('Failed to run plan', err);

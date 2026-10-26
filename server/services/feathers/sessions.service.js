@@ -1026,12 +1026,18 @@ export class SessionsService extends KnexService {
   }
 
   /**
-   * Create a user message targeting the session primary builder (agent id, config, model, params).
-   * Used by UI actions that should not depend on the chat composer’s active agent.
+   * Create a user message targeting a session agent (id, config, model, params).
+   * Defaults to the primary builder. Pass `agent_id` for replies to that agent
+   * (AskUserQuestions / plan buttons) so extra builders get the follow-up turn.
+   * Does not use the chat composer’s selected agent.
    */
   async createDefaultBuilderMessage(data, params) {
     const session = params.resolvedSession;
-    const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
+    const db = this.app.get('db');
+    const builder =
+      data.agent_id != null
+        ? await db('agents').where({ id: data.agent_id, session_id: session.id }).first()
+        : await getPrimaryBuilderAgent(db, session.id);
     if (!builder) throw new BadRequest('Agent not found');
 
     const messageJson =

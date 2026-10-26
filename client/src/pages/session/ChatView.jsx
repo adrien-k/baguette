@@ -362,9 +362,7 @@ export default function ChatView({
     if (!session?.id || stopping) return;
     setStopping(true);
     try {
-      const stopSingleAgent =
-        activeAgent?.id && (isReviewerAgent || !Number(activeAgent.is_primary));
-      if (stopSingleAgent) {
+      if (activeAgent?.id) {
         await agentsService.stop({ agent_id: activeAgent.id });
       } else {
         await sessionsService.stop(session.id);

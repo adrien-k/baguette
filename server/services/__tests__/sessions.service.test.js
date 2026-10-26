@@ -275,6 +275,31 @@ describe('Sessions service - custom methods', () => {
       expect(agentAfter.active_turn_id).toBeNull();
     });
 
+    it('session stop also stops extra builders', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: primary.id }).update({ status: 'running', active_turn_id: 1 });
+      const [extraId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'running',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 1,
+        active_turn_id: 1,
+      });
+
+      await app.service('sessions').stop(sessId, params({ id: userId }));
+
+      const extraAfter = await db('agents').where({ id: extraId }).first();
+      expect(extraAfter.status).toBe('stopped');
+      expect(extraAfter.active_turn_id).toBeNull();
+    });
+
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').stop(99999, params({ id: userId }))
@@ -291,6 +316,42 @@ describe('Sessions service - custom methods', () => {
       await expect(app.service('sessions').stop(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+  });
+
+  describe('agents.stop', () => {
+    it('stops the primary builder without stopping extra builders', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: primary.id }).update({ status: 'running', active_turn_id: 1 });
+      const [extraId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'running',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 1,
+        active_turn_id: 1,
+      });
+
+      const result = await app
+        .service('agents')
+        .stop({ agent_id: primary.id }, params({ id: userId }));
+
+      expect(result).toEqual({ ok: true, agent_id: primary.id });
+      expect(stopSession).toHaveBeenCalledWith(sessId, expect.anything());
+      const primaryAfter = await db('agents').where({ id: primary.id }).first();
+      expect(primaryAfter.status).toBe('stopped');
+      expect(primaryAfter.active_turn_id).toBeNull();
+      const extraAfter = await db('agents').where({ id: extraId }).first();
+      expect(extraAfter.status).toBe('running');
+      expect(extraAfter.active_turn_id).toBe(1);
+      const sessionAfter = await db('sessions').where({ id: sessId }).first();
+      expect(sessionAfter.status).toBe('active');
     });
   });
 
@@ -359,6 +420,74 @@ describe('Sessions service - custom methods', () => {
           params({ id: userId })
         )
       ).rejects.toThrow();
+    });
+
+    it('targets the given session agent instead of the primary builder', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      const [extraBuilderId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'stopped',
+        agent_sdk: primary.agent_sdk,
+        model: 'extra-model',
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 0,
+      });
+      const answers = [{ question: 'Pick one', value: 'A' }];
+
+      const result = await app.service('sessions').createDefaultBuilderMessage(
+        {
+          id: sessId,
+          content: '**Pick one**: A',
+          subtype: 'ask_user_answer',
+          answers,
+          agent_id: extraBuilderId,
+        },
+        params({ id: userId })
+      );
+
+      expect(result.agent_id).toBe(extraBuilderId);
+      expect(result.model).toBe('extra-model');
+      expect(result.agent_id).not.toBe(primary.id);
+    });
+
+    it('rejects agent_id that is not in the session', async () => {
+      await expect(
+        app.service('sessions').createDefaultBuilderMessage(
+          {
+            id: sessId,
+            content: '**Pick one**: A',
+            subtype: 'ask_user_answer',
+            answers: [{ question: 'Pick one', value: 'A' }],
+            agent_id: 99999,
+          },
+          params({ id: userId })
+        )
+      ).rejects.toBeBadRequestError();
+    });
+
+    it('rejects agent_id belonging to another session', async () => {
+      const other = await seedUserAndSession(db, {
+        github_id: 1099,
+        username: 'carol',
+        shortId: 'carol1',
+      });
+      const otherBuilder = await db('agents')
+        .where({ session_id: other.sessId, is_primary: 1 })
+        .first();
+
+      await expect(
+        app
+          .service('sessions')
+          .createDefaultBuilderMessage(
+            { id: sessId, content: 'Proceed with the plan.', agent_id: otherBuilder.id },
+            params({ id: userId })
+          )
+      ).rejects.toBeBadRequestError();
     });
   });
 

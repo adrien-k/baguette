@@ -389,6 +389,7 @@ export default function BaguetteMcpToolBlock({
   isError = false,
   startedAt,
   sessionId,
+  agentId,
   userReplied = false,
 }: {
   tool: string;
@@ -397,6 +398,7 @@ export default function BaguetteMcpToolBlock({
   isError?: boolean;
   startedAt?: string | null;
   sessionId?: number | string | null;
+  agentId?: number | null;
   userReplied?: boolean;
 }) {
   const mcpResult = parseMcpJsonResult(result);
@@ -435,6 +437,7 @@ export default function BaguetteMcpToolBlock({
         isError={isError || planFailed}
         errorMessage={planErrorMessage}
         sessionId={sessionId != null ? Number(sessionId) : null}
+        agentId={agentId}
         userReplied={userReplied}
         interactive={interactive}
       />

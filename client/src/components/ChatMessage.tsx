@@ -180,6 +180,7 @@ function TypedMessage(
         <PlanReviewBlock
           markdown={message.markdown}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );

@@ -52,10 +52,6 @@ class AgentsService extends KnexService {
     const reviewTurn = getReviewAgentTurn(this.app);
     if (agent.agent_type === 'reviewer') {
       await reviewTurn.stopReviewerAgent(session, agent);
-    } else if (agent.is_primary) {
-      await this.app
-        .service('sessions')
-        .stop({ id: session.id }, { ...params, resolvedSession: session });
     } else if (agent.agent_type === 'builder' || agent.agent_type === 'subagent') {
       const agentService = await getAgentServiceForAgent(this.app, agent);
       const activeKey = builderChatActiveKey(agent);

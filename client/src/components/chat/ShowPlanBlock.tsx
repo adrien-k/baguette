@@ -8,6 +8,7 @@ export default function ShowPlanBlock({
   heading = 'Plan ready for review',
   markdown,
   sessionId,
+  agentId,
   userReplied = false,
   interactive = true,
   isRunning = false,
@@ -17,6 +18,7 @@ export default function ShowPlanBlock({
   heading?: string;
   markdown?: string | null;
   sessionId?: number | null;
+  agentId?: number | null;
   userReplied?: boolean;
   /** When false, plan is informational only (no Run/Refine actions). */
   interactive?: boolean;
@@ -33,6 +35,7 @@ export default function ShowPlanBlock({
       await sessionsService.createDefaultBuilderMessage({
         id: sessionId,
         content: text,
+        ...(agentId != null ? { agent_id: agentId } : {}),
       });
     } catch (err) {
       toastError('Failed to send message', err);

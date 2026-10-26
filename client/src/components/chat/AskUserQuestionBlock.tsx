@@ -48,10 +48,12 @@ function isAnswerComplete(questions: AskUserQuestion[], answers: AnswerState[]):
 export default function AskUserQuestionBlock({
   questions: questionsProp,
   sessionId,
+  agentId,
   userReplied = false,
 }: {
   questions?: AskUserQuestion[] | null;
   sessionId?: number | null;
+  agentId?: number | null;
   userReplied?: boolean;
 }) {
   const questions = questionsProp ?? [];
@@ -72,6 +74,7 @@ export default function AskUserQuestionBlock({
       content: text,
       subtype: 'ask_user_answer',
       answers,
+      ...(agentId != null ? { agent_id: agentId } : {}),
     });
   };
 
