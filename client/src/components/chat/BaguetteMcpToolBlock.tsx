@@ -240,6 +240,8 @@ function UploadImageBlock({
   const [open, setOpen] = useState(false);
   const imageUrl = mcpResult?.url as string | undefined;
   const altText = (block.input?.altText as string | undefined) ?? 'uploaded image';
+  const filePath = block.input?.filePath as string | undefined;
+  const detail = filePath ?? (imageUrl ? 'uploaded' : undefined);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -252,51 +254,50 @@ function UploadImageBlock({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close]);
 
-  if (!imageUrl) {
-    return (
+  return (
+    <>
       <QuietToolBlock
-        icon="🖼"
         label="UploadImage"
+        detail={detail}
         isError={block.isError}
         result={block.result}
         input={block.input}
       />
-    );
-  }
-
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="block mt-1 rounded border border-strong overflow-hidden hover:border-faint transition-colors cursor-zoom-in"
-      >
-        <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
-      </button>
-      {open &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-            onClick={close}
-          >
+      {imageUrl ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="block mt-1 ml-3 rounded border border-strong overflow-hidden hover:border-faint transition-colors cursor-zoom-in bg-inset/30"
+        >
+          <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
+        </button>
+      ) : null}
+      {open && imageUrl
+        ? createPortal(
             <div
-              className="relative max-w-[90vw] max-h-[90vh]"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 sm:p-8"
+              onClick={close}
+              role="dialog"
+              aria-modal="true"
+              aria-label={altText}
             >
               <button
+                type="button"
                 onClick={close}
-                className="absolute -top-8 right-0 text-fg-muted hover:text-fg text-sm"
+                className="absolute top-4 right-4 text-fg-muted hover:text-fg text-sm font-mono z-10"
               >
                 ✕ close
               </button>
               <img
                 src={imageUrl}
                 alt={altText}
-                className="max-w-full max-h-[85vh] rounded border border-strong object-contain"
+                className="max-w-full max-h-full object-contain"
+                onClick={(e) => e.stopPropagation()}
               />
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body
+          )
+        : null}
     </>
   );
 }
