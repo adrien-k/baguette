@@ -1,4 +1,3 @@
-import db from '../../db.js';
 import { registerAgentsService } from './agents.service.js';
 import { registerMessagesService } from './messages.service.js';
 import { registerSessionsService } from './sessions.service.js';
@@ -23,13 +22,13 @@ import { registerSessionPlansService } from './session-plans.service.js';
 import { registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerUsageModelPricingService } from './usage-model-pricing.service.js';
 import { registerUsageService } from './usage.service.js';
-const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
+import { registerFeathersRealtime } from './realtime.js';
 
 /**
- * Register Feathers services and wire their events to SSE connections.
- * Call after app.configure(rest()) and before app.setup(server).
+ * Register Feathers services, SSE, and channel publishers.
+ * Call before feathersApp.setup(server).
  */
-export function registerFeathersServices(app, sseManager) {
+export function registerFeathersServices(app) {
   registerMessagesService(app);
   registerAgentsService(app);
   registerSessionsService(app);
@@ -57,110 +56,5 @@ export function registerFeathersServices(app, sseManager) {
 
   app.service('sessions').registerActivityMessageListeners(app);
 
-  /** `short_id` is internal (branch/worktree/docker naming) — never sent to clients. */
-  const stripSessionShortId = (data) => {
-    if (!data || typeof data !== 'object' || data.short_id == null) return data;
-    const { short_id: _shortId, ...rest } = data;
-    return rest;
-  };
-
-  // Route service CRUD events to the right SSE connections
-  for (const event of CRUD_EVENTS) {
-    app.service('sessions').on(event, (data) => {
-      if (data?.user_id)
-        sseManager.send(data.user_id, {
-          service: 'sessions',
-          event,
-          data: stripSessionShortId(data),
-        });
-    });
-
-    app.service('messages').on(event, async (data) => {
-      const session = await db('sessions').where({ id: data.session_id }).first();
-      if (session) sseManager.send(session.user_id, { service: 'messages', event, data });
-    });
-
-    app.service('agents').on(event, async (data) => {
-      if (!data?.session_id) return;
-      const session = await db('sessions').where({ id: data.session_id }).first();
-      if (session) sseManager.send(session.user_id, { service: 'agents', event, data });
-    });
-
-    app.service('tasks').on(event, async (data) => {
-      if (!data.session_id) return;
-      const session = await db('sessions').where({ id: data.session_id }).first();
-      if (session) sseManager.send(session.user_id, { service: 'tasks', event, data });
-    });
-
-    app.service('repos').on(event, (data) => {
-      sseManager.sendAll({ service: 'repos', event, data });
-    });
-
-    app.service('queued-messages').on(event, (data) => {
-      if (data?.user_id) sseManager.send(data.user_id, { service: 'queued-messages', event, data });
-    });
-
-    app.service('loops').on(event, (data) => {
-      if (data?.user_id) sseManager.send(data.user_id, { service: 'loops', event, data });
-    });
-
-    app.service('session-issues').on(event, async (data) => {
-      if (!data?.session_id) return;
-      const session = await db('sessions').where({ id: data.session_id }).first();
-      if (session) sseManager.send(session.user_id, { service: 'session-issues', event, data });
-    });
-
-    app.service('session-todos').on(event, async (data) => {
-      if (!data?.session_id) return;
-      const session = await db('sessions').where({ id: data.session_id }).first();
-      if (session) sseManager.send(session.user_id, { service: 'session-todos', event, data });
-    });
-
-    app.service('session-plans').on(event, async (data) => {
-      if (!data?.session_id) return;
-      const session = await db('sessions').where({ id: data.session_id }).first();
-      if (session) sseManager.send(session.user_id, { service: 'session-plans', event, data });
-    });
-  }
-
-  // Transient session-level errors (no replay needed)
-  app.service('sessions').on('app:error', (data) => {
-    if (data?.user_id)
-      sseManager.send(data.user_id, { service: 'sessions', event: 'app:error', data });
-  });
-
-  app.service('sessions').on('turn:start', (data) => {
-    if (data?.user_id)
-      sseManager.send(data.user_id, { service: 'sessions', event: 'turn:start', data });
-  });
-
-  app.service('sessions').on('turn:complete', (data) => {
-    if (data?.user_id)
-      sseManager.send(data.user_id, { service: 'sessions', event: 'turn:complete', data });
-  });
-
-  app.service('sessions').on('push:start', (data) => {
-    if (data?.user_id)
-      sseManager.send(data.user_id, { service: 'sessions', event: 'push:start', data });
-  });
-
-  app.service('sessions').on('push:complete', (data) => {
-    if (data?.user_id)
-      sseManager.send(data.user_id, { service: 'sessions', event: 'push:complete', data });
-  });
-
-  app.service('users').on('github:bad-credentials', (data) => {
-    if (data?.user_id)
-      sseManager.send(data.user_id, {
-        service: 'users',
-        event: 'github:bad-credentials',
-        data,
-      });
-  });
-
-  app.service('tasks').on('log', async (data) => {
-    if (!data.session_id) return;
-    const session = await db('sessions').where({ id: data.session_id }).first();
-    if (session) sseManager.send(session.user_id, { service: 'tasks', event: 'log', data });
-  });
+  registerFeathersRealtime(app);
 }

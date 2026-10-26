@@ -645,7 +645,7 @@ describe('PrUpsert', () => {
       'ghtoken',
       expect.objectContaining({
         body: expect.stringContaining(
-          '<!-- baguette-footer -->\n\n_cursor / `new-model` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_'
+          '<!-- baguette-footer -->\n\n_builder · Cost: $1.50_\n_  cursor / `new-model` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_'
         ),
       })
     );

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
-import { NotFound, BadRequest } from '@feathersjs/errors';
+import { NotFound, BadRequest } from 'feathers/errors';
 import { KnexService } from '@feathersjs/knex';
 const execFileAsync = promisify(execFile);
 import {

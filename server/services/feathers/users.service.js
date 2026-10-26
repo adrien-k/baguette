@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { KnexService } from '@feathersjs/knex';
-import { NotAuthenticated } from '@feathersjs/errors';
+import { NotAuthenticated } from 'feathers/errors';
 import { requireUser, encryptFields, decryptFields } from './hooks.js';
 import { encrypt } from '../../lib/encrypt.js';
 import { MCP_HTTP_ENDPOINT } from '../../config.js';

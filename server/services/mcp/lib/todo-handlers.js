@@ -1,11 +1,11 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { isFeathersBadRequest, isFeathersNotFound } from '../../../lib/feathers-errors.js';
 import { sortSessionTodosAsc } from '../../../../shared/session-todo-sort.js';
 import { ok, fail } from './result.js';
 import { serializeTodo, OPEN_TODO_STATUSES } from '../../session-todos.js';
 
 function serviceError(err) {
-  if (err instanceof BadRequest) return fail(err.message);
-  if (err instanceof NotFound) return fail('Todo not found');
+  if (isFeathersBadRequest(err)) return fail(err.message);
+  if (isFeathersNotFound(err)) return fail('Todo not found');
   throw err;
 }
 

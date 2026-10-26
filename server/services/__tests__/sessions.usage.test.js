@@ -7,7 +7,7 @@
  * therefore the difference from the previous result.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { ensureReviewerAgentRow } from '../agents-db.js';
 import { SessionsService } from '../feathers/sessions.service.js';

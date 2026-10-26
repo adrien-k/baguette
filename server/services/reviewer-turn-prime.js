@@ -1,5 +1,5 @@
 import { isGlobalSession } from '../../shared/session-scope.js';
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { getReviewAgentTurn, reviewTurnKey, buildReviewStartMessage } from './review-agent-turn.js';
 import { patchAgentInternal } from './feathers/agents.service.js';
 import { getAgentById } from './agents-db.js';

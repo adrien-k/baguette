@@ -1,4 +1,4 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { coerceModelParams } from '../../shared/agent-session-defaults.js';
 import { resolveAccountDefaultModel } from '../../shared/agent-default-model.js';
 import {

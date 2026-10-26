@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';

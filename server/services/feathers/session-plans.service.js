@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 

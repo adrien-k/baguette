@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
+import { BadRequest, Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { issueFixAgentPrompt, issuesFixAllAgentPrompt } from '../../../shared/session-issues.js';

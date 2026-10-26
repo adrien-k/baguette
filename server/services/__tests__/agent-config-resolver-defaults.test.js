@@ -7,7 +7,7 @@ import {
   resolveEffectiveAgentDefaults,
   resolveSessionFormDefaults,
 } from '../agent-config-resolver.js';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { repoAgentConfigLabel } from '../../../shared/agent-config-labels.js';
 
 const db = createTestDb();

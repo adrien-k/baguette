@@ -1,4 +1,4 @@
-import { NotFound } from '@feathersjs/errors';
+import { NotFound } from 'feathers/errors';
 import { getAgentById } from './agents-db.js';
 
 /**

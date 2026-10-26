@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';

@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import logger from '../logger.js';
 import { getAllowedCommandsFromUser } from './agent-settings.js';
 import { buildReviewSystemPromptAppend } from './session-prompt.js';
@@ -409,12 +409,12 @@ class ReviewAgentTurn {
   }
 }
 
-/** @param {import('@feathersjs/feathers').Application} app */
+/** @param {import('feathers').Application} app */
 export function getReviewAgentTurn(app) {
   return app.get('reviewAgentTurn');
 }
 
-/** @param {import('@feathersjs/feathers').Application} app */
+/** @param {import('feathers').Application} app */
 export function registerReviewAgentTurn(app) {
   const turn = new ReviewAgentTurn();
   app.set('reviewAgentTurn', turn);

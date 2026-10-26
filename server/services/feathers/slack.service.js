@@ -1,4 +1,4 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { encryptFields, decryptFields, requireUser } from './hooks.js';
 import { authTest } from '../slack.js';
 import { decrypt } from '../../lib/encrypt.js';

@@ -1,4 +1,4 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { throwIfAgentConfigDeleted } from './agent-config-deleted.js';
 import { decryptAgentConfigRow } from './agent-config-env.js';
 import { resolveAccountDefaultModel } from '../../shared/agent-default-model.js';

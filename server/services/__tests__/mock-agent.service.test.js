@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';

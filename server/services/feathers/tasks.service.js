@@ -1,4 +1,4 @@
-import { NotFound, BadRequest } from '@feathersjs/errors';
+import { NotFound, BadRequest } from 'feathers/errors';
 import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS, BASE_TASK_TIMEOUT_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';

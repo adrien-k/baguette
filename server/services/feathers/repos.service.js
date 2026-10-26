@@ -5,7 +5,7 @@ import path from 'path';
 import { KnexService } from '@feathersjs/knex';
 
 const execFileAsync = promisify(execFile);
-import { NotFound } from '@feathersjs/errors';
+import { NotFound } from 'feathers/errors';
 import {
   listUserInstallations,
   listInstallationRepos,

@@ -1,7 +1,7 @@
 /**
  * DB helpers for `agents` rows (internal — Feathers service owns external API).
  */
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { nextSessionItemRef } from './session-item-ref.js';
 
 export async function getPrimaryBuilderAgent(db, sessionId) {

@@ -17,7 +17,7 @@ export function parseUserRow(row) {
 
 /**
  * Route a persisted user row to the SDK service for this session's agent config.
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  * @param {object} row
  */
 export async function dispatchCreatedMessageToAgents(app, row) {

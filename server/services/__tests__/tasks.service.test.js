@@ -3,11 +3,10 @@
  * Tasks are stored in memory; sessions/users are still in the DB.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerTasksService } from '../feathers/tasks.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
-import { NotFound } from '@feathersjs/errors';
 import { Task } from '../task.js';
 
 // Prevent actual process spawning
@@ -157,13 +156,13 @@ describe('Tasks service — in-memory', () => {
     it("returns 404 for another user's task", async () => {
       await expect(
         app.service('tasks').get(taskId3, providerParams(userId1))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('returns 404 for an unknown id', async () => {
-      await expect(app.service('tasks').get(9999, providerParams(userId1))).rejects.toBeInstanceOf(
-        NotFound
-      );
+      await expect(
+        app.service('tasks').get(9999, providerParams(userId1))
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -193,7 +192,7 @@ describe('Tasks service — in-memory', () => {
         app
           .service('tasks')
           .create({ session_id: sessionId2, command: 'x' }, providerParams(userId1))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -218,7 +217,7 @@ describe('Tasks service — in-memory', () => {
     it("returns 404 when killing another user's task", async () => {
       await expect(
         app.service('tasks').kill(taskId3, providerParams(userId1))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -251,7 +250,7 @@ describe('Tasks service — in-memory', () => {
     it("returns 404 for another user's task", async () => {
       await expect(
         app.service('tasks').logs(taskId3, providerParams(userId1))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -299,7 +298,7 @@ describe('Tasks service — in-memory', () => {
     it("returns 404 when removing another user's task", async () => {
       await expect(
         app.service('tasks').remove(taskId3, providerParams(userId1))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {

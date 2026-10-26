@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
 import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';

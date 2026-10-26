@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
 import { AGENT_CONFIG_DELETED_MESSAGE } from '../agent-config-deleted.js';

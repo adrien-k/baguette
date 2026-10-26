@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
 import { registerMockAgentService } from '../feathers/mock-agent.service.ts';

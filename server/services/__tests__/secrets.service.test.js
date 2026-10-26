@@ -2,7 +2,7 @@
  * Integration tests for the secrets Feathers service.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSecretsService } from '../feathers/secrets.service.js';
 

@@ -1,4 +1,4 @@
-import { NotAuthenticated, Forbidden } from '@feathersjs/errors';
+import { NotAuthenticated, Forbidden } from 'feathers/errors';
 import { encrypt, decrypt } from '../../lib/encrypt.js';
 
 export function maskValue(value) {

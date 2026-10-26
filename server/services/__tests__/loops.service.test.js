@@ -4,8 +4,8 @@
  * session payload was handed over.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { feathers } from 'feathers';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerLoopsService } from '../feathers/loops.service.js';
 import {
@@ -149,7 +149,7 @@ describe('Loops service', () => {
     it('rejects an unknown repository', async () => {
       await expect(
         app.service('loops').create(loopData({ repo_full_name: 'nope/nope' }), params(aliceId))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('creates a global loop without a repository', async () => {
@@ -247,7 +247,7 @@ describe('Loops service', () => {
         app
           .service('loops')
           .create(loopData({ single_session: true, session_id: sessionId }), params(aliceId))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('leaves a loop created disabled unscheduled', async () => {
@@ -292,7 +292,7 @@ describe('Loops service', () => {
 
       await expect(
         app.service('loops').patch(loop.id, { enabled: false }, params(bobId))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
       await expect(app.service('loops').remove(loop.id, params(bobId))).rejects.toBeInstanceOf(
         NotFound
       );
@@ -352,9 +352,9 @@ describe('Loops service', () => {
 
       const result = await app.service('loops').find(params(aliceId));
       expect(result.data.map((l) => l.id)).not.toContain(loop.id);
-      await expect(app.service('loops').get(loop.id, params(aliceId))).rejects.toBeInstanceOf(
-        NotFound
-      );
+      await expect(app.service('loops').get(loop.id, params(aliceId))).rejects.toMatchObject({
+        name: 'NotFound',
+      });
       expect(await db('loops').where({ id: loop.id }).first()).toBeTruthy();
     });
 

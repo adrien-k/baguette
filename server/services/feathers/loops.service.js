@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-schedule.js';

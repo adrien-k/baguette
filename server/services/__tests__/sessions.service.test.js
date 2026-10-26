@@ -12,8 +12,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
-import { feathers } from '@feathersjs/feathers';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { feathers } from 'feathers';
+import { BadRequest } from 'feathers/errors';
 import { createTestDb, insertTestSession, testSessionAgentDefaults } from '../../test-utils/db.js';
 import {
   generateSessionShortId,
@@ -112,7 +112,7 @@ const params = (user) => ({ provider: 'rest', user });
 
 const claudeHandleMessageCreated = vi.fn().mockResolvedValue(undefined);
 const cursorHandleMessageCreated = vi.fn().mockResolvedValue(undefined);
-const deleteSessionTasks = vi.fn();
+const deleteSessionTasks = vi.fn().mockResolvedValue(undefined);
 const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, access_token: 'test-token' });
 // Not Feathers methods (like the real service): called directly by sessions.service.
 const findRunningTask = vi.fn().mockReturnValue(null);
@@ -278,13 +278,13 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').stop(99999, params({ id: userId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').stop(sessId, params({ id: otherUserId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -321,7 +321,7 @@ describe('Sessions service - custom methods', () => {
         app
           .service('sessions')
           .createDefaultBuilderMessage({ id: sessId, content: '   ' }, params({ id: userId }))
-      ).rejects.toThrow(BadRequest);
+      ).rejects.toBeBadRequestError();
     });
 
     it('creates ask_user_answer with structured answers', async () => {
@@ -489,13 +489,13 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').commands(99999, params({ id: userId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').commands(sessId, params({ id: otherUserId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
   });
 
@@ -590,7 +590,7 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').startPreviewService({ id: sessId }, params({ id: otherUserId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
   });
 
@@ -802,13 +802,13 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').archive(99999, params({ id: userId }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').archive(sessId, params({ id: otherUserId }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -1378,13 +1378,13 @@ describe('Sessions service - find, get, create', () => {
     it("throws NotFound when getting another user's session", async () => {
       await expect(
         app.service('sessions').get(sessId2, params({ id: userId1 }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('throws NotFound for a non-existent id', async () => {
-      await expect(app.service('sessions').get(99999, params({ id: userId1 }))).rejects.instanceOf(
-        NotFound
-      );
+      await expect(
+        app.service('sessions').get(99999, params({ id: userId1 }))
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -1526,13 +1526,13 @@ describe('Sessions service - find, get, create', () => {
     it("throws NotFound when patching another user's session", async () => {
       await expect(
         app.service('sessions').patch(sessId2, { status: 'completed' }, params({ id: userId1 }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('throws NotFound for a non-existent id', async () => {
       await expect(
         app.service('sessions').patch(99999, { status: 'completed' }, params({ id: userId1 }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -2065,8 +2065,9 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('creates a first message when initial_prompt is provided', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
 
       await app
         .service('sessions')
@@ -2079,11 +2080,13 @@ describe('Sessions service - find, get, create', () => {
       expect(userMsgCall).toBeTruthy();
       const parsed = JSON.parse(userMsgCall[0].message_json);
       expect(parsed.message.content).toBe('Please add tests');
+      createMessage.mockRestore();
     });
 
     it('does not create a first message when initial_prompt is empty', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
 
       const session = await app
         .service('sessions')
@@ -2096,6 +2099,7 @@ describe('Sessions service - find, get, create', () => {
       expect(session.label).toBe(`New session #${session.id}`);
       const savedRow = await db('sessions').where({ id: session.id }).first();
       expect(session.remote_branch).toBe(`task-${savedRow.short_id}`);
+      createMessage.mockRestore();
     });
 
     it('does not generate metadata for a global session without initial_prompt', async () => {
@@ -2225,8 +2229,9 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('persists a system prompt message before the first user message', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
 
       await app
         .service('sessions')
@@ -2246,6 +2251,7 @@ describe('Sessions service - find, get, create', () => {
       const promptIdx = createMessage.mock.calls.indexOf(promptCall);
       const userMsgIdx = createMessage.mock.calls.findIndex(([data]) => data.type === 'user');
       expect(promptIdx).toBeLessThan(userMsgIdx);
+      createMessage.mockRestore();
     });
 
     it('creates a global session in the repos folder without a worktree clone', async () => {
