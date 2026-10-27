@@ -2107,11 +2107,12 @@ describe('Sessions service - find, get, create', () => {
       pushSpy.mockRestore();
     });
 
-    it('skips auto-push when there are no commits to push', async () => {
+    it('skips auto-push when there are no commits and PR metadata is in sync', async () => {
       const created = await app
         .service('sessions')
         .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
 
+      const syncedAt = new Date().toISOString();
       await db('sessions').where({ id: created.id }).update({
         session_path: '/tmp/wt-auto-push-no-commits',
         auto_push: 1,
@@ -2119,6 +2120,8 @@ describe('Sessions service - find, get, create', () => {
         label: 'Title only',
         pr_description: 'Body without new commits',
         pr_number: 42,
+        last_pushed_at: syncedAt,
+        pr_metadata_updated_at: syncedAt,
       });
 
       vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
@@ -2129,6 +2132,39 @@ describe('Sessions service - find, get, create', () => {
       const pushSpy = vi.spyOn(app.service('sessions'), 'push');
       await app.service('sessions').onTurnComplete(created.id);
       expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+    });
+
+    it('auto-pushes when PR metadata changed but there are no new commits', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({
+          session_path: '/tmp/wt-auto-push-pr-metadata',
+          auto_push: 1,
+          status: 'completed',
+          label: 'Updated title',
+          pr_description: 'Updated body',
+          pr_number: 42,
+          last_pushed_at: new Date(Date.now() - 60_000).toISOString(),
+          pr_metadata_updated_at: new Date().toISOString(),
+        });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push').mockResolvedValue({ ok: true });
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
       pushSpy.mockRestore();
     });
 

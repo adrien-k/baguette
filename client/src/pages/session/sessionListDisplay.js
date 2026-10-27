@@ -1,7 +1,7 @@
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 
 export function sessionListPromptPreview(s, maxWords = 12) {
-  const prompt = s.initial_prompt?.trim();
+  const prompt = (s.pr_description?.trim() || s.initial_prompt?.trim()) ?? '';
   if (!prompt) return null;
   const parts = prompt.split(/\s+/);
   if (parts.length <= maxWords) return prompt;

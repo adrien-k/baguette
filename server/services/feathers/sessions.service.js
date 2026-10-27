@@ -58,7 +58,11 @@ import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
-import { computeSessionGitStatus } from '../session-git-status.js';
+import {
+  computeSessionGitStatus,
+  sessionNeedsPrMetadataSync,
+  touchPrMetadataUpdatedAtOnPatch,
+} from '../session-git-status.js';
 import { isBuilderAgentAwaitingUser } from '../agent-awaiting-user.js';
 import {
   builderChatActiveKey,
@@ -1189,6 +1193,13 @@ export class SessionsService extends KnexService {
             );
         }
       }
+      await this.app
+        .service('sessions')
+        .patch(
+          session.id,
+          { last_pushed_at: new Date().toISOString() },
+          { provider: undefined, user: { id: session.user_id } }
+        );
       pushOk = true;
       return { ok: true };
     } catch (err) {
@@ -1646,7 +1657,7 @@ export class SessionsService extends KnexService {
       );
       return;
     }
-    if (commitsToPush <= 0) return;
+    if (commitsToPush <= 0 && !sessionNeedsPrMetadataSync(session)) return;
 
     await this.push(
       { id: session.id },
@@ -2598,6 +2609,7 @@ const sessionsHooks = {
     patch: [
       requireOwnSession,
       clampAutoPushForLocalRepo,
+      touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
       normalizeModelFields,
     ],
