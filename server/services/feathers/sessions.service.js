@@ -1127,29 +1127,43 @@ export class SessionsService extends KnexService {
       const token = getGithubToken(user);
       if (!token) throw new BadRequest('No GitHub token configured');
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
+      const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
-      let pushedBranch;
-      try {
-        const result = await gitPush(cwd, token, {
-          branch,
-          force: forceMode === 'lease',
-          forceOverwrite: forceMode === 'force',
-        });
-        pushedBranch = result.branch;
-        await this.app
-          .service('sessions')
-          .patch(
-            session.id,
-            { remote_branch: pushedBranch },
-            { provider: undefined, user: { id: session.user_id } }
-          );
-      } catch (err) {
-        if (err.rejected) {
-          const conflict = new BadRequest('Push failed due to a conflict');
-          conflict.data = { conflict: true };
-          throw conflict;
+      let commitsToPush = 0;
+      if (!forceGit) {
+        ({ commitsToPush } = await computeSessionGitStatus(session));
+      }
+      const needsMetadataSync = sessionNeedsPrMetadataSync(session);
+      let pushedBranch = branch || session.remote_branch || session.local_branch;
+      if (forceGit || commitsToPush > 0) {
+        try {
+          const result = await gitPush(cwd, token, {
+            branch,
+            force: forceMode === 'lease',
+            forceOverwrite: forceMode === 'force',
+          });
+          pushedBranch = result.branch;
+          await this.app
+            .service('sessions')
+            .patch(
+              session.id,
+              { remote_branch: pushedBranch },
+              { provider: undefined, user: { id: session.user_id } }
+            );
+        } catch (err) {
+          if (err.rejected) {
+            const conflict = new BadRequest('Push failed due to a conflict');
+            conflict.data = { conflict: true };
+            throw conflict;
+          }
+          throw err;
         }
-        throw err;
+      } else if (
+        !needsMetadataSync &&
+        !(session.label || session.pr_description != null || session.pr_number)
+      ) {
+        pushOk = true;
+        return { ok: true };
       }
       if (session.label || session.pr_description != null || session.pr_number) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
@@ -1621,7 +1635,7 @@ export class SessionsService extends KnexService {
     const fresh = await db('sessions').where({ id: sessionId }).first();
     if (fresh) {
       try {
-        await this.maybeAutoPushAfterTurn(fresh);
+        await this.maybeAutoPushAfterTurn(fresh, agent);
       } catch (err) {
         logger.warn(
           { sessionId, err: err?.message },
@@ -1641,8 +1655,9 @@ export class SessionsService extends KnexService {
   }
 
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
-  async maybeAutoPushAfterTurn(session) {
+  async maybeAutoPushAfterTurn(session, agent) {
     if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
+    if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
     if (!getGithubToken(user)) return;

@@ -30,6 +30,8 @@ import {
   BAGUETTE_DESCRIPTION_MARKER,
   BAGUETTE_FOOTER_MARKER,
   createWorktree,
+  gitPush,
+  upsertPR,
   getOpenPR,
   getPRStatus,
   mergePR,
@@ -85,6 +87,8 @@ vi.mock('../github.js', async (importOriginal) => {
     ...actual,
     removeWorktree: vi.fn().mockResolvedValue(undefined),
     createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
+    gitPush: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-branch' }),
+    upsertPR: vi.fn().mockResolvedValue({ url: 'https://github.com/o/r/pull/1', number: 1 }),
     getOpenPRByNumber: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
     getPRStatus: vi.fn().mockResolvedValue('open'),
@@ -2166,6 +2170,83 @@ describe('Sessions service - find, get, create', () => {
       await app.service('sessions').onTurnComplete(created.id);
       expect(pushSpy).toHaveBeenCalledTimes(1);
       pushSpy.mockRestore();
+    });
+
+    it('does not auto-push when a non-primary builder completes a turn', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const primary = await db('agents').where({ session_id: created.id, is_primary: 1 }).first();
+      const [extraId] = await db('agents').insert({
+        session_id: created.id,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'completed',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+      });
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-extra-builder',
+        auto_push: 1,
+        status: 'completed',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 2,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id, extraId);
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+    });
+
+    it('syncs PR metadata without git push when there are no new commits', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({
+          session_path: '/tmp/wt-metadata-only-push',
+          label: 'Title',
+          pr_description: 'Body',
+          pr_number: 7,
+          last_pushed_at: new Date(Date.now() - 60_000).toISOString(),
+          pr_metadata_updated_at: new Date().toISOString(),
+        });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitPush).not.toHaveBeenCalled();
+      expect(upsertPR).toHaveBeenCalledTimes(1);
     });
 
     it('does not flush queued messages when onTurnComplete runs on an approval session', async () => {
