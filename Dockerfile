@@ -33,6 +33,8 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libseccomp-dev \
     libjemalloc2 \
+    libpq-dev \
+    libpq5 \
     libreadline-dev \
     libsqlite3-0 \
     libssl-dev \
