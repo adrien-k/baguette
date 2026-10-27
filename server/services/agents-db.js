@@ -40,6 +40,23 @@ export async function listAgentsForSession(db, sessionId) {
   return db('agents').where({ session_id: sessionId }).orderBy('id', 'asc');
 }
 
+/**
+ * @param {import('knex').Knex} db
+ * @param {number} sessionId
+ * @param {{ status?: string, active_only?: boolean }} [filter]
+ */
+export async function listSubagentsForSession(db, sessionId, { status, active_only } = {}) {
+  let q = db('agents')
+    .where({ session_id: sessionId, agent_type: 'subagent' })
+    .orderBy('id', 'asc');
+  if (active_only) {
+    q = q.whereIn('status', ['running', 'approval']);
+  } else if (status != null && String(status).trim() !== '') {
+    q = q.where({ status: String(status).trim() });
+  }
+  return q;
+}
+
 /** Running or awaiting-approval subagents spawned by `parentAgentId` via StartSubagent. */
 export async function listActiveChildAgents(db, parentAgentId) {
   return db('agents')

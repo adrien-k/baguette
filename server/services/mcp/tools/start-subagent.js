@@ -8,7 +8,8 @@ import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 
 const BASE_DESCRIPTION =
-  'Create a subagent (`agent_type` subagent) in a session, run its initial prompt, and wait for the turn to finish. ' +
+  'Create a subagent (`agent_type` subagent) in a session and run its initial prompt. ' +
+  'Default attach: true blocks until the turn finishes (up to 1 hour per wait; on timeout use GetSessionMessages, then AwaitSubagent or StopSubagent); attach: false returns immediately—use ListSubagents and AwaitSubagent. ' +
   'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. ';
 
 function startSubagentDescription(mode) {
@@ -32,6 +33,12 @@ function startSubagentSchema(mode) {
     session_id: z.number().int().describe('Target session id'),
     name: z.string().describe('Display name for the new subagent'),
     initial_prompt: z.string().describe('First user message that starts the agent turn'),
+    attach: z
+      .boolean()
+      .optional()
+      .describe(
+        'If true (default), wait until the initial turn finishes. If false, return agent_id/ref immediately.'
+      ),
   };
   if (mode === SUBAGENT_DEFAULT_PRESET) {
     return {
@@ -54,7 +61,8 @@ export function createStartSubagentTool(ctx) {
     description: startSubagentDescription(mode),
     schema: startSubagentSchema(mode),
     handler: async (args) => {
-      const { session_id, name, initial_prompt, preset_model_id } = args;
+      const { session_id, name, initial_prompt, preset_model_id, attach } = args;
+      const waitForCompletion = attach !== false;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
 
@@ -69,7 +77,7 @@ export function createStartSubagentTool(ctx) {
             ...(mode === SUBAGENT_DEFAULT_PRESET && preset_model_id != null
               ? { preset_model_id }
               : {}),
-            wait_for_completion: true,
+            wait_for_completion: waitForCompletion,
           },
           userParams
         );

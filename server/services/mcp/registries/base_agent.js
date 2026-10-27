@@ -6,6 +6,9 @@ import { createListBranchesTool } from '../tools/list-branches.js';
 import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
 import { createStartSubagentTool } from '../tools/start-subagent.js';
+import { createListSubagentsTool } from '../tools/list-subagents.js';
+import { createAwaitSubagentTool } from '../tools/await-subagent.js';
+import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
@@ -61,6 +64,9 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     createListModelsTool(ctx),
     createListPresetModelsTool(ctx),
     createStartSubagentTool(ctx),
+    createListSubagentsTool(ctx),
+    createAwaitSubagentTool(ctx),
+    createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
     ...sessionToolsFromContext(ctx),
     ...loopToolsFromContext(ctx),

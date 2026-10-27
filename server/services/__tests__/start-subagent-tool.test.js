@@ -30,6 +30,16 @@ describe('createStartSubagentTool schema', () => {
     expect(tool.schema.preset_model_id).toBeUndefined();
   });
 
+  it('includes attach in schema', () => {
+    const tool = createStartSubagentTool({
+      app: {},
+      userId: 1,
+      userParams: {},
+      user: { subagent_default_mode: 'inherit' },
+    });
+    expect(tool.schema.attach).toBeDefined();
+  });
+
   it('omits preset_model_id from schema when subagent default is config', () => {
     const tool = createStartSubagentTool({
       app: {},

@@ -5,7 +5,12 @@ import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { dispatchReviewerAfterCreate } from '../reviewer-turn-prime.js';
-import { builderChatActiveKey, getAgentById, listActiveChildAgents } from '../agents-db.js';
+import {
+  builderChatActiveKey,
+  getAgentById,
+  listActiveChildAgents,
+  listSubagentsForSession,
+} from '../agents-db.js';
 import { getAgentServiceForAgent } from '../agent-session-routing.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
@@ -28,6 +33,22 @@ async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
     throw new BadRequest('Cannot attach subagent to reviewer parent');
   }
   return id;
+}
+
+async function subagentTurnResult(app, sessionId, agentId) {
+  const db = app.get('db');
+  const agent = await getAgentById(db, agentId);
+  const lastAssistant = await db('session_messages')
+    .where({ session_id: sessionId, agent_id: agentId, type: 'assistant' })
+    .orderBy('id', 'desc')
+    .first();
+  return {
+    agent_id: agent.id,
+    ref: agent.ref,
+    status: agent.status,
+    session_id: sessionId,
+    last_assistant_message: summarizeAssistantMessage(lastAssistant),
+  };
 }
 
 function isAgentsRefUniqueViolation(err) {
@@ -165,19 +186,57 @@ class AgentsService extends KnexService {
       };
     }
 
-    const finalAgent = await waitForAgentTurnEnd(this.app.get('db'), agent.id);
-    const lastAssistant = await this.app
-      .get('db')('session_messages')
-      .where({ session_id: sessionId, agent_id: agent.id, type: 'assistant' })
-      .orderBy('id', 'desc')
-      .first();
+    await waitForAgentTurnEnd(this.app.get('db'), agent.id);
+    return subagentTurnResult(this.app, sessionId, agent.id);
+  }
 
+  async awaitSubagent(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    await this.app.service('sessions').get(sessionId, { user: params.user });
+    const db = this.app.get('db');
+    const agent = await this._resolveSubagentTarget(db, sessionId, data);
+    if (agent.status === 'running') {
+      await waitForAgentTurnEnd(db, agent.id);
+    }
+    return subagentTurnResult(this.app, sessionId, agent.id);
+  }
+
+  async _resolveSubagentTarget(db, sessionId, data) {
+    const agentId = data?.agent_id != null ? Number(data.agent_id) : null;
+    const agentRef = data?.agent_ref != null ? Number(data.agent_ref) : null;
+    if (!Number.isFinite(agentId) && !Number.isFinite(agentRef)) {
+      throw new BadRequest('agent_id or agent_ref is required');
+    }
+    let agent = null;
+    if (Number.isFinite(agentId)) {
+      agent = await getAgentById(db, agentId);
+    } else {
+      agent = await db('agents').where({ session_id: sessionId, ref: agentRef }).first();
+    }
+    if (!agent || agent.session_id !== sessionId || agent.agent_type !== 'subagent') {
+      throw new NotFound('Subagent not found');
+    }
+    return agent;
+  }
+
+  async listSubagents(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    await this.app.service('sessions').get(sessionId, { user: params.user });
+    const rows = await listSubagentsForSession(this.app.get('db'), sessionId, {
+      status: data?.status,
+      active_only: data?.active_only === true,
+    });
     return {
-      agent_id: finalAgent.id,
-      ref: finalAgent.ref,
-      status: finalAgent.status,
       session_id: sessionId,
-      last_assistant_message: summarizeAssistantMessage(lastAssistant),
+      subagents: rows.map((row) => ({
+        agent_id: row.id,
+        ref: row.ref,
+        name: row.name,
+        status: row.status,
+        parent_agent_id: row.parent_agent_id ?? null,
+      })),
     };
   }
 }
@@ -416,7 +475,17 @@ export function registerAgentsService(app, path = 'agents') {
     paginate: { default: 50, max: 100 },
   };
   app.use(path, new AgentsService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'stop', 'startSubagent'],
+    methods: [
+      'find',
+      'get',
+      'create',
+      'patch',
+      'remove',
+      'stop',
+      'startSubagent',
+      'awaitSubagent',
+      'listSubagents',
+    ],
   });
   app.service(path).hooks(agentsHooks);
 }

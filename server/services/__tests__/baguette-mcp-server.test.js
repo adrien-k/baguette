@@ -290,6 +290,9 @@ describe('builder MCP tool registry', () => {
     expect(names).not.toContain('UpdateSession');
     expect(names).not.toContain('CreatePlan');
     expect(names).not.toContain('StartSubagent');
+    expect(names).toContain('ListSubagents');
+    expect(names).toContain('AwaitSubagent');
+    expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
