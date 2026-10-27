@@ -321,7 +321,7 @@ describe('processCursorRunStream', () => {
 
   it('keeps a terminal error verdict even when no tools are pending', async () => {
     const { writer, rows } = mockWriter();
-    const { finishedOk } = await processCursorRunStream(
+    const { finishedOk, sawTerminalBreak } = await processCursorRunStream(
       mockRun([{ type: 'status', status: 'ERROR', message: 'boom' }]),
       {
         writer,
@@ -332,6 +332,32 @@ describe('processCursorRunStream', () => {
     );
 
     expect(finishedOk).toBe(false);
+    expect(sawTerminalBreak).toBe(true);
     expect(rows).toHaveLength(0);
+  });
+
+  it('reports a silent end (no terminal status) so the service can mark failure', async () => {
+    // Real-world shape (session 922): the provider killed the stream without any
+    // terminal status event — the caller must be able to tell this apart from a
+    // handled ERROR/CANCELLED break.
+    const { writer } = mockWriter();
+    const { finishedOk, sawTerminalBreak } = await processCursorRunStream(
+      mockRun([
+        {
+          type: 'tool_call',
+          status: 'completed',
+          call_id: 'call_read',
+          name: 'read',
+          args: { path: 'README.md' },
+          result: { status: 'success', value: {} },
+          agent_id: 'a',
+          run_id: 'r',
+        },
+      ]),
+      { writer }
+    );
+
+    expect(finishedOk).toBe(false);
+    expect(sawTerminalBreak).toBe(false);
   });
 });

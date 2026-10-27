@@ -164,6 +164,59 @@ describe('mapClaudeMessage', () => {
     });
   });
 
+  it('maps a rejected usage-limit event to a status row', () => {
+    const ops = mapClaudeMessage(
+      asClaude({
+        type: 'rate_limit_event',
+        rate_limit_info: {
+          status: 'rejected',
+          rateLimitType: 'five_hour',
+          resetsAt: 1793064000,
+        },
+      })
+    );
+    expect(ops[0]).toMatchObject({
+      op: 'system',
+      payload: { type: 'system', subtype: 'status' },
+    });
+    expect(ops[0].payload.status).toContain('Claude usage limit reached (five hour)');
+    // Epoch seconds are formatted as a UTC timestamp after the dash.
+    expect(ops[0].payload.status).toMatch(/resets \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
+  });
+
+  it('drops allowed usage-limit events (only rejections surface)', () => {
+    expect(
+      mapClaudeMessage(
+        asClaude({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } })
+      )
+    ).toBeNull();
+    expect(
+      mapClaudeMessage(
+        asClaude({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } })
+      )
+    ).toBeNull();
+    expect(mapClaudeMessage(asClaude({ type: 'rate_limit_event' }))).toBeNull();
+  });
+
+  it('derives error copy from the result subtype when the CLI carries no text', () => {
+    const ops = mapClaudeMessage(
+      asClaude({ type: 'result', subtype: 'error_max_turns', is_error: true })
+    );
+    expect(ops[0]).toMatchObject({ op: 'turn_result' });
+    expect(ops[0].payload.error_message).toContain('maximum number of turns');
+  });
+
+  it('prefers terminal_reason copy over the generic fallback', () => {
+    const ops = mapClaudeMessage(
+      asClaude({
+        type: 'result',
+        subtype: 'error_during_execution',
+        terminal_reason: 'blocking_limit',
+      })
+    );
+    expect(ops[0].payload.error_message).toContain('blocking_limit');
+  });
+
   it('produces no rows for control-flow system events', () => {
     expect(mapClaudeMessage(asClaude({ type: 'system', subtype: 'init' }))).toBeNull();
     expect(mapClaudeMessage(asClaude({ type: 'system', subtype: 'task_started' }))).toBeNull();

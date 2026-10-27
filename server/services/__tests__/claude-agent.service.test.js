@@ -56,6 +56,8 @@ import { loadBaguetteConfig } from '../baguette-config.js';
 
 import { REPOS_DIR } from '../../config.js';
 import { ClaudeAgentService } from '../feathers/claude-agent.service.ts';
+import { ensureReviewerAgentRow } from '../agents-db.js';
+import { reviewTurnKey } from '../review-agent-turn.js';
 import {
   getPrimaryBuilderForSession,
   insertSessionWithPrimaryBuilder,
@@ -113,11 +115,19 @@ function makeMockApp(db) {
   const getClaudeEnv = vi.fn().mockResolvedValue({});
   const deleteSessionTasks = vi.fn();
   const createTask = vi.fn().mockResolvedValue({});
+  const reviewAgentTurnStub = {
+    onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
+    _persistStatus: vi.fn().mockResolvedValue(undefined),
+    peekTurnExtras: vi.fn(() => null),
+    stopReviewerAgent: vi.fn().mockResolvedValue(undefined),
+  };
 
   return {
     get: function (key) {
       if (key === 'db') return db;
+      if (key === 'reviewAgentTurn') return reviewAgentTurnStub;
     },
+    _reviewAgentTurn: reviewAgentTurnStub,
     service: vi.fn((name) => {
       if (name === 'sessions')
         return {
@@ -682,6 +692,157 @@ describe('ClaudeAgentService', () => {
   // ── 5. Assistant failure ───────────────────────────────────────────────────
 
   describe('assistant failure', () => {
+    it('bubbles a quota-shaped failed result via app:error and marks the agent failed', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+
+      // Real-world quota shape: the CLI ends the turn with an error result carrying the
+      // usage-limit text instead of the stream throwing.
+      query.mockImplementation(() =>
+        makeAsyncIterable([
+          {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'sdk-1',
+          },
+          {
+            type: 'result',
+            subtype: 'error_during_execution',
+            is_error: true,
+            errors: ['You have hit your usage limit. Please wait until 10:00pm to continue.'],
+            total_cost_usd: 0,
+          },
+        ])
+      );
+
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
+
+      await vi.waitFor(() => {
+        expect(mockApp._sessionEmit).toHaveBeenCalledWith(
+          'app:error',
+          expect.objectContaining({
+            sessionId: BASE_SESSION_ID,
+            message: expect.stringContaining('usage limit'),
+          })
+        );
+      });
+      await vi.waitFor(() => {
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          { status: 'failed', active_turn_id: null },
+          expect.anything()
+        );
+      });
+      // No extra status row: the turn_result row already renders the error inline.
+      expect(mockApp._messageCreate).not.toHaveBeenCalledWith(
+        expect.objectContaining({ subtype: 'status' }),
+        expect.anything()
+      );
+    });
+
+    it('fails the turn and surfaces app:error when the query ends without a result', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+
+      // Iterator drains without any result and without throwing — the Claude mirror of
+      // the Cursor silent stream end: previously no verdict, no message, agent stuck.
+      query.mockImplementation(() =>
+        makeAsyncIterable([{ type: 'system', subtype: 'init', session_id: 'sdk-1' }])
+      );
+
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
+
+      await vi.waitFor(() => {
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          { status: 'failed', active_turn_id: null },
+          expect.anything()
+        );
+      });
+      await vi.waitFor(() => {
+        expect(mockApp._sessionEmit).toHaveBeenCalledWith(
+          'app:error',
+          expect.objectContaining({
+            sessionId: BASE_SESSION_ID,
+            message: expect.stringContaining('without completing'),
+          })
+        );
+      });
+      expect(mockApp._messageCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          session_id: BASE_SESSION_ID,
+          agent_id: BASE_BUILDER.id,
+          type: 'system',
+          subtype: 'status',
+        }),
+        expect.anything()
+      );
+    });
+
+    it('attributes the silent-end status row to the reviewer agent without review special-casing', async () => {
+      const reviewer = await ensureReviewerAgentRow(db, BASE_SESSION_ID, {
+        agent_config_id: BASE_BUILDER.agent_config_id,
+        agent_sdk: 'claude',
+        model: 'sonnet',
+        status: 'running',
+      });
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+
+      query.mockImplementation(() =>
+        makeAsyncIterable([{ type: 'system', subtype: 'init', session_id: 'sdk-1' }])
+      );
+      const state = service._openQuery({
+        sessionId: BASE_SESSION_ID,
+        agentId: reviewer.id,
+        userId: 1,
+        queryOptions: {},
+        extraState: { turnChannel: 'review' },
+        activeKey: reviewTurnKey(reviewer.id),
+      });
+
+      await service.processMessages(state);
+
+      // The status row belongs to the agent whose turn failed — the reviewer itself.
+      expect(mockApp._messageCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          session_id: BASE_SESSION_ID,
+          agent_id: reviewer.id,
+          type: 'system',
+          subtype: 'status',
+        }),
+        expect.anything()
+      );
+      // No review-side status handler was needed for the row itself; the reviewer's
+      // own status stays owned by the review turn service via onAgentTurnComplete.
+      expect(mockApp._reviewAgentTurn._persistStatus).not.toHaveBeenCalled();
+      expect(mockApp._sessionEmit).toHaveBeenCalledWith(
+        'app:error',
+        expect.objectContaining({ sessionId: BASE_SESSION_ID, message: expect.any(String) })
+      );
+      await vi.waitFor(() => {
+        expect(mockApp._reviewAgentTurn.onAgentTurnComplete).toHaveBeenCalledWith(
+          expect.objectContaining({ id: BASE_SESSION_ID }),
+          'failed',
+          { sdk: 'claude' }
+        );
+      });
+    });
+
     it('patches session status to failed when result has is_error=true', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,

@@ -22,6 +22,8 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs';
 import type {
   SDKMessage,
+  SDKRateLimitInfo,
+  SDKRateLimitEvent,
   SDKResultMessage,
   SDKStatusMessage,
   SDKThinkingTokensMessage,
@@ -221,14 +223,99 @@ function statusOp(msg: SDKStatusMessage): MessageOp[] | null {
 function mapResult(msg: SDKResultMessage): MessageOp[] {
   if (msg.subtype === 'success') {
     if (msg.is_error) {
-      return [turnResult('error', msg.result || 'Turn failed', msg.total_cost_usd)];
+      return [turnResult('error', claudeResultErrorText(msg), msg.total_cost_usd)];
     }
     return [turnResult('ok', null, msg.total_cost_usd)];
   }
-  // Error variants carry `errors: string[]`. Use the first entry, falling back
-  // to a generic message when the array is empty.
-  const detail = msg.errors[0] ?? null;
-  return [turnResult('error', detail ?? 'Turn failed', msg.total_cost_usd)];
+  // Error variants (error_during_execution / error_max_turns / …). Older CLIs put the
+  // text in `errors: string[]`, newer ones only report a terminal_reason.
+  return [turnResult('error', claudeResultErrorText(msg), msg.total_cost_usd)];
+}
+
+/**
+ * User-facing text for a failed turn result — used by the `turn_result` row and the
+ * service's `app:error` bubble so the chat card and the toast agree. Prefers explicit
+ * text from the CLI (`errors[0]`, legacy `result` payload), then derives copy from the
+ * result subtype / terminal reason, and falls back to a generic message.
+ */
+export function claudeResultErrorText(msg: SDKResultMessage): string {
+  const legacy = msgResultErrorDetail(msg);
+  if (legacy) return legacy;
+  const terminalCopy = terminalReasonCopy((msg as { terminal_reason?: string }).terminal_reason);
+  if (terminalCopy) return terminalCopy;
+  return claudeResultSubtypeCopy(msg.subtype);
+}
+
+/** Explicit error detail carried by older CLI result envelopes. */
+function msgResultErrorDetail(msg: SDKResultMessage): string | null {
+  const legacyEntry = (msg as { errors?: string[] }).errors?.[0];
+  if (legacyEntry) {
+    const first = legacyEntry.trim();
+    return first ? first : null;
+  }
+  // Legacy `is_error` success-shaped results carried the text directly in `result`.
+  const resultText = (msg as { result?: string }).result?.trim() ?? null;
+  return resultText ? resultText : null;
+}
+
+/** Human copy for the CLI's terminal_reason when no explicit error text is present. */
+function terminalReasonCopy(terminalReason: string | null | undefined): string | null {
+  if (!terminalReason) return null;
+  return `Turn ended without finishing (terminal reason: ${terminalReason}). Send your message again to continue.`;
+}
+
+/** Copy per error result subtype when the CLI carries no explicit error text. */
+function claudeResultSubtypeCopy(subtype: string): string {
+  if (subtype === 'error_max_turns') {
+    return 'Turn ended after reaching the maximum number of turns. Send a follow-up message to continue in a fresh turn.';
+  }
+  if (subtype === 'error_max_budget_usd') {
+    return 'Turn stopped after exceeding its USD budget. Increase the budget or send a follow-up message to continue.';
+  }
+  if (subtype === 'error_max_structured_output_retries') {
+    return 'Turn stopped after exhausting structured-output retries. Send your message again to continue.';
+  }
+  return 'Turn failed. Send your message again to continue.';
+}
+
+/**
+ * Copy for a rejected claude.ai usage limit (quota). Quota failures surface here before
+ * (or instead of) a failed result, so the chat shows exactly why the turn stopped.
+ */
+export function claudeRateLimitStatusText(info: SDKRateLimitInfo): string {
+  const limitType = info.rateLimitType
+    ? ` (${info.rateLimitType.replace(/_/g, ' ')})`
+    : ' (rate limit)';
+  const resetAt = claudeRateLimitResetAt(info.resetsAt);
+  const resetText = resetAt ? ` — resets ${resetAt}` : '';
+  return `Claude usage limit reached${limitType}${resetText}. Send a new message once the limit resets.`;
+}
+
+/** ISO reset timestamp for the limit, tolerating epoch-seconds and epoch-millis values. */
+function claudeRateLimitResetAt(resetsAt: number | undefined): string | null {
+  if (resetsAt == null) return null;
+  const ms = resetsAt > 1e11 ? resetsAt : resetsAt * 1000;
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return null;
+  return date
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/:00\.\d+Z$/, ' UTC');
+}
+
+function mapRateLimitEvent(msg: SDKRateLimitEvent): MessageOp[] | null {
+  const info = msg.rate_limit_info;
+  if (info?.status !== 'rejected') return null;
+  return [
+    {
+      op: 'system',
+      payload: {
+        type: 'system',
+        subtype: 'status',
+        status: claudeRateLimitStatusText(info),
+      },
+    },
+  ];
 }
 
 function turnResult(
@@ -266,6 +353,8 @@ export function mapClaudeMessage(msg: SDKMessage): MessageOp[] | null {
       return mapSystemVariant(msg);
     case 'result':
       return mapResult(msg);
+    case 'rate_limit_event':
+      return mapRateLimitEvent(msg as SDKRateLimitEvent);
     case 'stream_event':
       return mapClaudeStreamEvent(msg as SDKPartialAssistantMessage);
     default:
