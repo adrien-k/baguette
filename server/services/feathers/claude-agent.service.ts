@@ -966,9 +966,16 @@ export class ClaudeAgentService {
 
     // One terminal status for the whole turn (including background-task auto-resume).
     // Usage is recorded from the last SDK result; queued follow-ups start after this.
-    if (!isReview && (turnComplete || streamFailed || silentQueryEnd) && !awaitingUser) {
-      const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
-      await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
+    if (!isReview) {
+      const turnEnded = turnComplete || streamFailed || silentQueryEnd;
+      if (awaitingUser) {
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'approval');
+      } else if (turnEnded) {
+        const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
+      } else if (outcome === 'stopped') {
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'stopped');
+      }
     }
 
     if (!isReview) {

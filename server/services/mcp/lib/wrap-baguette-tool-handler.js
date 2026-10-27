@@ -1,7 +1,7 @@
 import { baguetteToolPausesForUserAfterSuccess } from '../../../../shared/baguette-mcp-tool-names.js';
 import { baguetteMcpToolSucceeded } from '../../baguette-mcp-tool-result.js';
 import { markAwaitingUserAfterTurnEndingTool } from '../../agent-awaiting-user.js';
-import { getPrimaryBuilderAgent, getReviewerAgent } from '../../agents-db.js';
+import { builderChatActiveKey, listAgentsForSession } from '../../agents-db.js';
 import { reviewTurnKey } from '../../review-agent-turn.js';
 
 function agentServiceForSdk(app, sdk) {
@@ -15,17 +15,22 @@ async function resolveActiveSessionState(app, sessionId) {
   const db = app.get('db');
   const candidates = [];
 
-  const builder = await getPrimaryBuilderAgent(db, sessionId);
-  if (builder?.agent_sdk) {
-    candidates.push({ sdk: builder.agent_sdk, keys: [sessionId], agentId: builder.id });
-  }
-  const reviewer = await getReviewerAgent(db, sessionId);
-  if (reviewer?.agent_sdk) {
-    candidates.push({
-      sdk: reviewer.agent_sdk,
-      keys: [reviewTurnKey(reviewer.id)],
-      agentId: reviewer.id,
-    });
+  const agents = await listAgentsForSession(db, sessionId);
+  for (const agent of agents) {
+    if (!agent.agent_sdk) continue;
+    if (agent.agent_type === 'reviewer') {
+      candidates.push({
+        sdk: agent.agent_sdk,
+        keys: [reviewTurnKey(agent.id)],
+        agentId: agent.id,
+      });
+    } else if (agent.agent_type === 'builder' || agent.agent_type === 'subagent') {
+      candidates.push({
+        sdk: agent.agent_sdk,
+        keys: [builderChatActiveKey(agent)],
+        agentId: agent.id,
+      });
+    }
   }
 
   for (const { sdk, keys, agentId } of candidates) {

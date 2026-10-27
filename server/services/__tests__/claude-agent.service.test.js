@@ -416,10 +416,11 @@ describe('ClaudeAgentService', () => {
       await service.processMessages(sessionState);
 
       expect(recordSpy).toHaveBeenCalled();
-      const terminalStatusPatch = mockApp._sessionPatch.mock.calls.find(
-        ([, data]) => data?.status === 'completed' || data?.status === 'failed'
+      expect(mockApp._agentPatch).toHaveBeenCalledWith(
+        BASE_BUILDER.id,
+        { status: 'approval', active_turn_id: null },
+        expect.anything()
       );
-      expect(terminalStatusPatch).toBeUndefined();
     });
   });
 

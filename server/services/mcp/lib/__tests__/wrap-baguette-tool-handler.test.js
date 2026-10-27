@@ -7,7 +7,8 @@ vi.mock('../../../feathers/agents.service.js', () => ({
 import { patchAgentInternal } from '../../../feathers/agents.service.js';
 import { wrapBaguetteToolList } from '../wrap-baguette-tool-handler.js';
 
-function makeDb({ sessionRow, builder, reviewer }) {
+function makeDb({ sessionRow, builder, reviewer, extraAgents = [] }) {
+  const agents = [...(builder ? [builder] : []), ...(reviewer ? [reviewer] : []), ...extraAgents];
   return (table) => {
     if (table === 'sessions') {
       return {
@@ -22,7 +23,14 @@ function makeDb({ sessionRow, builder, reviewer }) {
           first: async () => {
             if (query.is_primary === 1) return builder;
             if (query.agent_type === 'reviewer') return reviewer;
+            if (query.id != null) return agents.find((a) => a.id === query.id) ?? null;
             return null;
+          },
+          orderBy: async () => {
+            if (query.session_id != null) {
+              return agents.filter((a) => a.session_id === query.session_id);
+            }
+            return agents;
           },
         }),
       };
@@ -39,7 +47,13 @@ describe('wrapBaguetteToolList', () => {
       endTurnAwaitingUser: false,
       abortController: { abort },
     };
-    const builder = { id: 5, agent_sdk: 'cursor', agent_type: 'builder', session_id: 42 };
+    const builder = {
+      id: 5,
+      agent_sdk: 'cursor',
+      agent_type: 'builder',
+      is_primary: 1,
+      session_id: 42,
+    };
     const app = {
       get: (key) => {
         if (key === 'db') {
@@ -78,7 +92,13 @@ describe('wrapBaguetteToolList', () => {
       if (key === 'review:99') return sessionState;
       return null;
     });
-    const builder = { id: 10, agent_sdk: 'claude', agent_type: 'builder', session_id: 42 };
+    const builder = {
+      id: 10,
+      agent_sdk: 'claude',
+      agent_type: 'builder',
+      is_primary: 1,
+      session_id: 42,
+    };
     const reviewer = { id: 99, agent_sdk: 'claude', agent_type: 'reviewer', session_id: 42 };
     const app = {
       get: (key) => {
@@ -106,6 +126,7 @@ describe('wrapBaguetteToolList', () => {
 
     expect(getActiveSession).toHaveBeenCalledWith(42);
     expect(getActiveSession).toHaveBeenCalledWith('review:99');
+    expect(getActiveSession).toHaveBeenCalledTimes(2);
     expect(sessionState.endTurnAwaitingUser).toBe(true);
     expect(sessionState.agentId).toBe(99);
     expect(patchAgentInternal).toHaveBeenCalledWith(app, 99, { status: 'approval' }, 7);
@@ -114,7 +135,13 @@ describe('wrapBaguetteToolList', () => {
   it('does not pause for user when CreatePlan uses interactive false', async () => {
     patchAgentInternal.mockClear();
     const sessionState = { channel: 'chat', endTurnAwaitingUser: false };
-    const builder = { id: 5, agent_sdk: 'cursor', agent_type: 'builder', session_id: 42 };
+    const builder = {
+      id: 5,
+      agent_sdk: 'cursor',
+      agent_type: 'builder',
+      is_primary: 1,
+      session_id: 42,
+    };
     const app = {
       get: (key) => {
         if (key === 'db') {
@@ -147,7 +174,13 @@ describe('wrapBaguetteToolList', () => {
 
   it('does not patch approval when no active agent session exists', async () => {
     patchAgentInternal.mockClear();
-    const builder = { id: 5, agent_sdk: 'cursor', agent_type: 'builder', session_id: 42 };
+    const builder = {
+      id: 5,
+      agent_sdk: 'cursor',
+      agent_type: 'builder',
+      is_primary: 1,
+      session_id: 42,
+    };
     const app = {
       get: (key) => {
         if (key === 'db') {
@@ -225,7 +258,13 @@ describe('wrapBaguetteToolList', () => {
   it('does not mark awaiting user for non turn-ending tools', async () => {
     patchAgentInternal.mockClear();
     const sessionState = { channel: 'chat', endTurnAwaitingUser: false };
-    const builder = { id: 5, agent_sdk: 'cursor', agent_type: 'builder', session_id: 1 };
+    const builder = {
+      id: 5,
+      agent_sdk: 'cursor',
+      agent_type: 'builder',
+      is_primary: 1,
+      session_id: 1,
+    };
     const app = {
       get: (key) => {
         if (key === 'db') {
