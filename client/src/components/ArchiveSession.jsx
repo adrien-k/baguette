@@ -3,11 +3,13 @@ import { Archive, Check, Loader2, X } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { fetchSessionCommitsToPush } from '../utils/sessionCommitsToPush.js';
+import ArchiveConfirmModal from './ArchiveConfirmModal.jsx';
 
 export default function ArchiveSession({ session, onArchive }) {
   const [archiving, setArchiving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [unpushedCount, setUnpushedCount] = useState(0);
   const confirmRef = useRef(null);
 
@@ -22,6 +24,7 @@ export default function ArchiveSession({ session, onArchive }) {
       const query = closePr ? { close_pr: true } : {};
       await sessionsService.archive(session.id, { query });
       setPendingConfirm(false);
+      setShowConfirmModal(false);
       onArchive?.();
     } catch (err) {
       toastError('Failed to archive session', err);
@@ -66,15 +69,19 @@ export default function ArchiveSession({ session, onArchive }) {
     try {
       const commitsToPush = await fetchSessionCommitsToPush(session);
       setUnpushedCount(commitsToPush);
+      if (commitsToPush > 0 || hasDraftPr) {
+        setPendingConfirm(false);
+        setShowConfirmModal(true);
+        setChecking(false);
+        return;
+      }
     } catch (err) {
       toastError('Failed to check git status', err);
       setChecking(false);
       return;
     }
     setChecking(false);
-
-    const closePr = hasDraftPr;
-    await performArchive({ closePr });
+    await performArchive();
   };
 
   const confirmTitle = (() => {
@@ -86,59 +93,48 @@ export default function ArchiveSession({ session, onArchive }) {
         `${unpushedCount} unpushed commit${unpushedCount === 1 ? '' : 's'} will stay local only`
       );
     }
-    if (hasDraftPr) {
-      parts.push(`close draft PR #${session.pr_number}`);
-    }
     return parts.join(' · ');
   })();
 
   const iconButtonClass =
     'p-1 text-faint hover:text-accent hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
-  if (pendingConfirm) {
-    return (
-      <div
-        ref={confirmRef}
-        className="flex items-center gap-0.5 shrink-0"
-        onClick={(e) => e.stopPropagation()}
+  const archiveButton = pendingConfirm ? (
+    <div
+      ref={confirmRef}
+      className="flex items-center gap-0.5 shrink-0"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="text-[10px] font-medium text-faint whitespace-nowrap pr-0.5">Archive?</span>
+      <button
+        type="button"
+        onClick={handleCancel}
+        disabled={archiving}
+        title="Cancel"
+        className={`${iconButtonClass} hover:text-secondary`}
       >
-        <span className="text-[10px] font-medium text-faint whitespace-nowrap pr-0.5">
-          Archive?
-        </span>
-        <button
-          type="button"
-          onClick={handleCancel}
-          disabled={archiving}
-          title="Cancel"
-          className={`${iconButtonClass} hover:text-secondary`}
-        >
-          <X className="w-3.5 h-3.5 shrink-0" />
-        </button>
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={blocked || checking}
-          title={confirmTitle}
-          className={`${iconButtonClass} hover:text-success`}
-        >
-          {archiving || checking ? (
-            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
-          ) : (
-            <Check className="w-3.5 h-3.5 shrink-0" />
-          )}
-        </button>
-      </div>
-    );
-  }
-
-  const archiveTitle = isProvisioning ? 'Archive provisioning session' : 'Archive session';
-
-  return (
+        <X className="w-3.5 h-3.5 shrink-0" />
+      </button>
+      <button
+        type="button"
+        onClick={handleConfirm}
+        disabled={blocked || checking}
+        title={confirmTitle}
+        className={`${iconButtonClass} hover:text-success`}
+      >
+        {archiving || checking ? (
+          <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+        ) : (
+          <Check className="w-3.5 h-3.5 shrink-0" />
+        )}
+      </button>
+    </div>
+  ) : (
     <button
       type="button"
       onClick={startConfirm}
       disabled={blocked}
-      title={archiveTitle}
+      title={isProvisioning ? 'Archive provisioning session' : 'Archive session'}
       className={iconButtonClass}
     >
       {archiving || isArchiving ? (
@@ -147,5 +143,24 @@ export default function ArchiveSession({ session, onArchive }) {
         <Archive className="w-3.5 h-3.5 shrink-0" />
       )}
     </button>
+  );
+
+  return (
+    <>
+      {archiveButton}
+      {showConfirmModal && (
+        <ArchiveConfirmModal
+          prNumber={hasDraftPr ? session.pr_number : null}
+          commitsToPush={unpushedCount}
+          loading={archiving}
+          onConfirm={performArchive}
+          onCancel={() => {
+            if (archiving) return;
+            setShowConfirmModal(false);
+            setUnpushedCount(0);
+          }}
+        />
+      )}
+    </>
   );
 }
