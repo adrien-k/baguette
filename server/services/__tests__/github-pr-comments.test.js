@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getPRComments } from '../github.js';
+import { getPRComments, editPRComment } from '../github.js';
 
 vi.mock('../github-api.js', () => ({
   githubFetch: vi.fn(),
@@ -120,5 +120,55 @@ describe('getPRComments', () => {
     expect(result.warnings?.length).toBeGreaterThan(0);
     expect(result.issueComments).toHaveLength(1);
     expect(result.issueComments[0]).toMatchObject({ commentType: 'review_body', id: 50 });
+  });
+});
+
+describe('editPRComment', () => {
+  afterEach(() => {
+    vi.mocked(githubFetch).mockReset();
+  });
+
+  const baguetteBody = '*Posted by baguette - Claude, session 1:*\n\nold';
+  const ME = { id: 1, login: 'me' };
+  const ownComment = (id) => ({ id, user: ME, body: baguetteBody });
+
+  /** Routes GET /user, the comment GET, and the PATCH; `comment` is what GitHub returns. */
+  const mockGithub = (comment, patched) =>
+    vi.mocked(githubFetch).mockImplementation((url, opts) => {
+      if (url.endsWith('/user')) return Promise.resolve(jsonResponse(ME));
+      if (opts?.method === 'PATCH') return Promise.resolve(jsonResponse(patched));
+      return Promise.resolve(jsonResponse(comment));
+    });
+
+  it('patches an issue comment posted by Baguette', async () => {
+    mockGithub(ownComment(7), { id: 7, html_url: 'u', body: 'new' });
+
+    const result = await editPRComment('tok', 'o/r', 7, 'issue', 'new');
+
+    expect(result).toEqual({ id: 7, url: 'u', body: 'new' });
+    const patch = vi.mocked(githubFetch).mock.calls.find(([, o]) => o?.method === 'PATCH');
+    expect(patch[0]).toBe('https://api.github.com/repos/o/r/issues/comments/7');
+    expect(JSON.parse(patch[1].body)).toEqual({ body: 'new' });
+  });
+
+  it('uses the pulls endpoint for inline review comments', async () => {
+    mockGithub(ownComment(8), { id: 8, html_url: 'u', body: 'new' });
+
+    await editPRComment('tok', 'o/r', 8, 'review', 'new');
+
+    const urls = vi
+      .mocked(githubFetch)
+      .mock.calls.map(([u]) => u)
+      .filter((u) => !u.endsWith('/user'));
+    expect(urls.every((u) => u === 'https://api.github.com/repos/o/r/pulls/comments/8')).toBe(true);
+  });
+
+  it('refuses to edit another user’s comment', async () => {
+    mockGithub({ id: 10, user: { id: 2, login: 'someone-else' }, body: baguetteBody });
+
+    await expect(editPRComment('tok', 'o/r', 10, 'issue', 'new')).rejects.toThrow(
+      'Only comments posted by the authenticated user can be edited.'
+    );
+    expect(vi.mocked(githubFetch).mock.calls.some(([, o]) => o?.method === 'PATCH')).toBe(false);
   });
 });

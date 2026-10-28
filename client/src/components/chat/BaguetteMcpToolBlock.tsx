@@ -499,6 +499,20 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
+  if (toolShortName === 'EditPrComment') {
+    const body = (args.body as string | undefined) ?? '';
+    return (
+      <QuietToolBlock
+        icon="⚙"
+        label="EditPrComment"
+        detail={body.length > 60 ? body.slice(0, 57) + '…' : body}
+        isError={isError}
+        result={result}
+        input={args}
+      />
+    );
+  }
+
   if (toolShortName === 'PrReview') {
     const commentCount = (args.comments as unknown[] | undefined)?.length ?? 0;
     const detail = [

@@ -48,6 +48,7 @@ When the user asks to address, fix, or follow up on PR feedback:
 4. Call `PrWorkflows` to check CI status. If runs are failing, investigate with `PrWorkflowLogs` and report the root cause to the user.
 5. Implement only the changes the user has approved, then commit and refresh `label` / `description` with `UpdateSession` if the write-up needs updating.
 6. Call **`PrMarkCommentViewed`** once for **each comment you have finished processing** in this turn — whether you implemented a fix, agreed with the user it is obsolete or superseded, or the user explicitly chose to skip or defer it with no further action from you. Pass the comment `id` and `commentType` from `PrComments` (`issue` for conversation-thread comments, `review_body` for submitted PR review summaries, `review` for inline review comments on the diff). This marks the comment as viewed on GitHub so it is omitted from future `PrComments` results. Do not call it for comments that still need follow-up in a later session.
+7. To correct or update a comment you posted earlier (for example a stale status note), call **`EditPrComment`** with its `commentId` and `commentType` (`issue` or `review`) instead of posting a new one. It only edits comments posted under the same GitHub account, never other users' comments.
 
 ## Session review issues
 
