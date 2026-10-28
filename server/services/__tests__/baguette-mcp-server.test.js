@@ -29,6 +29,7 @@ vi.mock('../github.js', async (importOriginal) => {
     getPRComments: vi.fn(),
     createPRComment: vi.fn(),
     createPRLineComment: vi.fn(),
+    editPRComment: vi.fn(),
     createPRReview: vi.fn(),
     getPRWorkflows: vi.fn(),
     getPRWorkflowLogs: vi.fn(),
@@ -64,6 +65,7 @@ import {
   getPRComments,
   createPRComment,
   createPRLineComment,
+  editPRComment,
   createPRReview,
   getPRWorkflows,
   getPRWorkflowLogs,
@@ -71,6 +73,7 @@ import {
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { isPortListening } from '../port-utils.js';
+import { PUBLIC_HOST } from '../../config.js';
 import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
 import { createSessionAgentContext } from '../mcp/lib/session-agent-context.js';
 import { createGitPushTool } from '../mcp/tools/git-push.js';
@@ -93,6 +96,8 @@ const DEFAULT_SESSION = {
   session_path: '/tmp/wt',
   auto_push: 1,
 };
+// Footer buildSessionFooter adds for session 1 when there is no preview URL or usage.
+const OPEN_SESSION_FOOTER = `\n\n---\n\n<!-- baguette-footer -->\n\n_[Open Session](${PUBLIC_HOST}/sessions/1)_`;
 const SESSION_HEADER = '*Posted by baguette - Agent, session 1:*\n\n';
 const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 
@@ -551,7 +556,7 @@ describe('PrUpsert', () => {
       'ghtoken',
       expect.objectContaining({
         head: 'feature-branch',
-        body: `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nDetails`,
+        body: `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nDetails${OPEN_SESSION_FOOTER}`,
       })
     );
     expect(mockPatch).toHaveBeenCalledWith(
@@ -581,7 +586,9 @@ describe('PrUpsert', () => {
     expect(execFile).not.toHaveBeenCalled();
     expect(upsertPR).toHaveBeenCalledWith(
       'ghtoken',
-      expect.objectContaining({ body: `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nUpdated body` })
+      expect.objectContaining({
+        body: `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nUpdated body${OPEN_SESSION_FOOTER}`,
+      })
     );
     expect(mockPatch).toHaveBeenCalledWith(
       1,
@@ -605,7 +612,7 @@ describe('PrUpsert', () => {
     expect(upsertPR).toHaveBeenCalledWith(
       'ghtoken',
       expect.objectContaining({
-        body: `My reviewer notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nNew baguette content`,
+        body: `My reviewer notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nNew baguette content${OPEN_SESSION_FOOTER}`,
       })
     );
   });
@@ -645,7 +652,7 @@ describe('PrUpsert', () => {
       'ghtoken',
       expect.objectContaining({
         body: expect.stringContaining(
-          '<!-- baguette-footer -->\n\n_cursor / `new-model` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_'
+          `<!-- baguette-footer -->\n\n_[Open Session](${PUBLIC_HOST}/sessions/1)_\n_cursor / \`new-model\` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_`
         ),
       })
     );
@@ -1010,6 +1017,44 @@ describe('PrComments', () => {
     const result = parseResult(await callTool(tools, 'PrComments'));
     expect(result.ok).toBe(true);
     expect(getPRComments).toHaveBeenCalledWith('ghtoken', 'owner/repo', 42);
+  });
+});
+
+describe('EditPrComment', () => {
+  it('returns ok: false when no PR', async () => {
+    const { tools } = await buildServer({ pr_number: null });
+    const result = parseResult(
+      await callTool(tools, 'EditPrComment', { commentId: 5, commentType: 'issue', body: 'x' })
+    );
+    expect(result.ok).toBe(false);
+    expect(editPRComment).not.toHaveBeenCalled();
+  });
+
+  it('edits the comment with the session header', async () => {
+    editPRComment.mockResolvedValue({ id: 5, url: 'u', body: 'b' });
+    const { tools } = await buildServer({ pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'EditPrComment', { commentId: 5, commentType: 'review', body: 'Fixed' })
+    );
+    expect(result.ok).toBe(true);
+    expect(editPRComment).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      5,
+      'review',
+      `${SESSION_HEADER}Fixed`
+    );
+  });
+
+  it('returns the error when GitHub or the guard rejects the edit', async () => {
+    editPRComment.mockRejectedValue(
+      new Error('Only comments posted by the authenticated user can be edited.')
+    );
+    const { tools } = await buildServer({ pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'EditPrComment', { commentId: 5, commentType: 'issue', body: 'x' })
+    );
+    expect(result.ok).toBe(false);
   });
 });
 

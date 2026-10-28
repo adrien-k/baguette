@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { REPOS_DIR, resolveRepoPath, resolveDataDirRelativePath } from '../config.js';
+import { PUBLIC_HOST, REPOS_DIR, resolveRepoPath, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
 import {
   buildLogRangeHeader,
@@ -1304,6 +1304,46 @@ export async function createPRComment(token, repoFullName, prNumber, body) {
 }
 
 /**
+ * Edits a comment previously posted by the authenticated user. Refuses comments written by anyone
+ * else.
+ * @param {'issue' | 'review'} commentType - conversation comment or inline review comment
+ * @returns {{ id, url, body }}
+ */
+export async function editPRComment(token, repoFullName, commentId, commentType, body) {
+  const base =
+    commentType === 'review'
+      ? `https://api.github.com/repos/${repoFullName}/pulls/comments/${commentId}`
+      : `https://api.github.com/repos/${repoFullName}/issues/comments/${commentId}`;
+  const getRes = await githubFetch(base, { token });
+  if (!getRes.ok) {
+    const text = await getRes.text().catch(() => '');
+    throw new Error(`Failed to load comment: ${getRes.status} ${text}`);
+  }
+  const existing = await getRes.json();
+  const meRes = await githubFetch('https://api.github.com/user', { token });
+  if (!meRes.ok) {
+    const text = await meRes.text().catch(() => '');
+    throw new Error(`Failed to load GitHub user: ${meRes.status} ${text}`);
+  }
+  const me = await meRes.json();
+  if (existing.user?.id == null || existing.user.id !== me.id) {
+    throw new Error('Only comments posted by the authenticated user can be edited.');
+  }
+  const res = await githubFetch(base, {
+    method: 'PATCH',
+    token,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Failed to edit comment: ${res.status} ${text}`);
+  }
+  const data = await res.json();
+  return { id: data.id, url: data.html_url, body: data.body };
+}
+
+/**
  * Posts an inline review comment on a specific line of a PR.
  * @returns {{ id, url, body }}
  */
@@ -1777,9 +1817,12 @@ export function splitPrBody(body) {
   return { userPrefix, baguetteContent };
 }
 
-export function buildSessionFooter(_session, { previewUrl = null, usageLines = [] } = {}) {
+export function buildSessionFooter(session, { previewUrl = null, usageLines = [] } = {}) {
   const lines = [];
-  if (previewUrl) lines.push(`Preview: ${previewUrl}`);
+  const links = [];
+  if (previewUrl) links.push(`Preview: ${previewUrl}`);
+  if (session?.id != null) links.push(`[Open Session](${PUBLIC_HOST}/sessions/${session.id})`);
+  if (links.length) lines.push(links.join(' | '));
   if (usageLines?.length) lines.push(...usageLines);
   if (!lines.length) return '';
 
