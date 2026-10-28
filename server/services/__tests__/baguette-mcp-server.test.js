@@ -998,6 +998,28 @@ describe('AwaitDetachedTask', () => {
     expect(result.exitCode).toBe(2);
     expect(result.stdoutLines).toEqual(['done']);
   });
+
+  it('returns ok: false when the task does not exit before the await timeout', async () => {
+    vi.useFakeTimers();
+    const task = {
+      id: 42,
+      session_id: 1,
+      label: 'Run tests',
+      onLog() {
+        return () => {};
+      },
+      onExit() {
+        return () => {};
+      },
+    };
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const promise = callTool(tools, 'AwaitDetachedTask', { taskId: 42 });
+    await vi.advanceTimersByTimeAsync(900_000);
+    const result = parseResult(await promise);
+    vi.useRealTimers();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/KillTask/);
+  });
 });
 
 describe('PrComments', () => {

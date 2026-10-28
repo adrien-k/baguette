@@ -22,7 +22,7 @@ For commands defined in **`.baguette.yaml`** (tests, formatters, dev servers, mi
 
 **Default (`detach: false`):** wait for exit and return `exitCode` / `stdoutLines` / `stderrLines` inline (typical for tests and formatters).
 
-For **long-running** project tasks (dev servers, slow builds): `RunTask` with **`detach: true`** — you get a `taskId`; poll `ReadTaskOutput` / `TaskStatus` and stop with `KillTask`. When a detached task should finish before you continue (e.g. a detached build), call **`AwaitDetachedTask`** with that `taskId` to block until exit and get the same inline output shape. Baguette does not auto-wake you when detached tasks finish unless you call `AwaitDetachedTask`.
+For **long-running** project tasks (dev servers, slow builds): `RunTask` with **`detach: true`** — you get a `taskId`; poll `ReadTaskOutput` / `TaskStatus` and stop with `KillTask`. When a detached task should finish before you continue (e.g. a detached build), call **`AwaitDetachedTask`** with that `taskId` to block until exit (15 minutes per call; on timeout check output, then **`AwaitDetachedTask`** again or **`KillTask`**). Baguette does not auto-wake you when detached tasks finish unless you call `AwaitDetachedTask`.
 
 **Before ending your turn:** Usually **`AwaitDetachedTask`** (if you need the result) or **`KillTask`** (if you no longer need it) on any detached tasks you started this turn—do not leave stray builds or commands running in the background. The exception is intentional long-lived work such as a **dev server** you mean to keep up for preview or the next turn.
 

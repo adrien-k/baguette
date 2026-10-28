@@ -6,7 +6,7 @@ export function createKillTaskTool(ctx) {
   return {
     name: 'KillTask',
     description:
-      'Kill a running baguette task by its ID. Use before ending your turn to stop detached tasks you no longer need (when not awaiting their output).',
+      'Kill a running baguette task by its ID. Use when a detached task is stuck or after AwaitDetachedTask times out with no progress (ReadTaskOutput first). Also use before ending your turn to stop detached tasks you no longer need.',
     schema: { taskId: z.number().int().describe('Task ID from ListRunningTasks') },
     handler: async ({ taskId }) => {
       const task = app.service('tasks').getTask(taskId);

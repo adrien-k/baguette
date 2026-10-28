@@ -4,23 +4,29 @@ import {
   SUBAGENT_DEFAULT_PRESET,
   normalizeSubagentDefaultMode,
 } from '../../../../shared/subagent-default-mode.js';
+import { mcpAwaitTimeoutMinutes } from '../../../../shared/mcp-await-timeout.js';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 
-const BASE_DESCRIPTION =
-  'Create a subagent (`agent_type` subagent) in a session and run its initial prompt. ' +
-  'Default attach: true blocks until the turn finishes (up to 1 hour per wait; on timeout use GetSessionMessages, then AwaitSubagent or StopSubagent); attach: false returns immediately—use ListSubagents and AwaitSubagent. ' +
-  'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. ';
+function startSubagentBaseDescription() {
+  const waitMinutes = mcpAwaitTimeoutMinutes();
+  return (
+    'Create a subagent (`agent_type` subagent) in a session and run its initial prompt. ' +
+    `Default attach: true blocks until the turn finishes (up to ${waitMinutes} minutes per wait; on timeout use GetSessionMessages, then AwaitSubagent or StopSubagent); attach: false returns immediately—use ListSubagents and AwaitSubagent. ` +
+    'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. '
+  );
+}
 
 function startSubagentDescription(mode) {
+  const base = startSubagentBaseDescription();
   if (mode === SUBAGENT_DEFAULT_PRESET) {
     return (
-      BASE_DESCRIPTION +
+      base +
       'Pass preset_model_id from ListPresetModels (Settings → Agent subagent default is Preset).'
     );
   }
   return (
-    BASE_DESCRIPTION +
+    base +
     'Model follows Settings → Agent subagent default: ' +
     (mode === SUBAGENT_DEFAULT_CONFIG
       ? 'the configured subagent agent configuration and model.'

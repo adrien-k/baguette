@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  AGENT_TURN_WAIT_TIMEOUT_MS,
+  MCP_AWAIT_TIMEOUT_MS,
   agentTurnWaitTimeoutMessage,
-  waitForAgentTurnEnd,
-} from '../wait-for-agent-turn.js';
+} from '../../../shared/mcp-await-timeout.js';
+import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
 
 vi.mock('../agents-db.js', () => ({
   getAgentById: vi.fn(),
@@ -43,7 +43,7 @@ describe('waitForAgentTurnEnd', () => {
     await assertion;
   });
 
-  it('defaults to a one-hour wait cap', () => {
-    expect(AGENT_TURN_WAIT_TIMEOUT_MS).toBe(3_600_000);
+  it('defaults to the MCP await timeout cap', () => {
+    expect(MCP_AWAIT_TIMEOUT_MS).toBe(900_000);
   });
 });
