@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot, CheckCircle, ChevronDown, ChevronRight, Square } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { agentsService, messagesService, sessionIssuesService } from '../../feathers.js';
@@ -18,6 +18,7 @@ import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
+import { resolveAccountDefaultModel } from '@baguette/shared/agent-default-model.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import { useSessionAgents } from '../../hooks/useSessionAgents.js';
 import { isAgentTurnActive } from '../../utils/sessionAgents.js';
@@ -28,15 +29,20 @@ import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
-function effectiveReviewerDefaults(userSettings) {
-  if (userSettings?.reviewer_default_config_id != null) {
-    return {
-      configId: userSettings.reviewer_default_config_id,
-      model: userSettings.reviewer_default_model?.model ?? null,
-      modelParams: userSettings.reviewer_default_model?.model_params ?? null,
-    };
-  }
-  return null;
+function effectiveReviewerDefaults(userSettings, configOptions) {
+  if (userSettings?.reviewer_default_config_id == null) return null;
+  const config = configOptions?.find(
+    (c) => Number(c.key) === Number(userSettings.reviewer_default_config_id)
+  );
+  const resolved = resolveAccountDefaultModel(
+    userSettings.reviewer_default_model,
+    config?.default_model
+  );
+  return {
+    configId: userSettings.reviewer_default_config_id,
+    model: resolved.model ?? null,
+    modelParams: resolved.model_params ?? null,
+  };
 }
 
 const ISSUE_SECTION_HEADING_CLASS = 'text-xs font-medium text-faint uppercase tracking-wide';
@@ -91,7 +97,7 @@ export default function ReviewView({
 
   useEffect(() => {
     if (!session?.id) return;
-    const reviewerDefaults = effectiveReviewerDefaults(userSettings);
+    const reviewerDefaults = effectiveReviewerDefaults(userSettings, agentConfigOptions);
     const configId =
       reviewer?.agent_config_id ??
       session.review_agent_config_id ??
@@ -162,7 +168,7 @@ export default function ReviewView({
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [hash, issuesLoading, issues]);
 
-  const refreshClosedCount = () => {
+  const refreshClosedCount = useCallback(() => {
     if (!session?.id) {
       setClosedCount(0);
       setClosedCountLoading(false);
@@ -177,11 +183,11 @@ export default function ReviewView({
       })
       .catch(() => {})
       .finally(() => setClosedCountLoading(false));
-  };
+  }, [session]);
 
   useEffect(() => {
     refreshClosedCount();
-  }, [session?.id]);
+  }, [refreshClosedCount]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -195,7 +201,7 @@ export default function ReviewView({
     };
     sessionIssuesService.on('patched', onIssueClosed);
     return () => sessionIssuesService.off('patched', onIssueClosed);
-  }, [session?.id]);
+  }, [session?.id, refreshClosedCount]);
 
   const loadClosedIssues = async () => {
     if (!session?.id || closedLoading) return;

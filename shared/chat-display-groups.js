@@ -1,3 +1,5 @@
+import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp-tool-names.js';
+
 /** Minimum tool calls in a run before it collapses into a work summary. */
 export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
 
@@ -50,6 +52,36 @@ function messageIsToolCallRow(msg) {
   return msg?.type === 'tool_call';
 }
 
+function toolCallRowIsTurnEndingTool(msg) {
+  if (!messageIsToolCallRow(msg)) return false;
+  if (msg.kind === 'ask_user') return true;
+  if (msg.kind === 'mcp') {
+    const tool = msg.args?.tool ?? baguetteMcpShortName(msg.name);
+    return TURN_ENDING_BAGUETTE_TOOLS.has(tool);
+  }
+  const short = baguetteMcpShortName(msg.name) || msg.name;
+  return TURN_ENDING_BAGUETTE_TOOLS.has(short);
+}
+
+function blockIsTurnEndingTool(block) {
+  if (block._hidden) return false;
+  if (blockIsNamedMcpTool(block, 'CreatePlan')) return true;
+  if (blockIsNamedMcpTool(block, 'EditPlan')) return true;
+  if (blockIsNamedMcpTool(block, 'AskUserQuestions')) return true;
+  if (block.type === 'tool_use') {
+    const n = block.name;
+    if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return true;
+  }
+  return false;
+}
+
+/** CreatePlan, EditPlan, or AskUserQuestions — always visible, never inside Worked. */
+export function messageContainsTurnEndingTool(msg) {
+  if (toolCallRowIsTurnEndingTool(msg)) return true;
+  if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
+  return msg.message.content.some(blockIsTurnEndingTool);
+}
+
 /** Message whose visible tools include PrUpsert (MCP or legacy bash op). */
 export function messageContainsPrUpsert(msg) {
   if (messageIsToolCallRow(msg)) return blockIsPrUpsert(msg);
@@ -97,12 +129,17 @@ export function isChatAnchorMessage(msg) {
  * @param {object} [context] When grouping, pass `{ messages, index }` so only the last PrUpsert is a boundary.
  */
 export function isChatGroupBoundary(msg, context) {
-  return isChatAnchorMessage(msg) || prUpsertIsDisplayBoundary(msg, context);
+  return (
+    isChatAnchorMessage(msg) ||
+    prUpsertIsDisplayBoundary(msg, context) ||
+    messageContainsTurnEndingTool(msg)
+  );
 }
 
 /** Tool-only assistant turns plus system/result noise between group boundaries. */
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
+  if (messageContainsTurnEndingTool(msg)) return false;
   if (prUpsertIsDisplayBoundary(msg, context)) return false;
   if (msg.type === 'result' || msg.type === 'turn_result') return true;
   if (msg.type === 'tool_call') return true;

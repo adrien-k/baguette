@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { BadRequest } from '@feathersjs/errors';
-import { feathers } from '@feathersjs/feathers';
+import { BadRequest } from 'feathers/errors';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerUsageModelPricingService } from '../feathers/usage-model-pricing.service.js';
 

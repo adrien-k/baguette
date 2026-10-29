@@ -4,7 +4,7 @@
  * Creating a message also updates the parent session's status.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession, testMessageRow } from '../../test-utils/db.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';

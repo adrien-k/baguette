@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { Forbidden, NotFound } from '@feathersjs/errors';
+import { Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, maskValue } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 

@@ -18,6 +18,7 @@ vi.mock('../../config.js', () => ({
   AUTH_GITHUB_CLIENT_SECRET: 'client-secret',
   PUBLIC_HOST: 'http://localhost:5173',
   PUBLIC_API_URL: 'http://localhost:3000',
+  TRUST_PROXY_HOPS: 1,
   get GITHUB_APP_INSTALL_URL() {
     return configMock.slug ? `https://github.com/apps/${configMock.slug}/installations/new` : null;
   },
@@ -38,6 +39,7 @@ vi.mock('../../services/github.js', () => ({
 }));
 
 import { createAuthRoutes } from '../auth.js';
+import { cookieAuthMiddleware } from '../../feathers.js';
 import {
   cacheScopeForUser,
   clearReposCache,
@@ -56,7 +58,13 @@ beforeEach(async () => {
 
   const app = express();
   app.use(cookieParser(COOKIE_SECRET));
-  app.use(createAuthRoutes({ service: () => ({}) }));
+  // Mirror production: the shared cookie middleware resolves req.user / req.pendingUser
+  // before the auth routes run; both read those fields instead of the raw cookie.
+  app.set('view engine', 'ejs');
+  app.set('views', new URL('../../views', import.meta.url).pathname);
+  const fakeFeathersApp = { service: () => testUsersService() };
+  app.use(cookieAuthMiddleware(fakeFeathersApp));
+  app.use(createAuthRoutes(fakeFeathersApp));
 
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
@@ -76,6 +84,24 @@ function get(path, { cookie } = {}) {
 }
 
 const signedUserCookie = (userId) => `userId=s%3A${sign(String(userId), COOKIE_SECRET)}`;
+
+/** Users service stand-in backed by the same test DB (mirrors the Feathers users service). */
+function testUsersService() {
+  return {
+    async get(id) {
+      const user = await db('users')
+        .where({ id: Number(id) })
+        .first();
+      if (!user) {
+        const err = new Error('Not found');
+        err.code = 404;
+        err.name = 'NotFound';
+        throw err;
+      }
+      return user;
+    },
+  };
+}
 
 describe('GET /auth/github', () => {
   it('omits scope — a GitHub App uses its registered permissions instead', async () => {
@@ -205,6 +231,27 @@ describe('GET /auth/proxy', () => {
       'http://sess.localhost/_baguette/auth?sign=proxy-token'
     );
   });
+
+  it('rejects a pending (unapproved) account with a denial page and no proxy token', async () => {
+    const [pendingId] = await db('users').insert({
+      github_id: 9,
+      username: 'pending',
+      approved: false,
+    });
+
+    const res = await get('/auth/proxy?service=sess', { cookie: signedUserCookie(pendingId) });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('pending approval');
+  });
+
+  it('sends a stale cookie (deleted user) to login and clears the cookie', async () => {
+    const res = await get('/auth/proxy?service=sess', { cookie: signedUserCookie(99999) });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('http://localhost:5173/login');
+    expect(res.headers.get('set-cookie')).toContain('userId=;');
+  });
 });
 
 describe('GET /auth/me', () => {
@@ -239,5 +286,18 @@ describe('GET /auth/me', () => {
       color_scheme: 'dark',
     });
     expect(body.github.install_url).toBe('https://github.com/apps/baguette-test/installations/new');
+  });
+
+  it('reports a pending account with approved:false (the pending page reads this)', async () => {
+    const [pendingId] = await db('users').insert({
+      github_id: 11,
+      username: 'pendingme',
+      approved: false,
+    });
+
+    const res = await get('/auth/me', { cookie: signedUserCookie(pendingId) });
+
+    const body = await res.json();
+    expect(body.user).toMatchObject({ id: pendingId, username: 'pendingme', approved: false });
   });
 });

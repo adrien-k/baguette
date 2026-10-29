@@ -1,14 +1,13 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
-import { sliceByteRange, validateLogByteRange } from '../../mcp-pagination.js';
+import { sliceByteRange, validateLogByteRange, DEFAULT_LOG_BYTES } from '../../mcp-pagination.js';
 
 export function createGetSessionMessageTool(ctx) {
   const { app, userId } = ctx;
   return {
     name: 'GetSessionMessage',
-    description:
-      'Read a single message body (message_json) with optional byte range — same semantics as ReadTaskOutput / PrWorkflowLogs (default last 5000 bytes).',
+    description: `Read a single message body (message_json) with optional byte range — same semantics as ReadTaskOutput / PrWorkflowLogs (default last ${DEFAULT_LOG_BYTES} bytes).`,
     schema: {
       session_id: z.number().int().describe('Session numeric id'),
       message_id: z.number().int(),

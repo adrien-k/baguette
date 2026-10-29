@@ -3,7 +3,9 @@ import {
   resolveSessionTodoForTool,
   todoContentFromArgs,
   todoIdFromArgs,
+  todoRefsFromArgs,
   todoTitleFromArgs,
+  updateTodoStatusOnlyHeading,
 } from '../sessionTodoMcpDisplay.ts';
 import { sessionTodoTitle } from '../sessionTodoDisplay.ts';
 
@@ -40,6 +42,22 @@ describe('todoContentFromArgs', () => {
 describe('todoIdFromArgs', () => {
   it('reads nested tool ref', () => {
     expect(todoIdFromArgs({ input: { ref: 7 } })).toBe(7);
+  });
+});
+
+describe('todoRefsFromArgs', () => {
+  it('dedupes refs from flat args', () => {
+    expect(todoRefsFromArgs({ refs: [1, 2, 1] })).toEqual([1, 2]);
+  });
+});
+
+describe('updateTodoStatusOnlyHeading', () => {
+  it('returns heading for status-only updates', () => {
+    expect(updateTodoStatusOnlyHeading({ status: 'in_progress' })).toBe('Todo in progress');
+  });
+
+  it('returns null when title or content is set', () => {
+    expect(updateTodoStatusOnlyHeading({ status: 'completed', content: 'New body' })).toBeNull();
   });
 });
 

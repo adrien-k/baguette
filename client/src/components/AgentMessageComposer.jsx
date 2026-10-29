@@ -65,12 +65,14 @@ export default function AgentMessageComposer({
   autoFocus = false,
   resizable = false,
   rows = 1,
+  fitPlaceholderWhenEmpty = false,
   hint,
   agentName,
   agentType,
   agents,
   selectedAgentId,
   onSelectAgent,
+  agentOptionCostLabel,
   agentHeaderEnd,
 }) {
   const handleChange = (e) => {
@@ -120,11 +122,15 @@ export default function AgentMessageComposer({
               const picked = sessionAgents.find((a) => String(a.id) === value);
               if (picked) onSelectAgent(picked);
             }}
-            options={sessionAgents.map((a) => ({
-              value: String(a.id),
-              label: agentMenuOptionLabel(a),
-              icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
-            }))}
+            options={sessionAgents.map((a) => {
+              const costLabel = agentOptionCostLabel?.(a);
+              const base = agentMenuOptionLabel(a);
+              return {
+                value: String(a.id),
+                label: costLabel ? `${base} ${costLabel}` : base,
+                icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
+              };
+            })}
             selectedDisplay={{
               icon: (
                 <AgentTypeIcon
@@ -200,6 +206,7 @@ export default function AgentMessageComposer({
         canSubmit={hasDraft && !submitDisabled}
         disabled={disabled || sending}
         placeholder={placeholder}
+        fitPlaceholderWhenEmpty={fitPlaceholderWhenEmpty}
         autoFocus={autoFocus}
         className={
           resizable

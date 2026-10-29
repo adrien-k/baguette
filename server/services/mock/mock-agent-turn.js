@@ -12,6 +12,8 @@ import {
   MOCK_E2E_ASK_ANSWER_SUMMARY,
   MOCK_E2E_ASK_QUESTION_TEXT,
   MOCK_E2E_PLAN_MARKDOWN,
+  MOCK_E2E_PLAN_NON_INTERACTIVE_MARKDOWN,
+  MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY,
   MOCK_E2E_PLAN_RUN_SUMMARY,
   MOCK_REVIEW_ISSUES,
   MOCK_REVIEWER_SUMMARY_TEXT,
@@ -145,7 +147,7 @@ async function runMockPlanCreateTurn({ writer, abortSignal }) {
   await runMockTool(writer, abortSignal, {
     callId: 'mock-e2e-create-plan',
     name: 'mcp__baguette__CreatePlan',
-    args: { markdown: MOCK_E2E_PLAN_MARKDOWN },
+    args: { markdown: MOCK_E2E_PLAN_MARKDOWN, interactive: true },
     rawResult: JSON.stringify({ ok: true, markdown: MOCK_E2E_PLAN_MARKDOWN }),
   });
   await writer.persistTurnResult({
@@ -155,6 +157,45 @@ async function runMockPlanCreateTurn({ writer, abortSignal }) {
     total_cost_usd: 0,
   });
   return { awaitingUser: true };
+}
+
+/**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockPlanCreateNonInteractiveTurn({ writer, abortSignal }) {
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-e2e-create-plan-non-interactive',
+    name: 'mcp__baguette__CreatePlan',
+    args: {
+      markdown: MOCK_E2E_PLAN_NON_INTERACTIVE_MARKDOWN,
+      interactive: false,
+    },
+    rawResult: JSON.stringify({
+      ok: true,
+      markdown: MOCK_E2E_PLAN_NON_INTERACTIVE_MARKDOWN,
+    }),
+  });
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-e2e-todo-after-non-interactive-plan',
+    name: 'mcp__baguette__CreateTodo',
+    args: {
+      title: 'E2E orchestration step',
+      content: 'Mock todo created in the same turn after a non-interactive plan.',
+    },
+    rawResult: JSON.stringify({
+      ok: true,
+      todo: { ref: 1, title: 'E2E orchestration step', status: 'pending' },
+    }),
+  });
+  await writer.appendAssistantText(MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY);
+  await writer.flushAssistant();
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: 0,
+  });
+  return {};
 }
 
 /**
@@ -243,12 +284,14 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
       }
       preset_model_id = preset.id;
     }
+    const parentAgent = await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
     const result = await app.service('agents').startSubagent(
       {
         session_id: session.id,
         name: MOCK_E2E_SUBAGENT_NAME,
         initial_prompt: MOCK_E2E_QUICK_TURN_PROMPT,
         wait_for_completion: false,
+        ...(parentAgent?.id != null ? { parent_agent_id: parentAgent.id } : {}),
         ...(preset_model_id != null ? { preset_model_id } : {}),
       },
       { user: { id: userId }, provider: 'rest' }
@@ -314,6 +357,9 @@ export async function runMockAgentTurn({
   }
   if (scenario === 'plan-create') {
     return runMockPlanCreateTurn({ writer, abortSignal });
+  }
+  if (scenario === 'plan-create-non-interactive') {
+    return runMockPlanCreateNonInteractiveTurn({ writer, abortSignal });
   }
   if (scenario === 'plan-run') {
     return runMockPlanRunTurn({ writer, abortSignal });

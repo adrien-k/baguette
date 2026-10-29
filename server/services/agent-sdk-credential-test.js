@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { runClaudeConnectivityTest } from './claude-connectivity.js';
 import { isMockAgentSdkEnabled } from '../../shared/mock-agent-sdk.js';
 import { runCursorConnectivityTest } from './cursor-connectivity.js';

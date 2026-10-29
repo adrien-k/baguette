@@ -4,7 +4,6 @@ import type {
   TypedMessageView,
 } from '@baguette/shared/session-messages.ts';
 import UserMessageContent, { userMessagePlainText } from './chat/UserMessageContent.tsx';
-import MarkdownContent from './MarkdownContent.jsx';
 import CollapsibleMarkdown from './chat/CollapsibleMarkdown.tsx';
 import ThinkingBlock from './chat/ThinkingBlock.tsx';
 import ToolCallBlock from './chat/ToolCallBlock.tsx';
@@ -23,6 +22,7 @@ import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import SlackBlock from './chat/SlackBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
+import TurnErrorMessage from './chat/TurnErrorMessage.tsx';
 
 export type ChatMessageProps = {
   message: ChatMessageView;
@@ -32,23 +32,19 @@ export type ChatMessageProps = {
   agentName?: string;
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
-  agentType?: string | null;
   pinnedRunningBashIds?: Set<string>;
 };
 
 function UserMessageModelBadge({
   message,
-  agentType,
 }: {
   message: MessageViewMeta & {
     model?: string | null;
     model_params?: unknown;
   };
-  agentType: ChatMessageProps['agentType'];
 }) {
   return (
     <MessageTurnModelBadge
-      agentType={agentType}
       model={message.model}
       modelParams={message.model_params}
       agentConfigId={message.agent_config_id}
@@ -57,31 +53,18 @@ function UserMessageModelBadge({
   );
 }
 
-function TypedUserMessage({
-  message,
-  agentType,
-}: {
-  message: TypedMessageView & { type: 'user' };
-  agentType: ChatMessageProps['agentType'];
-}) {
+function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'user' } }) {
   const isBaguette = message.source === 'baguette' || message.subtype === 'baguette';
   if (isBaguette) {
-    return <BaguetteBlock message={message} agentType={agentType} />;
+    return <BaguetteBlock message={message} />;
   }
 
   if (isLoopUserMessage(message)) {
-    return (
-      <InjectedUserTurnBlock
-        label="Loop"
-        defaultTitle="Loop run"
-        message={message}
-        agentType={agentType}
-      />
-    );
+    return <InjectedUserTurnBlock label="Loop" defaultTitle="Loop run" message={message} />;
   }
 
   if (isMcpUserMessage(message)) {
-    return <McpAgentBlock message={message} agentType={agentType} />;
+    return <McpAgentBlock message={message} />;
   }
 
   if (message.subtype === 'ask_user_answer') {
@@ -99,7 +82,7 @@ function TypedUserMessage({
               />
             )}
           </div>
-          <UserMessageModelBadge message={message} agentType={agentType} />
+          <UserMessageModelBadge message={message} />
         </div>
         <AskUserAnswerBlock answers={answers} fallbackText={userText} />
       </div>
@@ -124,9 +107,7 @@ function TypedUserMessage({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 min-w-0">
-          {isHumanUserMessage(message) && (
-            <UserMessageModelBadge message={message} agentType={agentType} />
-          )}
+          {isHumanUserMessage(message) && <UserMessageModelBadge message={message} />}
           {userText && <CopyButton text={userText} />}
         </div>
       </div>
@@ -205,6 +186,7 @@ function TypedMessage(
         <PlanReviewBlock
           markdown={message.markdown}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );
@@ -256,26 +238,21 @@ function TypedMessage(
     }
 
     case 'user':
-      return <TypedUserMessage message={message} agentType={props.agentType} />;
+      return <TypedUserMessage message={message} />;
 
     case 'turn_result': {
       const isError = message.status === 'error';
-      return (
-        <>
-          <div
-            className={`text-center text-xs opacity-70 ${isError ? 'text-danger' : 'text-success'}`}
-          >
-            <span className="font-medium">{isError ? 'Error' : 'Completed'}</span>
-            {message.total_cost_usd != null && (
-              <span className="ml-2 text-faint">(${message.total_cost_usd.toFixed(4)})</span>
-            )}
+      if (isError && message.error_message) {
+        return (
+          <div className="flex justify-center px-2">
+            <TurnErrorMessage errorMessage={message.error_message} />
           </div>
-          {isError && message.error_message && (
-            <div className="mt-1 text-fg-muted text-xs">
-              <MarkdownContent>{message.error_message}</MarkdownContent>
-            </div>
-          )}
-        </>
+        );
+      }
+      return (
+        <div className="text-center text-xs opacity-70 text-success">
+          <span className="font-medium">Completed</span>
+        </div>
       );
     }
 

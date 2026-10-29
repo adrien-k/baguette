@@ -1,24 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 
 const FINE_POINTER_HOVER_QUERY = '(hover: hover) and (pointer: fine)';
 
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = (e) => setMatches(e.matches);
-    setMatches(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return matches;
-}
-
-/** Comment buttons stay visible; desktop hides them until line hover. */
+/** Comment button hidden until line hover (desktop) or tap (touch). */
 const DIFF_LINE_COMMENT_BTN_VISIBILITY =
-  'opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/diffline:opacity-100';
+  'opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/diffline:opacity-100';
 import {
   GitMerge,
   AlertCircle,
@@ -35,7 +22,6 @@ import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import PrDraftToggleButton from '../../components/PrDraftToggleButton.jsx';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
-import { useLongPressPointer } from '../../hooks/useLongPressPointer.js';
 import DiffLineComposer from '../../components/DiffLineComposer.jsx';
 import { useSessionAgents } from '../../hooks/useSessionAgents.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
@@ -181,19 +167,35 @@ function lineRefFromRow(row, filePath) {
   return null;
 }
 
-function DiffCodeRow({ rowClass, onOpenComposer, active, longPressLineToComment, children }) {
+function lineRefsEqual(a, b) {
+  if (!a || !b) return false;
+  return (
+    a.path === b.path && Number(a.line) === Number(b.line) && (a.side ?? null) === (b.side ?? null)
+  );
+}
+
+function DiffCodeRow({ rowClass, onOpenComposer, highlighted, onLineTap, children }) {
   const canOpen = Boolean(onOpenComposer);
-  const longPressPointer = useLongPressPointer({
-    enabled: longPressLineToComment && canOpen,
-    onLongPress: () => onOpenComposer?.(),
-  });
 
   return (
     <div
+      role={onLineTap && canOpen ? 'button' : undefined}
+      tabIndex={onLineTap && canOpen ? 0 : undefined}
+      onClick={(e) => {
+        if (!onLineTap || !canOpen) return;
+        if (e.target.closest('button')) return;
+        onLineTap();
+      }}
+      onKeyDown={(e) => {
+        if (!onLineTap || !canOpen) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onLineTap();
+        }
+      }}
       className={`group/diffline relative flex w-full min-w-0 items-start ${rowClass} ${
-        active ? 'ring-1 ring-inset ring-brand/60' : ''
-      } ${longPressLineToComment && canOpen ? 'touch-manipulation' : ''}`}
-      {...longPressPointer}
+        highlighted ? 'ring-1 ring-inset ring-brand/60' : ''
+      } ${onLineTap && canOpen ? 'touch-manipulation' : ''}`}
     >
       {canOpen && (
         <button
@@ -204,9 +206,9 @@ function DiffCodeRow({ rowClass, onOpenComposer, active, longPressLineToComment,
           }}
           title={LINE_HINT}
           aria-label={LINE_HINT}
-          aria-expanded={active}
+          aria-expanded={highlighted}
           className={`z-10 mr-0.5 shrink-0 inline-flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-9 [@media(pointer:coarse)]:h-9 rounded-md border border-strong bg-control/95 text-secondary shadow-sm transition-opacity hover:bg-control-hover hover:text-fg hover:border-faint touch-manipulation ${
-            active ? 'opacity-100' : DIFF_LINE_COMMENT_BTN_VISIBILITY
+            highlighted ? 'opacity-100' : DIFF_LINE_COMMENT_BTN_VISIBILITY
           }`}
         >
           <MessageSquarePlus
@@ -235,8 +237,10 @@ function InlineDiff({
   filePath,
   onLineReference,
   activeLine,
+  revealedLine,
+  onRevealLine,
+  tapLineToReveal,
   composer,
-  longPressLineToComment,
 }) {
   const rows = buildInlineRows(lines);
   const sendRef = (row) => {
@@ -257,15 +261,18 @@ function InlineDiff({
         }
         const ref = lineRefFromRow(row, filePath);
         const active = ref ? isLineActive(activeLine, filePath, ref.line, ref.side) : false;
+        const highlighted = active || (ref && revealedLine && lineRefsEqual(revealedLine, ref));
         const openComposer = onLineReference ? () => sendRef(row) : undefined;
+        const onLineTap =
+          tapLineToReveal && ref && onRevealLine ? () => onRevealLine(ref) : undefined;
         let body;
         if (row.type === 'removed') {
           body = (
             <DiffCodeRow
               rowClass={DIFF_REMOVED_ROW}
               onOpenComposer={openComposer}
-              active={active}
-              longPressLineToComment={longPressLineToComment}
+              highlighted={highlighted}
+              onLineTap={onLineTap}
             >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}></span>
@@ -277,8 +284,8 @@ function InlineDiff({
             <DiffCodeRow
               rowClass={DIFF_ADDED_ROW}
               onOpenComposer={openComposer}
-              active={active}
-              longPressLineToComment={longPressLineToComment}
+              highlighted={highlighted}
+              onLineTap={onLineTap}
             >
               <span className={NUM_CLS}></span>
               <span className={NUM_CLS}>{row.newNum}</span>
@@ -290,8 +297,8 @@ function InlineDiff({
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={openComposer}
-              active={active}
-              longPressLineToComment={longPressLineToComment}
+              highlighted={highlighted}
+              onLineTap={onLineTap}
             >
               <span className={NUM_CLS}>{row.oldNum}</span>
               <span className={NUM_CLS}>{row.newNum}</span>
@@ -315,8 +322,10 @@ function SideBySideDiff({
   filePath,
   onLineReference,
   activeLine,
+  revealedLine,
+  onRevealLine,
+  tapLineToReveal,
   composer,
-  longPressLineToComment,
 }) {
   const rows = buildSideBySideRows(lines);
   const sendRef = (line, side, change) => {
@@ -340,6 +349,30 @@ function SideBySideDiff({
           ? isLineActive(activeLine, filePath, row.right.num, 'after')
           : false;
         const showComposer = leftActive || rightActive;
+        const leftRef = row.left?.num
+          ? {
+              path: filePath,
+              line: row.left.num,
+              side: 'before',
+              ...(row.type === 'change' ? { change: 'removed' } : {}),
+            }
+          : null;
+        const rightRef = row.right?.num
+          ? {
+              path: filePath,
+              line: row.right.num,
+              side: 'after',
+              ...(row.type === 'change' ? { change: 'added' } : {}),
+            }
+          : null;
+        const leftHighlighted =
+          leftActive || (leftRef && revealedLine && lineRefsEqual(revealedLine, leftRef));
+        const rightHighlighted =
+          rightActive || (rightRef && revealedLine && lineRefsEqual(revealedLine, rightRef));
+        const leftOnLineTap =
+          tapLineToReveal && leftRef && onRevealLine ? () => onRevealLine(leftRef) : undefined;
+        const rightOnLineTap =
+          tapLineToReveal && rightRef && onRevealLine ? () => onRevealLine(rightRef) : undefined;
         const leftCell =
           row.type === 'change' ? (
             row.left ? (
@@ -348,8 +381,8 @@ function SideBySideDiff({
                 onOpenComposer={
                   onLineReference ? () => sendRef(row.left, 'before', 'removed') : undefined
                 }
-                active={leftActive}
-                longPressLineToComment={longPressLineToComment}
+                highlighted={leftHighlighted}
+                onLineTap={leftOnLineTap}
               >
                 <span className={NUM_CLS}>{row.left.num}</span>
                 <span className={DIFF_LINE_CONTENT_CLS}>{row.left.content || ' '}</span>
@@ -364,8 +397,8 @@ function SideBySideDiff({
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={onLineReference ? () => sendRef(row.left, 'before') : undefined}
-              active={leftActive}
-              longPressLineToComment={longPressLineToComment}
+              highlighted={leftHighlighted}
+              onLineTap={leftOnLineTap}
             >
               <span className={NUM_CLS}>{row.left?.num}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.left?.content || ' '}</span>
@@ -379,8 +412,8 @@ function SideBySideDiff({
                 onOpenComposer={
                   onLineReference ? () => sendRef(row.right, 'after', 'added') : undefined
                 }
-                active={rightActive}
-                longPressLineToComment={longPressLineToComment}
+                highlighted={rightHighlighted}
+                onLineTap={rightOnLineTap}
               >
                 <span className={NUM_CLS}>{row.right.num}</span>
                 <span className={DIFF_LINE_CONTENT_CLS}>{row.right.content || ' '}</span>
@@ -395,8 +428,8 @@ function SideBySideDiff({
             <DiffCodeRow
               rowClass={DIFF_CONTEXT_ROW}
               onOpenComposer={onLineReference ? () => sendRef(row.right, 'after') : undefined}
-              active={rightActive}
-              longPressLineToComment={longPressLineToComment}
+              highlighted={rightHighlighted}
+              onLineTap={rightOnLineTap}
             >
               <span className={NUM_CLS}>{row.right?.num}</span>
               <span className={DIFF_LINE_CONTENT_CLS}>{row.right?.content || ' '}</span>
@@ -422,8 +455,10 @@ function FileDiff({
   scrollId,
   onLineReference,
   activeLine,
+  revealedLine,
+  onRevealLine,
+  tapLineToReveal,
   composer,
-  longPressLineToComment,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const displayPath = diffFileDisplayPath(file);
@@ -450,8 +485,10 @@ function FileDiff({
               filePath={displayPath}
               onLineReference={onLineReference}
               activeLine={activeLine}
+              revealedLine={revealedLine}
+              onRevealLine={onRevealLine}
+              tapLineToReveal={tapLineToReveal}
               composer={composer}
-              longPressLineToComment={longPressLineToComment}
             />
           ) : (
             <SideBySideDiff
@@ -459,8 +496,10 @@ function FileDiff({
               filePath={displayPath}
               onLineReference={onLineReference}
               activeLine={activeLine}
+              revealedLine={revealedLine}
+              onRevealLine={onRevealLine}
+              tapLineToReveal={tapLineToReveal}
               composer={composer}
-              longPressLineToComment={longPressLineToComment}
             />
           )}
         </div>
@@ -525,6 +564,7 @@ export default function DiffView({
   const [mergeError, setMergeError] = useState(null);
   const [viewMode, setViewMode] = useState('inline');
   const [lineComposer, setLineComposer] = useState(null);
+  const [revealedLine, setRevealedLine] = useState(null);
   const finePointerHover = useMediaQuery(FINE_POINTER_HOVER_QUERY);
 
   const loading = diffLoading;
@@ -578,7 +618,7 @@ export default function DiffView({
   }, [fileByFile, scrollToFile, loading, diff, onScrolledToFile]);
 
   const canComment = !readonly;
-  const longPressLineToComment = canComment && !finePointerHover;
+  const tapLineToReveal = canComment && !finePointerHover;
   const enrichLineRef = (ref) => {
     const short_sha = selectedCommitMeta?.short_sha ?? branchHeadShortSha;
     return short_sha ? { ...ref, short_sha } : ref;
@@ -595,6 +635,13 @@ export default function DiffView({
         ? null
         : next
     );
+    setRevealedLine(null);
+  };
+
+  const handleRevealLine = (ref) => {
+    if (!tapLineToReveal || !ref) return;
+    const next = enrichLineRef(ref);
+    setRevealedLine((prev) => (lineRefsEqual(prev, next) ? null : next));
   };
   const lineComposerEl =
     lineComposer && canComment ? (
@@ -614,7 +661,10 @@ export default function DiffView({
         agentConfigOptions={agentConfigOptions}
         configsLoading={configsLoading}
         modelsLoading={modelsLoading}
-        onClose={() => setLineComposer(null)}
+        onClose={() => {
+          setLineComposer(null);
+          setRevealedLine(null);
+        }}
       />
     ) : null;
 
@@ -763,7 +813,7 @@ export default function DiffView({
                         </>
                       ) : (
                         <>
-                          long-press a line or{' '}
+                          tap a line or{' '}
                           <MessageSquarePlus className="inline w-3 h-3 align-text-bottom" /> to
                           message the agent
                         </>
@@ -802,8 +852,10 @@ export default function DiffView({
                   scrollId={diffFileScrollId(file)}
                   onLineReference={canComment ? handleLineClick : undefined}
                   activeLine={lineComposer}
+                  revealedLine={revealedLine}
+                  onRevealLine={handleRevealLine}
+                  tapLineToReveal={tapLineToReveal}
                   composer={lineComposerEl}
-                  longPressLineToComment={longPressLineToComment}
                 />
               ))}
             </div>

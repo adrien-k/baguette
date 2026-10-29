@@ -2,7 +2,7 @@
  * Integration tests for the user-repos Feathers service.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerUserReposService } from '../feathers/user-repos.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';

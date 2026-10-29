@@ -6,7 +6,7 @@ import http from 'http';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { sign } from 'cookie-signature';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 

@@ -4,8 +4,29 @@ export const ALL_REPOS = '__all__';
 /** URL segment for the in-app “new session” form (`…/sessions/new`). */
 export const NEW_SESSION_ROUTE_ID = 'new';
 
+/** URL segment for the in-app “new loop” form (`…/loops/new`). */
+export const NEW_LOOP_ROUTE_ID = 'new';
+
 export function isNewSessionRouteId(routeValue) {
   return routeValue === NEW_SESSION_ROUTE_ID;
+}
+
+export function isNewLoopRouteId(routeValue) {
+  return routeValue === NEW_LOOP_ROUTE_ID;
+}
+
+/** Session workspace home (list + new-session form): `/`, `/global`, `/repos/:id`. */
+export function isSessionHomePathname(pathname) {
+  if (!pathname) return false;
+  if (pathname === '/' || pathname === '/global') return true;
+  return /^\/repos\/\d+$/.test(pathname);
+}
+
+/** Loops workspace home (list + new-loop form): `/loops`, `/global/loops`, `/repos/:id/loops`. */
+export function isLoopHomePathname(pathname) {
+  if (!pathname) return false;
+  if (pathname === '/loops' || pathname === '/global/loops') return true;
+  return /^\/repos\/\d+\/loops$/.test(pathname);
 }
 /** Navbar / dashboard: sessions that are not tied to a single repository. */
 export const GLOBAL_SCOPE = '__global__';

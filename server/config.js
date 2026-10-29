@@ -53,6 +53,17 @@ const DEFAULT_PUBLIC_HOST = process.env.VITE_SERVER_ENABLED
 const DEFAULT_PUBLIC_API_HOST = 'http://localhost:3000';
 
 export const PUBLIC_HOST = process.env.PUBLIC_HOST || DEFAULT_PUBLIC_HOST;
+/**
+ * How many reverse-proxy hops sit between Baguette and the internet (kamal-proxy or Fly's
+ * router each count as one). X-Forwarded-For is read right-to-left: every proxy appends the
+ * address it saw, so only the rightmost `TRUST_PROXY_HOPS` entries cannot be forged by the
+ * client. The default of 1 matches all documented deployments. Set 0 when Baguette is
+ * exposed directly with no proxy, making the socket address the only trusted source.
+ */
+export const TRUST_PROXY_HOPS = Math.max(
+  0,
+  Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10) || 0
+);
 /** API base URL reachable by browsers and external clients (MCP, uploaded images, etc.). */
 export const PUBLIC_API_HOST =
   process.env.PUBLIC_API_HOST ||

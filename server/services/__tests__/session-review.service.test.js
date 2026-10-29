@@ -4,7 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createTestDb } from '../../test-utils/db.js';
 import {

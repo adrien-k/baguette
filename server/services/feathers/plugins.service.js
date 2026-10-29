@@ -1,6 +1,6 @@
 import path from 'path';
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import {
   parsePluginInput,
   getRemoteSha,

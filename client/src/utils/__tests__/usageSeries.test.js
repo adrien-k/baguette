@@ -10,6 +10,7 @@ import {
   SERIES_COLORS,
   OTHER_KEY,
   listSessionCostLines,
+  formatAgentUsageCostLabel,
   summarizeCostByModel,
   usageConfigKey,
   usageConfigLabel,
@@ -318,6 +319,17 @@ describe('formatUsd', () => {
     expect(formatUsd(0)).toBe('$0');
     expect(formatUsd(0.0042)).toBe('$0.0042');
     expect(formatUsd(1.5)).toBe('$1.50');
+  });
+});
+
+describe('formatAgentUsageCostLabel', () => {
+  it('wraps agent cost in parentheses', () => {
+    expect(formatAgentUsageCostLabel({ agentCost: 0.1 })).toBe('($0.10)');
+    expect(formatAgentUsageCostLabel({ agentCost: 0.02 })).toBe('($0.02)');
+  });
+
+  it('returns null when agent cost is zero', () => {
+    expect(formatAgentUsageCostLabel({ agentCost: 0 })).toBe(null);
   });
 });
 

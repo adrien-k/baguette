@@ -6,10 +6,12 @@ import {
   type PermissionResult,
   type Query,
   type SDKMessage,
+  type SDKResultMessage,
   type SDKUserMessage,
   type SettingSource,
 } from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
+import { disableExternal } from './hooks.js';
 import { remoteHasNewCommits } from '../github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -34,6 +36,7 @@ import {
 } from '../agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import { sessionMessageIdentity } from './message-create-fields.js';
+import { claudeResultErrorText } from '../claude/claude-mapping.ts';
 import {
   processClaudeQueryStream,
   type ClaudeStreamTurnOutcome,
@@ -205,7 +208,7 @@ export class ClaudeAgentService {
       allowedTools?: string[];
       permissionMode?: PermissionMode;
       settingSources?: SettingSource[];
-      resume?: string | boolean;
+      resume?: string;
       model?: string | null;
       modelParams?: unknown;
       canUseTool?: CanUseTool;
@@ -225,7 +228,7 @@ export class ClaudeAgentService {
     return {
       cwd,
       env: applyClaudeAgentModelEnv(claudeEnv, resolvedModel),
-      resume: resume !== undefined ? resume || undefined : undefined,
+      resume,
       model: resolvedModel,
       ...paramOptions,
       tools: { type: 'preset', preset: 'claude_code' },
@@ -286,6 +289,7 @@ export class ClaudeAgentService {
       plugins,
       model,
       modelParams,
+      ...(agent?.claude_session_id ? { resume: agent.claude_session_id } : {}),
       agent,
     });
   }
@@ -589,21 +593,35 @@ export class ClaudeAgentService {
     await this._closeQueryInstanceSafe(session.sessionId, session.queryInstance);
   }
 
-  async _persistSessionStatusMessage(sessionId: number, userId: number, statusText: string) {
+  /**
+   * Persist a system/status message on the agent the failure belongs to — reviewer,
+   * primary builder, or subagent are all rows in `agents`, so no channel distinction
+   * is needed here. Falls back to the primary builder when no agent id is given.
+   */
+  private async _persistSessionStatusMessage(
+    sessionId: number,
+    userId: number,
+    statusText: string,
+    agentId?: number | null
+  ) {
     const payload: SystemMessagePayload = {
       type: 'system',
       subtype: 'status',
       status: statusText,
     };
-    const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
-    if (!builder) return;
+    const db = this.app.get('db') as DbLike;
+    const agent =
+      agentId != null
+        ? ((await getAgentById(db, agentId)) as AgentRow | undefined)
+        : ((await getPrimaryBuilderAgent(db, sessionId)) as AgentRow | undefined);
+    if (!agent) return;
     await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(builder),
+        ...sessionMessageIdentity(agent),
       },
       { provider: undefined, user: { id: userId } }
     );
@@ -699,12 +717,10 @@ export class ClaudeAgentService {
     let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
       const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
-      const resumeId = agent.claude_session_id;
       queryOptions = await getReviewAgentTurn(this.app).buildClaudeQueryOptions(sessionRow, agent, {
         model,
         modelParams,
         claudeEnv,
-        continuation: !!resumeId || Boolean(extras.continuation),
         extraPrompt: extras.extraPrompt,
       });
     } else {
@@ -857,14 +873,11 @@ export class ClaudeAgentService {
       {
         streamWriter: sessionState.streamWriter ?? null,
         persistMessage: (message) => this.persistMessage(sessionState, message),
-        persistStatus: isReview
-          ? async (text) => {
-              const session = await db('sessions').where({ id: sessionId }).first();
-              if (session) {
-                await getReviewAgentTurn(this.app)._persistStatus(session, text);
-              }
-            }
-          : (text) => this._persistSessionStatusMessage(sessionId, userId, text),
+        // Shared by the stream's thrown-error path and the silent-end path below:
+        // attributed to the agent whose turn it is, not just the primary builder
+        // (see _persistSessionStatusMessage).
+        persistStatus: (text: string): Promise<void> =>
+          this._persistSessionStatusMessage(sessionId, userId, text, sessionState.agentId),
         onInitSessionId: async (id) => {
           await patchAgentInternal(
             this.app,
@@ -890,6 +903,40 @@ export class ClaudeAgentService {
 
     const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
 
+    // A turn can also end with a failed `result` message (quota, max turns, budget) without
+    // the stream throwing — the mirror of the Cursor terminal-status gap. Bubble it to the
+    // user: the turn_result row renders inline, but the toast/banner needs `app:error`.
+    // outcome === 'failed' also skips deliberate aborts (outcome 'stopped').
+    if (turnComplete && !streamFailed && !awaitingUser && outcome === 'failed') {
+      const failedText = claudeResultErrorText(lastResult as SDKResultMessage);
+      logger.warn(
+        { sessionId, subtype: (lastResult as { subtype?: string })?.subtype },
+        'Claude turn ended with a failed result'
+      );
+      this.app.service('sessions').emit('app:error', {
+        sessionId,
+        message: failedText,
+        user_id: userId,
+      });
+    }
+
+    // The SDK iterator can also drain without any result and without throwing (mirror of
+    // the Cursor silent stream end): with no verdict the agent used to stay 'running'
+    // forever and the user learned nothing. Surface it and end the turn as failed.
+    // outcome === 'failed' here means "no result and no throw"; aborts land on 'stopped'.
+    const silentQueryEnd = !turnComplete && !streamFailed && outcome === 'failed';
+    if (silentQueryEnd && !awaitingUser) {
+      logger.warn({ sessionId }, 'Claude query ended without a result message');
+      const statusText =
+        'Agent ended the turn without completing. Send your message again to continue.';
+      await this._persistSessionStatusMessage(sessionId, userId, statusText, sessionState.agentId);
+      this.app.service('sessions').emit('app:error', {
+        sessionId,
+        message: statusText,
+        user_id: userId,
+      });
+    }
+
     if (lastResult) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
@@ -906,7 +953,7 @@ export class ClaudeAgentService {
       }
     }
 
-    if (isReview && turnComplete && !awaitingUser) {
+    if (isReview && (turnComplete || silentQueryEnd) && !awaitingUser) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
       if (session) {
@@ -920,9 +967,16 @@ export class ClaudeAgentService {
 
     // One terminal status for the whole turn (including background-task auto-resume).
     // Usage is recorded from the last SDK result; queued follow-ups start after this.
-    if (!isReview && (turnComplete || streamFailed) && !awaitingUser) {
-      const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
-      await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
+    if (!isReview) {
+      const turnEnded = turnComplete || streamFailed || silentQueryEnd;
+      if (awaitingUser) {
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'approval');
+      } else if (turnEnded) {
+        const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
+      } else if (outcome === 'stopped') {
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'stopped');
+      }
     }
 
     if (!isReview) {
@@ -1263,6 +1317,9 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'isInterruptedSessionResumable',
     ],
   });
+  // Internal-only service: drives the agent SDK and must never be reachable over the
+  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
+  app.service(path).hooks({ before: { all: [disableExternal] } });
   registerAgentSdk(app, {
     key: CLAUDE_AGENT_SDK_KEY,
     label: CLAUDE_AGENT_SDK_LABEL,

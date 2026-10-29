@@ -57,9 +57,16 @@ export class DevProxy {
       if (sign) {
         try {
           const userId = verifyProxyToken(sign);
-          this._setProxyCookie(res, String(userId));
-          const dest = toSafePath(req.query.redirectTo) ?? '/';
-          return res.redirect(dest);
+          if (await this._isApprovedUser(userId)) {
+            this._setProxyCookie(res, String(userId));
+            const dest = toSafePath(req.query.redirectTo) ?? '/';
+            return res.redirect(dest);
+          }
+          return res.status(403).render('devserver-denied', {
+            title: 'Account pending approval',
+            message: 'An existing user must approve this account before previews can be opened.',
+            backUrl: PUBLIC_HOST,
+          });
         } catch (e) {
           logger.error(e, 'Proxy auth token error');
         }
@@ -197,8 +204,31 @@ export class DevProxy {
 
   // ── Internals ─────────────────────────────────────────────────────────────────
 
+  /**
+   * True when `userId` names an existing, approved user. The signed `baguette_proxy` cookie
+   * is the proxy's only identity source, so it is re-verified against the users table on
+   * every request — approval is the instance's privilege boundary and a cookie can outlive
+   * a revocation for up to its TTL. Fails closed: on lookup errors the user is treated as
+   * unauthenticated (the request is redirected to sign-in, never waved through).
+   */
+  async _isApprovedUser(userId) {
+    if (userId == null || userId === '') return false;
+    try {
+      const user = await this.app
+        .get('db')('users')
+        .where({ id: Number(userId) })
+        .first();
+      return !!user?.approved;
+    } catch (err) {
+      logger.error(err, 'Proxy user lookup failed — failing closed');
+      return false;
+    }
+  }
+
   async _resolveProxyAccess(handler, userId, clientIp) {
-    if (userId) return { userId, clientIp, needsAuth: false, ipBypass: false };
+    if (userId && (await this._isApprovedUser(userId))) {
+      return { userId, clientIp, needsAuth: false, ipBypass: false };
+    }
     const state = this.states.get(handler.key);
     if (handler.allowIpPublicAccess) {
       try {

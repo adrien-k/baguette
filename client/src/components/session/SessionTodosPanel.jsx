@@ -37,6 +37,8 @@ export default function SessionTodosPanel({
   sessionId,
   emptyMessage = 'No todos yet.',
   editable = false,
+  /** When true, only pending and in_progress todos (e.g. composer drawer). */
+  openOnly = false,
 }) {
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -47,7 +49,7 @@ export default function SessionTodosPanel({
 
   const { todos, loading } = useGetSessionTodos(sessionId, {
     enabled: sessionId != null,
-    openOnly: false,
+    openOnly,
   });
 
   const { openTodos, completedTodos } = useMemo(() => {
@@ -148,9 +150,11 @@ export default function SessionTodosPanel({
     return <p className="text-sm text-faint">Loading…</p>;
   }
 
-  const isEmpty = openTodos.length === 0 && completedTodos.length === 0;
-  const showCompletedSection = completedTodos.length > 0;
-  const allTodosCompleted = openTodos.length === 0 && completedTodos.length > 0;
+  const isEmpty = openOnly
+    ? openTodos.length === 0
+    : openTodos.length === 0 && completedTodos.length === 0;
+  const showCompletedSection = !openOnly && completedTodos.length > 0;
+  const allTodosCompleted = !openOnly && openTodos.length === 0 && completedTodos.length > 0;
   const showCompletedToggle = showCompletedSection && !allTodosCompleted;
 
   return (

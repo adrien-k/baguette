@@ -45,6 +45,8 @@ export type ProcessCursorRunStreamOptions = {
 export type ProcessCursorRunStreamResult = {
   finishedOk: boolean;
   hasBackgroundTask: boolean;
+  /** True when the loop exited via a terminal-status break (not silent/abort). */
+  sawTerminalBreak: boolean;
 };
 
 export async function processCursorRunStream(
@@ -54,6 +56,7 @@ export async function processCursorRunStream(
   const { writer, onUsage, onStatus, abortSignal } = options;
   let finishedOk = false;
   let hasBackgroundTask = false;
+  let sawTerminalBreak = false;
   let pendingToolCount = 0;
   /** Call ids already counted while running, so repeated `running` deltas count once. */
   const countedCalls = new Set<string>();
@@ -87,6 +90,7 @@ export async function processCursorRunStream(
     if (sdkMsg.type === 'status' && onStatus) {
       const result = await onStatus(sdkMsg);
       if (result?.break) {
+        sawTerminalBreak = true;
         // The terminal status is the authoritative turn verdict. The pending-tool count
         // only decides whether we can stop pulling now or keep draining the stream in
         // case late tool completions still arrive; it never overrides the verdict — the
@@ -99,5 +103,5 @@ export async function processCursorRunStream(
   }
 
   await writer.finish();
-  return { finishedOk, hasBackgroundTask };
+  return { finishedOk, hasBackgroundTask, sawTerminalBreak };
 }

@@ -7,7 +7,7 @@
  * therefore the difference from the previous result.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { ensureReviewerAgentRow } from '../agents-db.js';
 import { SessionsService } from '../feathers/sessions.service.js';
@@ -520,5 +520,45 @@ describe('sessionUsage', () => {
     });
     expect(usage.breakdown.filter((r) => r.agent_type === 'builder')).toHaveLength(1);
     expect(usage.breakdown.filter((r) => r.agent_type === 'reviewer')).toHaveLength(1);
+  });
+
+  it('returns per-agent cost totals in by_agent', async () => {
+    const { sessionId, agentConfigId } = await seed();
+    const service = makeService();
+    const session = await db('sessions').where({ id: sessionId }).first();
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const reviewer = await ensureReviewerAgentRow(db, sessionId, {
+      agent_config_id: agentConfigId,
+      agent_sdk: 'claude',
+    });
+
+    await db('usage').insert([
+      {
+        session_id: sessionId,
+        user_id: session.user_id,
+        repo_full_name: 'acme/app',
+        cost_usd: 0.1,
+        agent_id: builder.id,
+        agent_type: 'builder',
+        total_tokens: 10,
+      },
+      {
+        session_id: sessionId,
+        user_id: session.user_id,
+        repo_full_name: 'acme/app',
+        cost_usd: 0.02,
+        agent_id: reviewer.id,
+        agent_type: 'reviewer',
+        total_tokens: 5,
+      },
+    ]);
+
+    const usage = await service.sessionUsage(null, {
+      user: { id: session.user_id },
+      resolvedSession: session,
+    });
+    const byId = new Map(usage.by_agent.map((r) => [r.agent_id, r.cost_usd]));
+    expect(byId.get(builder.id)).toBeCloseTo(0.1, 6);
+    expect(byId.get(reviewer.id)).toBeCloseTo(0.02, 6);
   });
 });

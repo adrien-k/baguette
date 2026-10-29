@@ -1,8 +1,15 @@
-import { Agent, AgentBusyError, type SDKStatusMessage, type SDKUsageMessage } from '@cursor/sdk';
+import {
+  Agent,
+  AgentBusyError,
+  UnsupportedRunOperationError,
+  type SDKStatusMessage,
+  type SDKUsageMessage,
+} from '@cursor/sdk';
 import type {
   AgentOptions,
   ModelParameterValue,
   Run,
+  RunResult,
   SDKAgent,
   SDKCustomTool,
   SettingSource,
@@ -12,6 +19,7 @@ import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { cursorSdkStateRoot, cursorWorkspaceRef } from '../cursor/cursor-session-paths.js';
 import logger from '../../logger.js';
+import { disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
@@ -20,7 +28,12 @@ import {
   processCursorRunStream,
   type CursorStreamStatusCallback,
   type CursorStreamUsageCallback,
+  type ProcessCursorRunStreamResult,
 } from '../cursor/cursor-sdk-turn.ts';
+import {
+  cursorSilentEndStatusText,
+  cursorTerminalStatusSurfacing,
+} from '../cursor/cursor-turn-error.ts';
 import { extractUserTextFromUserPayload } from '../../../shared/user-message-content.js';
 import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -93,6 +106,8 @@ type CursorSessionState = {
   channel?: MessageChannel;
   turnAgentConfigId?: number | null;
   endTurnAwaitingUser?: boolean;
+  /** Set by stopTurn so a subsequent CANCELLED is treated as a deliberate stop. */
+  stopRequested?: boolean;
 };
 
 type StreamOneRunOpts = {
@@ -104,7 +119,7 @@ type StreamOneRunOpts = {
   onStatus?: CursorStreamStatusCallback;
 };
 
-type StreamOneRunResult = { finishedOk: boolean; hasBackgroundTask: boolean };
+type StreamOneRunResult = ProcessCursorRunStreamResult;
 
 export class CursorAgentService {
   app!: AgentApp;
@@ -579,6 +594,9 @@ ${body}`,
   async stopTurn(activeKey: string | number): Promise<void> {
     const session = this._activeSessions.get(activeKey);
     if (!session) return;
+    // Flag must land before the cancel: the terminal-status handler uses it to tell
+    // a deliberate stop from a remote/platform CANCELLED (which must bubble as an error).
+    session.stopRequested = true;
     try {
       session.abortController?.abort();
       await session.currentRun?.cancel();
@@ -662,7 +680,6 @@ ${body}`,
               model: turnModel.model,
               modelParams: turnModel.modelParams,
               agentConfigId: turnAgentConfigId,
-              continuation: !!resumeAgentId || Boolean(reviewExtras.continuation),
               extraPrompt: reviewExtras.extraPrompt,
             })
           : await this._sessionAgentOptions(session, turnModel, turnAgentConfigId, agent);
@@ -743,7 +760,8 @@ ${body}`,
               (err as Error).message,
               session,
               channel,
-              agent.id
+              agent.id,
+              turnId
             );
           }
         } catch {
@@ -773,9 +791,12 @@ ${body}`,
   }
 
   /**
-   * Stream one run to completion. Returns { finishedOk, hasBackgroundTask }.
-   * Handles ERROR/CANCELLED/EXPIRED by patching session status to 'failed' and persisting a message,
-   * except CANCELLED after a turn-ending Baguette tool (plan / questions), which is expected.
+   * Stream one run to completion. Returns { finishedOk, hasBackgroundTask, sawTerminalBreak }.
+   * Terminal ERROR/CANCELLED/EXPIRED statuses and silent stream ends mark the turn failed and
+   * persist a status message; real failures also emit `app:error` so the UI bubbles them up
+   * (a bare CANCELLED with no message killed session 922 turn 10 silently, "Service unavailable"
+   * only visible on Cursor's side). Only a user-initiated stop (stopTurn → stopRequested) stays
+   * quiet, and CANCELLED after a turn-ending Baguette tool (plan / questions) is expected.
    * FINISHED is left for the caller to handle (so follow-up runs can be chained first).
    */
   async _streamOneRun(
@@ -808,7 +829,7 @@ ${body}`,
 
     const { abortSignal, onUsage: onUsageOverride, onStatus: onStatusOverride } = streamOpts;
 
-    return processCursorRunStream(run, {
+    const streamed = await processCursorRunStream(run, {
       writer,
       abortSignal,
       onUsage: (sdkMsg: SDKUsageMessage) => {
@@ -828,6 +849,7 @@ ${body}`,
           if (status === 'CANCELLED' && sessionState?.endTurnAwaitingUser) {
             return { break: true, finishedOk: true };
           }
+          const userStopped = this.isCursorStopRequested(sessionState, abortSignal);
           logger.warn(
             {
               sessionId,
@@ -835,43 +857,148 @@ ${body}`,
               agent_id: sdkMsg.agent_id,
               run_id: sdkMsg.run_id,
               sdkMessage: sdkMsg.message,
+              user_stopped: userStopped,
             },
             'cursor-agent received terminal status'
           );
-          let statusMsg: string;
-          if (status === 'EXPIRED') {
-            statusMsg =
-              'Cursor agent conversation expired. Send your message again to continue in a fresh conversation.';
-          } else if (status === 'CANCELLED') {
-            statusMsg = 'Cursor agent was cancelled.';
-          } else {
-            statusMsg = `Cursor agent encountered an error.${sdkMsg.message ? ` ${sdkMsg.message}` : ''} Send your message again to continue in a fresh conversation.`;
-          }
-          if (channel === 'review') {
-            await getReviewAgentTurn(this.app)._persistStatus(session, statusMsg);
-            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
-              sdk: 'cursor',
-            });
-          } else {
-            const agentId = sessionState?.agentId;
-            const agentRow =
-              agentId != null ? await getAgentById(this.app.get('db'), agentId) : null;
-            if (agentRow) {
-              await setAgentTurnTerminal(this.app, agentRow, userId, 'failed');
-            }
-            await this._persistStatusMessage(
-              sessionId,
-              userId,
-              statusMsg,
-              session,
-              channel,
-              sessionState?.agentId
-            );
-          }
+          // Session-922 shape: a bare terminal status with no message. The run handle may
+          // still carry the real cause (e.g. "Service unavailable") — recover it unless the
+          // stop was ours; drain only when the status event itself is silent.
+          const sdkDetail = sdkMsg.message || null;
+          const detail =
+            userStopped || sdkDetail ? sdkDetail : await this._cursorRunFailureDetail(run);
+          const surfacing = cursorTerminalStatusSurfacing(status, {
+            detail,
+            userInitiated: userStopped,
+          });
+          await this._surfaceCursorTurnFailure(session, sessionId, userId, {
+            channel,
+            sessionState,
+            surfacing,
+          });
+          // finishedOk stays false even for user stops so the caller's completed-turn
+          // bookkeeping (usage/queued follow-ups) is skipped after a deliberate stop.
           return { break: true, finishedOk: false };
         }
       },
     });
+
+    // The stream generator can also drain without any status event (observed after
+    // provider-level failures): surface that instead of leaving the agent stuck running.
+    if (!streamed.finishedOk && !streamed.sawTerminalBreak && !sessionState?.endTurnAwaitingUser) {
+      const userStopped = this.isCursorStopRequested(sessionState, abortSignal);
+      if (!userStopped) {
+        logger.warn(
+          { sessionId, run_id: run.id },
+          'cursor-agent: run stream ended without a terminal status'
+        );
+        const detail = await this._cursorRunFailureDetail(run);
+        await this._surfaceCursorTurnFailure(session, sessionId, userId, {
+          channel,
+          sessionState,
+          surfacing: {
+            statusText: cursorSilentEndStatusText(detail),
+            isFailure: true,
+          },
+        });
+      }
+    }
+
+    return streamed;
+  }
+
+  /** True when the user (not Cursor's side) ended this run. */
+  isCursorStopRequested(
+    sessionState: CursorSessionState | null | undefined,
+    abortSignal?: AbortSignal
+  ): boolean {
+    return sessionState?.stopRequested === true || abortSignal?.aborted === true;
+  }
+
+  /**
+   * Terminal failure bookkeeping shared by the terminal-status and silent-end paths:
+   * persist the status row (with the turn id so it lands in the failed turn), mark the
+   * agent failed unless the stop was deliberate, and emit `app:error` for real failures.
+   */
+  private async _surfaceCursorTurnFailure(
+    session: AgentSessionRow,
+    sessionId: number,
+    userId: number,
+    {
+      channel,
+      sessionState,
+      surfacing,
+    }: {
+      channel: MessageChannel;
+      sessionState: CursorSessionState | undefined;
+      surfacing: { statusText: string; isFailure: boolean };
+    }
+  ): Promise<void> {
+    if (channel === 'review') {
+      await getReviewAgentTurn(this.app)._persistStatus(session, surfacing.statusText);
+      if (surfacing.isFailure) {
+        await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+          sdk: 'cursor',
+        });
+      }
+    } else {
+      const agentId = sessionState?.agentId;
+      const agentRow = agentId != null ? await getAgentById(this.app.get('db'), agentId) : null;
+      if (surfacing.isFailure && agentRow) {
+        await setAgentTurnTerminal(this.app, agentRow, userId, 'failed');
+      }
+      await this._persistStatusMessage(
+        sessionId,
+        userId,
+        surfacing.statusText,
+        session,
+        channel,
+        agentId,
+        sessionState?.turnId ?? null
+      );
+    }
+    if (surfacing.isFailure) {
+      this.app
+        .service('sessions')
+        .emit('app:error', { sessionId, message: surfacing.statusText, user_id: userId });
+    }
+  }
+
+  /**
+   * Best-effort failure detail from the run's terminal result. The terminal status event
+   * usually carries nothing (session 922: bare CANCELLED while Cursor reported
+   * "Service unavailable" on its side); `run.wait()` is the SDK's documented source for
+   * `RunResult.error`. Timeboxed so a wedged backend cannot stall the failure path.
+   */
+  private async _cursorRunFailureDetail(run: Run | null | undefined): Promise<string | null> {
+    if (!run) return null;
+    // Synchronous handle state first: populated once the handle is terminal, no round trip.
+    const synced = this.syncCursorRunErrorMessage(run);
+    if (synced) return synced;
+    // wait() throws UnsupportedRunOperationError while the run is still running — which is
+    // exactly the silent-end state — and that SDK error text must never become failure copy.
+    if (run.supports && !run.supports('wait')) return null;
+    if (typeof run.wait !== 'function') return null;
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000));
+    try {
+      const result = (await Promise.race([run.wait(), timeout])) as RunResult | null;
+      if (!result || result.status !== 'error') return null;
+      const message = result.error?.message;
+      return message ? message : null;
+    } catch (err) {
+      if (err instanceof UnsupportedRunOperationError) return null;
+      if ((err as Error).name === 'AbortError') return null;
+      const message = (err as Error).message;
+      return message ? message : null;
+    }
+  }
+
+  /** Terminal error message already known on the Run handle (`error` getter), if any. */
+  private syncCursorRunErrorMessage(run: Run): string | null {
+    const error = run.error;
+    if (!error) return null;
+    const message = error.message;
+    return message ? message : null;
   }
 
   /**
@@ -952,7 +1079,8 @@ ${body}`,
     statusText: string,
     _session: AgentSessionRow,
     channel: MessageChannel = 'chat',
-    builderAgentId?: number | null
+    builderAgentId?: number | null,
+    turnId?: number | null
   ) {
     const db = this.app.get('db');
     let agentRow;
@@ -968,6 +1096,7 @@ ${body}`,
     await this.app.service('messages').create(
       {
         session_id: sessionId,
+        ...(turnId != null ? { turn_id: turnId } : {}),
         type: 'system',
         subtype: 'status',
         message_json: JSON.stringify(payload),
@@ -1129,6 +1258,9 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'isInterruptedSessionResumable',
     ],
   });
+  // Internal-only service: drives the agent SDK and must never be reachable over the
+  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
+  app.service(path).hooks({ before: { all: [disableExternal] } });
   registerAgentSdk(app, {
     key: CURSOR_AGENT_SDK_KEY,
     label: CURSOR_AGENT_SDK_LABEL,

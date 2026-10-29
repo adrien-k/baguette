@@ -1,7 +1,7 @@
 /**
  * The slack-threads service: Slack thread ↔ session bindings.
  */
-import { getServiceOptions } from '@feathersjs/feathers';
+import { getServiceOptions } from 'feathers';
 import { describe, expect, it } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import {

@@ -2,7 +2,7 @@
 const AGENT_AWAITING_USER_STATUS = 'approval';
 
 /**
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  * @param {number} agentId
  * @param {number} userId
  */
@@ -20,10 +20,10 @@ export function isBuilderAgentAwaitingUser(agent) {
 }
 
 /**
- * After AskUserQuestions / CreatePlan / EditPlan: mark the agent awaiting user input.
+ * After AskUserQuestions / CreatePlan / EditPlan (when interactive is not false): mark the agent awaiting user input.
  * Does not abort or cancel the agent — the model should end the turn on its own.
  *
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  * @param {number} _sessionId
  * @param {number} userId
  * @param {{ endTurnAwaitingUser?: boolean; agentId?: number } | null | undefined} sessionState

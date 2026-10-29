@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
+import { BadRequest, Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, encryptFields, decryptFields, maskValue } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { normalizeAnthropicBaseUrl } from '../session-env.js';
@@ -32,7 +32,7 @@ const VALID_SDKS = new Set(['claude', 'cursor', 'pi', 'mock']);
 
 /**
  * List models for an owned agent configuration using that config's SDK service.
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  * @param {{ configId: number, userId: number, refresh?: boolean, credentialOverrides?: Record<string, string> }} opts
  */
 export async function listModelsForOwnedConfig(
@@ -55,7 +55,7 @@ export async function listModelsForOwnedConfig(
 
 /**
  * List models for an unsaved agent configuration (form credentials).
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  * @param {{ sdk: string, refresh?: boolean, credentialOverrides?: Record<string, string> }} opts
  */
 async function listModelsForDraftConfig(app, { sdk, refresh = false, credentialOverrides = {} }) {
@@ -374,7 +374,7 @@ const agentConfigsHooks = {
 /**
  * Record an SDK on the agent-configs service. No-op when that service is not mounted
  * (unit tests that register a single agent service in isolation).
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  * @param {{ key: string, label: string, servicePath: string }} meta
  */
 export function registerAgentSdk(app, { key, label, servicePath }) {

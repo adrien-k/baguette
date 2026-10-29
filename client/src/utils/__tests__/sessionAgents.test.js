@@ -5,10 +5,24 @@ import {
   agentMenuOptionLabel,
   agentNameMatchesType,
   countActiveAgentsForSession,
+  isAgentAwaitingUser,
+  isAgentTurnActive,
+  isAnyAgentAwaitingUser,
   isPrimaryAgent,
   isSubagentBuilder,
   sortSessionAgentsByRefAsc,
+  agentTitleFromPrompt,
 } from '../sessionAgents.js';
+
+describe('agentTitleFromPrompt', () => {
+  it('uses the first four words', () => {
+    expect(agentTitleFromPrompt('one two three four five')).toBe('one two three four');
+  });
+
+  it('falls back to Builder for empty prompts', () => {
+    expect(agentTitleFromPrompt('   ')).toBe('Builder');
+  });
+});
 
 describe('agent display labels', () => {
   it('treats default names as matching agent type', () => {
@@ -51,8 +65,16 @@ describe('agent display labels', () => {
   });
 });
 
+describe('agent turn status helpers', () => {
+  it('treats only running as an active turn', () => {
+    expect(isAgentTurnActive('running')).toBe(true);
+    expect(isAgentTurnActive('approval')).toBe(false);
+    expect(isAgentAwaitingUser('approval')).toBe(true);
+  });
+});
+
 describe('countActiveAgentsForSession', () => {
-  it('counts agents with running or approval status', () => {
+  it('counts only running agents', () => {
     const session = {
       agents: [
         { id: 1, status: 'running' },
@@ -61,7 +83,16 @@ describe('countActiveAgentsForSession', () => {
         { id: 4, status: 'running' },
       ],
     };
-    expect(countActiveAgentsForSession(session)).toBe(3);
+    expect(countActiveAgentsForSession(session)).toBe(2);
+  });
+
+  it('detects awaiting-user agents separately', () => {
+    const session = {
+      agents: [{ id: 1, status: 'approval' }],
+      status: 'stopped',
+    };
+    expect(countActiveAgentsForSession(session)).toBe(0);
+    expect(isAnyAgentAwaitingUser(session)).toBe(true);
   });
 
   it('returns 0 for archived sessions', () => {

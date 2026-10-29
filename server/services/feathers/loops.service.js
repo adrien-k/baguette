@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-schedule.js';
@@ -11,6 +11,7 @@ import { getAgentServiceForSession } from '../agent-session-routing.js';
 import { getPrimaryBuilderAgent } from '../agents-db.js';
 import { loadOwnedAgentConfig, resolveAgentConfigIdForRepoSdk } from '../agent-config-resolver.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
+import { resolveSessionPrStatus } from '../session-pr-status.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -148,6 +149,17 @@ class LoopsService extends KnexService {
     const builder = await getPrimaryBuilderAgent(db, tied.id);
     if (builder && BUSY_AGENT_STATUSES.has(builder.status)) {
       return { skipped: 'Previous run was still in progress — skipped this occurrence' };
+    }
+    const prStatus = await resolveSessionPrStatus(this.app, tied, user, {
+      treatStoredClosedAsTerminal: true,
+      logLabel: 'PR status refresh for loop run',
+    });
+    if (prStatus === 'closed' || prStatus === 'merged') {
+      logger.info(
+        { loopId: loop.id, sessionId: tied.id, prStatus },
+        'Tied session PR is closed or merged — starting a new session'
+      );
+      return { sessionId: (await this._startSession(loop, user)).id };
     }
 
     const userParams = { user: { id: loop.user_id } };

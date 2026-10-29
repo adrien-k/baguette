@@ -83,7 +83,11 @@ const PRICING_RULES = [
   { modelIds: ['claude-sonnet-4-5'], match: {}, rates: rates(3, 3.75, 0.3, 15) },
   { modelIds: ['claude-sonnet-4-6'], match: {}, rates: rates(3, 3.75, 0.3, 15) },
   { modelIds: ['claude-sonnet-5', 'claude-sonnet-5-5'], match: {}, rates: rates(2, 2.5, 0.2, 10) },
-  { modelIds: ['claude-haiku-4-5'], match: {}, rates: rates(1, 1.25, 0.1, 5) },
+  {
+    modelIds: ['claude-haiku-4-5', 'claude-haiku-5-5'],
+    match: {},
+    rates: rates(1, 1.25, 0.1, 5),
+  },
   { modelIds: ['claude-opus-4-5'], match: {}, rates: rates(5, 6.25, 0.5, 25) },
   { modelIds: ['claude-opus-4-6'], match: {}, rates: rates(5, 6.25, 0.5, 25) },
   { modelIds: ['claude-opus-4-7'], match: {}, rates: rates(5, 6.25, 0.5, 25) },

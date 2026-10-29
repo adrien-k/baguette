@@ -128,10 +128,10 @@ export async function processClaudeQueryStream(
   };
 
   const persistSdkMessage = async (message: SDKMessage) => {
-    const deferTurnResult =
-      trackBackgroundTasks &&
-      message.type === 'result' &&
-      (pendingBackgroundTaskIds.size > 0 || awaitingStreamContinuation);
+    // Defer the turn_result row until the consume loop finishes so the chat "Completed"
+    // banner does not appear while the agent is still running (background tasks, SDK
+    // auto-continuation, or terminal status not yet patched in processMessages).
+    const deferTurnResult = trackBackgroundTasks && message.type === 'result';
 
     if (deferTurnResult) {
       deferredTurnResultMessage = message;

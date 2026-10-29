@@ -27,6 +27,7 @@ type TypedToolCall = ToolCallPayload & {
   id: number;
   tool_started_at?: string | null;
   call_id?: string | null;
+  agent_id?: number | null;
 };
 
 /** The `tool_call` variant narrowed to a single kind. */
@@ -294,6 +295,7 @@ function ToolCallSwitch({
         <AskUserQuestionBlock
           questions={message.args.questions as AskUserQuestion[]}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );
@@ -302,6 +304,7 @@ function ToolCallSwitch({
         <PlanReviewBlock
           markdown={message.args.plan}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );
@@ -324,6 +327,7 @@ function ToolCallSwitch({
           isError={isError}
           startedAt={startedAt}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );

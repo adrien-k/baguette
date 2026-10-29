@@ -5,7 +5,7 @@
  * model the user's agent configurations can actually reach, at medium reasoning effort. If the
  * user has set a default (or there is nothing to pick from) the normal resolution applies.
  */
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { coerceModelParams } from '../../shared/agent-session-defaults.js';
 import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
 import { effortOptionFromPref } from '../../shared/model-variants.js';

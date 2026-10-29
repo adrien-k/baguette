@@ -1,8 +1,11 @@
-import express from '@feathersjs/express';
+import express from 'express';
 import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createHandler, errorHandler, queryParser, bodyParser } from 'feathers/http';
+import { toAbortableNodeHandler } from './lib/feathers-node-handler.js';
+import { getClientIp } from './lib/client-ip.js';
 
 import logger from './logger.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
@@ -22,50 +25,51 @@ import {
   handleAppError,
   createExpressErrorHandler,
 } from './lib/app-error-handler.js';
+import { createFeathersCookieAuth } from './lib/feathers-http-auth.js';
+import { unlessFeathersApiRoute } from './lib/unless-feathers-api-route.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
-import { SseManager } from './lib/sse-manager.js';
 import { LoopScheduler } from './services/loop-scheduler.js';
 import db from './db.js';
 
-const { rest } = express;
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = createFeathersApp();
-registerAppErrorHandler(app);
-const feathersSse = new SseManager();
 
-app.set('db', db);
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-const server = createServer(app);
+const expressApp = express();
+const feathersApp = createFeathersApp();
+registerAppErrorHandler(feathersApp);
 
-const devProxy = new DevProxy(app, [CodeServerHandler, DevserverHandler]);
-app.set('devProxy', devProxy);
+feathersApp.set('db', db);
 
-// Kamal health check
-app.get('/up', (req, res) => {
+expressApp.set('view engine', 'ejs');
+expressApp.set('views', path.join(__dirname, 'views'));
+
+const server = createServer(expressApp);
+
+const devProxy = new DevProxy(feathersApp, [CodeServerHandler, DevserverHandler]);
+expressApp.set('devProxy', devProxy);
+
+expressApp.get('/up', (req, res) => {
   res.send('OK');
 });
 
-app.use(cookieParser(ENCRYPTION_KEY));
+expressApp.use(cookieParser(ENCRYPTION_KEY));
 
-// Subdomain proxies — run before auth and body parsers so POST bodies are not
-// consumed before being piped to the underlying process.
-app.use(devProxy.middleware);
+expressApp.use(devProxy.middleware);
 
 // Slack signs the raw body, so keep it next to the parsed JSON for signature verification.
-app.use(
+expressApp.use(
+  '/api/slack',
   express.json({
     strict: false,
     verify: (req, _res, buf) => {
-      if (req.url.startsWith('/api/slack/')) req.rawBody = buf.toString('utf8');
+      req.rawBody = buf.toString('utf8');
     },
   })
 );
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieAuthMiddleware(app));
+expressApp.use(unlessFeathersApiRoute(express.json({ strict: false })));
+expressApp.use(unlessFeathersApiRoute(express.urlencoded({ extended: true })));
+expressApp.use(cookieAuthMiddleware(feathersApp));
 
 process.on('unhandledRejection', (reason) => {
   if (
@@ -77,70 +81,65 @@ process.on('unhandledRejection', (reason) => {
     logger.debug({ err: reason }, 'Ignored Claude agent SDK query-close rejection');
     return;
   }
-  if (app.get('handleAppError')?.(reason, {})) {
+  if (feathersApp.get('handleAppError')?.(reason, {})) {
     logger.warn({ err: reason }, 'Handled unhandled rejection');
     return;
   }
   logger.error({ err: reason }, 'Unhandled promise rejection');
 });
 
-const requireAuth = createRequireAuth(app);
-const slackBot = createSlackBot(app);
-app.set('slackBot', slackBot);
-const slackSocket = createSlackSocketManager(app, slackBot);
-app.use(createMcpRoutes(app));
-app.use(createSlackRoutes(app, slackBot));
-app.use(createSettingsRoutes(requireAuth));
-app.use(createAuthRoutes(app));
-app.use(createImagesRoutes());
+const requireAuth = createRequireAuth();
+const slackBot = createSlackBot(feathersApp);
+feathersApp.set('slackBot', slackBot);
+const slackSocket = createSlackSocketManager(feathersApp, slackBot);
+expressApp.use(createMcpRoutes(feathersApp));
+expressApp.use(createSlackRoutes(feathersApp, slackBot));
+expressApp.use(createSettingsRoutes(requireAuth));
+expressApp.use(createAuthRoutes(feathersApp));
+expressApp.use(createImagesRoutes());
 
-// SSE endpoint for real-time server→client events
-app.get('/api/events', requireAuth, (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
-  const userId = req.user.id;
-  feathersSse.subscribe(req, res, userId);
-});
-
-// Dev only: redirect GET / to the frontend dev server (e.g. Vite)
 if (process.env.VITE_SERVER_ENABLED === 'true') {
-  app.get('/', (req, res) => {
+  expressApp.get('/', (req, res) => {
     res.redirect(PUBLIC_HOST);
   });
 }
 
 if (process.env.VITE_SERVER_ENABLED !== 'true') {
   const clientDist = path.join(__dirname, '..', 'client', 'dist');
-  // Serve static routes before turning /api/* routes into Feathers services
-  // to avoid any conflict.
-  app.use(express.static(clientDist));
-  app.get('*', (req, res, next) => {
+  expressApp.use(express.static(clientDist));
+  expressApp.get('*', (req, res, next) => {
     if (req.url.startsWith('/api/')) return next();
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }
 
-// Strip /api prefix so Feathers services are accessible at /api/<name>
-// (existing /api/* Express routes above are already handled and won't reach here)
-app.use((req, res, next) => {
+expressApp.use((req, res, next) => {
   if (req.url.startsWith('/api/')) req.url = '/' + req.url.slice(5);
   next();
 });
-app.configure(rest());
-registerFeathersServices(app, feathersSse);
 
-app.hooks({
+registerFeathersServices(feathersApp);
+
+const feathersHttpHandler = createHandler(feathersApp, [
+  errorHandler(),
+  createFeathersCookieAuth(feathersApp),
+  queryParser(),
+  bodyParser(),
+]);
+expressApp.use(
+  toAbortableNodeHandler(feathersHttpHandler, (req) => ({
+    clientIp: req.feathers?.clientIp ?? getClientIp(req),
+    user: req.feathers?.user,
+  }))
+);
+
+feathersApp.hooks({
   error: {
     all: [
       async (context) => {
         const error = context.error;
-        handleAppError(app, error, { userId: context.params?.user?.id });
+        handleAppError(feathersApp, error, { userId: context.params?.user?.id });
 
-        // Log full error internally
         if (!error.code || error.code >= 500) {
           logger.error(error, 'Feathers error hook');
         }
@@ -151,27 +150,23 @@ app.hooks({
   },
 });
 
-app.use(createExpressErrorHandler(app));
-// Sessions interrupted by the last shutdown are resumed once every service is set up — the
-// restart path dispatches through the agent services, which need their own setup() to have run.
-const loopScheduler = new LoopScheduler(app);
-app.set('loopScheduler', loopScheduler);
-app.setup(server).then(
+expressApp.use(createExpressErrorHandler(feathersApp));
+
+const loopScheduler = new LoopScheduler(feathersApp);
+feathersApp.set('loopScheduler', loopScheduler);
+feathersApp.setup(server).then(
   async () => {
     slackBot.start();
     slackSocket.start();
-    await app.service('sessions').restartInterruptedSessions();
+    await feathersApp.service('sessions').restartInterruptedSessions();
     loopScheduler.start();
   },
   (err) => logger.error({ err }, 'App setup failed')
 );
 
-// WebSocket proxy for session subdomains — no Socket.IO to forward to.
 server.on('upgrade', (req, socket, head) => devProxy.handleUpgrade(req, socket, head));
 
 const PORT = process.env.PORT || 3000;
-// Preview proxy health-checks 127.0.0.1. Binding `::` in dev can make those
-// checks fail (IPv6-only) so the preview never leaves "starting".
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
 server.listen(PORT, HOST, () => {
   logger.info({ port: PORT, host: HOST }, 'Server running');
@@ -185,7 +180,7 @@ async function shutdown() {
   logger.info('Shutting down');
   loopScheduler.stop();
   try {
-    await app.service('tasks').killAllTasks();
+    await feathersApp.service('tasks').killAllTasks();
   } catch (err) {
     logger.error({ err }, 'Error while stopping tasks');
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentModelPresetsService } from '../feathers/agent-model-presets.service.js';
 import { ensureTestMockConfig } from '../../test-utils/agent-configs.js';
@@ -74,6 +74,38 @@ describe('agent-model-presets service', () => {
         },
         params({ id: userId })
       )
+    ).rejects.toThrow(/not found/i);
+  });
+
+  it('patches a preset for the owner', async () => {
+    const created = await app.service('agent-model-presets').create(
+      {
+        description: 'Before',
+        agent_config_id: configId,
+        model: 'mock-standard',
+      },
+      params({ id: userId })
+    );
+    const updated = await app
+      .service('agent-model-presets')
+      .patch(created.id, { description: 'After' }, params({ id: userId }));
+    expect(updated.description).toBe('After');
+    expect(updated.model).toBe('mock-standard');
+  });
+
+  it('does not patch another user preset', async () => {
+    const created = await app.service('agent-model-presets').create(
+      {
+        description: 'Mine',
+        agent_config_id: configId,
+        model: 'mock-standard',
+      },
+      params({ id: userId })
+    );
+    await expect(
+      app
+        .service('agent-model-presets')
+        .patch(created.id, { description: 'Hacked' }, params({ id: otherUserId }))
     ).rejects.toThrow(/not found/i);
   });
 });

@@ -226,46 +226,61 @@ export function createAuthRoutes(app) {
     }
   });
 
-  router.get('/auth/me', async (req, res) => {
-    // Sent regardless of sign-in state so the login screen can explain what it is connecting to.
+  router.get('/auth/me', (req, res) => {
+    // Sent regardless of sign-in state so the login and pending screens can explain what
+    // they are connecting to. Identity comes from the shared cookie middleware: req.user
+    // is an approved user, req.pendingUser a signed-in but unapproved one (reported with
+    // approved:false so the client can show the approval screen — it holds no other
+    // privileges server-side).
     const github = { install_url: GITHUB_APP_INSTALL_URL };
-    const userId = req.signedCookies?.userId;
-    if (!userId) return res.json({ user: null, github });
-
-    const user = await db('users').where({ id: userId }).first();
-    if (!user) return res.json({ user: null, github });
+    const identity = req.user ?? req.pendingUser;
+    if (!identity) return res.json({ user: null, github });
 
     res.json({
       github,
       user: {
-        id: user.id,
-        username: user.username,
-        avatar_url: user.avatar_url,
-        approved: !!user.approved,
-        onboarding_completed: !!user.onboarding_completed,
-        color_scheme: user.color_scheme === 'light' ? 'light' : 'dark',
+        id: identity.id,
+        username: identity.username,
+        avatar_url: identity.avatar_url,
+        approved: !!identity.approved,
+        onboarding_completed: !!identity.onboarding_completed,
+        color_scheme: identity.color_scheme === 'light' ? 'light' : 'dark',
       },
     });
   });
 
   // Signs a proxy token for the given service subdomain and redirects there.
   // Used by the dev-proxy middleware when the user has no baguette_proxy cookie.
+  const redirectToProxyLogin = (res, service, safeRedirectTo) => {
+    const returnParams = new URLSearchParams({ service });
+    if (safeRedirectTo) returnParams.set('redirectTo', safeRedirectTo);
+    const loginUrl = new URL('/login', PUBLIC_HOST);
+    loginUrl.searchParams.set('redirectTo', `/auth/proxy?${returnParams}`);
+    return res.redirect(loginUrl.toString());
+  };
+
   router.get('/auth/proxy', async (req, res, _next) => {
     const service = req.query.service;
     if (!service) return res.status(400).json({ error: 'Missing service parameter' });
 
     const safeRedirectTo = toSafePath(req.query.redirectTo);
 
-    const userId = req.signedCookies?.userId;
-    if (!userId) {
-      const returnParams = new URLSearchParams({ service });
-      if (safeRedirectTo) returnParams.set('redirectTo', safeRedirectTo);
-      const loginUrl = new URL('/login', PUBLIC_HOST);
-      loginUrl.searchParams.set('redirectTo', `/auth/proxy?${returnParams}`);
-      return res.redirect(loginUrl.toString());
+    // Identity is resolved by the shared cookie middleware (req.user = approved,
+    // req.pendingUser = signed in but unapproved). Only approved users may mint
+    // proxy tokens for the preview subdomains.
+    if (req.pendingUser) {
+      return res.status(403).render('devserver-denied', {
+        title: 'Account pending approval',
+        message: 'An existing user must approve this account before previews can be opened.',
+        backUrl: PUBLIC_HOST,
+      });
+    }
+    if (!req.user) {
+      if (req.signedCookies?.userId) res.clearCookie('userId');
+      return redirectToProxyLogin(res, service, safeRedirectTo);
     }
 
-    const token = signProxyToken(userId);
+    const token = signProxyToken(req.user.id);
     const { protocol, hostname } = new URL(PUBLIC_API_URL);
 
     const redirectToParam = safeRedirectTo

@@ -5,8 +5,8 @@
  * label are resolved server-side. A raw `command` stays available for ad-hoc runs.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
-import { BadRequest } from '@feathersjs/errors';
+import { feathers } from 'feathers';
+import { BadRequest } from 'feathers/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerTasksService } from '../feathers/tasks.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';

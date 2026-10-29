@@ -4,10 +4,12 @@ import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
 import { useMarkSessionDiffStaleOnFileTools } from './useMarkSessionDiffStaleOnFileTools.js';
 
+/** @typedef {null | 'viewing' | 'background'} DiffStaleMode */
+
 /**
  * Branch or single-commit diff text. Loads when the Diff tab is first opened (or commit
- * changes). While `stale`, keeps the cached diff until `refresh()`. Does not refetch
- * when switching back to the tab if the cache is marked stale.
+ * changes). While the Diff tab is open and the cache becomes `stale`, keeps showing the
+ * cached diff until `refresh()`. Leaving the tab or opening it with a stale cache refetches.
  */
 export function useSessionDiff(
   session,
@@ -18,59 +20,62 @@ export function useSessionDiff(
   const sessionId = session?.id;
   const skip = !sessionId || isGlobalSession(session ?? {});
   const isSingleCommit = selectedCommit && selectedCommit !== 'all';
-  const [diff, setDiff] = useState(null);
-  const [fileByFile, setFileByFile] = useState(false);
-  const [diffFile, setDiffFile] = useState(null);
+  const [cache, setCache] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [stale, setStale] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [staleMode, setStaleModeState] = useState(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const satisfiedFetchKeyRef = useRef(null);
-  const staleRef = useRef(false);
+  const enabledRef = useRef(enabled);
+  const staleModeRef = useRef(null);
+
+  const syncStaleMode = useCallback((/** @type {DiffStaleMode} */ mode) => {
+    staleModeRef.current = mode;
+    setStaleModeState(mode);
+  }, []);
 
   const fetchKey = skip
     ? null
     : `${sessionId}:${selectedCommit}:${selectedFile ?? ''}:${refreshNonce}`;
 
+  const hasFetched = cache !== null;
+  const stale = staleMode !== null;
+  const fileByFile = cache?.fileByFile ?? false;
+  const diffFile = cache?.diffFile ?? null;
+
   const markStale = useCallback(() => {
-    staleRef.current = true;
-    setStale(true);
-  }, []);
+    const mode = enabledRef.current ? 'viewing' : 'background';
+    syncStaleMode(mode);
+  }, [syncStaleMode]);
 
   useMarkSessionDiffStaleOnFileTools(sessionId, markStale);
   useInvalidateOnSessionTurnComplete(sessionId, markStale);
 
   useEffect(() => {
-    setDiff(null);
-    setFileByFile(false);
-    setDiffFile(null);
+    enabledRef.current = enabled;
+    if (!enabled && staleModeRef.current === 'viewing') {
+      syncStaleMode('background');
+    }
+  }, [enabled, syncStaleMode]);
+
+  useEffect(() => {
+    setCache(null);
     setError(null);
-    setStale(false);
-    staleRef.current = false;
-    setHasFetched(false);
-    satisfiedFetchKeyRef.current = null;
+    syncStaleMode(null);
     setRefreshNonce(0);
     setLoading(false);
-  }, [sessionId, selectedCommit]);
+  }, [sessionId, selectedCommit, syncStaleMode]);
 
   useEffect(() => {
     if (skip || !enabled) {
       setLoading(false);
       return;
     }
-    // Stale cache for this file/commit selection — keep until refresh; still fetch other keys.
-    if (
-      staleRef.current &&
-      hasFetched &&
-      refreshNonce === 0 &&
-      fetchKey &&
-      satisfiedFetchKeyRef.current === fetchKey
-    ) {
+    // Stale cache while Diff tab stays open — keep until refresh; still fetch other keys.
+    if (staleModeRef.current === 'viewing' && hasFetched && fetchKey && cache?.key === fetchKey) {
       setLoading(false);
       return;
     }
-    if (fetchKey && satisfiedFetchKeyRef.current === fetchKey) {
+    if (fetchKey && cache?.key === fetchKey && staleModeRef.current === null) {
       setLoading(false);
       return;
     }
@@ -88,13 +93,13 @@ export function useSessionDiff(
       .diff(payload)
       .then((res) => {
         if (!cancelled) {
-          setDiff(res.diff || '');
-          setFileByFile(!!res.file_by_file);
-          setDiffFile(res.file_path || null);
-          setStale(false);
-          staleRef.current = false;
-          setHasFetched(true);
-          satisfiedFetchKeyRef.current = fetchKey;
+          setCache({
+            key: fetchKey,
+            diff: res.diff || '',
+            fileByFile: !!res.file_by_file,
+            diffFile: res.file_path || null,
+          });
+          syncStaleMode(null);
         }
       })
       .catch((err) => {
@@ -117,15 +122,25 @@ export function useSessionDiff(
     diffFile,
     refreshNonce,
     fetchKey,
-    stale,
+    staleMode,
     hasFetched,
-    // staleRef is synchronous; `stale` state retriggers this effect when marking stale.
+    cache,
+    syncStaleMode,
+    // staleModeRef is synchronous; `staleMode` state retriggers this effect when marking stale.
   ]);
 
   const refresh = useCallback(() => {
-    satisfiedFetchKeyRef.current = null;
     setRefreshNonce((n) => (n === 0 ? 1 : n + 1));
   }, []);
 
-  return { diff, fileByFile, diffFile, loading, error, stale, hasFetched, refresh };
+  return {
+    diff: cache?.diff ?? null,
+    fileByFile,
+    diffFile,
+    loading,
+    error,
+    stale,
+    hasFetched,
+    refresh,
+  };
 }

@@ -8,12 +8,11 @@
  * - remove: soft-deletes a repo and its active sessions
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import { registerUsersService } from '../feathers/users.service.js';
 import { encrypt } from '../../lib/encrypt.js';
-import { NotFound } from '@feathersjs/errors';
 
 vi.mock('../agent-settings.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -488,9 +487,7 @@ describe('Repos service - remove', () => {
   });
 
   it('throws NotFound for an unknown repo id', async () => {
-    await expect(app.service('repos').remove(99999, params(adminUser))).rejects.toBeInstanceOf(
-      NotFound
-    );
+    await expect(app.service('repos').remove(99999, params(adminUser))).rejects.toBeNotFoundError();
   });
 
   it('any authenticated user can remove a repo', async () => {
@@ -573,9 +570,7 @@ describe('Repos service - get', () => {
   });
 
   it('returns 404 for an unknown repo id', async () => {
-    await expect(app.service('repos').get(99999, params(regularUser))).rejects.toBeInstanceOf(
-      NotFound
-    );
+    await expect(app.service('repos').get(99999, params(regularUser))).rejects.toBeNotFoundError();
   });
 
   it('unauthenticated get is rejected', async () => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 
@@ -47,14 +48,17 @@ function isAnswerComplete(questions: AskUserQuestion[], answers: AnswerState[]):
 export default function AskUserQuestionBlock({
   questions: questionsProp,
   sessionId,
+  agentId,
   userReplied = false,
 }: {
   questions?: AskUserQuestion[] | null;
   sessionId?: number | null;
+  agentId?: number | null;
   userReplied?: boolean;
 }) {
   const questions = questionsProp ?? [];
   const hasResult = userReplied;
+  const [expanded, setExpanded] = useState(false);
 
   const [answers, setAnswers] = useState<AnswerState[]>(() =>
     questions.map((q) => ({ selected: q.multiSelect ? new Set<string>() : null, otherText: '' }))
@@ -70,6 +74,7 @@ export default function AskUserQuestionBlock({
       content: text,
       subtype: 'ask_user_answer',
       answers,
+      ...(agentId != null ? { agent_id: agentId } : {}),
     });
   };
 
@@ -123,10 +128,41 @@ export default function AskUserQuestionBlock({
     }
   };
 
+  const questionCount = questions.length;
+  const summaryLabel =
+    questionCount === 1 ? '1 question answered' : `${questionCount} questions answered`;
+
+  if (hasResult && !expanded) {
+    return (
+      <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-2 px-3 sm:px-4 py-2 text-xs text-accent/70 hover:text-accent transition-colors text-left"
+        >
+          <ChevronRight className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <span>{summaryLabel}</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
-      <div className="px-3 sm:px-4 py-2 border-b border-brand/10">
-        <p className="text-xs text-accent/70">The agent has a question</p>
+      <div className="px-3 sm:px-4 py-2 border-b border-brand/10 flex items-center justify-between gap-2">
+        <p className="text-xs text-accent/70">
+          {hasResult ? summaryLabel : 'The agent has a question'}
+        </p>
+        {hasResult && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="shrink-0 text-accent/70 hover:text-accent transition-colors"
+            aria-label="Collapse questions"
+          >
+            <ChevronDown className="w-3.5 h-3.5" aria-hidden />
+          </button>
+        )}
       </div>
       <div className="px-3 sm:px-4 py-3 space-y-4">
         {questions.map((q, i) => {

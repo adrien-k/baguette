@@ -70,7 +70,11 @@ export function runningToolDisplay(block, opts = {}) {
       return { label: short, detail: input.branch };
     }
     if (short === 'PrWorkflowLogs') {
-      return { label: short, detail: input.runId != null ? `run ${input.runId}` : undefined };
+      const parts = [];
+      if (input.runId != null) parts.push(`run ${input.runId}`);
+      if (input.jobName) parts.push(input.jobName);
+      else if (input.jobId != null) parts.push(`job ${input.jobId}`);
+      return { label: short, detail: parts.length ? parts.join(' · ') : undefined };
     }
     if (short === 'AwaitDetachedTask') {
       const taskId = input.taskId;

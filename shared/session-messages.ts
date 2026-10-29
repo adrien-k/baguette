@@ -62,6 +62,7 @@ export type MessageViewMeta = {
   tool_status?: ToolCallStatus | null;
   tool_started_at?: string | null;
   tool_ended_at?: string | null;
+  agent_id?: number | null;
   agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
   agent_config_id?: number | null;
 };

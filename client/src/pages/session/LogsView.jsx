@@ -15,6 +15,7 @@ import {
 import { useStickToBottomScroll } from '../../hooks/useStickToBottomScroll.js';
 import StickToBottomScrollArea from '../../components/StickToBottomScrollArea.jsx';
 import { logToolDisplayName, logToolCallSummary } from '@baguette/shared/log-tool-label.js';
+import { formatTurnErrorMessage } from '@baguette/shared/format-turn-error-message.js';
 import { isBaguetteUserMessage, isMcpUserMessage } from '@baguette/shared/turn-model.js';
 import UserMessageContent, {
   userMessagePlainText,
@@ -151,7 +152,11 @@ function getMessageSummary(msg) {
   }
 
   if (type === 'turn_result') {
-    if (msg.status === 'error' && msg.error_message) return msg.error_message.slice(0, 140);
+    if (msg.status === 'error' && msg.error_message) {
+      const { headline, detail } = formatTurnErrorMessage(msg.error_message);
+      const summary = detail ? `${headline} — ${detail}` : headline;
+      return summary.slice(0, 140);
+    }
     if (msg.total_cost_usd != null) return `Cost $${Number(msg.total_cost_usd).toFixed(4)}`;
     return 'OK';
   }
@@ -332,12 +337,17 @@ function MessageDetail({ msg }) {
   }
 
   if (type === 'turn_result') {
+    const formattedError =
+      msg.status === 'error' && msg.error_message
+        ? formatTurnErrorMessage(msg.error_message)
+        : null;
     return (
       <div className="space-y-1">
         <StatusPill status={msg.status === 'ok' ? 'ok' : 'error'} />
-        {msg.error_message && (
-          <div className="text-danger text-xs whitespace-pre-wrap leading-relaxed">
-            {msg.error_message}
+        {formattedError && (
+          <div className="text-danger text-xs leading-relaxed space-y-0.5">
+            <div className="font-medium">{formattedError.headline}</div>
+            {formattedError.detail && <div className="text-fg-muted">{formattedError.detail}</div>}
           </div>
         )}
         {msg.total_cost_usd != null && (
@@ -498,22 +508,24 @@ export default function LogsView({
   loadMore,
   loadingMore,
   hasMore,
+  chatOpen = true,
   resetKey,
   agentLabelById,
 }) {
   const topSentinelRef = useRef(null);
   const { scrollContainerRef, prepareLoadMore } = useStickToBottomScroll({
     resetKey,
-    contentLength: rawMessages.length,
+    contentLength: chatOpen ? rawMessages.length : 0,
   });
 
   const handleLoadMore = useCallback(() => {
-    if (!hasMore || loadingMore) return;
+    if (!chatOpen || !hasMore || loadingMore) return;
     prepareLoadMore();
     loadMore();
-  }, [hasMore, loadMore, loadingMore, prepareLoadMore]);
+  }, [chatOpen, hasMore, loadMore, loadingMore, prepareLoadMore]);
 
   useEffect(() => {
+    if (!chatOpen) return;
     const container = scrollContainerRef.current;
     if (!container || !topSentinelRef.current || !hasMore) return;
     const observer = new IntersectionObserver(
@@ -524,7 +536,15 @@ export default function LogsView({
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore, hasMore]);
+  }, [chatOpen, handleLoadMore, hasMore, scrollContainerRef]);
+
+  if (!chatOpen) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+        <p className="text-faint text-sm text-center">Open an agent chat to see its logs.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">

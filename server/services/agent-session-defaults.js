@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import {
   orderedParamIdsFromVariants,
   paramValueOptionsFromVariants,

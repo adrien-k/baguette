@@ -33,6 +33,41 @@ export function todoRefFromArgs(args: Record<string, unknown>): number | null {
   return Number.isInteger(ref) ? ref : null;
 }
 
+export function todoRefsFromArgs(args: Record<string, unknown>): number[] {
+  const nested = nestedToolArgs(args);
+  const raw = args.refs ?? nested.refs;
+  if (!Array.isArray(raw)) return [];
+  const refs: number[] = [];
+  for (const item of raw) {
+    const ref = Number(item);
+    if (Number.isInteger(ref) && ref > 0 && !refs.includes(ref)) refs.push(ref);
+  }
+  return refs;
+}
+
+const STATUS_ONLY_HEADING: Record<string, string> = {
+  pending: 'Todo pending',
+  in_progress: 'Todo in progress',
+  completed: 'Todo completed',
+};
+
+function nestedField(args: Record<string, unknown>, key: string): unknown {
+  const nested = nestedToolArgs(args);
+  return args[key] ?? nested[key];
+}
+
+/** When UpdateTodo only changes status (no title/content), return a short chat heading. */
+export function updateTodoStatusOnlyHeading(args: Record<string, unknown>): string | null {
+  const status = nestedField(args, 'status');
+  const title = nestedField(args, 'title');
+  const content = nestedField(args, 'content');
+  const hasTitle = typeof title === 'string' && title.trim();
+  const hasContent = typeof content === 'string' && content.trim();
+  if (hasTitle || hasContent) return null;
+  if (typeof status !== 'string' || !STATUS_ONLY_HEADING[status]) return null;
+  return STATUS_ONLY_HEADING[status];
+}
+
 /** @deprecated Use todoRefFromArgs */
 export function todoIdFromArgs(args: Record<string, unknown>): number | null {
   return todoRefFromArgs(args);
@@ -84,7 +119,9 @@ export function resolveSessionTodoForTool(
 
   const fromResult = asTodoItem(mcpResult?.todo);
   if (fromResult) {
-    return { ...fromResult, status: displayStatus };
+    const status =
+      toolName === 'UpdateTodo' && fromResult.status ? fromResult.status : displayStatus;
+    return { ...fromResult, status };
   }
 
   const fromList = todoFromTodosList(toolName, mcpResult);

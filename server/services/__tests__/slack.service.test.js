@@ -2,7 +2,7 @@
  * Integration tests for the admin Slack apps CRUD service.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { feathers, getServiceOptions } from '@feathersjs/feathers';
+import { feathers, getServiceOptions } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSlackService } from '../feathers/slack.service.js';
 

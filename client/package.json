@@ -10,9 +10,7 @@
     "gen-icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
-    "@feathersjs/feathers": "^5.0.46",
-    "@feathersjs/rest-client": "^5.0.46",
-    "@feathersjs/socketio-client": "^5.0.46",
+    "feathers": "6.0.0-pre.11",
     "@floating-ui/react": "^0.27.20",
     "@lobehub/icons": "^5.23.0",
     "ansi-to-html": "^0.7.2",
@@ -26,8 +24,7 @@
     "react-markdown": "^10.1.0",
     "react-qr-code": "^2.2.0",
     "react-router-dom": "latest",
-    "remark-gfm": "^4.0.1",
-    "socket.io-client": "^4.8.3"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

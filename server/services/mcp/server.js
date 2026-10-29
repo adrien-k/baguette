@@ -24,7 +24,7 @@ async function buildBaguetteToolList(session, app, { slackApps = [], agent = nul
   let baseTools = [];
   try {
     const owner = await app.service('users').get(session.user_id, {});
-    baseTools = buildBaseAgentTools(owner, app, { callerSession: session });
+    baseTools = buildBaseAgentTools(owner, app, { callerSession: session, callerAgent: agent });
   } catch {
     baseTools = [];
   }

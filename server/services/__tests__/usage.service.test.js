@@ -2,7 +2,7 @@
  * Usage Feathers service: system-wide breakdown, agent-config filter list, active agents.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { ensureReviewerAgentRow } from '../agents-db.js';
 import { registerUsageService } from '../feathers/usage.service.js';

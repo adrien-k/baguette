@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { agentsService, sessionsService } from '../feathers.js';
+import { applyAgentPatchToSession } from '../utils/sessionAgents.js';
 import { sortSessionsForList } from '@baguette/shared/session-sort.js';
 import { sessionMatchesListQuery } from '@baguette/shared/session-list-query.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
@@ -118,10 +119,6 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
     const onPatched = (session) => mergeRealtime(session);
     const onRemoved = (session) => {
       if (!session?.id) return;
-      if (session.archived_at) {
-        mergeRealtime(session);
-        return;
-      }
       setSessions((prev) => {
         if (!prev.some((s) => s.id === session.id)) return prev;
         skipRef.current = Math.max(0, skipRef.current - 1);
@@ -134,26 +131,8 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
       setSessions((prev) => {
         const idx = prev.findIndex((s) => s.id === agent.session_id);
         if (idx < 0) return prev;
-        const session = prev[idx];
-        const agents = Array.isArray(session.agents) ? [...session.agents] : [];
-        const agentIdx = agents.findIndex((a) => a.id === agent.id);
-        const summary = {
-          id: agent.id,
-          name: agent.name,
-          agent_type: agent.agent_type,
-          status: agent.status,
-          is_primary: agent.is_primary,
-        };
-        if (agentIdx >= 0) agents[agentIdx] = summary;
-        else agents.push(summary);
-        const reviewer = agents.find((a) => a.agent_type === 'reviewer');
-        const next = {
-          ...session,
-          agents,
-          review_status: reviewer?.status ?? session.review_status,
-          reviewer_agent_id: reviewer?.id ?? session.reviewer_agent_id,
-        };
-        return sortSessionsForList(prev.map((s) => (s.id === session.id ? next : s)));
+        const next = applyAgentPatchToSession(prev[idx], agent);
+        return sortSessionsForList(prev.map((s) => (s.id === next.id ? next : s)));
       });
     };
 

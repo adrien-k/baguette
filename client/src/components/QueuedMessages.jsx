@@ -12,7 +12,7 @@ import UserMessageContent from './chat/UserMessageContent.tsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
 import { formatMonthDayTime } from '../utils/dates.js';
 
-function QueuedItem({ item, session, agentType, onDelete, onSendNow, onEdit }) {
+function QueuedItem({ item, session, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
@@ -49,7 +49,6 @@ function QueuedItem({ item, session, agentType, onDelete, onSendNow, onEdit }) {
           {hasFiles && <span className="text-faint"> · with attachment</span>}
         </span>
         <MessageTurnModelBadge
-          agentType={agentType}
           model={model}
           modelParams={modelParams}
           agentConfigId={agentConfigId}
@@ -146,7 +145,7 @@ function QueuedItem({ item, session, agentType, onDelete, onSendNow, onEdit }) {
  * @param {(id: number) => unknown} [props.onSendNow]
  * @param {(id: number, messageJson: string) => unknown} [props.onEdit]
  */
-export default function QueuedMessages({ queue, session, agentType, onDelete, onSendNow, onEdit }) {
+export default function QueuedMessages({ queue, session, onDelete, onSendNow, onEdit }) {
   if (!queue.length) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -155,7 +154,6 @@ export default function QueuedMessages({ queue, session, agentType, onDelete, on
           key={item.id}
           item={item}
           session={session}
-          agentType={agentType}
           onDelete={onDelete}
           onSendNow={onSendNow}
           onEdit={onEdit}

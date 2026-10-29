@@ -2,6 +2,7 @@ import http from 'http';
 import { PassThrough } from 'stream';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { DevProxy } from '../dev-proxy.js';
+import { signProxyToken } from '../preview.js';
 import { Task, HEARTBEAT_INTERVAL_MS } from '../task.js';
 
 describe('DevProxy._proxyRequest keep-alive', () => {
@@ -206,5 +207,130 @@ describe('DevProxy exit after the server came up', () => {
     task.exit(1);
 
     expect(proxy.states.has(key)).toBe(false);
+  });
+});
+
+describe('DevProxy approved-user gating', () => {
+  const clientIp = '203.0.113.9';
+
+  /** Minimal db/app stand-in: db('users').where({id}).first() resolves from usersById. */
+  function appWithUsers(usersById) {
+    const db = () => ({
+      where: (clause) => ({
+        first: () => Promise.resolve(usersById[clause.id] ?? null),
+      }),
+    });
+    return { get: () => db };
+  }
+
+  /** Handler stub that matches every host and would dispatch (render returns true). */
+  function stubHandlerClass({ allowIpPublicAccess } = {}) {
+    return class {
+      constructor(app, req) {
+        this.app = app;
+        this.req = req;
+        if (allowIpPublicAccess) this.allowIpPublicAccess = allowIpPublicAccess;
+      }
+      isValidHost() {
+        return true;
+      }
+      get key() {
+        return 'k';
+      }
+      get subdomain() {
+        return 'k';
+      }
+      async allowUser() {
+        return true;
+      }
+      async render() {
+        return true;
+      }
+      async buildTask() {
+        return { task: null, exposePort: null };
+      }
+      startupTimeoutMs = 1000;
+    };
+  }
+
+  it('treats a proxy cookie naming an approved user as authenticated', async () => {
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 1 } }), []);
+    const Handler = stubHandlerClass();
+    const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
+    expect(access).toMatchObject({ userId: '7', needsAuth: false, ipBypass: false });
+  });
+
+  it('treats a proxy cookie naming a pending user as anonymous (needsAuth)', async () => {
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 0 } }), []);
+    const Handler = stubHandlerClass();
+    const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
+    expect(access).toMatchObject({ userId: null, needsAuth: true, ipBypass: false });
+  });
+
+  it('treats a proxy cookie naming a deleted user as anonymous', async () => {
+    const proxy = new DevProxy(appWithUsers({}), []);
+    const Handler = stubHandlerClass();
+    const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
+    expect(access.needsAuth).toBe(true);
+  });
+
+  it('falls through to the handler IP bypass when the cookie user is not approved', async () => {
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 0 } }), []);
+    const Handler = stubHandlerClass({ allowIpPublicAccess: async () => true });
+    const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
+    expect(access).toMatchObject({ userId: null, needsAuth: false, ipBypass: true });
+  });
+
+  function middlewareRes() {
+    return {
+      redirectedTo: null,
+      redirect(destination) {
+        this.redirectedTo = destination;
+      },
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      render: vi.fn(),
+      cookie: vi.fn(),
+    };
+  }
+
+  it('/_baguette/auth sets the proxy cookie for an approved token holder', async () => {
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 1 } }), [stubHandlerClass()]);
+    const req = {
+      path: '/_baguette/auth',
+      query: { sign: signProxyToken(7) },
+      signedCookies: {},
+      headers: {},
+      url: '/',
+    };
+    const res = middlewareRes();
+
+    await proxy.middleware(req, res, () => {});
+
+    expect(res.cookie).toHaveBeenCalledWith('baguette_proxy', '7', expect.any(Object));
+    expect(res.redirectedTo).toBe('/');
+  });
+
+  it('/_baguette/auth rejects a token for an unapproved user without setting a cookie', async () => {
+    const proxy = new DevProxy(appWithUsers({ 8: { id: 8, approved: 0 } }), [stubHandlerClass()]);
+    const req = {
+      path: '/_baguette/auth',
+      query: { sign: signProxyToken(8) },
+      signedCookies: {},
+      headers: {},
+      url: '/',
+    };
+    const res = middlewareRes();
+
+    await proxy.middleware(req, res, () => {});
+
+    expect(res.statusCode).toBe(403);
+    expect(res.render).toHaveBeenCalledWith(
+      'devserver-denied',
+      expect.objectContaining({ title: 'Account pending approval' })
+    );
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 });

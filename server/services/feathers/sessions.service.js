@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
-import { NotFound, BadRequest } from '@feathersjs/errors';
+import { NotFound, BadRequest } from 'feathers/errors';
 import { KnexService } from '@feathersjs/knex';
 import { getPermalink as slackGetPermalink } from '../slack.js';
 import { slackUserHandle, resolveSlackUsernames } from '../slack-users.js';
@@ -29,7 +29,6 @@ import {
   markPRReady,
   markPRDraft,
   closePR,
-  getPRStatus,
   upsertPR,
   createWorktree,
   configureWorktreeGitIdentity,
@@ -62,7 +61,11 @@ import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
-import { computeSessionGitStatus } from '../session-git-status.js';
+import {
+  computeSessionGitStatus,
+  sessionNeedsPrMetadataSync,
+  touchPrMetadataUpdatedAtOnPatch,
+} from '../session-git-status.js';
 import { isBuilderAgentAwaitingUser } from '../agent-awaiting-user.js';
 import {
   builderChatActiveKey,
@@ -91,6 +94,7 @@ import {
   interpolateTaskConfigValue,
 } from '../session-env.js';
 import { getGithubToken } from '../agent-settings.js';
+import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { delta, diffModelUsage } from '../turn-usage.js';
 import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
@@ -1001,7 +1005,19 @@ export class SessionsService extends KnexService {
       { total_tokens: 0, cost_usd: 0, input_tokens: 0, output_tokens: 0 }
     );
 
-    return { totals, breakdown };
+    const agentCostRows = await db('usage')
+      .where({ session_id: session.id })
+      .whereNotNull('agent_id')
+      .select('agent_id')
+      .sum('cost_usd as cost_usd')
+      .groupBy('agent_id');
+
+    const by_agent = agentCostRows.map((r) => ({
+      agent_id: r.agent_id,
+      cost_usd: parseFloat(r.cost_usd ?? 0),
+    }));
+
+    return { totals, breakdown, by_agent };
   }
 
   /** Slack context of a session: who owns it, who they approved and the thread it lives in. */
@@ -1125,12 +1141,18 @@ export class SessionsService extends KnexService {
   }
 
   /**
-   * Create a user message targeting the session primary builder (agent id, config, model, params).
-   * Used by UI actions that should not depend on the chat composer’s active agent.
+   * Create a user message targeting a session agent (id, config, model, params).
+   * Defaults to the primary builder. Pass `agent_id` for replies to that agent
+   * (AskUserQuestions / plan buttons) so extra builders get the follow-up turn.
+   * Does not use the chat composer’s selected agent.
    */
   async createDefaultBuilderMessage(data, params) {
     const session = params.resolvedSession;
-    const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
+    const db = this.app.get('db');
+    const builder =
+      data.agent_id != null
+        ? await db('agents').where({ id: data.agent_id, session_id: session.id }).first()
+        : await getPrimaryBuilderAgent(db, session.id);
     if (!builder) throw new BadRequest('Agent not found');
 
     const messageJson =
@@ -1216,29 +1238,43 @@ export class SessionsService extends KnexService {
       const token = getGithubToken(user);
       if (!token) throw new BadRequest('No GitHub token configured');
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
+      const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
-      let pushedBranch;
-      try {
-        const result = await gitPush(cwd, token, {
-          branch,
-          force: forceMode === 'lease',
-          forceOverwrite: forceMode === 'force',
-        });
-        pushedBranch = result.branch;
-        await this.app
-          .service('sessions')
-          .patch(
-            session.id,
-            { remote_branch: pushedBranch },
-            { provider: undefined, user: { id: session.user_id } }
-          );
-      } catch (err) {
-        if (err.rejected) {
-          const conflict = new BadRequest('Push failed due to a conflict');
-          conflict.data = { conflict: true };
-          throw conflict;
+      let commitsToPush = 0;
+      if (!forceGit) {
+        ({ commitsToPush } = await computeSessionGitStatus(session));
+      }
+      const needsMetadataSync = sessionNeedsPrMetadataSync(session);
+      let pushedBranch = branch || session.remote_branch || session.local_branch;
+      if (forceGit || commitsToPush > 0) {
+        try {
+          const result = await gitPush(cwd, token, {
+            branch,
+            force: forceMode === 'lease',
+            forceOverwrite: forceMode === 'force',
+          });
+          pushedBranch = result.branch;
+          await this.app
+            .service('sessions')
+            .patch(
+              session.id,
+              { remote_branch: pushedBranch },
+              { provider: undefined, user: { id: session.user_id } }
+            );
+        } catch (err) {
+          if (err.rejected) {
+            const conflict = new BadRequest('Push failed due to a conflict');
+            conflict.data = { conflict: true };
+            throw conflict;
+          }
+          throw err;
         }
-        throw err;
+      } else if (
+        !needsMetadataSync &&
+        !(session.label || session.pr_description != null || session.pr_number)
+      ) {
+        pushOk = true;
+        return { ok: true };
       }
       if (session.label || session.pr_description != null || session.pr_number) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
@@ -1282,6 +1318,13 @@ export class SessionsService extends KnexService {
             );
         }
       }
+      await this.app
+        .service('sessions')
+        .patch(
+          session.id,
+          { last_pushed_at: new Date().toISOString() },
+          { provider: undefined, user: { id: session.user_id } }
+        );
       pushOk = true;
       return { ok: true };
     } catch (err) {
@@ -1470,11 +1513,6 @@ export class SessionsService extends KnexService {
         : await getReviewerAgent(db, sessionId);
     if (reviewer && reviewer.status !== 'running') {
       await patchAgentInternal(this.app, reviewer.id, { status: 'running' }, session.user_id);
-    }
-
-    const review = getReviewAgentTurn(this.app);
-    if (review && !review.peekTurnExtras(sessionId)) {
-      review.setTurnExtras(sessionId, { continuation: true });
     }
   }
 
@@ -1724,7 +1762,7 @@ export class SessionsService extends KnexService {
     const fresh = await db('sessions').where({ id: sessionId }).first();
     if (fresh) {
       try {
-        await this.maybeAutoPushAfterTurn(fresh);
+        await this.maybeAutoPushAfterTurn(fresh, agent);
       } catch (err) {
         logger.warn(
           { sessionId, err: err?.message },
@@ -1745,8 +1783,9 @@ export class SessionsService extends KnexService {
   }
 
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
-  async maybeAutoPushAfterTurn(session) {
+  async maybeAutoPushAfterTurn(session, agent) {
     if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
+    if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
     if (!getGithubToken(user)) return;
@@ -1761,7 +1800,7 @@ export class SessionsService extends KnexService {
       );
       return;
     }
-    if (commitsToPush <= 0) return;
+    if (commitsToPush <= 0 && !sessionNeedsPrMetadataSync(session)) return;
 
     await this.push(
       { id: session.id },
@@ -2723,6 +2762,7 @@ const sessionsHooks = {
     patch: [
       requireOwnSession,
       clampAutoPushForLocalRepo,
+      touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
       normalizeModelFields,
     ],
@@ -2766,25 +2806,16 @@ const sessionsHooks = {
 };
 
 function refreshPrStatusInBackground(app, session) {
-  if (!session?.pr_number || session.pr_status === 'merged') return;
+  if (
+    !session?.pr_number ||
+    storedPrStatusSkipsGithubRefresh(session.pr_status, { treatStoredClosedAsTerminal: false })
+  ) {
+    return;
+  }
   app
     .service('users')
     .get(session.user_id, {})
-    .then((user) => {
-      const token = getGithubToken(user);
-      if (!token) return;
-      return getPRStatus(token, session.repo_full_name, session.pr_number).then((pr_status) => {
-        if (pr_status !== session.pr_status) {
-          app
-            .service('sessions')
-            .patch(
-              session.id,
-              { pr_status },
-              { provider: undefined, user: { id: session.user_id } }
-            );
-        }
-      });
-    })
+    .then((user) => resolveSessionPrStatus(app, session, user))
     .catch(() => {});
 }
 

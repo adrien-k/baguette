@@ -32,8 +32,8 @@ import { createSlackDownloadFileTool } from '../tools/slack-download-file.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
 import { createTodoHandlers } from '../lib/todo-handlers.js';
 import { createCreateTodoTool } from '../tools/create-todo.js';
-import { createProcessTodoTool } from '../tools/process-todo.js';
-import { createCompleteTodoTool } from '../tools/complete-todo.js';
+import { createUpdateTodoTool } from '../tools/update-todo.js';
+import { createDeleteTodoTool } from '../tools/delete-todo.js';
 import { createListTodosTool } from '../tools/list-todos.js';
 import { createAskUserQuestionsTool } from '../tools/ask-user-questions.js';
 import { createPlanHandlers } from '../lib/plan-handlers.js';
@@ -57,8 +57,8 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
     createEditPlanTool(planHandlers),
     createReadPlanTool(planHandlers),
     createCreateTodoTool(todoHandlers),
-    createProcessTodoTool(ctx),
-    createCompleteTodoTool(ctx),
+    createUpdateTodoTool(ctx),
+    createDeleteTodoTool(ctx),
     createListTodosTool(ctx),
     createGitPullTool(ctx),
     createGitFetchTool(ctx),

@@ -110,6 +110,8 @@ That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DO
 | `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)  |
 | `ENCRYPTION_KEY`            | `openssl rand -hex 32`                                      |
 
+`TRUST_PROXY_HOPS` is optional (default `1`) and is not a secret: kamal-proxy is the one trusted `X-Forwarded-For` hop, so the default is correct for this topology. Set it to `0` only if you expose Baguette directly with no proxy in front.
+
 #### Fetch `SSH_PRIVATE_KEY` with SSM
 
 Replace `INSTANCE_ID` and `REGION` (or copy the filled-in command from `./infra/aws/provision-stack.sh outputs`):

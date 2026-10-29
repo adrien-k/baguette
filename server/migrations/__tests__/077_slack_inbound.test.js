@@ -39,7 +39,7 @@ async function seed() {
   return { userId, appId };
 }
 
-describe('075: inbound Slack', () => {
+describe('077: inbound Slack', () => {
   it('adds the credential and install columns to slack_apps', async () => {
     expect(await columns('slack_apps')).toEqual(
       expect.arrayContaining([

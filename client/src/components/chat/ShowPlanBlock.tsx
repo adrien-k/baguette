@@ -8,7 +8,9 @@ export default function ShowPlanBlock({
   heading = 'Plan ready for review',
   markdown,
   sessionId,
+  agentId,
   userReplied = false,
+  interactive = true,
   isRunning = false,
   isError = false,
   errorMessage = null,
@@ -16,7 +18,10 @@ export default function ShowPlanBlock({
   heading?: string;
   markdown?: string | null;
   sessionId?: number | null;
+  agentId?: number | null;
   userReplied?: boolean;
+  /** When false, plan is informational only (no Run/Refine actions). */
+  interactive?: boolean;
   isRunning?: boolean;
   isError?: boolean;
   errorMessage?: string | null;
@@ -30,6 +35,7 @@ export default function ShowPlanBlock({
       await sessionsService.createDefaultBuilderMessage({
         id: sessionId,
         content: text,
+        ...(agentId != null ? { agent_id: agentId } : {}),
       });
     } catch (err) {
       toastError('Failed to send message', err);
@@ -65,7 +71,7 @@ export default function ShowPlanBlock({
           <p className="text-sm text-faint italic">No plan content yet.</p>
         )}
       </div>
-      {!userReplied && !isError && (
+      {interactive && !userReplied && !isError && (
         <div className="px-3 sm:px-4 pb-4 pt-1 flex flex-wrap gap-2">
           <button
             type="button"

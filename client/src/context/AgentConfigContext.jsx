@@ -10,6 +10,7 @@ import {
 import { agentConfigsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { fetchAgentConfigModels } from '../utils/fetchAgentSdkModels.js';
+import { modelsKeptForFetch, shouldFetchModels } from '../utils/agentConfigModelCache.js';
 import { useRefetchOnSseReconnect } from '../hooks/useRefetchOnSseReconnect.js';
 
 const AgentConfigContext = createContext(null);
@@ -31,20 +32,21 @@ export function AgentConfigProvider({ children }) {
   const modelGenRef = useRef({});
   const modelCacheKeysRef = useRef(new Set());
   const modelCacheRef = useRef(modelCache);
-  useEffect(() => {
-    modelCacheRef.current = modelCache;
-  }, [modelCache]);
 
-  const reload = useCallback(() => {
-    setLoading(true);
+  const reload = useCallback((opts = {}) => {
+    const silent = Boolean(opts.silent);
+    if (!silent) setLoading(true);
     return agentConfigsService
       .find()
       .then((res) => setConfigs(res.data ?? []))
       .catch((err) => {
+        if (silent) return;
         setConfigs([]);
         toastError('Failed to load agent configurations', err);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   }, []);
 
   const dropModelCache = useCallback((configId) => {
@@ -52,6 +54,9 @@ export function AgentConfigProvider({ children }) {
     const key = String(configId);
     modelCacheKeysRef.current.delete(key);
     delete modelGenRef.current[key];
+    const nextRef = { ...modelCacheRef.current };
+    delete nextRef[key];
+    modelCacheRef.current = nextRef;
     setModelCache((prev) => {
       if (!prev[key]) return prev;
       const next = { ...prev };
@@ -87,47 +92,58 @@ export function AgentConfigProvider({ children }) {
     [modelCache]
   );
 
-  const ensureModels = useCallback((configId) => {
+  const ensureModels = useCallback((configId, { force = false } = {}) => {
     if (configId == null || configId === '') return;
     const key = String(configId);
     const entry = modelCacheRef.current[key];
-    if (entry?.status === 'loading' || entry?.status === 'ready') return;
+    if (!shouldFetchModels(entry?.status, { force })) return;
 
     const gen = (modelGenRef.current[key] ?? 0) + 1;
     modelGenRef.current[key] = gen;
     modelCacheKeysRef.current.add(key);
+    modelCacheRef.current = {
+      ...modelCacheRef.current,
+      [key]: { models: modelsKeptForFetch(entry), status: 'loading' },
+    };
 
-    setModelCache((prev) => ({
-      ...prev,
-      [key]: { models: entry?.status === 'error' ? [] : (entry?.models ?? []), status: 'loading' },
-    }));
+    setModelCache((prev) => {
+      if (modelGenRef.current[key] !== gen) return prev;
+      const next = {
+        ...prev,
+        [key]: { models: modelsKeptForFetch(prev[key] ?? entry), status: 'loading' },
+      };
+      modelCacheRef.current = next;
+      return next;
+    });
 
     fetchAgentConfigModels({ agentConfigId: Number(key) })
       .then(({ models: list }) => {
         if (modelGenRef.current[key] !== gen) return;
-        setModelCache((prev) => ({
-          ...prev,
-          [key]: { models: list, status: 'ready' },
-        }));
+        setModelCache((prev) => {
+          if (modelGenRef.current[key] !== gen) return prev;
+          const next = { ...prev, [key]: { models: list, status: 'ready' } };
+          modelCacheRef.current = next;
+          return next;
+        });
       })
       .catch(() => {
         if (modelGenRef.current[key] !== gen) return;
-        setModelCache((prev) => ({
-          ...prev,
-          [key]: { models: [], status: 'error' },
-        }));
+        setModelCache((prev) => {
+          if (modelGenRef.current[key] !== gen) return prev;
+          const previous = modelsKeptForFetch(prev[key] ?? entry);
+          const next = { ...prev, [key]: { models: previous, status: 'error' } };
+          modelCacheRef.current = next;
+          return next;
+        });
       });
   }, []);
 
   const refetchCachedModels = useCallback(() => {
     const keys = [...modelCacheKeysRef.current];
     for (const key of keys) {
-      dropModelCache(key);
+      ensureModels(key, { force: true });
     }
-    for (const key of keys) {
-      ensureModels(key);
-    }
-  }, [dropModelCache, ensureModels]);
+  }, [ensureModels]);
 
   useEffect(() => {
     reload();
@@ -137,7 +153,7 @@ export function AgentConfigProvider({ children }) {
     const onCreated = () => reload();
     const onPatched = (row) => {
       reload();
-      if (row?.id != null) dropModelCache(row.id);
+      if (row?.id != null) ensureModels(row.id, { force: true });
     };
     const onRemoved = (row) => {
       reload();
@@ -151,10 +167,10 @@ export function AgentConfigProvider({ children }) {
       agentConfigsService.off('patched', onPatched);
       agentConfigsService.off('removed', onRemoved);
     };
-  }, [reload, dropModelCache]);
+  }, [reload, dropModelCache, ensureModels]);
 
-  useRefetchOnSseReconnect(() => {
-    reload();
+  useRefetchOnSseReconnect((opts) => {
+    reload({ silent: opts?.silent !== false });
     refetchCachedModels();
   }, true);
 

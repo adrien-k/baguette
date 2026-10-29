@@ -64,9 +64,11 @@ import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
+  agentTitleFromPrompt,
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
+import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usageSeries.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
@@ -177,13 +179,7 @@ export default function ChatView({
       return activeAgent.agent_config_id ?? session?.review_agent_config_id;
     }
     return activeAgent.agent_config_id ?? session?.agent_config_id;
-  }, [
-    activeAgent?.id,
-    activeAgent?.agent_type,
-    activeAgent?.agent_config_id,
-    session?.agent_config_id,
-    session?.review_agent_config_id,
-  ]);
+  }, [activeAgent, session?.agent_config_id, session?.review_agent_config_id]);
   const { configOptions: agentConfigOptions, loading: configsLoading } = useAgentConfigs();
   const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
   const modelsLoading = modelsStale && !models.length;
@@ -225,6 +221,18 @@ export default function ChatView({
   const showMessageComposer = !activeSubagent;
   const showSessionChatFooterExtras = !activeAgent || Boolean(Number(activeAgent.is_primary));
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
+  const costByAgentId = useMemo(
+    () => usageCostByAgentId(sessionUsage?.by_agent),
+    [sessionUsage?.by_agent]
+  );
+  const agentUsageCostLabel = useCallback(
+    (agent) => {
+      if (!agent?.id) return null;
+      return formatAgentUsageCostLabel({ agentCost: costByAgentId.get(agent.id) ?? 0 });
+    },
+    [costByAgentId]
+  );
+  const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
   const agentDisplayName = activeAgent
@@ -243,7 +251,7 @@ export default function ChatView({
     }
     const load = () => {
       loopsService
-        .find({ query: { session_id: session.id, single_session: true, $limit: 50 } })
+        .find({ query: { session_id: chatSessionId, single_session: true, $limit: 50 } })
         .then((d) => setTiedLoops(d.data ?? d))
         .catch(() => {});
     };
@@ -319,25 +327,22 @@ export default function ChatView({
     return queue.filter((item) => item.agent_id === activeAgent.id);
   }, [queue, activeAgent]);
 
-  const { todos: sessionTodosAll } = useGetSessionTodos(chatSessionId, {
+  const { todos: sessionOpenTodos } = useGetSessionTodos(chatSessionId, {
     enabled: chatSessionId != null,
-    openOnly: false,
+    openOnly: true,
   });
 
   const sessionTodoCounts = useMemo(() => {
     let open = 0;
     let inProgress = 0;
-    let completed = 0;
-    for (const row of sessionTodosAll) {
+    for (const row of sessionOpenTodos) {
       if (row.status === 'pending') open += 1;
       else if (row.status === 'in_progress') inProgress += 1;
-      else if (row.status === 'completed') completed += 1;
     }
-    return { open, inProgress, completed };
-  }, [sessionTodosAll]);
+    return { open, inProgress };
+  }, [sessionOpenTodos]);
 
-  const sessionTodoTotal =
-    sessionTodoCounts.open + sessionTodoCounts.inProgress + sessionTodoCounts.completed;
+  const sessionTodoTotal = sessionTodoCounts.open + sessionTodoCounts.inProgress;
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,
@@ -357,9 +362,7 @@ export default function ChatView({
     if (!session?.id || stopping) return;
     setStopping(true);
     try {
-      const stopSingleAgent =
-        activeAgent?.id && (isReviewerAgent || !Number(activeAgent.is_primary));
-      if (stopSingleAgent) {
+      if (activeAgent?.id) {
         await agentsService.stop({ agent_id: activeAgent.id });
       } else {
         await sessionsService.stop(session.id);
@@ -455,7 +458,7 @@ export default function ChatView({
     );
     observer.observe(topSentinelRef.current);
     return () => observer.disconnect();
-  }, [handleLoadMore, hasMore]);
+  }, [handleLoadMore, hasMore, scrollContainerRef]);
 
   const buildContent = async (text, filesToSend) => {
     if (filesToSend.length) {
@@ -465,7 +468,11 @@ export default function ChatView({
     return text;
   };
 
-  const sendMessage = async (messageJson, { force = false, model, model_params } = {}) => {
+  const sendMessage = async (
+    messageJson,
+    { force = false, model, model_params, agent: agentOverride } = {}
+  ) => {
+    const targetAgent = agentOverride ?? activeAgent;
     await messagesService.create({
       session_id: session.id,
       type: 'user',
@@ -473,7 +480,7 @@ export default function ChatView({
       ...builderMessageCreateFields(session, {
         model: isReviewerAgent ? (model ?? composerModel) : model,
         model_params: isReviewerAgent ? (model_params ?? composerModelParams) : model_params,
-        agent: activeAgent,
+        agent: targetAgent,
       }),
       ...(force ? { force: true } : {}),
     });
@@ -588,6 +595,58 @@ export default function ChatView({
     }
   };
 
+  const showStartSubagentOption =
+    !readonly && showMessageComposer && activeAgent?.agent_type !== 'reviewer';
+
+  const handleStartSubagentBuilder = async () => {
+    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    const text = input.trim();
+    setError(null);
+    setFileError(null);
+    const filesToSend = files;
+    setFiles([]);
+    setSending(true);
+    let content;
+    try {
+      content = await buildContent(text, filesToSend);
+    } catch (err) {
+      setFileError(err?.message ?? 'Failed to read attached files');
+      setInput(text);
+      setFiles(filesToSend);
+      setSending(false);
+      return;
+    }
+    const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
+    let newAgent;
+    try {
+      newAgent = await agentsService.create({
+        session_id: session.id,
+        agent_type: 'builder',
+        name: agentTitleFromPrompt(text),
+      });
+    } catch (err) {
+      setInput(text);
+      setFiles(filesToSend);
+      toastFeathersError('Failed to start subagent', err);
+      setSending(false);
+      return;
+    }
+    if (newAgent?.id != null) {
+      onSelectAgent?.(newAgent);
+    }
+    try {
+      await sendMessage(messageJson, { ...composerTurnFields(), agent: newAgent });
+      setInput('');
+      persistentState.clear();
+    } catch (err) {
+      setInput(text);
+      setFiles(filesToSend);
+      toastFeathersError('Failed to send message', err);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
@@ -694,7 +753,6 @@ export default function ChatView({
                     sessionPath={session.absolute_session_path}
                     sessionId={session.id}
                     agentName={agentDisplayName}
-                    agentType={activeAgent?.agent_type}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 ) : (
@@ -707,7 +765,6 @@ export default function ChatView({
                     agentName={agentDisplayName}
                     messageIndex={item.index}
                     allMessages={displayMessages}
-                    agentType={activeAgent?.agent_type}
                     pinnedRunningBashIds={pinnedRunningBashIds}
                   />
                 )
@@ -903,7 +960,6 @@ export default function ChatView({
                   queue={agentQueue}
                   tiedLoops={tiedLoops}
                   session={session}
-                  agentType={activeAgent?.agent_type}
                   onDelete={handleQueueDelete}
                   onSendNow={handleQueueSendNow}
                   onEdit={handleQueueEdit}
@@ -945,6 +1001,14 @@ export default function ChatView({
                     agents={agents}
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
+                    agentOptionCostLabel={agentUsageCostLabel}
+                    agentHeaderEnd={
+                      activeAgentCostLabel ? (
+                        <span className="text-[11px] tabular-nums text-faint">
+                          {activeAgentCostLabel}
+                        </span>
+                      ) : null
+                    }
                     agentConfigKey={
                       agentSource?.agent_config_id != null
                         ? String(agentSource.agent_config_id)
@@ -996,14 +1060,27 @@ export default function ChatView({
                         onPreset={handleSchedulePreset}
                         onCustomSchedule={openScheduleModal}
                         extraItems={
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={openRegularlyModal}
-                            className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
-                          >
-                            Send regularly
-                          </button>
+                          <>
+                            {showStartSubagentOption ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={!canSendDraft}
+                                onClick={() => void handleStartSubagentBuilder()}
+                                className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                Start subagent
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={openRegularlyModal}
+                              className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control"
+                            >
+                              Send regularly
+                            </button>
+                          </>
                         }
                       />
                     }

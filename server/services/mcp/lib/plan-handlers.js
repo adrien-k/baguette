@@ -1,10 +1,10 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { isFeathersBadRequest, isFeathersNotFound } from '../../../lib/feathers-errors.js';
 import { ok, fail } from './result.js';
 import { applySessionPlanPatches } from '../../session-plan-patch.js';
 
 function serviceError(err) {
-  if (err instanceof BadRequest) return fail(err.message);
-  if (err instanceof NotFound) return fail('Plan not found');
+  if (isFeathersBadRequest(err)) return fail(err.message);
+  if (isFeathersNotFound(err)) return fail('Plan not found');
   throw err;
 }
 

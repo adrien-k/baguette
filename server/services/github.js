@@ -1393,6 +1393,12 @@ async function fetchWorkflowRunJobs(token, repoFullName, runId) {
   return (jobsData.jobs || []).map(mapWorkflowJob);
 }
 
+function workflowRunCompletedAt(r) {
+  if (r.completed_at) return r.completed_at;
+  if (r.status === 'completed' && r.updated_at) return r.updated_at;
+  return null;
+}
+
 function mapWorkflowRun(r, jobs) {
   return {
     id: r.id,
@@ -1402,7 +1408,7 @@ function mapWorkflowRun(r, jobs) {
     html_url: r.html_url,
     created_at: r.created_at,
     updated_at: r.updated_at,
-    completed_at: r.completed_at ?? null,
+    completed_at: workflowRunCompletedAt(r),
     path: r.path,
     event: r.event,
     head_sha: r.head_sha,
@@ -1411,34 +1417,108 @@ function mapWorkflowRun(r, jobs) {
   };
 }
 
-function normalizeGraphqlEnum(value) {
-  if (value == null) return null;
-  return String(value).toLowerCase();
+const WORKFLOW_RUN_IN_FLIGHT_STATUSES = new Set([
+  'queued',
+  'in_progress',
+  'waiting',
+  'requested',
+  'pending',
+]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mapStatusContextState(state) {
-  const s = normalizeGraphqlEnum(state);
-  if (s === 'success') return 'success';
-  if (s === 'failure' || s === 'error') return 'failure';
-  if (s === 'pending' || s === 'expected') return 'pending';
-  return s;
+function mapGraphqlCheckNodes(nodes) {
+  return nodes
+    .map((node) => {
+      if (node.__typename === 'CheckRun') {
+        const app = node.checkSuite?.app;
+        return {
+          name: node.name,
+          conclusion: normalizeGraphqlEnum(node.conclusion),
+          status: normalizeGraphqlEnum(node.status),
+          required: Boolean(node.isRequired),
+          app: app?.name ?? app?.slug ?? null,
+          html_url: node.detailsUrl ?? null,
+        };
+      }
+      if (node.__typename === 'StatusContext') {
+        return {
+          name: node.context,
+          conclusion: mapStatusContextState(node.state),
+          status: null,
+          required: Boolean(node.isRequired),
+          app: null,
+          html_url: node.targetUrl ?? null,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 /**
- * PR head check rollup (Actions check runs + legacy commit statuses), aligned with the PR checks UI.
- * @returns {{ checks: Array<{ name, conclusion, status, required, app, html_url }>, head_sha: string | null }}
+ * REST fallback for the check rollup, used when the GraphQL rollup is empty or
+ * unavailable. Limitation: these endpoints do not expose branch-protection
+ * state, so every check from this fallback reports `required: false`.
+ * Callers surface `checks_source: 'rest'` so agents know `required` is unknown.
  */
-async function fetchPRCheckRollup(token, repoFullName, prNumber) {
+async function fetchCommitChecksRest(token, repoFullName, sha) {
+  const checks = [];
+
+  const runsRes = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
+    { token }
+  );
+  if (runsRes.ok) {
+    const data = await runsRes.json();
+    for (const cr of data.check_runs || []) {
+      checks.push({
+        name: cr.name,
+        conclusion: normalizeGraphqlEnum(cr.conclusion),
+        status: normalizeGraphqlEnum(cr.status),
+        required: false,
+        app: cr.app?.name ?? cr.app?.slug ?? null,
+        html_url: cr.html_url ?? null,
+      });
+    }
+  }
+
+  const statusRes = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/commits/${encodeURIComponent(sha)}/status`,
+    { token }
+  );
+  if (statusRes.ok) {
+    const statusData = await statusRes.json();
+    for (const st of statusData.statuses || []) {
+      checks.push({
+        name: st.context,
+        conclusion: mapStatusContextState(st.state),
+        status: null,
+        required: false,
+        app: null,
+        html_url: st.target_url ?? null,
+      });
+    }
+  }
+
+  return checks;
+}
+
+async function fetchCommitCheckRollupGraphql(token, repoFullName, { prNumber, headSha }) {
   const [owner, repo] = repoFullName.split('/');
   if (!owner || !repo) return { checks: [], head_sha: null };
 
-  const query = `
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $number) {
-          commits(last: 1) {
-            nodes {
-              commit {
+  let query;
+  let variables;
+  if (prNumber != null) {
+    query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            headRefTarget {
+              ... on Commit {
                 oid
                 statusCheckRollup {
                   contexts(first: 100) {
@@ -1466,82 +1546,313 @@ async function fetchPRCheckRollup(token, repoFullName, prNumber) {
           }
         }
       }
-    }
-  `;
+    `;
+    variables = { owner, repo, number: prNumber };
+  } else if (headSha) {
+    query = `
+      query($owner: String!, $repo: String!, $oid: GitObjectID!) {
+        repository(owner: $owner, name: $repo) {
+          object(oid: $oid) {
+            ... on Commit {
+              oid
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun {
+                      name
+                      conclusion
+                      status
+                      isRequired
+                      detailsUrl
+                      checkSuite { app { name slug } }
+                    }
+                    ... on StatusContext {
+                      context
+                      state
+                      isRequired
+                      targetUrl
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    variables = { owner, repo, oid: headSha };
+  } else {
+    return { checks: [], head_sha: null };
+  }
 
   const res = await githubFetch('https://api.github.com/graphql', {
     method: 'POST',
     token,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query,
-      variables: { owner, repo, number: prNumber },
-    }),
+    body: JSON.stringify({ query, variables }),
   });
   if (!res.ok) return { checks: [], head_sha: null };
   const data = await res.json();
   if (data.errors?.length) return { checks: [], head_sha: null };
 
-  const commit = data?.data?.repository?.pullRequest?.commits?.nodes?.[0]?.commit;
-  if (!commit) return { checks: [], head_sha: null };
+  let commit;
+  if (prNumber != null) {
+    commit = data?.data?.repository?.pullRequest?.headRefTarget;
+  } else {
+    commit = data?.data?.repository?.object;
+  }
+  if (!commit?.oid) return { checks: [], head_sha: null };
 
-  const head_sha = commit.oid;
   const nodes = commit.statusCheckRollup?.contexts?.nodes ?? [];
-  const checks = nodes
-    .map((node) => {
-      if (node.__typename === 'CheckRun') {
-        const app = node.checkSuite?.app;
-        return {
-          name: node.name,
-          conclusion: normalizeGraphqlEnum(node.conclusion),
-          status: normalizeGraphqlEnum(node.status),
-          required: Boolean(node.isRequired),
-          app: app?.name ?? app?.slug ?? null,
-          html_url: node.detailsUrl ?? null,
-        };
-      }
-      if (node.__typename === 'StatusContext') {
-        return {
-          name: node.context,
-          conclusion: mapStatusContextState(node.state),
-          status: null,
-          required: Boolean(node.isRequired),
-          app: null,
-          html_url: node.targetUrl ?? null,
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  return { checks: mapGraphqlCheckNodes(nodes), head_sha: commit.oid };
+}
 
-  return { checks, head_sha };
+function normalizeGraphqlEnum(value) {
+  if (value == null) return null;
+  return String(value).toLowerCase();
+}
+
+function mapStatusContextState(state) {
+  const s = normalizeGraphqlEnum(state);
+  if (s === 'success') return 'success';
+  if (s === 'failure' || s === 'error') return 'failure';
+  if (s === 'pending' || s === 'expected') return 'pending';
+  return s;
 }
 
 /**
- * Recent workflow runs for a branch (with jobs) plus optional PR-head check rollup.
- * @returns {{ runs: Array<object>, checks: Array<object>, head_sha: string | null }}
+ * PR head check rollup (Actions check runs + legacy commit statuses), aligned with the PR checks UI.
+ * Uses GraphQL on the PR head commit, with REST fallback when rollup is empty.
+ * `checks_source` reports which source produced the checks: 'graphql' (includes
+ * branch-protection `required`), 'rest' (fallback; `required` is always false), or
+ * null when neither source was consulted.
+ * @returns {{ checks: Array<object>, head_sha: string | null, checks_source: 'graphql' | 'rest' | null }}
  */
-export async function getPRWorkflows(token, repoFullName, branch, { prNumber } = {}) {
-  const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=10`;
-  const res = await githubFetch(url, { token });
-  const runsRaw = res.ok ? (await res.json()).workflow_runs || [] : [];
+async function fetchPRCheckRollup(token, repoFullName, { prNumber, headSha } = {}) {
+  const graphql = await fetchCommitCheckRollupGraphql(token, repoFullName, {
+    prNumber: prNumber ?? null,
+    headSha: headSha ?? null,
+  });
+  let { checks, head_sha } = graphql;
 
+  if (!head_sha) {
+    if (headSha) {
+      head_sha = headSha;
+    } else if (prNumber != null) {
+      const prRes = await githubFetch(
+        `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
+        { token }
+      );
+      if (prRes.ok) {
+        const pr = await prRes.json();
+        head_sha = pr.head?.sha ?? null;
+      }
+    }
+  }
+
+  let checks_source = 'graphql';
+  if (checks.length === 0) {
+    if (head_sha) {
+      checks = await fetchCommitChecksRest(token, repoFullName, head_sha);
+      checks_source = 'rest';
+    } else {
+      checks_source = null;
+    }
+  }
+
+  return { checks, head_sha, checks_source };
+}
+
+async function loadWorkflowRunsForBranch(token, repoFullName, branch, perPage) {
+  const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=${perPage}`;
+  const res = await githubFetch(url, { token });
+  if (!res.ok) return { ok: false, runs: [] };
+  let runsRaw = [];
+  try {
+    runsRaw = (await res.json()).workflow_runs || [];
+  } catch {
+    return { ok: false, runs: [] };
+  }
   const runs = await Promise.all(
     runsRaw.map(async (r) => {
       const jobs = await fetchWorkflowRunJobs(token, repoFullName, r.id);
       return mapWorkflowRun(r, jobs);
     })
   );
+  return { ok: true, runs };
+}
 
-  let checks = [];
-  let head_sha = null;
-  if (prNumber) {
-    const rollup = await fetchPRCheckRollup(token, repoFullName, prNumber);
-    checks = rollup.checks;
-    head_sha = rollup.head_sha;
+function runIsInFlight(run) {
+  return WORKFLOW_RUN_IN_FLIGHT_STATUSES.has(run.status);
+}
+
+/**
+ * Fetch one workflow run by id, mapped like branch-page runs (jobs included unless
+ * withJobs is false). Returns null when the request fails or the run does not exist.
+ */
+async function fetchWorkflowRunById(token, repoFullName, runId, { withJobs = true } = {}) {
+  const res = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}`,
+    {
+      token,
+    }
+  );
+  if (!res.ok) return null;
+  let raw;
+  try {
+    raw = await res.json();
+  } catch {
+    return null;
+  }
+  if (!raw?.id) return null;
+  const jobs = withJobs ? await fetchWorkflowRunJobs(token, repoFullName, raw.id) : [];
+  return mapWorkflowRun(raw, jobs);
+}
+
+function filterWorkflowRuns(runs, { conclusion, status } = {}) {
+  let filtered = runs;
+  if (status) {
+    filtered = filtered.filter((r) => r.status === status);
+  }
+  if (conclusion) {
+    filtered = filtered.filter((r) => r.conclusion === conclusion);
+  }
+  return filtered;
+}
+
+/**
+ * Recent workflow runs for a branch (with jobs) plus PR-head check rollup.
+ * When waiting, stop reasons are surfaced: `wait_timed_out` (deadline elapsed),
+ * `wait_fetch_failed` (last poll fetch failed), `wait_run_not_found` (wait_for_run_id
+ * was never observed in any successful poll).
+ * @returns {{ runs: Array<object>, checks: Array<object>, head_sha: string | null, checks_source: 'graphql' | 'rest' | null, wait_timed_out?: boolean, wait_fetch_failed?: boolean, wait_run_not_found?: boolean, resolved_pr_number?: number }}
+ */
+export async function getPRWorkflows(token, repoFullName, branch, options = {}) {
+  const {
+    prNumber: prNumberOption,
+    conclusion,
+    status,
+    waitForCompletion = false,
+    waitForRunId,
+    waitTimeoutSeconds = 120,
+    perPage = 10,
+    pollIntervalMs = 5000,
+  } = options;
+
+  let effectivePrNumber = prNumberOption ?? null;
+  if (effectivePrNumber == null) {
+    const open = await getOpenPR(token, repoFullName, branch);
+    effectivePrNumber = open?.number ?? null;
   }
 
-  return { runs, checks, head_sha };
+  const shouldWait = Boolean(waitForCompletion || waitForRunId != null);
+  const deadline = Date.now() + waitTimeoutSeconds * 1000;
+  let waitTimedOut = false;
+  let waitFetchFailed = false;
+  let targetRunSeen = false;
+  let runs = [];
+
+  if (shouldWait) {
+    for (;;) {
+      let settled = false;
+      if (waitForRunId != null) {
+        // Poll the target run by id: newer runs can slide it out of the branch
+        // page, and a page-only check would silently treat "not found" as done.
+        const target = await fetchWorkflowRunById(token, repoFullName, waitForRunId, {
+          withJobs: false,
+        });
+        if (target) {
+          targetRunSeen = true;
+          waitFetchFailed = false;
+          settled = !runIsInFlight(target);
+        } else {
+          waitFetchFailed = true;
+        }
+      } else {
+        const page = await loadWorkflowRunsForBranch(token, repoFullName, branch, perPage);
+        if (page.ok) {
+          runs = page.runs;
+          waitFetchFailed = false;
+          settled = !page.runs.some(runIsInFlight);
+        } else {
+          // A failed poll is not "everything finished" — keep polling.
+          waitFetchFailed = true;
+        }
+      }
+      if (settled) break;
+      if (Date.now() >= deadline) {
+        waitTimedOut = true;
+        break;
+      }
+      await sleep(pollIntervalMs);
+    }
+
+    if (waitForRunId != null) {
+      // The polling loop checks the run by id; load the branch page for response data.
+      const page = await loadWorkflowRunsForBranch(token, repoFullName, branch, perPage);
+      if (page.ok) {
+        runs = page.runs;
+      } else {
+        waitFetchFailed = true;
+      }
+      // The target run may have slid out of the branch page — fetch it directly so
+      // the response still carries its conclusion and jobs.
+      if (!runs.some((r) => String(r.id) === String(waitForRunId))) {
+        const target = await fetchWorkflowRunById(token, repoFullName, waitForRunId);
+        if (target) runs = [target, ...runs];
+      }
+    }
+  } else {
+    const page = await loadWorkflowRunsForBranch(token, repoFullName, branch, perPage);
+    runs = page.runs;
+  }
+
+  runs = filterWorkflowRuns(runs, { conclusion, status });
+
+  const rollupHeadSha = runs[0]?.head_sha ?? undefined;
+  const rollup = await fetchPRCheckRollup(token, repoFullName, {
+    prNumber: effectivePrNumber ?? undefined,
+    headSha: rollupHeadSha,
+  });
+
+  const result = {
+    runs,
+    checks: rollup.checks,
+    checks_source: rollup.checks_source ?? null,
+    head_sha: rollup.head_sha ?? rollupHeadSha ?? null,
+  };
+  if (waitTimedOut) result.wait_timed_out = true;
+  if (waitFetchFailed) result.wait_fetch_failed = true;
+  if (waitForRunId != null && !targetRunSeen) result.wait_run_not_found = true;
+  if (effectivePrNumber != null && prNumberOption == null) {
+    result.resolved_pr_number = effectivePrNumber;
+  }
+  return result;
+}
+
+function selectWorkflowLogJobs(allJobs, { jobId, jobName, allJobs: fetchAllJobs } = {}) {
+  if (jobId != null) {
+    const match = allJobs.filter((j) => String(j.id) === String(jobId));
+    if (match.length === 0) {
+      throw new Error(`No job with id ${jobId} in workflow run`);
+    }
+    return match;
+  }
+  if (jobName != null) {
+    const match = allJobs.filter((j) => j.name === jobName);
+    if (match.length === 0) {
+      throw new Error(`No job named ${jobName} in workflow run`);
+    }
+    return match;
+  }
+  if (fetchAllJobs) {
+    return allJobs;
+  }
+  const failedJobs = allJobs.filter(
+    (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out'
+  );
+  return failedJobs.length > 0 ? failedJobs : allJobs;
 }
 
 /**
@@ -1551,14 +1862,19 @@ export async function getPRWorkflows(token, repoFullName, branch, { prNumber } =
  *
  * @returns {{ jobs: Array<{ id, name, status, conclusion, log, totalBytes, startByte, endByte }> }}
  */
-export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte, endByte } = {}) {
+export async function getPRWorkflowLogs(
+  token,
+  repoFullName,
+  runId,
+  { startByte, endByte, jobId, jobName, allJobs: fetchAllJobs } = {}
+) {
   const validationError = validateLogByteRange({ startByte, endByte });
   if (validationError) {
     throw new Error(validationError);
   }
 
   const jobsRes = await githubFetch(
-    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=30`,
+    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=100`,
     { token }
   );
   if (!jobsRes.ok) {
@@ -1567,11 +1883,7 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
   const jobsData = await jobsRes.json();
   const allJobs = jobsData.jobs || [];
 
-  // Focus on failed jobs; fall back to all jobs if none failed
-  const failedJobs = allJobs.filter(
-    (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out'
-  );
-  const targetJobs = failedJobs.length > 0 ? failedJobs : allJobs;
+  const targetJobs = selectWorkflowLogJobs(allJobs, { jobId, jobName, allJobs: fetchAllJobs });
 
   const results = await Promise.all(
     targetJobs.map(async (job) => {

@@ -56,6 +56,7 @@ export default [
       'client/dist/**',
       'client/scripts/**',
       '.data/**',
+      '.claude/**',
     ],
   },
 

@@ -290,6 +290,9 @@ describe('builder MCP tool registry', () => {
     expect(names).not.toContain('UpdateSession');
     expect(names).not.toContain('CreatePlan');
     expect(names).not.toContain('StartSubagent');
+    expect(names).toContain('ListSubagents');
+    expect(names).toContain('AwaitSubagent');
+    expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
@@ -645,7 +648,7 @@ describe('PrUpsert', () => {
       'ghtoken',
       expect.objectContaining({
         body: expect.stringContaining(
-          '<!-- baguette-footer -->\n\n_cursor / `new-model` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_'
+          '<!-- baguette-footer -->\n\n_builder · Cost: $1.50_\n_  cursor / `new-model` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_'
         ),
       })
     );
@@ -995,6 +998,28 @@ describe('AwaitDetachedTask', () => {
     expect(result.exitCode).toBe(2);
     expect(result.stdoutLines).toEqual(['done']);
   });
+
+  it('returns ok: false when the task does not exit before the await timeout', async () => {
+    vi.useFakeTimers();
+    const task = {
+      id: 42,
+      session_id: 1,
+      label: 'Run tests',
+      onLog() {
+        return () => {};
+      },
+      onExit() {
+        return () => {};
+      },
+    };
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const promise = callTool(tools, 'AwaitDetachedTask', { taskId: 42 });
+    await vi.advanceTimersByTimeAsync(900_000);
+    const result = parseResult(await promise);
+    vi.useRealTimers();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/KillTask/);
+  });
 });
 
 describe('PrComments', () => {
@@ -1161,6 +1186,12 @@ describe('PrWorkflows', () => {
     expect(result.ok).toBe(true);
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
       prNumber: 42,
+      conclusion: undefined,
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
     });
     expect(result.runs).toHaveLength(1);
     expect(result.checks).toHaveLength(1);
@@ -1173,6 +1204,30 @@ describe('PrWorkflows', () => {
     await callTool(tools, 'PrWorkflows');
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch', {
       prNumber: undefined,
+      conclusion: undefined,
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
+    });
+  });
+
+  it('accepts the startup_failure conclusion filter', async () => {
+    getPRWorkflows.mockResolvedValue({ runs: [], checks: [], head_sha: null });
+    const { tools } = await buildServer({ remote_branch: 'feat/branch', pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'PrWorkflows', { conclusion: 'startup_failure' })
+    );
+    expect(result.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
+      prNumber: 42,
+      conclusion: 'startup_failure',
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
     });
   });
 });
@@ -1188,6 +1243,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
       startByte: 0,
       endByte: 8000,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 
@@ -1198,6 +1256,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
       startByte: -10,
       endByte: undefined,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 
@@ -1208,6 +1269,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '99', {
       startByte: undefined,
       endByte: undefined,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 });

@@ -13,7 +13,6 @@ export default function ChatWorkSummary({
   sessionPath,
   sessionId,
   agentName,
-  agentType,
   pinnedRunningBashIds,
 }: {
   messages: ChatMessageView[];
@@ -24,7 +23,6 @@ export default function ChatWorkSummary({
   sessionPath?: string | null;
   sessionId?: number | null;
   agentName?: string;
-  agentType?: string | null;
   pinnedRunningBashIds?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -63,7 +61,6 @@ export default function ChatWorkSummary({
                 agentName={agentName}
                 messageIndex={index}
                 allMessages={displayMessages}
-                agentType={agentType}
                 pinnedRunningBashIds={pinnedRunningBashIds}
               />
             );

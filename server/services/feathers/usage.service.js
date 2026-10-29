@@ -1,4 +1,4 @@
-import { NotFound } from '@feathersjs/errors';
+import { NotFound } from 'feathers/errors';
 import { requireUser } from './hooks.js';
 import { getActiveAgents } from '../system-information.js';
 import {
@@ -13,7 +13,7 @@ class UsageService {
     this.app = app;
   }
 
-  /** Required for @feathersjs/express service registration (custom methods only). */
+  /** Required for Feathers HTTP service registration (custom methods only). */
   async get() {
     throw new NotFound();
   }

@@ -1,7 +1,7 @@
 /**
  * Fixtures for the Slack tests, on the real migrated schema (see test-utils/db.js).
  */
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { encrypt } from '../../lib/encrypt.js';
 import { registerSlackService } from '../feathers/slack.service.js';
 import { registerSlackThreadsService } from '../feathers/slack-threads.service.js';

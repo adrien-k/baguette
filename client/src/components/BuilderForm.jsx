@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, HelpCircle, Repeat } from 'lucide-react';
+import { ChevronRight, HelpCircle, Repeat, Trash2 } from 'lucide-react';
 import Alert from './Alert.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
@@ -15,6 +15,7 @@ import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import AgentMessageComposer from './AgentMessageComposer.jsx';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
@@ -70,6 +71,7 @@ export default function BuilderForm({
   onSubmit,
   onCreateLoop,
   onUpdateLoop,
+  onDeleteLoop,
   onCancelEdit,
   editingLoop,
   loading,
@@ -116,6 +118,8 @@ export default function BuilderForm({
   const repoFullName = allowRepoChoice ? (isGlobal ? null : targetScope) : repoFullNameProp;
   const linkedRepo = repos.find((r) => r.full_name === repoFullName);
   const localRepo = !isGlobal && Boolean(repoFullName) && isLocalRepo(linkedRepo ?? repoFullName);
+  /** Below md (default + sm): three-line composer so wrapped placeholders stay visible. */
+  const isBelowMd = useMediaQuery('(max-width: 767px)');
   const [branch, setBranch] = persistentState.useState('branch', editingLoop?.base_branch ?? '', {
     persistWhen: hasPromptText,
   });
@@ -455,6 +459,8 @@ export default function BuilderForm({
       skipColumn
       formClassName=""
       resizable
+      rows={isBelowMd ? 3 : 1}
+      fitPlaceholderWhenEmpty={isBelowMd}
       value={initialPrompt}
       onChange={setInitialPrompt}
       onSubmit={handleComposerSubmit}
@@ -532,12 +538,24 @@ export default function BuilderForm({
       )}
       {/* A loop being edited stays a loop, so the tabs give way to a title and a way out. */}
       {editingLoop ? (
-        <div className="flex min-w-0 items-center gap-2 border-b border-line pb-2 -mt-1 text-sm font-medium text-fg">
-          <Repeat className="w-4 h-4 shrink-0 text-accent" />
-          <span className="truncate">
-            Editing loop
-            {editingLoop.name ? <span className="text-faint"> · {editingLoop.name}</span> : ''}
-          </span>
+        <div className="flex min-w-0 items-center justify-between gap-2 border-b border-line pb-2 -mt-1">
+          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-fg">
+            <Repeat className="w-4 h-4 shrink-0 text-accent" />
+            <span className="truncate">
+              Editing loop
+              {editingLoop.name ? <span className="text-faint"> · {editingLoop.name}</span> : ''}
+            </span>
+          </div>
+          {onDeleteLoop && (
+            <button
+              type="button"
+              onClick={onDeleteLoop}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-faint transition-colors hover:bg-control hover:text-danger"
+            >
+              <Trash2 className="w-3.5 h-3.5" aria-hidden />
+              Delete
+            </button>
+          )}
         </div>
       ) : (
         onCreateLoop &&

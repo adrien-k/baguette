@@ -1,7 +1,7 @@
 import { Archive } from 'lucide-react';
 import { SessionStatusIcon } from './SessionCard.jsx';
 import { prListIndicatorProps } from '../utils/prStatusStyles.js';
-import { isAnyAgentRunning } from '../utils/sessionAgents.js';
+import { isAnyAgentAwaitingUser, isAnyAgentRunning } from '../utils/sessionAgents.js';
 
 const SIZE_CLASS = {
   sm: 'w-3 h-3',
@@ -27,6 +27,9 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
         ? 'provisioning'
         : 'running';
     return <SessionStatusIcon status={iconStatus} compact={size === 'sm'} aria-hidden />;
+  }
+  if (isAnyAgentAwaitingUser(session)) {
+    return <SessionStatusIcon status="approval" compact={size === 'sm'} aria-hidden />;
   }
   if (hasPr) {
     const { icon: PrIcon, iconClass, title } = prListIndicatorProps(session);
