@@ -12,7 +12,7 @@ export function createAwaitSubagentTool(ctx) {
     description:
       `Block until a subagent turn finishes (up to ${waitMinutes} minutes per call), then return status and the last assistant message. ` +
       'On timeout the subagent may still be running: read its last assistant message (GetSessionMessages), then AwaitSubagent again or StopSubagent. ' +
-      'Use after StartSubagent with attach: false or to wait on a subagent started earlier. ' +
+      'Use after StartSubagent with attach: false, or to wait on a subagent started earlier. ' +
       'Identify the subagent by agent_id or agent_ref from ListSubagents / StartSubagent.',
     schema: {
       session_id: z

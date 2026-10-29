@@ -92,17 +92,15 @@ export async function startMockBuilderSession(
   await composer.fill(prompt);
   await page.getByRole('button', { name: 'Start on a new branch' }).click();
 
-  await openRepoSessionFromList(page, prompt);
+  await waitForCreatedSessionOpen(page);
   await expect(page).toHaveURL(/\/sessions\/[a-f0-9]+|\/repos\/\d+\/sessions\/[a-f0-9]+/, {
     timeout: 30_000,
   });
 }
 
-/** Click a session card on the repo dashboard (not the new-session composer textarea). */
-async function openRepoSessionFromList(page, prompt) {
-  const sessionRow = page.getByRole('paragraph').filter({ hasText: prompt });
-  await expect(sessionRow).toBeVisible({ timeout: 120_000 });
-  await sessionRow.click();
+/** Wait for the just-created session to open — creation navigates straight into its chat. */
+async function waitForCreatedSessionOpen(page) {
+  await expect(page).toHaveURL(/\/sessions\//, { timeout: 120_000 });
 }
 
 async function waitForSessionProvisioningDone(page) {
@@ -138,14 +136,24 @@ export async function ensureSidePanelVisible(page) {
   await expect(agentsTab).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * Create an extra builder from the composer's Send menu ("Start subagent").
+ *
+ * The agent is named from the prompt's first four words, so `name` must be at most four
+ * words. The prompt sent to it appends the quick mock prompt so its first turn is fast;
+ * the helper waits for that turn to complete before returning (the composer targets the
+ * new builder meanwhile).
+ */
 export async function addManualBuilderAgent(page, name) {
   await ensureSidePanelVisible(page);
   await openSessionAgentsPanel(page);
-  await page.getByRole('button', { name: 'Add builder' }).click();
-  const nameInput = page.getByPlaceholder('e.g. Research');
-  await nameInput.fill(name);
-  await nameInput.press('Enter');
-  await expect(page.locator('li').filter({ hasText: name })).toBeVisible({ timeout: 30_000 });
+  const composer = await sessionChatComposer(page);
+  await composer.fill(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
+  await page.getByTitle('Schedule', { exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
+  const row = page.locator('li').filter({ hasText: name });
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByText(/Completed/i)).toBeVisible({ timeout: 120_000 });
 }
 
 export async function selectAgentInPanel(page, name) {
@@ -296,15 +304,27 @@ function sessionComposerRoot(page) {
   return page.locator('form').filter({ has: page.getByPlaceholder(/Message/) });
 }
 
+function composerModelDialog(page) {
+  return page.getByRole('dialog', { name: 'Choose agent and model' });
+}
+
+/**
+ * Open the composer model picker and wait until the dialog stays open.
+ * After an agent-config switch the select remounts while models reload, so a
+ * single click can land on a node that is about to unmount.
+ */
 export async function openComposerModelMenu(page, root) {
   const trigger = root
     .getByRole('button', { name: /Mock |Choose agent and model|Choose model/ })
     .first();
-  await trigger.click();
-}
-
-function composerModelDialog(page) {
-  return page.getByRole('dialog', { name: 'Choose agent and model' });
+  const dialog = composerModelDialog(page);
+  await expect(page.getByLabel('Loading agent and model')).toHaveCount(0, { timeout: 60_000 });
+  await expect(trigger).toBeEnabled({ timeout: 30_000 });
+  await expect(async () => {
+    if (await dialog.isVisible()) return;
+    await trigger.click();
+    await expect(dialog).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 export async function pickComposerAgentConfig(page, root, configLabel) {
@@ -349,8 +369,7 @@ export async function startMockSessionOnRepo(
   }
   await page.getByPlaceholder(/Ask the agent/).fill(prompt);
   await page.getByRole('button', { name: 'Start on a new branch' }).click();
-  await openRepoSessionFromList(page, prompt);
-  await expect(page).toHaveURL(/\/sessions\//, { timeout: 30_000 });
+  await waitForCreatedSessionOpen(page);
   await expectMockQuickTurnComplete(page);
 }
 
@@ -364,6 +383,7 @@ export async function expectComposerModelMenuLists(page, { show = [], hide = [] 
   const root = sessionComposerRoot(page);
   await openComposerModelMenu(page, root);
   const dialog = composerModelDialog(page);
+  await expect(dialog).toBeVisible();
   for (const displayName of show) {
     await expect(dialog.getByRole('button', { name: displayName, exact: true })).toBeVisible();
   }

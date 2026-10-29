@@ -47,6 +47,7 @@ import PrDraftToggleButton, {
 } from '../../components/PrDraftToggleButton.jsx';
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
+import RunningAgentBadges from '../../components/chat/RunningAgentBadges.tsx';
 import { useGetSessionTodos } from '../../hooks/useGetSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
@@ -65,6 +66,7 @@ import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
   agentTitleFromPrompt,
+  isAgentAwaitingUser,
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
@@ -167,6 +169,7 @@ export default function ChatView({
   const [restoring, setRestoring] = useState(false);
   const [deletingPermanently, setDeletingPermanently] = useState(false);
   const [queue, setQueue] = useState([]);
+  const [stoppingAgentId, setStoppingAgentId] = useState(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
   const [creatingLoop, setCreatingLoop] = useState(false);
@@ -235,6 +238,18 @@ export default function ChatView({
   const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
+  /** Other agents of this session that are mid-turn — badges above the composer. */
+  const otherActiveAgents = useMemo(
+    () =>
+      agents.filter(
+        (agent) =>
+          agent.id !== activeAgent?.id &&
+          (agent.agent_type === 'subagent' ||
+            (agent.agent_type === 'builder' && !Number(agent.is_primary))) &&
+          (isAgentTurnActive(agent.status) || isAgentAwaitingUser(agent.status))
+      ),
+    [agents, activeAgent?.id]
+  );
   const agentDisplayName = activeAgent
     ? agentDisplayTitle(activeAgent)
     : agentSource?.agent_sdk
@@ -371,6 +386,18 @@ export default function ChatView({
       toastError('Failed to stop agent', err);
     } finally {
       setStopping(false);
+    }
+  };
+
+  const handleStopAgentBadge = async (agent) => {
+    if (!agent?.id || stoppingAgentId != null) return;
+    setStoppingAgentId(agent.id);
+    try {
+      await agentsService.stop({ agent_id: agent.id });
+    } catch (err) {
+      toastError('Failed to stop agent', err);
+    } finally {
+      setStoppingAgentId(null);
     }
   };
 
@@ -925,7 +952,13 @@ export default function ChatView({
 
         {!readonly && session && !showMessageComposer && activeSubagent && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
-            <div className={`w-full ${CHAT_COLUMN_CLASS}`}>
+            <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
+              <RunningAgentBadges
+                agents={otherActiveAgents}
+                onSelectAgent={onSelectAgent}
+                onStopAgent={handleStopAgentBadge}
+                stoppingAgentId={stoppingAgentId}
+              />
               <div className="rounded-lg border border-strong bg-control overflow-hidden">
                 <p className="px-3 pt-2.5 pb-1 text-xs text-faint text-center">
                   This agent only accepts new messages via MCP. Switch to another agent to chat in
@@ -955,6 +988,12 @@ export default function ChatView({
         {!readonly && session && showMessageComposer && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
             <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
+              <RunningAgentBadges
+                agents={otherActiveAgents}
+                onSelectAgent={onSelectAgent}
+                onStopAgent={handleStopAgentBadge}
+                stoppingAgentId={stoppingAgentId}
+              />
               {(agentQueue.length > 0 || tiedLoops.length > 0) && (
                 <QueuedScheduledDrawer
                   queue={agentQueue}

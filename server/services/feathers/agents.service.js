@@ -124,6 +124,9 @@ class AgentsService extends KnexService {
     if (!name) throw new BadRequest('name is required');
     if (!initialPrompt) throw new BadRequest('initial_prompt is required');
 
+    const waitForCompletion = data.wait_for_completion !== false;
+    const notifyParent = data.notify_parent === true;
+
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
     const db = this.app.get('db');
     const parentAgentId = await resolveStartSubagentParentId(
@@ -148,6 +151,7 @@ class AgentsService extends KnexService {
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
+        notify_parent: notifyParent,
         ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
       },
       { ...params, provider: 'rest' }
@@ -175,7 +179,6 @@ class AgentsService extends KnexService {
       throw err;
     }
 
-    const waitForCompletion = data.wait_for_completion !== false;
     if (!waitForCompletion) {
       const fresh = await getAgentById(this.app.get('db'), agent.id);
       return {
@@ -183,6 +186,7 @@ class AgentsService extends KnexService {
         ref: agent.ref,
         status: fresh?.status ?? agent.status,
         session_id: sessionId,
+        notify_parent: Boolean(fresh?.notify_parent),
       };
     }
 
@@ -236,6 +240,7 @@ class AgentsService extends KnexService {
         name: row.name,
         status: row.status,
         parent_agent_id: row.parent_agent_id ?? null,
+        notify_parent: Boolean(row.notify_parent),
       })),
     };
   }
@@ -258,6 +263,7 @@ const CREATE_FIELDS = [
   'initial_prompt',
   'name',
   'parent_agent_id',
+  'notify_parent',
 ];
 
 async function stashReviewerCreateExtras(context) {
@@ -344,6 +350,8 @@ async function validateCreate(context) {
     const name = context.data.name?.trim();
     if (!name) throw new BadRequest('name is required for a subagent');
     context.data.is_primary = 0;
+    // Only subagents report back to a parent on completion (StartSubagent notify_parent).
+    context.data.notify_parent = context.data.notify_parent ? 1 : 0;
     if (context.data.parent_agent_id != null) {
       context.data.parent_agent_id = await resolveStartSubagentParentId(
         db,
@@ -353,6 +361,7 @@ async function validateCreate(context) {
     }
   } else {
     delete context.data.parent_agent_id;
+    delete context.data.notify_parent;
   }
   if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();

@@ -236,16 +236,29 @@ export class SessionsService extends KnexService {
    * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
    * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
    * Reviewer agents left in `running` are resumed the same way when a SDK session id is stored on the agent row.
+   * Non-primary builders and subagents left mid-turn are captured before any resume: the
+   * primary's restart prompt reports them, then resumable ones are restarted the same way
+   * (after the primaries) and the rest are marked stopped.
    *
    * Call this after `app.setup()` — restarting reaches into the agent services, which need their
    * own `setup()` to have run first.
    */
   async restartInterruptedSessions() {
     const db = this.app.get('db');
-    const counts = { restarted: 0, stopped: 0, failed: 0 };
+    const counts = {
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    };
     await this._abandonUnfinishedProvisioning(counts);
     await this._completeInterruptedArchives(counts);
     await this._repairArchivedSessionStatus();
+    // Capture interrupted children before anything is resumed: the snapshot drives both
+    // the primary's restart prompt and the settle pass, and keeps children spawned by
+    // resumed primaries out of scope.
+    const staleChildren = await this._listStaleChildAgents();
     let interrupted;
     try {
       interrupted = await db('sessions')
@@ -256,14 +269,14 @@ export class SessionsService extends KnexService {
         .select('sessions.id', 'sessions.user_id', 'agents.id as builder_agent_id');
     } catch (err) {
       logger.error(err, 'Failed to load interrupted sessions on startup');
-      return counts;
+      interrupted = [];
     }
 
     // Sequential: each restart spawns an agent process, so a burst of them on boot would
     // compete for CPU and API rate limits.
     for (const session of interrupted) {
       try {
-        if (await this._restartInterruptedSession(session)) counts.restarted++;
+        if (await this._restartInterruptedSession(session, { staleChildren })) counts.restarted++;
         else counts.stopped++;
       } catch (err) {
         // Recovery is best-effort per session — one bad session must not strand the others.
@@ -271,7 +284,8 @@ export class SessionsService extends KnexService {
         logger.error({ err, sessionId: session.id }, 'Failed to recover interrupted session');
       }
     }
-    if (interrupted.length > 0) {
+    await this._settleStaleChildAgents(staleChildren, counts);
+    if (interrupted.length > 0 || staleChildren.length > 0) {
       logger.info(counts, 'Recovered interrupted session(s) on startup');
     }
 
@@ -284,7 +298,7 @@ export class SessionsService extends KnexService {
    * Restart a single interrupted session. Returns true if it was resumed, false if it was
    * only marked stopped (nothing to resume from).
    */
-  async _restartInterruptedSession(partial) {
+  async _restartInterruptedSession(partial, { staleChildren = [] } = {}) {
     const session = await this.app.get('db')('sessions').where({ id: partial.id }).first();
     if (!session) return false;
     const userParams = { user: { id: session.user_id } };
@@ -302,6 +316,13 @@ export class SessionsService extends KnexService {
       return false;
     }
 
+    const restartPrompt =
+      RESTART_PROMPT +
+      (await this._childRestartNote(
+        session,
+        staleChildren.filter((child) => child.session_id === session.id)
+      ));
+
     await this._postStatusMessage(session.id, userParams, 'Server restarted — resuming session');
     try {
       const created = await this.app.service('messages').create(
@@ -312,7 +333,7 @@ export class SessionsService extends KnexService {
           message_json: JSON.stringify({
             type: 'user',
             source: 'baguette',
-            message: { role: 'user', content: RESTART_PROMPT },
+            message: { role: 'user', content: restartPrompt },
             title: 'Server restarted',
           }),
           ...sessionMessageIdentity(builder),
@@ -386,6 +407,125 @@ export class SessionsService extends KnexService {
         .update({ status: ARCHIVED_STATUS });
     } catch (err) {
       logger.error(err, 'Failed to repair archived session status on startup');
+    }
+  }
+
+  /**
+   * Non-primary builders and subagents have no process behind them after a reboot and
+   * nothing re-spawns them. Capture every child left mid-turn (`running`/`approval`) in
+   * any session — the primary's restart prompt reports them, then
+   * `_settleStaleChildAgents` resumes the resumable ones and stops the rest.
+   */
+  async _listStaleChildAgents() {
+    const db = this.app.get('db');
+    try {
+      return await db('agents')
+        .whereIn('agent_type', ['builder', 'subagent'])
+        .where('is_primary', 0)
+        .whereIn('status', ['running', 'approval'])
+        .select('*');
+    } catch (err) {
+      logger.error(err, 'Failed to load stale child agents on startup');
+      return [];
+    }
+  }
+
+  /** Resumability of a stale child agent (SDK transcript id persisted on its row). */
+  async _childAgentResumable(session, child) {
+    try {
+      const agentService = await getAgentServiceForAgent(this.app, child);
+      if (typeof agentService?.isInterruptedSessionResumable !== 'function') return false;
+      return await agentService.isInterruptedSessionResumable(session, { agent: child });
+    } catch (err) {
+      logger.warn(
+        { agentId: child.id, err: err?.message },
+        'Failed to check child agent resumability'
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Bullet list for the primary's restart prompt describing each interrupted child, so
+   * the resumed primary knows which of its subagents are coming back and which are gone.
+   */
+  async _childRestartNote(session, children) {
+    if (!children.length) return '';
+    const lines = [];
+    for (const child of children) {
+      const label = child.ref != null ? `#${child.ref} "${child.name}"` : `"${child.name}"`;
+      const resumable = await this._childAgentResumable(session, child);
+      lines.push(
+        resumable
+          ? `- ${label} — interrupted; it will be resumed automatically`
+          : `- ${label} — interrupted; it could not be resumed and was stopped`
+      );
+    }
+    return [
+      '',
+      'Other agents in this session were also interrupted by the restart:',
+      ...lines,
+      'Re-synchronize with ListSubagents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
+    ].join('\n');
+  }
+
+  /**
+   * Resume what can be resumed of the interrupted children captured at boot; stop the rest.
+   * Runs after the primaries are resumed: a resumed `notify_parent` child that finishes
+   * early must not wake its parent before the parent's own restart prompt has been
+   * injected (the wake would start a parent turn and the injection would be rejected as
+   * a turn mismatch).
+   */
+  async _settleStaleChildAgents(staleChildren, counts) {
+    for (const child of staleChildren) {
+      try {
+        const session = await this.app
+          .get('db')('sessions')
+          .where({ id: child.session_id })
+          .first();
+        const dispatchable =
+          session && !session.archived_at && !(session.repo_full_name && !session.session_path);
+        if (!dispatchable || !(await this._childAgentResumable(session, child))) {
+          await this._stopChildAgent(child);
+          counts.childrenStopped++;
+          continue;
+        }
+        await this._restartChildAgent(session, child);
+        counts.childrenRestarted++;
+      } catch (err) {
+        logger.error({ err, agentId: child.id }, 'Failed to settle stale child agent on startup');
+      }
+    }
+  }
+
+  async _stopChildAgent(child) {
+    await this.app
+      .get('db')('agents')
+      .where({ id: child.id })
+      .update({ status: 'stopped', active_turn_id: null });
+  }
+
+  /** Same injection pattern as the primary restart: persist the nudge, then dispatch manually. */
+  async _restartChildAgent(session, child) {
+    const userParams = { user: { id: session.user_id } };
+    const created = await this.app.service('messages').create(
+      {
+        session_id: session.id,
+        type: 'user',
+        subtype: 'baguette',
+        message_json: JSON.stringify({
+          type: 'user',
+          source: 'baguette',
+          message: { role: 'user', content: RESTART_PROMPT },
+          title: 'Server restarted',
+        }),
+        ...sessionMessageIdentity(child),
+      },
+      { ...userParams, _skipAgentDispatch: true }
+    );
+    const childService = await getAgentServiceForAgent(this.app, child);
+    if (typeof childService?.handleMessageCreated === 'function') {
+      await childService.handleMessageCreated(created);
     }
   }
 

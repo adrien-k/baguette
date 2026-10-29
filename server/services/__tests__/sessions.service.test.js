@@ -2863,6 +2863,26 @@ describe('Sessions service - restartInterruptedSessions', () => {
   // ignore anything that is not a user message, so assert on those only.
   const userDispatches = (mock) => mock.mock.calls.filter(([message]) => message.type === 'user');
 
+  /** Insert a non-primary agent (extra builder or subagent) mid-turn in a session. */
+  const insertChild = async (sessId, overrides = {}) => {
+    const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+    const [id] = await db('agents').insert({
+      session_id: sessId,
+      ref: overrides.ref ?? 2,
+      name: overrides.name ?? 'Helper',
+      agent_type: overrides.agent_type ?? 'subagent',
+      is_primary: 0,
+      status: overrides.status ?? 'running',
+      agent_config_id: primary.agent_config_id,
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      current_turn_id: 0,
+      parent_agent_id: primary.id,
+      claude_session_id: overrides.claude_session_id ?? null,
+    });
+    return id;
+  };
+
   beforeEach(async () => {
     vi.clearAllMocks();
     claudeHandleMessageCreated.mockResolvedValue(undefined);
@@ -2884,7 +2904,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect(await statusTextsFor(sessId)).toEqual(['Server restarted — resuming session']);
     expect(resumeInterruptedReviews).toHaveBeenCalled();
 
@@ -2902,7 +2928,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     const dispatched = userDispatches(cursorHandleMessageCreated);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0][0].session_id).toBe(sessId);
@@ -2914,7 +2946,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
     expect(userDispatches(claudeHandleMessageCreated)).toHaveLength(0);
 
@@ -2929,7 +2967,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect(userDispatches(cursorHandleMessageCreated)).toHaveLength(0);
   });
 
@@ -2941,7 +2985,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
     expect(await statusTextsFor(sessId)).toEqual([
       'Server restarted — resuming session',
@@ -2956,6 +3006,8 @@ describe('Sessions service - restartInterruptedSessions', () => {
       restarted: 0,
       stopped: 0,
       failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
     });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('approval');
     expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
@@ -2972,7 +3024,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 0, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
     expect(await db('session_messages')).toHaveLength(0);
   });
@@ -2982,7 +3040,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('failed');
     expect(removeWorktree).toHaveBeenCalled();
   });
@@ -2992,7 +3056,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     const row = await db('sessions').where({ id: sessId }).first();
     expect(row.archived_at).toBeTruthy();
     expect(row.status).toBe('archived');
@@ -3022,7 +3092,124 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: healthy }).first()).status).toBe('running');
+  });
+
+  it('resumes an interrupted subagent and reports it in the primary restart prompt', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc', session_path: '/tmp/wt' });
+    const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+    const childId = await insertChild(sessId, { claude_session_id: 'child-claude-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 1,
+      childrenStopped: 0,
+    });
+    expect((await db('agents').where({ id: childId }).first()).status).toBe('running');
+
+    const dispatched = userDispatches(claudeHandleMessageCreated);
+    expect(dispatched).toHaveLength(2);
+    const primaryPrompt = JSON.parse(
+      dispatched.find(([m]) => m.agent_id === primary.id)[0].message_json
+    );
+    expect(primaryPrompt.content).toContain('#2 "Helper"');
+    expect(primaryPrompt.content).toMatch(/will be resumed automatically/);
+    const childPrompt = JSON.parse(
+      dispatched.find(([m]) => m.agent_id === childId)[0].message_json
+    );
+    expect(childPrompt.content).toMatch(/interrupted your previous turn/);
+  });
+
+  it('marks a non-resumable subagent stopped and says so in the restart prompt', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc' });
+    await insertChild(sessId, { name: 'Flaky' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 1,
+    });
+
+    const dispatched = userDispatches(claudeHandleMessageCreated);
+    expect(dispatched).toHaveLength(1); // primary only — the child has no transcript to resume
+    const primaryPrompt = JSON.parse(dispatched[0][0].message_json);
+    expect(primaryPrompt.content).toMatch(/could not be resumed and was stopped/);
+    const child = await db('agents').where({ session_id: sessId, is_primary: 0 }).first();
+    expect(child.status).toBe('stopped');
+  });
+
+  it('omits the subagent section when the session has no interrupted children', async () => {
+    await seedSession({ claude_session_id: 'claude-abc' });
+
+    await app.service('sessions').restartInterruptedSessions();
+
+    const dispatched = userDispatches(claudeHandleMessageCreated);
+    expect(dispatched).toHaveLength(1);
+    const primaryPrompt = JSON.parse(dispatched[0][0].message_json);
+    expect(primaryPrompt.content).not.toMatch(/Other agents in this session/);
+  });
+
+  it('resumes children even when the primary had nothing to resume', async () => {
+    const sessId = await seedSession({ claude_session_id: null, session_path: '/tmp/wt' });
+    await insertChild(sessId, { claude_session_id: 'child-claude-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 1,
+      childrenStopped: 0,
+    });
+    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
+    // Only the child is dispatched; the primary fell back to the stopped path.
+    expect(userDispatches(claudeHandleMessageCreated)).toHaveLength(1);
+  });
+
+  it('stops children of archived sessions instead of resuming them', async () => {
+    const sessId = await seedSession({
+      claude_session_id: 'claude-abc',
+      archived_at: new Date().toISOString(),
+    });
+    await insertChild(sessId, { claude_session_id: 'child-claude-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 1,
+    });
+    expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
+    const child = await db('agents').where({ session_id: sessId, is_primary: 0 }).first();
+    expect(child.status).toBe('stopped');
+  });
+
+  it('resumes an approval-waiting subagent', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc', session_path: '/tmp/wt' });
+    await insertChild(sessId, { claude_session_id: 'child-claude-1', status: 'approval' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result.childrenRestarted).toBe(1);
+    expect(result.childrenStopped).toBe(0);
   });
 });

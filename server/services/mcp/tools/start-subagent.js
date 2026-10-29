@@ -12,7 +12,8 @@ function startSubagentBaseDescription() {
   const waitMinutes = mcpAwaitTimeoutMinutes();
   return (
     'Create a subagent (`agent_type` subagent) in a session and run its initial prompt. ' +
-    `Default attach: true blocks until the turn finishes (up to ${waitMinutes} minutes per wait; on timeout use GetSessionMessages, then AwaitSubagent or StopSubagent); attach: false returns immediately—use ListSubagents and AwaitSubagent. ` +
+    `Default attach: true waits until the turn finishes (up to ${waitMinutes} minutes per wait; on timeout use GetSessionMessages, then AwaitSubagent or StopSubagent). ` +
+    'attach: false returns immediately — then AwaitSubagent if you stay in this turn, or pass notify_parent: true if you will end your turn while it still runs (Baguette posts the result back as a new message when it finishes). ' +
     'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. '
   );
 }
@@ -48,6 +49,12 @@ function startSubagentSchema(mode) {
       .describe(
         'If true (default), wait until the initial turn finishes. If false, return agent_id/ref immediately.'
       ),
+    notify_parent: z
+      .boolean()
+      .optional()
+      .describe(
+        'When true, Baguette posts this subagent’s result back to you as a new user message when its turn finishes. Use with attach: false if you will end your turn before the subagent finishes; skip it if you will AwaitSubagent yourself.'
+      ),
   };
   if (mode === SUBAGENT_DEFAULT_PRESET) {
     return {
@@ -79,7 +86,7 @@ export function createStartSubagentTool(ctx) {
     description: startSubagentDescription(mode),
     schema: startSubagentSchema(mode),
     handler: async (args) => {
-      const { session_id, name, initial_prompt, preset_model_id, attach } = args;
+      const { session_id, name, initial_prompt, preset_model_id, attach, notify_parent } = args;
       const waitForCompletion = attach !== false;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
@@ -93,6 +100,7 @@ export function createStartSubagentTool(ctx) {
             initial_prompt,
             ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
             ...(preset_model_id != null ? { preset_model_id } : {}),
+            ...(notify_parent === true ? { notify_parent: true } : {}),
             wait_for_completion: waitForCompletion,
           },
           userParams

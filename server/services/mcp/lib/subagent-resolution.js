@@ -8,6 +8,7 @@ export function formatSubagentSummary(agent) {
     name: agent.name,
     status: agent.status,
     parent_agent_id: agent.parent_agent_id ?? null,
+    notify_parent: Boolean(agent.notify_parent),
   };
 }
 
