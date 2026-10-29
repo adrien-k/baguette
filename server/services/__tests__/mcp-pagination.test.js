@@ -18,28 +18,28 @@ describe('validateLogByteRange', () => {
 });
 
 describe('resolveByteRange', () => {
-  it('defaults to the last 5000 bytes', () => {
-    expect(resolveByteRange(10_000)).toEqual({ start: 5000, end: 9999 });
+  it('defaults to the last default tail bytes', () => {
+    expect(resolveByteRange(10_000)).toEqual({ start: 0, end: 9999 });
   });
 
-  it('with only startByte, spans max(5000, remaining) through EOF', () => {
+  it('with only startByte, spans max(MAX, remaining) through EOF', () => {
     expect(resolveByteRange(10_000, { startByte: 0 })).toEqual({ start: 0, end: 9999 });
     expect(resolveByteRange(3000, { startByte: 0 })).toEqual({ start: 0, end: 2999 });
-    expect(resolveByteRange(10_000, { startByte: 8000 })).toEqual({ start: 8000, end: 9999 });
+    expect(resolveByteRange(100_000, { startByte: 8000 })).toEqual({ start: 8000, end: 99999 });
   });
 
-  it('caps explicit start and end at 5000 bytes', () => {
-    expect(resolveByteRange(20_000, { startByte: 0, endByte: 19_999 })).toEqual({
+  it('caps explicit start and end at MAX_LOG_RANGE_BYTES', () => {
+    expect(resolveByteRange(200_000, { startByte: 0, endByte: 199_999 })).toEqual({
       start: 0,
-      end: 4999,
+      end: 65535,
     });
   });
 
   it('negative start and negative end stay within explicit cap', () => {
     expect(resolveByteRange(100, { startByte: -50, endByte: -1 })).toEqual({ start: 50, end: 99 });
-    expect(resolveByteRange(10_000, { startByte: -6000, endByte: -1 })).toEqual({
-      start: 4000,
-      end: 8999,
+    expect(resolveByteRange(100_000, { startByte: -6000, endByte: -1 })).toEqual({
+      start: 94000,
+      end: 99999,
     });
   });
 
@@ -63,10 +63,10 @@ describe('sliceByteRange', () => {
   });
 
   it('returns the last default bytes when no range is given', () => {
-    const text = 'x'.repeat(20_000);
+    const text = 'x'.repeat(80_000);
     const result = sliceByteRange(text);
     expect(result.log.length).toBe(DEFAULT_LOG_BYTES);
-    expect(result.startByte).toBe(20_000 - DEFAULT_LOG_BYTES);
+    expect(result.startByte).toBe(80_000 - DEFAULT_LOG_BYTES);
   });
 
   it('honours an inclusive endByte with explicit cap', () => {
@@ -76,7 +76,7 @@ describe('sliceByteRange', () => {
 });
 
 describe('buildLogRangeHeader', () => {
-  it('defaults to the last 5000 bytes', () => {
+  it('defaults to the last default tail bytes', () => {
     expect(buildLogRangeHeader({})).toBe(`bytes=-${DEFAULT_LOG_BYTES}`);
   });
 
@@ -86,7 +86,7 @@ describe('buildLogRangeHeader', () => {
   });
 
   it('uses closed range when start and end are set', () => {
-    expect(buildLogRangeHeader({ startByte: 0, endByte: 7999 })).toBe('bytes=0-4999');
+    expect(buildLogRangeHeader({ startByte: 0, endByte: 7999 })).toBe('bytes=0-7999');
   });
 
   it('requests a full log when endByte is negative', () => {

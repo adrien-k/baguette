@@ -1186,6 +1186,12 @@ describe('PrWorkflows', () => {
     expect(result.ok).toBe(true);
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
       prNumber: 42,
+      conclusion: undefined,
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
     });
     expect(result.runs).toHaveLength(1);
     expect(result.checks).toHaveLength(1);
@@ -1198,6 +1204,30 @@ describe('PrWorkflows', () => {
     await callTool(tools, 'PrWorkflows');
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch', {
       prNumber: undefined,
+      conclusion: undefined,
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
+    });
+  });
+
+  it('accepts the startup_failure conclusion filter', async () => {
+    getPRWorkflows.mockResolvedValue({ runs: [], checks: [], head_sha: null });
+    const { tools } = await buildServer({ remote_branch: 'feat/branch', pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'PrWorkflows', { conclusion: 'startup_failure' })
+    );
+    expect(result.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
+      prNumber: 42,
+      conclusion: 'startup_failure',
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
     });
   });
 });
@@ -1213,6 +1243,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
       startByte: 0,
       endByte: 8000,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 
@@ -1223,6 +1256,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
       startByte: -10,
       endByte: undefined,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 
@@ -1233,6 +1269,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '99', {
       startByte: undefined,
       endByte: undefined,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 });

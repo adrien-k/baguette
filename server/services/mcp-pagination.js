@@ -1,8 +1,8 @@
 /** Maximum bytes per request when startByte and endByte are both provided. */
-export const MAX_LOG_RANGE_BYTES = 5000;
+export const MAX_LOG_RANGE_BYTES = 65536;
 
 /** Default tail size when no byte range is specified. */
-export const DEFAULT_LOG_BYTES = MAX_LOG_RANGE_BYTES;
+export const DEFAULT_LOG_BYTES = 32768;
 
 /**
  * @param {number} index
