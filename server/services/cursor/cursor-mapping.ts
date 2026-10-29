@@ -114,7 +114,7 @@ function mapToolUse(msg: SDKToolUseMessage): MessageOp[] | null {
     const ops: MessageOp[] = [
       { op: 'tool_start', call_id: msg.call_id, name: canonical, input: asInput(msg.args) },
     ];
-    if (cursorToolKindFromName(msg.name) === 'task') {
+    if (cursorToolKindFromName(msg.name, asInput(msg.args)) === 'task') {
       ops.push(...cursorTaskToolProgressOps(msg.call_id, msg.result));
     }
     return ops;
@@ -249,12 +249,32 @@ export function cursorCanonicalToolName(name: string | null | undefined): string
 }
 
 /**
+ * Real tool name hidden behind Cursor's `mcp` meta-tool call (empty string when
+ * the call isn't a meta-tool or carries no nested tool name). Cursor wraps
+ * external MCP providers in a single `mcp` tool; `args.tool` (or `args.toolName`)
+ * holds the wrapped tool's name, e.g. `AskUserQuestions` via custom-user-tools.
+ */
+export function cursorMcpWrappedToolName(name: string | null | undefined, args?: unknown): string {
+  if (cursorCanonicalToolName(name) !== 'mcp' || !isDict(args)) return '';
+  if (typeof args.tool === 'string') return args.tool;
+  if (typeof args.toolName === 'string') return args.toolName;
+  if (isDict(args.args) && typeof args.args.tool === 'string') return args.args.tool;
+  return '';
+}
+
+/**
  * Resolve a canonical Cursor tool name to exactly one `ToolCallKind`.
  *
  * Names reach this function already canonicalised by `canonicalizeCursorToolName`.
  * Unrecognised names land as `generic` so the raw name is never lost.
+ *
+ * `args` (optional) unwraps calls made through Cursor's `mcp` meta-tool so the
+ * wrapped tool's own kind is used (AskUserQuestions must surface as `ask_user`).
  */
-export function cursorToolKindFromName(name: string | null | undefined): ToolCallKind {
+export function cursorToolKindFromName(
+  name: string | null | undefined,
+  args?: unknown
+): ToolCallKind {
   const n = cursorCanonicalToolName(name);
   if (n === 'Bash') return 'bash';
   if (n === 'Read') return 'read';
@@ -266,6 +286,10 @@ export function cursorToolKindFromName(name: string | null | undefined): ToolCal
   if (n === 'TodoWrite' || n === 'updateTodos') return 'todo';
   if (n === 'Task') return 'task';
   if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return 'ask_user';
+  // Same parity as the Claude mapper: a fully-qualified Baguette MCP name.
+  if (baguetteMcpShortName(name ?? '') === 'AskUserQuestions') return 'ask_user';
+  // Meta-tool call whose wrapped tool is AskUserQuestions.
+  if (cursorMcpWrappedToolName(n, args) === 'AskUserQuestions') return 'ask_user';
   if (n === 'ExitPlanMode' || n === 'createPlan') return 'exit_plan';
   if (isBaguetteMcpToolName(n) || isBaguetteMcpToolName(baguetteMcpShortName(name ?? ''))) {
     return 'mcp';
@@ -568,7 +592,7 @@ export function cursorBuildToolCallStart(
   startedAt: string = new Date().toISOString()
 ): ToolCallPayload {
   const canonical = cursorCanonicalToolName(name);
-  const kind = cursorToolKindFromName(name);
+  const kind = cursorToolKindFromName(name, args);
   return {
     type: 'tool_call',
     id: callId,
@@ -630,7 +654,9 @@ export function cursorBuildToolCallComplete(
   }
 ): ToolCallPayload {
   const finalName = name ?? prev.name;
-  const kind = cursorToolKindFromName(finalName);
+  // Wrapped meta-tool calls resolve from the merged raw input (args.tool),
+  // falling back to the running row's args when the result omits them.
+  const kind = cursorToolKindFromName(finalName, args ?? (prev.args as Dict));
   let status: ToolCallPayload['status'] = 'completed';
   if (isError || toolCallStatus === 'error') status = 'error';
   else if (toolCallStatus === 'cancelled') status = 'cancelled';

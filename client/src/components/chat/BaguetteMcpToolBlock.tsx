@@ -10,6 +10,7 @@ import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.
 import BashToolBlock from './BashToolBlock.tsx';
 import ShowPlanBlock from './ShowPlanBlock.tsx';
 import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
+import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
 
 function formatRunTaskCommand(label: string, runArgs?: unknown) {
   const parts = Array.isArray(runArgs)
@@ -402,6 +403,20 @@ export default function BaguetteMcpToolBlock({
   userReplied?: boolean;
 }) {
   const mcpResult = parseMcpJsonResult(result);
+
+  // AskUserQuestions routes through the Cursor `mcp` meta-tool (tool name in
+  // args.tool) and historically was kind: 'mcp'; render the question card for
+  // both shapes instead of a quiet MCP row.
+  if (toolShortName === 'AskUserQuestion' || toolShortName === 'AskUserQuestions') {
+    return (
+      <AskUserQuestionBlock
+        questions={(args.questions as AskUserQuestion[]) ?? []}
+        sessionId={sessionId != null ? Number(sessionId) : null}
+        agentId={agentId}
+        userReplied={userReplied}
+      />
+    );
+  }
 
   if (
     toolShortName === 'CreateTodo' ||

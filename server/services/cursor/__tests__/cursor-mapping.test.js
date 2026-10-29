@@ -5,6 +5,7 @@ import {
   canonicalizeCursorToolName,
   cursorCanonicalToolName,
   cursorToolKindFromName,
+  cursorMcpWrappedToolName,
   mapCursorToolResult,
   mapCursorBashToolResult,
   mapCursorToolArgs,
@@ -175,11 +176,76 @@ describe('cursorToolKindFromName', () => {
       EditPlan: 'mcp',
       ReadPlan: 'mcp',
       mcp__baguette__create_issue: 'mcp',
+      mcp__baguette__AskUserQuestions: 'ask_user',
       SomethingUnknown: 'generic',
     };
     for (const [name, kind] of Object.entries(expectations)) {
       expect(cursorToolKindFromName(name), name).toBe(kind);
     }
+  });
+
+  it("lifts AskUserQuestions out of Cursor's mcp meta-tool args", () => {
+    // Cursor routes external MCP providers through a single `mcp` tool and
+    // carries the real name in args.tool — previously this landed as kind 'mcp'
+    // and rendered a quiet MCP row instead of the question card.
+    expect(
+      cursorToolKindFromName('mcp', {
+        tool: 'AskUserQuestions',
+        questions: [{ question: 'Which model?' }],
+        providerIdentifier: 'custom-user-tools',
+      })
+    ).toBe('ask_user');
+    expect(cursorToolKindFromName('mcp')).toBe('mcp');
+    expect(cursorToolKindFromName('mcp', { tool: 'ReadTaskOutput', runId: '5' })).toBe('mcp');
+  });
+});
+
+describe('cursorMcpWrappedToolName', () => {
+  it('reads the nested tool name from meta-tool args', () => {
+    expect(cursorMcpWrappedToolName('mcp', { tool: 'AskUserQuestions' })).toBe('AskUserQuestions');
+    expect(cursorMcpWrappedToolName('mcp', { toolName: 'AskUserQuestions' })).toBe(
+      'AskUserQuestions'
+    );
+    expect(cursorMcpWrappedToolName('mcp', { args: { tool: 'AskUserQuestions' } })).toBe(
+      'AskUserQuestions'
+    );
+  });
+
+  it('returns empty for non-meta or tool-less calls', () => {
+    expect(cursorMcpWrappedToolName('Bash', { tool: 'AskUserQuestions' })).toBe('');
+    expect(cursorMcpWrappedToolName('mcp', {})).toBe('');
+    expect(cursorMcpWrappedToolName('mcp')).toBe('');
+  });
+});
+
+describe('meta-tool AskUserQuestions end-to-end', () => {
+  it('builds start/complete rows as ask_user with typed args', () => {
+    const rawArgs = {
+      tool: 'AskUserQuestions',
+      questions: [{ question: 'Which model?', options: [{ label: 'Composer 2.5' }] }],
+      providerIdentifier: 'custom-user-tools',
+    };
+    const start = cursorBuildToolCallStart('id-ask', 'mcp', rawArgs);
+    expect(start.kind).toBe('ask_user');
+    const done = cursorBuildToolCallComplete(start, {
+      args: rawArgs,
+      rawResult: { status: 'success', value: { ok: true, questions: rawArgs.questions } },
+    });
+    expect(done.kind).toBe('ask_user');
+    expect(done.name).toBe('mcp');
+    expect(done.args.questions).toEqual(rawArgs.questions);
+    expect(done.status).toBe('completed');
+    // ask_user rows carry only the base result shape — no mcp content envelope.
+    expect(done.result).toMatchObject({ status: 'ok', error_message: null });
+  });
+
+  it('falls back to the running row args when complete omits args', () => {
+    const running = cursorBuildToolCallStart('id-ask2', 'mcp');
+    expect(running.kind).toBe('mcp');
+    const rawArgs = { tool: 'AskUserQuestions', questions: [{ question: 'Plan?' }] };
+    const done = cursorBuildToolCallComplete(running, { args: rawArgs });
+    expect(done.kind).toBe('ask_user');
+    expect(done.args.questions).toEqual(rawArgs.questions);
   });
 });
 
