@@ -11,6 +11,9 @@ import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';
 import createMcpRoutes from './routes/mcp.js';
 import createImagesRoutes from './routes/images.js';
+import createSlackRoutes from './routes/slack.js';
+import { createSlackBot } from './services/slack-bot.js';
+import { createSlackSocketManager } from './services/slack-socket.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
@@ -52,7 +55,15 @@ app.use(cookieParser(ENCRYPTION_KEY));
 // consumed before being piped to the underlying process.
 app.use(devProxy.middleware);
 
-app.use(express.json({ strict: false }));
+// Slack signs the raw body, so keep it next to the parsed JSON for signature verification.
+app.use(
+  express.json({
+    strict: false,
+    verify: (req, _res, buf) => {
+      if (req.url.startsWith('/api/slack/')) req.rawBody = buf.toString('utf8');
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieAuthMiddleware(app));
 
@@ -74,7 +85,11 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const requireAuth = createRequireAuth(app);
+const slackBot = createSlackBot(app);
+app.set('slackBot', slackBot);
+const slackSocket = createSlackSocketManager(app, slackBot);
 app.use(createMcpRoutes(app));
+app.use(createSlackRoutes(app, slackBot));
 app.use(createSettingsRoutes(requireAuth));
 app.use(createAuthRoutes(app));
 app.use(createImagesRoutes());
@@ -143,6 +158,8 @@ const loopScheduler = new LoopScheduler(app);
 app.set('loopScheduler', loopScheduler);
 app.setup(server).then(
   async () => {
+    slackBot.start();
+    slackSocket.start();
     await app.service('sessions').restartInterruptedSessions();
     loopScheduler.start();
   },

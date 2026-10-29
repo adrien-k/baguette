@@ -54,6 +54,8 @@ export const sessionsService = createService('sessions', {
     'changedFiles',
     'sessionGitStatus',
     'sessionUsage',
+    'sessionSlack',
+    'setSlackApprovals',
     'branchCommits',
     'shas',
     'getPlan',

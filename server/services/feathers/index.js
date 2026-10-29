@@ -15,6 +15,7 @@ import { registerAgentConfigsService } from './agent-configs.service.js';
 import { registerAgentModelPresetsService } from './agent-model-presets.service.js';
 import { registerPluginsService } from './plugins.service.js';
 import { registerSlackService } from './slack.service.js';
+import { registerSlackThreadsService } from './slack-threads.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerLoopsService } from './loops.service.js';
 import { registerSessionIssuesService } from './session-issues.service.js';
@@ -47,6 +48,7 @@ export function registerFeathersServices(app, sseManager) {
   registerUserReposService(app);
   registerPluginsService(app);
   registerSlackService(app);
+  registerSlackThreadsService(app);
   registerLoopsService(app);
   registerSessionIssuesService(app);
   registerSessionTodosService(app);

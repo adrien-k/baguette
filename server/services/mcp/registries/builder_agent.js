@@ -3,6 +3,9 @@ import { createGitPullTool } from '../tools/git-pull.js';
 import { createGitFetchTool } from '../tools/git-fetch.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
 import { createUpdateSessionTool } from '../tools/update-session.js';
+import { createArchiveSessionTool } from '../tools/archive-session.js';
+import { createSessionCostTool } from '../tools/session-cost.js';
+import { createSystemStatsTool } from '../tools/system-stats.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
 import { createPrMarkCommentViewedTool } from '../tools/pr-mark-comment-viewed.js';
 import { createPrCommentTool } from '../tools/pr-comment.js';
@@ -22,6 +25,10 @@ import { createReadTaskOutputTool } from '../tools/read-task-output.js';
 import { createConfigRepoPromptTool } from '../tools/config-repo-prompt.js';
 import { createUploadImageTool } from '../tools/upload-image.js';
 import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
+import { createSlackReadThreadTool } from '../tools/slack-read-thread.js';
+import { createSlackEditMessageTool } from '../tools/slack-edit-message.js';
+import { createSlackReadChannelTool } from '../tools/slack-read-channel.js';
+import { createSlackDownloadFileTool } from '../tools/slack-download-file.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
 import { createTodoHandlers } from '../lib/todo-handlers.js';
 import { createCreateTodoTool } from '../tools/create-todo.js';
@@ -57,6 +64,9 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
     createGitFetchTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),
     createUpdateSessionTool(ctx),
+    createArchiveSessionTool(ctx),
+    createSessionCostTool(ctx),
+    createSystemStatsTool(),
     createPrCommentsTool(ctx),
     createPrMarkCommentViewedTool(ctx),
     createPrCommentTool(ctx),
@@ -77,7 +87,13 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
     createUploadImageTool(ctx),
   ];
   if (slackApps.length) {
-    tools.push(createSlackPostMessageTool(ctx));
+    tools.push(
+      createSlackPostMessageTool(ctx),
+      createSlackEditMessageTool(ctx),
+      createSlackReadThreadTool(ctx),
+      createSlackReadChannelTool(ctx),
+      createSlackDownloadFileTool(ctx)
+    );
   }
   return tools;
 }

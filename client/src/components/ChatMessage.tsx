@@ -17,8 +17,10 @@ import {
   isLoopUserMessage,
   isMcpUserMessage,
 } from '@baguette/shared/turn-model.js';
+import { isSlackUserMessage } from '@baguette/shared/slack-user-message.js';
 import InjectedUserTurnBlock from './chat/InjectedUserTurnBlock.jsx';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
+import SlackBlock from './chat/SlackBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
 
@@ -102,6 +104,10 @@ function TypedUserMessage({
         <AskUserAnswerBlock answers={answers} fallbackText={userText} />
       </div>
     );
+  }
+
+  if (isSlackUserMessage(message)) {
+    return <SlackBlock message={message} />;
   }
 
   const userText = userMessagePlainText(message);

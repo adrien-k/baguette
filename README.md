@@ -26,7 +26,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **Diff view** -- Browse the session's current git diff with per-file sections and inline/split toggle.
 - **File attachments** -- Attach images and files to any chat message.
 - **Cost tracking** -- Track session costs on session cards, with a daily chart and usage breakdown per repo (Claude and Cursor costs tracked separately).
-- **Slack** -- Connect one or more Slack bots at the admin level and agents can post updates to a channel ([read more](docs/slack.md)).
+- **Slack** -- Tag the Baguette app in a Slack channel to start a session (like Cursor) and get results and PR links back in the thread. Uses Socket Mode, so it works locally and behind a firewall ([read more](docs/slack.md)).
 - **Secrets** -- Inject global secrets into all sessions and tasks via Baguette config placeholders.
 - **Session config (`.baguette.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
 - **User approval** -- First user is auto-approved; subsequent users require approval from an existing user.
@@ -154,7 +154,32 @@ For details on the data directory layout, git worktree strategy, and web server 
 
 ## Slack
 
-Connect a Slack workspace under **Settings → Integrations** to let agents post updates to a channel. See **[docs/slack.md](docs/slack.md)** for the app setup and required scopes.
+Tag the Baguette app in a Slack channel and it starts a session on your behalf, works on the task (branch, commits, PR), and posts the result back in the thread, ending with the PR link and branch. It reacts when tagged or addressed by name ("baguette …"), and in a thread it owns it follows the conversation without a tag, like a person would. To start a session you have to be logged in to Baguette and have linked your Slack account; anyone else gets a private "log in to Baguette" reply. Once a session is running in a thread, others in that thread can chip in with suggestions, and the owner stays in charge.
+
+Baguette connects to Slack over [Socket Mode](https://api.slack.com/apis/socket-mode): it opens an outbound connection, so **no public URL, tunnel or open port is needed**. It works locally and behind a firewall.
+
+### Setting up the Slack app
+
+1. Create the app at <https://api.slack.com/apps> → **Create New App → From scratch**.
+2. **Socket Mode** → enable it. Then **Basic Information → App-Level Tokens → Generate Token and Scopes**, add the `connections:write` scope, and copy the token (`xapp-…`).
+3. **OAuth & Permissions** → add the **Bot Token Scopes** `app_mentions:read`, `users:read`, `files:read`, `chat:write`, `assistant:write`, `channels:read`, `groups:read`, `channels:history`, `groups:history`, then **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-…`) shown on that same page.
+4. **Event Subscriptions** → switch **Enable Events** on. Under **Subscribe to bot events** (not "on behalf of users"), click **Add Bot User Event** and add **`app_mention`**, **`message.channels`**, **`message.groups`** and **`agent_session_stopped`**, then **Save Changes**. Without this Slack sends the bot nothing, and tagging it does nothing. No Request URL is needed in Socket Mode.
+5. **Interactivity & Shortcuts** → switch **Interactivity** on (no URL needed in Socket Mode). This makes the session picker buttons work.
+6. **Install App → Reinstall to Workspace** (Slack shows a banner after you change scopes or events), and copy the **Bot User OAuth Token** again if it changed.
+   While the agent works, Slack shows its native animated status under the thread: "Baguette is cooking… 🥖". That needs `assistant:write` (step 3) and **Agents & AI Apps** switched on in the app's settings. With the `agent_session_stopped` event from step 4 it also gets a **Stop button**; clicking it stops the session like Stop in the Baguette UI (owner only). If Slack refuses the native status, Baguette posts and edits a "🥖 Baguette is cooking…" message instead; typing "stop" works either way.
+   `users:read` is required for the session's Details tab and the bot to show real Slack usernames; without it they appear as raw ids like `U0CCTKMSWF6` (the server logs `Slack user lookup failed … missing_scope`). If your app was installed before you added the scope, add it under **OAuth & Permissions** and reinstall — Slack only applies new scopes on reinstall.
+7. Give Baguette the two tokens, either in **Settings → Integrations → Add Slack app** (name, app-level token, bot token — ignore the "Advanced" section), or in `.env`:
+   ```
+   SLACK_BOT_TOKEN=xoxb-…
+   SLACK_APP_TOKEN=xapp-…
+   ```
+8. In Slack, invite the bot to a channel (`/invite @<your app name>`) and tag it: `@<your app name> fix the flaky login test`. The first time, it replies privately with a link: log in to Baguette, confirm that the Slack account is yours, then tag it again.
+
+Add `repo=owner/name` (and optionally `branch=name`) to pick the repo; otherwise it uses your only repo, or the one from your latest session. Tag the bot again in the thread to give the same session more instructions.
+
+Say "stop" and the bot interrupts the work at once. Messages from Slack show up in the session chat as "Slack (name)". Attach json, txt, csv, svg, images… to a message and the agent gets them. Slack is visible to the whole company, so the bot never posts secrets or anything sensitive there — it points you to the session chat or pull request instead.
+
+See **[docs/slack.md](docs/slack.md)** for scope details and the alternative public-URL setup.
 
 ## Security
 
