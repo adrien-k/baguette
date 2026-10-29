@@ -167,6 +167,18 @@ describe('Loops service', () => {
       expect(loop.auto_push).toBe(false);
     });
 
+    it('defaults create_new_branch to true for repository loops', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      expect(loop.create_new_branch).toBe(true);
+    });
+
+    it('stores create_new_branch false for a repository loop', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ create_new_branch: false }), params(aliceId));
+      expect(loop.create_new_branch).toBe(false);
+    });
+
     it('forces auto_push off for local repository loops', async () => {
       await db('repos').insert({ full_name: 'local-loop', repo_path: '/tmp/local-loop' });
       const loop = await app
@@ -386,6 +398,19 @@ describe('Loops service', () => {
       expect(new Date(enabled.next_run_at).getTime()).toBeGreaterThan(Date.now());
     });
 
+    it('toggles create_new_branch without touching other fields', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      const off = await app
+        .service('loops')
+        .patch(loop.id, { create_new_branch: false }, params(aliceId));
+      expect(off.create_new_branch).toBe(false);
+      expect(off.auto_push).toBe(loop.auto_push);
+      const on = await app
+        .service('loops')
+        .patch(loop.id, { create_new_branch: true }, params(aliceId));
+      expect(on.create_new_branch).toBe(true);
+    });
+
     it('recomputes the next run when the recurrence changes', async () => {
       const loop = await app.service('loops').create(loopData(), params(aliceId));
       const patched = await app
@@ -463,6 +488,17 @@ describe('Loops service', () => {
       expect(row.last_session_id).toBe(77);
       expect(row.last_run_at).toBeTruthy();
       expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('starts the session on the base branch when create_new_branch is off', async () => {
+      await makeDueLoop({ create_new_branch: false });
+
+      await app.service('loops').runDue();
+
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ base_branch: 'main', create_new_branch: false }),
+        expect.anything()
+      );
     });
 
     it('skips disabled loops and loops that are not due yet', async () => {
