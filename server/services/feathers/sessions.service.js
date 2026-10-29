@@ -1927,7 +1927,7 @@ async function provisionSessionEnvironment(app, session, params) {
   const repo = await db('repos').where({ full_name: repoFullName }).first();
   if (!repo) throw new BadRequest(`Repository "${repoFullName}" is not registered`);
 
-  const userParams = { provider: undefined, user };
+  const userParams = { provider: undefined, user, _skipPrMetadataTouch: true };
   let patch = {};
 
   if (continueExistingBranch) {

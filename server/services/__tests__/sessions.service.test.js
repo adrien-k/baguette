@@ -2172,6 +2172,80 @@ describe('Sessions service - find, get, create', () => {
       pushSpy.mockRestore();
     });
 
+    it('does not auto-push a continued session whose PR metadata was only loaded from GitHub', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      getOpenPR.mockResolvedValueOnce({
+        number: 42,
+        html_url: 'https://github.com/test/repo/pull/42',
+        title: 'Feature PR',
+        base_ref: 'develop',
+        draft: false,
+      });
+
+      const created = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({ session_path: '/tmp/wt-continue-no-push', auto_push: 1, status: 'completed' });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+    });
+
+    it('auto-pushes a continued session when there are commits even if metadata was only loaded', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      getOpenPR.mockResolvedValueOnce({
+        number: 42,
+        html_url: 'https://github.com/test/repo/pull/42',
+        title: 'Feature PR',
+        base_ref: 'develop',
+        draft: false,
+      });
+
+      const created = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({ session_path: '/tmp/wt-continue-commits', auto_push: 1, status: 'completed' });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 2,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push').mockResolvedValue({ ok: true });
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      pushSpy.mockRestore();
+    });
+
     it('does not auto-push when a non-primary builder completes a turn', async () => {
       const created = await app
         .service('sessions')
@@ -2443,6 +2517,47 @@ describe('Sessions service - find, get, create', () => {
       expect(session.pr_url).toBe('https://github.com/test/repo/pull/42');
       expect(session.label).toBe('Feature PR');
       expect(generateSessionMetadata).not.toHaveBeenCalled();
+    });
+
+    it('create_new_branch=false does not mark PR metadata as updated when loading an open PR', async () => {
+      getOpenPR.mockResolvedValueOnce({
+        number: 42,
+        html_url: 'https://github.com/test/repo/pull/42',
+        title: 'Feature PR',
+        base_ref: 'develop',
+        draft: false,
+      });
+
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      const row = await db('sessions').where({ id: session.id }).first();
+      expect(row.pr_number).toBe(42);
+      expect(row.label).toBe('Feature PR');
+      expect(row.pr_metadata_updated_at).toBeNull();
+    });
+
+    it('create_new_branch=false does not mark PR metadata as updated without an open PR', async () => {
+      getOpenPR.mockResolvedValueOnce(null);
+
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      const row = await db('sessions').where({ id: session.id }).first();
+      expect(row.label).toBe('Continuing: feature/foo');
+      expect(row.pr_metadata_updated_at).toBeNull();
     });
 
     it('create_new_branch=false strips baguette PR markers into pr_description', async () => {

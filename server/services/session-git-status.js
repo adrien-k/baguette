@@ -14,9 +14,16 @@ export function sessionNeedsPrMetadataSync(session) {
   return new Date(metaAt).getTime() > new Date(pushedAt).getTime();
 }
 
+/**
+ * Mark PR metadata as locally updated when a patch changes title/body/base.
+ * Patches that load these fields from GitHub (e.g. continuing an existing branch
+ * provisions the session from the open PR) pass `params._skipPrMetadataTouch`:
+ * loading is not a local update and must not trigger a metadata-only push.
+ */
 export function touchPrMetadataUpdatedAtOnPatch(context) {
   const data = context.data;
   if (!data) return context;
+  if (context.params?._skipPrMetadataTouch) return context;
   const session = context.params.ownSession;
   if (!session) return context;
   for (const field of PR_METADATA_FIELDS) {
