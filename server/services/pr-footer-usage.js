@@ -141,3 +141,43 @@ export async function loadSessionFooterUsageLines(db, session) {
   if (!rows.length) return [];
   return formatPrFooterUsageLines(mergeUsageForPrFooter(rows));
 }
+
+function formatSlackModelLabel(row) {
+  if (row.agent_sdk === 'cursor' && row.fast) {
+    return `${row.model} (Fast)`;
+  }
+  return row.model;
+}
+
+/**
+ * One-line models + session cost for Slack message footers.
+ *
+ * @param {ReturnType<typeof mergeUsageForPrFooter>} rows
+ * @returns {string | null}
+ */
+export function formatSlackFooterUsageSummary(rows) {
+  if (!rows.length) return null;
+  const modelLabels = [];
+  const seen = new Set();
+  const sorted = [...rows].sort((a, b) => b.cost_usd - a.cost_usd);
+  for (const row of sorted) {
+    const label = formatSlackModelLabel(row);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    modelLabels.push(label);
+  }
+  const totalCost = rows.reduce((sum, row) => sum + row.cost_usd, 0);
+  return `${modelLabels.join(', ')} · ${formatUsd(totalCost)}`;
+}
+
+/**
+ * @param {import('knex').Knex} db
+ * @param {Record<string, unknown>} session
+ * @returns {Promise<string | null>}
+ */
+export async function loadSessionSlackFooterUsageSummary(db, session) {
+  if (!session?.id) return null;
+  const rows = await querySessionUsageByModel(db, session.id);
+  if (!rows.length) return null;
+  return formatSlackFooterUsageSummary(mergeUsageForPrFooter(rows));
+}

@@ -73,9 +73,24 @@ const SESSION = {
 const ACME = { id: 1, name: 'acme', bot_token: 'xoxb-token' };
 const ENG = { id: 2, name: 'eng', bot_token: 'xoxb-eng' };
 
-async function buildTools({ slackApps = [ACME] } = {}) {
+async function buildTools({ slackApps = [ACME], usageRows = [] } = {}) {
+  const emptyUsageQuery = () => {
+    const chain = {
+      where: () => chain,
+      select: () => chain,
+      sum: () => chain,
+      groupBy: () => chain,
+      groupByRaw: () => chain,
+      orderBy: () => chain,
+      then(onFulfilled, onRejected) {
+        return Promise.resolve(usageRows).then(onFulfilled, onRejected);
+      },
+    };
+    return chain;
+  };
   const db = (table) => {
     if (table === 'sessions') return { where: () => ({ first: async () => ({ ...SESSION }) }) };
+    if (table === 'usage') return emptyUsageQuery();
     return { where: () => ({ first: async () => null }) };
   };
   const app = {
@@ -148,8 +163,44 @@ describe('SlackPostMessage', () => {
     const { text } = postMessage.mock.calls[0][1];
     expect(text).toContain('Build is green');
     expect(text).toContain('https://baguette.test/sessions/1');
+    expect(text).toContain('baguette#1');
     expect(text).toContain('Claude claude-opus-5');
-    expect(text).toContain('session 1');
+    expect(text).not.toContain('session 1');
+  });
+
+  it('includes models and session cost in the footer when usage exists', async () => {
+    const tools = await buildTools({
+      usageRows: [
+        {
+          agent_type: 'builder',
+          model: 'composer-2.5',
+          agent_sdk: 'cursor',
+          model_params: null,
+          cost_usd: '1.20',
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+        },
+        {
+          agent_type: 'reviewer',
+          model: 'claude-opus-5',
+          agent_sdk: 'claude',
+          model_params: null,
+          cost_usd: '0.30',
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+        },
+      ],
+    });
+    await call(tools, 'SlackPostMessage', { text: 'Done', channel: 'C_ENG' });
+
+    const { text } = postMessage.mock.calls[0][1];
+    expect(text).toContain('baguette#1');
+    expect(text).toContain('composer-2.5, claude-opus-5 · $1.50');
+    expect(text).not.toContain('session 1');
   });
 
   it('resolves a channel name to an id', async () => {
@@ -196,8 +247,23 @@ describe('SlackPostMessage', () => {
 
   it('fails when apps were removed mid-session', async () => {
     let slackApps = [ACME];
+    const emptyUsageQuery = () => {
+      const chain = {
+        where: () => chain,
+        select: () => chain,
+        sum: () => chain,
+        groupBy: () => chain,
+        groupByRaw: () => chain,
+        orderBy: () => chain,
+        then(onFulfilled, onRejected) {
+          return Promise.resolve([]).then(onFulfilled, onRejected);
+        },
+      };
+      return chain;
+    };
     const db = (table) => {
       if (table === 'sessions') return { where: () => ({ first: async () => ({ ...SESSION }) }) };
+      if (table === 'usage') return emptyUsageQuery();
       return { where: () => ({ first: async () => null }) };
     };
     const app = {

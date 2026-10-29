@@ -46,7 +46,8 @@ unknown name comes back with the list of channels the bot can actually reach.
 
 Message text uses Slack [mrkdwn](https://api.slack.com/reference/surfaces/formatting): `*bold*`,
 `_italic_`, `` `code` ``, and `<https://url|label>` for links. Every message gets a footer linking
-back to the session that posted it.
+back to the session (`baguette#<id>`) with models used and total session cost when usage is recorded
+(fallback: the session’s agent model).
 
 Slack API failures (missing scope, bot not in channel, revoked token, …) are returned to the agent
 as tool errors with a recovery hint instead of interrupting the turn.
