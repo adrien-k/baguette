@@ -1,11 +1,5 @@
 import { getAgentById, getAgentBySessionRef } from '../../agents-db.js';
 
-const ACTIVE_SUBAGENT_STATUSES = ['running', 'approval'];
-
-export function isSubagentStatusActive(status) {
-  return ACTIVE_SUBAGENT_STATUSES.includes(status);
-}
-
 export function formatSubagentSummary(agent) {
   if (!agent) return null;
   return {

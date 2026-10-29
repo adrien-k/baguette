@@ -11,6 +11,7 @@ import {
   type SettingSource,
 } from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
+import { disableExternal } from './hooks.js';
 import { remoteHasNewCommits } from '../github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../agent-settings.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -1316,6 +1317,9 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'isInterruptedSessionResumable',
     ],
   });
+  // Internal-only service: drives the agent SDK and must never be reachable over the
+  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
+  app.service(path).hooks({ before: { all: [disableExternal] } });
   registerAgentSdk(app, {
     key: CLAUDE_AGENT_SDK_KEY,
     label: CLAUDE_AGENT_SDK_LABEL,

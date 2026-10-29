@@ -94,16 +94,17 @@ Note the **Client ID**, generate a **Client Secret**, and note the App slug (the
 
 All configuration is driven by the following variables:
 
-| Variable                    | Description                                                                                                          |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `DEPLOY_SERVER`             | Your server hostname or IP address                                                                                   |
-| `DEPLOY_USER`               | SSH user on the server (default: `ubuntu`)                                                                           |
-| `DOMAIN`                    | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths                    |
-| `SSH_PRIVATE_KEY`           | Private key for SSH access to the server (contents of `/home/ubuntu/.ssh/id_ed25519`)                                |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                 |
-| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                             |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)                                                           |
-| `ENCRYPTION_KEY`            | At least 32 random characters — used for cookie signing and secret encryption (generate with `openssl rand -hex 32`) |
+| Variable                    | Description                                                                                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEPLOY_SERVER`             | Your server hostname or IP address                                                                                                                                                     |
+| `DEPLOY_USER`               | SSH user on the server (default: `ubuntu`)                                                                                                                                             |
+| `DOMAIN`                    | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths                                                                                      |
+| `SSH_PRIVATE_KEY`           | Private key for SSH access to the server (contents of `/home/ubuntu/.ssh/id_ed25519`)                                                                                                  |
+| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                                                                                   |
+| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                                                                                               |
+| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)                                                                                                                             |
+| `ENCRYPTION_KEY`            | At least 32 random characters — used for cookie signing and secret encryption (generate with `openssl rand -hex 32`)                                                                   |
+| `TRUST_PROXY_HOPS`          | Optional. Reverse-proxy hops trusted to set `X-Forwarded-For` (default: `1` — kamal-proxy is the one trusted hop). Set `0` only when exposing Baguette directly with no proxy in front |
 
 **Optional — Docker Hub (or GHCR) instead of the local registry on the server**
 

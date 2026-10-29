@@ -15,9 +15,10 @@ function signedUserCookie(userId) {
 }
 
 describe('getClientIpFromHeaders', () => {
-  it('uses the first X-Forwarded-For hop', () => {
+  it('uses the rightmost X-Forwarded-For hop (the edge proxy’s entry)', () => {
+    // The first hop is client-controlled; only the rightmost hop is trustworthy.
     const headers = new Headers({ 'x-forwarded-for': '203.0.113.1, 10.0.0.1' });
-    expect(getClientIpFromHeaders(headers)).toBe('203.0.113.1');
+    expect(getClientIpFromHeaders(headers)).toBe('10.0.0.1');
   });
 
   it('returns empty string when there is no forwarded header', () => {
@@ -81,5 +82,30 @@ describe('createFeathersCookieAuth', () => {
 
     expect(get).toHaveBeenCalledWith('3', {});
     expect(context.params.user).toBe(user);
+  });
+
+  it('exposes a pending (unapproved) cookie identity as params.pendingUser, never params.user', async () => {
+    const pending = { id: 5, approved: false };
+    const get = vi.fn().mockResolvedValue(pending);
+    const middleware = createFeathersCookieAuth({ service: () => ({ get }) });
+    const context = makeContext({ headers: { cookie: signedUserCookie(5) } });
+
+    await middleware(context, async () => {});
+
+    expect(context.params.user).toBeUndefined();
+    expect(context.params.pendingUser).toBe(pending);
+  });
+
+  it('demotes a non-approved identity passed in via params (defensive)', async () => {
+    const pending = { id: 9, approved: false };
+    const get = vi.fn();
+    const middleware = createFeathersCookieAuth({ service: () => ({ get }) });
+    const context = makeContext({ params: { user: pending } });
+
+    await middleware(context, async () => {});
+
+    expect(context.params.user).toBeUndefined();
+    expect(context.params.pendingUser).toBe(pending);
+    expect(get).not.toHaveBeenCalled();
   });
 });

@@ -125,6 +125,7 @@ export function useSessionDiff(
     staleMode,
     hasFetched,
     cache,
+    syncStaleMode,
     // staleModeRef is synchronous; `staleMode` state retriggers this effect when marking stale.
   ]);
 

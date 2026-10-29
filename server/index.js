@@ -75,7 +75,7 @@ process.on('unhandledRejection', (reason) => {
   logger.error({ err: reason }, 'Unhandled promise rejection');
 });
 
-const requireAuth = createRequireAuth(feathersApp);
+const requireAuth = createRequireAuth();
 expressApp.use(createMcpRoutes(feathersApp));
 expressApp.use(createSettingsRoutes(requireAuth));
 expressApp.use(createAuthRoutes(feathersApp));

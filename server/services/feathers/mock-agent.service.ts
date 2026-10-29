@@ -1,4 +1,5 @@
 import logger from '../../logger.js';
+import { disableExternal } from './hooks.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createMessageStreamWriter } from '../message-writer-factory.ts';
 import {
@@ -307,6 +308,9 @@ export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVIC
       'isInterruptedSessionResumable',
     ],
   });
+  // Internal-only service: drives the agent SDK and must never be reachable over the
+  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
+  app.service(path).hooks({ before: { all: [disableExternal] } });
   registerAgentSdk(app, {
     key: MOCK_AGENT_SDK,
     label: MOCK_AGENT_SDK_LABEL,

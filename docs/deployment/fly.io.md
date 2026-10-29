@@ -79,6 +79,8 @@ fly secrets set \
 
 `PUBLIC_HOST` must be the full URL users will reach Baguette at (including `https://`). Update it if you later add a custom domain.
 
+By default Baguette trusts one reverse-proxy hop for `X-Forwarded-For` (`TRUST_PROXY_HOPS=1`) — Fly's proxy is that hop, so the default is correct here. Only set `TRUST_PROXY_HOPS=0` (via `fly secrets set`) if you expose Baguette with no proxy in front.
+
 ## 6. Wildcard DNS and TLS
 
 Baguette uses wildcard subdomains for session preview URLs (`session-<id>.your-domain.com`). On Fly.io this requires a custom domain.

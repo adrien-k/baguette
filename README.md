@@ -59,15 +59,16 @@ npm install
 cp .env.example .env
 ```
 
-| Variable                    | Description                                                                                                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                                                          |
-| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                                                                      |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug, i.e. the `<slug>` in `github.com/apps/<slug>`                                                                                                |
-| `ENCRYPTION_KEY`            | At least 32 characters; used for cookie signing and for encrypting secrets                                                                                    |
-| `PUBLIC_HOST`               | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`) |
-| `PORT`                      | Express server port (default: `3000`)                                                                                                                         |
-| `DATA_DIR`                  | Data directory for DB, repo clones, and worktrees (default: `~/.baguette`)                                                                                    |
+| Variable                    | Description                                                                                                                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                                                                                                      |
+| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                                                                                                                  |
+| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug, i.e. the `<slug>` in `github.com/apps/<slug>`                                                                                                                                            |
+| `ENCRYPTION_KEY`            | At least 32 characters; used for cookie signing and for encrypting secrets                                                                                                                                |
+| `PUBLIC_HOST`               | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`)                                             |
+| `PORT`                      | Express server port (default: `3000`)                                                                                                                                                                     |
+| `DATA_DIR`                  | Data directory for DB, repo clones, and worktrees (default: `~/.baguette`)                                                                                                                                |
+| `TRUST_PROXY_HOPS`          | Reverse-proxy hops between the internet and Baguette trusted to set `X-Forwarded-For` (default: `1` — one proxy that appends the client address). Set `0` when Baguette is exposed directly with no proxy |
 
 3. Create the GitHub App and set its callback URL to `http://localhost:5173/auth/github/callback` — see [Setting up the GitHub App](#setting-up-the-github-app).
 

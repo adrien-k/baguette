@@ -484,7 +484,7 @@ export default function Session() {
     }
     if (!sessionRepo) return;
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
-  }, [fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
+  }, [pathname, fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
 
   const [pendingAgentConfigId, setPendingAgentConfigId] = useState(null);
   const [switchingAgentSdk, setSwitchingAgentSdk] = useState(false);

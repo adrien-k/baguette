@@ -5,8 +5,6 @@ import {
 } from '../../shared/mcp-await-timeout.js';
 import { getAgentById } from './agents-db.js';
 
-export { AGENT_TURN_WAIT_TIMEOUT_MS, agentTurnWaitTimeoutMessage };
-
 /**
  * Poll until the agent is no longer running (or a terminal status is reached).
  * @param {import('knex').Knex} db

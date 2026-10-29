@@ -2,12 +2,12 @@
 export const SESSION_MAIN_MIN_WIDTH = 400;
 
 export const SIDE_PANEL_WIDTH_DEFAULT = 360;
-export const SIDE_PANEL_WIDTH_MIN = 240;
-export const SIDE_PANEL_WIDTH_MAX = 800;
+const SIDE_PANEL_WIDTH_MIN = 240;
+const SIDE_PANEL_WIDTH_MAX = 800;
 
 export const SESSIONS_SIDEBAR_WIDTH_DEFAULT = 360;
-export const SESSIONS_SIDEBAR_WIDTH_MIN = 240;
-export const SESSIONS_SIDEBAR_WIDTH_MAX = 600;
+const SESSIONS_SIDEBAR_WIDTH_MIN = 240;
+const SESSIONS_SIDEBAR_WIDTH_MAX = 600;
 
 function hardMaxForViewport(viewportWidth, columnMax) {
   return Math.min(columnMax, Math.floor(viewportWidth * 0.65));

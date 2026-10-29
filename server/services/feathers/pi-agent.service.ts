@@ -8,6 +8,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { mkdir } from 'node:fs/promises';
 import logger from '../../logger.js';
+import { disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { buildPiCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
@@ -854,6 +855,9 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'isInterruptedSessionResumable',
     ],
   });
+  // Internal-only service: drives the agent SDK and must never be reachable over the
+  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
+  app.service(path).hooks({ before: { all: [disableExternal] } });
   registerAgentSdk(app, {
     key: PI_AGENT_SDK_KEY,
     label: PI_AGENT_SDK_LABEL,

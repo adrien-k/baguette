@@ -282,7 +282,7 @@ function claudeResultSubtypeCopy(subtype: string): string {
  * Copy for a rejected claude.ai usage limit (quota). Quota failures surface here before
  * (or instead of) a failed result, so the chat shows exactly why the turn stopped.
  */
-export function claudeRateLimitStatusText(info: SDKRateLimitInfo): string {
+function claudeRateLimitStatusText(info: SDKRateLimitInfo): string {
   const limitType = info.rateLimitType
     ? ` (${info.rateLimitType.replace(/_/g, ' ')})`
     : ' (rate limit)';

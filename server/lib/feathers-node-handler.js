@@ -10,7 +10,7 @@
  */
 
 /** Match the old `SseManager` interval so idle SSE survives proxy timeouts. */
-export const SSE_HEARTBEAT_MS = 30_000;
+const SSE_HEARTBEAT_MS = 30_000;
 const SSE_HEARTBEAT_FRAME = ': heartbeat\n\n';
 
 const BUFFERED_CONTENT_TYPES = [

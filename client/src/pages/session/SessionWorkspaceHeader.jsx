@@ -9,7 +9,7 @@ import SessionTools from '../../components/SessionTools.jsx';
 import { SessionLoopBadge } from '../../components/SessionLoopIndicator.jsx';
 import { sessionHeaderTitle } from './sessionListDisplay.js';
 
-export const CREATE_WORKSPACE_HEADER_TITLE_CLASS =
+const CREATE_WORKSPACE_HEADER_TITLE_CLASS =
   'min-w-0 truncate text-sm font-semibold leading-snug text-fg md:text-base';
 
 export default function SessionWorkspaceHeader({

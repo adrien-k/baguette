@@ -19,6 +19,7 @@ import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { cursorSdkStateRoot, cursorWorkspaceRef } from '../cursor/cursor-session-paths.js';
 import logger from '../../logger.js';
+import { disableExternal } from './hooks.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildCursorCustomTools } from '../baguette-mcp-server.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
@@ -1257,6 +1258,9 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'isInterruptedSessionResumable',
     ],
   });
+  // Internal-only service: drives the agent SDK and must never be reachable over the
+  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
+  app.service(path).hooks({ before: { all: [disableExternal] } });
   registerAgentSdk(app, {
     key: CURSOR_AGENT_SDK_KEY,
     label: CURSOR_AGENT_SDK_LABEL,
