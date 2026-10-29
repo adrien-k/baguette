@@ -1,7 +1,7 @@
 import { BadRequest, NotFound } from 'feathers/errors';
 import { encryptFields, decryptFields, requireUser } from './hooks.js';
-import { authTest } from '../slack.js';
-import { decrypt } from '../../lib/encrypt.js';
+import { authTest, slackEventsUrl, slackRedirectUri } from '../slack.js';
+import { decrypt, encrypt } from '../../lib/encrypt.js';
 
 /**
  * Admin-level Slack apps (table: slack_apps). Each row is one Slack bot the workspace can post as.
@@ -49,6 +49,48 @@ class SlackAppsService {
     return row;
   }
 
+  /** Connects a Slack user to a Baguette user (moving an existing link to the new account). */
+  async linkUser({ slack_app_id: slackAppId, slack_user_id: slackUserId, user_id: userId }) {
+    await this._row(slackAppId);
+    const existing = await this.db('slack_user_links')
+      .where({ slack_app_id: slackAppId, slack_user_id: slackUserId })
+      .first();
+    if (existing) {
+      await this.db('slack_user_links').where({ id: existing.id }).update({ user_id: userId });
+      return;
+    }
+    await this.db('slack_user_links').insert({
+      slack_app_id: slackAppId,
+      slack_user_id: slackUserId,
+      user_id: userId,
+    });
+  }
+
+  /** Stores who the bot is in its workspace, learned when Socket Mode connects. */
+  async saveIdentity(id, { bot_user_id, team_id, team_name, api_app_id }) {
+    const identity = { bot_user_id, team_id, team_name, api_app_id };
+    const defined = Object.fromEntries(Object.entries(identity).filter(([, v]) => v !== undefined));
+    if (!Object.keys(defined).length) return;
+    await this.db('slack_apps').where({ id }).update(defined);
+  }
+
+  /** Stores what "Add to Slack" returned: the bot token and the workspace it belongs to. */
+  async saveInstall(id, access) {
+    await this._row(id);
+    const now = new Date().toISOString();
+    await this.db('slack_apps')
+      .where({ id })
+      .update({
+        bot_token_encrypted: encrypt(access.botToken),
+        bot_user_id: access.botUserId,
+        api_app_id: access.apiAppId,
+        team_id: access.teamId,
+        team_name: access.teamName,
+        installed_at: now,
+        updated_at: now,
+      });
+  }
+
   /** Verifies a stored token against Slack and reports the workspace it belongs to. */
   async test(id, _params) {
     const row = await this._row(id);
@@ -70,7 +112,10 @@ function pickSlackAppFields(context) {
   if (context.data.name !== undefined) {
     data.name = typeof context.data.name === 'string' ? context.data.name.trim() : '';
   }
-  if (context.data.bot_token !== undefined) data.bot_token = context.data.bot_token;
+  for (const field of ['bot_token', 'app_token', 'client_id', 'client_secret', 'signing_secret']) {
+    if (context.data[field] !== undefined) data[field] = context.data[field];
+  }
+  if (typeof data.client_id === 'string') data.client_id = data.client_id.trim();
   context.data = data;
   return context;
 }
@@ -80,10 +125,26 @@ function requireNameOnCreate(context) {
   return context;
 }
 
-function requireBotTokenOnCreate(context) {
+/** A manual bot token, or the OAuth credentials that let "Add to Slack" mint one. */
+function requireTokenOrOAuthCredentialsOnCreate(context) {
   const token = typeof context.data.bot_token === 'string' ? context.data.bot_token.trim() : '';
-  if (!token) throw new BadRequest('bot_token is required');
-  context.data.bot_token = token;
+  if (token) {
+    context.data.bot_token = token;
+    return context;
+  }
+  delete context.data.bot_token;
+  const { client_id, client_secret, signing_secret } = context.data;
+  if (!client_id || !client_secret || !signing_secret) {
+    throw new BadRequest(
+      'Provide a bot_token, or client_id, client_secret and signing_secret to install via OAuth'
+    );
+  }
+  return context;
+}
+
+/** OAuth-pending apps have no token until installed; the column is NOT NULL. */
+function defaultEmptyBotToken(context) {
+  if (context.data.bot_token_encrypted == null) context.data.bot_token_encrypted = '';
   return context;
 }
 
@@ -113,8 +174,44 @@ function touchTimestamps(context) {
   return context;
 }
 
-const encryptToken = encryptFields({ bot_token: 'bot_token_encrypted' });
-const decryptToken = decryptFields({ bot_token: 'bot_token_encrypted' });
+const SECRET_FIELDS = {
+  bot_token: 'bot_token_encrypted',
+  app_token: 'app_token_encrypted',
+  client_secret: 'client_secret_encrypted',
+  signing_secret: 'signing_secret_encrypted',
+};
+const encryptToken = encryptFields(SECRET_FIELDS);
+const decryptInternal = decryptFields(SECRET_FIELDS);
+
+/**
+ * Stored secrets never leave the server: external callers only learn whether each one is set
+ * (`has_bot_token`, …). Server-side callers (the bot, Socket Mode) get the plaintext.
+ */
+function exposeSecrets(context) {
+  if (!context.params.provider) return decryptInternal(context);
+  const hide = (row) => {
+    for (const [plain, encrypted] of Object.entries(SECRET_FIELDS)) {
+      row[`has_${plain}`] = Boolean(row[encrypted]);
+      delete row[encrypted];
+      delete row[plain];
+    }
+  };
+  if (Array.isArray(context.result)) context.result.forEach(hide);
+  else if (context.result) hide(context.result);
+  return context;
+}
+
+/** What the Slack app's settings page needs to point Slack at this server. */
+function addInstallInfo(context) {
+  const decorate = (row) => {
+    row.events_url = slackEventsUrl();
+    row.redirect_uri = slackRedirectUri();
+    row.installed = Boolean(row.team_id);
+  };
+  if (Array.isArray(context.result)) context.result.forEach(decorate);
+  else if (context.result) decorate(context.result);
+  return context;
+}
 
 const slackHooks = {
   before: {
@@ -122,9 +219,10 @@ const slackHooks = {
     create: [
       pickSlackAppFields,
       requireNameOnCreate,
-      requireBotTokenOnCreate,
+      requireTokenOrOAuthCredentialsOnCreate,
       requireUniqueName,
       encryptToken,
+      defaultEmptyBotToken,
       touchTimestamps,
     ],
     patch: [
@@ -136,11 +234,11 @@ const slackHooks = {
     ],
   },
   after: {
-    find: [decryptToken],
-    get: [decryptToken],
-    create: [decryptToken],
-    patch: [decryptToken],
-    remove: [decryptToken],
+    find: [exposeSecrets, addInstallInfo],
+    get: [exposeSecrets, addInstallInfo],
+    create: [exposeSecrets, addInstallInfo],
+    patch: [exposeSecrets, addInstallInfo],
+    remove: [exposeSecrets],
   },
 };
 
@@ -149,4 +247,6 @@ export function registerSlackService(app, path = 'admin/slack') {
     methods: ['find', 'get', 'create', 'patch', 'remove', 'test'],
   });
   app.service(path).hooks(slackHooks);
+  // Server-side calls get plaintext secrets, so no event of this service may ever reach a client.
+  app.service(path).publish?.(() => null);
 }

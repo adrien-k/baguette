@@ -504,13 +504,22 @@ export function PluginsTab() {
 
 // ─── SlackTab ─────────────────────────────────────────────────────────────────
 
-const SLACK_SCOPES = 'chat:write, channels:read, groups:read';
+const SLACK_SCOPES =
+  'app_mentions:read, users:read, files:read, chat:write, assistant:write, channels:read, groups:read, channels:history, groups:history';
+const SLACK_EVENTS = 'app_mention, message.channels, message.groups, agent_session_stopped';
+const DEFAULT_SLACK_APP_NAME = 'baguette';
+// The API never returns stored secrets; a set one is shown as dots.
+const SECRET_PLACEHOLDER = '••••••••••';
 
 const inputClass = INPUT_CLASS;
 
 function SlackAppCard({ app, onChanged }) {
   const [name, setName] = useState(app.name);
   const [tokenPatch, setTokenPatch] = useState(undefined);
+  const [appTokenPatch, setAppTokenPatch] = useState(undefined);
+  const [clientId, setClientId] = useState(app.client_id ?? '');
+  const [clientSecretPatch, setClientSecretPatch] = useState(undefined);
+  const [signingSecretPatch, setSigningSecretPatch] = useState(undefined);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [identity, setIdentity] = useState(null);
@@ -518,10 +527,30 @@ function SlackAppCard({ app, onChanged }) {
   useEffect(() => {
     setName(app.name);
     setTokenPatch(undefined);
+    setAppTokenPatch(undefined);
+    setClientId(app.client_id ?? '');
+    setClientSecretPatch(undefined);
+    setSigningSecretPatch(undefined);
     setIdentity(null);
-  }, [app.id, app.name, app.bot_token]);
+  }, [
+    app.id,
+    app.name,
+    app.has_bot_token,
+    app.has_app_token,
+    app.client_id,
+    app.has_client_secret,
+    app.has_signing_secret,
+  ]);
 
-  const dirty = name.trim() !== app.name || tokenPatch !== undefined;
+  const dirty =
+    name.trim() !== app.name ||
+    tokenPatch !== undefined ||
+    appTokenPatch !== undefined ||
+    clientId.trim() !== (app.client_id ?? '') ||
+    clientSecretPatch !== undefined ||
+    signingSecretPatch !== undefined;
+  const canInstall =
+    Boolean(app.client_id && app.has_client_secret && app.has_signing_secret) && !dirty;
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -530,6 +559,10 @@ function SlackAppCard({ app, onChanged }) {
     try {
       const payload = { name: name.trim() };
       if (tokenPatch !== undefined) payload.bot_token = tokenPatch;
+      if (appTokenPatch !== undefined) payload.app_token = appTokenPatch;
+      if (clientId.trim() !== (app.client_id ?? '')) payload.client_id = clientId.trim();
+      if (clientSecretPatch !== undefined) payload.client_secret = clientSecretPatch;
+      if (signingSecretPatch !== undefined) payload.signing_secret = signingSecretPatch;
       await slackService.patch(app.id, payload);
       toast.success(`Saved ${name.trim()}`);
       onChanged();
@@ -575,13 +608,87 @@ function SlackAppCard({ app, onChanged }) {
         />
       </Field>
 
-      <Field label="Bot user OAuth token">
+      <Field
+        label="App-level token (Socket Mode)"
+        hint="Starts with xapp-. With it, Baguette connects to Slack itself: no public URL, Request URL or Signing secret needed."
+      >
         <MaskedSecretInput
-          maskedValue={app.bot_token}
+          maskedValue={app.has_app_token ? SECRET_PLACEHOLDER : ''}
+          placeholder="xapp-…"
+          onChange={(value, dirtyToken) => setAppTokenPatch(dirtyToken ? value : undefined)}
+        />
+      </Field>
+
+      <Field
+        label="Bot user OAuth token"
+        hint="Slack app → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-)."
+      >
+        <MaskedSecretInput
+          maskedValue={app.has_bot_token ? SECRET_PLACEHOLDER : ''}
           placeholder="xoxb-…"
           onChange={(value, dirtyToken) => setTokenPatch(dirtyToken ? value : undefined)}
         />
       </Field>
+
+      <details className="mb-4" open={Boolean(app.client_id || app.installed)}>
+        <summary className="text-xs font-medium text-fg-muted cursor-pointer mb-2">
+          Advanced: public URL setup (Events API + Add to Slack)
+        </summary>
+        <Field
+          label="Client ID"
+          hint={
+            <>
+              From <span className="text-fg-muted">Basic Information → App Credentials</span>.
+              Needed for the Add to Slack install.
+            </>
+          }
+        >
+          <input
+            type="text"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            autoComplete="off"
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
+
+        <Field label="Client secret">
+          <MaskedSecretInput
+            maskedValue={app.has_client_secret ? SECRET_PLACEHOLDER : ''}
+            placeholder="Client secret"
+            onChange={(value, dirtySecret) => setClientSecretPatch(dirtySecret ? value : undefined)}
+          />
+        </Field>
+
+        <Field
+          label="Signing secret"
+          hint="Used to verify that incoming events really come from Slack."
+        >
+          <MaskedSecretInput
+            maskedValue={app.has_signing_secret ? SECRET_PLACEHOLDER : ''}
+            placeholder="Signing secret"
+            onChange={(value, dirtySecret) =>
+              setSigningSecretPatch(dirtySecret ? value : undefined)
+            }
+          />
+        </Field>
+
+        <div className="mb-4 text-sm text-faint space-y-1">
+          <p>
+            In Slack, set <span className="text-fg-muted">Event Subscriptions → Request URL</span>{' '}
+            to <code className="text-fg-muted break-all">{app.events_url}</code>, subscribe to{' '}
+            <code className="text-fg-muted">{SLACK_EVENTS}</code>, and add the redirect URL{' '}
+            <code className="text-fg-muted break-all">{app.redirect_uri}</code> under OAuth &amp;
+            Permissions.
+          </p>
+          {app.installed && (
+            <p className="text-success">
+              Installed in {app.team_name || app.team_id}. Invite the bot to a channel with{' '}
+              <code>/invite @bot</code>, then tag it.
+            </p>
+          )}
+        </div>
+      </details>
 
       <div className="flex items-center gap-3 flex-wrap">
         <button
@@ -591,6 +698,13 @@ function SlackAppCard({ app, onChanged }) {
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
+        <a
+          href={canInstall ? `/api/slack/install?app_id=${app.id}` : undefined}
+          aria-disabled={!canInstall}
+          className={`${PRIMARY_BUTTON_SIZED} inline-block ${canInstall ? '' : 'opacity-50 pointer-events-none'}`}
+        >
+          {app.installed ? 'Reinstall to Slack' : 'Add to Slack'}
+        </a>
         <button
           type="button"
           onClick={handleTest}
@@ -619,8 +733,12 @@ function SlackAppCard({ app, onChanged }) {
 export function SlackTab() {
   const [apps, setApps] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newName, setNewName] = useState(DEFAULT_SLACK_APP_NAME);
   const [newToken, setNewToken] = useState('');
+  const [newAppToken, setNewAppToken] = useState('');
+  const [newClientId, setNewClientId] = useState('');
+  const [newClientSecret, setNewClientSecret] = useState('');
+  const [newSigningSecret, setNewSigningSecret] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -634,16 +752,33 @@ export function SlackTab() {
 
   const closeAddForm = () => {
     setShowAddForm(false);
-    setNewName('');
+    setNewName(DEFAULT_SLACK_APP_NAME);
     setNewToken('');
+    setNewAppToken('');
+    setNewClientId('');
+    setNewClientSecret('');
+    setNewSigningSecret('');
   };
+
+  const hasOAuthCredentials = Boolean(
+    newClientId.trim() && newClientSecret.trim() && newSigningSecret.trim()
+  );
+  const canAdd = Boolean(newName.trim() && (newToken.trim() || hasOAuthCredentials));
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!newName.trim() || !newToken.trim()) return;
+    if (!canAdd) return;
     setSaving(true);
     try {
-      await slackService.create({ name: newName.trim(), bot_token: newToken.trim() });
+      const payload = { name: newName.trim() };
+      if (newToken.trim()) payload.bot_token = newToken.trim();
+      if (newAppToken.trim()) payload.app_token = newAppToken.trim();
+      if (hasOAuthCredentials) {
+        payload.client_id = newClientId.trim();
+        payload.client_secret = newClientSecret.trim();
+        payload.signing_secret = newSigningSecret.trim();
+      }
+      await slackService.create(payload);
       closeAddForm();
       toast.success('Slack app added');
       load();
@@ -662,9 +797,10 @@ export function SlackTab() {
       headerAside={<SystemWideBadge />}
       description={
         <>
-          Connect one or more Slack bots so agents can post updates to a channel. The{' '}
+          Install a Slack app so people can tag it in a channel to start sessions (each person links
+          their own Baguette account the first time), and so agents can post updates. The{' '}
           <code className="text-secondary">SlackPostMessage</code> tool only appears in sessions
-          once at least one app is saved. Bot token scopes:{' '}
+          once an app has a bot token. Bot scopes:{' '}
           <code className="text-fg-muted">{SLACK_SCOPES}</code>.
         </>
       }
@@ -685,8 +821,28 @@ export function SlackTab() {
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="acme"
+              placeholder="baguette"
               className={inputClass}
+            />
+          </Field>
+
+          <Field
+            label="App-level token (Socket Mode)"
+            hint={
+              <>
+                Slack app →{' '}
+                <span className="text-fg-muted">Basic Information → App-Level Tokens</span> with the
+                connections:write scope (starts with xapp-). Needs Socket Mode enabled.
+              </>
+            }
+          >
+            <input
+              type="password"
+              value={newAppToken}
+              onChange={(e) => setNewAppToken(e.target.value)}
+              placeholder="xapp-…"
+              autoComplete="off"
+              className={`${inputClass} font-mono`}
             />
           </Field>
 
@@ -694,9 +850,11 @@ export function SlackTab() {
             label="Bot user OAuth token"
             hint={
               <>
-                From your Slack app under{' '}
-                <span className="text-fg-muted">OAuth &amp; Permissions</span> (starts with{' '}
-                <code className="text-fg-muted">xoxb-</code>).
+                Slack app →{' '}
+                <span className="text-fg-muted">
+                  OAuth &amp; Permissions → Bot User OAuth Token
+                </span>{' '}
+                (starts with xoxb-).
               </>
             }
           >
@@ -710,10 +868,53 @@ export function SlackTab() {
             />
           </Field>
 
+          <details className="mb-4">
+            <summary className="text-xs font-medium text-fg-muted cursor-pointer mb-2">
+              Advanced: public URL setup (Events API + Add to Slack)
+            </summary>
+            <Field
+              label="Client ID"
+              hint={
+                <>
+                  From your Slack app under{' '}
+                  <span className="text-fg-muted">Basic Information → App Credentials</span>.
+                </>
+              }
+            >
+              <input
+                type="text"
+                value={newClientId}
+                onChange={(e) => setNewClientId(e.target.value)}
+                autoComplete="off"
+                className={`${inputClass} font-mono`}
+              />
+            </Field>
+
+            <Field label="Client secret">
+              <input
+                type="password"
+                value={newClientSecret}
+                onChange={(e) => setNewClientSecret(e.target.value)}
+                autoComplete="off"
+                className={`${inputClass} font-mono`}
+              />
+            </Field>
+
+            <Field label="Signing secret">
+              <input
+                type="password"
+                value={newSigningSecret}
+                onChange={(e) => setNewSigningSecret(e.target.value)}
+                autoComplete="off"
+                className={`${inputClass} font-mono`}
+              />
+            </Field>
+          </details>
+
           <div className="flex items-center gap-3 flex-wrap">
             <button
               type="submit"
-              disabled={saving || !newName.trim() || !newToken.trim()}
+              disabled={saving || !canAdd}
               className={`${PRIMARY_BUTTON_SIZED} disabled:bg-disabled disabled:text-faint`}
             >
               {saving ? 'Adding…' : 'Add'}

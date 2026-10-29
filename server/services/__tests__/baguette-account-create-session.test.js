@@ -14,7 +14,11 @@ vi.mock('../cursor-models.js', () => ({
 }));
 
 import { buildBaguetteAccountToolList } from '../baguette-account-mcp-tools.js';
-import { resolveCreateSessionBaseBranch } from '../mcp/tools/create-session.js';
+import {
+  createCreateSessionTool,
+  resolveCreateSessionBaseBranch,
+} from '../mcp/tools/create-session.js';
+import { createAccountContext } from '../mcp/lib/account-context.js';
 
 const db = createTestDb();
 
@@ -201,5 +205,138 @@ describe('CreateSession MCP model defaults', () => {
       }),
       expect.any(Object)
     );
+  });
+});
+
+describe('CreateSession used by the Slack bot and by sessions living in Slack threads', () => {
+  let app;
+  let user;
+  let configId;
+  let createSpy;
+  let slackBot;
+
+  beforeEach(async () => {
+    await db('users').insert({ github_id: 77, username: 'slack-user', approved: true });
+    user = await db('users').where({ username: 'slack-user' }).first();
+    configId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });
+    await db('repos').insert({
+      id: 1,
+      full_name: 'acme/repo',
+      stripped_name: 'acme-repo',
+      repo_path: '/tmp/acme-repo.git',
+      default_branch: 'main',
+    });
+    await db('user_repos').insert({ user_id: user.id, repo_id: 1 });
+
+    createSpy = vi.fn().mockResolvedValue({ id: 42 });
+    slackBot = { attachSessionToThread: vi.fn().mockResolvedValue(undefined) };
+    app = {
+      get: (key) => (key === 'slackBot' ? slackBot : db),
+      service: (name) => {
+        if (name === 'users') return { get: async (id) => db('users').where({ id }).first() };
+        if (name === 'repos') {
+          return {
+            find: async () => ({
+              data: [{ id: 1, full_name: 'acme/repo', default_branch: 'main' }],
+            }),
+          };
+        }
+        if (name === 'sessions') return { create: createSpy };
+        if (name === 'agent-configs') {
+          return { getSdkMeta: (sdk) => (sdk === 'claude' ? { key: 'claude' } : null) };
+        }
+        throw new Error(`unexpected service ${name}`);
+      },
+    };
+  });
+
+  const tool = (extra = {}, callerSession = null) =>
+    createCreateSessionTool({
+      ...createAccountContext({ id: user.id }, app, { callerSession }),
+      ...extra,
+    });
+  const args = { repo_id: 1, base_branch: 'main', initial_prompt: 'hello' };
+
+  it('uses the model a caller chose even when the user has no defaults configured', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    const result = parseMcpToolResult(await tool({ resolveBuilderModel }).handler(args));
+
+    expect(result.ok).toBe(true);
+    expect(resolveBuilderModel).toHaveBeenCalledWith(
+      db,
+      user.id,
+      expect.objectContaining({ repo_id: 1 })
+    );
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: configId, model: 'haiku', agent_sdk: 'claude' }),
+      expect.any(Object)
+    );
+  });
+
+  it('passes a title and a first-message tag to the new session, when the caller has them', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    const initialMessageMeta = { source: 'slack', slack: { user_id: 'U1' } };
+    await tool({ resolveBuilderModel, initialLabel: 'Fix login', initialMessageMeta }).handler({
+      ...args,
+      branch_name: 'fix-login',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ branch_name: 'fix-login' }),
+      expect.objectContaining({ initialLabel: 'Fix login', initialMessageMeta })
+    );
+  });
+
+  it('leaves those params out for ordinary callers', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    await tool({ resolveBuilderModel }).handler(args);
+    const sessionParams = createSpy.mock.calls[0][1];
+    expect(sessionParams).not.toHaveProperty('initialLabel');
+    expect(sessionParams).not.toHaveProperty('initialMessageMeta');
+  });
+
+  it('reports a failing model resolver as a tool error', async () => {
+    const resolveBuilderModel = vi.fn().mockRejectedValue(new Error('no models'));
+    const result = parseMcpToolResult(await tool({ resolveBuilderModel }).handler(args));
+    expect(result).toMatchObject({ ok: false, error: 'no models' });
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('moves the Slack thread of the calling session over to the new session', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    await tool({ resolveBuilderModel }, { id: 7 }).handler(args);
+    expect(slackBot.attachSessionToThread).toHaveBeenCalledWith(7, 42);
+  });
+
+  it('does not touch Slack when the caller is not a session', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    await tool({ resolveBuilderModel }).handler(args);
+    expect(slackBot.attachSessionToThread).not.toHaveBeenCalled();
+  });
+
+  it('still creates the session when the Slack hand-over fails or Slack is not there', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    slackBot.attachSessionToThread.mockRejectedValue(new Error('db locked'));
+    expect(
+      parseMcpToolResult(await tool({ resolveBuilderModel }, { id: 7 }).handler(args)).ok
+    ).toBe(true);
+
+    const noBot = { ...app, get: (key) => (key === 'slackBot' ? undefined : db) };
+    const bare = createCreateSessionTool({
+      ...createAccountContext({ id: user.id }, noBot, { callerSession: { id: 7 } }),
+      resolveBuilderModel,
+    });
+    expect(parseMcpToolResult(await bare.handler(args)).ok).toBe(true);
   });
 });

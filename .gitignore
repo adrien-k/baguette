@@ -13,3 +13,8 @@ e2e/screenshots/
 config/credentials/
 .kamal/.env
 fly.toml
+.claude
+.codex
+.vscode
+.antigravity
+.gemini

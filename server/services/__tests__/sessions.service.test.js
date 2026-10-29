@@ -10,8 +10,10 @@
  *  2. "find, get, create" - standard CRUD with real seeded rows.
  *     Uses a stub messages service so createFirstMessage stays isolated.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
 import { feathers } from 'feathers';
 import { BadRequest } from 'feathers/errors';
 import { createTestDb, insertTestSession, testSessionAgentDefaults } from '../../test-utils/db.js';
@@ -21,6 +23,8 @@ import {
   resolveSessionFromData,
 } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
+import { slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
+import { insertSlackApp } from './slack-test-helpers.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
@@ -324,6 +328,68 @@ describe('Sessions service - custom methods', () => {
       await expect(app.service('sessions').stop(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+  });
+
+  // ── archiveAfterTurn (the agent closing its own session) ───────────────────
+
+  describe('archiveAfterTurn', () => {
+    afterEach(() => vi.useRealTimers());
+
+    const sessions = () => app.service('sessions');
+    const archivedAt = async () => (await db('sessions').where({ id: sessId }).first()).archived_at;
+
+    it('archives the session a couple of seconds after the turn that asked for it', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      sessions().archiveAfterTurn(sessId);
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
+
+      expect(await archivedAt()).toBeFalsy();
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.waitFor(async () => expect(await archivedAt()).toBeTruthy());
+    });
+
+    it('does nothing for a session nobody asked to archive', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await archivedAt()).toBeFalsy();
+    });
+
+    it('waits for the main agent: a subagent finishing its turn does not close the session', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      sessions().archiveAfterTurn(sessId);
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 0 });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await archivedAt()).toBeFalsy();
+
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.waitFor(async () => expect(await archivedAt()).toBeTruthy());
+    });
+
+    it('only archives once, however many turns finish afterwards', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const archive = vi.spyOn(sessions(), 'archive').mockResolvedValue({});
+      sessions().archiveAfterTurn(sessId);
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(archive).toHaveBeenCalledTimes(1);
+      expect(archive).toHaveBeenCalledWith({ id: sessId }, { provider: undefined });
+      archive.mockRestore();
+    });
+
+    it('keeps running if archiving fails', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const archive = vi
+        .spyOn(sessions(), 'archive')
+        .mockRejectedValue(new Error('cleanup failed'));
+      sessions().archiveAfterTurn(sessId);
+      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(archive).toHaveBeenCalledTimes(1);
+      archive.mockRestore();
     });
   });
 
@@ -803,6 +869,70 @@ describe('Sessions service - custom methods', () => {
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeFalsy();
       expect(closePR).not.toHaveBeenCalled();
+    });
+
+    describe('Slack files', () => {
+      const makeFile = async (dir) => {
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(path.join(dir, 'a.png'), 'x');
+      };
+      const exists = (dir) =>
+        fs.access(dir).then(
+          () => true,
+          () => false
+        );
+      const linkThread = async (sessionId, slackAppId, thread = '111.222') =>
+        db('slack_threads').insert({
+          slack_app_id: slackAppId,
+          channel_id: 'C1',
+          thread_ts: thread,
+          session_id: sessionId,
+          user_id: userId,
+        });
+
+      it('deletes the files downloaded for the session', async () => {
+        const slackAppId = await insertSlackApp(db);
+        await linkThread(sessId, slackAppId);
+        const threadDir = slackFilesDir(slackAppId, 'C1', '111.222');
+        const toolDir = slackSessionFilesDir(sessId);
+        await makeFile(threadDir);
+        await makeFile(toolDir);
+
+        await app.service('sessions').archive(sessId, params({ id: userId }));
+
+        expect(await exists(threadDir)).toBe(false);
+        expect(await exists(toolDir)).toBe(false);
+      });
+
+      it('keeps the thread files while another live session serves the thread', async () => {
+        const slackAppId = await insertSlackApp(db);
+        const other = await insertTestSession(db, {
+          user_id: userId,
+          repo_full_name: 'test/repo',
+          base_branch: 'main',
+          initial_prompt: 'other',
+          short_id: 'other1',
+        });
+        await linkThread(sessId, slackAppId);
+        await linkThread(other, slackAppId);
+        const threadDir = slackFilesDir(slackAppId, 'C1', '111.222');
+        await makeFile(threadDir);
+
+        await app.service('sessions').archive(sessId, params({ id: userId }));
+
+        expect(await exists(threadDir)).toBe(true);
+      });
+
+      it('still archives when the files cannot be deleted', async () => {
+        const slackAppId = await insertSlackApp(db);
+        await linkThread(sessId, slackAppId);
+        const rm = vi.spyOn(fs, 'rm').mockRejectedValueOnce(new Error('EACCES'));
+
+        const result = await app.service('sessions').archive(sessId, params({ id: userId }));
+        rm.mockRestore();
+
+        expect(result.archived_at).toBeTruthy();
+      });
     });
 
     it('stops agent, archives session, returns the session row', async () => {
@@ -2366,6 +2496,49 @@ describe('Sessions service - find, get, create', () => {
       createMessage.mockRestore();
     });
 
+    it('marks the first message with where the prompt came from (Slack)', async () => {
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
+      const meta = {
+        source: 'slack',
+        slack: {
+          user_id: 'U1',
+          user_name: 'Jan',
+          text: 'add tests',
+          suggestion: false,
+          untagged: false,
+        },
+      };
+
+      await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, initial_prompt: 'add tests\n\nSlack context …' }), {
+          ...params({ id: userId1 }),
+          initialMessageMeta: meta,
+        });
+
+      const parsed = JSON.parse(
+        createMessage.mock.calls.find(([d]) => d.type === 'user')[0].message_json
+      );
+      expect(parsed).toMatchObject({ type: 'user', source: 'slack', slack: meta.slack });
+      expect(parsed.message.content).toBe('add tests\n\nSlack context …');
+    });
+
+    it('leaves an ordinary first message unmarked', async () => {
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
+      await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, initial_prompt: 'Hello' }), params({ id: userId1 }));
+      const parsed = JSON.parse(
+        createMessage.mock.calls.find(([d]) => d.type === 'user')[0].message_json
+      );
+      expect(parsed.source).toBeUndefined();
+      expect(parsed.slack).toBeUndefined();
+    });
+
     it('does not create a first message when initial_prompt is empty', async () => {
       const createMessage = vi
         .spyOn(app.service('messages'), 'create')
@@ -2578,6 +2751,38 @@ describe('Sessions service - find, get, create', () => {
         .patch(created.id, { auto_push: true }, params({ id: userId1 }));
 
       expect(patched.auto_push).toBeFalsy();
+    });
+
+    it('uses a title given up front instead of asking the model to invent one', async () => {
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, branch_name: 'fix-login' }), {
+          ...params({ id: userId1 }),
+          initialLabel: 'Fix the login test',
+        });
+
+      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(session.label).toBe('Fix the login test');
+    });
+
+    it('does the same for a global session', async () => {
+      const session = await app
+        .service('sessions')
+        .create(
+          { is_global: true, initial_prompt: 'Look across repos', ...testSessionAgentDefaults },
+          { ...params({ id: userId1 }), initialLabel: 'Look across repos' }
+        );
+
+      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(session.label).toBe('Look across repos');
+    });
+
+    it('still generates the title when none is given', async () => {
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+      expect(generateSessionMetadata).toHaveBeenCalled();
+      expect(session.label).toBe('Test task');
     });
 
     it('passes the session so metadata generation uses its selected model', async () => {

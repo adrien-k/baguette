@@ -14,6 +14,9 @@ import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';
 import createMcpRoutes from './routes/mcp.js';
 import createImagesRoutes from './routes/images.js';
+import createSlackRoutes from './routes/slack.js';
+import { createSlackBot } from './services/slack-bot.js';
+import { createSlackSocketManager } from './services/slack-socket.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
@@ -54,6 +57,16 @@ expressApp.use(cookieParser(ENCRYPTION_KEY));
 
 expressApp.use(devProxy.middleware);
 
+// Slack signs the raw body, so keep it next to the parsed JSON for signature verification.
+expressApp.use(
+  '/api/slack',
+  express.json({
+    strict: false,
+    verify: (req, _res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    },
+  })
+);
 expressApp.use(unlessFeathersApiRoute(express.json({ strict: false })));
 expressApp.use(unlessFeathersApiRoute(express.urlencoded({ extended: true })));
 expressApp.use(cookieAuthMiddleware(feathersApp));
@@ -76,7 +89,11 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const requireAuth = createRequireAuth();
+const slackBot = createSlackBot(feathersApp);
+feathersApp.set('slackBot', slackBot);
+const slackSocket = createSlackSocketManager(feathersApp, slackBot);
 expressApp.use(createMcpRoutes(feathersApp));
+expressApp.use(createSlackRoutes(feathersApp, slackBot));
 expressApp.use(createSettingsRoutes(requireAuth));
 expressApp.use(createAuthRoutes(feathersApp));
 expressApp.use(createImagesRoutes());
@@ -139,6 +156,8 @@ const loopScheduler = new LoopScheduler(feathersApp);
 feathersApp.set('loopScheduler', loopScheduler);
 feathersApp.setup(server).then(
   async () => {
+    slackBot.start();
+    slackSocket.start();
     await feathersApp.service('sessions').restartInterruptedSessions();
     loopScheduler.start();
   },

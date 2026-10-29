@@ -21,8 +21,23 @@ export function resolveCreateSessionBaseBranch(baseBranch, branch) {
   return { base_branch: resolved };
 }
 
+/**
+ * A session started by a session that lives in a Slack thread continues in that thread: replies
+ * and follow-ups move to the new session. Never fails the creation.
+ */
+async function continueInSlackThread(app, fromSessionId, newSessionId) {
+  if (fromSessionId == null) return;
+  try {
+    await app.get('slackBot')?.attachSessionToThread?.(fromSessionId, newSessionId);
+  } catch {
+    // The new session exists either way; only the Slack thread hand-over is lost.
+  }
+}
+
 export function createCreateSessionTool(ctx) {
-  const { app, userId, userParams, requireRepoAccess, loadRepoWithKeys } = ctx;
+  const { app, userId, userParams, requireRepoAccess, loadRepoWithKeys, callerSession } = ctx;
+  // Callers (e.g. Slack) may supply their own model resolution for when no default is configured.
+  const resolveBuilderModel = ctx.resolveBuilderModel ?? resolveMcpBuilderModel;
   return {
     name: 'CreateSession',
     description:
@@ -111,7 +126,7 @@ export function createCreateSessionTool(ctx) {
       const db = app.get('db');
       let resolved;
       try {
-        resolved = await resolveMcpBuilderModel(db, userId, {
+        resolved = await resolveBuilderModel(db, userId, {
           preset_model_id: preset_model_id ?? null,
           repo_id: is_global ? null : repo_id,
         });
@@ -188,7 +203,10 @@ export function createCreateSessionTool(ctx) {
         const session = await app.service('sessions').create(payload, {
           ...userParams,
           user: fullUser,
+          ...(ctx.initialMessageMeta ? { initialMessageMeta: ctx.initialMessageMeta } : {}),
+          ...(ctx.initialLabel ? { initialLabel: ctx.initialLabel } : {}),
         });
+        await continueInSlackThread(app, callerSession?.id, session.id);
         return ok({
           sessionId: session.id,
           sessionPath: `/sessions/${session.id}`,

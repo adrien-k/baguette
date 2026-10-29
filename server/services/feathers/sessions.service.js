@@ -4,6 +4,8 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import { NotFound, BadRequest } from 'feathers/errors';
 import { KnexService } from '@feathersjs/knex';
+import { getPermalink as slackGetPermalink } from '../slack.js';
+import { slackUserHandle, resolveSlackUsernames } from '../slack-users.js';
 const execFileAsync = promisify(execFile);
 import {
   loadBaguetteConfig,
@@ -39,6 +41,7 @@ import {
   buildSessionFooter,
   resolveRestoreWorktreeBranches,
 } from '../github.js';
+import { removeSlackFileDirs, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
@@ -150,6 +153,8 @@ export class SessionsService extends KnexService {
     this._lastResultTotals = new Map();
     /** @type {Record<number, number>} When `onActivity` last ran per session (ms since epoch). */
     this._sessionActivityLastBumpMs = Object.create(null);
+    /** Sessions the agent asked to close; archived once their current turn ends. */
+    this._archiveAfterTurnIds = new Set();
   }
 
   setup(app) {
@@ -576,6 +581,36 @@ export class SessionsService extends KnexService {
     await this._finalizeRemoval(session.id);
   }
 
+  /**
+   * Deletes the Slack attachments downloaded for a session. A thread's directory is shared by
+   * every session serving that thread, so it stays while another live session still uses it.
+   */
+  async _removeSlackFiles(sessionId) {
+    try {
+      const db = this.app.get('db');
+      const threads = await db('slack_threads').where({ session_id: sessionId });
+      const dirs = [slackSessionFilesDir(sessionId)];
+      for (const thread of threads) {
+        const stillUsed = await db('slack_threads')
+          .join('sessions', 'sessions.id', 'slack_threads.session_id')
+          .where({
+            'slack_threads.slack_app_id': thread.slack_app_id,
+            'slack_threads.channel_id': thread.channel_id,
+            'slack_threads.thread_ts': thread.thread_ts,
+          })
+          .whereNot('slack_threads.session_id', sessionId)
+          .whereNull('sessions.archived_at')
+          .first();
+        if (!stillUsed) {
+          dirs.push(slackFilesDir(thread.slack_app_id, thread.channel_id, thread.thread_ts));
+        }
+      }
+      await removeSlackFileDirs(dirs);
+    } catch (err) {
+      logger.warn({ err: err.message, sessionId }, 'Failed to remove Slack files of session');
+    }
+  }
+
   async _finalizeRemoval(sessionId) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -590,6 +625,7 @@ export class SessionsService extends KnexService {
         logger.warn({ err: err.message, sessionId }, 'Failed to remove session docker volume')
       );
     }
+    await this._removeSlackFiles(sessionId);
     await this._deleteStrongLoopsTiedToSession(sessionId);
     const archivedAt = new Date().toISOString();
     // Only mark archived after the worktree is gone so a later create cannot
@@ -982,6 +1018,81 @@ export class SessionsService extends KnexService {
     }));
 
     return { totals, breakdown, by_agent };
+  }
+
+  /** Slack context of a session: who owns it, who they approved and the thread it lives in. */
+  async sessionSlack(_data, params) {
+    const session = params.resolvedSession;
+    const db = this.app.get('db');
+    const thread = await db('slack_threads')
+      .where({ session_id: session.id })
+      .orderBy('id', 'desc')
+      .first();
+    if (!thread) return { linked: false };
+    const slackApp = await this.app.service('admin/slack').get(thread.slack_app_id, {});
+    const token = slackApp.bot_token;
+    const ownerId = await this.slackOwnerId(session, thread);
+    const approvedIds = Object.entries(JSON.parse(session.slack_approvals ?? '{}'))
+      .filter(([, status]) => status === 'approved')
+      .map(([id]) => id)
+      .filter((id) => id !== ownerId);
+    const ids = ownerId ? [ownerId, ...approvedIds] : approvedIds;
+    const handles = await Promise.all(ids.map((id) => slackUserHandle(token, id)));
+    const thread_url = await slackGetPermalink(token, {
+      channel: thread.channel_id,
+      ts: thread.thread_ts,
+    }).catch(() => null);
+    return {
+      linked: true,
+      owner: ownerId ? handles[0] : null,
+      approvals: handles,
+      thread_url,
+    };
+  }
+
+  /** Slack id of the session's owner: recorded on first approval request, else their linked account. */
+  async slackOwnerId(session, thread) {
+    if (session.slack_owner) return session.slack_owner;
+    const link = await this.app
+      .get('db')('slack_user_links')
+      .where({ slack_app_id: thread.slack_app_id, user_id: thread.user_id })
+      .first();
+    return link?.slack_user_id ?? null;
+  }
+
+  /** Replaces the approved Slack users with the given usernames (the owner is always approved). */
+  async setSlackApprovals(data, params) {
+    const session = params.resolvedSession;
+    const usernames = Array.isArray(data?.usernames) ? data.usernames : [];
+    const db = this.app.get('db');
+    const thread = await db('slack_threads')
+      .where({ session_id: session.id })
+      .orderBy('id', 'desc')
+      .first();
+    if (!thread) throw new BadRequest('This session is not linked to a Slack thread');
+    const slackApp = await this.app.service('admin/slack').get(thread.slack_app_id, {});
+    const { ids, unknown } = await resolveSlackUsernames(slackApp.bot_token, usernames);
+    if (unknown.length) throw new BadRequest(`Unknown Slack users: ${unknown.join(', ')}`);
+    const ownerId = await this.slackOwnerId(session, thread);
+    const next = {};
+    for (const [id, status] of Object.entries(JSON.parse(session.slack_approvals ?? '{}'))) {
+      if (status !== 'approved') next[id] = status;
+    }
+    for (const id of ids) if (id !== ownerId) next[id] = 'approved';
+    await db('sessions')
+      .where({ id: session.id })
+      .update({
+        slack_approvals: JSON.stringify(next),
+        ...(ownerId && !session.slack_owner ? { slack_owner: ownerId } : {}),
+      });
+    return this.sessionSlack(data, {
+      ...params,
+      resolvedSession: {
+        ...session,
+        slack_approvals: JSON.stringify(next),
+        slack_owner: session.slack_owner ?? ownerId,
+      },
+    });
   }
 
   async branchCommits(_data, params) {
@@ -1594,6 +1705,22 @@ export class SessionsService extends KnexService {
     this._lastResultTotals.delete(totalsKey);
   }
 
+  /** Archive `sessionId` after its current turn completes (so the final reply is still delivered). */
+  archiveAfterTurn(sessionId) {
+    this._archiveAfterTurnIds.add(sessionId);
+  }
+
+  async _archiveIfRequestedAfterTurn(sessionId, agent) {
+    if (agent && !agent.is_primary) return;
+    if (!this._archiveAfterTurnIds.delete(sessionId)) return;
+    // Give listeners of `turn:complete` (e.g. Slack posting the final reply) a moment first.
+    setTimeout(() => {
+      this.archive({ id: sessionId }, { provider: undefined }).catch((err) =>
+        logger.warn({ sessionId, err: err?.message }, 'sessions: archive after turn failed')
+      );
+    }, 2000).unref?.();
+  }
+
   async onTurnStart(sessionId) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -1652,6 +1779,7 @@ export class SessionsService extends KnexService {
     if (after) {
       this.emit('turn:complete', { session_id: sessionId, user_id: after.user_id });
     }
+    await this._archiveIfRequestedAfterTurn(sessionId, agent);
   }
 
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
@@ -1891,7 +2019,9 @@ async function provisionGlobalSession(app, session, params) {
     auto_push: false,
     is_global: true,
   };
-  if (hasInitialPrompt(session.initial_prompt)) {
+  if (params.label) {
+    patch.label = params.label;
+  } else if (hasInitialPrompt(session.initial_prompt)) {
     try {
       const metadataAgent = await getAgentServiceForSession(app, session);
       const result = await metadataAgent.generateSessionMetadata(
@@ -1984,7 +2114,9 @@ async function provisionSessionEnvironment(app, session, params) {
     const fallbackBranch = taskBranchForShortId(branchPrefix, shortId);
     let remoteName =
       session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
-    if (hasInitialPrompt(session.initial_prompt)) {
+    if (params.label) {
+      patch.label = params.label;
+    } else if (hasInitialPrompt(session.initial_prompt)) {
       try {
         const metadataAgent = await getAgentServiceForSession(app, session);
         const result = await metadataAgent.generateSessionMetadata(
@@ -2064,6 +2196,7 @@ async function finalizeSessionAfterProvision(app, session, params) {
     params: {
       user: params.user,
       initialFiles: params.initialFiles,
+      initialMessageMeta: params.initialMessageMeta,
     },
   };
   await persistSystemPrompt(promptContext);
@@ -2177,6 +2310,9 @@ async function scheduleSessionProvisioning(context) {
   const params = {
     user: context.params.user,
     initialFiles: context.params.initialFiles,
+    initialMessageMeta: context.params.initialMessageMeta,
+    // A title given up front saves the LLM call that would otherwise invent one.
+    label: context.params.initialLabel,
     createNewBranch: context.params._createNewBranch ?? true,
     requestedBranchName: context.params._requestedBranchName,
   };
@@ -2533,6 +2669,8 @@ export function registerSessionsService(app, path = 'sessions') {
       'changedFiles',
       'sessionGitStatus',
       'sessionUsage',
+      'sessionSlack',
+      'setSlackApprovals',
       'branchCommits',
       'shas',
       'getPlan',
@@ -2635,6 +2773,8 @@ const sessionsHooks = {
     changedFiles: [resolveSessionFromData],
     sessionGitStatus: [resolveSessionFromData],
     sessionUsage: [resolveSessionFromData],
+    sessionSlack: [resolveSessionFromData],
+    setSlackApprovals: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     getPlan: [resolveSessionFromData],
@@ -2735,6 +2875,8 @@ async function createFirstMessage(context) {
       : initialPrompt;
     messageJson = JSON.stringify({
       type: 'user',
+      // Where the prompt came from (e.g. Slack), for the chat to show.
+      ...context.params.initialMessageMeta,
       message: { role: 'user', content },
     });
   }
