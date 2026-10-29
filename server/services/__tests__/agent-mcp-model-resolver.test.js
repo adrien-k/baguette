@@ -120,7 +120,7 @@ describe('resolveMcpStartSubagentModel', () => {
     ).rejects.toThrow(MCP_SUBAGENT_PRESET_REQUIRED_ERROR);
   });
 
-  it('ignores preset_model_id when subagent default is inherit', async () => {
+  it('applies preset_model_id when subagent default is inherit', async () => {
     const [presetId] = await db('agent_model_presets').insert({
       user_id: userId,
       description: 'Alt',
@@ -131,6 +131,31 @@ describe('resolveMcpStartSubagentModel', () => {
       session_id: sessionId,
       preset_model_id: presetId,
     });
-    expect(resolved.model).toBe(MOCK_STANDARD_MODEL_ID);
+    expect(resolved.agent_config_id).toBe(configId);
+    expect(resolved.model).toBe(MOCK_SECONDARY_MODEL_ID);
+  });
+
+  it('applies preset_model_id when subagent default is config', async () => {
+    await db('users')
+      .where({ id: userId })
+      .update({
+        subagent_default_mode: SUBAGENT_DEFAULT_CONFIG,
+        subagent_default_config_id: configId,
+        subagent_default_model: stringifyAgentDefaultModel({
+          model: MOCK_STANDARD_MODEL_ID,
+          model_params: null,
+        }),
+      });
+    const [presetId] = await db('agent_model_presets').insert({
+      user_id: userId,
+      description: 'Alt',
+      agent_config_id: configId,
+      model: MOCK_SECONDARY_MODEL_ID,
+    });
+    const resolved = await resolveMcpStartSubagentModel(db, userId, {
+      session_id: sessionId,
+      preset_model_id: presetId,
+    });
+    expect(resolved.model).toBe(MOCK_SECONDARY_MODEL_ID);
   });
 });

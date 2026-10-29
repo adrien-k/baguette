@@ -20,14 +20,16 @@ describe('createStartSubagentTool schema', () => {
     expect(required).toContain('preset_model_id');
   });
 
-  it('omits preset_model_id from schema when subagent default is inherit', () => {
+  it('exposes optional preset_model_id when subagent default is inherit', () => {
     const tool = createStartSubagentTool({
       app: {},
       userId: 1,
       userParams: {},
       user: { subagent_default_mode: 'inherit' },
     });
-    expect(tool.schema.preset_model_id).toBeUndefined();
+    expect(tool.schema.preset_model_id).toBeDefined();
+    const json = z.toJSONSchema(z.object(tool.schema));
+    expect(json.required ?? []).not.toContain('preset_model_id');
   });
 
   it('includes attach in schema', () => {
@@ -40,13 +42,15 @@ describe('createStartSubagentTool schema', () => {
     expect(tool.schema.attach).toBeDefined();
   });
 
-  it('omits preset_model_id from schema when subagent default is config', () => {
+  it('exposes optional preset_model_id when subagent default is config', () => {
     const tool = createStartSubagentTool({
       app: {},
       userId: 1,
       userParams: {},
       user: { subagent_default_mode: 'config' },
     });
-    expect(tool.schema.preset_model_id).toBeUndefined();
+    expect(tool.schema.preset_model_id).toBeDefined();
+    const json = z.toJSONSchema(z.object(tool.schema));
+    expect(json.required ?? []).not.toContain('preset_model_id');
   });
 });

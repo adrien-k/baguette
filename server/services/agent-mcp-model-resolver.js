@@ -57,6 +57,7 @@ export async function resolveMcpBuilderModel(db, userId, { preset_model_id, repo
 
 /**
  * Resolve model fields for MCP/UI StartSubagent (subagent defaults + session inherit).
+ * An explicit preset_model_id always wins, whatever the account subagent default is.
  * @param {import('knex').Knex} db
  * @param {number} userId
  * @param {{ session_id: number, preset_model_id?: number | null, repo_id?: number | null }} opts
@@ -66,14 +67,15 @@ export async function resolveMcpStartSubagentModel(
   userId,
   { session_id, preset_model_id, repo_id } = {}
 ) {
+  if (preset_model_id != null) {
+    return resolvePresetModel(db, userId, preset_model_id);
+  }
+
   const settings = await resolveEffectiveSubagentDefaultSettings(db, userId, repo_id ?? null);
   const mode = normalizeSubagentDefaultMode(settings.mode);
 
   if (mode === SUBAGENT_DEFAULT_PRESET) {
-    if (preset_model_id == null) {
-      throw new BadRequest(MCP_SUBAGENT_PRESET_REQUIRED_ERROR);
-    }
-    return resolvePresetModel(db, userId, preset_model_id);
+    throw new BadRequest(MCP_SUBAGENT_PRESET_REQUIRED_ERROR);
   }
 
   if (mode === SUBAGENT_DEFAULT_CONFIG) {

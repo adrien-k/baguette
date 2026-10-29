@@ -22,15 +22,18 @@ function startSubagentDescription(mode) {
   if (mode === SUBAGENT_DEFAULT_PRESET) {
     return (
       base +
-      'Pass preset_model_id from ListPresetModels (Settings → Agent subagent default is Preset).'
+      'Pass preset_model_id from ListPresetModels (required: Settings → Agent subagent default is Preset).'
     );
   }
-  return (
-    base +
+  const follows =
     'Model follows Settings → Agent subagent default: ' +
     (mode === SUBAGENT_DEFAULT_CONFIG
       ? 'the configured subagent agent configuration and model.'
-      : 'inherit the session primary builder configuration and model.')
+      : 'inherit the session primary builder configuration and model.');
+  return (
+    base +
+    follows +
+    ' Pass preset_model_id from ListPresetModels to override the model for this subagent.'
   );
 }
 
@@ -55,7 +58,16 @@ function startSubagentSchema(mode) {
         .describe('Preset id from ListPresetModels (required when subagent default is Preset).'),
     };
   }
-  return base;
+  return {
+    ...base,
+    preset_model_id: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        'Optional preset id from ListPresetModels; overrides the subagent default model for this subagent.'
+      ),
+  };
 }
 
 export function createStartSubagentTool(ctx) {
@@ -80,9 +92,7 @@ export function createStartSubagentTool(ctx) {
             name,
             initial_prompt,
             ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
-            ...(mode === SUBAGENT_DEFAULT_PRESET && preset_model_id != null
-              ? { preset_model_id }
-              : {}),
+            ...(preset_model_id != null ? { preset_model_id } : {}),
             wait_for_completion: waitForCompletion,
           },
           userParams
