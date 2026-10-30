@@ -204,6 +204,9 @@ export async function expectMcpReadonlyComposer(page) {
     )
   ).toBeVisible({ timeout: 30_000 });
   await expect(await sessionChatComposer(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Switch agent' })).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 export async function deleteAgentFromPanel(page, name) {

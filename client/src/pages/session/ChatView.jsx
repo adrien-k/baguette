@@ -40,14 +40,12 @@ import ChatQuickActionButton, {
 } from '../../components/chat/ChatQuickActionButton.tsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
-import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
 import PrDraftToggleButton, {
   canTogglePrDraftStatus,
 } from '../../components/PrDraftToggleButton.jsx';
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
-import RunningAgentBadges from '../../components/chat/RunningAgentBadges.tsx';
 import { useGetSessionTodos } from '../../hooks/useGetSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
@@ -66,7 +64,6 @@ import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
   agentTitleFromPrompt,
-  isAgentAwaitingUser,
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
@@ -169,7 +166,6 @@ export default function ChatView({
   const [restoring, setRestoring] = useState(false);
   const [deletingPermanently, setDeletingPermanently] = useState(false);
   const [queue, setQueue] = useState([]);
-  const [stoppingAgentId, setStoppingAgentId] = useState(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
   const [creatingLoop, setCreatingLoop] = useState(false);
@@ -238,17 +234,9 @@ export default function ChatView({
   const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
-  /** Other agents of this session that are mid-turn — badges above the composer. */
-  const otherActiveAgents = useMemo(
-    () =>
-      agents.filter(
-        (agent) =>
-          agent.id !== activeAgent?.id &&
-          (agent.agent_type === 'subagent' ||
-            (agent.agent_type === 'builder' && !Number(agent.is_primary))) &&
-          (isAgentTurnActive(agent.status) || isAgentAwaitingUser(agent.status))
-      ),
-    [agents, activeAgent?.id]
+  const runningAgentCount = useMemo(
+    () => agents.filter((a) => isAgentTurnActive(a.status)).length,
+    [agents]
   );
   const agentDisplayName = activeAgent
     ? agentDisplayTitle(activeAgent)
@@ -386,18 +374,6 @@ export default function ChatView({
       toastError('Failed to stop agent', err);
     } finally {
       setStopping(false);
-    }
-  };
-
-  const handleStopAgentBadge = async (agent) => {
-    if (!agent?.id || stoppingAgentId != null) return;
-    setStoppingAgentId(agent.id);
-    try {
-      await agentsService.stop({ agent_id: agent.id });
-    } catch (err) {
-      toastError('Failed to stop agent', err);
-    } finally {
-      setStoppingAgentId(null);
     }
   };
 
@@ -951,49 +927,41 @@ export default function ChatView({
         )}
 
         {!readonly && session && !showMessageComposer && activeSubagent && (
-          <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
-            <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
-              <RunningAgentBadges
-                agents={otherActiveAgents}
-                onSelectAgent={onSelectAgent}
-                onStopAgent={handleStopAgentBadge}
-                stoppingAgentId={stoppingAgentId}
-              />
-              <div className="rounded-lg border border-strong bg-control overflow-hidden">
-                <p className="px-3 pt-2.5 pb-1 text-xs text-faint text-center">
-                  This agent only accepts new messages via MCP. Switch to another agent to chat in
-                  Baguette.
-                </p>
-                <div className="px-2 sm:px-3 pb-2 pt-0.5">
-                  <SessionModelSelect
-                    agentConfigKey={
-                      agentSource?.agent_config_id != null
-                        ? String(agentSource.agent_config_id)
-                        : agentSource?.agent_sdk
-                    }
-                    model={composerModel}
-                    params={composerModelParams}
-                    models={models}
-                    agentConfigOptions={agentConfigOptions}
-                    configsLoading={configsLoading}
-                    modelsLoading={modelsLoading}
-                    disabled
-                    className="min-w-0"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <AgentMessageComposer
+            value=""
+            onChange={() => {}}
+            onSubmit={(e) => e.preventDefault()}
+            mcpReadOnly
+            disabled
+            hint="This agent only accepts new messages via MCP. Switch to another agent to chat in Baguette."
+            agentName={activeAgent?.name}
+            agentType={activeAgent?.agent_type}
+            agents={agents}
+            selectedAgentId={activeAgent?.id}
+            onSelectAgent={onSelectAgent}
+            runningAgentCount={runningAgentCount}
+            agentOptionCostLabel={agentUsageCostLabel}
+            agentHeaderEnd={
+              activeAgentCostLabel ? (
+                <span className="text-[11px] tabular-nums text-faint">{activeAgentCostLabel}</span>
+              ) : null
+            }
+            agentConfigKey={
+              agentSource?.agent_config_id != null
+                ? String(agentSource.agent_config_id)
+                : agentSource?.agent_sdk
+            }
+            model={composerModel}
+            params={composerModelParams}
+            models={models}
+            agentConfigOptions={agentConfigOptions}
+            configsLoading={configsLoading}
+            modelsLoading={modelsLoading}
+          />
         )}
         {!readonly && session && showMessageComposer && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
             <div className={`w-full ${CHAT_COLUMN_CLASS} flex flex-col gap-2`}>
-              <RunningAgentBadges
-                agents={otherActiveAgents}
-                onSelectAgent={onSelectAgent}
-                onStopAgent={handleStopAgentBadge}
-                stoppingAgentId={stoppingAgentId}
-              />
               {(agentQueue.length > 0 || tiedLoops.length > 0) && (
                 <QueuedScheduledDrawer
                   queue={agentQueue}
@@ -1040,6 +1008,7 @@ export default function ChatView({
                     agents={agents}
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
+                    runningAgentCount={runningAgentCount}
                     agentOptionCostLabel={agentUsageCostLabel}
                     agentHeaderEnd={
                       activeAgentCostLabel ? (

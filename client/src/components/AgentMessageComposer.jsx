@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 import SessionModelSelect from './SessionModelSelect.jsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
 import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
@@ -5,7 +6,9 @@ import ButtonWithOptions from './ButtonWithOptions.jsx';
 import { SPLIT_GROUP_CLASS, SPLIT_PRIMARY_CLASS } from './splitButtonStyles.js';
 import LightChipDropdown from './LightChipDropdown.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
+import Tooltip from './Tooltip.jsx';
 import {
+  activeAgentsRunningLabel,
   agentDisplayTitle,
   agentMenuOptionLabel,
   isSubagentBuilder,
@@ -19,11 +22,30 @@ const COMPOSER_SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';
 const TEXTAREA_CLASS =
   'block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-fg placeholder-faint focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed rounded-t-lg';
 
-function composerAgentSwitcherBadgeClass(agentType) {
-  if (agentType === 'reviewer') {
+function composerAgentSwitcherBadgeClass(agent) {
+  if (isSubagentBuilder(agent)) {
+    return 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200 hover:enabled:bg-cyan-500/20 hover:enabled:border-cyan-500/45';
+  }
+  if (agent?.agent_type === 'reviewer') {
     return 'bg-violet-500/15 border-violet-500/35 text-violet-200 hover:enabled:bg-violet-500/25 hover:enabled:border-violet-500/45';
   }
   return 'bg-brand/15 border-brand/40 text-accent hover:enabled:bg-brand/25 hover:enabled:border-brand/50';
+}
+
+function RunningAgentsIndicator({ count }) {
+  if (!count || count <= 0) return null;
+  const label = activeAgentsRunningLabel(count);
+  return (
+    <Tooltip content={label}>
+      <span
+        className="flex items-center gap-0.5 shrink-0 tabular-nums text-[11px] opacity-80"
+        aria-label={label}
+      >
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        {count}
+      </span>
+    </Tooltip>
+  );
 }
 
 /**
@@ -74,6 +96,8 @@ export default function AgentMessageComposer({
   onSelectAgent,
   agentOptionCostLabel,
   agentHeaderEnd,
+  runningAgentCount = 0,
+  mcpReadOnly = false,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -104,7 +128,13 @@ export default function AgentMessageComposer({
   const showAgentHeader =
     headerAgent &&
     (headerAgent.agent_type || headerAgent.name) &&
-    (showAgentSwitcher || sessionAgents.length === 0);
+    (showAgentSwitcher || sessionAgents.length === 0 || mcpReadOnly);
+
+  const agentTitleNode = (
+    <span className="text-xs font-medium text-heading truncate">
+      {agentDisplayTitle(headerAgent)}
+    </span>
+  );
 
   const agentHeader = showAgentHeader ? (
     <div
@@ -139,15 +169,16 @@ export default function AgentMessageComposer({
                 />
               ),
               content: (
-                <span className="text-xs font-medium text-heading truncate">
-                  {agentDisplayTitle(headerAgent)}
+                <span className="flex items-center gap-1.5 min-w-0 max-w-full">
+                  {agentTitleNode}
+                  <RunningAgentsIndicator count={runningAgentCount} />
                 </span>
               ),
             }}
             ariaLabel="Switch agent"
             shrinkableTrigger
             triggerClassName={`gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors !h-auto min-h-0 max-w-full ${composerAgentSwitcherBadgeClass(
-              headerAgent.agent_type
+              headerAgent
             )}`}
           />
         ) : (
@@ -156,9 +187,8 @@ export default function AgentMessageComposer({
               agentType={headerAgent.agent_type}
               subagent={isSubagentBuilder(headerAgent)}
             />
-            <span className="text-xs font-medium text-heading truncate">
-              {agentDisplayTitle(headerAgent)}
-            </span>
+            {agentTitleNode}
+            <RunningAgentsIndicator count={runningAgentCount} />
           </>
         )}
       </div>
@@ -195,26 +225,36 @@ export default function AgentMessageComposer({
       }`}
     >
       {agentHeader}
-      <ComposerTextarea
-        id={textareaId}
-        rows={rows}
-        maxHeightPx={resizable ? 320 : 160}
-        keepManualResize={resizable}
-        value={value}
-        onChange={handleChange}
-        onSubmit={onSubmit}
-        canSubmit={hasDraft && !submitDisabled}
-        disabled={disabled || sending}
-        placeholder={placeholder}
-        fitPlaceholderWhenEmpty={fitPlaceholderWhenEmpty}
-        autoFocus={autoFocus}
-        className={
-          resizable
-            ? `${TEXTAREA_CLASS} max-h-[70vh] overflow-auto resize-y`
-            : `${TEXTAREA_CLASS} resize-none`
-        }
-      />
-      {hint ? <p className="px-2 sm:px-3 pb-1 text-xs text-faint">{hint}</p> : null}
+      {!mcpReadOnly ? (
+        <ComposerTextarea
+          id={textareaId}
+          rows={rows}
+          maxHeightPx={resizable ? 320 : 160}
+          keepManualResize={resizable}
+          value={value}
+          onChange={handleChange}
+          onSubmit={onSubmit}
+          canSubmit={hasDraft && !submitDisabled}
+          disabled={disabled || sending}
+          placeholder={placeholder}
+          fitPlaceholderWhenEmpty={fitPlaceholderWhenEmpty}
+          autoFocus={autoFocus}
+          className={
+            resizable
+              ? `${TEXTAREA_CLASS} max-h-[70vh] overflow-auto resize-y`
+              : `${TEXTAREA_CLASS} resize-none`
+          }
+        />
+      ) : null}
+      {hint ? (
+        <p
+          className={`px-2 sm:px-3 text-xs text-faint text-center${
+            mcpReadOnly ? ' pt-2.5 pb-1' : ' pb-1'
+          }`}
+        >
+          {hint}
+        </p>
+      ) : null}
       <div className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 pb-1.5 pt-0.5 rounded-b-lg overflow-visible min-w-0">
         <SessionModelSelect
           agentConfigKey={agentConfigKey}
@@ -227,18 +267,20 @@ export default function AgentMessageComposer({
           onModelChange={onModelChange}
           onAutoPushChange={onAutoPushChange}
           autoPushDisabled={autoPushDisabled}
-          showAutoPushParam={showAutoPushParam}
+          showAutoPushParam={showAutoPushParam && !mcpReadOnly}
           agentConfigOptions={agentConfigOptions}
           onAgentConfigChange={onAgentConfigChange}
           configsLoading={configsLoading}
           modelsLoading={modelsLoading}
-          disabled={disabled || sending}
+          disabled={disabled || sending || mcpReadOnly}
           className="min-w-0 flex-1"
         />
-        <div className="flex shrink-0 items-center justify-end gap-1">
-          {toolbarExtra}
-          {sendControl}
-        </div>
+        {!mcpReadOnly ? (
+          <div className="flex shrink-0 items-center justify-end gap-1">
+            {toolbarExtra}
+            {sendControl}
+          </div>
+        ) : null}
       </div>
     </div>
   );
