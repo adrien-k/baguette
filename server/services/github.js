@@ -1957,17 +1957,28 @@ export async function getPRWorkflowLogs(
 }
 
 /**
+ * GitHub emits a second pull_request.synchronize when a PATCH includes `base`,
+ * even if the branch name is unchanged and a git push just updated HEAD.
+ * Only retarget when the desired base differs from the PR's current base.
+ */
+export function prBasePatchField(baseBranch, currentBaseBranch) {
+  if (!baseBranch || !currentBaseBranch || baseBranch === currentBaseBranch) return undefined;
+  return baseBranch;
+}
+
+/**
  * Create or update a pull request via the GitHub API.
  * @returns {{ url: string, number: number }}
  */
 export async function upsertPR(
   token,
-  { repoFullName, prNumber, title, body, head, baseBranch, reopen = false }
+  { repoFullName, prNumber, title, body, head, baseBranch, currentBaseBranch, reopen = false }
 ) {
   if (prNumber) {
     const patchBody = { title, body };
     if (reopen) patchBody.state = 'open';
-    if (baseBranch) patchBody.base = baseBranch;
+    const base = prBasePatchField(baseBranch, currentBaseBranch);
+    if (base) patchBody.base = base;
     const res = await githubFetch(
       `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
       {

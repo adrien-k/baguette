@@ -97,6 +97,7 @@ export function createPrUpsertTool(ctx) {
 
       // Preserve any user-written content above the baguette section
       let userPrefix = '';
+      let currentBaseBranch;
       if (effectivePrNumber) {
         try {
           const existingPr = await getOpenPRByNumber(
@@ -105,6 +106,7 @@ export function createPrUpsertTool(ctx) {
             effectivePrNumber
           );
           userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+          currentBaseBranch = existingPr?.base?.ref;
         } catch {
           // non-fatal — proceed without user prefix
         }
@@ -127,6 +129,7 @@ export function createPrUpsertTool(ctx) {
         ),
         head,
         baseBranch,
+        currentBaseBranch,
         reopen,
       });
       if (!effectivePrNumber) {

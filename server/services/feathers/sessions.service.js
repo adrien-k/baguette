@@ -1308,6 +1308,7 @@ export class SessionsService extends KnexService {
       if (session.label || session.pr_description != null || session.pr_number) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
         let userPrefix = '';
+        let currentBaseBranch;
         if (session.pr_number) {
           try {
             const existingPr = await getOpenPRByNumber(
@@ -1316,6 +1317,7 @@ export class SessionsService extends KnexService {
               session.pr_number
             );
             userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+            currentBaseBranch = existingPr?.base?.ref;
           } catch {
             // non-fatal — proceed without user prefix
           }
@@ -1336,6 +1338,7 @@ export class SessionsService extends KnexService {
           ),
           head: session.pr_number ? undefined : head,
           baseBranch: session.base_branch,
+          currentBaseBranch,
         });
         if (!session.pr_number) {
           await this.app

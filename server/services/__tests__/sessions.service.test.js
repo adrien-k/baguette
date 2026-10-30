@@ -33,6 +33,7 @@ import {
   gitPush,
   upsertPR,
   getOpenPR,
+  getOpenPRByNumber,
   getPRStatus,
   mergePR,
   markPRDraft,
@@ -2308,6 +2309,11 @@ describe('Sessions service - find, get, create', () => {
       });
       vi.mocked(gitPush).mockClear();
       vi.mocked(upsertPR).mockClear();
+      vi.mocked(getOpenPRByNumber).mockResolvedValueOnce({
+        title: 'Title',
+        body: '',
+        base: { ref: 'main' },
+      });
 
       const sessionRow = await db('sessions').where({ id: created.id }).first();
       await app.service('sessions').push(
@@ -2321,6 +2327,13 @@ describe('Sessions service - find, get, create', () => {
 
       expect(gitPush).not.toHaveBeenCalled();
       expect(upsertPR).toHaveBeenCalledTimes(1);
+      expect(upsertPR).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          baseBranch: sessionRow.base_branch,
+          currentBaseBranch: 'main',
+        })
+      );
     });
 
     it('does not flush queued messages when onTurnComplete runs on an approval session', async () => {
