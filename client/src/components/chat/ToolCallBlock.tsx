@@ -230,11 +230,27 @@ export default function ToolCallBlock({
   sessionPath,
   sessionId,
   userReplied = false,
+  agents,
+  onSelectAgent,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
   sessionId?: number;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
 }) {
   if (message._hidden) return null;
 
@@ -244,6 +260,8 @@ export default function ToolCallBlock({
       sessionPath={sessionPath}
       sessionId={sessionId}
       userReplied={userReplied}
+      agents={agents}
+      onSelectAgent={onSelectAgent}
     />
   );
 }
@@ -257,11 +275,27 @@ function ToolCallSwitch({
   sessionPath,
   sessionId,
   userReplied,
+  agents,
+  onSelectAgent,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
   sessionId?: number;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
 }) {
   const isError = message.status === 'error';
   const startedAt = message.tool_started_at ?? message.started_at;
@@ -329,6 +363,8 @@ function ToolCallSwitch({
           sessionId={sessionId}
           agentId={message.agent_id}
           userReplied={userReplied}
+          agents={agents}
+          onSelectAgent={onSelectAgent}
         />
       );
     }

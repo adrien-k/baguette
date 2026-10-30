@@ -31,6 +31,20 @@ export type ChatMessageProps = {
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
   pinnedRunningBashIds?: Set<string>;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
 };
 
 function UserMessageModelBadge({
@@ -173,6 +187,8 @@ function TypedMessage(
     agentName = 'Agent',
     pinnedRunningBashIds,
     userReplied,
+    agents,
+    onSelectAgent,
   } = props;
   switch (message.type) {
     case 'plan':
@@ -194,6 +210,8 @@ function TypedMessage(
           sessionPath={sessionPath}
           sessionId={sessionId ?? undefined}
           userReplied={userReplied}
+          agents={agents}
+          onSelectAgent={onSelectAgent}
         />
       );
     }

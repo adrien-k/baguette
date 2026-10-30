@@ -11,6 +11,7 @@ import BashToolBlock from './BashToolBlock.tsx';
 import ShowPlanBlock from './ShowPlanBlock.tsx';
 import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
 import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
+import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
 
 function formatRunTaskCommand(label: string, runArgs?: unknown) {
   const parts = Array.isArray(runArgs)
@@ -392,6 +393,8 @@ export default function BaguetteMcpToolBlock({
   sessionId,
   agentId,
   userReplied = false,
+  agents,
+  onSelectAgent,
 }: {
   tool: string;
   args?: Record<string, unknown>;
@@ -401,6 +404,20 @@ export default function BaguetteMcpToolBlock({
   sessionId?: number | string | null;
   agentId?: number | null;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
 }) {
   const mcpResult = parseMcpJsonResult(result);
 
@@ -498,6 +515,21 @@ export default function BaguetteMcpToolBlock({
         result={result}
         isError={isError}
         startedAt={startedAt}
+      />
+    );
+  }
+
+  if (toolShortName === 'StartSubagent' || toolShortName === 'AwaitSubagent') {
+    return (
+      <SubagentMcpToolBlock
+        toolName={toolShortName}
+        args={args}
+        result={result}
+        parsedResult={mcpResult}
+        isError={isError}
+        startedAt={startedAt}
+        agents={agents}
+        onSelectAgent={onSelectAgent}
       />
     );
   }

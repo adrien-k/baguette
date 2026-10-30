@@ -757,6 +757,8 @@ export default function ChatView({
                     sessionId={session.id}
                     agentName={agentDisplayName}
                     pinnedRunningBashIds={pinnedRunningBashIds}
+                    agents={agents}
+                    onSelectAgent={onSelectAgent}
                   />
                 ) : (
                   <ChatMessage
@@ -769,6 +771,8 @@ export default function ChatView({
                     messageIndex={item.index}
                     allMessages={displayMessages}
                     pinnedRunningBashIds={pinnedRunningBashIds}
+                    agents={agents}
+                    onSelectAgent={onSelectAgent}
                   />
                 )
               )}
@@ -913,6 +917,8 @@ export default function ChatView({
                   items={runningBashDock}
                   sessionPath={session?.absolute_session_path}
                   sessionId={session?.id}
+                  agents={agents}
+                  onSelectAgent={onSelectAgent}
                 />
               )}
               <div ref={messagesEndRef} />

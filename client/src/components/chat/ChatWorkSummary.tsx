@@ -14,6 +14,8 @@ export default function ChatWorkSummary({
   sessionId,
   agentName,
   pinnedRunningBashIds,
+  agents,
+  onSelectAgent,
 }: {
   messages: ChatMessageView[];
   indices: number[];
@@ -24,6 +26,20 @@ export default function ChatWorkSummary({
   sessionId?: number | null;
   agentName?: string;
   pinnedRunningBashIds?: Set<string>;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const duration = formatTaskDuration(durationMs);
@@ -62,6 +78,8 @@ export default function ChatWorkSummary({
                 messageIndex={index}
                 allMessages={displayMessages}
                 pinnedRunningBashIds={pinnedRunningBashIds}
+                agents={agents}
+                onSelectAgent={onSelectAgent}
               />
             );
           })}
