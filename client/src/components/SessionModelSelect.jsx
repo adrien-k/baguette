@@ -22,6 +22,12 @@ import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
+function modelDescriptionTooltip(model, label) {
+  const description = typeof model?.description === 'string' ? model.description.trim() : '';
+  if (!description || description === label) return undefined;
+  return description;
+}
+
 function parseModelParams(params) {
   if (params == null || params === '') return null;
   if (typeof params === 'string') {
@@ -194,7 +200,11 @@ export default function SessionModelSelect({
     (selectedModelId && hasAgentModelPricing(selectedModelId, currentParams));
 
   const modelOptions = useMemo(() => {
-    const opts = models.map((m) => ({ value: m.id, label: m.display_name }));
+    const opts = models.map((m) => ({
+      value: m.id,
+      label: m.display_name,
+      title: modelDescriptionTooltip(m, m.display_name),
+    }));
     if (selectedModelId && !models.some((m) => m.id === selectedModelId)) {
       opts.push({ value: selectedModelId, label: selectedModelId });
     }
@@ -360,7 +370,9 @@ export default function SessionModelSelect({
               }}
               ariaLabel={showAgentConfigPicker ? 'Choose agent and model' : 'Choose model'}
               placement="top-start"
-              triggerTitle={modelTriggerLabel}
+              triggerTitle={
+                modelDescriptionTooltip(selectedModelObj, modelTriggerLabel) ?? modelTriggerLabel
+              }
               disabled={disabled}
               shrinkableTrigger
               triggerClassName="text-xs text-faint hover:text-secondary leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"

@@ -7,7 +7,7 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 /**
  * @param {{ baseUrl: string, apiKey?: string | null, authToken?: string | null }} config
  * @param {{ limit?: number, signal?: AbortSignal }} [options]
- * @returns {Promise<Array<{ id: string, display_name: string, description: null }>>}
+ * @returns {Promise<Array<{ id: string, display_name: string, description: string | null }>>}
  */
 export async function listAnthropicApiModels(config, options = {}) {
   const limit = options.limit ?? 100;

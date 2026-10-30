@@ -150,7 +150,9 @@ export async function listPiModels(apiKey, envVar, { refresh = false, config = n
       return rows.map((m) => attachPiModelVariants(m));
     }
     const runtime = await createPiModelRuntime(apiKey, envVar);
-    const available = await runtime.getAvailable();
-    return available.map((m) => mapPiCatalogRow(m));
+    // getAvailable() only checks auth on the already-loaded catalog. Remote
+    // providers need refresh() so a cache miss actually hits the network.
+    await runtime.refresh({ allowNetwork: true });
+    return runtime.getAvailableSnapshot().map(mapPiCatalogRow);
   });
 }

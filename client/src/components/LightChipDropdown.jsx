@@ -27,7 +27,7 @@ const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max
 const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
- * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean }} LightDropdownOption
+ * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean, detail?: string }} LightDropdownOption
  * @typedef {{ heading?: string, options: LightDropdownOption[] }} LightDropdownSection
  */
 
@@ -116,7 +116,7 @@ export default function LightChipDropdown({
 
     const keyed = (
       <div key={optionKey(opt.value)} className={layout === 'list' ? 'w-full' : ''}>
-        {opt.disabled && opt.title ? (
+        {opt.title ? (
           <Tooltip content={opt.title} wrap placement="left">
             <span className="block w-full">{button}</span>
           </Tooltip>
