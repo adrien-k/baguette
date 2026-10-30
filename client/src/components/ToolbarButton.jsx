@@ -35,7 +35,7 @@ const ToolbarButton = forwardRef(function ToolbarButton(
       {Icon ? (
         <Icon className={`w-3 h-3 shrink-0 opacity-90 ${iconClassName}`} aria-hidden />
       ) : null}
-      {label != null && label !== '' && (
+      {typeof label === 'string' && label.length > 0 && (
         <span className={hideLabelBelowSm ? 'hidden sm:inline' : undefined}>{label}</span>
       )}
       {children}

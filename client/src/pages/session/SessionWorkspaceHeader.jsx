@@ -27,6 +27,7 @@ export default function SessionWorkspaceHeader({
   handlePush,
   pushing,
   commitsToPush,
+  pushToolReadonly = false,
   session,
   prInfo,
 }) {
@@ -173,7 +174,7 @@ export default function SessionWorkspaceHeader({
             session={headerSession}
             tools={['pr', 'preview', 'code', 'push']}
             hideLabelBelowSm
-            readonly={!!headerSession.archived_at || headerSession.status === 'archiving'}
+            readonly={pushToolReadonly}
             onPush={handlePush}
             pushing={pushing}
             commitsToPush={commitsToPush}

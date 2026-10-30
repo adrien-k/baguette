@@ -66,6 +66,7 @@ import { SESSION_MAIN_MIN_WIDTH } from '../utils/sessionLayout.js';
 import { useGetLoops } from '../hooks/useGetLoops.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
 import { autoPushEnabledForRepo, isLocalRepo } from '../utils/repoDisplayName.js';
+import { isSessionPushToolReadonly } from '../utils/sessionPushGitStatus.js';
 import { parseMessageRow } from '@baguette/shared/parse-message-row.ts';
 import { isGlobalSessionDisabledView } from './session/sessionViews.js';
 
@@ -220,6 +221,7 @@ export default function Session() {
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
+  const pushToolReadonly = isSessionPushToolReadonly(gitSession);
   const { configOptions } = useAgentConfigs();
   const {
     commits: branchCommits,
@@ -945,9 +947,12 @@ export default function Session() {
       : isNewSessionRoute || Boolean(session));
 
   const isReadonly =
-    !isNewSessionRoute && (!!session?.archived_at || session?.status === 'archiving');
+    !isNewSessionRoute &&
+    (!!gitSession?.archived_at ||
+      gitSession?.status === 'archiving' ||
+      gitSession?.status === 'archived');
   const isArchiving =
-    !isNewSessionRoute && !session?.archived_at && session?.status === 'archiving';
+    !isNewSessionRoute && !gitSession?.archived_at && gitSession?.status === 'archiving';
 
   useLayoutEffect(() => {
     if (isNewSessionRoute) return;
@@ -1065,6 +1070,7 @@ export default function Session() {
           handlePush={handlePush}
           pushing={pushing}
           commitsToPush={commitsToPush}
+          pushToolReadonly={pushToolReadonly}
           session={session}
           prInfo={prInfo}
         />
