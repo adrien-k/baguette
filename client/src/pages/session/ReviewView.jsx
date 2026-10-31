@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, CheckCircle, ChevronDown, ChevronRight, Square } from 'lucide-react';
+import { Bot, CheckCircle, ChevronDown, ChevronRight, Loader2, Square, Trash2 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { agentsService, messagesService, sessionIssuesService } from '../../feathers.js';
 import {
@@ -21,10 +21,11 @@ import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel
 import { resolveAccountDefaultModel } from '@baguette/shared/agent-default-model.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import { useSessionAgents } from '../../hooks/useSessionAgents.js';
-import { isAgentTurnActive } from '../../utils/sessionAgents.js';
+import { canRemoveAgentWhenIdle, isAgentTurnActive } from '../../utils/sessionAgents.js';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
+import ClearReviewerChatConfirmModal from '../../components/ClearReviewerChatConfirmModal.jsx';
 import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
@@ -66,6 +67,7 @@ export default function ReviewView({
   issues,
   issuesLoading,
   onOpenReviewerChat,
+  onReviewerCleared,
 }) {
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
@@ -78,6 +80,8 @@ export default function ReviewView({
   const [closedLoading, setClosedLoading] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
+  const [showClearReviewerConfirm, setShowClearReviewerConfirm] = useState(false);
+  const [clearingReviewer, setClearingReviewer] = useState(false);
   const { reviewer } = useSessionAgents(session?.id);
   const [savingIssueId, setSavingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
@@ -311,6 +315,23 @@ export default function ReviewView({
     }
   };
 
+  const canClearReviewer =
+    !readonly && reviewer != null && canRemoveAgentWhenIdle(reviewer) && !clearingReviewer;
+
+  const handleConfirmClearReviewer = async () => {
+    if (!reviewer?.id || !canClearReviewer) return;
+    setClearingReviewer(true);
+    try {
+      await agentsService.remove(reviewer.id);
+      setShowClearReviewerConfirm(false);
+      onReviewerCleared?.();
+    } catch (err) {
+      toastError('Failed to clear reviewer chat', err);
+    } finally {
+      setClearingReviewer(false);
+    }
+  };
+
   const handleReviewNewCommits = async () => {
     if (!session?.id || reviewingNewCommits || isRunning) return;
     if (!reviewer?.id) {
@@ -473,11 +494,29 @@ export default function ReviewView({
           <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4`}>
             <div className="@container w-full">
               <div className={REVIEW_CONTROLS_ROW_CLASS}>
-                <ReviewLatestChangesButton
-                  disabled={reviewingNewCommits}
-                  loading={reviewingNewCommits}
-                  onReview={handleReviewNewCommits}
-                />
+                <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-x-3 gap-y-2 @min-[36rem]:w-auto">
+                  <ReviewLatestChangesButton
+                    disabled={reviewingNewCommits || clearingReviewer}
+                    loading={reviewingNewCommits}
+                    onReview={handleReviewNewCommits}
+                  />
+                  {canClearReviewer && (
+                    <button
+                      type="button"
+                      title="Reset reviewer chat"
+                      disabled={reviewingNewCommits || clearingReviewer}
+                      onClick={() => setShowClearReviewerConfirm(true)}
+                      className={`inline-flex shrink-0 items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50 ${INLINE_SECONDARY_LINK_CLASS}`}
+                    >
+                      {clearingReviewer ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      )}
+                      Reset
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={openReviewerChat}
@@ -593,6 +632,15 @@ export default function ReviewView({
           )}
         </div>
       </div>
+      {showClearReviewerConfirm && (
+        <ClearReviewerChatConfirmModal
+          loading={clearingReviewer}
+          onCancel={() => {
+            if (!clearingReviewer) setShowClearReviewerConfirm(false);
+          }}
+          onConfirm={handleConfirmClearReviewer}
+        />
+      )}
     </div>
   );
 }

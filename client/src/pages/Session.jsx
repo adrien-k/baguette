@@ -1232,6 +1232,7 @@ export default function Session() {
                   issues={sessionIssues}
                   issuesLoading={sessionIssuesLoading}
                   onOpenReviewerChat={selectAgent}
+                  onReviewerCleared={handleReviewerCleared}
                 />
               )}
             {!isLoopsView &&

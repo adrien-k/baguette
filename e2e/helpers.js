@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { expect } from '@playwright/test';
 import {
   MOCK_ALT_PRIMARY_MODEL_ID,
@@ -409,6 +411,69 @@ export async function startMockReviewFromIssuesTab(page) {
     await expect(page.getByText(issue.title)).toBeVisible({ timeout: 120_000 });
   }
   await expect(page.getByText('Review in progress')).toBeHidden({ timeout: 120_000 });
+}
+
+/** Issues tab controls shown when a reviewer agent exists and is idle. */
+export async function expectIssuesTabReviewerControls(page) {
+  await page.getByRole('button', { name: 'Issues' }).click();
+  await expect(page.getByRole('button', { name: 'Review latest changes' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('button', { name: 'Reset', exact: true })).toBeVisible();
+}
+
+/** Close the side-panel drawer on viewports below md (scrim + panel overlay). */
+export async function ensureMobileSidePanelClosed(page) {
+  const scrim = page.locator('div.md\\:hidden.fixed.inset-0.z-30');
+  if ((await scrim.count()) === 0) return;
+  if (!(await scrim.first().isVisible())) return;
+  await scrim.first().click({ position: { x: 16, y: 400 } });
+  await expect(scrim).toHaveCount(0, { timeout: 15_000 });
+}
+
+export async function screenshotIssuesTabReviewerControls(
+  page,
+  screenshotPath,
+  { closeMobilePanel = false } = {}
+) {
+  if (!screenshotPath) return;
+  if (closeMobilePanel) {
+    await ensureMobileSidePanelClosed(page);
+    await page.getByRole('button', { name: 'Issues' }).click();
+    await expect(page.getByRole('button', { name: 'Review latest changes' })).toBeVisible({
+      timeout: 30_000,
+    });
+  }
+  await mkdir(dirname(screenshotPath), { recursive: true });
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+}
+
+export async function confirmClearReviewerChatModal(page) {
+  const modal = page.locator('.fixed.inset-0').filter({
+    has: page.getByRole('heading', { name: 'Clear reviewer chat?' }),
+  });
+  await expect(modal).toBeVisible();
+  await modal.getByRole('button', { name: 'Clear reviewer chat', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Clear reviewer chat?' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Issues' }).click();
+  await expect(page.getByRole('button', { name: 'Start review' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('button', { name: 'Reset', exact: true })).toHaveCount(0);
+}
+
+/**
+ * Reset the reviewer from the Issues tab (same as Agents panel trash on reviewer).
+ * When `E2E_SCREENSHOT_PATH` is set, captures a viewport screenshot before confirming.
+ */
+export async function resetReviewerFromIssuesTab(page, { screenshotPath } = {}) {
+  await expectIssuesTabReviewerControls(page);
+  const path = screenshotPath ?? process.env.E2E_SCREENSHOT_PATH;
+  if (path) {
+    await screenshotIssuesTabReviewerControls(page, path);
+  }
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await confirmClearReviewerChatModal(page);
 }
 
 export {
