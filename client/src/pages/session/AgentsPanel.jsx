@@ -6,6 +6,7 @@ import { toastError } from '../../utils/toastError.jsx';
 import {
   agentDisplayTitle,
   canRemoveAgentWhenIdle,
+  isAgentAwaitingUser,
   isAgentTurnActive,
   isPrimaryAgent,
   isSubagentBuilder,
@@ -13,6 +14,7 @@ import {
 } from '../../utils/sessionAgents.js';
 import AgentTypeIcon from '../../components/AgentTypeIcon.jsx';
 import AgentMainBadge from '../../components/AgentMainBadge.jsx';
+import { SessionStatusIcon } from '../../components/SessionCard.jsx';
 import ClearReviewerChatConfirmModal from '../../components/ClearReviewerChatConfirmModal.jsx';
 import DeleteAgentConfirmModal from '../../components/DeleteAgentConfirmModal.jsx';
 import { useSessionUsage } from '../../hooks/useSessionUsage.js';
@@ -21,6 +23,12 @@ import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usage
 function statusLabel(status) {
   if (!status) return '—';
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function agentPanelStatusIconStatus(status) {
+  if (isAgentTurnActive(status)) return 'running';
+  if (isAgentAwaitingUser(status)) return 'approval';
+  return status;
 }
 
 function AgentListRow({
@@ -100,9 +108,16 @@ function AgentListRow({
             )}
             {isPrimaryAgent(agent) ? <AgentMainBadge /> : null}
           </div>
-          <p className="text-[11px] text-faint mt-0.5">
-            {statusLabel(agent.status)}
-            {costLabel ? <span className="tabular-nums">{` ${costLabel}`}</span> : null}
+          <p className="text-[11px] text-faint mt-0.5 flex items-center gap-1 min-w-0">
+            <SessionStatusIcon
+              status={agentPanelStatusIconStatus(agent.status)}
+              compact
+              aria-hidden
+            />
+            <span className="truncate">
+              {statusLabel(agent.status)}
+              {costLabel ? <span className="tabular-nums">{` ${costLabel}`}</span> : null}
+            </span>
           </p>
         </button>
         {canRename && !renaming && (
@@ -299,7 +314,7 @@ export default function AgentsPanel({
   if (loading && agents.length === 0) {
     return (
       <div className="flex justify-center py-8">
-        <Loader2 className="w-5 h-5 animate-spin text-faint" />
+        <SessionStatusIcon status="provisioning" aria-hidden />
       </div>
     );
   }
