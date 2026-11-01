@@ -3032,7 +3032,8 @@ describe('Sessions service - restartInterruptedSessions', () => {
   });
 
   it('leaves sessions waiting on user approval alone on restart', async () => {
-    const sessId = await seedSession({ status: 'approval', claude_session_id: 'claude-abc' });
+    const sessId = await seedSession({ claude_session_id: 'claude-abc' });
+    await db('agents').where({ session_id: sessId, is_primary: 1 }).update({ status: 'approval' });
 
     expect(await app.service('sessions').restartInterruptedSessions()).toEqual({
       restarted: 0,
@@ -3041,7 +3042,10 @@ describe('Sessions service - restartInterruptedSessions', () => {
       childrenRestarted: 0,
       childrenStopped: 0,
     });
-    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('approval');
+    expect((await db('agents').where({ session_id: sessId, is_primary: 1 }).first()).status).toBe(
+      'approval'
+    );
+    expect(await messagesFor(sessId)).toHaveLength(0);
     expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
   });
 
@@ -3235,13 +3239,22 @@ describe('Sessions service - restartInterruptedSessions', () => {
     expect(child.status).toBe('stopped');
   });
 
-  it('resumes an approval-waiting subagent', async () => {
+  it('leaves an approval-waiting subagent alone on restart', async () => {
     const sessId = await seedSession({ claude_session_id: 'claude-abc', session_path: '/tmp/wt' });
+    await db('agents').where({ session_id: sessId, is_primary: 1 }).update({ status: 'approval' });
     await insertChild(sessId, { claude_session_id: 'child-claude-1', status: 'approval' });
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result.childrenRestarted).toBe(1);
-    expect(result.childrenStopped).toBe(0);
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
+    expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
+    const child = await db('agents').where({ session_id: sessId, is_primary: 0 }).first();
+    expect(child.status).toBe('approval');
   });
 });

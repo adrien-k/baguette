@@ -256,7 +256,7 @@ export class SessionsService extends KnexService {
       interrupted = await db('sessions')
         .join('agents', 'agents.session_id', 'sessions.id')
         .where('agents.is_primary', 1)
-        .whereIn('agents.status', ['running', 'approval'])
+        .where('agents.status', 'running')
         .whereNull('sessions.archived_at')
         .select('sessions.id', 'sessions.user_id', 'agents.id as builder_agent_id');
     } catch (err) {
@@ -404,8 +404,9 @@ export class SessionsService extends KnexService {
 
   /**
    * Non-primary builders and subagents have no process behind them after a reboot and
-   * nothing re-spawns them. Capture every child left mid-turn (`running`/`approval`) in
-   * any session — the primary's restart prompt reports them, then
+   * nothing re-spawns them. Capture every child left mid-turn (`running` only; `approval`
+   * children are waiting on the user and are left unchanged) in any session — the primary's
+   * restart prompt reports them, then
    * `_settleStaleChildAgents` resumes the resumable ones and stops the rest.
    */
   async _listStaleChildAgents() {
@@ -414,7 +415,7 @@ export class SessionsService extends KnexService {
       return await db('agents')
         .whereIn('agent_type', ['builder', 'subagent'])
         .where('is_primary', 0)
-        .whereIn('status', ['running', 'approval'])
+        .where('status', 'running')
         .select('*');
     } catch (err) {
       logger.error(err, 'Failed to load stale child agents on startup');
@@ -475,6 +476,12 @@ export class SessionsService extends KnexService {
           .get('db')('sessions')
           .where({ id: child.session_id })
           .first();
+        const primary = session
+          ? await getPrimaryBuilderAgent(this.app.get('db'), session.id)
+          : null;
+        if (isBuilderAgentAwaitingUser(primary)) {
+          continue;
+        }
         const dispatchable =
           session && !session.archived_at && !(session.repo_full_name && !session.session_path);
         if (!dispatchable || !(await this._childAgentResumable(session, child))) {
