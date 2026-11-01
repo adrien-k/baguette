@@ -65,6 +65,8 @@ export default function LightChipDropdown({
   shrinkableTrigger = false,
   /** Override trigger when `value` is not in the option list */
   selectedDisplay,
+  /** Accessible name for the trigger button (e.g. agent switcher). */
+  triggerAriaLabel,
   /** Show only `triggerIcon` (no label text) */
   iconOnly = false,
   hideChevron = false,
@@ -170,6 +172,7 @@ export default function LightChipDropdown({
             }}
             aria-expanded={open}
             aria-haspopup="dialog"
+            aria-label={triggerAriaLabel}
             aria-labelledby={label && id ? `${id}-label` : undefined}
             title={triggerTitle ?? (triggerContent ? undefined : triggerLabel)}
             className={`${triggerBase} ${

@@ -1,12 +1,15 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
 import { test, expect } from '@playwright/test';
 import {
   MOCK_AGENT_SUMMARY_TEXT,
   MOCK_E2E_CREATE_PLAN_PROMPT,
   MOCK_REVIEW_ISSUES,
 } from '../shared/mock-agent-sdk.js';
-import { createLocalRepo, devLogin, startMockBuilderSession } from './helpers.js';
+import {
+  createLocalRepo,
+  devLogin,
+  saveE2eScreenshot,
+  startMockBuilderSession,
+} from './helpers.js';
 
 test.describe('mock agent chat', () => {
   test('dev login, local repo, mock session renders tool calls and summary', async ({ page }) => {
@@ -31,11 +34,7 @@ test.describe('mock agent chat', () => {
     ).toBeVisible();
     await expect(page.getByText('.baguette-mock/notes.txt').first()).toBeVisible();
 
-    const screenshotPath = process.env.E2E_SCREENSHOT_PATH;
-    if (screenshotPath) {
-      await mkdir(dirname(screenshotPath), { recursive: true });
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-    }
+    await saveE2eScreenshot(page, 'mock-agent-full-turn.png', { fullPage: true });
   });
 
   test('mock builder session then mock reviewer creates issues on Issues tab', async ({ page }) => {

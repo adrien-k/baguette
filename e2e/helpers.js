@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import {
   MOCK_ALT_PRIMARY_MODEL_ID,
@@ -175,6 +176,97 @@ export async function sendSessionChatMessage(page, text) {
   await expect(composer).toBeEnabled({ timeout: 30_000 });
   await composer.fill(text);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
+}
+
+const E2E_SCREENSHOTS_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'screenshots');
+
+export function parseSessionIdFromUrl(url) {
+  const match = String(url).match(/\/sessions\/([^/?]+)/);
+  return match?.[1] ?? null;
+}
+
+export async function listSessionAgentsForPage(page) {
+  const sessionId = parseSessionIdFromUrl(page.url());
+  expect(sessionId).toBeTruthy();
+  const res = await page.request.get('/api/agents', {
+    params: { session_id: sessionId, $limit: 100 },
+  });
+  expect(res.ok()).toBe(true);
+  const body = await res.json();
+  return body.data ?? body;
+}
+
+/** Wait until at least one agent is running and at least one is not. */
+export async function waitForRunningAndIdleAgents(page, timeout = 60_000) {
+  await expect
+    .poll(
+      async () => {
+        const agents = await listSessionAgentsForPage(page);
+        const running = agents.filter((a) => a.status === 'running').length;
+        const idle = agents.filter((a) => a.status !== 'running').length;
+        return running >= 1 && idle >= 1;
+      },
+      { timeout }
+    )
+    .toBe(true);
+}
+
+export async function openComposerAgentSwitcher(page) {
+  const trigger = page.getByRole('button', { name: 'Switch agent' });
+  await expect(trigger).toBeVisible({ timeout: 30_000 });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Switch agent' });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
+ * While a turn is active on one agent and another is idle, open the composer
+ * switcher and assert Running / Idle section headings (retries until the menu
+ * catches the overlap or times out).
+ */
+export async function expectComposerAgentSwitcherSections(page, { timeout = 120_000 } = {}) {
+  await expect
+    .poll(
+      async () => {
+        const agents = await listSessionAgentsForPage(page);
+        const running = agents.filter((a) => a.status === 'running').length;
+        const idle = agents.filter((a) => a.status !== 'running').length;
+        if (running < 1 || idle < 1) return false;
+
+        const chatTab = page.getByRole('button', { name: 'Chat', exact: true });
+        if (await chatTab.isVisible()) {
+          await chatTab.click();
+        }
+
+        const trigger = page.getByRole('button', { name: 'Switch agent' });
+        if (!(await trigger.isVisible())) return false;
+        await trigger.click();
+        const dialog = page.getByRole('dialog', { name: 'Switch agent' });
+        if (!(await dialog.isVisible())) return false;
+        const hasRunning = await dialog.getByText('Running', { exact: true }).isVisible();
+        const hasIdle = await dialog.getByText('Idle', { exact: true }).isVisible();
+        if (!hasRunning || !hasIdle) {
+          await page.keyboard.press('Escape');
+          return false;
+        }
+        return true;
+      },
+      { timeout }
+    )
+    .toBe(true);
+  return page.getByRole('dialog', { name: 'Switch agent' });
+}
+
+/**
+ * Write a Playwright screenshot under `e2e/screenshots/` (gitignored), or to
+ * `E2E_SCREENSHOT_PATH` when that env var is set (single-file override).
+ */
+export async function saveE2eScreenshot(page, fileName, options = {}) {
+  const path = process.env.E2E_SCREENSHOT_PATH ?? join(E2E_SCREENSHOTS_DIR, fileName);
+  await mkdir(dirname(path), { recursive: true });
+  await page.screenshot({ path, ...options });
+  return path;
 }
 
 async function waitForPrimaryBuilderIdle(page) {

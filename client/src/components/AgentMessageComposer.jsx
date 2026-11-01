@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import SessionModelSelect from './SessionModelSelect.jsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
@@ -11,6 +12,7 @@ import {
   activeAgentsRunningLabel,
   agentDisplayTitle,
   agentMenuOptionLabel,
+  agentSwitcherDropdownSections,
   isSubagentBuilder,
 } from '../utils/sessionAgents.js';
 
@@ -136,6 +138,31 @@ export default function AgentMessageComposer({
     </span>
   );
 
+  const agentSwitcherSections = useMemo(() => {
+    return agentSwitcherDropdownSections(sessionAgents, (a) => {
+      const costLabel = agentOptionCostLabel?.(a);
+      const base = agentMenuOptionLabel(a);
+      return {
+        value: String(a.id),
+        label: costLabel ? `${base} ${costLabel}` : base,
+        icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
+      };
+    });
+  }, [sessionAgents, agentOptionCostLabel]);
+
+  const agentSwitcherOptions = useMemo(() => {
+    if (agentSwitcherSections) return undefined;
+    return sessionAgents.map((a) => {
+      const costLabel = agentOptionCostLabel?.(a);
+      const base = agentMenuOptionLabel(a);
+      return {
+        value: String(a.id),
+        label: costLabel ? `${base} ${costLabel}` : base,
+        icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
+      };
+    });
+  }, [sessionAgents, agentOptionCostLabel, agentSwitcherSections]);
+
   const agentHeader = showAgentHeader ? (
     <div
       className={`flex items-center gap-2 px-2 sm:px-3 pt-2 pb-1 min-w-0${
@@ -152,15 +179,8 @@ export default function AgentMessageComposer({
               const picked = sessionAgents.find((a) => String(a.id) === value);
               if (picked) onSelectAgent(picked);
             }}
-            options={sessionAgents.map((a) => {
-              const costLabel = agentOptionCostLabel?.(a);
-              const base = agentMenuOptionLabel(a);
-              return {
-                value: String(a.id),
-                label: costLabel ? `${base} ${costLabel}` : base,
-                icon: <AgentTypeIcon agentType={a.agent_type} subagent={isSubagentBuilder(a)} />,
-              };
-            })}
+            options={agentSwitcherOptions}
+            sections={agentSwitcherSections ?? undefined}
             selectedDisplay={{
               icon: (
                 <AgentTypeIcon
@@ -176,6 +196,7 @@ export default function AgentMessageComposer({
               ),
             }}
             ariaLabel="Switch agent"
+            triggerAriaLabel="Switch agent"
             shrinkableTrigger
             triggerClassName={`gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors !h-auto min-h-0 max-w-full ${composerAgentSwitcherBadgeClass(
               headerAgent
