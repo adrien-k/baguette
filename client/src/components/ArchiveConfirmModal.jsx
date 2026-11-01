@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Modal, { ModalActions, ModalHeader } from './Modal.jsx';
-import UnpushedCommitsWarning from './UnpushedCommitsWarning.jsx';
+import UnpushedCommitsWarning, { formatCommitsNotOnAnyRemote } from './UnpushedCommitsWarning.jsx';
 import { GHOST_BUTTON_CLASS } from '../utils/buttonStyles.js';
 import { TEXT_SECONDARY } from '../utils/ui.js';
 
@@ -25,6 +25,7 @@ export default function ArchiveConfirmModal({
 
       <UnpushedCommitsWarning
         commitsToPush={commitsToPush}
+        commitLabel={formatCommitsNotOnAnyRemote(commitsToPush)}
         consequence="Archiving removes the worktree and those commits will only exist locally until you push from another clone."
         hint="Push from the session header or ask the agent to push before archiving if you still need these changes on GitHub."
       />

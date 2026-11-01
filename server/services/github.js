@@ -672,6 +672,25 @@ export async function gitPush(
 const MAX_DIFF_BUFFER_SIZE = 5 * 1024 * 1024;
 
 /**
+ * Returns the number of commits on HEAD that are not on any remote-tracking ref.
+ * Commits already reachable from another remote branch (for example a stacked
+ * parent) are not counted, even if `origin/<session remote_branch>` was never pushed.
+ * @returns {Promise<number>}
+ */
+export async function gitCommitsNotOnAnyRemote(worktreePath) {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
+      { maxBuffer: 256 }
+    );
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Returns the number of local commits not yet on the session remote branch.
  * When `remoteBranch` is set, counts `origin/<remoteBranch>..HEAD` so a unique
  * local worktree branch is not treated as fully unpushed. Falls back to
@@ -697,12 +716,7 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
         /* origin/<remoteBranch> missing — count commits not on any remote */
       }
     }
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
-      { maxBuffer: 256 }
-    );
-    return parseInt(stdout.trim(), 10) || 0;
+    return gitCommitsNotOnAnyRemote(worktreePath);
   } catch {
     return 0;
   }

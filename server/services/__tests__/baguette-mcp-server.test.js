@@ -338,6 +338,7 @@ describe('CurrentSessionInfo', () => {
     expect(result.local_branch).toBe('feat/x');
     expect(result.session_branch).toBeUndefined();
     expect(result.git_commits_to_push).toBe('git rev-list --count origin/feat/x-remote..HEAD');
+    expect(result.git_commits_not_on_any_remote).toBe('git rev-list --count HEAD --not --remotes');
     expect(result.git_commits_behind_remote).toBe(
       'git rev-list --count HEAD..origin/feat/x-remote'
     );

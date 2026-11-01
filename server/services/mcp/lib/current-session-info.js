@@ -49,6 +49,7 @@ function buildCurrentSessionInfo(sessionRow, { readOnlySession = false } = {}) {
       : BUILDER_SESSION_RESTRICTIONS,
     git_diff_against_base: `git diff origin/${baseBranch}...HEAD`,
     git_merge_base_with_base: `git merge-base HEAD origin/${baseBranch}`,
+    git_commits_not_on_any_remote: 'git rev-list --count HEAD --not --remotes',
   };
   if (pushRef) {
     info.git_commits_to_push = `git rev-list --count origin/${pushRef}..HEAD`;
@@ -61,7 +62,7 @@ export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
   return {
     name: 'CurrentSessionInfo',
     description:
-      'Get the current session label, pr_description, session_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Session plans live in the database — use ReadPlan / CreatePlan / EditPlan. Use **`UpdateSession`** to change label, description, and/or base_branch; use **`PrRead`** when you need the live GitHub PR URL or synced title/body.',
+      'Get the current session label, pr_description, session_path (repo root for repo sessions), base_branch, remote_branch, local_branch, and working_directory_restrictions. Session plans live in the database — use ReadPlan / CreatePlan / EditPlan. Use **`UpdateSession`** to change label, description, and/or base_branch; use **`PrRead`** when you need the live GitHub PR URL or synced title/body. `git_commits_to_push` is commits on HEAD not yet on origin/<remote_branch> (what a push of this session branch would add). `git_commits_not_on_any_remote` is commits on HEAD not on any remote-tracking ref (archive warning; stacked-parent commits already on another remote do not count).',
     schema: {},
     handler: async () => {
       const session = await getSessionRow();
