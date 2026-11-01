@@ -107,6 +107,10 @@ export default function AgentMessageComposer({
 
   const hasDraft = canSendProp ?? Boolean(value.trim());
   const canSubmit = hasDraft && !disabled && !sending && !submitDisabled;
+  const composerChromeDisabled = disabled || sending;
+  /** MCP subagents: composer is read-only but users must still switch agents in Baguette. */
+  const agentSwitcherDisabled = mcpReadOnly ? sending : composerChromeDisabled;
+  const dimComposerChrome = disabled && !mcpReadOnly;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -173,7 +177,7 @@ export default function AgentMessageComposer({
         {showAgentSwitcher ? (
           <LightChipDropdown
             layout="list"
-            disabled={disabled || sending}
+            disabled={agentSwitcherDisabled}
             value={String(selectedAgentId)}
             onChange={(value) => {
               const picked = sessionAgents.find((a) => String(a.id) === value);
@@ -242,7 +246,7 @@ export default function AgentMessageComposer({
   const box = (
     <div
       className={`w-full rounded-lg border border-strong bg-control overflow-visible ${
-        disabled ? 'opacity-60' : 'focus-within:ring-2 focus-within:ring-brand/50'
+        dimComposerChrome ? 'opacity-60' : 'focus-within:ring-2 focus-within:ring-brand/50'
       }`}
     >
       {agentHeader}
@@ -293,7 +297,7 @@ export default function AgentMessageComposer({
           onAgentConfigChange={onAgentConfigChange}
           configsLoading={configsLoading}
           modelsLoading={modelsLoading}
-          disabled={disabled || sending || mcpReadOnly}
+          disabled={composerChromeDisabled || mcpReadOnly}
           className="min-w-0 flex-1"
         />
         {!mcpReadOnly ? (

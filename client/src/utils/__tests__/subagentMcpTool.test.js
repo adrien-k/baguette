@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   findSessionAgentForSubagentTool,
+  findRunningStartSubagentInSession,
+  resolveOpenSubagentFromMcpTool,
   resolveSubagentForMcpToolCall,
   resolveSubagentTargetFromMcpTool,
   subagentLastAssistantPreview,
@@ -107,5 +109,60 @@ describe('resolveSubagentForMcpToolCall', () => {
     );
     expect(resolved.agent).toEqual(agents[1]);
     expect(resolved.agentId).toBe(11);
+  });
+});
+
+describe('findRunningStartSubagentInSession', () => {
+  const withParent = [
+    ...agents,
+    {
+      id: 20,
+      ref: 5,
+      name: 'Scout',
+      agent_type: 'subagent',
+      parent_agent_id: 1,
+    },
+    {
+      id: 21,
+      ref: 6,
+      name: 'Scout',
+      agent_type: 'subagent',
+      parent_agent_id: 99,
+    },
+  ];
+
+  it('matches name and parent agent while the tool is still running', () => {
+    expect(findRunningStartSubagentInSession(withParent, 'Scout', 1)).toEqual(withParent[4]);
+  });
+
+  it('prefers the newest ref when several subagents share a name for one parent', () => {
+    const list = [
+      ...withParent,
+      { id: 22, ref: 7, name: 'Scout', agent_type: 'subagent', parent_agent_id: 1 },
+    ];
+    expect(findRunningStartSubagentInSession(list, 'Scout', 1)).toEqual(list[6]);
+  });
+});
+
+describe('resolveOpenSubagentFromMcpTool', () => {
+  it('opens by agent ref on AwaitSubagent before the result arrives', () => {
+    expect(
+      resolveOpenSubagentFromMcpTool(agents, 'AwaitSubagent', { agent_ref: 3 }, null, {
+        isRunning: true,
+      })
+    ).toEqual(agents[1]);
+  });
+
+  it('opens a running StartSubagent via session agents', () => {
+    const list = [
+      ...agents,
+      { id: 30, ref: 8, name: 'Explore', agent_type: 'subagent', parent_agent_id: 1 },
+    ];
+    expect(
+      resolveOpenSubagentFromMcpTool(list, 'StartSubagent', { name: 'Explore' }, null, {
+        isRunning: true,
+        parentAgentId: 1,
+      })
+    ).toEqual(list[4]);
   });
 });

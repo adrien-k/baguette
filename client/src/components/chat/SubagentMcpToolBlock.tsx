@@ -3,10 +3,9 @@ import { useMemo, useState, type MouseEvent } from 'react';
 import AgentTypeIcon from '../AgentTypeIcon.jsx';
 import { agentDisplayTitle } from '../../utils/sessionAgents.js';
 import {
-  resolveSubagentForMcpToolCall,
+  resolveOpenSubagentFromMcpTool,
   resolveSubagentTargetFromMcpTool,
   subagentLastAssistantPreview,
-  subagentToolHasStableIdentity,
 } from '../../utils/subagentMcpTool.js';
 import ToolRunElapsed from './ToolRunElapsed.tsx';
 import { formatToolInput, hasToolInput } from './QuietToolBlock.tsx';
@@ -18,6 +17,7 @@ type SessionAgent = {
   name?: string;
   agent_type?: string;
   status?: string;
+  parent_agent_id?: number | null;
 };
 
 type McpResultData = Record<string, unknown> | null;
@@ -40,6 +40,50 @@ function badgeRef(
   return ref != null ? ref : null;
 }
 
+function SubagentOpenCard({
+  label,
+  refLabel,
+  canOpen,
+  onOpen,
+}: {
+  label: string;
+  refLabel: number | null;
+  canOpen: boolean;
+  onOpen: (e: MouseEvent) => void;
+}) {
+  const cardBody = (
+    <>
+      <AgentTypeIcon agentType="subagent" subagent className="h-3.5 w-3.5 shrink-0" />
+      {refLabel != null ? (
+        <span className="font-mono text-[10px] text-faint shrink-0">#{refLabel}</span>
+      ) : null}
+      <span className="truncate min-w-0">{label}</span>
+    </>
+  );
+
+  if (!canOpen) {
+    return (
+      <div
+        className="inline-flex max-w-[14rem] min-w-0 items-center gap-1.5 rounded-lg border border-line/80 bg-control/40 px-2.5 py-1.5 text-xs font-medium text-fg-muted"
+        title={label}
+      >
+        {cardBody}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`Open ${label}`}
+      className="inline-flex max-w-[14rem] min-w-0 items-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-100 transition-colors hover:bg-cyan-500/20 hover:border-cyan-500/50 cursor-pointer"
+    >
+      {cardBody}
+    </button>
+  );
+}
+
 export default function SubagentMcpToolBlock({
   toolName,
   args = {},
@@ -47,6 +91,7 @@ export default function SubagentMcpToolBlock({
   parsedResult,
   isError = false,
   startedAt,
+  parentAgentId,
   agents,
   onSelectAgent,
 }: {
@@ -56,6 +101,7 @@ export default function SubagentMcpToolBlock({
   parsedResult?: McpResultData;
   isError?: boolean;
   startedAt?: string | null;
+  parentAgentId?: number | null;
   agents?: SessionAgent[];
   onSelectAgent?: (agent: SessionAgent) => void;
 }) {
@@ -70,25 +116,18 @@ export default function SubagentMcpToolBlock({
     () => resolveSubagentTargetFromMcpTool(toolName, args, parsedResult ?? null),
     [toolName, args, parsedResult]
   );
-  const resolved = useMemo(
-    () => resolveSubagentForMcpToolCall(agents, toolName, args, parsedResult ?? null),
-    [agents, toolName, args, parsedResult]
+
+  const openAgent = useMemo(
+    () =>
+      resolveOpenSubagentFromMcpTool(agents, toolName, args, parsedResult ?? null, {
+        parentAgentId,
+        isRunning,
+      }) as SessionAgent | null,
+    [agents, toolName, args, parsedResult, parentAgentId, isRunning]
   );
 
-  const badgeAgent: SessionAgent | null = resolved.agent
-    ? (resolved.agent as SessionAgent)
-    : resolved.agentId != null
-      ? {
-          id: resolved.agentId,
-          ref: resolved.agentRef ?? undefined,
-          name: resolved.name ?? undefined,
-          agent_type: 'subagent',
-          status: resolved.status ?? undefined,
-        }
-      : null;
-
   const displayAgent: SessionAgent | null =
-    badgeAgent ??
+    openAgent ??
     (target.name || target.agentRef != null
       ? {
           id: 0,
@@ -98,27 +137,21 @@ export default function SubagentMcpToolBlock({
         }
       : null);
 
-  const refLabel = badgeRef(badgeAgent, target);
+  const refLabel = badgeRef(openAgent ?? displayAgent, target);
 
-  const showBadge =
+  const showSubagentCard =
     displayAgent != null ||
+    openAgent != null ||
     target.agentRef != null ||
     (toolName === 'StartSubagent' && Boolean(target.name));
 
-  const stableIdentity = subagentToolHasStableIdentity(target);
-  const canOpen = Boolean(
-    onSelectAgent &&
-    stableIdentity &&
-    badgeAgent?.id &&
-    badgeAgent.id > 0 &&
-    (target.agentId != null || resolved.agent != null)
-  );
+  const canOpen = Boolean(onSelectAgent && openAgent?.id && openAgent.id > 0);
 
-  const badgeLabel = subagentBadgeLabel(displayAgent, target);
+  const cardLabel = subagentBadgeLabel(openAgent ?? displayAgent, target);
 
   const detail =
     toolName === 'StartSubagent'
-      ? ((typeof args.name === 'string' ? args.name : null) ?? resolved.name)
+      ? ((typeof args.name === 'string' ? args.name : null) ?? openAgent?.name ?? target.name)
       : null;
 
   const lastAssistantPreview = useMemo(
@@ -135,8 +168,8 @@ export default function SubagentMcpToolBlock({
 
   const handleOpen = (e: MouseEvent) => {
     e.stopPropagation();
-    if (!canOpen || !badgeAgent) return;
-    onSelectAgent(badgeAgent);
+    if (!canOpen || !openAgent) return;
+    onSelectAgent?.(openAgent);
   };
 
   return (
@@ -169,24 +202,13 @@ export default function SubagentMcpToolBlock({
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {isRunning && startedAt ? <ToolRunElapsed startedAt={startedAt} /> : null}
-          {showBadge ? (
-            <button
-              type="button"
-              onClick={handleOpen}
-              disabled={!canOpen}
-              title={canOpen ? `Open ${badgeLabel}` : badgeLabel}
-              className={`inline-flex max-w-[12rem] items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
-                canOpen
-                  ? 'border-cyan-500/35 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 cursor-pointer'
-                  : 'border-line/80 bg-control/40 text-fg-muted cursor-default'
-              }`}
-            >
-              <AgentTypeIcon agentType="subagent" subagent className="h-3 w-3" />
-              {refLabel != null ? (
-                <span className="font-mono text-[10px] opacity-80">#{refLabel}</span>
-              ) : null}
-              <span className="truncate">{badgeLabel}</span>
-            </button>
+          {showSubagentCard ? (
+            <SubagentOpenCard
+              label={cardLabel}
+              refLabel={refLabel}
+              canOpen={canOpen}
+              onOpen={handleOpen}
+            />
           ) : null}
         </div>
       </div>

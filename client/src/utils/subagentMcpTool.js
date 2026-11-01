@@ -81,6 +81,83 @@ export function subagentToolHasStableIdentity(target) {
   return false;
 }
 
+function subagentNameMatches(agent, name) {
+  if (!agent || typeof agent.name !== 'string') return false;
+  return agent.name.trim() === name;
+}
+
+function pickNewestSubagentByRef(candidates) {
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0];
+  return candidates.reduce((best, agent) => {
+    const bestRef = best?.ref ?? -1;
+    const nextRef = agent?.ref ?? -1;
+    if (nextRef > bestRef) return agent;
+    if (nextRef < bestRef) return best;
+    const bestId = best?.id ?? -1;
+    const nextId = agent?.id ?? -1;
+    return nextId > bestId ? agent : best;
+  });
+}
+
+/**
+ * While StartSubagent is still running (no MCP result yet), the subagent row often
+ * already exists — match by display name and parent builder that invoked the tool.
+ * @param {Array<{ id?: number; ref?: number; name?: string; agent_type?: string; parent_agent_id?: number | null }> | undefined} agents
+ * @param {string} name
+ * @param {number | null | undefined} parentAgentId
+ */
+export function findRunningStartSubagentInSession(agents, name, parentAgentId) {
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (!trimmed || !Array.isArray(agents) || !agents.length) return null;
+  const parentId =
+    parentAgentId != null && Number.isFinite(Number(parentAgentId)) ? Number(parentAgentId) : null;
+  const candidates = agents.filter((agent) => {
+    if (agent.agent_type !== 'subagent') return false;
+    if (!subagentNameMatches(agent, trimmed)) return false;
+    if (parentId == null) return true;
+    return agent.parent_agent_id === parentId;
+  });
+  return pickNewestSubagentByRef(candidates);
+}
+
+/**
+ * Session agent to open in chat for this MCP subagent tool call, if known.
+ * @param {Array<{ id?: number; ref?: number; name?: string; agent_type?: string; status?: string; parent_agent_id?: number | null }> | undefined} agents
+ * @param {'StartSubagent' | 'AwaitSubagent'} toolName
+ * @param {Record<string, unknown> | undefined} args
+ * @param {Record<string, unknown> | null | undefined} parsedResult
+ * @param {{ parentAgentId?: number | null; isRunning?: boolean }} [options]
+ */
+export function resolveOpenSubagentFromMcpTool(agents, toolName, args, parsedResult, options = {}) {
+  const { parentAgentId, isRunning = false } = options;
+  const resolved = resolveSubagentForMcpToolCall(agents, toolName, args, parsedResult);
+  if (resolved.agent?.id) return resolved.agent;
+
+  if (resolved.agentId != null && Number.isFinite(resolved.agentId) && resolved.agentId > 0) {
+    const fromSession = findSessionAgentForSubagentTool(agents, { agentId: resolved.agentId });
+    if (fromSession) return fromSession;
+    return {
+      id: resolved.agentId,
+      ref: resolved.agentRef ?? undefined,
+      name: resolved.name ?? undefined,
+      agent_type: 'subagent',
+      status: resolved.status ?? undefined,
+    };
+  }
+
+  if (resolved.agentRef != null && Number.isFinite(resolved.agentRef)) {
+    const fromRef = findSessionAgentForSubagentTool(agents, { agentRef: resolved.agentRef });
+    if (fromRef) return fromRef;
+  }
+
+  if (toolName === 'StartSubagent' && isRunning && typeof args?.name === 'string') {
+    return findRunningStartSubagentInSession(agents, args.name, parentAgentId);
+  }
+
+  return null;
+}
+
 /** @param {unknown[]} blocks */
 function textFromAssistantBlocks(blocks) {
   if (!Array.isArray(blocks)) return null;

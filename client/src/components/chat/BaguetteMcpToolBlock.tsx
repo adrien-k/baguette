@@ -58,6 +58,9 @@ function mcpDataHasPayload(data: Record<string, unknown>): boolean {
     data.todo != null ||
     data.todos != null ||
     data.markdown != null ||
+    data.agent_id != null ||
+    data.ref != null ||
+    data.subagent != null ||
     data.ok === true ||
     data.ok === false ||
     data.error != null
@@ -528,6 +531,7 @@ export default function BaguetteMcpToolBlock({
         parsedResult={mcpResult}
         isError={isError}
         startedAt={startedAt}
+        parentAgentId={agentId}
         agents={agents}
         onSelectAgent={onSelectAgent}
       />
