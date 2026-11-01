@@ -60,7 +60,7 @@ export function usageRepoLabel(fullName) {
   return repoDisplayName(fullName);
 }
 
-export function usageRepoTitle(fullName) {
+function usageRepoTitle(fullName) {
   if (!fullName || fullName === '__global__') return 'Global sessions';
   return fullName;
 }
@@ -178,11 +178,11 @@ export function usageConfigKey(row) {
   return UNKNOWN_CONFIG_KEY;
 }
 
-export function usageUserKey(row) {
+function usageUserKey(row) {
   return row?.user_id == null ? '' : String(row.user_id);
 }
 
-export function usageUserLabel(row) {
+function usageUserLabel(row) {
   if (row?.username) return row.username;
   if (row?.user_id != null) return `User ${row.user_id}`;
   return 'Unknown user';
@@ -396,7 +396,7 @@ export function usageDimensionHeading(dimension) {
   return 'By repository';
 }
 
-export const USAGE_GROUP_DIMENSIONS = [
+const USAGE_GROUP_DIMENSIONS = [
   { key: 'user', label: 'By user' },
   { key: 'model', label: 'By model' },
   { key: 'repo', label: 'By repo' },

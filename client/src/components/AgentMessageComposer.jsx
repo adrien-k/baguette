@@ -120,7 +120,7 @@ export default function AgentMessageComposer({
 
   const submitPadding = submitSubtitle ? 'px-2 sm:px-2.5 md:px-3' : COMPOSER_SUBMIT_BUTTON_PADDING;
 
-  const sessionAgents = Array.isArray(agents) ? agents : [];
+  const sessionAgents = useMemo(() => (Array.isArray(agents) ? agents : []), [agents]);
   const agentFromList =
     sessionAgents.length && selectedAgentId != null
       ? sessionAgents.find((a) => a.id === selectedAgentId)

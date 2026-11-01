@@ -21,6 +21,8 @@ import { registerClaudeAgentService } from '../../agent-sdks/claude/agent-servic
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
 import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
+import { clearAllUsageTotals } from '../../agent-sdks/claude/usage-totals.js';
+import { estimateAgentTurnCostUsd } from '../../../shared/agent-model-pricing.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
   const tool = (name, description, inputSchema, handler) => ({
@@ -38,6 +40,33 @@ vi.mock('@cursor/sdk', () => ({
 }));
 
 const db = createTestDb();
+const REVIEW_USAGE_MODEL = 'claude-sonnet-4-6';
+
+function claudeModelUsage(input, output) {
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    webSearchRequests: 0,
+    costUSD: 0,
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+  };
+}
+
+function expectedReviewTurnCost(input, output) {
+  return estimateAgentTurnCostUsd(
+    {
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+    },
+    REVIEW_USAGE_MODEL,
+    {}
+  );
+}
 const params = (user) => ({ provider: 'rest', user });
 const execFileAsync = promisify(execFile);
 
@@ -152,7 +181,7 @@ async function* reviewStream() {
     is_error: false,
     total_cost_usd: 0.01,
     modelUsage: {
-      sonnet: { inputTokens: 10, outputTokens: 5 },
+      [REVIEW_USAGE_MODEL]: claudeModelUsage(10, 5),
     },
   };
 }
@@ -284,6 +313,7 @@ async function reviewLatestCommits(overrides = {}) {
 }
 
 beforeEach(async () => {
+  clearAllUsageTotals();
   query.mockReset();
   query.mockImplementation(() => makeQueryResult());
   const [userId] = await db('users').insert({
@@ -340,7 +370,7 @@ describe('session-review service', () => {
     const usage = await db('usage').where({ session_id: sessionId, agent_type: 'reviewer' });
     expect(usage.length).toBe(1);
     expect(usage[0].agent_sdk).toBe('claude');
-    expect(Number(usage[0].cost_usd)).toBeCloseTo(0.01, 6);
+    expect(Number(usage[0].cost_usd)).toBeCloseTo(expectedReviewTurnCost(10, 5), 6);
     expect(usage[0].input_tokens).toBe(10);
     expect(usage[0].output_tokens).toBe(5);
   });

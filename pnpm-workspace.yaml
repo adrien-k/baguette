@@ -13,3 +13,9 @@ minimumReleaseAgeExclude:
   - '@cursor/sdk@1.0.30'
 packages:
   - 'client'
+peerDependencyRules:
+  allowedVersions:
+    react: '19'
+    react-dom: '19'
+overrides:
+  glob: ^13.0.0

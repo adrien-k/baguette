@@ -10,16 +10,16 @@
     "gen-icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
-    "feathers": "6.0.0-pre.11",
     "@floating-ui/react": "^0.27.20",
-    "@lobehub/icons": "^5.23.0",
+    "@lobehub/icons": "^6.13.0",
     "ansi-to-html": "^0.7.2",
     "diff": "^9.0.0",
+    "feathers": "6.0.0-pre.11",
     "highlight.js": "^11.12.0",
     "lucide-react": "^1.28.0",
     "mermaid": "^12.0.0",
-    "react": "latest",
-    "react-dom": "latest",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "react-hot-toast": "^2.6.0",
     "react-markdown": "^10.1.0",
     "react-qr-code": "^2.2.0",
@@ -35,5 +35,12 @@
     "tailwindcss": "latest",
     "vite": "latest",
     "vite-plugin-pwa": "^1.3.0"
+  },
+  "overrides": {
+    "glob": "^13.0.0",
+    "@emoji-mart/react": {
+      "react": "$react",
+      "react-dom": "$react-dom"
+    }
   }
 }
