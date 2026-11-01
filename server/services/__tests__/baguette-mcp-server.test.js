@@ -71,7 +71,9 @@ import {
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { isPortListening } from '../port-utils.js';
-import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
+import { buildBaguetteToolList } from '../mcp/server.js';
+import { loadConfiguredSlackApps } from '../mcp/lib/slack.js';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
 import { createSessionAgentContext } from '../mcp/lib/session-agent-context.js';
 import { createGitPushTool } from '../mcp/tools/git-push.js';
 import { createPrUpsertTool } from '../mcp/tools/pr-upsert.js';
@@ -243,7 +245,10 @@ async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null }
     sessionRow,
     appOpts
   );
-  await buildBaguetteMcpServer(sessionRow, app, { agent });
+  const slackApps = await loadConfiguredSlackApps(app);
+  claudeAgentSdkPlugin.adaptTools(
+    await buildBaguetteToolList(sessionRow, app, { slackApps, agent })
+  );
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }

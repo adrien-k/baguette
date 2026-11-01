@@ -10,6 +10,9 @@ import {
   buildSessionAgentIssueMcpTools,
 } from '../baguette-issue-mcp-tools.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
+import { registerAllSdkPlugins } from '../../agent-sdks/index.js';
+
+registerAllSdkPlugins();
 
 const db = createTestDb();
 

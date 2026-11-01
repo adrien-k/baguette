@@ -51,9 +51,9 @@ export async function listAnthropicApiModels(config, options = {}) {
 
 /**
  * @param {{ baseUrl: string, apiKey?: string | null, authToken?: string | null }} config
- * @param {{ model: string, signal?: AbortSignal }} body
+ * @param {{ model: string, signal?: AbortSignal, extraHeaders?: Record<string, string> }} body
  */
-export async function probeAnthropicMessages(config, { model, signal }) {
+export async function probeAnthropicMessages(config, { model, signal, extraHeaders }) {
   return anthropicApiRequest(config, 'POST', '/v1/messages', {
     body: {
       model,
@@ -61,5 +61,6 @@ export async function probeAnthropicMessages(config, { model, signal }) {
       messages: [{ role: 'user', content: 'ping' }],
     },
     signal: signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    extraHeaders,
   });
 }

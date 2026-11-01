@@ -1,3 +1,5 @@
+import { formatAgentSdkDisplayName } from './agent-sdk-display.js';
+
 const MAX_LABEL_LEN = 20;
 
 export function truncateLabel(label, maxLen = MAX_LABEL_LEN) {
@@ -6,11 +8,14 @@ export function truncateLabel(label, maxLen = MAX_LABEL_LEN) {
   return s.slice(0, maxLen);
 }
 
-export function sdkDisplayName(sdk) {
-  if (sdk === 'cursor') return 'Cursor';
-  if (sdk === 'pi') return 'Pi';
-  if (sdk === 'mock') return 'Mock';
-  return 'Claude';
+/**
+ * Human-readable SDK name. Prefer plugin/meta `label` when the caller has it.
+ * @param {string | null | undefined} sdk
+ * @param {string | null | undefined} [label]
+ */
+export function sdkDisplayName(sdk, label) {
+  if (label) return String(label);
+  return formatAgentSdkDisplayName(sdk);
 }
 
 /** Account-level config label for an SDK. */

@@ -9,7 +9,7 @@ vi.mock('../../lib/cache.js', () => ({
   clear: vi.fn(async () => {}),
 }));
 
-vi.mock('../anthropic-models.js', () => ({
+vi.mock('../../agent-sdks/claude/anthropic-models.js', () => ({
   listModels: vi.fn(async () => ({
     models: [{ id: 'claude-sonnet-4-5', display_name: 'Sonnet' }],
     rejected_models: [],
@@ -18,7 +18,7 @@ vi.mock('../anthropic-models.js', () => ({
 }));
 
 const { listModelsForUser, loadModelsForSdk } = await import('../baguette-models-for-user.js');
-const { listModels } = await import('../anthropic-models.js');
+const { listModels } = await import('../../agent-sdks/claude/anthropic-models.js');
 
 const db = createTestDb();
 

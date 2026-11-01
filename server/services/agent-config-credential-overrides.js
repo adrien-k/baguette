@@ -1,4 +1,4 @@
-import { defaultAgentConfigApiKeyEnvVar } from '../../shared/agent-config-api-key-env.js';
+import { getSdkPlugin } from '../agent-sdks/registry.js';
 
 const CONFIG_COLUMN_OVERRIDE_KEYS = ['api_url', 'api_key', 'api_key_env_var'];
 
@@ -65,12 +65,12 @@ export function applyCredentialOverridesToConfig(config, overrides) {
  * @param {Record<string, string>} overrides
  */
 export function draftAgentConfigForConnectivityTest(sdk, overrides = {}) {
+  const schema = getSdkPlugin(sdk)?.credentialSchema;
   const base = {
     sdk,
     api_url: null,
     api_key: null,
-    api_key_env_var:
-      sdk === 'cursor' || sdk === 'mock' ? null : defaultAgentConfigApiKeyEnvVar(sdk),
+    api_key_env_var: schema?.defaultEnvVar ?? null,
   };
   return applyCredentialOverridesToConfig(base, overrides);
 }

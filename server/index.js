@@ -8,7 +8,7 @@ import { toAbortableNodeHandler } from './lib/feathers-node-handler.js';
 import { getClientIp } from './lib/client-ip.js';
 
 import logger from './logger.js';
-import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
+import { SDK_QUERY_CLOSED_MESSAGE } from './agent-sdks/claude/claude-agent-sdk-constants.js';
 import { createAuthRoutes } from './routes/auth.js';
 import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';

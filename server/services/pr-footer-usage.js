@@ -1,5 +1,5 @@
-import { parseModelParamsJson } from '../../shared/cursor-model-pricing.js';
 import { normalizeUsageAgentType } from '../../shared/usage-agent-type.js';
+import { getSdkPlugin } from '../agent-sdks/registry.js';
 
 function formatTokens(n) {
   const value = Number(n) || 0;
@@ -16,8 +16,8 @@ function formatUsd(n) {
   return `$${value.toFixed(0)}`;
 }
 
-function cursorFastFromModelParams(modelParams) {
-  return parseModelParamsJson(modelParams).fast === 'true';
+function usageLabelExtras(row) {
+  return getSdkPlugin(row.agent_sdk)?.usageLabelExtras?.(row) ?? {};
 }
 
 /**
@@ -52,7 +52,8 @@ async function querySessionUsageByModel(db, sessionId) {
 }
 
 /**
- * Merge usage rows that share agent type, agent_sdk, model, and Cursor fast flag (from stored model_params).
+ * Merge usage rows that share agent type, agent_sdk, model, and plugin extras
+ * (e.g. Cursor `fast` from `usageLabelExtras`).
  *
  * @param {ReturnType<typeof querySessionUsageByModel> extends Promise<infer T> ? T : never} rows
  */
@@ -61,7 +62,7 @@ export function mergeUsageForPrFooter(rows) {
 
   for (const row of rows) {
     const agent_type = normalizeUsageAgentType(row.agent_type);
-    const fast = row.agent_sdk === 'cursor' ? cursorFastFromModelParams(row.model_params) : false;
+    const fast = usageLabelExtras(row).fast === true;
     const key = `${agent_type}\0${row.agent_sdk}\0${row.model}\0${fast ? '1' : '0'}`;
     const prev = merged.get(key);
     if (prev) {
@@ -143,7 +144,7 @@ export async function loadSessionFooterUsageLines(db, session) {
 }
 
 function formatSlackModelLabel(row) {
-  if (row.agent_sdk === 'cursor' && row.fast) {
+  if (row.fast) {
     return `${row.model} (Fast)`;
   }
   return row.model;

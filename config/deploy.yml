@@ -53,7 +53,7 @@ registry:
 <% end %>
   username: <%= ENV.fetch("DOCKER_REGISTRY_USERNAME") %>
   password:
-    - KAMAL_REGISTRY_PASSWORD
+    - DOCKER_REGISTRY_PASSWORD
 <% else %>
 # Use a local registry on the deploy server — no credentials needed.
 # Kamal automatically starts the registry and pushes the image to it.

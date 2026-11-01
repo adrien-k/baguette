@@ -102,6 +102,11 @@ async function createAndMigrate() {
   return db;
 }
 
+/** In-memory migrated Knex instance without Vitest lifecycle hooks. */
+export function createMigratedTestDb() {
+  return createAndMigrate();
+}
+
 async function truncateAllTables(db) {
   await db.raw('PRAGMA foreign_keys = OFF');
   const tables = await db

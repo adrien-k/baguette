@@ -9,10 +9,8 @@ import { registerReposService } from '../feathers/repos.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
-import {
-  registerAgentConfigsService,
-  registerAgentSdk,
-} from '../feathers/agent-configs.service.js';
+import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk } from '../../agent-sdks/registry.js';
 const db = createTestDb();
 
 let app;

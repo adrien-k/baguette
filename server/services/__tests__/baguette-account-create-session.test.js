@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
-vi.mock('../anthropic-models.js', () => ({
+vi.mock('../../agent-sdks/claude/anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue({
     models: [{ id: 'sonnet', display_name: 'Sonnet' }],
     rejected_models: [],
   }),
 }));
 const listCursorModels = vi.fn().mockResolvedValue([]);
-vi.mock('../cursor-models.js', () => ({
+vi.mock('../../agent-sdks/cursor/models.js', () => ({
   listCursorModels: (...args) => listCursorModels(...args),
 }));
 

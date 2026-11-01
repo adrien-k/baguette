@@ -272,7 +272,7 @@ export async function assertAgentConfigOnCreate(context) {
     const { ensureTestClaudeConfig, ensureTestPiConfig, insertTestAgentConfig } =
       await import('../test-utils/agent-configs.js');
     if (sdkHint === 'mock') {
-      const { ensureMockAgentConfig } = await import('./mock-agent-config.js');
+      const { ensureMockAgentConfig } = await import('../agent-sdks/mock/mock-agent-config.js');
       agentConfigId = await ensureMockAgentConfig(db, userId);
     } else if (sdkHint === 'pi') {
       agentConfigId = await ensureTestPiConfig(db, userId);

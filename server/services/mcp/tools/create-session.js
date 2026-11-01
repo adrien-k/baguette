@@ -1,9 +1,7 @@
 import { z } from 'zod';
 import { stringifyModelParamsForStorage } from '../../../../shared/agent-session-defaults.js';
-import { resolveCursorModelParams } from '../../../../shared/model-variants.js';
-import { resolveClaudeAgentModelParams } from '../../claude-model-params.js';
-import { resolvePiAgentModelParams } from '../../pi-model-params.js';
-import { parseCursorModelPrefsJson } from '../../agent-preferences.js';
+import { getSdkPlugin } from '../../../agent-sdks/registry.js';
+import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
 import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
@@ -133,33 +131,17 @@ export function createCreateSessionTool(ctx) {
 
       let modelParams = stringifyModelParamsForStorage(resolved.model_params);
       if (!modelParams && resolved.model) {
-        const prefs = parseCursorModelPrefsJson(fullUser.agent_preferences);
+        await ensureBuiltInSdkPluginsRegistered();
+        const plugin = getSdkPlugin(agent_sdk);
         try {
           const models = await loadModelsForSdk(fullUser, agent_sdk, null, app, {
             agentConfigId: resolved.agent_config_id,
           });
-          let resolvedParams;
-          if (agent_sdk === 'cursor') {
-            resolvedParams = resolveCursorModelParams({
-              models,
-              modelId: resolved.model,
-              modelParamsJson: undefined,
-              cursorModelPrefs: prefs,
-            });
-          } else if (agent_sdk === 'claude') {
-            resolvedParams = resolveClaudeAgentModelParams({
-              models,
-              modelId: resolved.model,
-              modelParams: undefined,
-              cursorModelPrefs: prefs,
-            });
-          } else if (agent_sdk === 'pi') {
-            resolvedParams = resolvePiAgentModelParams({
-              models,
-              modelId: resolved.model,
-              modelParams: undefined,
-            });
-          }
+          const resolvedParams = plugin?.resolveModelParams?.({
+            models,
+            modelId: resolved.model,
+            user: fullUser,
+          });
           modelParams = stringifyModelParamsForStorage(resolvedParams);
         } catch {
           // Model list unavailable — session still starts with model id only (no variant params).

@@ -11,7 +11,7 @@ import {
   PUBLIC_API_URL,
 } from '../config.js';
 import { toSafePath } from '../lib/safe-path.js';
-import { ensureMockAgentConfig } from '../services/mock-agent-config.js';
+import { ensureMockAgentConfig } from '../agent-sdks/mock/mock-agent-config.js';
 import { isMockAgentSdkEnabled, MOCK_STANDARD_MODEL_ID } from '../../shared/mock-agent-sdk.js';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';

@@ -23,7 +23,7 @@ import { normalizeUserPayloadForStorage } from '../shared/normalize-user-payload
 import {
   claudeBuildToolCallComplete,
   claudeBuildToolCallStart,
-} from '../server/services/claude/claude-mapping.ts';
+} from '../server/agent-sdks/claude/mapping.ts';
 import {
   applySessionMessageWrites,
   forEachSessionMessageGroup,

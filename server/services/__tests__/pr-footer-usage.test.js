@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { registerAllSdkPlugins } from '../../agent-sdks/index.js';
 import {
   mergeUsageForPrFooter,
   formatPrFooterUsageLine,
   formatPrFooterUsageLines,
   formatSlackFooterUsageSummary,
 } from '../pr-footer-usage.js';
+
+registerAllSdkPlugins();
 
 const builderFastParams = JSON.stringify([{ id: 'fast', value: 'true' }]);
 const reviewerSlowParams = JSON.stringify([{ id: 'fast', value: 'false' }]);

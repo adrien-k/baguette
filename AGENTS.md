@@ -35,8 +35,12 @@ New API endpoints should be implemented as **Feathers services** in `server/serv
 
 - Add custom actions (beyond CRUD) as **custom methods** on the service class and declare them in `app.use(path, service, { methods: [...] })`.
 - Register the service in `server/services/feathers/index.js` via `registerFeathersServices`.
-- Export the client-side service from `client/src/feathers.js` and call `.methods(...)` for any custom methods.
+- Export the client-side service from `client/src/feathers.js`. Call custom methods directly (`service.listModels(...)`); do not call `.methods(...)` on the client — in Feathers 6 that is itself an HTTP custom-method request.
 - Use `apiFetch` only for non-Feathers endpoints (e.g. `server/routes/settings.js`, auth routes).
+
+### Agent SDKs are self-contained plugins
+
+Agent runtimes (claude, cursor, pi, mock) live in their own `server/agent-sdks/<sdk>/` folder — agent Feathers service, helpers, and tests together — and register through the plugin registry + manifest in `server/agent-sdks/` (`registry.js` / `index.js`). Never hardcode `sdk === 'x'` branches in SDK-agnostic code; look behavior up via `getSdkPlugin` / `registerAgentSdk` from `agent-sdks/registry.js`. To add an SDK, create the folder and add it to `allSdkPlugins` in `agent-sdks/index.js` — see `docs/adding-an-agent-sdk.md`.
 
 **DB writes belong in the Feathers service, not in helper/utility modules.** External service modules (e.g. `server/services/plugins-service.js`) should contain only pure logic and file-system/network operations. The Feathers service method is responsible for reading from and writing to the DB before/after calling those helpers. This keeps the DB boundary clear and ensures auth hooks run around every DB mutation.
 

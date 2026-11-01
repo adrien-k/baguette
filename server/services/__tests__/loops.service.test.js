@@ -8,13 +8,11 @@ import { feathers } from 'feathers';
 import { BadRequest, NotFound } from 'feathers/errors';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerLoopsService } from '../feathers/loops.service.js';
-import {
-  claudeTiedSessionLoopCompaction,
-  directPromptTiedSessionLoopCompaction,
-} from '../feathers/loop-compaction.ts';
+import { directPromptTiedSessionLoopCompaction } from '../feathers/loop-compaction.ts';
+import { claudeTiedSessionLoopCompaction } from '../../agent-sdks/claude/loop-compaction.ts';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
-import { registerAgentSdk } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk } from '../../agent-sdks/registry.js';
 import { getPRStatus } from '../github.js';
 
 vi.mock('../github.js', async (importOriginal) => {

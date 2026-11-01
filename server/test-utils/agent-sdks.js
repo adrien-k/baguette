@@ -2,12 +2,10 @@ import {
   CLAUDE_AGENT_SDK_KEY,
   CLAUDE_AGENT_SDK_LABEL,
   CLAUDE_AGENT_SERVICE_PATH,
-  CURSOR_AGENT_SDK_KEY,
-} from '../services/agent-sdk-meta.js';
-import {
-  registerAgentSdk,
-  registerAgentConfigsService,
-} from '../services/feathers/agent-configs.service.js';
+} from '../agent-sdks/claude/meta.js';
+import { CURSOR_AGENT_SDK_KEY } from '../agent-sdks/cursor/meta.js';
+import { registerAgentSdk } from '../agent-sdks/registry.js';
+import { registerAgentConfigsService } from '../services/feathers/agent-configs.service.js';
 
 /** Mount `agent-configs` when the test app does not already have it (SDK registry + dispatch). */
 export function mountAgentConfigs(app) {

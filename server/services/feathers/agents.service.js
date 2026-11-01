@@ -445,7 +445,7 @@ async function beforeRemove(context) {
   }
   const db = context.app.get('db');
   if (row.agent_type === 'reviewer') {
-    context.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(row.id));
+    context.app.service('sessions').resetUsageTotals(reviewTurnKey(row.id));
   }
   await db('session_messages').where({ agent_id: row.id }).delete();
   await db('queued_messages').where({ agent_id: row.id }).delete();

@@ -3,6 +3,7 @@ import { BadRequest } from 'feathers/errors';
 import { getReviewAgentTurn, reviewTurnKey, buildReviewStartMessage } from './review-agent-turn.js';
 import { patchAgentInternal } from './feathers/agents.service.js';
 import { getAgentById } from './agents-db.js';
+import { storedSessionIdColumns } from '../agent-sdks/registry.js';
 
 async function assertSessionCanReview(session) {
   if (isGlobalSession(session)) {
@@ -20,15 +21,17 @@ export async function dispatchReviewerAfterCreate(app, agent, session, createDat
   reviewTurn.setTurnExtras(session.id, {
     extraPrompt: createData.extra_prompt,
   });
-  app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(agent.id));
+  app.service('sessions').resetUsageTotals(reviewTurnKey(agent.id));
+  const storedSessionClear = {};
+  for (const col of storedSessionIdColumns()) {
+    storedSessionClear[col] = null;
+  }
   await patchAgentInternal(
     app,
     agent.id,
     {
       status: 'running',
-      claude_session_id: null,
-      cursor_agent_id: null,
-      pi_session_id: null,
+      ...storedSessionClear,
       active_turn_id: null,
     },
     session.user_id

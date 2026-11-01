@@ -15,6 +15,8 @@ import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
+import { useSdkMetas } from '../../hooks/useSdkMetas.js';
+import { sdkDisplayName } from '@baguette/shared/agent-config-labels.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
@@ -90,12 +92,14 @@ export default function ReviewView({
   const [reviewUserMessage, setReviewUserMessage] = reviewPersist.useState('focus', '');
 
   const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { getMeta } = useSdkMetas();
   const agentConfigOptions = configOptions;
 
   const [reviewConfigId, setReviewConfigId] = useState(null);
   const [reviewModel, setReviewModel] = useState('');
   const [reviewModelParams, setReviewModelParams] = useState(null);
   const [reviewAgentSdk, setReviewAgentSdk] = useState(null);
+  const reviewSdkLabel = sdkDisplayName(reviewAgentSdk, getMeta(reviewAgentSdk)?.label);
   const { models, stale: modelsStale } = useAgentConfigModels(reviewConfigId);
   const fallbackConfigId = agentConfigOptions[0]?.key ?? null;
 
@@ -443,7 +447,7 @@ export default function ReviewView({
           <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6 space-y-4`}>
             {userSettings && !hasSdkKey && (
               <Alert variant="alert">
-                Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                Add a {reviewSdkLabel} API key in{' '}
                 <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
               </Alert>
             )}
@@ -537,7 +541,7 @@ export default function ReviewView({
             <div className="@container w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
-                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                  Add a {reviewSdkLabel} API key in{' '}
                   <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
                 </Alert>
               )}

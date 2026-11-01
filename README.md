@@ -70,6 +70,8 @@ cp .env.example .env
 | `DATA_DIR`                  | Data directory for DB, repo clones, and worktrees (default: `~/.baguette`)                                                                                                                                |
 | `TRUST_PROXY_HOPS`          | Reverse-proxy hops between the internet and Baguette trusted to set `X-Forwarded-For` (default: `1` — one proxy that appends the client address). Set `0` when Baguette is exposed directly with no proxy |
 
+Optional **live agent-SDK tests** (`*.live.test.js`) call a real model and skip unless set. Copy the `SDK_TESTS_*` block from `.env.example` (Claude / Cursor / Pi keys + model; `SDK_TESTS_MOCK=1` for the mock SDK). Do not set them in CI unless you intend to pay for those calls. The `agents-integration-test` Baguette task runs Pi, Claude, and Cursor live tests on cheap OpenCode Go / Cursor models using those secrets.
+
 3. Create the GitHub App and set its callback URL to `http://localhost:5173/auth/github/callback` — see [Setting up the GitHub App](#setting-up-the-github-app).
 
 4. Run database migrations:

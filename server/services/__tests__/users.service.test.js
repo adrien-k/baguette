@@ -6,7 +6,7 @@ import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 
 const mockClearUserReposPickerCache = vi.fn();
-vi.mock('../anthropic-models.js', () => ({
+vi.mock('../../agent-sdks/claude/anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue({
     models: [{ id: 'sonnet', display_name: 'Sonnet' }],
     rejected_models: [],

@@ -53,7 +53,9 @@ vi.mock('../slack.js', () => ({
 
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { getPermalink, postMessage, resolveChannelId } from '../slack.js';
-import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
+import { buildBaguetteToolList } from '../mcp/server.js';
+import { loadConfiguredSlackApps } from '../mcp/lib/slack.js';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
 
 // ─── Harness ────────────────────────────────────────────────────────────────
 
@@ -100,7 +102,11 @@ async function buildTools({ slackApps = [ACME], usageRows = [] } = {}) {
       return { patch: vi.fn(), get: async () => ({ id: 7, access_token: 'tok' }) };
     },
   };
-  await buildBaguetteMcpServer({ ...SESSION }, app);
+  const session = { ...SESSION };
+  const slackAppsLoaded = await loadConfiguredSlackApps(app);
+  claudeAgentSdkPlugin.adaptTools(
+    await buildBaguetteToolList(session, app, { slackApps: slackAppsLoaded })
+  );
   return createSdkMcpServer.mock.calls.at(-1)[0].tools;
 }
 
@@ -273,7 +279,10 @@ describe('SlackPostMessage', () => {
         return { patch: vi.fn(), get: async () => ({ id: 7, access_token: 'tok' }) };
       },
     };
-    await buildBaguetteMcpServer({ ...SESSION }, app);
+    const slackAppsLoaded = await loadConfiguredSlackApps(app);
+    claudeAgentSdkPlugin.adaptTools(
+      await buildBaguetteToolList({ ...SESSION }, app, { slackApps: slackAppsLoaded })
+    );
     const tools = createSdkMcpServer.mock.calls.at(-1)[0].tools;
     slackApps = [];
 

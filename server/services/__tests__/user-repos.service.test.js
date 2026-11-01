@@ -6,7 +6,7 @@ import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerUserReposService } from '../feathers/user-repos.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
-vi.mock('../anthropic-models.js', () => ({
+vi.mock('../../agent-sdks/claude/anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue({
     models: [{ id: 'sonnet', display_name: 'Sonnet' }],
     rejected_models: [],

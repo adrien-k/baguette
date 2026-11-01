@@ -2,7 +2,6 @@ import { KnexService } from '@feathersjs/knex';
 import { BadRequest, Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, encryptFields, decryptFields, maskValue } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
-import { normalizeAnthropicBaseUrl } from '../session-env.js';
 import { decryptAgentConfigRow } from '../agent-config-env.js';
 import { testFromAgentConfig } from '../agent-sdk-credential-test.js';
 import { truncateLabel } from '../../../shared/agent-config-labels.js';
@@ -25,10 +24,19 @@ import {
 } from '../agent-config-credential-overrides.js';
 import { normalizeAgentConfigLogo } from '../../../shared/agent-config-logo.js';
 import { throwIfAgentConfigDeleted } from '../agent-config-deleted.js';
-
-const VALID_SDKS = new Set(['claude', 'cursor', 'pi', 'mock']);
+import { getSdkPlugin, sdkPluginPublicMeta } from '../../agent-sdks/registry.js';
 
 /** @typedef {{ key: string, label: string, servicePath: string }} AgentSdkMeta */
+
+function isKnownAgentSdk(service, sdk) {
+  if (!sdk) return false;
+  if (service.getSdkMeta?.(sdk)) return true;
+  return Boolean(getSdkPlugin(sdk));
+}
+
+function unknownSdkError(sdk) {
+  return new BadRequest(`Unknown agent SDK "${sdk}"`);
+}
 
 /**
  * List models for an owned agent configuration using that config's SDK service.
@@ -59,8 +67,9 @@ export async function listModelsForOwnedConfig(
  * @param {{ sdk: string, refresh?: boolean, credentialOverrides?: Record<string, string> }} opts
  */
 async function listModelsForDraftConfig(app, { sdk, refresh = false, credentialOverrides = {} }) {
-  if (!VALID_SDKS.has(sdk)) {
-    throw new BadRequest('sdk must be claude, cursor, pi, or mock');
+  const configs = app.service('agent-configs');
+  if (!isKnownAgentSdk(configs, sdk)) {
+    throw unknownSdkError(sdk);
   }
   const config = draftAgentConfigForConnectivityTest(sdk, credentialOverrides);
   return listModelsForAgentConfigShape(app, { config, refresh, user: null });
@@ -91,6 +100,7 @@ class AgentConfigsService extends KnexService {
 
   /**
    * Register an agent SDK service. Called by each SDK service at startup.
+   * Extra capability fields are optional (merged from `getSdkPlugin` when present).
    * @param {{ key?: string, label?: string, service_path?: string, servicePath?: string }} data
    */
   registerSdk(data = {}) {
@@ -103,17 +113,25 @@ class AgentConfigsService extends KnexService {
     if (this._sdks.has(key)) {
       throw new BadRequest(`Duplicate agent SDK key: ${key}`);
     }
-    this._sdks.set(key, { key, label, servicePath });
-    return { key, label, service_path: servicePath };
+    const plugin = getSdkPlugin(key) ?? {};
+    const stored = sdkPluginPublicMeta({
+      ...plugin,
+      ...data,
+      key,
+      label,
+      servicePath,
+    });
+    this._sdks.set(key, stored);
+    return { ...stored };
   }
 
-  getSdkMetas() {
-    return [...this._sdks.values()].map((m) => ({ ...m }));
+  async getSdkMetas() {
+    return [...this._sdks.values()].map((m) => sdkPluginPublicMeta(m));
   }
 
   getSdkMeta(key) {
     const meta = this._sdks.get(key);
-    return meta ? { ...meta } : null;
+    return meta ? sdkPluginPublicMeta(meta) : null;
   }
 
   /** Feathers path for a registered `agent_sdk` key (unknown keys use the first registered SDK). */
@@ -142,7 +160,7 @@ class AgentConfigsService extends KnexService {
     const userId = params.user?.id;
     if (!userId) throw new Forbidden('Not authenticated');
     const knex = this.options.Model;
-    const { ensureMockAgentConfig } = await import('../mock-agent-config.js');
+    const { ensureMockAgentConfig } = await import('../../agent-sdks/mock/mock-agent-config.js');
     await ensureMockAgentConfig(knex, userId);
     const rows = await this.options
       .Model('agent_configs')
@@ -237,8 +255,8 @@ class AgentConfigsService extends KnexService {
       config = applyCredentialOverridesToConfig(decryptAgentConfigRow(row), overrides);
     } else {
       if (!sdk) throw new BadRequest('id or sdk is required');
-      if (!VALID_SDKS.has(sdk)) {
-        throw new BadRequest('sdk must be claude, cursor, pi, or mock');
+      if (!isKnownAgentSdk(this, sdk)) {
+        throw unknownSdkError(sdk);
       }
       config = draftAgentConfigForConnectivityTest(sdk, overrides);
     }
@@ -256,11 +274,26 @@ async function validateAgentConfigWrite(context) {
   } else if (context.method === 'create') {
     throw new BadRequest('label is required');
   }
-  if (data.sdk !== undefined && !VALID_SDKS.has(data.sdk)) {
-    throw new BadRequest('sdk must be claude, cursor, pi, or mock');
+  if (data.sdk !== undefined && !isKnownAgentSdk(context.service, data.sdk)) {
+    throw unknownSdkError(data.sdk);
   }
+
+  let effectiveSdk = data.sdk;
+  if (effectiveSdk === undefined && context.method === 'patch' && context.id != null) {
+    const row = await context.service._ownedRow(context.id, context.params.user?.id);
+    effectiveSdk = row.sdk;
+  }
+
+  const plugin = getSdkPlugin(effectiveSdk);
+  const schema =
+    plugin?.credentialSchema ??
+    context.service.getSdkMeta?.(effectiveSdk)?.credentialSchema ??
+    null;
+
   if (data.api_url !== undefined) {
-    data.api_url = normalizeAnthropicBaseUrl(data.api_url);
+    if (schema?.hasApiUrl && typeof plugin?.normalizeApiUrl === 'function') {
+      data.api_url = plugin.normalizeApiUrl(data.api_url);
+    }
   }
   if (data.extra_env_json !== undefined && data.extra_env_json != null) {
     if (typeof data.extra_env_json === 'object') {
@@ -289,26 +322,22 @@ async function validateAgentConfigWrite(context) {
     }
   }
 
-  let effectiveSdk = data.sdk;
-  if (effectiveSdk === undefined && context.method === 'patch' && context.id != null) {
-    const row = await context.service._ownedRow(context.id, context.params.user?.id);
-    effectiveSdk = row.sdk;
-  }
+  const storesEnvVar = schema?.envVarOptions != null && schema?.defaultEnvVar != null;
 
   if (context.method === 'create' && data.sdk) {
-    if (data.sdk === 'cursor' || data.sdk === 'mock') {
+    if (!storesEnvVar) {
       data.api_key_env_var = null;
     } else if (data.api_key_env_var == null || data.api_key_env_var === '') {
-      data.api_key_env_var = defaultAgentConfigApiKeyEnvVar(data.sdk);
+      data.api_key_env_var = defaultAgentConfigApiKeyEnvVar(schema);
     }
   }
 
   if (data.api_key_env_var !== undefined || data.sdk !== undefined) {
-    if (effectiveSdk === 'cursor' || effectiveSdk === 'mock') {
+    if (!storesEnvVar) {
       data.api_key_env_var = null;
     } else if (data.api_key_env_var !== undefined && effectiveSdk) {
       try {
-        data.api_key_env_var = normalizeAgentConfigApiKeyEnvVar(effectiveSdk, data.api_key_env_var);
+        data.api_key_env_var = normalizeAgentConfigApiKeyEnvVar(schema, data.api_key_env_var);
       } catch (err) {
         throw new BadRequest(err.message);
       }
@@ -371,21 +400,6 @@ const agentConfigsHooks = {
   },
 };
 
-/**
- * Record an SDK on the agent-configs service. No-op when that service is not mounted
- * (unit tests that register a single agent service in isolation).
- * @param {import('feathers').Application} app
- * @param {{ key: string, label: string, servicePath: string }} meta
- */
-export function registerAgentSdk(app, { key, label, servicePath }) {
-  if (!app.services?.['agent-configs']) return;
-  return app.service('agent-configs').registerSdk({
-    key,
-    label,
-    service_path: servicePath,
-  });
-}
-
 export function registerAgentConfigsService(app, path = 'agent-configs') {
   const options = {
     Model: app.get('db'),
@@ -405,6 +419,7 @@ export function registerAgentConfigsService(app, path = 'agent-configs') {
       'listModels',
       'testConnectivity',
       'lastUsed',
+      'getSdkMetas',
     ],
   });
   app.service(path).hooks(agentConfigsHooks);

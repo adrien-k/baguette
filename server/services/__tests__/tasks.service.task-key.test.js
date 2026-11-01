@@ -16,7 +16,7 @@ import { loadBaguetteConfig } from '../baguette-config.js';
 // Prevent actual process spawning
 vi.spyOn(Task.prototype, 'start').mockReturnValue(undefined);
 
-vi.mock('../feathers/claude-agent.service.ts', () => ({
+vi.mock('../../agent-sdks/claude/agent-service.ts', () => ({
   getSessionEnv: vi.fn().mockResolvedValue({}),
 }));
 

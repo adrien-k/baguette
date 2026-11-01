@@ -7,7 +7,7 @@ import { usageModelFieldsFromSnapshot } from './usage-snapshot.js';
 
 /**
  * USD estimate for a Cursor/Pi `usage` row (or live turn tokens) using model snapshots.
- * Mirrors `sessions.recordCursorUsage` / `recordPiUsage` so recomputes match new turns.
+ * Mirrors Cursor/Pi `recordTurnUsage` so recomputes match new turns.
  *
  * `input_tokens` on the row is already derived from `raw_token_usage` for Cursor; see
  * `shared/cursor-token-adjustment.js`.

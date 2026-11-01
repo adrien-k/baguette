@@ -17,9 +17,10 @@ import { registerSessionIssuesService } from '../feathers/session-issues.service
 import { getReviewAgentTurn, registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
-import { registerClaudeAgentService } from '../feathers/claude-agent.service.ts';
+import { registerClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
-import { registerAgentSdk } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => {
   const tool = (name, description, inputSchema, handler) => ({
@@ -105,6 +106,23 @@ function makeApp(db) {
     }
   );
   registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
+  registerSdkPlugin(claudeAgentSdkPlugin);
+  registerSdkPlugin({
+    key: 'cursor',
+    label: 'Cursor',
+    servicePath: 'cursor-agent',
+    supportsModelParams: true,
+    storedSessionIdColumn: 'cursor_agent_id',
+    hasStoredSession: (agent) => Boolean(agent?.cursor_agent_id),
+  });
+  registerSdkPlugin({
+    key: 'pi',
+    label: 'Pi',
+    servicePath: 'pi-agent',
+    supportsModelParams: true,
+    storedSessionIdColumn: 'pi_session_id',
+    hasStoredSession: (agent) => Boolean(agent?.pi_session_id),
+  });
   app.use(
     'pi-agent',
     {

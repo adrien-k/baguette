@@ -18,8 +18,8 @@ vi.mock('../../db.js', () => ({ default: vi.fn() }));
 import { createFeathersApp } from '../../feathers.js';
 import { toAbortableNodeHandler } from '../../lib/feathers-node-handler.js';
 import { createFeathersCookieAuth } from '../../lib/feathers-http-auth.js';
-import { registerClaudeAgentService } from '../feathers/claude-agent.service.ts';
-import { CLAUDE_AGENT_SERVICE_PATH } from '../agent-sdk-meta.js';
+import { registerClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
+import { CLAUDE_AGENT_SERVICE_PATH } from '../../agent-sdks/claude/meta.js';
 
 /** Same middleware stack as server/index.js (minus Express-specific layers). */
 function handlerFor(app) {

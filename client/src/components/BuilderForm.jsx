@@ -10,6 +10,7 @@ import { agentConfigsService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
+import { useSdkMetas } from '../hooks/useSdkMetas.js';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
@@ -171,11 +172,13 @@ export default function BuilderForm({
   // another SDK's list.
   const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
   const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { getMeta } = useSdkMetas();
   const selectedConfig =
     configOptions.find((c) => c.key === String(agentConfigId)) ?? configOptions[0] ?? null;
   const agentSdk = selectedConfig?.sdk ?? '';
-  const isCursor = agentSdk === 'cursor';
-  const usesModelParams = agentSdk === 'cursor' || agentSdk === 'claude' || agentSdk === 'pi';
+  const sdkMeta = getMeta(agentSdk);
+  const usesModelParams = sdkMeta?.supportsModelParams === true;
+  const appliesUserModelPrefs = sdkMeta?.appliesUserModelPrefs === true;
 
   const applyConfigAndModel = (nextConfigId, modelId, paramsJson) => {
     if (nextConfigId) setAgentConfigIdRaw(String(nextConfigId));
@@ -299,14 +302,18 @@ export default function BuilderForm({
     const current = models.find((m) => m.id === model);
     if (current) {
       if (usesModelParams && !modelParamsJson) {
-        setModelParamsJson(paramsJsonForModelChange(current, cursorModelPrefs));
+        setModelParamsJson(
+          paramsJsonForModelChange(current, appliesUserModelPrefs ? cursorModelPrefs : undefined)
+        );
       }
       return;
     }
     const fallback = defaultModelForSdk(models);
     if (!fallback) return;
     setModel(fallback.id);
-    setModelParamsJson(paramsJsonForModelChange(fallback, cursorModelPrefs));
+    setModelParamsJson(
+      paramsJsonForModelChange(fallback, appliesUserModelPrefs ? cursorModelPrefs : undefined)
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [models, modelsStale]);
 
@@ -347,7 +354,7 @@ export default function BuilderForm({
       }
     })();
     let finalParams = parsedParams;
-    if (isCursor) {
+    if (appliesUserModelPrefs) {
       finalParams = applyParamOverrides(
         parsedParams ?? [],
         cursorModelPrefs,

@@ -28,7 +28,9 @@ describe('resolveCreateSessionAgentFields', () => {
   };
 
   it('uses stored defaults when MCP omits fields', () => {
-    expect(resolveCreateSessionAgentFields({}, stored)).toEqual({
+    expect(
+      resolveCreateSessionAgentFields({}, stored, null, null, { supportsModelParams: true })
+    ).toEqual({
       agent_sdk: 'cursor',
       model: 'composer',
       model_params: [{ id: 'fast', value: 'true' }],
@@ -75,12 +77,23 @@ describe('resolveCreateSessionAgentFields', () => {
       resolveCreateSessionAgentFields(
         {},
         { agent_sdk: null, model: null, model_params: null },
-        { agent_sdk: 'cursor', model: 'composer', model_params: [{ id: 'fast', value: 'true' }] }
+        { agent_sdk: 'cursor', model: 'composer', model_params: [{ id: 'fast', value: 'true' }] },
+        null,
+        { supportsModelParams: true }
       )
     ).toEqual({
       agent_sdk: 'cursor',
       model: 'composer',
       model_params: [{ id: 'fast', value: 'true' }],
+      variant_index: undefined,
+    });
+  });
+
+  it('omits model_params when the SDK does not support them', () => {
+    expect(resolveCreateSessionAgentFields({}, stored)).toEqual({
+      agent_sdk: 'cursor',
+      model: 'composer',
+      model_params: undefined,
       variant_index: undefined,
     });
   });

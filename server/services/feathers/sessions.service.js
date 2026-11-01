@@ -75,6 +75,7 @@ import {
 import { patchAgentInternal } from './agents.service.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { getReviewAgentTurn } from '../review-agent-turn.js';
+import { listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
@@ -93,11 +94,6 @@ import {
 import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { delta, diffModelUsage } from '../turn-usage.js';
-import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
-import { estimateUsageRowCostUsd } from '../../lib/usage-row-cost.js';
-import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
-import { usagePricingSnapshotForCost } from '../../lib/usage-pricing-snapshot.js';
 import { getAgentById } from '../agents-db.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
@@ -144,10 +140,6 @@ const ARCHIVED_STATUS = 'archived';
 export class SessionsService extends KnexService {
   constructor(options) {
     super(options);
-    // Last result message's running totals per session, for differencing the next
-    // one. Held in memory only: a restart also restarts the agent's own counters,
-    // so an absent entry and a reset counter line up.
-    this._lastResultTotals = new Map();
     /** @type {Record<number, number>} When `onActivity` last ran per session (ms since epoch). */
     this._sessionActivityLastBumpMs = Object.create(null);
   }
@@ -233,7 +225,7 @@ export class SessionsService extends KnexService {
    * A session left in `running` has no agent process behind it after a reboot, so it
    * would otherwise sit there forever. Sessions in `approval` are waiting on the user and are
    * left unchanged. Sessions whose agent conversation can be resumed
-   * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
+   * (stored SDK session id on the agent row) are restarted by injecting a follow-up user message
    * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
    * Reviewer agents left in `running` are resumed the same way when a SDK session id is stored on the agent row.
    * Non-primary builders and subagents left mid-turn are captured before any resume: the
@@ -1495,7 +1487,7 @@ export class SessionsService extends KnexService {
     });
 
     this.app.service('tasks').deleteSessionTasks(sessionId);
-    this._lastResultTotals.delete(sessionId);
+    this.resetUsageTotals(sessionId);
 
     this.emit('removed', { id: sessionId });
     return { ok: true, id: sessionId };
@@ -1549,192 +1541,46 @@ export class SessionsService extends KnexService {
   }
 
   /**
-   * Incremental Claude cost/tokens for one finished turn's final SDK `result`.
-   * Called from claude-agent after the query stream ends (see `_recordClaudeTurnUsage`).
+   * Insert a usage row assembled by an SDK plugin / agent service, then optionally
+   * add `costUsd` to `sessions.total_cost_usd`. Derivation (Claude deltas, Cursor
+   * token adjustment, pricing) stays on the plugin.
    *
-   * `total_cost_usd` and `modelUsage` are running totals for the query, so this
-   * turn's share is the difference from the last result for `totalsKey`. See
-   * server/services/turn-usage.js.
-   *
-   * TODO: should rather be implemented on the claude-agent service
-   * @returns {Promise<number>} cost delta written to `usage.cost_usd`
+   * @param {{ id: number, user_id: number, repo_full_name?: string|null }} session
+   * @param {Record<string, unknown>} rowFields usage columns (`cost_usd`, tokens, `agent_sdk`, …)
+   * @param {{ patchSessionCost?: boolean, costUsd?: number }} [opts]
+   * @returns {Promise<number>} cost used for the optional session total patch
    */
-  async recordClaudeUsage(
-    session,
-    result,
-    { turnModel, totalsKey, patchSessionCost, agentConfigId, agentId } = {}
-  ) {
-    if (!session || !result) return 0;
-    const key = totalsKey ?? session.id;
-    const prev = this._lastResultTotals.get(key) ?? { cost: 0, models: {} };
-    const costUpdate = delta(prev.cost, result.total_cost_usd);
-    const turnUsage = diffModelUsage(prev.models, result.modelUsage);
-    this._lastResultTotals.set(key, {
-      cost: Number(result.total_cost_usd) || 0,
-      models: result.modelUsage ?? {},
-    });
-    if (costUpdate <= 0 && turnUsage.total_tokens <= 0) return 0;
-
+  async insertUsageRow(session, rowFields, { patchSessionCost = false, costUsd } = {}) {
+    if (!session) return 0;
     const db = this.app.get('db');
-    const agent =
-      agentId != null
-        ? await getAgentById(db, agentId)
-        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
-    const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const snapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
-
-    const row = {
+    const cost = Number(costUsd ?? rowFields.cost_usd ?? 0) || 0;
+    await db('usage').insert({
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(costUpdate, 0),
-      agent_sdk: agent?.agent_sdk ?? 'claude',
-      agent_type,
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      model: snapshot.model,
-      model_params: snapshot.model_params,
-      agent_config_id: requireAgentConfigId(agentConfigId),
-    };
-    if (agent?.id != null) row.agent_id = agent.id;
-    await db('usage').insert(row);
-
-    if (patchSessionCost && costUpdate > 0) {
+      ...rowFields,
+    });
+    if (patchSessionCost && cost > 0) {
       const latest = await db('sessions').where({ id: session.id }).first();
       await this.app
         .service('sessions')
         .patch(
           session.id,
-          { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUpdate },
+          { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + cost },
           { provider: undefined, user: { id: session.user_id } }
         );
     }
-    return costUpdate;
+    return cost;
   }
 
   /**
-   * One Cursor turn: token totals from the run stream plus USD estimated from our pricing table.
-   * Local Cursor agents cannot report billed USD via `agent.getUsage()` (feature_unavailable).
-   *
-   * TODO: should rather be implemented on the cursor-agent service
-   * @param {Record<string, unknown>} turnUsage per-turn accumulator; derivation mutates it in place
-   * @returns {Promise<number>} cost delta written to `usage.cost_usd`
+   * Drop SDK running-total maps for a chat session or review turn. Plugins that
+   * do not track totals no-op (`resetUsageTotals` is optional).
    */
-  async recordCursorUsage(
-    session,
-    turnUsage,
-    { turnModel, patchSessionCost, agentConfigId, agentId } = {}
-  ) {
-    if (!session || !turnUsage) return 0;
-
-    applyCursorUsageDerivation(turnUsage);
-    const db = this.app.get('db');
-    const agent =
-      agentId != null
-        ? await getAgentById(db, agentId)
-        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
-    const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot);
-
-    if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
-
-    const row = {
-      session_id: session.id,
-      user_id: session.user_id,
-      repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(costUsd, 0),
-      agent_sdk: 'cursor',
-      agent_type,
-      agent_config_id: requireAgentConfigId(agentConfigId),
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      raw_token_usage: turnUsage.raw_token_usage,
-      model: pricingSnapshot.model,
-      model_params: pricingSnapshot.model_params,
-    };
-    if (agent?.id != null) row.agent_id = agent.id;
-    await db('usage').insert(row);
-
-    if (!patchSessionCost || costUsd <= 0) return costUsd;
-
-    const latest = await db('sessions').where({ id: session.id }).first();
-    await this.app
-      .service('sessions')
-      .patch(
-        session.id,
-        { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUsd },
-        { provider: undefined, user: { id: session.user_id } }
-      );
-    return costUsd;
-  }
-
-  /**
-   * One Pi turn: token totals from `turn_end` events, USD from the shared agent pricing table.
-   * @param {Record<string, unknown>} turnUsage
-   * @returns {Promise<number>}
-   */
-  async recordPiUsage(
-    session,
-    turnUsage,
-    { turnModel, patchSessionCost, agentConfigId, agentId } = {}
-  ) {
-    if (!session || !turnUsage) return 0;
-
-    const db = this.app.get('db');
-    const agent =
-      agentId != null
-        ? await getAgentById(db, agentId)
-        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
-    const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot);
-
-    if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
-
-    const row = {
-      session_id: session.id,
-      user_id: session.user_id,
-      repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(costUsd, 0),
-      agent_sdk: 'pi',
-      agent_type,
-      agent_config_id: requireAgentConfigId(agentConfigId),
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      model: pricingSnapshot.model,
-      model_params: pricingSnapshot.model_params,
-    };
-    if (agent?.id != null) row.agent_id = agent.id;
-    await db('usage').insert(row);
-
-    if (!patchSessionCost || costUsd <= 0) return costUsd;
-
-    const latest = await db('sessions').where({ id: session.id }).first();
-    await this.app
-      .service('sessions')
-      .patch(
-        session.id,
-        { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUsd },
-        { provider: undefined, user: { id: session.user_id } }
-      );
-    return costUsd;
-  }
-
-  resetClaudeUsageTotals(totalsKey) {
-    this._lastResultTotals.delete(totalsKey);
+  resetUsageTotals(totalsKey) {
+    for (const plugin of listSdkPlugins()) {
+      plugin.resetUsageTotals?.(totalsKey);
+    }
   }
 
   async onTurnStart(sessionId) {
@@ -2481,15 +2327,9 @@ function normalizeModelFields(context) {
   return context;
 }
 
-const BUILDER_AGENT_SESSION_FIELDS = [
-  'agent_config_id',
-  'agent_sdk',
-  'model',
-  'model_params',
-  'claude_session_id',
-  'cursor_agent_id',
-  'pi_session_id',
-];
+function builderAgentSessionFields() {
+  return ['agent_config_id', 'agent_sdk', 'model', 'model_params', ...storedSessionIdColumns()];
+}
 const REVIEWER_AGENT_SESSION_FIELDS = [
   'review_agent_config_id',
   'review_agent_sdk',
@@ -2505,7 +2345,7 @@ const REVIEW_SESSION_FIELD_TO_AGENT = {
 
 async function stashBuilderAgentFieldsOnCreate(context) {
   const builderStash = {};
-  for (const key of BUILDER_AGENT_SESSION_FIELDS) {
+  for (const key of builderAgentSessionFields()) {
     if (context.data[key] !== undefined) {
       builderStash[key] = context.data[key];
       delete context.data[key];
@@ -2557,9 +2397,9 @@ async function mergeSessionAgentFields(context) {
       out.agent_sdk = builder.agent_sdk;
       out.model = builder.model;
       out.model_params = builder.model_params;
-      out.claude_session_id = builder.claude_session_id;
-      out.cursor_agent_id = builder.cursor_agent_id;
-      out.pi_session_id = builder.pi_session_id;
+      for (const col of storedSessionIdColumns()) {
+        out[col] = builder[col] ?? null;
+      }
       out.builder_agent_id = builder.id;
     }
     if (reviewer) {
@@ -2591,7 +2431,7 @@ async function redirectAgentFieldsOnSessionPatch(context) {
   const db = context.app.get('db');
   const sessionId = context.id;
   const builderPatch = {};
-  for (const key of BUILDER_AGENT_SESSION_FIELDS) {
+  for (const key of builderAgentSessionFields()) {
     if (context.data[key] !== undefined) {
       builderPatch[key] = context.data[key];
       delete context.data[key];
@@ -2614,9 +2454,9 @@ async function redirectAgentFieldsOnSessionPatch(context) {
       const prevSdk = builder.agent_sdk || 'claude';
       const nextSdk = builderPatch.agent_sdk ?? prevSdk;
       if (nextSdk !== prevSdk) {
-        builderPatch.claude_session_id = null;
-        builderPatch.cursor_agent_id = null;
-        builderPatch.pi_session_id = null;
+        for (const col of storedSessionIdColumns()) {
+          builderPatch[col] = null;
+        }
       }
       await patchAgentInternal(context.app, builder.id, builderPatch, userId);
     }

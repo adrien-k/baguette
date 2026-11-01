@@ -3,12 +3,17 @@ import { baguetteMcpToolSucceeded } from '../../baguette-mcp-tool-result.js';
 import { markAwaitingUserAfterTurnEndingTool } from '../../agent-awaiting-user.js';
 import { builderChatActiveKey, listAgentsForSession } from '../../agents-db.js';
 import { reviewTurnKey } from '../../review-agent-turn.js';
+import { servicePathForSdk } from '../../../agent-sdks/registry.js';
+import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 
-function agentServiceForSdk(app, sdk) {
-  if (sdk === 'claude') return app.service('claude-agent');
-  if (sdk === 'cursor') return app.service('cursor-agent');
-  if (sdk === 'pi') return app.service('pi-agent');
-  return null;
+async function agentServiceForSdk(app, sdk) {
+  await ensureBuiltInSdkPluginsRegistered();
+  const path = servicePathForSdk(sdk);
+  try {
+    return app.service(path);
+  } catch {
+    return null;
+  }
 }
 
 async function resolveActiveSessionState(app, sessionId) {
@@ -34,7 +39,7 @@ async function resolveActiveSessionState(app, sessionId) {
   }
 
   for (const { sdk, keys, agentId } of candidates) {
-    const agentService = agentServiceForSdk(app, sdk);
+    const agentService = await agentServiceForSdk(app, sdk);
     if (!agentService?.getActiveSession) continue;
     for (const key of keys) {
       const state = agentService.getActiveSession(key);

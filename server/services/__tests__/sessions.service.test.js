@@ -25,7 +25,7 @@ import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
-import { registerAgentSdk } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
 import {
   BAGUETTE_DESCRIPTION_MARKER,
   BAGUETTE_FOOTER_MARKER,
@@ -41,6 +41,25 @@ import {
   closePR,
   removeWorktree,
 } from '../github.js';
+
+registerSdkPlugin({
+  key: 'claude',
+  label: 'Claude',
+  servicePath: 'claude-agent',
+  storedSessionIdColumn: 'claude_session_id',
+});
+registerSdkPlugin({
+  key: 'cursor',
+  label: 'Cursor',
+  servicePath: 'cursor-agent',
+  storedSessionIdColumn: 'cursor_agent_id',
+});
+registerSdkPlugin({
+  key: 'pi',
+  label: 'Pi',
+  servicePath: 'pi-agent',
+  storedSessionIdColumn: 'pi_session_id',
+});
 
 // ── Module-level mocks ────────────────────────────────────────────────────────
 

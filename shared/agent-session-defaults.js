@@ -80,12 +80,15 @@ export function parseAgentSessionDefaultsJson(raw) {
  * Merge MCP CreateSession explicit args with stored account defaults.
  * When defaults are in last-used mode, pass `lastUsed` from the user's latest session.
  * Explicit values (including `undefined` meaning omitted) win over defaults.
+ * Pass `supportsModelParams` from the SDK plugin/meta — this helper must not
+ * branch on sdk keys.
  */
 export function resolveCreateSessionAgentFields(
   explicit,
   storedDefaults,
   lastUsed = null,
-  defaultSdk = null
+  defaultSdk = null,
+  { supportsModelParams = false } = {}
 ) {
   const defaults = parseAgentSessionDefaultsJson(storedDefaults);
   const useLastUsed = isLastUsedAgentDefaults(defaults);
@@ -117,12 +120,12 @@ export function resolveCreateSessionAgentFields(
     fixed &&
     defaults.model_params &&
     agent_sdk === defaults.agent_sdk &&
-    (agent_sdk === 'cursor' || agent_sdk === 'claude' || agent_sdk === 'pi')
+    supportsModelParams
   ) {
     model_params = defaults.model_params;
   } else if (
     useLastUsed &&
-    (agent_sdk === 'cursor' || agent_sdk === 'claude' || agent_sdk === 'pi') &&
+    supportsModelParams &&
     lastUsed?.agent_sdk === agent_sdk &&
     lastUsed?.model_params?.length
   ) {

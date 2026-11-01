@@ -5,7 +5,7 @@ const LUNAROUTE_ENV_ROUTING_URL = 'LUNAROUTE_ROUTING_URL';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-/** Keep in sync with `server/pi/extensions/lunaroute-chat/constants.ts`. */
+/** Keep in sync with `server/agent-sdks/pi/extensions/lunaroute-chat/constants.ts`. */
 const NON_CHAT_CAPABILITIES = [
   'image_generation',
   'embeddings',

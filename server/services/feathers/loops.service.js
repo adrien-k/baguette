@@ -347,7 +347,7 @@ async function normalizeAgentConfigOnLoopWrite(context) {
     const { ensureTestClaudeConfig, ensureTestPiConfig, insertTestAgentConfig } =
       await import('../../test-utils/agent-configs.js');
     if (sdkHint === 'mock') {
-      const { ensureMockAgentConfig } = await import('../mock-agent-config.js');
+      const { ensureMockAgentConfig } = await import('../../agent-sdks/mock/mock-agent-config.js');
       configId = await ensureMockAgentConfig(db, userId);
     } else if (sdkHint === 'pi') {
       configId = await ensureTestPiConfig(db, userId);

@@ -1,8 +1,8 @@
 import { BadRequest } from 'feathers/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
-import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { getPrimaryBuilderAgent } from '../agents-db.js';
+import { getSdkPlugin } from '../../agent-sdks/registry.js';
 
 /** Row column value for an agent config id: integer, or null. */
 function coerceAgentConfigId(raw) {
@@ -63,7 +63,7 @@ export function sessionMessageIdentity(agent, overrides = {}) {
       : agentSdkForAgent(agent);
   if (!model) throw new BadRequest('model is required');
   const row = { agent_id: agent.id, agent_sdk, model };
-  if (modelParams != null && agentSdkSupportsModelParams(agent_sdk)) {
+  if (modelParams != null && getSdkPlugin(agent_sdk)?.supportsModelParams === true) {
     row.model_params = modelParams;
   }
   row.agent_config_id =

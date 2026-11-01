@@ -21,6 +21,7 @@ import { hasAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
+import { useSdkMetas } from '../hooks/useSdkMetas.js';
 
 function modelDescriptionTooltip(model, label) {
   const description = typeof model?.description === 'string' ? model.description.trim() : '';
@@ -172,12 +173,12 @@ export default function SessionModelSelect({
   const selectedAgentConfig = isUnset
     ? null
     : agentConfigOptions?.find((o) => String(o.key) === String(agentConfigKey));
+  const { getMeta } = useSdkMetas();
   const agentSdk = selectedAgentConfig?.sdk ?? (isUnset ? null : agentConfigKey);
-  const isCursor = agentSdk === 'cursor';
-  const isPi = agentSdk === 'pi';
-  const isClaude = agentSdk === 'claude';
-  const usesModelParamVariants = isCursor || isPi || isClaude;
-  const usesAgentPricingTable = isCursor || isPi;
+  const sdkMeta = getMeta(agentSdk);
+  const usesModelParamVariants = sdkMeta?.supportsModelParams === true;
+  const usesAgentPricingTable = sdkMeta?.usesAgentPricingTable === true;
+  const appliesUserModelPrefs = sdkMeta?.appliesUserModelPrefs === true;
   const selectedModelId = model || null;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
   const variants = useMemo(() => selectedModelObj?.variants ?? [], [selectedModelObj]);
@@ -267,7 +268,7 @@ export default function SessionModelSelect({
           options,
           onSelect: (value) => {
             if (!selectedModelId || disabled) return;
-            const prefKey = isCursor ? prefKeyForParamId(paramId) : null;
+            const prefKey = appliesUserModelPrefs ? prefKeyForParamId(paramId) : null;
             if (prefKey && onCursorModelPrefChange) {
               onCursorModelPrefChange(prefKey, prefValueFromParamValue(paramId, value));
             }
@@ -286,7 +287,7 @@ export default function SessionModelSelect({
     return items;
   }, [
     usesModelParamVariants,
-    isCursor,
+    appliesUserModelPrefs,
     variants,
     orderedParamIds,
     currentParams,
@@ -320,7 +321,10 @@ export default function SessionModelSelect({
   const pickModel = (newId) => {
     if (disabled || isUnset || !newId || newId === selectedModelId) return;
     const newModelObj = models.find((m) => m.id === newId);
-    onModelChange(newId, paramsJsonForModelChange(newModelObj, cursorModelPrefs));
+    onModelChange(
+      newId,
+      paramsJsonForModelChange(newModelObj, appliesUserModelPrefs ? cursorModelPrefs : undefined)
+    );
   };
 
   const pickAgentConfig = (nextKey) => {
