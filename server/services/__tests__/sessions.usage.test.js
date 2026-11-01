@@ -2,9 +2,9 @@
  * Usage recording for Claude sessions, driven by the SDK `result` message.
  *
  * Baguette runs `query({ prompt: channel })` with an async-iterable channel, i.e.
- * streaming-input mode, where `total_cost_usd` and `modelUsage` are running
- * totals for the whole query rather than per-turn figures. Each turn's row is
- * therefore the difference from the previous result.
+ * streaming-input mode, where `modelUsage` is a running total for the whole query
+ * rather than per-turn figures. Each turn's token row is the difference from the
+ * previous result; USD is estimated from the model pricing table.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
@@ -14,6 +14,7 @@ import { emptyTurnUsage } from '../turn-usage.js';
 import { ClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
 import { CursorAgentService } from '../../agent-sdks/cursor/agent-service.ts';
 import { clearAllUsageTotals } from '../../agent-sdks/claude/usage-totals.js';
+import { estimateAgentTurnCostUsd } from '../../../shared/agent-model-pricing.js';
 
 afterEach(() => {
   clearAllUsageTotals();
@@ -111,6 +112,25 @@ function makeUsageHarness() {
 
 const usageRows = (sessionId) => db('usage').where({ session_id: sessionId }).orderBy('id');
 
+function estimatedClaudeCost(
+  input,
+  output,
+  cacheRead = 0,
+  cacheWrite = 0,
+  model = 'claude-opus-5'
+) {
+  return estimateAgentTurnCostUsd(
+    {
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+    },
+    model,
+    {}
+  );
+}
+
 const claudeTurnModel = { model: 'sonnet', modelParams: null };
 
 function claudeRecordOpts(agentConfigId, extra = {}) {
@@ -131,7 +151,7 @@ describe('claude usage recording', () => {
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
-    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.12, 6);
+    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(estimatedClaudeCost(1000, 200, 50, 10), 6);
     expect(rows[0].input_tokens).toBe(1000);
     expect(rows[0].output_tokens).toBe(200);
     expect(rows[0].cache_read_tokens).toBe(50);
@@ -159,12 +179,12 @@ describe('claude usage recording', () => {
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
-    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.18, 6);
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(estimatedClaudeCost(1500, 250), 6);
     expect(rows[1].input_tokens).toBe(1500);
     expect(rows[1].output_tokens).toBe(250);
   });
 
-  it('keeps the session total equal to the last cumulative figure', async () => {
+  it('accumulates estimated session total across turns', async () => {
     const { sessionId, agentConfigId } = await seed();
     const { sessions, claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -180,14 +200,15 @@ describe('claude usage recording', () => {
       claudeRecordOpts(agentConfigId, { patchSessionCost: true })
     );
 
+    const expectedTotal = estimatedClaudeCost(1000, 200) + estimatedClaudeCost(1500, 250);
     const totals = await db('usage')
       .where({ session_id: sessionId })
       .sum('cost_usd as total')
       .first();
-    expect(parseFloat(totals.total)).toBeCloseTo(0.3, 6);
+    expect(parseFloat(totals.total)).toBeCloseTo(expectedTotal, 6);
 
     const patched = sessions._patch.mock.calls.at(-1)[1];
-    expect(patched.total_cost_usd).toBeCloseTo(0.3, 6);
+    expect(patched.total_cost_usd).toBeCloseTo(expectedTotal, 6);
   });
 
   it('treats a reset counter after a resume as fresh work', async () => {
@@ -208,30 +229,53 @@ describe('claude usage recording', () => {
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
-    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.02, 6);
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(estimatedClaudeCost(100, 20), 6);
     expect(rows[1].input_tokens).toBe(100);
   });
 
-  it('records tokens for a turn that was not billed', async () => {
+  it('estimates cost from tokens even when SDK billed USD is 0', async () => {
+    const { sessionId, agentConfigId } = await seed();
+    const { sessions, claude } = makeUsageHarness();
+    const session = await db('sessions').where({ id: sessionId }).first();
+    const expected = estimatedClaudeCost(800, 60);
+
+    await claude.recordTurnUsage(
+      session,
+      resultPayload({ cost: 0, models: { 'claude-opus-5': modelUsage(800, 60) } }),
+      claudeRecordOpts(agentConfigId, { patchSessionCost: true })
+    );
+
+    const rows = await usageRows(sessionId);
+    expect(rows).toHaveLength(1);
+    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(expected, 6);
+    expect(rows[0].total_tokens).toBe(860);
+    expect(sessions._patch).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({ total_cost_usd: expect.any(Number) }),
+      expect.anything()
+    );
+  });
+
+  it('records zero cost when the Claude model is not in the pricing table', async () => {
     const { sessionId, agentConfigId } = await seed();
     const { sessions, claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await claude.recordTurnUsage(
       session,
-      resultPayload({ cost: 0, models: { 'claude-opus-5': modelUsage(800, 60) } }),
-      claudeRecordOpts(agentConfigId)
+      resultPayload({ cost: 0.5, models: { 'unknown-claude-model': modelUsage(800, 60) } }),
+      claudeRecordOpts(agentConfigId, {
+        turnModel: { model: 'unknown-claude-model', modelParams: null },
+        patchSessionCost: true,
+      })
     );
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
     expect(parseFloat(rows[0].cost_usd)).toBe(0);
+    expect(rows[0].model).toBe('unknown-claude-model');
     expect(rows[0].total_tokens).toBe(860);
-    expect(sessions._patch).not.toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ total_cost_usd: expect.anything() }),
-      expect.anything()
-    );
+    expect(sessions._patch).not.toHaveBeenCalled();
   });
 
   it('writes no row for a turn that moved neither cost nor tokens', async () => {
@@ -327,7 +371,7 @@ describe('claude usage recording', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].agent_type).toBe('builder');
     expect(rows[1].agent_type).toBe('reviewer');
-    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.01, 6);
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(estimatedClaudeCost(10, 5), 6);
     expect(rows[1].input_tokens).toBe(10);
     expect(rows[1].output_tokens).toBe(5);
   });

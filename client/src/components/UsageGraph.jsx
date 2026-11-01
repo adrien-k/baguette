@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import {
+  availableUsageDimensions,
   buildSeries,
   formatMetric,
   metricOf,
   OTHER_KEY,
   recentDays,
-  sumBy,
-  usageConfigKey,
+  resolveUsageDimension,
 } from '../utils/usageSeries.js';
 import UsageModelLabel from './UsageModelLabel.jsx';
 
@@ -20,13 +20,6 @@ function yAxisTicks(max) {
   if (max <= 0) return [0];
   return [max, max / 2, 0];
 }
-
-const DIMENSIONS = [
-  { key: 'repo', label: 'By repo' },
-  { key: 'config', label: 'By config' },
-  { key: 'agent_type', label: 'By agent' },
-  { key: 'model', label: 'By model' },
-];
 
 function DimensionToggle({ value, onChange, options }) {
   return (
@@ -79,23 +72,9 @@ export default function UsageGraph({
   const data = rows ?? [];
   const total = data.reduce((sum, r) => sum + metricOf(r, metric), 0);
 
-  const canSplitByRepo = sumBy(data, (r) => r.repo_full_name).size > 1;
-  const canSplitByConfig = sumBy(data, (r) => usageConfigKey(r)).size > 1;
-  const canSplitByKind =
-    sumBy(data, (r) => (r.agent_type === 'reviewer' ? 'reviewer' : 'builder')).size > 1;
-  const canSplitByModel = sumBy(data, (r) => r.model || '').size > 1;
-
-  const dimensionOptions = DIMENSIONS.filter((d) => {
-    if (d.key === 'repo') return canSplitByRepo;
-    if (d.key === 'config') return canSplitByConfig;
-    if (d.key === 'model') return canSplitByModel;
-    if (d.key === 'agent_type') return canSplitByKind;
-    return false;
-  });
+  const dimensionOptions = availableUsageDimensions(data);
   const showDimensionToggle = dimensionOptions.length > 1;
-  const activeDimension = dimensionOptions.some((d) => d.key === dimension)
-    ? dimension
-    : (dimensionOptions[0]?.key ?? 'repo');
+  const activeDimension = resolveUsageDimension(data, dimension);
 
   const { series, byDay } = buildSeries(data, activeDimension, metric);
   const days = recentDays(dayCount);

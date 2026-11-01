@@ -1,14 +1,25 @@
 /**
  * Agent model list prices (USD per 1M tokens): input, cache write, cache read, output.
- * Used to estimate Cursor and Pi session cost from per-turn token counts. Baguette does
- * not read billed USD from local Cursor agents (`feature_unavailable` on `getUsage()`).
+ * Used to estimate session cost from per-turn token counts for every agent SDK.
+ * Baguette does not persist billed USD from the Claude SDK `result`, and local
+ * Cursor agents cannot report billed USD (`feature_unavailable` on `getUsage()`).
  *
  * PRICING_RULES below was generated from a copy-paste of
  * https://cursor.com/docs/models-and-pricing — update manually when list prices change.
  */
 
-/** Shown on the Usage page and in tooltips. */
+/** Public list-price references agents can paste from when filling missing rates. */
 export const AGENT_MODEL_PRICING_DOC_URL = 'https://cursor.com/docs/models-and-pricing';
+
+export const OPENROUTER_PRICING_DOC_URL = 'https://openrouter.ai/models';
+
+/** Opening prompt for a Global session that fills missing usage model prices. */
+export const FIX_MODEL_PRICING_PROMPT = [
+  'Missing model prices were found on this Baguette instance.',
+  'Call ListMissingModelPrices to list models with no cost.',
+  `Then ask me to paste a USD-per-1M-token listing from ${AGENT_MODEL_PRICING_DOC_URL}, ${OPENROUTER_PRICING_DOC_URL}, or another reasonable price reference — or fetch one of those pages.`,
+  'Map listed rates onto the missing usage.model ids, call UpdateModelPricing, then RecomputeUsageCosts so stored usage costs update.',
+].join(' ');
 
 /**
  * Map provider model ids (e.g. Pi `glm-5.3-flash`) to ids in PRICING_RULES (`glm-5p3-flash`).

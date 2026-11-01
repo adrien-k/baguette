@@ -320,6 +320,9 @@ describe('global sessions', () => {
     expect(names).not.toContain('AwaitDetachedTask');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('CurrentSessionInfo');
+    expect(names).toContain('ListMissingModelPrices');
+    expect(names).toContain('UpdateModelPricing');
+    expect(names).toContain('RecomputeUsageCosts');
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');

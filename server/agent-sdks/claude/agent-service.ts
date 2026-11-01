@@ -880,8 +880,8 @@ export class ClaudeAgentService {
   }
 
   /**
-   * Incremental Claude cost/tokens for one finished turn's final SDK `result`.
-   * Running totals live on the Claude plugin (`usage-totals.js`).
+   * Incremental Claude tokens and estimated cost for one finished turn's final
+   * SDK `result`. Running token totals live on the Claude plugin (`usage-totals.js`).
    */
   async recordTurnUsage(
     session: AgentSessionRow,

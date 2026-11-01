@@ -1542,8 +1542,8 @@ export class SessionsService extends KnexService {
 
   /**
    * Insert a usage row assembled by an SDK plugin / agent service, then optionally
-   * add `costUsd` to `sessions.total_cost_usd`. Derivation (Claude deltas, Cursor
-   * token adjustment, pricing) stays on the plugin.
+   * add `costUsd` to `sessions.total_cost_usd`. Derivation (Claude token deltas,
+   * Cursor token adjustment, model-rate pricing) stays on the plugin.
    *
    * @param {{ id: number, user_id: number, repo_full_name?: string|null }} session
    * @param {Record<string, unknown>} rowFields usage columns (`cost_usd`, tokens, `agent_sdk`, …)

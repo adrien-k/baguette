@@ -2,13 +2,20 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
-import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined, Monitor } from 'lucide-react';
+import {
+  Settings as SettingsIcon,
+  LogOut,
+  ChartNoAxesCombined,
+  CircleDollarSign,
+  Monitor,
+} from 'lucide-react';
 import NavbarTasksAndStats from './components/NavbarTasksAndStats.jsx';
 import Login from './pages/Login.jsx';
 const System = lazy(() => import('./pages/System.jsx'));
 const Session = lazy(() => import('./pages/Session.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Usage = lazy(() => import('./pages/Usage.jsx'));
+const ModelPricing = lazy(() => import('./pages/ModelPricing.jsx'));
 const Onboarding = lazy(() => import('./pages/Onboarding.jsx'));
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider } from './context/RepoContext.jsx';
@@ -106,7 +113,7 @@ function Nav() {
                 </button>
                 {userMenuOpen && (
                   <div
-                    className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+                    className={`absolute right-0 top-full mt-1 w-52 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
                   >
                     <div className="sm:hidden">
                       <ColorSchemeToggle menuItem />
@@ -115,6 +122,10 @@ function Nav() {
                       <Link to="/usage" className={MENU_ITEM_CLASS}>
                         <ChartNoAxesCombined className="w-4 h-4 text-faint" />
                         Usage
+                      </Link>
+                      <Link to="/model-pricing" className={MENU_ITEM_CLASS}>
+                        <CircleDollarSign className="w-4 h-4 text-faint" />
+                        Model pricing
                       </Link>
                       <Link to="/system" className={MENU_ITEM_CLASS}>
                         <Monitor className="w-4 h-4 text-faint" />
@@ -298,6 +309,16 @@ function AppRoutes() {
                 <ProtectedRoute>
                   <div className="flex-1 min-h-0 overflow-auto">
                     <Usage />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/model-pricing"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <ModelPricing />
                   </div>
                 </ProtectedRoute>
               }

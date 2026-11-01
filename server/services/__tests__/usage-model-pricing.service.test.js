@@ -111,7 +111,7 @@ describe('usage-model-pricing service', () => {
     );
     const result = await svc.recompute({ model_id: 'unknown-model' }, params(user));
     expect(result.updated_rows).toBe(1);
-    expect(result.claude_usage_excluded).toBe(true);
+    expect(result).not.toHaveProperty('claude_usage_excluded');
     const row = await db('usage').where({ model: 'unknown-model' }).first();
     expect(parseFloat(row.cost_usd)).toBeCloseTo(2, 6);
   });

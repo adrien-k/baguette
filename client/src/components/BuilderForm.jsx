@@ -128,6 +128,11 @@ export default function BuilderForm({
     'prompt',
     editingLoop?.prompt ?? defaultPrompt ?? ''
   );
+  useEffect(() => {
+    const trimmed = String(defaultPrompt || '').trim();
+    if (!trimmed || editingLoop) return;
+    setInitialPrompt(trimmed);
+  }, [defaultPrompt, editingLoop, setInitialPrompt]);
   const [showMore, setShowMore] = globalState.useState('showMore', false);
   const [branchName, setBranchName] = persistentState.useState('branchName', '', {
     persistWhen: hasPromptText,

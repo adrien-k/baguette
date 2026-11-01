@@ -22,6 +22,11 @@ import { createGetLoopTool } from '../tools/get-loop.js';
 import { createCreateLoopTool } from '../tools/create-loop.js';
 import { createUpdateLoopTool } from '../tools/update-loop.js';
 import { createDeleteLoopTool } from '../tools/delete-loop.js';
+import {
+  createListMissingModelPricesTool,
+  createRecomputeUsageCostsTool,
+  createUpdateModelPricingTool,
+} from '../tools/model-pricing.js';
 
 function sessionToolsFromContext(ctx) {
   return [
@@ -68,6 +73,9 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     createAwaitSubagentTool(ctx),
     createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
+    createListMissingModelPricesTool(ctx),
+    createUpdateModelPricingTool(ctx),
+    createRecomputeUsageCostsTool(ctx),
     ...sessionToolsFromContext(ctx),
     ...loopToolsFromContext(ctx),
     ...issueReadToolsFromContext(ctx),

@@ -269,6 +269,102 @@ export async function saveE2eScreenshot(page, fileName, options = {}) {
   return path;
 }
 
+const E2E_DB_PATH = join(
+  fileURLToPath(new URL('..', import.meta.url)),
+  '.data-e2e',
+  'baguette.sqlite3'
+);
+
+/**
+ * Insert usage rows into the Playwright webServer sqlite DB so Usage / Model
+ * pricing have tokens, cost, missing prices, and all group-by dimensions.
+ * Mock turns do not write usage.
+ */
+export async function seedE2eUsageDashboard(page) {
+  const me = await page.request.get('/auth/me').then((r) => r.json());
+  const userId = me.user?.id;
+  expect(userId).toBeTruthy();
+
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    const otherUserId = Number(
+      db
+        .prepare(
+          `INSERT INTO users (github_id, username, approved)
+           VALUES (?, ?, 1)`
+        )
+        .run(9_000_001, 'e2e-other').lastInsertRowid
+    );
+
+    const insert = db.prepare(
+      `INSERT INTO usage (
+         session_id, user_id, repo_full_name, cost_usd, created_at, agent_sdk,
+         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+         reasoning_tokens, total_tokens, model, agent_type
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const today = new Date().toISOString();
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const rows = [
+      [
+        null,
+        userId,
+        'e2e/usage-dashboard',
+        0,
+        today,
+        'mock',
+        8000,
+        2000,
+        500,
+        200,
+        0,
+        10700,
+        MOCK_STANDARD_MODEL_ID,
+        'builder',
+      ],
+      [
+        null,
+        userId,
+        'e2e/usage-dashboard',
+        0.42,
+        yesterday,
+        'claude',
+        4000,
+        1500,
+        0,
+        0,
+        0,
+        5500,
+        'claude-sonnet-4-5',
+        'builder',
+      ],
+      [
+        null,
+        otherUserId,
+        '',
+        0,
+        today,
+        'mock',
+        1200,
+        400,
+        0,
+        0,
+        0,
+        1600,
+        MOCK_STANDARD_MODEL_ID,
+        'subagent',
+      ],
+    ];
+    const tx = db.transaction(() => {
+      for (const row of rows) insert.run(...row);
+    });
+    tx();
+  } finally {
+    db.close();
+  }
+}
+
 async function waitForPrimaryBuilderIdle(page) {
   await openSessionAgentsPanel(page);
   const main = page.locator('li').filter({ hasText: 'Main' });

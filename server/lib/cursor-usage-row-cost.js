@@ -6,8 +6,8 @@ import { parseCursorRawTokenUsage } from '../../shared/cursor-token-adjustment.j
 import { usageModelFieldsFromSnapshot } from './usage-snapshot.js';
 
 /**
- * USD estimate for a Cursor/Pi `usage` row (or live turn tokens) using model snapshots.
- * Mirrors Cursor/Pi `recordTurnUsage` so recomputes match new turns.
+ * USD estimate for a persisted `usage` row (or live turn tokens) using model snapshots.
+ * Mirrors each SDK `recordTurnUsage` so recomputes match new turns.
  *
  * `input_tokens` on the row is already derived from `raw_token_usage` for Cursor; see
  * `shared/cursor-token-adjustment.js`.
