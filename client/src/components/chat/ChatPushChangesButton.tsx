@@ -1,4 +1,4 @@
-import { Loader2, Upload } from 'lucide-react';
+import { ArrowUpToLine, Loader2 } from 'lucide-react';
 import { canShowChatPushChangesBar } from '../SessionTools.jsx';
 import ChatQuickActionButton, { CHAT_ACTION_BUTTON_CLASS } from './ChatQuickActionButton.tsx';
 
@@ -24,7 +24,7 @@ export default function ChatPushChangesButton({
 
   return (
     <ChatQuickActionButton
-      icon={pushing ? Loader2 : Upload}
+      icon={pushing ? Loader2 : ArrowUpToLine}
       label={pushing ? 'Pushing…' : 'Push changes'}
       tooltip="Push local commits to GitHub and update the pull request."
       onClick={onPush}

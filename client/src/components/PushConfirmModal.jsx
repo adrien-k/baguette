@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ArrowUpToLine } from 'lucide-react';
 import SearchableSelect from './SearchableSelect/index.jsx';
 import { useGetBranches } from '../hooks/useGetBranches.js';
 import { sessionsService } from '../feathers.js';
@@ -171,7 +171,7 @@ export default function PushConfirmModal({
               : 'bg-brand hover:bg-brand-hover text-on-brand'
           }`}
         >
-          <Upload className="w-3.5 h-3.5" />
+          <ArrowUpToLine className="w-3.5 h-3.5" />
           {isPureForce ? 'Force Push' : forceMode === 'lease' ? 'Force Push' : 'Push'}
         </button>
       </ModalActions>

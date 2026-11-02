@@ -45,11 +45,11 @@ export default function SessionWorkspaceHeader({
             </div>
           </div>
         ) : routeLoopId ? (
-          <div className="flex items-start justify-between gap-2 min-h-11">
+          <div className="flex items-center justify-between gap-2 min-h-11">
             <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
               <Link
                 to={loopsHomeUrl}
-                className="md:hidden shrink-0 text-faint hover:text-secondary mt-0.5"
+                className="md:hidden shrink-0 text-faint hover:text-secondary"
               >
                 <ChevronLeft className="w-5 h-5" />
               </Link>
@@ -114,12 +114,9 @@ export default function SessionWorkspaceHeader({
           </div>
         </div>
       ) : headerSession ? (
-        <div className="flex items-start justify-between gap-2 min-h-11">
+        <div className="flex items-center justify-between gap-2 min-h-11">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <Link
-              to={homeUrl}
-              className="md:hidden shrink-0 text-faint hover:text-secondary mt-0.5"
-            >
+            <Link to={homeUrl} className="md:hidden shrink-0 text-faint hover:text-secondary">
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">

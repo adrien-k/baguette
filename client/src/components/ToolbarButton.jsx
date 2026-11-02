@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 const BASE_CLASS =
   'session-tool-btn inline-flex items-center justify-center shrink-0 rounded-md border font-medium transition-colors border-strong/80 bg-control/50 text-secondary hover:border-info/35 hover:bg-info/10 hover:text-info disabled:opacity-50';
 
-const DEFAULT_SIZE = 'h-8 gap-1.5 px-2 text-xs';
+const DEFAULT_SIZE = 'h-8 gap-1.5 px-2 text-xs leading-none';
 
 /** Container classes for {@link SessionTools} — sizes all `.session-tool-btn` descendants. */
 export const SESSION_TOOLS_CONTAINER_CLASS = {

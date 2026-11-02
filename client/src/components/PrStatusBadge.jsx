@@ -1,7 +1,7 @@
 import { PR_STATUS_BADGE_CONFIG, PR_STATUS_BADGE_FALLBACK } from '../utils/prStatusStyles.js';
 
 const BASE_CLASS =
-  'session-tool-btn inline-flex items-center justify-center shrink-0 rounded-md border font-medium transition-colors h-8 gap-1.5 px-2 text-xs';
+  'session-tool-btn inline-flex items-center justify-center shrink-0 rounded-md border font-medium transition-colors h-8 gap-1.5 px-2 text-xs leading-none';
 
 export default function PrStatusBadge({
   status,

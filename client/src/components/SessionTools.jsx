@@ -1,4 +1,4 @@
-import { MonitorPlay, Upload } from 'lucide-react';
+import { ArrowUpToLine, MonitorPlay } from 'lucide-react';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import PrStatusBadge from './PrStatusBadge.jsx';
 import PreviewServicesDropdown from './PreviewServicesDropdown.jsx';
@@ -148,7 +148,7 @@ export default function SessionTools({
       )}
       {visibleTools.includes('push') && (
         <ToolbarButton
-          icon={Upload}
+          icon={ArrowUpToLine}
           label="Push"
           hideLabelBelowSm={hideLabelBelowSm}
           onClick={onPush}
