@@ -78,13 +78,18 @@ describe('docker-session helpers', () => {
     ]);
   });
 
-  it('normalizeDockerRunOptions rejects kebab-case spellings', () => {
-    expect(() =>
-      normalizeDockerContainer({
-        image: 'redis:7',
-        'cap-add': 'SYS_PTRACE',
-      })
-    ).toThrow(/Unknown container field "cap-add"/);
+  it('normalizeDockerContainer accepts kebab-case run option keys', () => {
+    const c = normalizeDockerContainer({
+      image: 'redis:7',
+      'cap-add': 'SYS_PTRACE',
+      'security-opt': ['seccomp=unconfined'],
+    });
+    expect(c.runOptions).toEqual([
+      '--cap-add',
+      'SYS_PTRACE',
+      '--security-opt',
+      'seccomp=unconfined',
+    ]);
   });
 
   it('normalizeDockerRunOptions supports boolean flags', () => {
