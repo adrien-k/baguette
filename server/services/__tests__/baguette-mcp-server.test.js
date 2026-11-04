@@ -293,14 +293,28 @@ describe('builder MCP tool registry', () => {
     const { tools } = await buildServer({}, {}, { agent: { agent_type: 'subagent' } });
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('UpdateSession');
-    expect(names).not.toContain('CreatePlan');
     expect(names).not.toContain('StartSubagent');
+    expect(names).toContain('CreatePlan');
+    expect(names).toContain('StartPlan');
+    expect(names).toContain('ListPlans');
+    expect(names).toContain('EditPlan');
+    expect(names).toContain('CompletePlan');
     expect(names).toContain('ListSubagents');
     expect(names).toContain('AwaitSubagent');
     expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
+  });
+
+  it('plan and todo tool descriptions tell agents CreatePlan does not attach and to complete todos', async () => {
+    const { tools } = await buildServer();
+    const desc = (name) => tools.find((t) => t.name === name)?.description ?? '';
+    expect(desc('CreatePlan')).toMatch(/does not attach/i);
+    expect(desc('StartPlan')).toMatch(/Run the plan/i);
+    expect(desc('ListPlans')).toMatch(/ListPlans|plan_id/i);
+    expect(desc('CompletePlan')).toMatch(/completed/);
+    expect(desc('DeleteTodo')).toMatch(/Prefer UpdateTodo with status completed/);
   });
 });
 

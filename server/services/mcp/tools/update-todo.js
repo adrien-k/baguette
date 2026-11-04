@@ -25,6 +25,7 @@ export function createUpdateTodoTool(ctx) {
         .string()
         .optional()
         .describe('What to do (markdown). Concrete task only—no session boilerplate.'),
+      plan_id: z.number().int().optional().describe('Optional plan id to attach this todo to.'),
     },
     handler: async (args) => {
       const { session, result: sessionError } = await requireMcpSession(
@@ -33,7 +34,7 @@ export function createUpdateTodoTool(ctx) {
         userId
       );
       if (sessionError) return sessionError;
-      return createTodoHandlers(session, app).updateTodo(args);
+      return createTodoHandlers(session, app, { callerAgent: ctx.callerAgent }).updateTodo(args);
     },
   };
 }

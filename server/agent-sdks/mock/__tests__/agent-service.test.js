@@ -305,6 +305,12 @@ describe('MockAgentService', () => {
           }
         });
         expect(assistant).toBeTruthy();
+        const startPlan = rows.find((r) => {
+          if (r.type !== 'tool_call') return false;
+          const p = JSON.parse(r.message_json);
+          return p.kind === 'mcp' && p.args?.tool === 'StartPlan';
+        });
+        expect(startPlan).toBeFalsy();
       },
       { timeout: 10_000 }
     );

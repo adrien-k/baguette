@@ -37,8 +37,13 @@ export default function SessionTodosPanel({
   sessionId,
   emptyMessage = 'No todos yet.',
   editable = false,
-  /** When true, only pending and in_progress todos (e.g. composer drawer). */
+  /** When true, only pending and in_progress todos (e.g. legacy open-only listing). */
   openOnly = false,
+  /** When set, new todos are created with this plan_id. Also filters fetched/override todos. */
+  planId = null,
+  /** When set, skip fetching and render these todos (composer drawer). */
+  todos: todosOverride,
+  loading: loadingOverride,
 }) {
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -47,10 +52,16 @@ export default function SessionTodosPanel({
   const [busyId, setBusyId] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  const { todos, loading } = useGetSessionTodos(sessionId, {
-    enabled: sessionId != null,
+  const fromHook = useGetSessionTodos(sessionId, {
+    enabled: sessionId != null && todosOverride == null,
     openOnly,
   });
+  const rawTodos = todosOverride ?? fromHook.todos;
+  const todos = useMemo(() => {
+    if (planId == null) return rawTodos;
+    return rawTodos.filter((row) => row.plan_id === planId);
+  }, [planId, rawTodos]);
+  const loading = loadingOverride ?? fromHook.loading;
 
   const { openTodos, completedTodos } = useMemo(() => {
     const open = [];
@@ -107,7 +118,9 @@ export default function SessionTodosPanel({
     if (!title || !content || sessionId == null) return;
     setCreating(true);
     try {
-      await sessionTodosService.create({ session_id: sessionId, title, content });
+      const payload = { session_id: sessionId, title, content };
+      if (planId != null) payload.plan_id = planId;
+      await sessionTodosService.create(payload);
       setNewTitle('');
       setNewContent('');
       setShowAddForm(false);

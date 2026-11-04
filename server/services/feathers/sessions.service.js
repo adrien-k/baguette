@@ -99,7 +99,6 @@ import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
-import { readSessionPlanMarkdown } from '../session-plan.js';
 import {
   buildLoopUserMessageJson,
   loopUserRowSubtypeFromMessageJson,
@@ -1161,11 +1160,6 @@ export class SessionsService extends KnexService {
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
     }
-  }
-
-  async getPlan(_data, params) {
-    const session = params.resolvedSession;
-    return readSessionPlanMarkdown(this.app, session);
   }
 
   /**
@@ -2525,7 +2519,6 @@ export function registerSessionsService(app, path = 'sessions') {
       'sessionUsage',
       'branchCommits',
       'shas',
-      'getPlan',
       'createDefaultBuilderMessage',
       'merge',
       'setPrDraft',
@@ -2627,7 +2620,6 @@ const sessionsHooks = {
     sessionUsage: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
-    getPlan: [resolveSessionFromData],
     createDefaultBuilderMessage: [
       normalizeCreateDefaultBuilderMessageData,
       schemaHooks.validateData(createDefaultBuilderMessageDataValidator),

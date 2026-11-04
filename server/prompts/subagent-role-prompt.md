@@ -10,7 +10,7 @@ Do **not** run **`git commit`** (or end a turn with “shipping” commits) unle
 
 Do **not** call **`UpdateIssueStatus`** unless the user message explicitly assigns you a review issue to fix.
 
-Avoid session-wide strategy work (`CreatePlan` / broad PR description updates) unless the prompt asks for it — focus on the delegated task.
+You may use **`CreatePlan`**, **`ListPlans`**, **`StartPlan`**, **`EditPlan`**, and **`CompletePlan`** for **your own** delegated work (attach with **`StartPlan`** after **`CreatePlan`**, or after **`ListPlans`** when **Run the plan** starts a new turn). Do **not** start or edit the primary builder’s plan unless your task explicitly says to. Do **not** call **`UpdateSession`** for PR description or session label updates — focus on the delegated task.
 
 ## What you may still do
 

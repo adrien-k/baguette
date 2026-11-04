@@ -1,23 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
-import { sessionsService, sessionPlansService } from '../feathers.js';
+import { sessionPlansService } from '../feathers.js';
+import { findAllPages } from '../utils/feathersFindAll.js';
 import { toastError } from '../utils/toastError.jsx';
 
-export function useGetSessionPlan(sessionId, { enabled = true } = {}) {
-  const [markdown, setMarkdown] = useState('');
+export function useGetSessionPlans(sessionId, { enabled = true } = {}) {
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const reload = useCallback(() => {
     if (!enabled || sessionId == null) {
-      setMarkdown('');
+      setPlans([]);
       return;
     }
     setLoading(true);
-    sessionsService
-      .getPlan({ id: sessionId })
-      .then((res) => setMarkdown(res.markdown ?? ''))
+    findAllPages(sessionPlansService, { session_id: sessionId, $sort: { ref: 1 } })
+      .then((rows) => setPlans(rows))
       .catch((err) => {
-        toastError('Failed to load plan', err);
-        setMarkdown('');
+        toastError('Failed to load plans', err);
+        setPlans([]);
       })
       .finally(() => setLoading(false));
   }, [enabled, sessionId]);
@@ -41,5 +41,5 @@ export function useGetSessionPlan(sessionId, { enabled = true } = {}) {
     };
   }, [enabled, sessionId, reload]);
 
-  return { markdown, loading, reload };
+  return { plans, loading, reload };
 }

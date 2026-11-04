@@ -202,6 +202,7 @@ async function runMockPlanCreateNonInteractiveTurn({ writer, abortSignal }) {
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
 async function runMockPlanRunTurn({ writer }) {
+  // Run the plan is a user message only — do not call StartPlan here.
   await writer.appendAssistantText(MOCK_E2E_PLAN_RUN_SUMMARY);
   await writer.flushAssistant();
   await writer.persistTurnResult({

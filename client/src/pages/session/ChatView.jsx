@@ -46,7 +46,7 @@ import PrDraftToggleButton, {
 } from '../../components/PrDraftToggleButton.jsx';
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
-import { useGetSessionTodos } from '../../hooks/useGetSessionTodos.js';
+import { useComposerSessionTodos } from '../../hooks/useComposerSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
@@ -330,22 +330,23 @@ export default function ChatView({
     return queue.filter((item) => item.agent_id === activeAgent.id);
   }, [queue, activeAgent]);
 
-  const { todos: sessionOpenTodos } = useGetSessionTodos(chatSessionId, {
-    enabled: chatSessionId != null,
-    openOnly: true,
-  });
+  const { todos: composerTodos, loading: composerTodosLoading } = useComposerSessionTodos(
+    chatSessionId,
+    activeAgent,
+    { enabled: chatSessionId != null }
+  );
 
   const sessionTodoCounts = useMemo(() => {
     let open = 0;
     let inProgress = 0;
-    for (const row of sessionOpenTodos) {
+    let completed = 0;
+    for (const row of composerTodos) {
       if (row.status === 'pending') open += 1;
       else if (row.status === 'in_progress') inProgress += 1;
+      else if (row.status === 'completed') completed += 1;
     }
-    return { open, inProgress };
-  }, [sessionOpenTodos]);
-
-  const sessionTodoTotal = sessionTodoCounts.open + sessionTodoCounts.inProgress;
+    return { open, inProgress, completed };
+  }, [composerTodos]);
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,
@@ -982,10 +983,12 @@ export default function ChatView({
                   onExpandedChange={setQueueDrawerExpanded}
                 />
               )}
-              {sessionTodoTotal > 0 && (
+              {composerTodos.length > 0 && (
                 <SessionTodosDrawer
                   sessionId={chatSessionId}
                   counts={sessionTodoCounts}
+                  todos={composerTodos}
+                  loading={composerTodosLoading}
                   expanded={todosDrawerExpanded}
                   onExpandedChange={setTodosDrawerExpanded}
                 />

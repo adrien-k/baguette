@@ -6,7 +6,11 @@ import { formatAgentSdkDisplayName } from '../../../../shared/agent-sdk-display.
 /**
  * Context shared by repo-session MCP tools (git, PR, tasks, config, etc.).
  */
-export function createSessionAgentContext(session, app, { slackApps = [] } = {}) {
+export function createSessionAgentContext(
+  session,
+  app,
+  { slackApps = [], callerAgent = null } = {}
+) {
   const db = app.get('db');
   let sessionRef = session;
 
@@ -78,6 +82,10 @@ export function createSessionAgentContext(session, app, { slackApps = [] } = {})
     get session() {
       return sessionRef;
     },
+    get userId() {
+      return sessionRef.user_id;
+    },
+    callerAgent,
     slackApps,
     getSession,
     getToken,

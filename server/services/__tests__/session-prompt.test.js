@@ -139,6 +139,20 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('Subagent role');
   });
 
+  it('documents multi-plan StartPlan/CompletePlan and completed todos instead of DeleteTodo', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session);
+    expect(result).toContain('**`StartPlan`**');
+    expect(result).toContain('**`ListPlans`**');
+    expect(result).toContain('**`CompletePlan`**');
+    expect(result).toContain('current_plan_id');
+    expect(result).not.toContain('once for the initial plan');
+    expect(result).toContain('**Run the plan**');
+    expect(result).toContain('only sends a message');
+    expect(result).toContain('Mark todos **`completed`**');
+    expect(result).toContain('do **not** use **`DeleteTodo`** as the normal workflow');
+  });
+
   it('uses subagent role prompt for subagent agents', async () => {
     const session = await seedSession({ session_path: '/tmp/wt' });
     const result = await buildSystemPromptAppend(session, { agent: { agent_type: 'subagent' } });
@@ -147,6 +161,10 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
     expect(result).not.toContain('Baguette repo configuration');
     expect(result).toContain('do **not** have `UpdateSession`');
+    expect(result).toContain('StartPlan');
+    expect(result).toContain('CompletePlan');
+    expect(result).toContain('Mark todos **`completed`**');
+    expect(result).toContain('do **not** use **`DeleteTodo`** as the normal workflow');
     expect(loadBaguetteAgentPrompt).toHaveBeenCalledWith('/tmp/wt', 'subagent');
   });
 

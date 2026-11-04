@@ -25,7 +25,7 @@ export async function buildBaguetteToolList(session, app, { slackApps = [], agen
     baseTools = [];
   }
 
-  const tools = [...baseTools, ...buildBuilderAgentTools(session, app, { slackApps })];
+  const tools = [...baseTools, ...buildBuilderAgentTools(session, app, { slackApps, agent })];
 
   let wrapped = wrapBaguetteToolList(session, app, tools);
   if (isGlobalSession(session)) {

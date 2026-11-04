@@ -107,8 +107,6 @@ export function sessionHref(session, { fromAllSessions } = {}) {
 export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSession',
   'UpdateIssueStatus',
-  'CreatePlan',
-  'EditPlan',
   'StartSubagent',
   'CreateSession',
   'CreateLoop',
