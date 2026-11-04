@@ -298,6 +298,25 @@ export function cursorToolKindFromName(
   return 'generic';
 }
 
+/**
+ * Lift the wrapped tool's payload out of Cursor's `mcp` meta-tool call.
+ *
+ * Cursor routes external MCP providers through a single `mcp` tool: the real
+ * tool name arrives in `tool`/`toolName` (top level or inside `args`), and the
+ * wrapped call's own arguments can be nested under `args` instead of flat.
+ * Returns the input unchanged when the call is not a detected meta-tool call,
+ * so plain external-MCP and native tool inputs pass through untouched. Top
+ * level fields win over nested ones, mirroring the `mcp` args mapping.
+ */
+export function unwrapCursorMetaToolInput(toolName: string, inp: Dict): Dict {
+  if (cursorCanonicalToolName(toolName) !== 'mcp') return inp;
+  if (!cursorMcpWrappedToolName(toolName, inp)) return inp;
+  const nested = isDict(inp.args) ? inp.args : {};
+  const { tool: _tool, toolName: _toolName, args: _args, ...rest } = inp;
+  const { tool: _nestedTool, toolName: _nestedToolName, ...fields } = nested;
+  return { ...fields, ...rest };
+}
+
 /** Normalise raw Cursor tool input into typed `args` for `kind`. */
 export function mapCursorToolArgs<K extends ToolCallKind>(
   kind: K,
@@ -351,8 +370,14 @@ export function mapCursorToolArgs<K extends ToolCallKind>(
         description: str(inp.description),
         subagent_type: cursorSubagentTypeLabel(inp.subagent_type ?? inp.subagentType),
       } as ToolArgsByKind[K];
-    case 'ask_user':
-      return { questions: (inp.questions as Dict[]) ?? [] } as ToolArgsByKind[K];
+    case 'ask_user': {
+      // Cursor routes Baguette MCP tools through its `mcp` meta-tool: the
+      // wrapped payload (incl. `questions`) can sit under `args` with the
+      // tool name in `toolName`/`tool`. Reading only the top level dropped
+      // the questions and rendered an empty "The agent has a question" card.
+      const unwrapped = unwrapCursorMetaToolInput(toolName, inp);
+      return { questions: (unwrapped.questions as Dict[]) ?? [] } as ToolArgsByKind[K];
+    }
     case 'exit_plan':
       return { plan: str(inp.plan ?? inp.planContent) } as ToolArgsByKind[K];
     case 'mcp': {

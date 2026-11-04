@@ -247,6 +247,54 @@ describe('meta-tool AskUserQuestions end-to-end', () => {
     expect(done.kind).toBe('ask_user');
     expect(done.args.questions).toEqual(rawArgs.questions);
   });
+
+  // Regression for session 994: the meta-tool call resolved to kind 'ask_user'
+  // but the stored row was `args: { questions: [] }` because the questions sat
+  // inside the meta-tool envelope instead of at the top level — the UI showed
+  // only "The agent has a question" with no content to answer.
+  const nestedEnvelopeCases = [
+    {
+      label: 'toolName at top level, questions under args',
+      rawArgs: {
+        toolName: 'AskUserQuestions',
+        args: { questions: [{ question: 'Which transport?' }] },
+      },
+    },
+    {
+      label: 'tool at top level, questions under args',
+      rawArgs: {
+        tool: 'AskUserQuestions',
+        args: { questions: [{ question: 'Which transport?' }] },
+      },
+    },
+    {
+      label: 'tool and questions both nested under args',
+      rawArgs: {
+        args: { tool: 'AskUserQuestions', questions: [{ question: 'Which transport?' }] },
+      },
+    },
+  ];
+
+  it.each(nestedEnvelopeCases)('keeps questions when $label', ({ rawArgs }) => {
+    const start = cursorBuildToolCallStart('id-nested', 'mcp', rawArgs);
+    expect(start.kind).toBe('ask_user');
+    const done = cursorBuildToolCallComplete(start, {
+      args: rawArgs,
+      rawResult: { status: 'success', value: { ok: true } },
+    });
+    expect(done.kind).toBe('ask_user');
+    expect(done.args.questions).toEqual([{ question: 'Which transport?' }]);
+  });
+
+  it('does not unwrap nested args for a direct ask_user call', () => {
+    const rawArgs = {
+      questions: [{ question: 'Ship it?' }],
+      args: { questions: [{ question: 'stale' }] },
+    };
+    const start = cursorBuildToolCallStart('id-direct', 'AskUserQuestions', rawArgs);
+    expect(start.kind).toBe('ask_user');
+    expect(start.args.questions).toEqual([{ question: 'Ship it?' }]);
+  });
 });
 
 describe('mapCursorToolArgs', () => {
