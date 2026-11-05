@@ -386,6 +386,19 @@ function formatExternal(context) {
 const encryptApiKey = encryptFields({ api_key: 'api_key_encrypted' });
 const decryptApiKey = decryptFields({ api_key: 'api_key_encrypted' });
 
+async function clearProviderModelsCache(context) {
+  const row = context.result;
+  if (!row?.sdk) return context;
+  const plugin = getSdkPlugin(row.sdk);
+  if (typeof plugin?.clearModelsCache !== 'function') return context;
+  try {
+    await plugin.clearModelsCache(row);
+  } catch {
+    // Invalidation is best-effort; the write already succeeded.
+  }
+  return context;
+}
+
 const agentConfigsHooks = {
   before: {
     all: [requireUser],
@@ -395,8 +408,8 @@ const agentConfigsHooks = {
   after: {
     find: [decryptApiKey, formatExternal],
     get: [decryptApiKey, formatExternal],
-    create: [decryptApiKey, formatExternal],
-    patch: [decryptApiKey, formatExternal],
+    create: [decryptApiKey, clearProviderModelsCache, formatExternal],
+    patch: [decryptApiKey, clearProviderModelsCache, formatExternal],
   },
 };
 

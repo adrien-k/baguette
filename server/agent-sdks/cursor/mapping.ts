@@ -308,7 +308,7 @@ export function cursorToolKindFromName(
  * so plain external-MCP and native tool inputs pass through untouched. Top
  * level fields win over nested ones, mirroring the `mcp` args mapping.
  */
-export function unwrapCursorMetaToolInput(toolName: string, inp: Dict): Dict {
+function unwrapCursorMetaToolInput(toolName: string, inp: Dict): Dict {
   if (cursorCanonicalToolName(toolName) !== 'mcp') return inp;
   if (!cursorMcpWrappedToolName(toolName, inp)) return inp;
   const nested = isDict(inp.args) ? inp.args : {};

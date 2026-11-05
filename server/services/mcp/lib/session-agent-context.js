@@ -2,6 +2,11 @@ import { getGithubToken } from '../../agent-settings.js';
 import { resolveDataDirRelativePath } from '../../../config.js';
 import { fail } from './result.js';
 import { formatAgentSdkDisplayName } from '../../../../shared/agent-sdk-display.js';
+import {
+  gitAuthFromRepo,
+  githubApiAvailable,
+  isLocalRepo,
+} from '../../../../shared/repo-origin.js';
 
 /**
  * Context shared by repo-session MCP tools (git, PR, tasks, config, etc.).
@@ -23,8 +28,10 @@ export function createSessionAgentContext(
     return sessionRef;
   };
 
+  const getUser = async () => app.service('users').get(sessionRef.user_id, {});
+
   const getToken = async () => {
-    const user = await app.service('users').get(sessionRef.user_id, {});
+    const user = await getUser();
     return getGithubToken(user);
   };
 
@@ -56,15 +63,31 @@ export function createSessionAgentContext(
     return db('repos').where({ id: s.repo_id }).first();
   };
 
-  const requireGitHubRepo = async () => {
-    const repo = await getRepo();
-    if (!repo?.origin) {
-      return fail(
-        'This repository is not connected to GitHub. Push and PR features are unavailable.'
-      );
-    }
-    return null;
+  const getGitAuth = async () => {
+    const [repo, user] = await Promise.all([getRepo(), getUser()]);
+    return gitAuthFromRepo(repo, {
+      token: getGithubToken(user),
+      userId: user?.id ?? sessionRef.user_id,
+    });
   };
+
+  /** Origin present, or access_mode github — git push/pull/fetch. */
+  const requireRemoteRepo = async () => {
+    const repo = await getRepo();
+    if (!isLocalRepo(repo)) return null;
+    return fail('This repository has no remote. Push, pull, and fetch are unavailable.');
+  };
+
+  /** App token or PAT and a github.com origin — PR / GitHub API tools. */
+  const requireGitHubApi = async () => {
+    const [repo, token] = await Promise.all([getRepo(), getToken()]);
+    if (githubApiAvailable({ token, origin: repo?.origin })) return null;
+    return fail(
+      'GitHub API is not available for this repository. PR features require a GitHub token and a github.com remote.'
+    );
+  };
+
+  const requireGitHubRepo = requireGitHubApi;
 
   const patchSession = async (data) => {
     const updated = await app
@@ -89,9 +112,12 @@ export function createSessionAgentContext(
     slackApps,
     getSession,
     getToken,
+    getGitAuth,
     describeAgent,
     withSessionHeader,
     getRepo,
+    requireRemoteRepo,
+    requireGitHubApi,
     requireGitHubRepo,
     patchSession,
     absoluteSessionPath,

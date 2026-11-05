@@ -1,4 +1,5 @@
 import { listClaudeModels } from './gateway-models.js';
+import { clearClaudeModelsCache } from './anthropic-models.js';
 import { runClaudeConnectivityTest } from './connectivity.js';
 import { resolveClaudeAgentModelParams } from './model-params.js';
 import { claudeToolCallBuilders } from './tool-call-builders.ts';
@@ -43,6 +44,10 @@ export const claudeAgentSdkPlugin = {
 
   listModels(config, { refresh = false, user = null } = {}) {
     return listClaudeModels(config, { refresh, user });
+  },
+
+  clearModelsCache(config) {
+    return clearClaudeModelsCache(config);
   },
 
   testConnectivity(config) {

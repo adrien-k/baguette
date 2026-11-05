@@ -15,7 +15,7 @@ You may use **`CreatePlan`**, **`ListPlans`**, **`StartPlan`**, **`EditPlan`**, 
 ## What you may still do
 
 - Edit files, run tests, and use **`RunTask`** / shell for the assigned work.
-- Use **`CurrentSessionInfo`**, **`PrRead`**, **`GitPull`**, **`GitFetch`**, and read-only git commands when needed for the task.
+- Use {{subagent_session_tools}} and read-only git commands when needed for the task.
 - Use **`CreateSessionMessage`** only when the user explicitly asks you to message another session (same as any builder). If your task says the primary set **`notify_parent`** (or "you will be notified"), Baguette already posts your result back automatically — do **not** also send your own completion message.
 - When the user **does** instruct you to commit, use a simple inline message only: `git add -A && git commit -m "concise message"` — never heredoc (`<<EOF`) syntax.
 

@@ -1,7 +1,13 @@
 import { feathers } from 'feathers';
+import db from './db.js';
 import { getClientIp } from './lib/client-ip.js';
+import { touchUserLastIp } from './lib/user-last-ip.js';
 import { requirePublicService } from './services/feathers/public-services.js';
 import logger from './logger.js';
+
+function isNotFoundError(err) {
+  return Number(err?.code) === 404 || err?.name === 'NotFound' || err?.className === 'not-found';
+}
 
 /** Standalone Feathers v6 application (no Express wrapper). */
 export function createFeathersApp() {
@@ -30,17 +36,29 @@ export function cookieAuthMiddleware(feathersApp) {
     if (!userId) return next();
     try {
       const user = await feathersApp.service('users').get(userId, {});
-      if (!user) return next();
+      if (!user) {
+        res.clearCookie('userId');
+        return next();
+      }
       if (!user.approved) {
         req.pendingUser = user;
         return next();
       }
       req.user = user;
       req.feathers.user = user;
+      touchUserLastIp(db, user.id, req.feathers.clientIp, req).catch((err) => {
+        logger.warn({ err, userId: user.id }, 'Failed to update user last IP');
+      });
       next();
     } catch (err) {
-      // A failed lookup must stay distinguishable from "user deleted": requireAuth only
-      // clears the session cookie on a definitive 404, not on transient errors.
+      // Deleted / never-existed user (stale cookie after a DB wipe): stay anonymous
+      // and drop the cookie. Do not warn — this is expected on first load of a fresh
+      // instance. Transient failures stay on req.identityLookupError so requireAuth
+      // can keep the cookie and surface a 500 instead of signing the operator out.
+      if (isNotFoundError(err)) {
+        res.clearCookie('userId');
+        return next();
+      }
       req.identityLookupError = err;
       logger.warn({ err }, 'Session cookie user lookup failed');
       next();

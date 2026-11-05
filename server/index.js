@@ -29,6 +29,7 @@ import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
 import { LoopScheduler } from './services/loop-scheduler.js';
 import db from './db.js';
+import { seedInstanceSettings, getGithubAppConfig } from './lib/instance-settings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -139,6 +140,13 @@ const loopScheduler = new LoopScheduler(feathersApp);
 feathersApp.set('loopScheduler', loopScheduler);
 feathersApp.setup(server).then(
   async () => {
+    await seedInstanceSettings(db);
+    const github = await getGithubAppConfig(db);
+    if (!github.configured) {
+      logger.warn(
+        'GitHub App not configured — GitHub sign-in disabled until credentials are saved.'
+      );
+    }
     await feathersApp.service('sessions').restartInterruptedSessions();
     loopScheduler.start();
   },

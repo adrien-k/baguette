@@ -17,6 +17,7 @@ const PUBLIC_SERVICES = [
   'agent-configs',
   'agent-model-presets',
   'agents',
+  'instance-settings',
   'loops',
   'messages',
   'queued-messages',

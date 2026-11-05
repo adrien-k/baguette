@@ -49,8 +49,12 @@ export async function listCursorModels(apiKey) {
   }
 }
 
-export async function refreshCursorModels(apiKey) {
+export async function clearCursorModelsCache() {
   await cache.clear(MODELS_CACHE_KEY);
+}
+
+export async function refreshCursorModels(apiKey) {
+  await clearCursorModelsCache();
   // Throws on failure — callers must handle the error
   const sdkModels = await Cursor.models.list({ apiKey });
   return mapSdkModels(sdkModels);

@@ -18,6 +18,12 @@ function modelsCacheKey(apiKey, envVar) {
   return `pi-models:${envVar}:${apiKey.slice(0, 8)}`;
 }
 
+/** Drop the cached Pi provider catalog for this API key + env var. */
+export async function clearPiModelsCache(apiKey, envVar) {
+  if (!apiKey || !envVar) return;
+  await cache.clear(modelsCacheKey(apiKey, envVar));
+}
+
 /**
  * LunaRoute's Pi provider only exposes OAuth auth; runtime api_key overrides are ignored.
  *

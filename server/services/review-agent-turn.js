@@ -196,7 +196,10 @@ class ReviewAgentTurn {
 
   async _prepareReviewPrompt(session, reviewer, extraPrompt) {
     const userPrompt = await this._userReviewPrompt(session, extraPrompt);
-    const systemPrompt = await buildReviewSystemPromptAppend(session, userPrompt);
+    const systemPrompt = await buildReviewSystemPromptAppend(session, userPrompt, {
+      db: this.app.get('db'),
+      app: this.app,
+    });
     if (reviewer && !reviewerHasStoredSession(reviewer)) {
       await this._persist(session, reviewer, {
         type: 'system',

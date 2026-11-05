@@ -13,6 +13,7 @@
  * Plugin members (all optional except key/label/servicePath):
  * - `register(app, { servicePath })` — mount the Feathers service + registerAgentSdk
  * - `listModels(config, { refresh, user })` — agent-configs `listModels`
+ * - `clearModelsCache(config)` — drop the cached provider catalog after create/patch
  * - `requiresApiKey` — false only when model catalogs work with an empty api_key (mock)
  * - `testConnectivity(config)` — agent-configs `testConnectivity`
  * - `toolCallBuilders()` — MessageStreamWriter tool-call builders (fresh per call)

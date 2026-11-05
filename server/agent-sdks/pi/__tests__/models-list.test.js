@@ -15,7 +15,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   resolveCliModel: vi.fn(),
 }));
 
-const { listPiModels } = await import('../models.js');
+const { listPiModels, clearPiModelsCache } = await import('../models.js');
 const cache = await import('../../../lib/cache.js');
 
 describe('listPiModels', () => {
@@ -41,6 +41,14 @@ describe('listPiModels', () => {
     expect(refresh).not.toHaveBeenCalled();
 
     await listPiModels('sk-test12345', 'OPENAI_API_KEY', { refresh: true });
+    expect(refresh).toHaveBeenCalledWith({ allowNetwork: true });
+  });
+
+  it('clearPiModelsCache drops the catalog so the next list hits the network', async () => {
+    await listPiModels('sk-test12345', 'OPENAI_API_KEY');
+    refresh.mockClear();
+    await clearPiModelsCache('sk-test12345', 'OPENAI_API_KEY');
+    await listPiModels('sk-test12345', 'OPENAI_API_KEY');
     expect(refresh).toHaveBeenCalledWith({ allowNetwork: true });
   });
 });

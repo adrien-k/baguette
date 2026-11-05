@@ -13,8 +13,9 @@ Fly.io machines are **Firecracker VMs**, not containers running on a shared host
 ## Prerequisites
 
 - [flyctl](https://fly.io/docs/hands-on/install-flyctl/) installed and authenticated (`fly auth login`)
-- A [GitHub App](https://github.com/settings/apps)
-- An Anthropic API key
+- A persistent volume for `DATA_DIR` (see below). No GitHub App or encryption-key env is required.
+- Optional: a [GitHub App](https://github.com/settings/apps) — or create one later in the wizard / **Admin → GitHub App**
+- An Anthropic API key (configured in **Settings → Agent** after the first sign-in)
 
 ## 1. Configure fly.toml
 
@@ -52,9 +53,11 @@ fly volumes create baguette_data --size 10 --region iad
 
 Adjust `--region` to match `primary_region` in `fly.toml`. The volume is attached to a single machine, so avoid scaling to multiple machines without a shared storage strategy.
 
-## 4. GitHub App
+## 4. GitHub App (optional)
 
-Create a GitHub App at [github.com/settings/apps](https://github.com/settings/apps), with the permissions and options listed in [Setting up the GitHub App](../../README.md#setting-up-the-github-app).
+Skip this if you will use passkeys and/or a PAT. The wizard or **Admin → GitHub App** can register an App via GitHub’s manifest flow.
+
+To create an App yourself at [github.com/settings/apps](https://github.com/settings/apps), use the permissions and options listed in [Setting up the GitHub App](../../README.md#setting-up-the-github-app).
 
 With the default Fly.io domain:
 
@@ -68,18 +71,24 @@ With a custom domain:
 
 ## 5. Set secrets
 
+No app secrets are required. Persist the volume from step 3 — first boot writes `/data/encryption.key` and an empty `instance_settings` row. Optional `BOOTSTRAP_PASSWORD` gates the first visitor (env-only; never copied to disk).
+
 ```bash
 fly secrets set \
-  AUTH_GITHUB_CLIENT_ID=your_client_id \
-  AUTH_GITHUB_CLIENT_SECRET=your_client_secret \
-  AUTH_GITHUB_APP_SLUG=your-app-slug \
-  ENCRYPTION_KEY=$(openssl rand -hex 32) \
   PUBLIC_HOST=https://your-app-name.fly.dev
+```
+
+Optional first-visitor gate on a public app:
+
+```bash
+fly secrets set BOOTSTRAP_PASSWORD=a-long-random-string
 ```
 
 `PUBLIC_HOST` must be the full URL users will reach Baguette at (including `https://`). Update it if you later add a custom domain.
 
 By default Baguette trusts one reverse-proxy hop for `X-Forwarded-For` (`TRUST_PROXY_HOPS=1`) — Fly's proxy is that hop, so the default is correct here. Only set `TRUST_PROXY_HOPS=0` (via `fly secrets set`) if you expose Baguette with no proxy in front.
+
+`TRUST_EDGE_COUNTRY` is optional and default off. Set `1` (via `fly secrets set TRUST_EDGE_COUNTRY=1`) only when Baguette runs behind Cloudflare, CloudFront, or App Engine, which set the client-country header. Fly's proxy does not set those headers; without them, Admin → Users last-used country comes from a geoip lookup of the client IP.
 
 ## 6. Wildcard DNS and TLS
 

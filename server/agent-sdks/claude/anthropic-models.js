@@ -20,6 +20,11 @@ export function modelsCacheKey(claudeApiUrl) {
   return `anthropic-models:${base}`;
 }
 
+/** Drop the cached provider catalog for this config's Claude API URL. */
+export async function clearClaudeModelsCache(config) {
+  await cache.clear(modelsCacheKey(config?.api_url ?? config?.baseUrl ?? null));
+}
+
 function mapSdkModels(sdkModels) {
   const models = [];
   for (const row of sdkModels ?? []) {

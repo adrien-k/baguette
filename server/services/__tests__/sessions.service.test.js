@@ -2539,7 +2539,7 @@ describe('Sessions service - find, get, create', () => {
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/foo',
         expect.any(String),
-        null,
+        expect.objectContaining({ mode: 'local' }),
         { localBranch: `feature/foo-${savedRow.short_id}`, baseBranch: 'develop' }
       );
       expect(session.local_branch).toBe(`feature/foo-${savedRow.short_id}`);
@@ -2653,7 +2653,7 @@ describe('Sessions service - find, get, create', () => {
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/bar',
         expect.any(String),
-        null,
+        expect.objectContaining({ mode: 'local' }),
         { localBranch: `feature/bar-${savedRow.short_id}`, baseBranch: 'mainline' }
       );
     });
@@ -2765,7 +2765,7 @@ describe('Sessions service - find, get, create', () => {
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/taken',
         savedRow.short_id,
-        null,
+        expect.objectContaining({ mode: 'local' }),
         expect.objectContaining({ localBranch: session.local_branch })
       );
     });

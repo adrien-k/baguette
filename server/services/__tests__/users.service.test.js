@@ -29,6 +29,15 @@ vi.mock('../github.js', async (importOriginal) => {
   };
 });
 
+const githubConfigMock = vi.hoisted(() => ({ configured: false }));
+vi.mock('../../lib/instance-settings.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGithubAppConfig: vi.fn(async () => ({ configured: githubConfigMock.configured })),
+  };
+});
+
 import { registerUsersService } from '../feathers/users.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
@@ -36,7 +45,18 @@ import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 const db = createTestDb();
 
 const params = (user) => ({ provider: 'rest', user });
+const setAdminParams = (user, targetUserId) => ({
+  provider: 'rest',
+  user,
+  route: { id: targetUserId },
+});
 const unauthParams = { provider: 'rest' };
+
+function expectForbidden(promise) {
+  return expect(promise).rejects.toThrow(
+    /Admin required|Forbidden|Not allowed|Cannot demote|Cannot revoke|Cannot delete/
+  );
+}
 
 function makeApp(dbRef) {
   const app = feathers();
@@ -57,10 +77,11 @@ let user2;
 let pendingUser;
 
 beforeEach(async () => {
+  githubConfigMock.configured = false;
   await db('users').insert([
-    { github_id: 1, username: 'alice', approved: true },
-    { github_id: 2, username: 'bob', approved: true },
-    { github_id: 3, username: 'charlie', approved: false },
+    { github_id: 1, username: 'alice', approved: true, admin: 1 },
+    { github_id: 2, username: 'bob', approved: true, admin: 0 },
+    { github_id: 3, username: 'charlie', approved: false, admin: 0 },
   ]);
   user1 = await db('users').where({ username: 'alice' }).first();
   user2 = await db('users').where({ username: 'bob' }).first();
@@ -71,10 +92,14 @@ beforeEach(async () => {
 });
 
 describe('Users service - find', () => {
-  it('any authenticated user can list all users', async () => {
+  it('admin can list all users', async () => {
     const result = await app.service('users').find(params(user1));
     const data = result.data ?? result;
     expect(data.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('non-admin cannot list users', async () => {
+    await expectForbidden(app.service('users').find(params(user2)));
   });
 
   it('unauthenticated find is rejected', async () => {
@@ -91,11 +116,15 @@ describe('Users service - find', () => {
 });
 
 describe('Users service - approve', () => {
-  it('any authenticated user can approve a pending user', async () => {
+  it('admin can approve a pending user', async () => {
     await app.service('users').approve(pendingUser.id, params(user1));
 
     const updated = await db('users').where({ id: pendingUser.id }).first();
     expect(updated.approved).toBe(1); // SQLite stores booleans as 0/1
+  });
+
+  it('non-admin cannot approve', async () => {
+    await expectForbidden(app.service('users').approve(pendingUser.id, params(user2)));
   });
 
   it('unauthenticated approve is rejected', async () => {
@@ -106,11 +135,19 @@ describe('Users service - approve', () => {
 });
 
 describe('Users service - reject', () => {
-  it('any authenticated user can reject (revoke) an approved user', async () => {
+  it('admin can reject (revoke) an approved user', async () => {
     await app.service('users').reject(user2.id, params(user1));
 
     const updated = await db('users').where({ id: user2.id }).first();
     expect(updated.approved).toBe(0);
+  });
+
+  it('non-admin cannot reject', async () => {
+    await expectForbidden(app.service('users').reject(user2.id, params(user2)));
+  });
+
+  it('cannot reject the last admin', async () => {
+    await expectForbidden(app.service('users').reject(user1.id, params(user1)));
   });
 
   it('unauthenticated reject is rejected', async () => {
@@ -121,10 +158,23 @@ describe('Users service - reject', () => {
 });
 
 describe('Users service - get', () => {
-  it('any authenticated user can get a user by id', async () => {
+  it('admin can get any user by id', async () => {
     const result = await app.service('users').get(user2.id, params(user1));
     expect(result.id).toBe(user2.id);
     expect(result.username).toBe('bob');
+  });
+
+  it('non-admin can get self only', async () => {
+    const self = await app.service('users').get(user2.id, params(user2));
+    expect(self.id).toBe(user2.id);
+    await expectForbidden(app.service('users').get(user1.id, params(user2)));
+  });
+
+  it('external user payload includes admin as boolean', async () => {
+    const adminView = await app.service('users').get(user1.id, params(user1));
+    expect(adminView.admin).toBe(true);
+    const self = await app.service('users').get(user2.id, params(user2));
+    expect(self.admin).toBe(false);
   });
 
   it('unauthenticated get is rejected', async () => {
@@ -135,13 +185,21 @@ describe('Users service - get', () => {
 });
 
 describe('Users service - create', () => {
-  it('any authenticated user can create a new user', async () => {
+  it('admin can create a new user', async () => {
     const result = await app
       .service('users')
       .create({ github_id: 999, username: 'newuser', approved: false }, params(user1));
     expect(result.username).toBe('newuser');
     const row = await db('users').where({ username: 'newuser' }).first();
     expect(row).toBeTruthy();
+  });
+
+  it('non-admin cannot create users', async () => {
+    await expectForbidden(
+      app
+        .service('users')
+        .create({ github_id: 999, username: 'newuser', approved: false }, params(user2))
+    );
   });
 
   it('unauthenticated create is rejected', async () => {
@@ -236,6 +294,25 @@ describe('Users service - patch', () => {
     await expect(
       app.service('users').patch(user2.id, { approved: false }, params(user1))
     ).rejects.toThrow('Can only patch own user');
+  });
+
+  it('external patch cannot set admin', async () => {
+    await app
+      .service('users')
+      .patch(user2.id, { admin: true, color_scheme: 'light' }, params(user2));
+    const row = await db('users').where({ id: user2.id }).first();
+    expect(row.admin).toBe(0);
+    expect(row.color_scheme).toBe('light');
+  });
+
+  it('external patch cannot set github_id or approved', async () => {
+    await app
+      .service('users')
+      .patch(user2.id, { github_id: 99999, approved: false, color_scheme: 'light' }, params(user2));
+    const row = await db('users').where({ id: user2.id }).first();
+    expect(row.github_id).toBe(2);
+    expect(row.approved).toBe(1);
+    expect(row.color_scheme).toBe('light');
   });
 
   it('unauthenticated patch is rejected', async () => {
@@ -343,16 +420,109 @@ describe('Users service - agent defaults patch', () => {
   });
 });
 
+describe('Users service - setAdmin', () => {
+  it('non-admin cannot setAdmin', async () => {
+    await expectForbidden(
+      app.service('users').setAdmin({ admin: true }, setAdminParams(user2, user2.id))
+    );
+  });
+
+  it('admin can promote another user', async () => {
+    const updated = await app
+      .service('users')
+      .setAdmin({ admin: true }, setAdminParams(user1, user2.id));
+    expect(updated.admin).toBe(true);
+  });
+
+  it('accepts id in the payload (REST client call)', async () => {
+    const updated = await app
+      .service('users')
+      .setAdmin({ id: user2.id, admin: true }, params(user1));
+    expect(updated.admin).toBe(true);
+  });
+
+  it('requires a target user id', async () => {
+    await expect(app.service('users').setAdmin({ admin: true }, params(user1))).rejects.toThrow(
+      'User id is required'
+    );
+  });
+
+  it('cannot demote the last admin', async () => {
+    await expectForbidden(
+      app.service('users').setAdmin({ admin: false }, setAdminParams(user1, user1.id))
+    );
+  });
+});
+
 describe('Users service - remove', () => {
-  it('any authenticated user can remove a user', async () => {
+  it('admin can remove a user', async () => {
     await app.service('users').remove(pendingUser.id, params(user1));
     const row = await db('users').where({ id: pendingUser.id }).first();
     expect(row).toBeUndefined();
   });
 
+  it('non-admin cannot remove users', async () => {
+    await expectForbidden(app.service('users').remove(pendingUser.id, params(user2)));
+  });
+
   it('unauthenticated remove is rejected', async () => {
     await expect(app.service('users').remove(pendingUser.id, unauthParams)).rejects.toThrow(
       'Not authenticated'
+    );
+  });
+
+  it('cannot remove the last admin', async () => {
+    await expectForbidden(app.service('users').remove(user1.id, params(user1)));
+    expect(await db('users').where({ id: user1.id }).first()).toBeTruthy();
+  });
+
+  it('can remove an admin when another admin remains', async () => {
+    await db('users').where({ id: user2.id }).update({ admin: 1 });
+    await app.service('users').remove(user2.id, params(user1));
+    expect(await db('users').where({ id: user2.id }).first()).toBeUndefined();
+  });
+});
+
+describe('Users service - invite', () => {
+  it('admin can create a one-time invite for a new username', async () => {
+    const result = await app.service('users').invite({ username: 'dana' }, params(user1));
+    expect(result.invite_url).toMatch(/\/invite\/bginv_/);
+    expect(result.user).toMatchObject({
+      username: 'dana',
+      approved: true,
+      admin: false,
+      invite_pending: true,
+    });
+    const row = await db('users').where({ username: 'dana' }).first();
+    expect(row.invite_token_hash).toBeTruthy();
+    expect(row.approved).toBe(1);
+
+    const listed = await app.service('users').get(row.id, params(user1));
+    expect(listed.invite_pending).toBe(true);
+    expect(listed.invite_token_hash).toBeUndefined();
+  });
+
+  it('regenerates the token for an unused invite', async () => {
+    const first = await app.service('users').invite({ username: 'dana' }, params(user1));
+    const second = await app.service('users').invite({ username: 'dana' }, params(user1));
+    expect(second.invite_url).not.toBe(first.invite_url);
+    expect(second.user.id).toBe(first.user.id);
+  });
+
+  it('rejects invites when the GitHub App is configured', async () => {
+    githubConfigMock.configured = true;
+    await expect(app.service('users').invite({ username: 'dana' }, params(user1))).rejects.toThrow(
+      'Invites are only available when GitHub sign-in is not configured'
+    );
+  });
+
+  it('non-admin cannot invite', async () => {
+    await expectForbidden(app.service('users').invite({ username: 'dana' }, params(user2)));
+  });
+
+  it('rejects a username that already signs in', async () => {
+    await expect(app.service('users').invite({ username: 'alice' }, params(user1))).rejects.toThrow(
+      'That user already signs in with GitHub'
     );
   });
 });

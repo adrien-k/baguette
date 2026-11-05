@@ -29,6 +29,13 @@
     "*.{js,jsx,ts,tsx}": "eslint --fix --cache --cache-location node_modules/.cache/eslint",
     "*": "prettier --write --ignore-unknown"
   },
+  "allowScripts": {
+    "@google/genai": false,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "protobufjs": false,
+    "unrs-resolver@1.12.2": true
+  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.310",
     "@anthropic-ai/sdk": "^0.102.0",
@@ -38,7 +45,8 @@
     "@feathersjs/knex": "^5.0.46",
     "@feathersjs/schema": "^5.0.46",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "latest",
+    "@simplewebauthn/server": "^14.0.3",
+    "better-sqlite3": "13.0.3",
     "cookie": "^2.0.1",
     "cookie-parser": "latest",
     "cookie-signature": "latest",
@@ -46,6 +54,7 @@
     "ejs": "latest",
     "express": "^4.22.3",
     "feathers": "6.0.0-pre.11",
+    "geoip-country": "^5.0.202610310241",
     "js-yaml": "^5.2.3",
     "knex": "latest",
     "pino": "^10.3.1",

@@ -1,10 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import {
+  autoPushEnabledForRepo,
   duplicateRepoDisplayNames,
   formatRepoLabel,
   groupReposByOrg,
+  repoAccessModeLabel,
   repoOrg,
 } from '../repoDisplayName.js';
+
+describe('autoPushEnabledForRepo', () => {
+  it('allows auto-push for github remotes and blocks local', () => {
+    expect(
+      autoPushEnabledForRepo('acme/app', true, {
+        access_mode: 'github',
+        origin: 'https://github.com/acme/app.git',
+      })
+    ).toBe(true);
+    expect(autoPushEnabledForRepo('scratch', true, { access_mode: 'local', origin: null })).toBe(
+      false
+    );
+  });
+});
+
+describe('repoAccessModeLabel', () => {
+  it('labels github and local', () => {
+    expect(repoAccessModeLabel({ access_mode: 'github' })).toBe('GitHub');
+    expect(repoAccessModeLabel({ access_mode: 'local' })).toBe('local');
+  });
+});
 
 describe('repoOrg', () => {
   it('returns the owner for GitHub full names', () => {

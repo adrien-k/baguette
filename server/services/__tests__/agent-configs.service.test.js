@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as cache from '../../lib/cache.js';
 import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
@@ -232,5 +233,27 @@ describe('agent-configs credential schema', () => {
     const claude = metas.find((m) => m.key === 'claude');
     expect(claude.credentialSchema.hasApiUrl).toBe(true);
     expect(claude.adaptTools).toBeUndefined();
+  });
+});
+
+describe('agent-configs provider cache', () => {
+  it('clears the SDK provider catalog after create and patch', async () => {
+    const spy = vi.spyOn(cache, 'clear').mockResolvedValue(undefined);
+    const created = await app.service('agent-configs').create(
+      {
+        label: 'Cache Claude',
+        sdk: 'claude',
+        api_key: 'sk-ant-cache',
+        api_url: 'https://api.anthropic.com',
+      },
+      params(user1)
+    );
+    expect(spy).toHaveBeenCalledWith('anthropic-models:https://api.anthropic.com');
+    spy.mockClear();
+    await app
+      .service('agent-configs')
+      .patch(created.id, { label: 'Cache Claude 2' }, params(user1));
+    expect(spy).toHaveBeenCalledWith('anthropic-models:https://api.anthropic.com');
+    spy.mockRestore();
   });
 });

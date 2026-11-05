@@ -56,7 +56,7 @@ import {
 } from '../agent-session-routing.js';
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
-import { isLocalRepo } from '../../../shared/repo-origin.js';
+import { gitAuthFromRepo, isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import {
   computeSessionGitStatus,
@@ -996,12 +996,12 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
+      const auth = await sessionGitAuth(this.app, session, user);
       const currentBranch = session.remote_branch || session.local_branch;
       await Promise.all([
-        session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
+        session.base_branch ? gitFetch(cwd, auth, session.base_branch).catch(() => {}) : null,
         currentBranch && currentBranch !== session.base_branch
-          ? gitFetch(cwd, token, currentBranch).catch(() => {})
+          ? gitFetch(cwd, auth, currentBranch).catch(() => {})
           : null,
       ]);
       const commitSha =
@@ -1052,8 +1052,8 @@ export class SessionsService extends KnexService {
     try {
       if (!commitSha && session.base_branch) {
         const user = await this.app.service('users').get(session.user_id, {});
-        const token = getGithubToken(user);
-        await gitFetch(cwd, token, session.base_branch).catch(() => {});
+        const auth = await sessionGitAuth(this.app, session, user);
+        await gitFetch(cwd, auth, session.base_branch).catch(() => {});
       }
       const files = commitSha
         ? await gitShowCommitNumstat(cwd, commitSha)
@@ -1130,12 +1130,12 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
+      const auth = await sessionGitAuth(this.app, session, user);
       const currentBranch = session.remote_branch || session.local_branch;
       await Promise.all([
-        session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
+        session.base_branch ? gitFetch(cwd, auth, session.base_branch).catch(() => {}) : null,
         currentBranch && currentBranch !== session.base_branch
-          ? gitFetch(cwd, token, currentBranch).catch(() => {})
+          ? gitFetch(cwd, auth, currentBranch).catch(() => {})
           : null,
       ]);
       const commits = await gitLogSinceBase(cwd, session.base_branch);
@@ -1153,9 +1153,9 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
+      const auth = await sessionGitAuth(this.app, session, user);
       const branch = data.branch || session.remote_branch || session.local_branch;
-      if (branch) await gitFetch(cwd, token, branch).catch(() => {});
+      if (branch) await gitFetch(cwd, auth, branch).catch(() => {});
       return await gitLocalAndRemoteSha(cwd, branch || null);
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
@@ -1258,7 +1258,11 @@ export class SessionsService extends KnexService {
       const cwd = resolveDataDirRelativePath(session.session_path);
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
-      if (!token) throw new BadRequest('No GitHub token configured');
+      const auth = await sessionGitAuth(this.app, session, user);
+      if (auth.mode === 'local') throw new BadRequest('This repository has no remote to push to');
+      if (auth.mode === 'github' && !auth.token) {
+        throw new BadRequest('No GitHub token configured');
+      }
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
       const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
@@ -1270,7 +1274,7 @@ export class SessionsService extends KnexService {
       let pushedBranch = branch || session.remote_branch || session.local_branch;
       if (forceGit || commitsToPush > 0) {
         try {
-          const result = await gitPush(cwd, token, {
+          const result = await gitPush(cwd, auth, {
             branch,
             force: forceMode === 'lease',
             forceOverwrite: forceMode === 'force',
@@ -1298,7 +1302,7 @@ export class SessionsService extends KnexService {
         pushOk = true;
         return { ok: true };
       }
-      if (session.label || session.pr_description != null || session.pr_number) {
+      if (token && (session.label || session.pr_description != null || session.pr_number)) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
         let userPrefix = '';
         let currentBaseBranch;
@@ -1406,8 +1410,13 @@ export class SessionsService extends KnexService {
         : null;
       if (!repo) throw new BadRequest('Session has no associated repository');
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
-      if (!token) throw new BadRequest('No GitHub token configured');
+      const auth = gitAuthFromRepo(repo, {
+        token: getGithubToken(user),
+        userId: user?.id,
+      });
+      if (auth.mode === 'github' && !auth.token) {
+        throw new BadRequest('No GitHub token configured');
+      }
 
       const { branch, localBranch } = await resolveRestoreWorktreeBranches(
         resolveRepoPath(repo),
@@ -1419,7 +1428,7 @@ export class SessionsService extends KnexService {
         repo,
         branch,
         session.short_id,
-        token,
+        auth,
         { localBranch, baseBranch: session.base_branch }
       );
       dbUpdate.local_branch = localBranch;
@@ -1650,7 +1659,8 @@ export class SessionsService extends KnexService {
     if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
-    if (!getGithubToken(user)) return;
+    const auth = await sessionGitAuth(this.app, session, user);
+    if (auth.mode === 'github' && !auth.token) return;
 
     let commitsToPush;
     try {
@@ -1747,6 +1757,16 @@ async function sessionRepoIsLocal(app, session) {
   if (!session?.repo_id) return isLocalRepo(session?.repo_full_name);
   const repo = await app.get('db')('repos').where({ id: session.repo_id }).first();
   return isLocalRepo(repo ?? session.repo_full_name);
+}
+
+async function sessionGitAuth(app, session, user) {
+  const repo = session?.repo_id
+    ? await app.get('db')('repos').where({ id: session.repo_id }).first()
+    : null;
+  return gitAuthFromRepo(repo, {
+    token: getGithubToken(user),
+    userId: user?.id ?? session?.user_id ?? null,
+  });
 }
 
 /**
@@ -1916,6 +1936,7 @@ async function provisionSessionEnvironment(app, session, params) {
   const token = getGithubToken(user);
   const repo = await db('repos').where({ full_name: repoFullName }).first();
   if (!repo) throw new BadRequest(`Repository "${repoFullName}" is not registered`);
+  const auth = gitAuthFromRepo(repo, { token, userId: user?.id });
 
   const userParams = { provider: undefined, user, _skipPrMetadataTouch: true };
   let patch = {};
@@ -1937,7 +1958,7 @@ async function provisionSessionEnvironment(app, session, params) {
       repo,
       workingBranch,
       shortId,
-      token,
+      auth,
       { localBranch, baseBranch: baseBranchForWorktree }
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
@@ -1965,7 +1986,7 @@ async function provisionSessionEnvironment(app, session, params) {
       repo,
       baseBranch,
       shortId,
-      token
+      auth
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
     patch.session_path = path.relative(DATA_DIR, absoluteWorktreePath);
@@ -2671,7 +2692,10 @@ async function persistSystemPrompt(context) {
   if (!session) return context;
   if (!session.repo_full_name && !isGlobalSession(session)) return context;
 
-  const promptAppend = await buildSystemPromptAppend(session);
+  const promptAppend = await buildSystemPromptAppend(session, {
+    db: context.app.get('db'),
+    app: context.app,
+  });
 
   if (!promptAppend) return context;
 

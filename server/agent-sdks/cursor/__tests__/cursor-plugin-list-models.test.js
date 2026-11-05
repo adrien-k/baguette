@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const listCursorModels = vi.hoisted(() => vi.fn());
 const refreshCursorModels = vi.hoisted(() => vi.fn());
+const clearCursorModelsCache = vi.hoisted(() => vi.fn());
 
 vi.mock('../models.js', () => ({
   listCursorModels,
   refreshCursorModels,
+  clearCursorModelsCache,
 }));
 
 import { cursorAgentSdkPlugin } from '../index.js';
@@ -13,6 +15,7 @@ import { cursorAgentSdkPlugin } from '../index.js';
 beforeEach(() => {
   listCursorModels.mockReset();
   refreshCursorModels.mockReset();
+  clearCursorModelsCache.mockReset();
 });
 
 describe('cursorAgentSdkPlugin.listModels', () => {
@@ -33,6 +36,12 @@ describe('cursorAgentSdkPlugin.listModels', () => {
     expect(refreshCursorModels).toHaveBeenCalledWith('cursor-key');
     expect(listCursorModels).not.toHaveBeenCalled();
     expect(result.models).toEqual([{ id: 'composer-1', displayName: 'Composer' }]);
+  });
+
+  it('clearModelsCache drops the Cursor provider catalog', async () => {
+    clearCursorModelsCache.mockResolvedValue(undefined);
+    await cursorAgentSdkPlugin.clearModelsCache({ api_key: 'cursor-key' });
+    expect(clearCursorModelsCache).toHaveBeenCalled();
   });
 
   it('propagates refresh failures from refreshCursorModels', async () => {

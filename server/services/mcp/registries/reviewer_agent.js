@@ -18,7 +18,11 @@ export function buildReviewerAgentTools(session, app, turnAgent = {}) {
   const h = createIssueHandlers(session, app, turnAgent);
   const ctx = createSessionAgentContext(session, app);
   return [
-    createCurrentSessionInfoTool(loadSessionRow(session, app), { readOnlySession: true }),
+    createCurrentSessionInfoTool(loadSessionRow(session, app), {
+      readOnlySession: true,
+      getRepo: ctx.getRepo,
+      getToken: ctx.getToken,
+    }),
     createCreateIssueTool(h),
     ...buildSessionIssueReadTools(session, app),
     createUpdateIssueTool(ctx),

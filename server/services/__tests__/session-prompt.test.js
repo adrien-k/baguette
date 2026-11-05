@@ -176,6 +176,37 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('Baguette repo configuration');
   });
 
+  it('keeps GitHub PR instructions for github remotes', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session, {
+      repo: {
+        access_mode: 'github',
+        origin: 'https://github.com/acme/app.git',
+      },
+      user: { access_token: 'tok' },
+    });
+    expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).toContain('PrRead');
+    expect(result).toContain('PrComments');
+    expect(result).toContain('GitHub pull request template');
+    expect(result).toContain('syncs the pull request to GitHub');
+  });
+
+  it('tells local repos to commit only with no push', async () => {
+    const session = await seedSession();
+    const result = await buildSystemPromptAppend(session, {
+      repo: { access_mode: 'local', origin: null },
+      user: { id: 1 },
+    });
+    expect(result).toContain('**local** repository');
+    expect(result).toContain('does **not** push');
+    expect(result).toContain('UpdateSession');
+    expect(result).not.toContain('PrRead');
+    expect(result).not.toContain('PrComments');
+    expect(result).not.toContain('GitHub CLI');
+    expect(result).not.toContain('GitHub pull request template');
+  });
+
   it('uses the light global prompt for is_global sessions', async () => {
     const session = await seedSession({
       is_global: true,

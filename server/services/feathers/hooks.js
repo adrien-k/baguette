@@ -65,6 +65,18 @@ export async function requireUser(context) {
   return context;
 }
 
+/** External calls only: requires an authenticated admin (SQLite admin 0/1 → boolean). */
+export async function requireAdmin(context) {
+  if (!context.params.provider) return context;
+  if (!context.params.user?.id) {
+    throw new NotAuthenticated('Not authenticated');
+  }
+  if (!context.params.user?.admin) {
+    throw new Forbidden('Admin required');
+  }
+  return context;
+}
+
 export async function scopeByUser(context) {
   const userId = context.params.user?.id;
   if (context.method === 'create') {

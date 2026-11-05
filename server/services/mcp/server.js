@@ -6,6 +6,7 @@ import {
 import { buildBaseAgentTools } from './registries/base_agent.js';
 import { buildBuilderAgentTools } from './registries/builder_agent.js';
 import { wrapBaguetteToolList } from './lib/wrap-baguette-tool-handler.js';
+import { applyRepoAccessModeToTools, resolveSessionRepoAccess } from './lib/repo-access-tools.js';
 
 export { buildReviewerAgentTools } from './registries/reviewer_agent.js';
 
@@ -18,8 +19,9 @@ export { buildReviewerAgentTools } from './registries/reviewer_agent.js';
  */
 export async function buildBaguetteToolList(session, app, { slackApps = [], agent = null } = {}) {
   let baseTools = [];
+  let owner = null;
   try {
-    const owner = await app.service('users').get(session.user_id, {});
+    owner = await app.service('users').get(session.user_id, {});
     baseTools = buildBaseAgentTools(owner, app, { callerSession: session, callerAgent: agent });
   } catch {
     baseTools = [];
@@ -35,6 +37,10 @@ export async function buildBaguetteToolList(session, app, { slackApps = [], agen
   if (agent?.agent_type === 'subagent') {
     const excluded = new Set(SUBAGENT_EXCLUDED_MCP_TOOLS);
     wrapped = wrapped.filter((t) => !excluded.has(t.name));
+  }
+  if (!isGlobalSession(session)) {
+    const access = await resolveSessionRepoAccess(session, app, owner);
+    wrapped = applyRepoAccessModeToTools(wrapped, access);
   }
   return wrapped;
 }

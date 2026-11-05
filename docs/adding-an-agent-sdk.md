@@ -40,6 +40,7 @@ export const claudeAgentSdkPlugin = {
   // agent-configs `listModels` (config is a decrypted agent_configs row)
   requiresApiKey: true,                                   // set false if catalogs work with empty api_key (mock)
   async listModels(config, { refresh, user }),
+  async clearModelsCache(config),     // drop cached provider catalog after create/patch
 
   // agent-configs `testConnectivity`
   async testConnectivity(config),

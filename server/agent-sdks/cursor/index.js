@@ -1,4 +1,4 @@
-import { refreshCursorModels, listCursorModels } from './models.js';
+import { refreshCursorModels, listCursorModels, clearCursorModelsCache } from './models.js';
 import { runCursorConnectivityTest } from './connectivity.js';
 import { resolveCursorModelParams } from '../../../shared/model-variants.js';
 import { parseCursorModelPrefsJson } from '../../../shared/cursor-model-prefs.js';
@@ -38,6 +38,10 @@ export const cursorAgentSdkPlugin = {
 
   register(app, { servicePath } = {}) {
     registerCursorAgentService(app, servicePath);
+  },
+
+  clearModelsCache() {
+    return clearCursorModelsCache();
   },
 
   async listModels(config, { refresh = false } = {}) {

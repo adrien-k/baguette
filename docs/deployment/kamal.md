@@ -79,32 +79,32 @@ Add a wildcard A record pointing to your server IP:
 
 This routes both `www.your-domain.com` (Baguette UI) and `session-<id>.your-domain.com` (preview subdomains) to your server.
 
-## 4. GitHub App
+## 4. GitHub App (optional)
 
-Create a GitHub App at [github.com/settings/apps](https://github.com/settings/apps):
+You can skip this and use passkeys and/or a personal access token. The first-user wizard can create a GitHub App via GitHub’s manifest flow, and admins can configure or recreate it later from **Admin → GitHub App**.
+
+To create an App yourself at [github.com/settings/apps](https://github.com/settings/apps):
 
 - **Homepage URL**: `https://www.your-domain.com`
 - **Callback URL** and **Setup URL**: `https://www.your-domain.com/auth/github/callback`
 
 Set the permissions and options listed in [Setting up the GitHub App](../../README.md#setting-up-the-github-app).
 
-Note the **Client ID**, generate a **Client Secret**, and note the App slug (the `<slug>` in `github.com/apps/<slug>`) — they become the `AUTH_GITHUB_CLIENT_ID`, `AUTH_GITHUB_CLIENT_SECRET`, and `AUTH_GITHUB_APP_SLUG` secrets below.
-
 ## 5. Deploy Baguette
+
+A single-node install needs **no required app env** besides optional `BOOTSTRAP_PASSWORD`. Persist `/home/ubuntu/baguette_storage` (`DATA_DIR`). First boot writes `${DATA_DIR}/encryption.key` (mode `0600`) and an empty `instance_settings` row.
 
 All configuration is driven by the following variables:
 
-| Variable                    | Description                                                                                                                                                                            |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DEPLOY_SERVER`             | Your server hostname or IP address                                                                                                                                                     |
-| `DEPLOY_USER`               | SSH user on the server (default: `ubuntu`)                                                                                                                                             |
-| `DOMAIN`                    | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths                                                                                      |
-| `SSH_PRIVATE_KEY`           | Private key for SSH access to the server (contents of `/home/ubuntu/.ssh/id_ed25519`)                                                                                                  |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID                                                                                                                                                                   |
-| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                                                                                                                                               |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)                                                                                                                             |
-| `ENCRYPTION_KEY`            | At least 32 random characters — used for cookie signing and secret encryption (generate with `openssl rand -hex 32`)                                                                   |
-| `TRUST_PROXY_HOPS`          | Optional. Reverse-proxy hops trusted to set `X-Forwarded-For` (default: `1` — kamal-proxy is the one trusted hop). Set `0` only when exposing Baguette directly with no proxy in front |
+| Variable             | Description                                                                                                                                                                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEPLOY_SERVER`      | Your server hostname or IP address                                                                                                                                                                                                                                                       |
+| `DEPLOY_USER`        | SSH user on the server (default: `ubuntu`)                                                                                                                                                                                                                                               |
+| `DOMAIN`             | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths                                                                                                                                                                                        |
+| `SSH_PRIVATE_KEY`    | Private key for SSH access to the server (contents of `/home/ubuntu/.ssh/id_ed25519`)                                                                                                                                                                                                    |
+| `BOOTSTRAP_PASSWORD` | Optional. One-time first-visitor gate (env-only; never copied to disk). Set this on public hosts.                                                                                                                                                                                        |
+| `TRUST_PROXY_HOPS`   | Optional. Reverse-proxy hops trusted to set `X-Forwarded-For` (default: `1` — kamal-proxy is the one trusted hop). Set `0` only when exposing Baguette directly with no proxy in front                                                                                                   |
+| `TRUST_EDGE_COUNTRY` | Optional. Set `1` only when Baguette runs behind Cloudflare, CloudFront, or App Engine, which set the client-country header. Default off — country comes from a geoip lookup of the client IP. kamal-proxy does not set those headers, so leave this unset unless you put a CDN in front |
 
 **Optional — Docker Hub (or GHCR) instead of the local registry on the server**
 
@@ -155,13 +155,10 @@ The included workflow (`.github/workflows/deploy.yml`) runs only on manual **wor
 
    **Secrets** (encrypted, "Secrets" tab):
 
-   | Secret                      | Value                                                                 |
-   | --------------------------- | --------------------------------------------------------------------- |
-   | `SSH_PRIVATE_KEY`           | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server              |
-   | `AUTH_GITHUB_CLIENT_ID`     | Your GitHub App client ID                                             |
-   | `AUTH_GITHUB_CLIENT_SECRET` | Your GitHub App client secret                                         |
-   | `AUTH_GITHUB_APP_SLUG`      | Your GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)       |
-   | `ENCRYPTION_KEY`            | Random 32+ character string (e.g. `openssl rand -hex 32`)             |
-   | `DOCKER_REGISTRY_PASSWORD`  | Docker Hub token or registry password (only if using remote registry) |
+   | Secret                     | Value                                                                 |
+   | -------------------------- | --------------------------------------------------------------------- |
+   | `SSH_PRIVATE_KEY`          | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server              |
+   | `BOOTSTRAP_PASSWORD`       | Optional. First-visitor gate on public hosts (env-only)               |
+   | `DOCKER_REGISTRY_PASSWORD` | Docker Hub token or registry password (only if using remote registry) |
 
 3. In GitHub, open **Actions → Deploy → Run workflow**, choose the environment, and run the workflow.

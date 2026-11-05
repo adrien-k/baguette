@@ -5,7 +5,8 @@ vi.mock('../../../lib/cache.js', () => ({
   clear: vi.fn(async () => {}),
 }));
 
-import { modelsCacheKey } from '../anthropic-models.js';
+import { clearClaudeModelsCache, modelsCacheKey } from '../anthropic-models.js';
+import * as cache from '../../../lib/cache.js';
 import {
   gatewayAuthHeaders,
   gatewayDiscoveryActive,
@@ -87,5 +88,12 @@ describe('modelsCacheKey', () => {
       'anthropic-models:https://opencode.ai/zen/go'
     );
     expect(modelsCacheKey(null)).toBe('anthropic-models:https://api.anthropic.com');
+  });
+});
+
+describe('clearClaudeModelsCache', () => {
+  it('clears the cache key for the config API URL', async () => {
+    await clearClaudeModelsCache({ api_url: 'https://opencode.ai/zen/go/' });
+    expect(cache.clear).toHaveBeenCalledWith('anthropic-models:https://opencode.ai/zen/go');
   });
 });

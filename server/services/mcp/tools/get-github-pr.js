@@ -3,7 +3,7 @@ import { getOpenPRByNumber } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createGetGithubPrTool(ctx) {
-  const { getRepo, getToken, requireGitHubRepo } = ctx;
+  const { getRepo, getToken, requireGitHubApi } = ctx;
   return {
     name: 'GetGithubPr',
     description:
@@ -12,7 +12,7 @@ export function createGetGithubPrTool(ctx) {
       pr_number: z.number().int().describe('Pull request number'),
     },
     handler: async ({ pr_number } = {}) => {
-      const localErr = await requireGitHubRepo();
+      const localErr = await requireGitHubApi();
       if (localErr) return localErr;
       const repo = await getRepo();
       if (!repo?.full_name) return fail('No repo linked to this session.');

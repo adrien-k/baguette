@@ -30,7 +30,6 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'GitFetch',
   'CurrentSessionInfo',
   'UpdateSession',
-  'PrUpsert',
   'PrComments',
   'PrMarkCommentViewed',
   'PrComment',

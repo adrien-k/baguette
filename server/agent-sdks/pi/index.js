@@ -1,4 +1,4 @@
-import { listPiModels } from './models.js';
+import { listPiModels, clearPiModelsCache } from './models.js';
 import { runPiConnectivityTest } from './connectivity.js';
 import { resolvePiAgentModelParams } from './model-params.js';
 import { piBuildToolCallComplete, piBuildToolCallStart } from './mapping.ts';
@@ -38,6 +38,10 @@ export const piAgentSdkPlugin = {
 
   register(app, { servicePath } = {}) {
     registerPiAgentService(app, servicePath);
+  },
+
+  clearModelsCache(config) {
+    return clearPiModelsCache(config.api_key, config.api_key_env_var || DEFAULT_PI_API_KEY_ENV_VAR);
   },
 
   async listModels(config, { refresh = false } = {}) {

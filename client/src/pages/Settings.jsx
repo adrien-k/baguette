@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Bot, GitBranch, Bell, KeyRound, Puzzle, Users, Blocks, ScrollText } from 'lucide-react';
+import { Bot, GitBranch, Bell, KeyRound, Puzzle, Blocks, ScrollText, User } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -8,17 +8,12 @@ import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { requestNotificationPermission } from '../utils/notifications.js';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
-import { repoDisplayName, isLocalRepo } from '../utils/repoDisplayName.js';
+import { repoDisplayName, repoAccessModeLabel } from '../utils/repoDisplayName.js';
 import McpAccessSection from '../components/McpAccessSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
-import {
-  SecretsTab,
-  PluginsTab,
-  UsersTab,
-  SlackTab,
-  AllRepositoriesSection,
-} from './settings/GlobalSettingsSections.jsx';
+import { SecretsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
+import AccountSettingsTab from './settings/AccountSettingsTab.jsx';
 import PromptsSettingsTab from './settings/PromptsSettingsTab.jsx';
 import {
   SettingsSection,
@@ -165,8 +160,8 @@ function RepositoriesTab({ settings, onSave }) {
   return (
     <div>
       <SettingsTabHeader title="Repositories">
-        Repositories you can start sessions on. Link GitHub repositories or create local ones.
-        Per-repo prompts are under Prompts.
+        Repositories you can start sessions on. Link GitHub remotes, or create local ones. Per-repo
+        prompts are under Prompts.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -300,11 +295,9 @@ function RepositoriesTab({ settings, onSave }) {
                     <code className="text-sm text-fg font-medium">
                       {repoDisplayName(r.full_name)}
                     </code>
-                    {isLocalRepo(r) && (
-                      <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
-                        local
-                      </span>
-                    )}
+                    <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
+                      {repoAccessModeLabel(r)}
+                    </span>
                   </div>
                   {r.full_name.startsWith('/') && (
                     <div className="text-xs text-faint mt-0.5 font-mono truncate">
@@ -336,8 +329,6 @@ function RepositoriesTab({ settings, onSave }) {
             ))}
           </div>
         </SettingsSection>
-
-        <AllRepositoriesSection />
       </div>
 
       {confirmUnlink && (
@@ -440,8 +431,7 @@ function IntegrationsTab({ settings, onRefreshSettings }) {
   return (
     <div>
       <SettingsTabHeader title="Integrations">
-        Connect external tools to Baguette: MCP clients for remote access, and Slack bots so agents
-        can post updates to your channels.
+        Connect MCP clients for remote access to this Baguette account.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -451,7 +441,6 @@ function IntegrationsTab({ settings, onRefreshSettings }) {
           endpoint={settings?.mcp_endpoint}
           onTokenChange={onRefreshSettings}
         />
-        <SlackTab />
       </div>
     </div>
   );
@@ -466,8 +455,8 @@ const TABS = [
   { id: 'integrations', label: 'Integrations', icon: Blocks },
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'account', label: 'Account', icon: User },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
-  { id: 'users', label: 'Users', icon: Users },
 ];
 
 const DEFAULT_TAB = TABS[0].id;
@@ -475,6 +464,7 @@ const DEFAULT_TAB = TABS[0].id;
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') || DEFAULT_TAB;
+  const { refreshAuth } = useAuth();
   const {
     currentUser: settings,
     loading: settingsLoading,
@@ -489,9 +479,14 @@ export default function Settings() {
   if (rawTab === 'system' || rawTab === 'docker') {
     return <Navigate to="/system" replace />;
   }
+  if (rawTab === 'users') {
+    return <Navigate to="/admin?tab=users" replace />;
+  }
+  if (rawTab === 'slack') {
+    return <Navigate to="/admin?tab=slack" replace />;
+  }
 
-  const requestedTab = rawTab === 'slack' ? 'integrations' : rawTab;
-  const activeTab = TABS.some((t) => t.id === requestedTab) ? requestedTab : DEFAULT_TAB;
+  const activeTab = TABS.some((t) => t.id === rawTab) ? rawTab : DEFAULT_TAB;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
@@ -552,8 +547,13 @@ export default function Settings() {
           )}
           {activeTab === 'notifications' && <NotificationsSection />}
           {activeTab === 'secrets' && <SecretsTab />}
+          {activeTab === 'account' && settingsLoading && !error && (
+            <p className="text-faint">Loading…</p>
+          )}
+          {activeTab === 'account' && settings && (
+            <AccountSettingsTab settings={settings} refreshAuth={refreshAuth} />
+          )}
           {activeTab === 'plugins' && <PluginsTab />}
-          {activeTab === 'users' && <UsersTab />}
         </div>
       </div>
     </div>

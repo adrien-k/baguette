@@ -7,7 +7,7 @@ import { ok, fail } from '../lib/result.js';
 const execFileAsync = promisify(execFile);
 
 export function createPrReviewTool(ctx) {
-  const { getSession, getToken, withSessionHeader, absoluteSessionPath } = ctx;
+  const { getSession, getToken, requireGitHubApi, withSessionHeader, absoluteSessionPath } = ctx;
   return {
     name: 'PrReview',
     description:
@@ -40,6 +40,8 @@ export function createPrReviewTool(ctx) {
         'request-changes': 'REQUEST_CHANGES',
         comment: 'COMMENT',
       };
+      const localErr = await requireGitHubApi();
+      if (localErr) return localErr;
       const session = await getSession();
       if (!session?.pr_number) return fail('No pull request associated with this session.');
 

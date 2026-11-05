@@ -1,4 +1,9 @@
-import { isLocalRepo as isLocalRepoShared } from '@baguette/shared/repo-origin.js';
+import {
+  autoPushEnabledForRepo as autoPushEnabledForRepoShared,
+  isLocalRepo as isLocalRepoShared,
+  repoAccessMode as repoAccessModeShared,
+  repoAccessModeLabel as repoAccessModeLabelShared,
+} from '@baguette/shared/repo-origin.js';
 
 /** Display name for a repo full_name:
  *  - GitHub "owner/repo"    → "repo"
@@ -17,11 +22,17 @@ export function isLocalRepo(fullNameOrRepo) {
   return isLocalRepoShared(fullNameOrRepo);
 }
 
-/** Auto-push only applies to GitHub-hosted repositories with a remote. */
+/** Auto-push only applies to repos with a remote (`github`); never local. */
 export function autoPushEnabledForRepo(repoFullName, autoPush = true, repoRow = null) {
-  const row = repoRow ?? undefined;
-  if (isLocalRepo(row ?? repoFullName)) return false;
-  return autoPush;
+  return autoPushEnabledForRepoShared(repoFullName, autoPush, repoRow);
+}
+
+export function repoAccessMode(fullNameOrRepo) {
+  return repoAccessModeShared(fullNameOrRepo);
+}
+
+export function repoAccessModeLabel(fullNameOrRepo) {
+  return repoAccessModeLabelShared(fullNameOrRepo);
 }
 
 /** Owner/org for a GitHub `owner/repo`, or `"Local"` for path/name-only repos. */

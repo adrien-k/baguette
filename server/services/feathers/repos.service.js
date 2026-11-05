@@ -5,7 +5,7 @@ import path from 'path';
 import { KnexService } from '@feathersjs/knex';
 
 const execFileAsync = promisify(execFile);
-import { NotFound } from 'feathers/errors';
+import { Conflict, NotFound } from 'feathers/errors';
 import {
   listUserInstallations,
   listInstallationRepos,
@@ -23,11 +23,54 @@ import {
   toStrippedName,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
-import { requireUser } from './hooks.js';
+import { requireUser, requireAdmin } from './hooks.js';
 import { getGithubToken } from '../agent-settings.js';
 import { REPOS_DIR, normalizeRepoPathForStorage, resolveRepoPath } from '../../config.js';
 
 import { gitHubOriginFromFullName, isLocalRepo } from '../../../shared/repo-origin.js';
+
+function assertCompatibleExistingRepo(repo, { origin, accessMode }) {
+  if (!repo) return;
+  const existingMode = repo.access_mode || 'github';
+  const existingOrigin =
+    repo.origin || (existingMode === 'github' ? gitHubOriginFromFullName(repo.full_name) : null);
+  if (existingMode === accessMode && existingOrigin === origin) return;
+  throw new Conflict('Repository name already registered');
+}
+
+async function allocateStrippedName(db, base, existingStripped) {
+  if (existingStripped) return existingStripped;
+  const taken = await db('repos').where({ stripped_name: base }).first();
+  if (!taken) return base;
+  let n = 0;
+  while (
+    await db('repos')
+      .where({ stripped_name: `${base}-${n}` })
+      .first()
+  )
+    n++;
+  return `${base}-${n}`;
+}
+
+async function linkedUsersByRepoIds(db, repoIds) {
+  const usersByRepo = Object.fromEntries(repoIds.map((id) => [id, []]));
+  if (repoIds.length === 0) return usersByRepo;
+  const rows = await db('user_repos')
+    .join('users', 'users.id', 'user_repos.user_id')
+    .whereIn('user_repos.repo_id', repoIds)
+    .select('user_repos.repo_id', 'users.id as user_id', 'users.username', 'users.avatar_url')
+    .orderBy('users.username');
+  for (const row of rows) {
+    const list = usersByRepo[row.repo_id];
+    if (!list) continue;
+    list.push({
+      id: row.user_id,
+      username: row.username,
+      avatar_url: row.avatar_url ?? null,
+    });
+  }
+  return usersByRepo;
+}
 
 class ReposService extends KnexService {
   setup(app) {
@@ -67,6 +110,7 @@ class ReposService extends KnexService {
         'repos.repo_path',
         'repos.default_branch',
         'repos.origin',
+        'repos.access_mode',
         'repos.created_at',
         'user_repos.id as user_repo_id',
         'user_repos.show_in_all_sessions'
@@ -118,6 +162,7 @@ class ReposService extends KnexService {
         'repos.repo_path',
         'repos.default_branch',
         'repos.origin',
+        'repos.access_mode',
         'repos.created_at'
       )
       .whereNull('repos.deleted_at')
@@ -146,10 +191,16 @@ class ReposService extends KnexService {
           : Promise.resolve(false)
       )
     );
+    const usersByRepo = await linkedUsersByRepoIds(
+      db,
+      repos.map((r) => r.id)
+    );
+
     return repos.map((r, i) => ({
       ...r,
       session_count: countMap[r.id] ?? 0,
       exists_on_fs: existsOnFs[i],
+      users: usersByRepo[r.id] ?? [],
     }));
   }
 
@@ -160,28 +211,17 @@ class ReposService extends KnexService {
   async create(data, params) {
     const { fullName } = data;
     const db = this.options.Model;
-    let repo = await db('repos').where({ full_name: fullName }).first();
-
-    let strippedName = repo?.stripped_name;
-    if (!strippedName) {
-      const base = toStrippedName(fullName);
-      const taken = await db('repos').where({ stripped_name: base }).first();
-      if (taken) {
-        let n = 0;
-        while (
-          await db('repos')
-            .where({ stripped_name: `${base}-${n}` })
-            .first()
-        )
-          n++;
-        strippedName = `${base}-${n}`;
-      } else {
-        strippedName = base;
-      }
-    }
-
     const origin = gitHubOriginFromFullName(fullName);
     if (!origin) throw new Error(`Not a GitHub repository full name: ${fullName}`);
+
+    let repo = await db('repos').where({ full_name: fullName }).first();
+    assertCompatibleExistingRepo(repo, { origin, accessMode: 'github' });
+
+    const strippedName = await allocateStrippedName(
+      db,
+      toStrippedName(fullName),
+      repo?.stripped_name
+    );
 
     const ghUser = await this._loadUserForGithub(params);
     const mainRepoPath = await ensureMainClone(
@@ -209,6 +249,7 @@ class ReposService extends KnexService {
         default_branch: defaultBranch,
         last_fetched_at: now,
         origin,
+        access_mode: 'github',
       };
       if (repo.deleted_at) updates.deleted_at = null;
       await db('repos').where({ id: repo.id }).update(updates);
@@ -222,6 +263,7 @@ class ReposService extends KnexService {
           default_branch: defaultBranch,
           last_fetched_at: now,
           origin,
+          access_mode: 'github',
         })
         .returning('*');
     }
@@ -403,24 +445,13 @@ class ReposService extends KnexService {
 
     const db = this.options.Model;
     let repo = await db('repos').where({ full_name: fullName }).first();
+    assertCompatibleExistingRepo(repo, { origin: null, accessMode: 'local' });
 
-    let strippedName = repo?.stripped_name;
-    if (!strippedName) {
-      const base = toStrippedName(localPath ? path.basename(localPath) : name);
-      const taken = await db('repos').where({ stripped_name: base }).first();
-      if (taken) {
-        let n = 0;
-        while (
-          await db('repos')
-            .where({ stripped_name: `${base}-${n}` })
-            .first()
-        )
-          n++;
-        strippedName = `${base}-${n}`;
-      } else {
-        strippedName = base;
-      }
-    }
+    const strippedName = await allocateStrippedName(
+      db,
+      toStrippedName(localPath ? path.basename(localPath) : name),
+      repo?.stripped_name
+    );
 
     const repoPath = localPath
       ? await ensureLocalClone(localPath, strippedName)
@@ -446,6 +477,7 @@ class ReposService extends KnexService {
         default_branch: defaultBranch,
         last_fetched_at: now,
         origin: null,
+        access_mode: 'local',
       };
       if (repo.deleted_at) updates.deleted_at = null;
       await db('repos').where({ id: repo.id }).update(updates);
@@ -459,6 +491,7 @@ class ReposService extends KnexService {
           default_branch: defaultBranch,
           last_fetched_at: now,
           origin: null,
+          access_mode: 'local',
         })
         .returning('*');
     }
@@ -495,6 +528,8 @@ class ReposService extends KnexService {
 const reposHooks = {
   before: {
     all: [requireUser],
+    findAll: [requireAdmin],
+    remove: [requireAdmin],
   },
 };
 

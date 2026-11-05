@@ -7,6 +7,7 @@ import { registerUsersService } from './users.service.js';
 import { registerReposService } from './repos.service.js';
 import { registerUserReposService } from './user-repos.service.js';
 import { registerAgentSdkServices } from '../../agent-sdks/index.js';
+import { registerInstanceSettingsService } from './instance-settings.service.js';
 import { registerAgentConfigsService } from './agent-configs.service.js';
 import { registerAgentModelPresetsService } from './agent-model-presets.service.js';
 import { registerPluginsService } from './plugins.service.js';
@@ -34,6 +35,7 @@ export function registerFeathersServices(app, { realtime = true } = {}) {
   registerSessionsService(app);
   registerQueuedMessagesService(app);
   registerAgentConfigsService(app);
+  registerInstanceSettingsService(app);
   registerAgentModelPresetsService(app);
   registerAgentSdkServices(app);
   registerTasksService(app);

@@ -27,23 +27,29 @@ const { TEST_REPOS_DIR } = vi.hoisted(() => ({
   TEST_REPOS_DIR: `/tmp/baguette-git-test-${Math.random().toString(36).slice(2)}`,
 }));
 
-vi.mock('../../config.js', () => ({
-  REPOS_DIR: TEST_REPOS_DIR,
-  resolveDataDirRelativePath: (subpath) => {
-    if (subpath == null || subpath === '') return subpath;
-    if (path.isAbsolute(subpath)) return subpath;
-    return `${TEST_REPOS_DIR}/${subpath}`;
-  },
-  resolveRepoPath: (repo) => {
-    if (!repo) return undefined;
-    const stored = repo.repo_path;
-    if (stored == null || stored === '') {
-      return repo.stripped_name ? `${TEST_REPOS_DIR}/repos/${repo.stripped_name}/main` : undefined;
-    }
-    if (path.isAbsolute(stored)) return stored;
-    return `${TEST_REPOS_DIR}/${stored}`;
-  },
-}));
+vi.mock('../../config.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    REPOS_DIR: TEST_REPOS_DIR,
+    resolveDataDirRelativePath: (subpath) => {
+      if (subpath == null || subpath === '') return subpath;
+      if (path.isAbsolute(subpath)) return subpath;
+      return `${TEST_REPOS_DIR}/${subpath}`;
+    },
+    resolveRepoPath: (repo) => {
+      if (!repo) return undefined;
+      const stored = repo.repo_path;
+      if (stored == null || stored === '') {
+        return repo.stripped_name
+          ? `${TEST_REPOS_DIR}/repos/${repo.stripped_name}/main`
+          : undefined;
+      }
+      if (path.isAbsolute(stored)) return stored;
+      return `${TEST_REPOS_DIR}/${stored}`;
+    },
+  };
+});
 
 import {
   createWorktree,

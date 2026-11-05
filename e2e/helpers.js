@@ -275,6 +275,39 @@ const E2E_DB_PATH = join(
   'baguette.sqlite3'
 );
 
+/** Flip `users.approved` for the signed-in account (Playwright webServer sqlite). */
+export async function setE2eUserApproved(page, approved) {
+  const me = await page.request.get('/auth/me').then((r) => r.json());
+  const userId = me.user?.id;
+  expect(userId).toBeTruthy();
+
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    db.prepare('UPDATE users SET approved = ? WHERE id = ?').run(approved ? 1 : 0, userId);
+  } finally {
+    db.close();
+  }
+}
+
+/** Insert a dummy passkey so the onboarding identity step can Continue without WebAuthn. */
+export async function seedE2ePasskey(page) {
+  const me = await page.request.get('/auth/me').then((r) => r.json());
+  const userId = me.user?.id;
+  expect(userId).toBeTruthy();
+
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    db.prepare(
+      `INSERT INTO user_passkeys (user_id, credential_id, public_key, counter)
+       VALUES (?, ?, ?, 0)`
+    ).run(userId, `e2e-cred-${userId}`, 'e2e-public-key');
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * Insert usage rows into the Playwright webServer sqlite DB so Usage / Model
  * pricing have tokens, cost, missing prices, and all group-by dimensions.
