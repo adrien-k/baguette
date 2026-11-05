@@ -122,6 +122,8 @@ export default function ChatView({
   activeAgent,
   agents = [],
   onSelectAgent,
+  tasks = [],
+  onSelectTask,
   systemPrompt,
   onViewChange,
   readonly,
@@ -760,6 +762,8 @@ export default function ChatView({
                     pinnedRunningBashIds={pinnedRunningBashIds}
                     agents={agents}
                     onSelectAgent={onSelectAgent}
+                    tasks={tasks}
+                    onSelectTask={onSelectTask}
                   />
                 ) : (
                   <ChatMessage
@@ -774,6 +778,8 @@ export default function ChatView({
                     pinnedRunningBashIds={pinnedRunningBashIds}
                     agents={agents}
                     onSelectAgent={onSelectAgent}
+                    tasks={tasks}
+                    onSelectTask={onSelectTask}
                   />
                 )
               )}
@@ -920,6 +926,8 @@ export default function ChatView({
                   sessionId={session?.id}
                   agents={agents}
                   onSelectAgent={onSelectAgent}
+                  tasks={tasks}
+                  onSelectTask={onSelectTask}
                 />
               )}
               <div ref={messagesEndRef} />

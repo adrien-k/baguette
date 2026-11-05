@@ -27,6 +27,8 @@ function mcpDataHasPayload(data: Record<string, unknown>): boolean {
     data.agent_id != null ||
     data.ref != null ||
     data.subagent != null ||
+    data.taskId != null ||
+    data.task_id != null ||
     data.ok === true ||
     data.ok === false ||
     data.error != null

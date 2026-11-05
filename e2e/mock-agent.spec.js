@@ -25,6 +25,11 @@ test.describe('mock agent chat', () => {
     await expect(page.getByText('ConfigRepoPrompt').first()).toBeVisible();
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible();
     await expect(page.getByText(MOCK_E2E_CREATE_PLAN_PROMPT)).toBeVisible();
+    const nestedWorkGroup = page
+      .getByRole('button', { name: /Worked( for .*)? · \d+ calls/ })
+      .nth(1);
+    await expect(nestedWorkGroup).toBeVisible();
+    await nestedWorkGroup.click();
     await expect(page.getByText('Exercise every tool kind').first()).toBeVisible();
     await expect(
       page

@@ -45,6 +45,14 @@ export type ChatMessageProps = {
     agent_type?: string;
     status?: string;
   }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 };
 
 function UserMessageModelBadge({
@@ -189,6 +197,8 @@ function TypedMessage(
     userReplied,
     agents,
     onSelectAgent,
+    tasks,
+    onSelectTask,
   } = props;
   switch (message.type) {
     case 'plan':
@@ -212,6 +222,8 @@ function TypedMessage(
           userReplied={userReplied}
           agents={agents}
           onSelectAgent={onSelectAgent}
+          tasks={tasks}
+          onSelectTask={onSelectTask}
         />
       );
     }

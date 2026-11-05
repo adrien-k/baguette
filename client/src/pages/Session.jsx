@@ -601,6 +601,23 @@ export default function Session() {
     setActiveTaskModal(taskId);
   };
 
+  const selectTask = useCallback(
+    (taskId) => {
+      if (taskId == null) return;
+      setActiveTaskModal(taskId);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('panel', 'tasks');
+          return next;
+        },
+        { replace: true }
+      );
+      setShowTasks(true);
+    },
+    [setSearchParams, setShowTasks]
+  );
+
   const linkedSessionRepo =
     session?.repo_id != null || session?.repo_full_name
       ? repos.find(
@@ -1205,6 +1222,8 @@ export default function Session() {
                   activeAgent={activeAgent}
                   agents={agents}
                   onSelectAgent={selectAgent}
+                  tasks={tasks}
+                  onSelectTask={selectTask}
                   systemPrompt={systemPrompt}
                   onViewChange={setView}
                   readonly={isReadonly}

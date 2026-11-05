@@ -849,6 +849,8 @@ describe('RunTask', () => {
     );
     const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
+    expect(result.taskId).toBe(99);
+    expect(result.label).toBe('Run tests');
     expect(result.exitCode).toBe(0);
     expect(result.stdoutLines).toEqual(['all tests passed']);
     expect(result.stderrLines).toEqual([]);

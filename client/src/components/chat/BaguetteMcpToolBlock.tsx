@@ -7,19 +7,12 @@ import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
 import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
-import BashToolBlock from './BashToolBlock.tsx';
 import ShowPlanBlock from './ShowPlanBlock.tsx';
 import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
 import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
 import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
+import TaskMcpToolBlock from './TaskMcpToolBlock.tsx';
 import { parseMcpJsonResult, type McpResultData } from '../../utils/parseMcpJsonResult.ts';
-
-function formatRunTaskCommand(label: string, runArgs?: unknown) {
-  const parts = Array.isArray(runArgs)
-    ? runArgs.filter((a): a is string => typeof a === 'string')
-    : [];
-  return parts.length > 0 ? `${label} ${parts.join(' ')}` : label;
-}
 
 const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   critical: 'bg-danger/15 text-danger border-danger/35',
@@ -346,6 +339,8 @@ export default function BaguetteMcpToolBlock({
   userReplied = false,
   agents,
   onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   tool: string;
   args?: Record<string, unknown>;
@@ -369,6 +364,14 @@ export default function BaguetteMcpToolBlock({
     agent_type?: string;
     status?: string;
   }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   const mcpResult = parseMcpJsonResult(result);
 
@@ -442,30 +445,17 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
-  if (toolShortName === 'RunTask') {
-    const label = (args.label as string | undefined) ?? 'RunTask';
-    const runArgs = (args.args as unknown[]) ?? [];
+  if (toolShortName === 'RunTask' || toolShortName === 'AwaitDetachedTask') {
     return (
-      <BashToolBlock
-        badgeLabel="RunTask"
-        command={formatRunTaskCommand(label, runArgs)}
+      <TaskMcpToolBlock
+        toolName={toolShortName}
+        args={args}
         result={result}
+        parsedResult={mcpResult}
         isError={isError}
         startedAt={startedAt}
-      />
-    );
-  }
-
-  if (toolShortName === 'AwaitDetachedTask') {
-    const taskId = args.taskId;
-    const label = taskId != null ? `Await task #${taskId}` : 'AwaitDetachedTask';
-    return (
-      <BashToolBlock
-        badgeLabel="AwaitDetachedTask"
-        command={label}
-        result={result}
-        isError={isError}
-        startedAt={startedAt}
+        tasks={tasks}
+        onSelectTask={onSelectTask}
       />
     );
   }

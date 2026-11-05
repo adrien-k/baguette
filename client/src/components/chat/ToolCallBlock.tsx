@@ -232,6 +232,8 @@ export default function ToolCallBlock({
   userReplied = false,
   agents,
   onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
@@ -251,6 +253,14 @@ export default function ToolCallBlock({
     agent_type?: string;
     status?: string;
   }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   if (message._hidden) return null;
 
@@ -262,6 +272,8 @@ export default function ToolCallBlock({
       userReplied={userReplied}
       agents={agents}
       onSelectAgent={onSelectAgent}
+      tasks={tasks}
+      onSelectTask={onSelectTask}
     />
   );
 }
@@ -277,6 +289,8 @@ function ToolCallSwitch({
   userReplied,
   agents,
   onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
@@ -296,6 +310,14 @@ function ToolCallSwitch({
     agent_type?: string;
     status?: string;
   }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   const isError = message.status === 'error';
   const startedAt = message.tool_started_at ?? message.started_at;
@@ -365,6 +387,8 @@ function ToolCallSwitch({
           userReplied={userReplied}
           agents={agents}
           onSelectAgent={onSelectAgent}
+          tasks={tasks}
+          onSelectTask={onSelectTask}
         />
       );
     }

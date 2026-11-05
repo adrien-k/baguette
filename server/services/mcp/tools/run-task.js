@@ -77,6 +77,8 @@ export function createRunTaskTool(ctx) {
               onExit: (id, exitCode) =>
                 resolve(
                   ok({
+                    taskId: id,
+                    label,
                     exitCode,
                     stdoutLines: streamToLines(stdout),
                     stderrLines: streamToLines(stderr),
