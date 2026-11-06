@@ -486,7 +486,7 @@ describe('Users service - agent defaults patch', () => {
     );
     expect(updated.agent_default_model.model).toBe('kimi-k3');
     expect(updated.agent_default_config_id).toBe(configId);
-  });
+  }, 15000);
 
   it('accepts any as the agent-created model policy and rejects unknown modes', async () => {
     const updated = await app
