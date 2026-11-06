@@ -5,6 +5,8 @@ import AgentsPanel from './AgentsPanel.jsx';
 import LogsView from './LogsView.jsx';
 import TaskPanel from '../../components/TaskPanel.jsx';
 import { SIDE_PANEL_TABS } from './sessionSidePanelTabs.js';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 
 function sidePanelTabClass(active) {
   return `shrink-0 px-2.5 py-2 text-[11px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
@@ -16,7 +18,7 @@ export default function SessionSidePanel({
   sidePanelTab,
   onSidePanelTabChange,
   onClose,
-  session: _session,
+  session,
   isGlobal,
   readonly,
   sidePanelOpen: _sidePanelOpen,
@@ -52,8 +54,10 @@ export default function SessionSidePanel({
   onSelectAgent,
   onReviewerCleared,
 }) {
+  const { currentUser } = useCurrentUser();
   const filesUnavailable = isGlobal;
   const sidePanelTabs = SIDE_PANEL_TABS;
+  const ownerReadonly = readonly || !isSessionOwner(session, currentUser);
 
   return (
     <>
@@ -108,7 +112,7 @@ export default function SessionSidePanel({
             selectedAgentId={selectedAgentId}
             onSelectAgent={onSelectAgent}
             onReviewerCleared={onReviewerCleared}
-            readonly={readonly}
+            readonly={ownerReadonly}
           />
         )}
         {sidePanelTab === 'logs' && (
@@ -136,7 +140,7 @@ export default function SessionSidePanel({
             onViewLogs={onViewLogs}
             onViewBaguetteConfig={onViewBaguetteConfig}
             showBaguetteConfigLink={showBaguetteConfigLink}
-            readonly={readonly}
+            readonly={ownerReadonly}
           />
         )}
       </div>

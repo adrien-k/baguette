@@ -15,7 +15,14 @@ export function sessionHeaderTitle(session, isMdUp) {
   return 'Session';
 }
 
-export function nextVisibleSession({ sessions, sessionId, session, repoId, fromAllSessions }) {
+export function nextVisibleSession({
+  sessions,
+  sessionId,
+  session,
+  repoId,
+  fromAllSessions,
+  fromSharedWithMe,
+}) {
   return sessions.find((s) => {
     if (
       String(s.id) === String(sessionId) ||
@@ -24,7 +31,7 @@ export function nextVisibleSession({ sessions, sessionId, session, repoId, fromA
       s.status === 'archived'
     )
       return false;
-    if (fromAllSessions) return true;
+    if (fromAllSessions || fromSharedWithMe) return true;
     if (isGlobalSession(session)) return isGlobalSession(s);
     const currentRepoId = repoId || session?.repo_id;
     return !currentRepoId || String(s.repo_id) === String(currentRepoId);

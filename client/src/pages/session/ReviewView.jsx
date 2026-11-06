@@ -12,6 +12,7 @@ import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
@@ -74,6 +75,7 @@ export default function ReviewView({
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
   const { currentUser: userSettings } = useCurrentUser();
+  const isOwner = isSessionOwner(session, userSettings);
   const [starting, setStarting] = useState(false);
   const [closedCount, setClosedCount] = useState(0);
   const [closedCountLoading, setClosedCountLoading] = useState(false);
@@ -398,7 +400,7 @@ export default function ReviewView({
   };
 
   useEffect(() => {
-    if (!session?.id || readonly || modelsStale || !models.length) return;
+    if (!isOwner || !session?.id || readonly || modelsStale || !models.length) return;
     if (!reviewModel) return;
     if (models.some((m) => m.id === reviewModel)) return;
     const fallback = defaultModelForSdk(models);
@@ -480,9 +482,9 @@ export default function ReviewView({
                 models={models}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
-                onModelChange={handleReviewModelChange}
+                onModelChange={isOwner ? handleReviewModelChange : undefined}
                 agentConfigOptions={agentConfigOptions}
-                onAgentConfigChange={handleReviewConfigChange}
+                onAgentConfigChange={isOwner ? handleReviewConfigChange : undefined}
                 configsLoading={configsLoading}
                 modelsLoading={modelsStale && !models.length}
                 canSend={canStartReview}

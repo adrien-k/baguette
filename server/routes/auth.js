@@ -137,21 +137,48 @@ async function userIsFirst(userId) {
   return Number(first?.id) === Number(userId);
 }
 
+/** Development-only login identity. Default stays `dev`; `?username=` creates a distinct user. */
+function devLoginIdentity(usernameQuery) {
+  const raw = Array.isArray(usernameQuery) ? usernameQuery[0] : usernameQuery;
+  const username =
+    String(raw || 'dev')
+      .trim()
+      .slice(0, 40)
+      .replace(/[^a-zA-Z0-9._-]/g, '-')
+      .replace(/^-+|-+$/g, '') || 'dev';
+  if (username === 'dev') {
+    return { username: 'dev', email: 'dev@baguette.local', github_id: 0 };
+  }
+  let hash = 0;
+  for (let i = 0; i < username.length; i += 1) {
+    hash = (hash * 31 + username.charCodeAt(i)) >>> 0;
+  }
+  return {
+    username,
+    email: `${username}@baguette.local`,
+    github_id: 1_000_000_000 + (hash % 900_000_000),
+  };
+}
+
 export function createAuthRoutes(app) {
   const router = Router();
 
   if (process.env.NODE_ENV === 'development') {
     router.get('/auth/dev', async (req, res, next) => {
       try {
+        const identity = devLoginIdentity(req.query.username);
         const devGhKey = process.env.DEV_USER_GH_KEY || '';
-        let user = await db('users').where({ email: 'dev@baguette.local' }).first();
+        let user = await db('users').where({ email: identity.email }).first();
+        if (!user) {
+          user = await db('users').where({ username: identity.username }).first();
+        }
         if (!user) {
           const created = await app.service('users').create(
             {
-              github_id: 0,
-              username: 'dev',
-              email: 'dev@baguette.local',
-              access_token: devGhKey,
+              github_id: identity.github_id,
+              username: identity.username,
+              email: identity.email,
+              access_token: identity.username === 'dev' ? devGhKey : '',
               approved: true,
               admin: true,
               onboarding_completed: true,
@@ -161,7 +188,7 @@ export function createAuthRoutes(app) {
           user = { id: created.id };
         } else {
           const patch = {};
-          if (devGhKey) patch.access_token = devGhKey;
+          if (identity.username === 'dev' && devGhKey) patch.access_token = devGhKey;
           if (!user.onboarding_completed) patch.onboarding_completed = true;
           if (Object.keys(patch).length) {
             await app.service('users').patch(user.id, patch, {});

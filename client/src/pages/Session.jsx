@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from 'react-rout
 import { Loader2 } from 'lucide-react';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
-import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
+import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE, SHARED_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
@@ -51,6 +51,7 @@ import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
   isGlobalSession,
   isAllSessionsPath,
+  isSharedWithMePath,
   isNewSessionRouteId,
   agentsScopePathFromPathname,
   isLoopHomePathname,
@@ -76,6 +77,7 @@ export default function Session() {
   const isNewSessionRoute = isNewSessionRouteId(routeSessionId) || isSessionHomePathname(pathname);
   const isNewLoopRoute = isNewLoopRouteId(routeLoopId) || isLoopHomePathname(pathname);
   const fromAllSessions = isAllSessionsPath(pathname);
+  const fromSharedWithMe = isSharedWithMePath(pathname);
   const isGlobalSessionsRoute = pathname.startsWith('/global/');
   const {
     homeUrl,
@@ -96,6 +98,7 @@ export default function Session() {
     hasMore: hasMoreSessions,
     loadMore: loadMoreSessions,
     refetch: refetchSessions,
+    listScope,
   } = useSessionsContext();
   const { selectedRepo, setSelectedRepo, repos } = useRepoContext();
 
@@ -103,11 +106,13 @@ export default function Session() {
     if (!isLoopsView) return null;
     const isAll = selectedRepo === ALL_REPOS;
     const isGlobal = selectedRepo === GLOBAL_SCOPE;
-    if (isAll) return {};
-    if (isGlobal) return { is_global: true };
-    if (selectedRepo) return { repo_full_name: selectedRepo };
+    const isShared = selectedRepo === SHARED_SCOPE || fromSharedWithMe;
+    const scope = { list_scope: listScope };
+    if (isAll || isShared) return scope;
+    if (isGlobal) return { ...scope, is_global: true };
+    if (selectedRepo) return { ...scope, repo_full_name: selectedRepo };
     return null;
-  }, [isLoopsView, selectedRepo]);
+  }, [isLoopsView, selectedRepo, listScope, fromSharedWithMe]);
   const { loops, loaded: loopsLoaded, reload: reloadLoops } = useGetLoops(loopsQuery);
   const loopWorkspace = useLoopWorkspace({
     routeLoopId: isLoopsView ? routeLoopId : undefined,
@@ -434,7 +439,13 @@ export default function Session() {
     if (String(sessionFromHook.id) !== String(routeSessionId)) return;
     if (!sessionNeedsLastViewedUpdate(sessionFromHook)) return;
     const activityAt = sessionActivityAt(sessionFromHook);
-    sessionsService.patch(sessionFromHook.id, { last_viewed_at: activityAt }).catch(() => {});
+    sessionsService
+      .patch(sessionFromHook.id, { last_viewed_at: activityAt })
+      .then((updated) => {
+        if (updated?.id == null) return;
+        sessionsService.emit('patched', updated);
+      })
+      .catch(() => {});
   }, [isNewSessionRoute, sessionLoading, sessionFromHook, routeSessionId]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
@@ -443,6 +454,10 @@ export default function Session() {
     if (!isSessionHomePathname(pathname)) return;
     if (pathname === '/global') {
       if (selectedRepo !== GLOBAL_SCOPE) setSelectedRepo(GLOBAL_SCOPE);
+      return;
+    }
+    if (pathname === '/shared') {
+      if (selectedRepo !== SHARED_SCOPE) setSelectedRepo(SHARED_SCOPE);
       return;
     }
     if (repoId) {
@@ -463,6 +478,10 @@ export default function Session() {
       if (selectedRepo !== GLOBAL_SCOPE) setSelectedRepo(GLOBAL_SCOPE);
       return;
     }
+    if (scopePath === '/shared' || pathname.startsWith('/shared/loops')) {
+      if (selectedRepo !== SHARED_SCOPE) setSelectedRepo(SHARED_SCOPE);
+      return;
+    }
     const repoMatch = scopePath.match(/^\/repos\/(\d+)/);
     if (repoMatch) {
       if (!repos.length) return;
@@ -476,6 +495,10 @@ export default function Session() {
   // Keep All sessions context on /sessions/:id so the logo and picker stay on `/`.
   useEffect(() => {
     if (isSessionHomePathname(pathname)) return;
+    if (fromSharedWithMe) {
+      if (selectedRepo !== SHARED_SCOPE) setSelectedRepo(SHARED_SCOPE);
+      return;
+    }
     if (fromAllSessions) {
       if (selectedRepo !== ALL_REPOS) setSelectedRepo(ALL_REPOS);
       return;
@@ -486,7 +509,15 @@ export default function Session() {
     }
     if (!sessionRepo) return;
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
-  }, [pathname, fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
+  }, [
+    pathname,
+    fromAllSessions,
+    fromSharedWithMe,
+    sessionFromHook,
+    sessionRepo,
+    selectedRepo,
+    setSelectedRepo,
+  ]);
 
   const [pendingAgentConfigId, setPendingAgentConfigId] = useState(null);
   const [switchingAgentSdk, setSwitchingAgentSdk] = useState(false);
@@ -778,23 +809,24 @@ export default function Session() {
     setShowBaguetteConfigModal(true);
   }, [setShowBaguetteConfigModal]);
 
-  const builderIsGlobal = isNewSessionRoute
-    ? pathname === '/global' || (!fromAllSessions && isGlobalSessionsRoute)
-    : fromAllSessions
-      ? false
-      : isGlobalSession(session);
-  const builderRepoFullName = isNewSessionRoute
-    ? fromAllSessions
-      ? null
-      : repoId
-        ? (repos.find((r) => String(r.id) === String(repoId))?.full_name ?? null)
-        : null
-    : fromAllSessions
-      ? null
-      : isGlobalSession(session)
-        ? null
-        : session?.repo_full_name;
-  const builderAllowRepoChoice = fromAllSessions;
+  let builderIsGlobal;
+  if (isNewSessionRoute) {
+    builderIsGlobal =
+      pathname === '/global' || (!fromAllSessions && !fromSharedWithMe && isGlobalSessionsRoute);
+  } else if (fromAllSessions || fromSharedWithMe) {
+    builderIsGlobal = false;
+  } else {
+    builderIsGlobal = isGlobalSession(session);
+  }
+  let builderRepoFullName = null;
+  if (isNewSessionRoute) {
+    if (!fromAllSessions && !fromSharedWithMe && repoId) {
+      builderRepoFullName = repos.find((r) => String(r.id) === String(repoId))?.full_name ?? null;
+    }
+  } else if (!fromAllSessions && !fromSharedWithMe && !isGlobalSession(session)) {
+    builderRepoFullName = session?.repo_full_name;
+  }
+  const builderAllowRepoChoice = fromAllSessions || fromSharedWithMe;
 
   const handleCreateSession = async ({
     isGlobal,
@@ -809,6 +841,7 @@ export default function Session() {
     autoPush,
     plugins,
     agentConfigId,
+    isShared,
   }) => {
     const params = isGlobal
       ? {
@@ -831,6 +864,7 @@ export default function Session() {
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;
     if (plugins?.length) params.plugins = plugins;
+    if (isShared) params.is_shared = true;
     if (files?.length) {
       try {
         params.initial_files = await Promise.all(files.map(fileToContentBlock));
@@ -939,6 +973,7 @@ export default function Session() {
       session,
       repoId,
       fromAllSessions,
+      fromSharedWithMe,
     });
     navigate(firstSession ? sessionUrl(firstSession.id) : homeUrl);
   }, [
@@ -947,6 +982,7 @@ export default function Session() {
     session,
     repoId,
     fromAllSessions,
+    fromSharedWithMe,
     navigate,
     sessionUrl,
     homeUrl,
@@ -1138,6 +1174,7 @@ export default function Session() {
           hasMoreSessions={hasMoreSessions}
           sessionsLength={sessions.length}
           onLoadMoreSessions={loadMoreSessions}
+          listScope={listScope}
         />
 
         <div
@@ -1422,6 +1459,7 @@ export default function Session() {
         onTaskKill={handleTaskKill}
         onTaskRetry={handleTaskRetry}
         onCloseTaskLog={() => setActiveTaskModal(null)}
+        readonly={isReadonly}
         showBaguetteConfigModal={showBaguetteConfigModal}
         onCloseBaguetteConfig={() => setShowBaguetteConfigModal(false)}
       />

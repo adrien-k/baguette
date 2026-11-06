@@ -3,6 +3,8 @@ import BaguetteConfigModal from '../../components/BaguetteConfigModal.jsx';
 import PushConfirmModal from '../../components/PushConfirmModal.jsx';
 import SwitchAgentSdkConfirmModal from '../../components/SwitchAgentSdkConfirmModal.jsx';
 import TaskConfirmModal from '../../components/TaskConfirmModal.jsx';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 
 export default function SessionWorkspaceModals({
   pendingAgentConfigId,
@@ -30,7 +32,10 @@ export default function SessionWorkspaceModals({
   onCloseTaskLog,
   showBaguetteConfigModal,
   onCloseBaguetteConfig,
+  readonly = false,
 }) {
+  const { currentUser } = useCurrentUser();
+  const tasksReadonly = readonly || !isSessionOwner(session, currentUser);
   return (
     <>
       {pendingAgentConfigId && session && (
@@ -47,7 +52,7 @@ export default function SessionWorkspaceModals({
           onCancel={onAgentSdkSwitchCancel}
         />
       )}
-      {pendingTaskConfirm && (
+      {pendingTaskConfirm && !tasksReadonly && (
         <TaskConfirmModal
           taskLabel={pendingTaskConfirm.taskKey}
           description={pendingTaskConfirm.description}
@@ -78,8 +83,8 @@ export default function SessionWorkspaceModals({
             label: session.label,
             repo_full_name: session.repo_full_name,
           }}
-          onKill={onTaskKill}
-          onRetry={onTaskRetry}
+          onKill={tasksReadonly ? undefined : onTaskKill}
+          onRetry={tasksReadonly ? undefined : onTaskRetry}
           onClose={onCloseTaskLog}
         />
       )}

@@ -223,6 +223,8 @@ export default function SessionModelSelect({
     [agentConfigOptions]
   );
 
+  const modelLocked = typeof onModelChange !== 'function';
+  const pickerDisabled = disabled || modelLocked;
   const showAgentConfigPicker = Boolean(onAgentConfigChange && agentConfigOptions?.length);
   const isSmUp = useMediaQuery('(min-width: 640px)');
   const showAutoPush = showAutoPushParam && onAutoPushChange;
@@ -267,7 +269,7 @@ export default function SessionModelSelect({
           valueLabel: formatParamDisplayValue(paramId, currentValue),
           options,
           onSelect: (value) => {
-            if (!selectedModelId || disabled) return;
+            if (!selectedModelId || pickerDisabled) return;
             const prefKey = appliesUserModelPrefs ? prefKeyForParamId(paramId) : null;
             if (prefKey && onCursorModelPrefChange) {
               onCursorModelPrefChange(prefKey, prefValueFromParamValue(paramId, value));
@@ -292,7 +294,7 @@ export default function SessionModelSelect({
     orderedParamIds,
     currentParams,
     selectedModelId,
-    disabled,
+    pickerDisabled,
     onCursorModelPrefChange,
     onModelChange,
   ]);
@@ -319,7 +321,7 @@ export default function SessionModelSelect({
   }
 
   const pickModel = (newId) => {
-    if (disabled || isUnset || !newId || newId === selectedModelId) return;
+    if (pickerDisabled || isUnset || !newId || newId === selectedModelId) return;
     const newModelObj = models.find((m) => m.id === newId);
     onModelChange(
       newId,
@@ -328,7 +330,7 @@ export default function SessionModelSelect({
   };
 
   const pickAgentConfig = (nextKey) => {
-    if (disabled || !nextKey || nextKey === agentConfigKey || !onAgentConfigChange) return;
+    if (pickerDisabled || !nextKey || nextKey === agentConfigKey || !onAgentConfigChange) return;
     onAgentConfigChange(nextKey);
   };
 
@@ -356,7 +358,7 @@ export default function SessionModelSelect({
                     options={agentConfigMenuOptions}
                     value={agentConfigKey ?? ''}
                     onChange={pickAgentConfig}
-                    disabled={disabled}
+                    disabled={pickerDisabled}
                   />
                 ) : null
               }
@@ -377,13 +379,18 @@ export default function SessionModelSelect({
               triggerTitle={
                 modelDescriptionTooltip(selectedModelObj, modelTriggerLabel) ?? modelTriggerLabel
               }
-              disabled={disabled}
+              disabled={pickerDisabled}
+              hideChevron={pickerDisabled}
               shrinkableTrigger
               triggerClassName="text-xs text-faint hover:text-secondary leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
             />
           </div>
           {showParamPicker && (
-            <ComposerParamPicker items={dropdownItems} disabled={disabled} placement="top-start" />
+            <ComposerParamPicker
+              items={dropdownItems}
+              disabled={pickerDisabled}
+              placement="top-start"
+            />
           )}
           {showClear && (
             <ParamPrefClearButton
@@ -403,7 +410,7 @@ export default function SessionModelSelect({
             <span className="inline-flex items-center p-1">
               <ParamToggleSwitch
                 checked={autoPushOn}
-                disabled={disabled || autoPushDisabled}
+                disabled={pickerDisabled || autoPushDisabled}
                 ariaLabel="Auto-push"
                 onToggle={() => {
                   if (autoPushDisabled) return;

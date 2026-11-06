@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
+import { requireOwnSessionForWrite } from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { assertTodoStatus } from '../session-todos.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
@@ -87,7 +88,12 @@ export function registerSessionTodosService(app, path = 'session-todos') {
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeBySessionUser],
-      patch: [only(['title', 'content', 'status', 'sort_order', 'plan_id'])],
+      create: [requireOwnSessionForWrite],
+      patch: [
+        requireOwnSessionForWrite,
+        only(['title', 'content', 'status', 'sort_order', 'plan_id']),
+      ],
+      remove: [requireOwnSessionForWrite],
     },
   });
 }

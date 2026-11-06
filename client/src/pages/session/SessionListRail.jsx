@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import { MessageSquare, Plus, Repeat } from 'lucide-react';
 import MiniLoopEntry from '../../components/MiniLoopEntry.jsx';
 import MiniSessionEntry from '../../components/MiniSessionEntry.jsx';
+import { LIST_SCOPE_MINE, LIST_SCOPE_SHARED } from '@baguette/shared/session-sharing.js';
+
 export default function SessionListRail({
   sessionsSidebarElRef,
   mobilePreferList,
@@ -32,6 +34,7 @@ export default function SessionListRail({
   hasMoreSessions,
   sessionsLength,
   onLoadMoreSessions,
+  listScope = LIST_SCOPE_MINE,
 }) {
   return (
     <div
@@ -116,7 +119,11 @@ export default function SessionListRail({
           {isLoopsView ? (
             <>
               {loopsLoaded && !loops.length && (
-                <p className="px-3 py-4 text-xs text-faint text-center">No loops configured.</p>
+                <p className="px-3 py-4 text-xs text-faint text-center">
+                  {listScope === LIST_SCOPE_SHARED
+                    ? 'No loops shared with you.'
+                    : 'No loops configured.'}
+                </p>
               )}
               {!loopsLoaded && loops.length === 0 && (
                 <p className="px-3 py-4 text-xs text-faint text-center">Loading loops…</p>
@@ -130,11 +137,17 @@ export default function SessionListRail({
                   }
                   onToggle={reloadLoops}
                   onDelete={onDeleteLoop}
+                  listScope={listScope}
                 />
               ))}
             </>
           ) : (
             <>
+              {sidebarSessions.length === 0 && listScope === LIST_SCOPE_SHARED && (
+                <p className="px-3 py-4 text-xs text-faint text-center">
+                  No sessions shared with you.
+                </p>
+              )}
               {sidebarSessions.map((s) => (
                 <MiniSessionEntry
                   key={s.id}
@@ -146,6 +159,7 @@ export default function SessionListRail({
                   suppressUnreadWhenOpen={
                     String(s.id) === String(routeSessionId) && suppressOpenSessionUnread
                   }
+                  listScope={listScope}
                 />
               ))}
               {hasMoreSessions && sessionsLength > 0 && (

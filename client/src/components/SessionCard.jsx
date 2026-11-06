@@ -11,6 +11,9 @@ import SessionCardLayout from './SessionCardLayout.jsx';
 import SessionListIndicator, { SessionUnreadDot } from './SessionListIndicator.jsx';
 import ReviewInProgressBadge, { isReviewInProgress } from './ReviewInProgressBadge.jsx';
 import { SessionLoopBadge } from './SessionLoopIndicator.jsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
+import ListOwnerLabel from './ListOwnerLabel.jsx';
 
 export function SessionStatusIcon({ status, compact = false, ...props }) {
   const size = compact ? 'w-3 h-3' : 'w-3.5 h-3.5';
@@ -47,6 +50,8 @@ const STATUS_ACCENT = {
 
 export default function SessionCard({ session, suppressRepoBadge = false }) {
   const navigate = useNavigate();
+  const { currentUser } = useCurrentUser();
+  const isOwner = isSessionOwner(session, currentUser);
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
   const isArchived = !!session.archived_at;
   const isArchiving = !isArchived && session.status === 'archiving';
@@ -58,7 +63,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
   if (!isArchived && !isArchiving) {
     if (isSessionStoppable(session)) {
       actions.push({ node: <StopSession session={session} /> });
-    } else {
+    } else if (isOwner) {
       actions.push({ node: <ArchiveSession session={session} /> });
     }
   }
@@ -90,6 +95,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
         ) : null
       }
       indicator={<SessionListIndicator session={session} size="md" />}
+      owner={!isOwner ? <ListOwnerLabel owner={session.owner} /> : null}
       title={
         <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
           <SessionUnreadDot session={session} />

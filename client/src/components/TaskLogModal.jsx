@@ -172,7 +172,7 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
             {!isTaskTerminal(task.status) && endLabel && (
               <span className={`text-xs font-medium ${endLabel.className}`}>{endLabel.text}</span>
             )}
-            {isTaskStoppable(task.status) && (
+            {onKill && isTaskStoppable(task.status) && (
               <button
                 onClick={() => onKill(task.id)}
                 className="text-danger hover:text-danger opacity-60 hover:opacity-100 transition-all"

@@ -200,6 +200,32 @@ describe('Tasks service — in-memory', () => {
         app.service('tasks').create({ session_id: sessionId1, command: 'x' }, { provider: 'rest' })
       ).rejects.toThrow('Not authenticated');
     });
+
+    it('returns 404 when a collaborator creates a task on a shared session', async () => {
+      await db('sessions').where({ id: sessionId1 }).update({ is_shared: 1 });
+      await expect(
+        app
+          .service('tasks')
+          .create({ session_id: sessionId1, command: 'whoami' }, providerParams(userId2))
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('lets the owner create a task on a shared session', async () => {
+      await db('sessions').where({ id: sessionId1 }).update({ is_shared: 1 });
+      const task = await app
+        .service('tasks')
+        .create({ session_id: sessionId1, command: 'echo shared' }, providerParams(userId1));
+      expect(task.session_id).toBe(sessionId1);
+      expect(task.command).toBe('echo shared');
+    });
+
+    it('lets internal callers create a task without a provider', async () => {
+      const task = await app
+        .service('tasks')
+        .create({ session_id: sessionId1, command: 'echo init' }, { user: { id: userId1 } });
+      expect(task.session_id).toBe(sessionId1);
+      expect(task.command).toBe('echo init');
+    });
   });
 
   // ── kill ───────────────────────────────────────────────────────────────────
@@ -224,6 +250,13 @@ describe('Tasks service — in-memory', () => {
       await expect(app.service('tasks').kill(taskId1, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+
+    it('returns 404 when a collaborator kills a task on a shared session', async () => {
+      await db('sessions').where({ id: sessionId1 }).update({ is_shared: 1 });
+      await expect(
+        app.service('tasks').kill(taskId1, providerParams(userId2))
+      ).rejects.toBeNotFoundError();
     });
   });
 
@@ -305,6 +338,28 @@ describe('Tasks service — in-memory', () => {
       await expect(app.service('tasks').remove(taskId1, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+
+    it('returns 404 when a collaborator removes a task on a shared session', async () => {
+      await db('sessions').where({ id: sessionId1 }).update({ is_shared: 1 });
+      await expect(
+        app.service('tasks').remove(taskId1, providerParams(userId2))
+      ).rejects.toBeNotFoundError();
+      expect(app.service('tasks').getTask(taskId1)).not.toBeNull();
+    });
+  });
+
+  describe('shared session read access', () => {
+    it('lets a collaborator get and list tasks on a shared session', async () => {
+      await db('sessions').where({ id: sessionId1 }).update({ is_shared: 1 });
+      const task = await app.service('tasks').get(taskId1, providerParams(userId2));
+      expect(task.id).toBe(taskId1);
+      const listed = await app.service('tasks').find({
+        query: { session_id: sessionId1 },
+        ...providerParams(userId2),
+      });
+      const data = Array.isArray(listed) ? listed : listed.data;
+      expect(data.map((t) => t.id)).toEqual(expect.arrayContaining([taskId1, taskId2]));
     });
   });
 });

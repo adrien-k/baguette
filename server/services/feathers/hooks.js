@@ -91,32 +91,7 @@ export async function scopeByUser(context) {
   return context;
 }
 
-export async function scopeBySessionUser(context) {
-  if (context.method === 'create') {
-    if (!context.data.session_id) {
-      throw new Error('session_id is required');
-    }
-    await context.app
-      .service('sessions')
-      .get(context.data.session_id, { user: context.params.user });
-    return context;
-  }
-
-  if (context.method === 'patch') {
-    await context.service.get(context.id, { user: context.params.user });
-    return context;
-  }
-
-  const query = context.service.createQuery(context.params);
-  context.params.knex = query.whereExists(function () {
-    this.select(1)
-      .from('sessions')
-      .whereRaw(`sessions.id = ${context.service.fullName}.session_id`)
-      .where('sessions.user_id', context.params.user.id);
-  });
-
-  return context;
-}
+export { scopeByAccessibleSession as scopeBySessionUser } from './shared-access.js';
 
 /**
  * Strip every field but `fields` from external create/patch payloads.

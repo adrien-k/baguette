@@ -27,6 +27,7 @@ import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
+import UserAvatar from './components/UserAvatar.jsx';
 import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
 import { CurrentUserProvider } from './context/CurrentUserContext.jsx';
 import { AgentConfigProvider } from './context/AgentConfigContext.jsx';
@@ -127,7 +128,7 @@ function Nav() {
                     onClick={() => setUserMenuOpen(!userMenuOpen)}
                     className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-control/50 transition-colors"
                   >
-                    <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
+                    <UserAvatar user={user} size="md" />
                     <span className="hidden sm:block text-secondary text-sm">{user.username}</span>
                   </button>
                   {userMenuOpen && (
@@ -232,6 +233,38 @@ function AppRoutes() {
             />
             <Route
               path="/"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared/sessions/:id"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared/loops"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared/loops/:loopId"
               element={
                 <ProtectedRoute>
                   <Session />

@@ -49,6 +49,8 @@ import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
 import { useComposerSessionTodos } from '../../hooks/useComposerSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
@@ -139,6 +141,8 @@ export default function ChatView({
   pushing = false,
   onDeletePermanently,
 }) {
+  const { currentUser } = useCurrentUser();
+  const isOwner = isSessionOwner(session, currentUser);
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
   );
@@ -193,12 +197,17 @@ export default function ChatView({
     setComposerModelParams(agentSource?.model_params ?? null);
   }, [activeAgent?.id, agentSource?.model, agentSource?.model_params]);
 
-  const composerTurnFields = () =>
-    builderMessageCreateFields(session, {
-      model: composerModel,
-      model_params: composerModelParams,
+  const composerTurnFields = () => {
+    const model = isOwner ? composerModel : (agentSource?.model ?? composerModel);
+    const modelParams = isOwner
+      ? composerModelParams
+      : (agentSource?.model_params ?? composerModelParams);
+    return builderMessageCreateFields(session, {
+      model,
+      model_params: modelParams,
       agent: activeAgent,
     });
+  };
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {
     setComposerModel(modelId);
@@ -207,7 +216,7 @@ export default function ChatView({
   };
 
   useEffect(() => {
-    if (!session?.id || modelsStale || !models.length) return;
+    if (!isOwner || !session?.id || modelsStale || !models.length) return;
     const current = agentSource?.model;
     if (current && models.some((m) => m.id === current)) return;
     const fallback = defaultModelForSdk(models);
@@ -802,7 +811,7 @@ export default function ChatView({
                   </button>
                 </div>
               )}
-              {session?.archived_at && (
+              {session?.archived_at && isOwner && (
                 <div className="flex gap-2 flex-wrap py-2">
                   <Tooltip content="Recreate the worktree on the same branch and resume this session.">
                     <button
@@ -847,14 +856,16 @@ export default function ChatView({
                       }
                       className={CHAT_ACTION_BUTTON_CLASS}
                     />
-                    <ChatQuickActionButton
-                      icon={GitMerge}
-                      label="Merge"
-                      tooltip="Merge the pull request into the base branch."
-                      onClick={openMergeFlow}
-                      disabled={checkingUnpushedForMerge}
-                      className={CHAT_ACTION_BUTTON_CLASS}
-                    />
+                    {isOwner && (
+                      <ChatQuickActionButton
+                        icon={GitMerge}
+                        label="Merge"
+                        tooltip="Merge the pull request into the base branch."
+                        onClick={openMergeFlow}
+                        disabled={checkingUnpushedForMerge}
+                        className={CHAT_ACTION_BUTTON_CLASS}
+                      />
+                    )}
                     <ChatQuickActionButton
                       icon={CircleCheck}
                       label="Check CI"
@@ -903,12 +914,12 @@ export default function ChatView({
                         />
                       </>
                     )}
-                    {canTogglePrDraftStatus(session) && (
+                    {isOwner && canTogglePrDraftStatus(session) && (
                       <PrDraftToggleButton session={session} className={CHAT_ACTION_BUTTON_CLASS} />
                     )}
                     <ChatPushChangesButton
                       session={session}
-                      readonly={readonly}
+                      readonly={readonly || !isOwner}
                       onPush={onPush}
                       pushing={pushing}
                       commitsToPush={commitsToPush}
@@ -1045,10 +1056,10 @@ export default function ChatView({
                     models={models}
                     cursorModelPrefs={cursorModelPrefs}
                     onCursorModelPrefChange={onCursorModelPrefChange}
-                    onModelChange={handleComposerModelChange}
-                    onAutoPushChange={onAutoPushChange}
+                    onModelChange={isOwner ? handleComposerModelChange : undefined}
+                    onAutoPushChange={isOwner ? onAutoPushChange : undefined}
                     autoPushDisabled={autoPushDisabled}
-                    onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
+                    onAgentConfigChange={readonly || !isOwner ? undefined : onAgentConfigChange}
                     agentConfigOptions={agentConfigOptions}
                     configsLoading={configsLoading}
                     modelsLoading={modelsLoading}

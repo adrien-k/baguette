@@ -1,6 +1,12 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only } from './hooks.js';
+import {
+  attachOwners,
+  scopeByOwnerOrShared,
+  stampWasShared,
+  takeListScope,
+} from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-schedule.js';
 import logger from '../../logger.js';
@@ -35,6 +41,7 @@ const WRITABLE_FIELDS = [
   'timezone',
   'enabled',
   'session_id',
+  'is_shared',
 ];
 
 const SCHEDULE_FIELDS = [
@@ -209,6 +216,7 @@ const BOOLEAN_QUERY_FIELDS = [
   'single_session',
   'is_global',
   'created_from_session',
+  'is_shared',
 ];
 
 /** REST query strings (`"true"`) do not match SQLite integer booleans. */
@@ -263,6 +271,7 @@ function sessionDataFromLoop(loop) {
   if (loop.model_params) data.model_params = loop.model_params;
   const plugins = parseJsonArray(loop.plugins);
   if (plugins?.length) data.plugins = plugins;
+  data.is_shared = !!loop.is_shared;
   return data;
 }
 
@@ -385,6 +394,7 @@ function normalizeCreate(context) {
   data.enabled = data.enabled === undefined ? true : !!data.enabled;
   data.create_new_branch = data.create_new_branch === undefined ? true : !!data.create_new_branch;
   data.auto_push = data.auto_push === undefined ? true : !!data.auto_push;
+  data.is_shared = !!data.is_shared;
   const repo = context.params.resolvedRepo;
   if (!data.is_global && isLocalRepo(repo ?? data.repo_full_name)) {
     data.auto_push = false;
@@ -415,6 +425,7 @@ async function requireOwnLoop(context) {
     .first();
   if (!loop) throw new NotFound('Loop not found');
   context.params.existingLoop = loop;
+  context.params.was_shared = !!loop.is_shared;
   if (loop.repo_id) {
     context.params.loopRepo = await context.app
       .get('db')('repos')
@@ -443,7 +454,13 @@ function normalizePatch(context) {
   if (context.params.provider && 'session_id' in data) delete data.session_id;
 
   if ('prompt' in data && !data.prompt?.trim()) throw new BadRequest('prompt is required');
-  for (const field of ['enabled', 'create_new_branch', 'auto_push', 'single_session']) {
+  for (const field of [
+    'enabled',
+    'create_new_branch',
+    'auto_push',
+    'single_session',
+    'is_shared',
+  ]) {
     if (field in data) data[field] = !!data[field];
   }
   const loopRepo = context.params.loopRepo;
@@ -500,6 +517,7 @@ function formatLoop(loop) {
     auto_push: !!loop.auto_push,
     single_session: !!loop.single_session,
     is_global: !!loop.is_global,
+    is_shared: !!loop.is_shared,
     created_from_session: !!loop.created_from_session,
     session_id: loop.session_id ?? null,
     last_session_id: loop.last_session_id ?? null,
@@ -532,6 +550,19 @@ function writeLoopsToResult(context, loops) {
 
 function attachedSessionId(loop) {
   return loop.session_id || loop.last_session_id || null;
+}
+
+async function syncTiedSessionShare(context) {
+  const existing = context.params.existingLoop;
+  const loop = context.result;
+  if (!existing?.single_session || !existing.session_id || !loop) return context;
+  if (!!existing.is_shared === !!loop.is_shared) return context;
+  const user = context.params.user;
+  if (!user?.id) return context;
+  await context.app
+    .service('sessions')
+    .patch(existing.session_id, { is_shared: !!loop.is_shared }, { user });
+  return context;
 }
 
 async function attachTiedSessions(context) {
@@ -571,8 +602,14 @@ async function orderByNewestFirst(context) {
 const loopsHooks = {
   before: {
     all: [requireUser],
-    find: [coerceBooleanQuery, scopeByUser, scopeActiveSessionLoops, orderByNewestFirst],
-    get: [scopeByUser, scopeActiveSessionLoops],
+    find: [
+      takeListScope,
+      coerceBooleanQuery,
+      scopeByOwnerOrShared,
+      scopeActiveSessionLoops,
+      orderByNewestFirst,
+    ],
+    get: [scopeByOwnerOrShared, scopeActiveSessionLoops],
     create: [
       only(WRITABLE_FIELDS),
       scopeByUser,
@@ -583,20 +620,19 @@ const loopsHooks = {
       normalizeCreate,
     ],
     patch: [
-      scopeByUser,
       requireOwnLoop,
       only(WRITABLE_FIELDS),
       serializePlugins,
       normalizeAgentConfigOnLoopWrite,
       normalizePatch,
     ],
-    remove: [scopeByUser, requireOwnLoop, clearSessionLoopReferences],
+    remove: [requireOwnLoop, clearSessionLoopReferences],
   },
   after: {
-    find: [formatResult, attachTiedSessions],
-    get: [formatResult, attachTiedSessions],
-    create: [formatResult, attachTiedSessions],
-    patch: [formatResult, attachTiedSessions],
+    find: [formatResult, attachTiedSessions, attachOwners],
+    get: [formatResult, attachTiedSessions, attachOwners],
+    create: [formatResult, attachTiedSessions, attachOwners],
+    patch: [formatResult, attachTiedSessions, attachOwners, syncTiedSessionShare, stampWasShared],
     remove: [formatResult],
   },
 };

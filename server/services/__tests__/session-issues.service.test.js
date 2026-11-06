@@ -217,4 +217,34 @@ describe('session-issues service', () => {
     const rows = Array.isArray(messages) ? messages : messages.data;
     expect(rows).toHaveLength(1);
   });
+
+  it('lets a collaborator read issues on a shared session but not mutate them', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1 });
+    const created = await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'high', title: 'Shared bug' }, { user });
+    const found = await app.service('session-issues').find({
+      ...params(other),
+      query: { session_id: sessionId },
+    });
+    const rows = found.data ?? found;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('Shared bug');
+
+    await expect(
+      app.service('session-issues').patch(created.id, { status: 'ignored' }, params(other))
+    ).rejects.toThrow(/Session not found/);
+    await expect(app.service('session-issues').remove(created.id, params(other))).rejects.toThrow(
+      /Session not found/
+    );
+    await expect(
+      app.service('session-issues').askAgentToFix(created.id, params(other))
+    ).rejects.toThrow(/Session not found/);
+    await expect(
+      app.service('session-issues').askAgentToFixAll({ session_id: sessionId }, params(other))
+    ).rejects.toThrow(/Session not found/);
+
+    const still = await db('session_issues').where({ id: created.id }).first();
+    expect(still.status).toBe('opened');
+  });
 });

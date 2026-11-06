@@ -62,6 +62,10 @@ export function createCreateSessionTool(ctx) {
       branch_name: z.string().optional().describe('Optional new branch name'),
       auto_push: z.boolean().optional().describe('Auto-push commits (default true)'),
       plugins: z.array(z.string()).optional().describe('Plugin ids to enable'),
+      is_shared: z
+        .boolean()
+        .optional()
+        .describe('When true, every authenticated user on this instance can open the session'),
     },
     handler: async ({
       repo_id,
@@ -74,6 +78,7 @@ export function createCreateSessionTool(ctx) {
       branch_name,
       auto_push = true,
       plugins,
+      is_shared,
     }) => {
       if (!is_global && repo_id == null) {
         return fail('repo_id is required unless is_global is true');
@@ -165,6 +170,7 @@ export function createCreateSessionTool(ctx) {
       if (modelParams) payload.model_params = modelParams;
       if (!is_global && branch_name) payload.branch_name = branch_name;
       if (plugins?.length) payload.plugins = plugins;
+      if (is_shared) payload.is_shared = true;
 
       try {
         const session = await app.service('sessions').create(payload, {

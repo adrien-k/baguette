@@ -434,6 +434,24 @@ async function stopReviewerBeforeRemove(app, row, user) {
   await getReviewAgentTurn(app).stopReviewerAgent(session, row);
 }
 
+/** Collaborators may stop a run; only the owner can create, reconfigure, or delete agents. */
+async function requireOwnSessionForWrite(context) {
+  if (!context.params?.provider) return context;
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const db = context.app.get('db');
+  let sessionId = context.data?.session_id;
+  if (context.id != null) {
+    const agent = await getAgentById(db, context.id);
+    if (!agent) throw new NotFound('Agent not found');
+    sessionId = agent.session_id;
+  }
+  if (sessionId == null) return context;
+  const session = await db('sessions').where({ id: sessionId, user_id: userId }).first();
+  if (!session) throw new NotFound('Session not found');
+  return context;
+}
+
 async function beforeRemove(context) {
   const row = await context.service.get(context.id, { user: context.params.user });
   if (!row) throw new NotFound('Agent not found');
@@ -459,6 +477,7 @@ const agentsHooks = {
     find: [],
     get: [],
     create: [
+      requireOwnSessionForWrite,
       pickCreateFields,
       stashReviewerCreateExtras,
       allocateAgentRef,
@@ -467,8 +486,13 @@ const agentsHooks = {
       normalizeModelParams,
       resolveSdkOnConfigChange,
     ],
-    patch: [only(EXTERNAL_PATCH_FIELDS), normalizeModelParams, resolveSdkOnConfigChange],
-    remove: [beforeRemove],
+    patch: [
+      requireOwnSessionForWrite,
+      only(EXTERNAL_PATCH_FIELDS),
+      normalizeModelParams,
+      resolveSdkOnConfigChange,
+    ],
+    remove: [requireOwnSessionForWrite, beforeRemove],
     stop: [requireUser],
   },
   after: {

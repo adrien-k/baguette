@@ -459,3 +459,111 @@ describe('Messages service - remove', () => {
     );
   });
 });
+
+describe('Messages service - sharing authors', () => {
+  it('stamps author_user_id and lets a collaborator post on a shared session', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1, status: 'stopped' });
+    await db('agents').where({ session_id: sessionId }).update({ status: 'stopped' });
+    const aliceMsg = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+        author_user_id: otherUserId,
+        ...(await builderFields()),
+      },
+      params({ id: userId })
+    );
+    expect(aliceMsg.author_user_id).toBe(userId);
+    expect(aliceMsg.author).toMatchObject({ id: userId, username: 'alice' });
+
+    await db('sessions').where({ id: sessionId }).update({ status: 'stopped' });
+    await db('agents').where({ session_id: sessionId }).update({ status: 'stopped' });
+
+    const bobMsg = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'From Bob' },
+        }),
+        ...(await builderFields()),
+      },
+      params({ id: otherUserId })
+    );
+    expect(bobMsg.author_user_id).toBe(otherUserId);
+    expect(bobMsg.author).toMatchObject({ username: 'bob' });
+  });
+
+  it('uses the session agent model when a collaborator sends a different one', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1, status: 'stopped' });
+    await db('agents')
+      .where({ session_id: sessionId })
+      .update({ status: 'stopped', model: 'opus' });
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const msg = await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: 'From Bob' },
+        }),
+        ...(await builderFields({ model: 'haiku', agent_config_id: builder.agent_config_id })),
+      },
+      params({ id: otherUserId })
+    );
+    expect(msg.model).toBe('opus');
+    const agent = await db('agents').where({ id: builder.id }).first();
+    expect(agent.model).toBe('opus');
+  });
+
+  it('does not let a collaborator patch the session model', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1 });
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await expect(
+      app.service('agents').patch(builder.id, { model: 'haiku' }, params({ id: otherUserId }))
+    ).rejects.toThrow(/Session not found/);
+    const agent = await db('agents').where({ id: builder.id }).first();
+    expect(agent.model).toBe('sonnet');
+  });
+
+  it('does not let a collaborator reassign a message via a spoofed session_id', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1 });
+    await expect(
+      app
+        .service('messages')
+        .patch(
+          msgId,
+          { session_id: otherSessionId, message_json: '{"forged":true}' },
+          params({ id: otherUserId })
+        )
+    ).rejects.toThrow(/Session not found/);
+    const row = await db('session_messages').where({ id: msgId }).first();
+    expect(row.session_id).toBe(sessionId);
+    expect(row.message_json).toContain('Hello');
+  });
+
+  it('does not let a collaborator patch or remove messages', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1 });
+    await expect(
+      app
+        .service('messages')
+        .patch(msgId, { message_json: '{"forged":true}' }, params({ id: otherUserId }))
+    ).rejects.toThrow(/Session not found/);
+    await expect(
+      app.service('messages').remove(msgId, params({ id: otherUserId }))
+    ).rejects.toThrow(/Session not found/);
+    const row = await db('session_messages').where({ id: msgId }).first();
+    expect(row.message_json).toContain('Hello');
+  });
+
+  it('still lets the owner patch messages on a shared session', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1 });
+    const patched = await app
+      .service('messages')
+      .patch(msgId, { subtype: 'edited' }, params({ id: userId }));
+    expect(patched.subtype).toBe('edited');
+  });
+});

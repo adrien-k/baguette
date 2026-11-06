@@ -39,12 +39,18 @@ export function localRepoName() {
 }
 
 /** Dev sign-in (NODE_ENV=development only). Lands on the dashboard with session cookie set. */
-export async function devLogin(page) {
-  const authResponse = await page.goto('/auth/dev');
+export async function devLogin(page, username = 'dev') {
+  const path =
+    username === 'dev' ? '/auth/dev' : `/auth/dev?username=${encodeURIComponent(username)}`;
+  const authResponse = await page.goto(path);
   expect(authResponse?.ok()).toBe(true);
   await page.waitForURL((url) => url.pathname === '/' || url.pathname === '', {
     timeout: 15_000,
   });
+}
+
+export async function devLoginAs(page, username) {
+  return devLogin(page, username);
 }
 
 export async function listRepos(page) {
@@ -86,12 +92,20 @@ async function waitForMockModelPicker(page) {
 export async function startMockBuilderSession(
   page,
   repoId,
-  prompt = 'Exercise the mock agent for e2e'
+  prompt = 'Exercise the mock agent for e2e',
+  options = {}
 ) {
   await page.goto(`/repos/${repoId}`);
   const composer = page.getByPlaceholder(/Ask the agent what you want to build or plan/i);
   await expect(composer).toBeVisible({ timeout: 60_000 });
   await waitForMockModelPicker(page);
+  if (options.shared) {
+    const sharedSwitch = page.getByRole('switch', { name: 'Shared' });
+    await expect(sharedSwitch).toBeVisible({ timeout: 15_000 });
+    if ((await sharedSwitch.getAttribute('aria-checked')) !== 'true') {
+      await sharedSwitch.click();
+    }
+  }
   await composer.fill(prompt);
   await page.getByRole('button', { name: 'Start on a new branch' }).click();
 

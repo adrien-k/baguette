@@ -126,6 +126,66 @@ describe('registerFeathersRealtime', () => {
     expect(payload).not.toHaveProperty('short_id');
   });
 
+  it('publishes a minimal payload when a session is unshared', async () => {
+    const app = makeRealtimeApp();
+    const ownerConn = joinUserOnConnect(app, 1);
+    const otherConn = joinUserOnConnect(app, 2);
+
+    const publishPromise = waitForPublish(app);
+    await app.service('sessions').patch(10, {
+      user_id: 1,
+      is_shared: 0,
+      _was_shared: true,
+      label: 'secret',
+      initial_prompt: 'do not leak this prompt',
+    });
+    const { event, channel, hook } = await publishPromise;
+
+    expect(event).toBe('patched');
+    expect(channel.connections).toContain(ownerConn);
+    expect(channel.connections).toContain(otherConn);
+    const payload = payloadForConnection(channel, otherConn, hook);
+    expect(payload).toEqual({ id: 10, user_id: 1, is_shared: 0 });
+  });
+
+  it('publishes a minimal payload when a loop is unshared', async () => {
+    const app = makeRealtimeApp();
+    const otherConn = joinUserOnConnect(app, 2);
+
+    const publishPromise = waitForPublish(app);
+    await app.service('loops').patch(4, {
+      user_id: 1,
+      is_shared: 0,
+      _was_shared: true,
+      prompt: 'secret loop prompt',
+      schedule: '0 * * * *',
+    });
+    const { event, channel, hook } = await publishPromise;
+
+    expect(event).toBe('patched');
+    expect(channel.connections).toContain(otherConn);
+    const payload = payloadForConnection(channel, otherConn, hook);
+    expect(payload).toEqual({ id: 4, user_id: 1, is_shared: 0 });
+  });
+
+  it('strips last_viewed_at from session CRUD publish payloads', async () => {
+    const app = makeRealtimeApp();
+    joinUserOnConnect(app, 1);
+
+    const publishPromise = waitForPublish(app);
+    await app.service('sessions').patch(10, {
+      user_id: 1,
+      status: 'stopped',
+      last_viewed_at: '2026-01-01T00:00:00.000Z',
+    });
+    const { event, channel, hook } = await publishPromise;
+
+    expect(event).toBe('patched');
+    const payload = payloadForConnection(channel, app.channel('user/1').connections[0], hook);
+    expect(payload).toMatchObject({ id: 10, user_id: 1, status: 'stopped' });
+    expect(payload).not.toHaveProperty('last_viewed_at');
+  });
+
   it('does not deliver another user’s session events to the wrong connection', async () => {
     await db('users').insert([
       { github_id: 1, username: 'alice', approved: true },
@@ -153,6 +213,106 @@ describe('registerFeathersRealtime', () => {
       id: 1,
       session_id: sessionId,
       content: 'hello',
+    });
+    const { channel } = await publishPromise;
+
+    expect(channel.connections).toContain(aliceConn);
+    expect(channel.connections).not.toContain(bobConn);
+  });
+
+  it('delivers shared session events to other authenticated connections', async () => {
+    await db('users').insert([
+      { github_id: 11, username: 'alice-share', approved: true },
+      { github_id: 12, username: 'bob-share', approved: true },
+    ]);
+    const alice = await db('users').where({ username: 'alice-share' }).first();
+    const bob = await db('users').where({ username: 'bob-share' }).first();
+    await db('repos').insert({ full_name: 'test/shared-repo', repo_path: '/tmp/shared-repo' });
+    const repo = await db('repos').where({ full_name: 'test/shared-repo' }).first();
+    const sessionId = await insertTestSession(db, {
+      user_id: alice.id,
+      repo_id: repo.id,
+      repo_full_name: repo.full_name,
+      base_branch: 'main',
+      initial_prompt: 'Shared',
+      is_shared: 1,
+    });
+
+    const app = makeRealtimeApp();
+    const aliceConn = joinUserOnConnect(app, alice.id);
+    const bobConn = joinUserOnConnect(app, bob.id);
+
+    const publishPromise = waitForPublish(app);
+    await app.service('messages').create({
+      id: 2,
+      session_id: sessionId,
+      content: 'hello shared',
+    });
+    const { channel } = await publishPromise;
+
+    expect(channel.connections).toContain(aliceConn);
+    expect(channel.connections).toContain(bobConn);
+  });
+
+  it('delivers turn:complete for a shared session to other authenticated connections', async () => {
+    await db('users').insert([
+      { github_id: 21, username: 'alice-turn', approved: true },
+      { github_id: 22, username: 'bob-turn', approved: true },
+    ]);
+    const alice = await db('users').where({ username: 'alice-turn' }).first();
+    const bob = await db('users').where({ username: 'bob-turn' }).first();
+    await db('repos').insert({ full_name: 'test/turn-repo', repo_path: '/tmp/turn-repo' });
+    const repo = await db('repos').where({ full_name: 'test/turn-repo' }).first();
+    const sessionId = await insertTestSession(db, {
+      user_id: alice.id,
+      repo_id: repo.id,
+      repo_full_name: repo.full_name,
+      base_branch: 'main',
+      initial_prompt: 'Shared turn',
+      is_shared: 1,
+    });
+
+    const app = makeRealtimeApp();
+    const aliceConn = joinUserOnConnect(app, alice.id);
+    const bobConn = joinUserOnConnect(app, bob.id);
+
+    const publishPromise = waitForPublish(app);
+    app.service('sessions').emit('turn:complete', {
+      session_id: sessionId,
+      user_id: alice.id,
+    });
+    const { event, channel } = await publishPromise;
+
+    expect(event).toBe('turn:complete');
+    expect(channel.connections).toContain(aliceConn);
+    expect(channel.connections).toContain(bobConn);
+  });
+
+  it('does not deliver turn:complete for a private session to other users', async () => {
+    await db('users').insert([
+      { github_id: 31, username: 'alice-priv', approved: true },
+      { github_id: 32, username: 'bob-priv', approved: true },
+    ]);
+    const alice = await db('users').where({ username: 'alice-priv' }).first();
+    const bob = await db('users').where({ username: 'bob-priv' }).first();
+    await db('repos').insert({ full_name: 'test/priv-repo', repo_path: '/tmp/priv-repo' });
+    const repo = await db('repos').where({ full_name: 'test/priv-repo' }).first();
+    const sessionId = await insertTestSession(db, {
+      user_id: alice.id,
+      repo_id: repo.id,
+      repo_full_name: repo.full_name,
+      base_branch: 'main',
+      initial_prompt: 'Private turn',
+    });
+
+    const app = makeRealtimeApp();
+    const aliceConn = joinUserOnConnect(app, alice.id);
+    const bobConn = joinUserOnConnect(app, bob.id);
+
+    const publishPromise = waitForPublish(app);
+    app.service('sessions').emit('turn:complete', {
+      session_id: sessionId,
+      user_id: alice.id,
     });
     const { channel } = await publishPromise;
 

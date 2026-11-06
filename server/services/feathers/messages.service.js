@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import logger from '../../logger.js';
 import { requireUser, scopeBySessionUser } from './hooks.js';
+import { attachMessageAuthors, requireOwnSessionForWrite } from './shared-access.js';
 import { MESSAGES_PAGINATE } from '../../config.js';
 import { assignTurnOnUserMessageCreate } from '../../../shared/turn-assignment.js';
 import { scopeAgentDefaultFind, requireMessageIdentity } from './message-identity.js';
@@ -111,8 +112,13 @@ const messagesHooks = {
       queueIfRunning,
       (context) => primeReviewerUserMessageCreate(context.app, context),
     ],
+    patch: [requireOwnSessionForWrite],
+    update: [requireOwnSessionForWrite],
+    remove: [requireOwnSessionForWrite],
   },
   after: {
-    create: [afterCreateNotifySessions, afterCreateDispatchAgent],
+    find: [attachMessageAuthors],
+    get: [attachMessageAuthors],
+    create: [attachMessageAuthors, afterCreateNotifySessions, afterCreateDispatchAgent],
   },
 };

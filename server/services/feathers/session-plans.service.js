@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
+import { requireOwnSessionForWrite } from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
 
@@ -82,7 +83,9 @@ export function registerSessionPlansService(app, path = 'session-plans') {
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeBySessionUser],
-      patch: [only(['markdown', 'status'])],
+      create: [requireOwnSessionForWrite],
+      patch: [requireOwnSessionForWrite, only(['markdown', 'status'])],
+      remove: [requireOwnSessionForWrite],
     },
   });
 }

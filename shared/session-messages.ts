@@ -65,6 +65,8 @@ export type MessageViewMeta = {
   agent_id?: number | null;
   agent_sdk?: string | null;
   agent_config_id?: number | null;
+  author_user_id?: number | null;
+  author?: { id: number; username: string; avatar_url?: string | null } | null;
 };
 
 /** Typed tool_call row view: the payload plus row meta (call_id lands here too). */

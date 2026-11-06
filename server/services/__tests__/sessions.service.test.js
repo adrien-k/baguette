@@ -782,6 +782,14 @@ describe('Sessions service - custom methods', () => {
         app.service('sessions').startPreviewService({ id: sessId }, params({ id: otherUserId }))
       ).rejects.toBeNotFoundError();
     });
+
+    it('rejects with NotFound when a collaborator starts preview on a shared session', async () => {
+      await db('sessions').where({ id: sessId }).update({ is_shared: 1 });
+      await expect(
+        app.service('sessions').startPreviewService({ id: sessId }, params({ id: otherUserId }))
+      ).rejects.toBeNotFoundError();
+      expect(tasksCreate).not.toHaveBeenCalled();
+    });
   });
 
   // ── remove ─────────────────────────────────────────────────────────────────
@@ -1832,6 +1840,81 @@ describe('Sessions service - find, get, create', () => {
       expect(updated.agent_sdk).toBe('claude');
       expect(updated.agent_config_id).toBe(claudeB);
       expect(updated.claude_session_id).toBe('claude-thread-1');
+    });
+  });
+
+  describe('sharing', () => {
+    it('lets another user get a shared session and lists it under list_scope=shared', async () => {
+      await app.service('sessions').patch(sessId1, { is_shared: true }, params({ id: userId1 }));
+
+      const got = await app.service('sessions').get(sessId1, params({ id: userId2 }));
+      expect(got.id).toBe(sessId1);
+      expect(got.is_shared).toBe(true);
+      expect(got.owner).toMatchObject({ id: userId1, username: 'alice' });
+
+      const mine = await app.service('sessions').find({
+        query: { list_scope: 'mine' },
+        ...params({ id: userId2 }),
+      });
+      expect((mine.data ?? mine).map((s) => s.id)).not.toContain(sessId1);
+
+      const shared = await app.service('sessions').find({
+        query: { list_scope: 'shared' },
+        ...params({ id: userId2 }),
+      });
+      expect((shared.data ?? shared).map((s) => s.id)).toContain(sessId1);
+
+      const ownerMine = await app.service('sessions').find({
+        query: { list_scope: 'mine' },
+        ...params({ id: userId1 }),
+      });
+      expect((ownerMine.data ?? ownerMine).map((s) => s.id)).toContain(sessId1);
+    });
+
+    it('does not let a collaborator archive or patch settings', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+      await expect(
+        app.service('sessions').archive(sessId1, params({ id: userId2 }))
+      ).rejects.toBeNotFoundError();
+      await expect(
+        app.service('sessions').patch(sessId1, { label: 'hijack' }, params({ id: userId2 }))
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('isolates last_viewed_at per viewer', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+      const aliceViewed = '2026-03-01T00:00:00.000Z';
+      const bobViewed = '2026-03-02T00:00:00.000Z';
+      await app
+        .service('sessions')
+        .patch(sessId1, { last_viewed_at: aliceViewed }, params({ id: userId1 }));
+      await app
+        .service('sessions')
+        .patch(sessId1, { last_viewed_at: bobViewed }, params({ id: userId2 }));
+
+      const alice = await app.service('sessions').get(sessId1, params({ id: userId1 }));
+      const bob = await app.service('sessions').get(sessId1, params({ id: userId2 }));
+      expect(alice.last_viewed_at).toBe(aliceViewed);
+      expect(bob.last_viewed_at).toBe(bobViewed);
+      const ownerRow = await db('sessions').where({ id: sessId1 }).first();
+      expect(ownerRow.last_viewed_at).toBe(aliceViewed);
+    });
+
+    it('upserts concurrent last_viewed_at patches without a primary-key error', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+      const first = '2026-03-01T00:00:00.000Z';
+      const second = '2026-03-02T00:00:00.000Z';
+      await Promise.all([
+        app.service('sessions').patch(sessId1, { last_viewed_at: first }, params({ id: userId2 })),
+        app.service('sessions').patch(sessId1, { last_viewed_at: second }, params({ id: userId2 })),
+      ]);
+      const bob = await app.service('sessions').get(sessId1, params({ id: userId2 }));
+      expect([first, second]).toContain(bob.last_viewed_at);
+      const rows = await db('session_user_state').where({
+        session_id: sessId1,
+        user_id: userId2,
+      });
+      expect(rows).toHaveLength(1);
     });
   });
 

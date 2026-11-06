@@ -32,6 +32,7 @@ import {
   stringifyModelParams,
 } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
@@ -171,6 +172,12 @@ export default function BuilderForm({
   const [sessionStartMode, setSessionStartMode] = useState('new-branch');
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
+  const [isShared, setIsShared] = persistentState.useState('isShared', !!editingLoop?.is_shared, {
+    persistWhen: hasPromptText,
+  });
+  const loopReadOnly = Boolean(
+    editingLoop && userSettings && !isSessionOwner(editingLoop, userSettings)
+  );
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
@@ -333,6 +340,7 @@ export default function BuilderForm({
   // The branch-name field is the only other entry, and a loop never shows it.
   const hasMoreOptions = (!isGlobal && !isLoop) || availablePlugins.length > 0;
   const canSubmit =
+    !loopReadOnly &&
     !loading &&
     hasAgentConfig &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
@@ -377,6 +385,7 @@ export default function BuilderForm({
       createNewBranch,
       branchName: branchName || undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
+      isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
@@ -407,6 +416,7 @@ export default function BuilderForm({
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
+        is_shared: payload.isShared,
         ...schedulePayload(schedule),
       };
     }
@@ -423,6 +433,7 @@ export default function BuilderForm({
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
+      is_shared: payload.isShared,
       ...schedulePayload(schedule),
     };
   };
@@ -556,9 +567,12 @@ export default function BuilderForm({
             <span className="truncate">
               Editing loop
               {editingLoop.name ? <span className="text-faint"> · {editingLoop.name}</span> : ''}
+              {loopReadOnly && editingLoop.owner?.username ? (
+                <span className="text-faint"> · shared by {editingLoop.owner.username}</span>
+              ) : null}
             </span>
           </div>
-          {onDeleteLoop && (
+          {onDeleteLoop && !loopReadOnly && (
             <button
               type="button"
               onClick={onDeleteLoop}
@@ -709,14 +723,24 @@ export default function BuilderForm({
         )}
       </div>
 
+      <Toggle
+        checked={isShared}
+        onChange={setIsShared}
+        disabled={loopReadOnly}
+        label="Shared"
+        title="Everyone on this Baguette instance can open this."
+        className="gap-2"
+      />
+
       {isLoop && (
         <>
-          <LoopScheduleFields schedule={schedule} onChange={setSchedule} />
+          <LoopScheduleFields schedule={schedule} onChange={setSchedule} disabled={loopReadOnly} />
 
           <div className="flex items-center gap-4">
             <Toggle
               checked={singleSession}
               onChange={setSingleSession}
+              disabled={loopReadOnly}
               label="Single session"
               className="gap-2"
             />

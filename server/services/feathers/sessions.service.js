@@ -44,6 +44,14 @@ import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
 import {
+  attachOwners,
+  attachViewerLastViewed,
+  handleSessionLastViewedPatch,
+  scopeByOwnerOrShared,
+  stampWasShared,
+  takeListScope,
+} from './shared-access.js';
+import {
   DEFAULT_PAGINATE,
   DATA_DIR,
   resolveRepoPath,
@@ -1486,6 +1494,7 @@ export class SessionsService extends KnexService {
       }
       await trx('usage').where({ session_id: sessionId }).update({ session_id: null });
       await trx('queued_messages').where({ session_id: sessionId }).delete();
+      await trx('session_user_state').where({ session_id: sessionId }).delete();
       await trx('session_messages').where({ session_id: sessionId }).delete();
       await trx('session_issues').where({ session_id: sessionId }).delete();
       await trx('session_todos').where({ session_id: sessionId }).delete();
@@ -1726,6 +1735,7 @@ export class SessionsService extends KnexService {
 }
 
 async function requireOwnSession(context) {
+  if (context.params.skipOwnerPatch) return context;
   const db = context.app.get('db');
   const id = context.id;
   const userId = context.params.user?.id;
@@ -1736,10 +1746,28 @@ async function requireOwnSession(context) {
   const session = await db('sessions').where({ id, user_id: userId }).first();
   if (!session) throw new NotFound('Session not found');
   context.params.ownSession = session;
+  context.params.was_shared = !!session.is_shared;
   // Clear params.knex: scopeByUser set it to a SELECT builder which gets consumed
   // by _patch's UPDATE step, causing _findOrGet to return 0 rows. Ownership is
   // already verified above, so the plain id-based query in _patch is sufficient.
   delete context.params.knex;
+  return context;
+}
+
+async function requireOwnResolvedSession(context) {
+  const userId = context.params.user?.id;
+  if (!userId || !context.params.provider) return context;
+  const session = context.params.resolvedSession;
+  if (!session || session.user_id !== userId) {
+    throw new NotFound('Session not found');
+  }
+  return context;
+}
+
+function coerceIsSharedOnWrite(context) {
+  if ('is_shared' in (context.data || {})) {
+    context.data.is_shared = context.data.is_shared ? 1 : 0;
+  }
   return context;
 }
 
@@ -2267,6 +2295,7 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
     is_global: Boolean(session.is_global),
+    is_shared: Boolean(session.is_shared),
     codeserver_url:
       absoluteSessionPath && !isGlobalSession(session)
         ? getCodeserverUrl(absoluteSessionPath)
@@ -2613,9 +2642,12 @@ function applyGroupSort(context) {
 
 const sessionsHooks = {
   before: {
-    all: [requireUser, sanitizeSessionFindQuery, scopeByUser],
-    find: [applySessionListFilters, applyGroupSort],
+    all: [requireUser, sanitizeSessionFindQuery],
+    find: [takeListScope, scopeByOwnerOrShared, applySessionListFilters, applyGroupSort],
+    get: [scopeByOwnerOrShared],
     create: [
+      scopeByUser,
+      coerceIsSharedOnWrite,
       ensureShortId,
       seedLastActivityOnCreate,
       validateSessionCreate,
@@ -2626,7 +2658,9 @@ const sessionsHooks = {
       stashBuilderAgentFieldsOnCreate,
     ],
     patch: [
+      handleSessionLastViewedPatch,
       requireOwnSession,
+      coerceIsSharedOnWrite,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
@@ -2646,25 +2680,39 @@ const sessionsHooks = {
       schemaHooks.validateData(createDefaultBuilderMessageDataValidator),
       resolveSessionFromData,
     ],
-    merge: [resolveSessionFromData],
-    setPrDraft: [resolveSessionFromData],
-    push: [resolveSessionFromData],
-    archive: [resolveSessionFromData],
-    restore: [resolveSessionFromData],
+    merge: [resolveSessionFromData, requireOwnResolvedSession],
+    setPrDraft: [resolveSessionFromData, requireOwnResolvedSession],
+    push: [resolveSessionFromData, requireOwnResolvedSession],
+    archive: [resolveSessionFromData, requireOwnResolvedSession],
+    restore: [resolveSessionFromData, requireOwnResolvedSession],
     getPrDetails: [resolveSessionFromData],
     previewStatus: [resolveSessionFromData],
-    startPreviewService: [resolveSessionFromData],
+    startPreviewService: [resolveSessionFromData, requireOwnResolvedSession],
   },
   after: {
-    find: [mergeSessionAgentFields, addHasWebserver],
-    get: [refreshPrStatusAfterGet, mergeSessionAgentFields, addHasWebserver],
+    find: [attachOwners, attachViewerLastViewed, mergeSessionAgentFields, addHasWebserver],
+    get: [
+      attachOwners,
+      attachViewerLastViewed,
+      refreshPrStatusAfterGet,
+      mergeSessionAgentFields,
+      addHasWebserver,
+    ],
     create: [
+      attachOwners,
       insertPrimaryBuilderAfterCreate,
       mergeSessionAgentFields,
       scheduleSessionProvisioning,
       addHasWebserver,
     ],
-    patch: [mergeSessionAgentFields, syncSessionSettingsAfterPatch, addHasWebserver],
+    patch: [
+      attachOwners,
+      attachViewerLastViewed,
+      mergeSessionAgentFields,
+      syncSessionSettingsAfterPatch,
+      addHasWebserver,
+      stampWasShared,
+    ],
   },
 };
 

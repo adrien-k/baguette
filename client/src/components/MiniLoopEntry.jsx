@@ -10,8 +10,14 @@ import { toastError } from '../utils/toastError.jsx';
 import { loopsService } from '../feathers.js';
 import CardRepoBadge from './CardRepoBadge.jsx';
 import LoopLastError from './LoopLastError.jsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import { LIST_SCOPE_SHARED, isSessionOwner } from '@baguette/shared/session-sharing.js';
+import ListOwnerLabel from './ListOwnerLabel.jsx';
 
-export default function MiniLoopEntry({ loop, currentLoopId, onToggle, onDelete }) {
+export default function MiniLoopEntry({ loop, currentLoopId, onToggle, onDelete, listScope }) {
+  const { currentUser } = useCurrentUser();
+  const isOwner = isSessionOwner(loop, currentUser);
+  const showOwner = listScope === LIST_SCOPE_SHARED || !isOwner;
   const { loopEditUrl, showRepoDetails } = useFilterRoutes();
   const isCurrent = String(loop.id) === String(currentLoopId);
   const title = loopDisplayTitle(loop);
@@ -40,6 +46,7 @@ export default function MiniLoopEntry({ loop, currentLoopId, onToggle, onDelete 
           className={`w-3.5 h-3.5 shrink-0 ${loop.enabled ? 'text-accent' : 'text-faint'}`}
           aria-hidden
         />
+        {showOwner && <ListOwnerLabel owner={loop.owner} />}
         <Link to={loopEditUrl(loop.id)} className="flex-1 min-w-0 leading-snug text-left">
           {showRepoDetails && (
             <span className="block truncate">
@@ -55,7 +62,7 @@ export default function MiniLoopEntry({ loop, currentLoopId, onToggle, onDelete 
           )}
           <LoopLastError message={loop.last_error} textClassName="text-[11px] mt-0.5" />
         </Link>
-        {onDelete && (
+        {onDelete && isOwner && (
           <button
             type="button"
             onClick={(e) => {
@@ -70,26 +77,28 @@ export default function MiniLoopEntry({ loop, currentLoopId, onToggle, onDelete 
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
-        <button
-          type="button"
-          role="switch"
-          aria-checked={loop.enabled}
-          aria-label={loop.enabled ? 'Disable loop' : 'Enable loop'}
-          onClick={handleToggle}
-          className="shrink-0"
-        >
-          <span
-            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
-              loop.enabled ? 'bg-brand' : 'bg-track'
-            }`}
+        {isOwner && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={loop.enabled}
+            aria-label={loop.enabled ? 'Disable loop' : 'Enable loop'}
+            onClick={handleToggle}
+            className="shrink-0"
           >
             <span
-              className={`inline-block h-3 w-3 rounded-full bg-knob shadow transition-transform ${
-                loop.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                loop.enabled ? 'bg-brand' : 'bg-track'
               }`}
-            />
-          </span>
-        </button>
+            >
+              <span
+                className={`inline-block h-3 w-3 rounded-full bg-knob shadow transition-transform ${
+                  loop.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

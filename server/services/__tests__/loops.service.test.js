@@ -296,6 +296,59 @@ describe('Loops service', () => {
       );
     });
 
+    it('lets another user get a shared loop but not patch it', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ is_shared: true }), params(aliceId));
+      expect(loop.is_shared).toBe(true);
+      expect(loop.owner).toMatchObject({ id: aliceId, username: 'alice' });
+
+      const got = await app.service('loops').get(loop.id, params(bobId));
+      expect(got.id).toBe(loop.id);
+
+      const shared = await app
+        .service('loops')
+        .find({ ...params(bobId), query: { list_scope: 'shared' } });
+      expect(shared.data.map((row) => row.id)).toContain(loop.id);
+
+      await expect(
+        app.service('loops').patch(loop.id, { enabled: false }, params(bobId))
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('copies is_shared onto spawned sessions and syncs a tied single-session', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ is_shared: true, enabled: false }), params(aliceId));
+      const spawned = await app.service('loops')._startSession(loop, { id: aliceId });
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ is_shared: true, loop_id: loop.id }),
+        expect.anything()
+      );
+      expect(spawned.is_shared).toBe(true);
+
+      const sessionId = await insertTestSession(db, {
+        user_id: aliceId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'tied',
+        short_id: 'tiedsh',
+        is_shared: 0,
+      });
+      const tied = await app
+        .service('loops')
+        .create(
+          loopData({ single_session: true, session_id: sessionId, is_shared: false }),
+          params(aliceId)
+        );
+      await app.service('loops').patch(tied.id, { is_shared: true }, params(aliceId));
+      expect(sessionsPatch).toHaveBeenCalledWith(
+        sessionId,
+        { is_shared: true },
+        expect.objectContaining({ user: { id: aliceId } })
+      );
+    });
+
     it('nullifies loop_id on sessions spawned by the loop when it is deleted', async () => {
       const loop = await app.service('loops').create(loopData(), params(aliceId));
       const spawnedId = await seedSession({ short_id: 'spawn1', loop_id: loop.id });

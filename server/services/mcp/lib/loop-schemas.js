@@ -26,5 +26,9 @@ export const loopPatchSchema = {
   plugins: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
   is_global: z.boolean().optional(),
+  is_shared: z
+    .boolean()
+    .optional()
+    .describe('When true, every authenticated user on this instance can open the loop'),
   ...loopScheduleSchema,
 };

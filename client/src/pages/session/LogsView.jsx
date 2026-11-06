@@ -88,6 +88,7 @@ function getMessageLabel(msg) {
   if (type === 'user') {
     if (isMcpUserMessage(msg)) return 'MCP message';
     if (isBaguetteUserMessage(msg)) return 'Baguette';
+    if (msg.author?.username) return msg.author.username;
     return 'User';
   }
   if (type === 'assistant') return 'Assistant';

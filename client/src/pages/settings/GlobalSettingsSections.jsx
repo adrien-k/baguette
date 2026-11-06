@@ -16,6 +16,7 @@ import TextInput from '../../components/TextInput.jsx';
 import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
 import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { BANNER_WARN, INPUT_CLASS, TEXT_MUTED, TEXT_PRIMARY } from '../../utils/ui.js';
+import UserAvatar from '../../components/UserAvatar.jsx';
 import { formatRelativeTime } from '../../utils/dates.js';
 import { countryCodeToFlagEmoji } from '../../utils/countryFlag.js';
 import { repoAccessModeLabel } from '../../utils/repoDisplayName.js';
@@ -448,11 +449,7 @@ export function UsersTab() {
             return (
               <div key={u.id} className="flex items-center justify-between py-3 gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  {u.avatar_url ? (
-                    <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-control shrink-0" />
-                  )}
+                  <UserAvatar user={u} size="lg" />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="text-sm text-fg font-medium truncate">{u.username}</div>

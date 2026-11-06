@@ -21,6 +21,27 @@ import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
 import TurnErrorMessage from './chat/TurnErrorMessage.tsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import UserAvatar from './UserAvatar.jsx';
+
+function UserAuthorLabel({
+  author,
+}: {
+  author?: { id?: number; username?: string; avatar_url?: string | null } | null;
+}) {
+  const { currentUser } = useCurrentUser();
+  const isSelf =
+    author?.id != null && currentUser?.id != null && String(author.id) === String(currentUser.id);
+  if (!author || isSelf) {
+    return <span className="shrink-0">You</span>;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <UserAvatar user={author} size="sm" />
+      <span className="truncate">{author.username}</span>
+    </span>
+  );
+}
 
 export type ChatMessageProps = {
   message: ChatMessageView;
@@ -94,7 +115,7 @@ function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'us
       <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
         <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="shrink-0">You</span>
+            <UserAuthorLabel author={message.author} />
             {message.created_at && (
               <MessageTimestamp
                 createdAt={message.created_at}
@@ -114,7 +135,7 @@ function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'us
     <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
       <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="shrink-0">You</span>
+          <UserAuthorLabel author={message.author} />
           {message.created_at && (
             <MessageTimestamp
               createdAt={message.created_at}

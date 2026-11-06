@@ -4,19 +4,24 @@ import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
 import { requestNotificationPermission } from '../utils/notifications.js';
 import { useSessionNotifications } from '../hooks/useSessionNotifications.jsx';
 import { useRepoContext } from './RepoContext.jsx';
+import { useCurrentUser } from './CurrentUserContext.jsx';
 import { sessionsListQueryFromPath } from '@baguette/shared/session-list-query.js';
+import { normalizeListScope } from '@baguette/shared/session-sharing.js';
 
 const SessionsContext = createContext(null);
 
 export function SessionsProvider({ children }) {
   const location = useLocation();
   const { repos } = useRepoContext() ?? {};
+  const { currentUser } = useCurrentUser();
   const listQuery = useMemo(
     () => sessionsListQueryFromPath(location.pathname),
     [location.pathname]
   );
+  const listScope = normalizeListScope(listQuery.list_scope);
   const { sessions, loading, refetch, hasMore, loadMore } = useGetUserSessions(listQuery, {
     repos,
+    currentUserId: currentUser?.id,
   });
 
   useSessionNotifications(sessions, loading);
@@ -29,6 +34,7 @@ export function SessionsProvider({ children }) {
         loading,
         hasMore,
         loadMore,
+        listScope,
         requestNotificationPermission,
       }}
     >

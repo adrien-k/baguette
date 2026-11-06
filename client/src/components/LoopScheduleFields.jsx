@@ -12,7 +12,7 @@ const SCHEDULE_TABS = [
  * Recurrence picker shared by the builder form's Loop tab and the edit modal.
  * `schedule` is the flat shape the loops service stores; `onChange` gets a whole new one.
  */
-export default function LoopScheduleFields({ schedule, onChange }) {
+export default function LoopScheduleFields({ schedule, onChange, disabled = false }) {
   const set = (patch) => onChange({ ...schedule, ...patch });
 
   const toggleDay = (value) =>
@@ -30,6 +30,7 @@ export default function LoopScheduleFields({ schedule, onChange }) {
           <button
             key={tab.value}
             type="button"
+            disabled={disabled}
             onClick={() => set({ schedule_type: tab.value })}
             className={`${chipOptionClassName(schedule.schedule_type === tab.value)} px-3 py-1.5 rounded-md`}
           >
@@ -41,6 +42,7 @@ export default function LoopScheduleFields({ schedule, onChange }) {
       {schedule.schedule_type === 'interval' ? (
         <select
           value={schedule.interval_minutes}
+          disabled={disabled}
           onChange={(e) => set({ interval_minutes: Number(e.target.value) })}
           className={INPUT_CLASS}
         >
@@ -58,6 +60,7 @@ export default function LoopScheduleFields({ schedule, onChange }) {
                 <button
                   key={d.value}
                   type="button"
+                  disabled={disabled}
                   onClick={() => toggleDay(d.value)}
                   className={chipOptionClassName(schedule.days_of_week.includes(d.value))}
                 >
@@ -70,6 +73,7 @@ export default function LoopScheduleFields({ schedule, onChange }) {
             <input
               type="time"
               value={schedule.time_of_day}
+              disabled={disabled}
               onChange={(e) => set({ time_of_day: e.target.value })}
               className={`${INPUT_CLASS} w-auto`}
             />
