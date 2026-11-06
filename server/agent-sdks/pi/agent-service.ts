@@ -1,12 +1,18 @@
 import {
   type AgentSession as PiAgentSession,
   createAgentSession,
+  createMcpExtension,
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
   type CreateAgentSessionOptions,
 } from '@earendil-works/pi-coding-agent';
 import { mkdir } from 'node:fs/promises';
+import {
+  loadEnabledMcpServersForSession,
+  readPiUserMcpConfig,
+  writePiUserMcpConfig,
+} from '../../services/user-mcp-runtime.js';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
 import { resolveDataDirRelativePath } from '../../config.js';
@@ -141,7 +147,7 @@ export class PiAgentService {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent }
+      { agent, db: this.app.get('db') as never, agentSdk: PI_AGENT_SDK_KEY }
     );
     return systemPrompt ? [systemPrompt] : [];
   }
@@ -199,6 +205,12 @@ export class PiAgentService {
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
     const modelId = model ?? null;
     const settingsManager = SettingsManager.create(cwd, agentDir);
+    // Pi's config schema accepts the user's description; Claude and Cursor do
+    // not, so only the Pi turn asks for it.
+    const userMcp = await loadEnabledMcpServersForSession(this.app, session, {
+      withDescription: true,
+    });
+    await writePiUserMcpConfig(agentDir, userMcp);
     const systemAppend =
       appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session, agent));
     const resourceLoader = new DefaultResourceLoader({
@@ -207,6 +219,11 @@ export class PiAgentService {
       settingsManager,
       appendSystemPrompt: systemAppend,
       additionalExtensionPaths: lunaroutePiAdditionalExtensionPaths(envVar),
+      // SDK sessions do not load MCP by default (see the SDK docs "Codemode and
+      // MCP" and examples/sdk/14-codemode-mcp.ts). The extension's own default
+      // loader reads only the global pi agent dir, so it must point at this
+      // session's mcp.json (written above from the enabled user MCP servers).
+      extensionFactories: [createMcpExtension({ loadConfig: () => readPiUserMcpConfig(agentDir) })],
     });
     await resourceLoader.reload();
     const resolvedTools =
@@ -245,6 +262,13 @@ export class PiAgentService {
     }
   ): Promise<PiAgentSession> {
     const { session: piSession } = await createAgentSession(opts.agentOptions);
+    // Emits session_start, which loads the loader's extensions and lets the MCP
+    // extension connect the user servers in the background and register their
+    // mcp__<server>__* tools (same pattern as the SDK's
+    // examples/sdk/14-codemode-mcp.ts).
+    if (typeof piSession.bindExtensions === 'function') {
+      await piSession.bindExtensions({});
+    }
     const {
       pendingModelId,
       pendingModelParams,

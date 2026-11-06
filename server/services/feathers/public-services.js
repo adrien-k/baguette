@@ -19,6 +19,7 @@ const PUBLIC_SERVICES = [
   'agents',
   'instance-settings',
   'loops',
+  'mcp-servers',
   'messages',
   'queued-messages',
   'repos',

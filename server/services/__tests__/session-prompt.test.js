@@ -209,6 +209,71 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('GitHub pull request template');
   });
 
+  it('appends the user MCP server guidance when a described server is enabled', async () => {
+    const session = await seedSession({
+      base_branch: 'main',
+      mcp_servers: JSON.stringify({ default: true }),
+    });
+    const [denied] = await db('user_mcp_servers').insert({
+      user_id: session.user_id,
+      name: 'undocumented',
+      transport: 'http',
+      url: 'https://mcp.example/no',
+      enabled: 1,
+    });
+    const [onId] = await db('user_mcp_servers').insert({
+      user_id: session.user_id,
+      name: 'fabricate',
+      transport: 'http',
+      url: 'https://mcp.example/fabricate',
+      enabled: 1,
+      description: 'Build realistic test fixtures when the task needs seeded data.',
+    });
+    const [sseId] = await db('user_mcp_servers').insert({
+      user_id: session.user_id,
+      name: 'events',
+      transport: 'sse',
+      url: 'https://mcp.example/sse',
+      enabled: 1,
+      description: 'Streamed in-app notifications.',
+    });
+    const snapshot = { default: false, [denied]: true, [onId]: true, [sseId]: true };
+    await db('sessions')
+      .where({ id: session.id })
+      .update({ mcp_servers: JSON.stringify(snapshot) });
+    const sessionRow = await db('sessions').where({ id: session.id }).first();
+
+    const piPrompt = await buildSystemPromptAppend(sessionRow, { db, agentSdk: 'pi' });
+    expect(piPrompt).toContain('## User MCP servers');
+    expect(piPrompt).toContain('`fabricate`: Build realistic test fixtures');
+    expect(piPrompt).toContain('mcp__fabricate__<tool>');
+    expect(piPrompt).not.toContain('`events`');
+    expect(piPrompt).not.toContain('`undocumented`');
+
+    const claudePrompt = await buildSystemPromptAppend(sessionRow, { db, agentSdk: 'claude' });
+    expect(claudePrompt).toContain('`events`: Streamed in-app notifications.');
+  });
+
+  it('renders no MCP section when db is missing or nothing described is enabled', async () => {
+    const session = await seedSession({ base_branch: 'main' });
+    const [offId] = await db('user_mcp_servers').insert({
+      user_id: session.user_id,
+      name: 'docs',
+      transport: 'http',
+      url: 'https://mcp.example/docs',
+      enabled: 1,
+      description: 'docs lookup',
+    });
+    await db('sessions')
+      .where({ id: session.id })
+      .update({ mcp_servers: JSON.stringify({ [offId]: false }) });
+    const sessionRow = await db('sessions').where({ id: session.id }).first();
+    const withDb = await buildSystemPromptAppend(sessionRow, { db, agentSdk: 'claude' });
+    expect(withDb).not.toContain('## User MCP servers');
+    const noDb = await buildSystemPromptAppend(sessionRow);
+    expect(noDb).not.toContain('## User MCP servers');
+  });
+
   it('uses the light global prompt for is_global sessions', async () => {
     const session = await seedSession({
       is_global: true,
@@ -247,5 +312,27 @@ describe('buildReviewSystemPromptAppend', () => {
     expect(result).toContain('submitted');
     expect(result).toContain('ListSkills');
     expect(result).toContain('ReadSkill');
+  });
+
+  it('appends MCP server guidance for the reviewer turn', async () => {
+    const session = await seedSession({ base_branch: 'main' });
+    const [onId] = await db('user_mcp_servers').insert({
+      user_id: session.user_id,
+      name: 'fabricate',
+      transport: 'http',
+      url: 'https://mcp.example/fabricate',
+      enabled: 1,
+      description: 'Build realistic test fixtures when the task needs seeded data.',
+    });
+    await db('sessions')
+      .where({ id: session.id })
+      .update({ mcp_servers: JSON.stringify({ [onId]: true }) });
+    const sessionRow = await db('sessions').where({ id: session.id }).first();
+    const result = await buildReviewSystemPromptAppend(sessionRow, 'Watch for SQL injection.', {
+      db,
+      agentSdk: 'claude',
+    });
+    expect(result).toContain('## User MCP servers');
+    expect(result).toContain('`fabricate`');
   });
 });

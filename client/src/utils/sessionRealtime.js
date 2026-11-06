@@ -1,5 +1,5 @@
 /** Merge a realtime session event into the list before matching, so partial patches keep identity fields. */
-export function mergeSessionRealtimeList(prev, session) {
+function mergeSessionRealtimeList(prev, session) {
   if (!session?.id) return { existing: null, merged: session };
   const existing = prev.find((row) => String(row.id) === String(session.id));
   const merged = existing ? { ...existing, ...session } : session;

@@ -17,6 +17,7 @@ import { getGithubToken, getAllowedCommandsFromUser } from '../../services/agent
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { applyClaudeAgentModelEnv, getClaudeEnv } from './env.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
+import { loadEnabledMcpServersForSession } from '../../services/user-mcp-runtime.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
 import { toolListToClaudeMcpServer } from './adapt-tools.js';
 import { createMessageChannel } from '../../services/message-channel.js';
@@ -244,6 +245,7 @@ export class ClaudeAgentService {
         })
       );
     const paramOptions = claudeSdkOptionsFromModelParams(modelParams);
+    const userMcp = await loadEnabledMcpServersForSession(this.app, sessionRow);
     return {
       cwd,
       env: applyClaudeAgentModelEnv(claudeEnv, resolvedModel),
@@ -252,7 +254,7 @@ export class ClaudeAgentService {
       ...paramOptions,
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources,
-      mcpServers: { baguette: resolvedMcp },
+      mcpServers: { ...userMcp, baguette: resolvedMcp },
       permissionMode,
       systemPrompt: {
         type: 'preset',
@@ -298,7 +300,11 @@ export class ClaudeAgentService {
       type: 'local' as const,
       path: resolveDataDirRelativePath(p.local_path as string) ?? '',
     }));
-    const systemPrompt = await buildSystemPromptAppend(sessionRow, { agent });
+    const systemPrompt = await buildSystemPromptAppend(sessionRow, {
+      agent,
+      db: this.app.get('db') as never,
+      agentSdk: CLAUDE_AGENT_SDK_KEY,
+    });
     return this.buildQueryOptions(sessionRow, {
       claudeEnv,
       systemPrompt,

@@ -20,7 +20,7 @@ function writeRecordsToResult(context, records) {
   else context.result = records[0];
 }
 
-export function applyListScope(query, userId, listScope) {
+function applyListScope(query, userId, listScope) {
   if (userId == null) return query;
   const scope = normalizeListScope(listScope);
   if (scope === LIST_SCOPE_SHARED) {
@@ -32,7 +32,7 @@ export function applyListScope(query, userId, listScope) {
   return query.where('user_id', userId);
 }
 
-export function applyAccessibleScope(query, userId) {
+function applyAccessibleScope(query, userId) {
   if (userId == null) return query;
   return query.where(function ownerOrShared() {
     this.where('user_id', userId).orWhere('is_shared', 1);
@@ -186,7 +186,7 @@ export async function attachViewerLastViewed(context) {
   return context;
 }
 
-export async function upsertSessionLastViewed(db, { sessionId, userId, lastViewedAt, isOwner }) {
+async function upsertSessionLastViewed(db, { sessionId, userId, lastViewedAt, isOwner }) {
   await db('session_user_state')
     .insert({
       session_id: sessionId,

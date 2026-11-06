@@ -36,6 +36,7 @@ import { createListPlansTool } from '../tools/list-plans.js';
 import { createEditPlanTool } from '../tools/edit-plan.js';
 import { createReadPlanTool } from '../tools/read-plan.js';
 import { createCompletePlanTool } from '../tools/complete-plan.js';
+import { createConfigureMcpServerTool } from '../tools/configure-mcp-server.js';
 
 function buildBuilderIssueTools(ctx) {
   return [createUpdateIssueStatusTool(ctx)];
@@ -81,6 +82,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createReadTaskOutputTool(ctx),
     createConfigRepoPromptTool(ctx),
     createUploadImageTool(ctx),
+    createConfigureMcpServerTool(ctx),
   ];
   if (slackApps.length) {
     tools.push(createSlackPostMessageTool(ctx));

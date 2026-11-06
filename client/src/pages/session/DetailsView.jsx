@@ -13,6 +13,7 @@ import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyl
 import { CARD_MUTED_CLASS, TEXT_HEADING, TEXT_PRIMARY } from '../../utils/ui.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { formatTokens, formatUsd, AGENT_TYPE_LABELS } from '../../utils/usageSeries.js';
+import McpSessionServers from '../../components/McpSessionServers.jsx';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import Toggle from '../../components/Toggle.jsx';
@@ -276,6 +277,14 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
               </div>
             </>
           )}
+        </DetailsCard>
+
+        <DetailsCard label="MCP servers">
+          <McpSessionServers
+            session={session}
+            readonly={readonly}
+            onSessionUpdate={onSessionUpdate}
+          />
         </DetailsCard>
 
         <DetailsCard label="Usage">

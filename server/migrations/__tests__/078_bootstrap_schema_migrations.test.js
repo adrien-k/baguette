@@ -287,10 +287,15 @@ describe('bootstrap schema migrations (078+)', () => {
     expect(await db.schema.hasTable('instance_settings')).toBe(false);
     expect(await db.schema.hasTable('user_passkeys')).toBe(false);
     expect((await columnInfo(db, 'repos')).map((c) => c.name)).not.toContain('access_mode');
+    expect(await db.schema.hasTable('user_mcp_servers')).toBe(false);
+    expect(await db.schema.hasTable('mcp_oauth_states')).toBe(false);
+    expect((await columnInfo(db, 'sessions')).map((c) => c.name)).not.toContain('mcp_servers');
 
     // User data survived the round trip; the batch applies again.
     expect((await db('users').where({ id: userId }).first()).github_id).toBe(42);
     await db.migrate.latest();
     expect((await db('users').where({ id: userId }).first()).admin).toBe(1);
+    expect(await db.schema.hasTable('user_mcp_servers')).toBe(true);
+    expect((await columnInfo(db, 'sessions')).map((c) => c.name)).toContain('mcp_servers');
   });
 });

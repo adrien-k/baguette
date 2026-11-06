@@ -3,6 +3,7 @@ import { isGlobalSession } from '../../shared/session-scope.js';
 import { combinePromptExtensions } from '../../shared/agent-prompts.js';
 import { repoAccessMode } from '../../shared/repo-origin.js';
 import { loadBaguetteAgentPrompt } from './baguette-config.js';
+import { sessionMcpPromptServers } from './user-mcp-runtime.js';
 
 const PR_METADATA_HINT_GITHUB =
   'Use **`UpdateSession`** to change label and description; for pull request title, URL, and description on GitHub, call **`PrRead`**.';
@@ -80,12 +81,38 @@ async function loadRoleAndEndOfTurn(role, snippets) {
   return { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt };
 }
 
+/**
+ * "When and why" guidance for the MCP servers this session's snapshot enables.
+ * Repository key: no SDK surfaces a model-visible per-server description, so
+ * the user's Settings → Integrations text rides on the session prompt. Rendered
+ * only when at least one enabled server actually has a description, and SSE
+ * entries are dropped for Pi turns because Pi never attaches them.
+ */
+async function userMcpSection(sessionRow, { db = null, agentSdk = null } = {}) {
+  if (!db) return '';
+  const servers = await sessionMcpPromptServers(db, sessionRow);
+  const described = servers
+    .filter((row) => row.description?.trim())
+    .filter((row) => agentSdk !== 'pi' || row.transport !== 'sse');
+  if (!described.length) return '';
+  const lines = described.map((row) => `- \`${row.name}\`: ${row.description.trim()}`);
+  return [
+    '## User MCP servers',
+    '',
+    `These MCP servers are attached to this session's agents (tool names like \`mcp__${described[0].name}__<tool>\`). The user wrote this guidance in Settings → Integrations about when and why to use them:`,
+    '',
+    ...lines,
+  ].join('\n');
+}
+
 export async function buildSystemPromptAppend(
   sessionRow,
-  { agent = null, repo = null, db = null } = {}
+  { agent = null, repo = null, db = null, agentSdk = null } = {}
 ) {
+  const mcpSection = await userMcpSection(sessionRow, { db, agentSdk });
   if (isGlobalSession(sessionRow)) {
-    return loadPrompt('global-prompt', {});
+    const prompt = await loadPrompt('global-prompt', {});
+    return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
   }
 
   const repoRow = await resolveRepoRow(sessionRow, { repo, db });
@@ -107,7 +134,8 @@ export async function buildSystemPromptAppend(
     templateVars.repo_config_prompt = repoConfigPrompt;
     templateVars.builder_end_of_turn_prompt = builderEndOfTurnPrompt;
   }
-  return loadPrompt(buildTemplate, templateVars);
+  const prompt = await loadPrompt(buildTemplate, templateVars);
+  return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
 }
 
 /** Uninterpolated base-prompt.md for Settings (readonly base) — github/default text. */
@@ -150,7 +178,7 @@ export async function loadFullSubagentPromptTemplate() {
 export async function buildReviewSystemPromptAppend(
   sessionRow,
   userReviewPrompt = '',
-  { repo = null, db = null } = {}
+  { repo = null, db = null, agentSdk = null } = {}
 ) {
   const sessionPath = sessionRow?.session_path ?? null;
   const repoRow = await resolveRepoRow(sessionRow, { repo, db });
@@ -158,12 +186,14 @@ export async function buildReviewSystemPromptAppend(
   const repoReview = sessionPath ? await loadBaguetteAgentPrompt(sessionPath, 'reviewer') : null;
   const combined = combinePromptExtensions(repoReview ?? '', userReviewPrompt?.trim() ?? '');
   const extra = combined ? `## Additional review instructions\n\n${combined}\n` : '';
-  return loadPrompt('review-prompt', {
+  const prompt = await loadPrompt('review-prompt', {
     user_review_prompt: extra,
     base_prompt: await loadPrompt('base-prompt', {
       session_pr_metadata_hint: snippets.prMetadataHint,
     }),
   });
+  const mcpSection = await userMcpSection(sessionRow, { db, agentSdk });
+  return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
 }
 
 /** Full review-prompt.md for Settings with base-prompt.md embedded (no user extension). */

@@ -516,6 +516,37 @@ describe('Loops service', () => {
       expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
     });
 
+    it('reuses the loop MCP snapshot instead of current defaults', async () => {
+      const [serverId] = await db('user_mcp_servers').insert({
+        user_id: aliceId,
+        name: 'docs',
+        transport: 'http',
+        url: 'https://mcp.example/docs',
+        enabled: 0,
+      });
+      const loop = await makeDueLoop({
+        mcp_servers: { [serverId]: true },
+      });
+      await db('user_mcp_servers').insert({
+        user_id: aliceId,
+        name: 'later',
+        transport: 'http',
+        url: 'https://mcp.example/later',
+        enabled: 1,
+      });
+
+      await app.service('loops').runDue();
+
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loop_id: loop.id,
+          mcp_servers: { [String(serverId)]: true },
+          mcp_servers_locked: true,
+        }),
+        expect.anything()
+      );
+    });
+
     it('skips disabled loops and loops that are not due yet', async () => {
       await app.service('loops').create(loopData(), params(aliceId)); // due in an hour
       const disabled = await makeDueLoop();

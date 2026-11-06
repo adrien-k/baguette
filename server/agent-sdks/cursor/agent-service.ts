@@ -22,6 +22,7 @@ import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
+import { loadEnabledMcpServersForSession } from '../../services/user-mcp-runtime.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
 import { toolListToCursorCustomTools } from './adapt-tools.js';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
@@ -323,6 +324,8 @@ ${body}`,
       }
       agentOptions.model = params?.length ? { id: modelId, params } : { id: modelId };
     }
+    const userMcp = await loadEnabledMcpServersForSession(this.app, session);
+    if (Object.keys(userMcp).length) agentOptions.mcpServers = userMcp;
     return agentOptions;
   }
 
@@ -408,7 +411,7 @@ ${body}`,
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent }
+      { agent, db: this.app.get('db') as never, agentSdk: CURSOR_AGENT_SDK_KEY }
     );
     return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',

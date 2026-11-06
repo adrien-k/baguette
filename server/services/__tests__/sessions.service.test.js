@@ -1931,6 +1931,40 @@ describe('Sessions service - find, get, create', () => {
       expect(session.base_branch).toBe('main');
     });
 
+    it('snapshots MCP server defaults and applies create overrides', async () => {
+      const [onId] = await db('user_mcp_servers').insert({
+        user_id: userId1,
+        name: 'docs',
+        transport: 'http',
+        url: 'https://mcp.example/docs',
+        enabled: 1,
+      });
+      const [offId] = await db('user_mcp_servers').insert({
+        user_id: userId1,
+        name: 'logs',
+        transport: 'sse',
+        url: 'https://mcp.example/logs',
+        enabled: 0,
+      });
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          mcp_servers: { [onId]: false, [offId]: true, 99999: true },
+        }),
+        params({ id: userId1 })
+      );
+      expect(session.mcp_servers).toEqual({
+        [String(onId)]: false,
+        [String(offId)]: true,
+      });
+
+      const patched = await app
+        .service('sessions')
+        .patch(session.id, { mcp_servers: { [onId]: true } }, params({ id: userId1 }));
+      expect(patched.mcp_servers[String(onId)]).toBe(true);
+      expect(patched.mcp_servers[String(offId)]).toBe(true);
+    });
+
     it('persists builder agent sdk and model at create', async () => {
       const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
       const cursorConfigId = await insertTestAgentConfig(db, userId1, {

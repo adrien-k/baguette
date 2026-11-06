@@ -18,6 +18,8 @@ import { getPrimaryBuilderAgent } from '../agents-db.js';
 import { loadOwnedAgentConfig, resolveAgentConfigIdForRepoSdk } from '../agent-config-resolver.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { resolveSessionPrStatus } from '../session-pr-status.js';
+import { parseMcpServersMap } from '../mcp-server-config.js';
+import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -34,6 +36,7 @@ const WRITABLE_FIELDS = [
   'model',
   'model_params',
   'plugins',
+  'mcp_servers',
   'schedule_type',
   'interval_minutes',
   'time_of_day',
@@ -271,6 +274,10 @@ function sessionDataFromLoop(loop) {
   if (loop.model_params) data.model_params = loop.model_params;
   const plugins = parseJsonArray(loop.plugins);
   if (plugins?.length) data.plugins = plugins;
+  if (loop.mcp_servers != null && loop.mcp_servers !== '') {
+    data.mcp_servers = parseMcpServersMap(loop.mcp_servers);
+    data.mcp_servers_locked = true;
+  }
   data.is_shared = !!loop.is_shared;
   return data;
 }
@@ -319,6 +326,25 @@ function serializePlugins(context) {
   if (Array.isArray(plugins)) context.data.plugins = JSON.stringify(plugins);
   else if (plugins === null) context.data.plugins = null;
   else if (plugins === undefined) delete context.data.plugins;
+  return context;
+}
+
+async function snapshotMcpServers(context) {
+  const userId = context.params.user?.id ?? context.data.user_id;
+  const db = context.app.get('db');
+  if (context.method === 'patch') {
+    if (!('mcp_servers' in context.data)) return context;
+    const existing = await db('loops').where({ id: context.id }).first();
+    context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+      override: context.data.mcp_servers,
+      existing: existing?.mcp_servers,
+    });
+    return context;
+  }
+  context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+    override: context.data.mcp_servers,
+    locked: false,
+  });
   return context;
 }
 
@@ -512,6 +538,10 @@ function formatLoop(loop) {
     ...loop,
     days_of_week: parseDaysOfWeek(loop.days_of_week),
     plugins: parseJsonArray(loop.plugins) ?? [],
+    mcp_servers:
+      loop.mcp_servers == null || loop.mcp_servers === ''
+        ? null
+        : parseMcpServersMap(loop.mcp_servers),
     enabled: !!loop.enabled,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
@@ -616,6 +646,7 @@ const loopsHooks = {
       resolveTiedSession,
       resolveRepo,
       serializePlugins,
+      snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizeCreate,
     ],
@@ -623,6 +654,7 @@ const loopsHooks = {
       requireOwnLoop,
       only(WRITABLE_FIELDS),
       serializePlugins,
+      snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizePatch,
     ],

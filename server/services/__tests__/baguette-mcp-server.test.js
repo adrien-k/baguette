@@ -294,6 +294,7 @@ describe('builder MCP tool registry', () => {
     expect(names).not.toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
     expect(names).toContain('UpdateSession');
+    expect(names).toContain('ConfigureMcpServer');
   });
 
   it('keeps GitHub PR tools for github remotes with a token', async () => {
@@ -367,6 +368,7 @@ describe('builder MCP tool registry', () => {
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
+    expect(names).toContain('ConfigureMcpServer');
   });
 
   it('plan and todo tool descriptions tell agents CreatePlan does not attach and to complete todos', async () => {

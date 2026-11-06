@@ -6,7 +6,7 @@ import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
-import { agentConfigsService, pluginsService } from '../feathers.js';
+import { agentConfigsService, mcpServersService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
@@ -164,6 +164,8 @@ export default function BuilderForm({
     { persistWhen: hasPromptText }
   );
   const [availablePlugins, setAvailablePlugins] = useState([]);
+  const [mcpCatalog, setMcpCatalog] = useState([]);
+  const [mcpEnabled, setMcpEnabled] = useState({});
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
   const [modeState, setModeState] = useState(editingLoop ? 'loop' : 'session');
@@ -336,9 +338,38 @@ export default function BuilderForm({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    mcpServersService
+      .find()
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res?.data ?? [];
+        setMcpCatalog(rows);
+        const stored = editingLoop?.mcp_servers;
+        const useStored = stored && typeof stored === 'object';
+        const next = {};
+        for (const server of rows) {
+          const key = String(server.id);
+          if (useStored) next[key] = stored[key] === true || stored[server.id] === true;
+          else next[key] = !!server.enabled;
+        }
+        setMcpEnabled(next);
+      })
+      .catch((err) => {
+        if (!cancelled) toastError('Failed to load MCP servers', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Reload defaults when opening a different loop. A new session form uses Settings toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingLoop?.id]);
+
   const isLoop = mode === 'loop';
   // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions = (!isGlobal && !isLoop) || availablePlugins.length > 0;
+  const hasMoreOptions =
+    (!isGlobal && !isLoop) || availablePlugins.length > 0 || mcpCatalog.length > 0;
   const canSubmit =
     !loopReadOnly &&
     !loading &&
@@ -353,6 +384,11 @@ export default function BuilderForm({
     setFiles([]);
     setFileError(null);
     setLoopName('');
+    if (!editingLoop) {
+      const next = {};
+      for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
+      setMcpEnabled(next);
+    }
   };
 
   const buildPayload = ({ createNewBranch = true }) => {
@@ -387,6 +423,7 @@ export default function BuilderForm({
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
+      mcpServers: mcpEnabled,
       agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
   };
@@ -416,6 +453,7 @@ export default function BuilderForm({
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
+        mcp_servers: payload.mcpServers ?? {},
         is_shared: payload.isShared,
         ...schedulePayload(schedule),
       };
@@ -433,6 +471,7 @@ export default function BuilderForm({
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
+      mcp_servers: payload.mcpServers ?? {},
       is_shared: payload.isShared,
       ...schedulePayload(schedule),
     };
@@ -795,6 +834,46 @@ export default function BuilderForm({
                     />
                   </div>
                 </>
+              )}
+
+              {mcpCatalog.length > 0 && (
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-secondary mb-1.5">
+                    MCP servers
+                  </label>
+                  <div className="space-y-1.5">
+                    {mcpCatalog.map((server) => (
+                      <label
+                        key={server.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!mcpEnabled[String(server.id)]}
+                          onChange={(e) =>
+                            setMcpEnabled((prev) => ({
+                              ...prev,
+                              [String(server.id)]: e.target.checked,
+                            }))
+                          }
+                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                        />
+                        <span className="text-sm text-secondary leading-tight">
+                          <span className="font-medium text-heading">{server.name}</span>
+                          <span className="block text-xs font-normal text-faint mt-0.5">
+                            {server.url}
+                            {server.transport === 'sse' ? ' · not attached on Pi' : ''}
+                          </span>
+                          {server.description ? (
+                            <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
+                              {server.description}
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {availablePlugins.length > 0 && (

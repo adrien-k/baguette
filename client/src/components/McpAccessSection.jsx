@@ -58,8 +58,8 @@ export default function McpAccessSection({
 
   return (
     <SettingsSection
-      title="External MCP access"
-      description="Connect external agents (Cursor, Claude Desktop, etc.) to Baguette over HTTP MCP. Tools include listing repos, branches, models, sessions, and creating sessions."
+      title="MCP access"
+      description="Inbound access: let external agents (Cursor, Claude Desktop, etc.) call Baguette over HTTP MCP. Tools include listing repos, branches, models, sessions, and creating sessions."
     >
       <p className="text-xs text-faint">
         Status:{' '}

@@ -43,6 +43,8 @@ import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
+import { parseMcpServersMap } from '../mcp-server-config.js';
+import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
 import {
   attachOwners,
   attachViewerLastViewed,
@@ -2295,6 +2297,7 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
     is_global: Boolean(session.is_global),
+    mcp_servers: parseMcpServersMap(session.mcp_servers),
     is_shared: Boolean(session.is_shared),
     codeserver_url:
       absoluteSessionPath && !isGlobalSession(session)
@@ -2352,6 +2355,27 @@ function serializePlugins(context) {
   } else if (plugins == null) {
     delete context.data.plugins;
   }
+  return context;
+}
+
+async function snapshotMcpServers(context) {
+  const userId = context.params.user?.id ?? context.data.user_id;
+  const db = context.app.get('db');
+  if (context.method === 'patch') {
+    if (context.data.mcp_servers === undefined) return context;
+    const existing = await db('sessions').where({ id: context.id }).first();
+    context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+      override: context.data.mcp_servers,
+      existing: existing?.mcp_servers,
+    });
+    return context;
+  }
+  const requestedLock = context.data.mcp_servers_locked === true;
+  delete context.data.mcp_servers_locked;
+  context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+    override: context.data.mcp_servers,
+    locked: requestedLock && !context.params.provider,
+  });
   return context;
 }
 
@@ -2653,6 +2677,7 @@ const sessionsHooks = {
       validateSessionCreate,
       assertAgentConfigOnCreate,
       serializePlugins,
+      snapshotMcpServers,
       extractInitialFiles,
       normalizeModelFields,
       stashBuilderAgentFieldsOnCreate,
@@ -2664,6 +2689,7 @@ const sessionsHooks = {
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
+      snapshotMcpServers,
       normalizeModelFields,
     ],
     stop: [resolveSessionFromData],

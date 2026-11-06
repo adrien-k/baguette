@@ -178,6 +178,7 @@ describe('cursorToolKindFromName', () => {
       StartPlan: 'mcp',
       ListPlans: 'mcp',
       CompletePlan: 'mcp',
+      ConfigureMcpServer: 'mcp',
       mcp__baguette__create_issue: 'mcp',
       mcp__baguette__AskUserQuestions: 'ask_user',
       SomethingUnknown: 'generic',

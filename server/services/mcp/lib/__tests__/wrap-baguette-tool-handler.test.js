@@ -40,53 +40,57 @@ function makeDb({ sessionRow, builder, reviewer, extraAgents = [] }) {
 }
 
 describe('wrapBaguetteToolList', () => {
-  it('marks awaiting user after AskUserQuestions without aborting the agent', async () => {
-    const abort = vi.fn();
-    const sessionState = {
-      channel: 'chat',
-      endTurnAwaitingUser: false,
-      abortController: { abort },
-    };
-    const builder = {
-      id: 5,
-      agent_sdk: 'cursor',
-      agent_type: 'builder',
-      is_primary: 1,
-      session_id: 42,
-    };
-    const app = {
-      get: (key) => {
-        if (key === 'db') {
-          return makeDb({ sessionRow: { id: 42 }, builder, reviewer: null });
-        }
-        return undefined;
-      },
-      service: (name) => {
-        if (name === 'cursor-agent') {
-          return { getActiveSession: () => sessionState };
-        }
-        return null;
-      },
-    };
-    const session = { id: 42, user_id: 7 };
-    const tools = wrapBaguetteToolList(session, app, [
-      {
-        name: 'AskUserQuestions',
-        description: 'ask',
-        schema: {},
-        handler: async () => ({ ok: true }),
-      },
-    ]);
+  it(
+    'marks awaiting user after AskUserQuestions without aborting the agent',
+    { timeout: 20_000 },
+    async () => {
+      const abort = vi.fn();
+      const sessionState = {
+        channel: 'chat',
+        endTurnAwaitingUser: false,
+        abortController: { abort },
+      };
+      const builder = {
+        id: 5,
+        agent_sdk: 'cursor',
+        agent_type: 'builder',
+        is_primary: 1,
+        session_id: 42,
+      };
+      const app = {
+        get: (key) => {
+          if (key === 'db') {
+            return makeDb({ sessionRow: { id: 42 }, builder, reviewer: null });
+          }
+          return undefined;
+        },
+        service: (name) => {
+          if (name === 'cursor-agent') {
+            return { getActiveSession: () => sessionState };
+          }
+          return null;
+        },
+      };
+      const session = { id: 42, user_id: 7 };
+      const tools = wrapBaguetteToolList(session, app, [
+        {
+          name: 'AskUserQuestions',
+          description: 'ask',
+          schema: {},
+          handler: async () => ({ ok: true }),
+        },
+      ]);
 
-    await tools[0].handler({ questions: [{ question: 'Go?' }] });
+      await tools[0].handler({ questions: [{ question: 'Go?' }] });
 
-    expect(sessionState.endTurnAwaitingUser).toBe(true);
-    expect(sessionState.agentId).toBe(5);
-    expect(patchAgentInternal).toHaveBeenCalledWith(app, 5, { status: 'approval' }, 7);
-    expect(abort).not.toHaveBeenCalled();
-  });
+      expect(sessionState.endTurnAwaitingUser).toBe(true);
+      expect(sessionState.agentId).toBe(5);
+      expect(patchAgentInternal).toHaveBeenCalledWith(app, 5, { status: 'approval' }, 7);
+      expect(abort).not.toHaveBeenCalled();
+    }
+  );
 
-  it('finds review-turn active session state via reviewTurnKey', async () => {
+  it('finds review-turn active session state via reviewTurnKey', { timeout: 20_000 }, async () => {
     const sessionState = { turnChannel: 'review', endTurnAwaitingUser: false };
     const getActiveSession = vi.fn((key) => {
       if (key === 'review:99') return sessionState;

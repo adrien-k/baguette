@@ -54,6 +54,10 @@ vi.mock('child_process', () => ({
   execFile: vi.fn((_cmd, _args, _opts, cb) => cb(null, { stdout: '', stderr: '' })),
 }));
 
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(async () => [{ address: '1.1.1.1', family: 4 }]),
+}));
+
 // ─── Imports ──────────────────────────────────────────────────────────────────
 
 import path from 'path';
@@ -256,6 +260,34 @@ describe('ClaudeAgentService', () => {
         model: 'sonnet',
       });
       expect(options.resume).toBeUndefined();
+    });
+
+    it('merges enabled user MCP servers beside the baguette server', async () => {
+      const { encrypt } = await import('../../../lib/encrypt.js');
+      const [serverId] = await db('user_mcp_servers').insert({
+        user_id: BASE_USER.id,
+        name: 'docs',
+        transport: 'http',
+        url: 'https://mcp.example/mcp',
+        enabled: 0,
+        bearer_token_encrypted: encrypt('secret-token'),
+      });
+      await db('sessions')
+        .where({ id: BASE_SESSION_ID })
+        .update({ mcp_servers: JSON.stringify({ [serverId]: true }) });
+      const service = new ClaudeAgentService();
+      service.setup(mockApp);
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      const options = await service.buildQueryOptions(sessionRow, {
+        claudeEnv: { ANTHROPIC_API_KEY: 'key' },
+        model: 'sonnet',
+      });
+      expect(options.mcpServers.docs).toEqual({
+        type: 'http',
+        url: 'https://mcp.example/mcp',
+        headers: { Authorization: 'Bearer secret-token' },
+      });
+      expect(options.mcpServers.baguette).toEqual({});
     });
   });
 

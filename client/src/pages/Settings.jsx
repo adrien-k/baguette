@@ -20,6 +20,7 @@ import { useRepoContext } from '../context/RepoContext.jsx';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { repoDisplayName, repoAccessModeLabel } from '../utils/repoDisplayName.js';
 import McpAccessSection from '../components/McpAccessSection.jsx';
+import McpServersSection from '../components/McpServersSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import { SecretsTab, SkillsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
@@ -219,8 +220,9 @@ function RepositoriesTab({ settings, onSave }) {
               }}
             />
             <p className="mt-1 text-xs text-faint">
-              Fine-grained or classic PAT with access to the repositories you use in Baguette. Leave
-              blank and save to clear a stored token.
+              Fine-grained or classic PAT with access to the repositories you use in Baguette. To
+              clear a stored token, focus the field and save with it emptied (type a character,
+              delete it), then save.
             </p>
           </div>
           <SettingsSaveRow
@@ -441,7 +443,7 @@ function IntegrationsTab({ settings, onRefreshSettings }) {
   return (
     <div>
       <SettingsTabHeader title="Integrations">
-        Connect MCP clients for remote access to this Baguette account.
+        Let external agents call this account, and add MCP servers your agents can call.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -451,6 +453,7 @@ function IntegrationsTab({ settings, onRefreshSettings }) {
           endpoint={settings?.mcp_endpoint}
           onTokenChange={onRefreshSettings}
         />
+        <McpServersSection />
       </div>
     </div>
   );

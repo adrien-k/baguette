@@ -90,3 +90,4 @@ export const sessionTodosService = createService('session-todos');
 export const sessionPlansService = createService('session-plans');
 export const agentModelPresetsService = createService('agent-model-presets');
 export const agentConfigsService = createService('agent-configs');
+export const mcpServersService = createService('mcp-servers');
