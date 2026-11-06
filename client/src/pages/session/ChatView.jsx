@@ -257,16 +257,24 @@ export default function ChatView({
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
   const chatSessionId = session?.id;
+  const chatSessionIdRef = useRef(chatSessionId);
+  useEffect(() => {
+    chatSessionIdRef.current = chatSessionId;
+  }, [chatSessionId]);
 
   useEffect(() => {
     if (!chatSessionId) {
       setTiedLoops([]);
       return;
     }
+    let cancelled = false;
     const load = () => {
+      const sessionId = chatSessionId;
       loopsService
-        .find({ query: { session_id: chatSessionId, single_session: true, $limit: 50 } })
-        .then((d) => setTiedLoops(d.data ?? d))
+        .find({ query: { session_id: sessionId, single_session: true, $limit: 50 } })
+        .then((d) => {
+          if (!cancelled) setTiedLoops(d.data ?? d);
+        })
         .catch(() => {});
     };
     load();
@@ -274,6 +282,7 @@ export default function ChatView({
     loopsService.on('patched', load);
     loopsService.on('removed', load);
     return () => {
+      cancelled = true;
       loopsService.off('created', load);
       loopsService.off('patched', load);
       loopsService.off('removed', load);
@@ -282,16 +291,24 @@ export default function ChatView({
 
   const reloadQueuedMessages = useCallback(() => {
     if (!chatSessionId) return;
+    const sessionId = chatSessionId;
     queuedMessagesService
-      .find({ query: { session_id: chatSessionId, $sort: { created_at: 1 }, $limit: 50 } })
-      .then((res) => setQueue(res.data ?? res))
+      .find({ query: { session_id: sessionId, $sort: { created_at: 1 }, $limit: 50 } })
+      .then((res) => {
+        if (chatSessionIdRef.current !== sessionId) return;
+        setQueue(res.data ?? res);
+      })
       .catch(() => {});
   }, [chatSessionId]);
 
   useRefetchOnSseReconnect(reloadQueuedMessages, Boolean(chatSessionId));
 
   useEffect(() => {
-    if (!chatSessionId) return;
+    if (!chatSessionId) {
+      setQueue([]);
+      return;
+    }
+    setQueue([]);
     reloadQueuedMessages();
 
     const onCreated = (item) => {

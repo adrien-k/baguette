@@ -130,7 +130,7 @@ export default function Session() {
     const parsed = Number(routeSessionId);
     return Number.isFinite(parsed) ? parsed : null;
   }, [isNewSessionRoute, routeSessionId]);
-  const { agents, primaryBuilder, reviewer } = useSessionAgents(sessionId);
+  const { agents, loading: agentsLoading, primaryBuilder, reviewer } = useSessionAgents(sessionId);
   const agentParam = searchParams.get('agent');
   const activeAgent = useMemo(() => {
     if (!agents.length) return null;
@@ -146,7 +146,9 @@ export default function Session() {
     loadMore,
     loadingMore,
     hasMore,
-  } = useGetMessages(sessionId, activeAgent?.id ?? null);
+  } = useGetMessages(sessionId, activeAgent?.id ?? null, {
+    skip: Boolean(sessionId) && agentsLoading && agents.length === 0,
+  });
   const chatViewOpen = activeView === 'chat';
   const agentLabelById = useMemo(() => {
     const map = new Map();
@@ -316,7 +318,8 @@ export default function Session() {
   // its id) lags behind the URL for a few renders. Treat that window as loading so the
   // chat shows a loader instead of the previous session's conversation.
   const switchingSession = !!sessionId && !isNewSessionRoute && session?.id !== sessionId;
-  const chatLoading = switchingSession || messagesLoading;
+  const agentsPending = Boolean(sessionId) && agentsLoading && agents.length === 0;
+  const chatLoading = switchingSession || agentsPending || messagesLoading;
 
   // If loadMore produced only hidden/filtered messages, keep pulling until something visible appears
   const activeViewTabRef = useRef(null);
@@ -335,6 +338,11 @@ export default function Session() {
 
   useEffect(() => {
     setSession(null);
+    setError(null);
+    setShowPushModal(false);
+    setPushRequest(null);
+    setActiveTaskModal(null);
+    setPendingTaskConfirm(null);
   }, [routeSessionId]);
 
   useEffect(() => {
@@ -1250,6 +1258,7 @@ export default function Session() {
               session &&
               activeView === 'chat' && (
                 <ChatView
+                  key={session.id}
                   messages={messages}
                   loading={chatLoading}
                   loadMore={loadMore}
@@ -1283,6 +1292,7 @@ export default function Session() {
               session &&
               activeView === 'review' && (
                 <ReviewView
+                  key={session.id}
                   session={session}
                   readonly={isReadonly}
                   issues={sessionIssues}
@@ -1297,6 +1307,7 @@ export default function Session() {
               session &&
               activeView === 'diff' && (
                 <DiffView
+                  key={session.id}
                   session={session}
                   selectedCommit={selectedDiffCommit}
                   commits={branchCommits}
@@ -1312,7 +1323,7 @@ export default function Session() {
                   diffHasFetched={sessionDiffHasFetched}
                   onRefreshDiff={refreshSessionDiff}
                   fileByFile={sessionDiffFileByFile}
-                  changedFiles={diffFiles}
+                  changedFiles={diffFiles ?? []}
                   selectedFile={diffSelectorFile}
                   onSelectedFileChange={setSelectedDiffFile}
                   scrollToFile={scrollToDiffFile}
@@ -1330,6 +1341,7 @@ export default function Session() {
               session &&
               activeView === 'preview' && (
                 <PreviewView
+                  key={session.id}
                   session={session}
                   readonly={isReadonly}
                   onViewLogs={handleViewTaskLogs}
@@ -1339,13 +1351,20 @@ export default function Session() {
               !isNewSessionRoute &&
               !awaitingSession &&
               session &&
-              activeView === 'plan' && <PlanView session={session} readonly={isReadonly} />}
+              activeView === 'plan' && (
+                <PlanView key={session.id} session={session} readonly={isReadonly} />
+              )}
             {!isLoopsView &&
               !isNewSessionRoute &&
               !awaitingSession &&
               session &&
               activeView === 'details' && (
-                <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />
+                <DetailsView
+                  key={session.id}
+                  session={session}
+                  readonly={isReadonly}
+                  onSessionUpdate={setSession}
+                />
               )}
           </div>
 
@@ -1382,6 +1401,7 @@ export default function Session() {
               className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-brand/50 active:bg-brand/70"
             />
             <SessionSidePanel
+              key={sessionId}
               sidePanelTab={sidePanelTab}
               onSidePanelTabChange={setSidePanelTab}
               onClose={hideSidePanel}

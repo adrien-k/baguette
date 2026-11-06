@@ -227,20 +227,37 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
   const [startingService, setStartingService] = useState(null);
   const [stoppingTaskId, setStoppingTaskId] = useState(null);
 
-  const refreshStatus = useCallback(() => {
-    if (!session?.id) return;
-    sessionsService
-      .previewStatus({ id: session.id })
-      .then((res) => setServices(res.services ?? []))
-      .catch((err) => toastError('Failed to load preview status', err))
-      .finally(() => setLoading(false));
-  }, [session]);
+  const refreshStatus = useCallback(
+    (isCurrent = () => true) => {
+      if (!session?.id) return;
+      const id = session.id;
+      sessionsService
+        .previewStatus({ id })
+        .then((res) => {
+          if (!isCurrent()) return;
+          setServices(res.services ?? []);
+        })
+        .catch((err) => {
+          if (isCurrent()) toastError('Failed to load preview status', err);
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        });
+    },
+    [session]
+  );
 
   useEffect(() => {
+    let cancelled = false;
+    const isCurrent = () => !cancelled;
     setLoading(true);
-    refreshStatus();
-    const interval = setInterval(refreshStatus, 4000);
-    return () => clearInterval(interval);
+    setServices([]);
+    refreshStatus(isCurrent);
+    const interval = setInterval(() => refreshStatus(isCurrent), 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [refreshStatus]);
 
   const handleStart = async (serviceName) => {

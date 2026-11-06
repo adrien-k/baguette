@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from 'feathers';
+
+// This file pulls in the full agent-sdk plugin graph, so its per-test setup
+// runs long. Under full-suite parallelism that can exceed the 5s default.
+vi.setConfig({ testTimeout: 20000 });
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';

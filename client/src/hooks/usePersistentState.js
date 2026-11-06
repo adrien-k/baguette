@@ -11,7 +11,7 @@ function readFromStorage(key) {
 
 export function usePersistentState(storageKey) {
   const [store, setStore] = useState(() => readFromStorage(storageKey));
-  const prevKeyRef = useRef(storageKey);
+  const [boundKey, setBoundKey] = useState(storageKey);
   // persistWhen gates by field key, so any write persists a snapshot that respects all gates of
   // its storage key, not just the gate of the field being written. Gates are scoped per storage
   // key and re-registered by makeField on every render, so a storage-key change never inherits
@@ -19,13 +19,14 @@ export function usePersistentState(storageKey) {
   const gatesRef = useRef({});
   const setterCacheRef = useRef(new Map());
 
+  if (boundKey !== storageKey) {
+    setBoundKey(storageKey);
+    setStore(readFromStorage(storageKey));
+  }
+
   useEffect(() => {
-    if (storageKey !== prevKeyRef.current) {
-      prevKeyRef.current = storageKey;
-      setterCacheRef.current.clear();
-      setStore(readFromStorage(storageKey));
-    }
-  }, [storageKey]);
+    setterCacheRef.current.clear();
+  }, [boundKey]);
 
   // Returns [value, setter] — like useState but backed by localStorage under storageKey.fieldKey.
   // `options.persistWhen(store)` gates persistence: while it returns false the value still works

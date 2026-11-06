@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { agentsService, sessionsService, sessionIssuesService, tasksService } from '../feathers.js';
 import { applyAgentPatchToSession } from '../utils/sessionAgents.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
+import { sameScopeId, scopeKeyOf } from '../utils/boundScope.js';
+import { useScopeRequest } from './useScopeRequest.js';
 
 const normalizeId = (sessionId) =>
   sessionId == null || sessionId === '' || sessionId === 'new' ? null : sessionId;
@@ -27,6 +29,9 @@ function paginateTotal(res) {
  * fetched alongside the session). Updates in realtime (patched, removed, task/issue counts).
  */
 export function useGetSession(sessionId) {
+  const requestedId = normalizeId(sessionId);
+  const requestedKey = requestedId == null ? '' : scopeKeyOf(requestedId);
+  const { begin, isKeyCurrent } = useScopeRequest(requestedKey);
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
   const [loadedFor, setLoadedFor] = useState(null);
@@ -44,7 +49,7 @@ export function useGetSession(sessionId) {
         }),
       ]);
       setSession((prev) => {
-        if (!prev || prev.id !== id) return prev;
+        if (!prev || !sameScopeId(prev.id, id)) return prev;
         return {
           ...prev,
           open_issues_count: paginateTotal(issuesRes),
@@ -64,61 +69,68 @@ export function useGetSession(sessionId) {
     (_opts) => {
       const id = normalizeId(sessionId);
       if (!id) return;
+      const key = scopeKeyOf(id);
+      const isCurrent = begin(key);
       sessionsService
         .get(id)
         .then((s) => {
+          if (!isCurrent()) return;
           setSession(s);
           setError(null);
           setLoadedFor(id);
           void refreshCounts(s.id);
         })
         .catch((err) => {
+          if (!isCurrent()) return;
           setError(err);
           setSession(null);
           setLoadedFor(id);
         });
     },
-    [sessionId, refreshCounts]
+    [sessionId, refreshCounts, begin]
   );
 
-  useRefetchOnSseReconnect(refetch, normalizeId(sessionId) != null);
+  useRefetchOnSseReconnect(refetch, requestedId != null);
 
   useEffect(() => {
     const id = normalizeId(sessionId);
     if (!id) {
+      begin('');
       setError(null);
       return;
     }
+    const key = scopeKeyOf(id);
+    const isCurrent = begin(key);
     let cancelled = false;
 
     sessionsService
       .get(id)
       .then((s) => {
-        if (cancelled) return;
+        if (cancelled || !isCurrent()) return;
         setSession(s);
         setError(null);
         setLoadedFor(id);
         void refreshCounts(s.id);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (cancelled || !isCurrent()) return;
         setError(err);
         setSession(null);
         setLoadedFor(id);
       });
 
     const onPatched = (updated) => {
-      if (String(updated.id) !== String(id)) return;
+      if (!sameScopeId(updated.id, id) || !isKeyCurrent(key)) return;
       setSession((prev) => mergeSessionPatch(prev, updated));
     };
     const onRemoved = (removed) => {
-      if (String(removed.id) !== String(id)) return;
+      if (!sameScopeId(removed.id, id) || !isKeyCurrent(key)) return;
       setSession(null);
       setLoadedFor(null);
     };
 
     const onAgentPatched = (agent) => {
-      if (String(agent?.session_id) !== String(id)) return;
+      if (!sameScopeId(agent?.session_id, id) || !isKeyCurrent(key)) return;
       setSession((prev) => applyAgentPatchToSession(prev, agent));
     };
 
@@ -132,13 +144,13 @@ export function useGetSession(sessionId) {
       sessionsService.off('removed', onRemoved);
       agentsService.off('patched', onAgentPatched);
     };
-  }, [sessionId, refreshCounts]);
+  }, [sessionId, refreshCounts, begin, isKeyCurrent]);
 
   useEffect(() => {
     const currentId = sessionIdRef.current;
     if (!currentId) return;
 
-    const forThisSession = (row) => String(row?.session_id) === String(currentId);
+    const forThisSession = (row) => sameScopeId(row?.session_id, currentId);
     const onIssueChange = (row) => {
       if (!forThisSession(row)) return;
       void refreshCounts(Number(currentId));
@@ -165,10 +177,12 @@ export function useGetSession(sessionId) {
     };
   }, [session?.id, refreshCounts]);
 
-  const loading = Boolean(normalizeId(sessionId)) && loadedFor !== normalizeId(sessionId);
-  const requestedId = normalizeId(sessionId);
-  const matched =
-    Boolean(session) && requestedId != null && String(session.id) === String(requestedId);
+  const loading = Boolean(requestedId) && !sameScopeId(loadedFor, requestedId);
+  const matched = Boolean(session) && requestedId != null && sameScopeId(session.id, requestedId);
 
-  return { session: matched ? session : null, loading, error };
+  return {
+    session: matched ? session : null,
+    loading,
+    error: sameScopeId(loadedFor, requestedId) ? error : null,
+  };
 }
