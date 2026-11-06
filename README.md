@@ -37,6 +37,27 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **[Kamal guide (VPS)](docs/deployment/kamal.md)** — Deploy to any Ubuntu VPS (Hetzner, EC2, DigitalOcean, etc.) using [Kamal](https://kamal-deploy.org/). Includes a GitHub Actions workflow for manual deploys via workflow_dispatch.
 - **[AWS EC2 + CloudFormation](docs/deployment/aws-ec2-kamal.md)** — Provision EC2, Route 53, and acme.sh for Kamal with stack outputs for GitHub Actions CI variables.
 
+## Advanced settings
+
+The env vars below only matter once Baguette is exposed beyond `localhost` — leave them at their defaults for local development.
+
+### What is IP detection used for?
+
+Baguette records the client IP of each request and uses it for three things:
+
+- **Rate limiting sign-in attempts** — failed bootstrap-password and passkey attempts are throttled per client IP.
+- **Last sign-in visibility** — **Admin → Users** shows each account's last-used IP and country.
+- **IP-public previews** — for previews used outside a browser (e.g. Expo Go), the IP that started the dev server can use the preview without signing in.
+
+The IP is read from `X-Forwarded-For` right-to-left: every proxy in front of Baguette appends the address it saw, so only the rightmost `TRUST_PROXY_HOPS` entries cannot be forged by the client. With the default of 1, a header value supplied directly by the browser is ignored.
+
+| Variable             | Description                                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRUST_PROXY_HOPS`   | Reverse-proxy hops between the internet and Baguette trusted to set `X-Forwarded-For` (default: `1` — one proxy that appends the client address). Set `0` when Baguette is exposed directly with no proxy             |
+| `TRUST_EDGE_COUNTRY` | Optional. Set `1` only when Baguette runs behind Cloudflare, CloudFront, or App Engine, which set the client-country header. Default off — Admin → Users last-used country comes from a geoip lookup of the client IP |
+
+Both defaults match the documented deployments ([Fly.io](docs/deployment/fly.io.md), [Kamal](docs/deployment/kamal.md), [AWS EC2](docs/deployment/aws-ec2-kamal.md)); see those guides for the exact commands.
+
 ## Local development
 
 ### Prerequisites
@@ -61,18 +82,14 @@ npm install
 cp .env.example .env
 ```
 
-| Variable             | Description                                                                                                                                                                                                           |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOOTSTRAP_PASSWORD` | Optional. One-time first-visitor gate. Env-only; never written to disk. Set this on public hosts so a stranger cannot claim the instance.                                                                             |
-| `DATA_DIR`           | Data directory for the SQLite DB, `encryption.key`, repo clones, and worktrees (default: `~/.baguette`)                                                                                                               |
-| `PUBLIC_HOST`        | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`)                                                         |
-| `PORT`               | Express server port (default: `3000`)                                                                                                                                                                                 |
-| `TRUST_PROXY_HOPS`   | Reverse-proxy hops between the internet and Baguette trusted to set `X-Forwarded-For` (default: `1` — one proxy that appends the client address). Set `0` when Baguette is exposed directly with no proxy             |
-| `TRUST_EDGE_COUNTRY` | Optional. Set `1` only when Baguette runs behind Cloudflare, CloudFront, or App Engine, which set the client-country header. Default off — Admin → Users last-used country comes from a geoip lookup of the client IP |
+| Variable             | Description                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOTSTRAP_PASSWORD` | Optional. One-time first-visitor gate. Env-only; never written to disk. Set this on public hosts so a stranger cannot claim the instance.                     |
+| `DATA_DIR`           | Data directory for the SQLite DB, `encryption.key`, repo clones, and worktrees (default: `~/.baguette`)                                                       |
+| `PUBLIC_HOST`        | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`) |
+| `PORT`               | Express server port (default: `3000`)                                                                                                                         |
 
 If `encryption.key` is missing, first boot generates a key (file mode `0600`). Losing that file makes cookies and encrypted secrets unreadable — Baguette never regenerates over an existing file.
-
-Optional **live agent-SDK tests** (`*.live.test.js`) call a real model and skip unless set. Copy the `SDK_TESTS_*` block from `.env.example` (Claude / Cursor / Pi keys + model; `SDK_TESTS_MOCK=1` for the mock SDK). Do not set them in CI unless you intend to pay for those calls. The `agents-integration-test` Baguette task runs Pi, Claude, and Cursor live tests on cheap OpenCode Go / Cursor models using those secrets.
 
 3. Run database migrations:
 
