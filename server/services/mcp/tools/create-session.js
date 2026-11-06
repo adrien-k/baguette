@@ -4,7 +4,12 @@ import { getSdkPlugin } from '../../../agent-sdks/registry.js';
 import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
+import { normalizeSubagentDefaultMode } from '../../../../shared/subagent-default-mode.js';
 import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
+import {
+  agentCreatedModelClause,
+  agentCreatedModelSchemaFields,
+} from '../lib/agent-created-model-fields.js';
 import { ok, fail } from '../lib/result.js';
 
 /** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
@@ -19,16 +24,22 @@ export function resolveCreateSessionBaseBranch(baseBranch, branch) {
   return { base_branch: resolved };
 }
 
+function createSessionDescription(mode) {
+  return (
+    'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
+    'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch. ' +
+    `${agentCreatedModelClause(mode, 'session')} ` +
+    'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
+    'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).'
+  );
+}
+
 export function createCreateSessionTool(ctx) {
-  const { app, userId, userParams, requireRepoAccess, loadRepoWithKeys } = ctx;
+  const { app, userId, userParams, user, requireRepoAccess, loadRepoWithKeys } = ctx;
+  const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
   return {
     name: 'CreateSession',
-    description:
-      'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
-      'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch. ' +
-      'Optional preset_model_id from ListPresetModels, else Settings → Agent session defaults. ' +
-      'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
-      'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).',
+    description: createSessionDescription(mode),
     schema: {
       repo_id: z
         .number()
@@ -50,11 +61,7 @@ export function createCreateSessionTool(ctx) {
         .optional()
         .describe('Start a global session in the shared repos folder (no git/PR tools)'),
       initial_prompt: z.string().describe('Initial user prompt for the agent'),
-      preset_model_id: z
-        .number()
-        .int()
-        .optional()
-        .describe('Preset model id from ListPresetModels'),
+      ...agentCreatedModelSchemaFields(mode),
       create_new_branch: z
         .boolean()
         .optional()
@@ -74,6 +81,9 @@ export function createCreateSessionTool(ctx) {
       is_global = false,
       initial_prompt,
       preset_model_id,
+      agent_config_id,
+      model,
+      model_params,
       create_new_branch = true,
       branch_name,
       auto_push = true,
@@ -116,7 +126,11 @@ export function createCreateSessionTool(ctx) {
       try {
         resolved = await resolveMcpBuilderModel(db, userId, {
           preset_model_id: preset_model_id ?? null,
+          agent_config_id: agent_config_id ?? null,
+          model: model ?? null,
+          model_params: model_params ?? null,
           repo_id: is_global ? null : repo_id,
+          app,
         });
       } catch (err) {
         return fail(err.message);

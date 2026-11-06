@@ -487,6 +487,17 @@ describe('Users service - agent defaults patch', () => {
     expect(updated.agent_default_model.model).toBe('kimi-k3');
     expect(updated.agent_default_config_id).toBe(configId);
   });
+
+  it('accepts any as the agent-created model policy and rejects unknown modes', async () => {
+    const updated = await app
+      .service('users')
+      .patch(user1.id, { subagent_default_mode: 'any' }, params(user1));
+    expect(updated.subagent_default_mode).toBe('any');
+    expect(updated.subagent_default_config_id).toBeNull();
+    await expect(
+      app.service('users').patch(user1.id, { subagent_default_mode: 'free' }, params(user1))
+    ).rejects.toThrow(/inherit, config, preset, or any/);
+  });
 });
 
 describe('Users service - setAdmin', () => {

@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import {
-  SUBAGENT_DEFAULT_CONFIG,
-  SUBAGENT_DEFAULT_PRESET,
-  normalizeSubagentDefaultMode,
-} from '../../../../shared/subagent-default-mode.js';
+import { normalizeSubagentDefaultMode } from '../../../../shared/subagent-default-mode.js';
 import { mcpAwaitTimeoutMinutes } from '../../../../shared/mcp-await-timeout.js';
+import {
+  agentCreatedModelClause,
+  agentCreatedModelSchemaFields,
+} from '../lib/agent-created-model-fields.js';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 
@@ -19,27 +19,11 @@ function startSubagentBaseDescription() {
 }
 
 function startSubagentDescription(mode) {
-  const base = startSubagentBaseDescription();
-  if (mode === SUBAGENT_DEFAULT_PRESET) {
-    return (
-      base +
-      'Pass preset_model_id from ListPresetModels (required: Settings → Agent subagent default is Preset).'
-    );
-  }
-  const follows =
-    'Model follows Settings → Agent subagent default: ' +
-    (mode === SUBAGENT_DEFAULT_CONFIG
-      ? 'the configured subagent agent configuration and model.'
-      : 'inherit the session primary builder configuration and model.');
-  return (
-    base +
-    follows +
-    ' Pass preset_model_id from ListPresetModels to override the model for this subagent.'
-  );
+  return `${startSubagentBaseDescription()}${agentCreatedModelClause(mode, 'subagent')}`;
 }
 
 function startSubagentSchema(mode) {
-  const base = {
+  return {
     session_id: z.number().int().describe('Target session id'),
     name: z.string().describe('Display name for the new subagent'),
     initial_prompt: z.string().describe('First user message that starts the agent turn'),
@@ -55,25 +39,7 @@ function startSubagentSchema(mode) {
       .describe(
         'When true, Baguette posts this subagent’s result back to you as a new user message when its turn finishes. Use with attach: false if you will end your turn before the subagent finishes; skip it if you will AwaitSubagent yourself.'
       ),
-  };
-  if (mode === SUBAGENT_DEFAULT_PRESET) {
-    return {
-      ...base,
-      preset_model_id: z
-        .number()
-        .int()
-        .describe('Preset id from ListPresetModels (required when subagent default is Preset).'),
-    };
-  }
-  return {
-    ...base,
-    preset_model_id: z
-      .number()
-      .int()
-      .optional()
-      .describe(
-        'Optional preset id from ListPresetModels; overrides the subagent default model for this subagent.'
-      ),
+    ...agentCreatedModelSchemaFields(mode),
   };
 }
 
@@ -86,7 +52,17 @@ export function createStartSubagentTool(ctx) {
     description: startSubagentDescription(mode),
     schema: startSubagentSchema(mode),
     handler: async (args) => {
-      const { session_id, name, initial_prompt, preset_model_id, attach, notify_parent } = args;
+      const {
+        session_id,
+        name,
+        initial_prompt,
+        preset_model_id,
+        agent_config_id,
+        model,
+        model_params,
+        attach,
+        notify_parent,
+      } = args;
       const waitForCompletion = attach !== false;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
       if (error) return fail(error);
@@ -100,6 +76,9 @@ export function createStartSubagentTool(ctx) {
             initial_prompt,
             ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
             ...(preset_model_id != null ? { preset_model_id } : {}),
+            ...(agent_config_id != null ? { agent_config_id } : {}),
+            ...(model != null ? { model } : {}),
+            ...(model_params != null ? { model_params } : {}),
             ...(notify_parent === true ? { notify_parent: true } : {}),
             wait_for_completion: waitForCompletion,
           },

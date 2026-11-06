@@ -153,7 +153,7 @@ describe('CreateSession MCP model defaults', () => {
       })
     );
     expect(result?.ok).toBe(false);
-    expect(String(result?.error ?? result?.message ?? '')).toMatch(/Session defaults/i);
+    expect(String(result?.error ?? result?.message ?? '')).toMatch(/Builder default/i);
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -199,6 +199,68 @@ describe('CreateSession MCP model defaults', () => {
         base_branch: 'feature/parent',
         create_new_branch: true,
       }),
+      expect.any(Object)
+    );
+  });
+
+  it('uses a listed model when agent-created policy is any', async () => {
+    await db('users').where({ id: user.id }).update({ subagent_default_mode: 'any' });
+    const tools = buildBaguetteAccountToolList({ id: user.id, subagent_default_mode: 'any' }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    expect(createSession.schema.model).toBeDefined();
+    expect(createSession.schema.agent_config_id).toBeDefined();
+    await createSession.handler({
+      repo_id: 1,
+      base_branch: 'main',
+      initial_prompt: 'hello',
+      agent_config_id: claudeConfigId,
+      model: 'sonnet',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: claudeConfigId, model: 'sonnet' }),
+      expect.any(Object)
+    );
+  });
+
+  it('rejects an unknown model when agent-created policy is any', async () => {
+    await db('users').where({ id: user.id }).update({ subagent_default_mode: 'any' });
+    const tools = buildBaguetteAccountToolList({ id: user.id, subagent_default_mode: 'any' }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    const result = parseMcpToolResult(
+      await createSession.handler({
+        repo_id: 1,
+        base_branch: 'main',
+        initial_prompt: 'hello',
+        agent_config_id: claudeConfigId,
+        model: 'not-a-model',
+      })
+    );
+    expect(result?.ok).toBe(false);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the fixed model for new sessions when the policy is config', async () => {
+    await db('users')
+      .where({ id: user.id })
+      .update({
+        subagent_default_mode: 'config',
+        subagent_default_config_id: claudeConfigId,
+        subagent_default_model: JSON.stringify({ model: 'haiku', model_params: null }),
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+      });
+    const tools = buildBaguetteAccountToolList(
+      { id: user.id, subagent_default_mode: 'config' },
+      app
+    );
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    await createSession.handler({
+      repo_id: 1,
+      base_branch: 'main',
+      initial_prompt: 'hello',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: claudeConfigId, model: 'haiku' }),
       expect.any(Object)
     );
   });

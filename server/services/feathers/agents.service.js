@@ -137,7 +137,11 @@ class AgentsService extends KnexService {
     const resolved = await resolveMcpStartSubagentModel(db, params.user.id, {
       session_id: sessionId,
       preset_model_id: data.preset_model_id ?? null,
+      agent_config_id: data.agent_config_id ?? null,
+      model: data.model ?? null,
+      model_params: data.model_params ?? null,
       repo_id: session.repo_id ?? null,
+      app: this.app,
     });
 
     const modelParamsStored = stringifyModelParamsForStorage(resolved.model_params);
