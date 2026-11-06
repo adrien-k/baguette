@@ -9,7 +9,7 @@ import { splitPreviewLines } from '../../utils/chatContentPreview.js';
 import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
 import ShowPlanBlock from './ShowPlanBlock.tsx';
 import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
-import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
+import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
 import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
 import TaskMcpToolBlock from './TaskMcpToolBlock.tsx';
 import ConfigureMcpServerBlock from './ConfigureMcpServerBlock.tsx';
@@ -382,7 +382,7 @@ export default function BaguetteMcpToolBlock({
   if (toolShortName === 'AskUserQuestion' || toolShortName === 'AskUserQuestions') {
     return (
       <AskUserQuestionBlock
-        questions={(args.questions as AskUserQuestion[]) ?? []}
+        questions={args.questions}
         sessionId={sessionId != null ? Number(sessionId) : null}
         agentId={agentId}
         userReplied={userReplied}

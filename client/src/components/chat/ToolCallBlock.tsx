@@ -12,7 +12,7 @@ import { stripWorktreePath } from '../../utils/paths.js';
 import EditDiffView from './EditDiffView.tsx';
 import QuietToolBlock from './QuietToolBlock.tsx';
 import BashToolBlock from './BashToolBlock.tsx';
-import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
+import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
 import PlanReviewBlock from './PlanReviewBlock.tsx';
 import BaguetteMcpToolBlock from './BaguetteMcpToolBlock.tsx';
 import TodoBlock from './TodoBlock.tsx';
@@ -349,7 +349,7 @@ function ToolCallSwitch({
     case 'ask_user':
       return (
         <AskUserQuestionBlock
-          questions={message.args.questions as AskUserQuestion[]}
+          questions={message.args.questions}
           sessionId={sessionId}
           agentId={message.agent_id}
           userReplied={userReplied}
