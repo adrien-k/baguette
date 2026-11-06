@@ -846,6 +846,30 @@ describe('RunTask', () => {
     expect(joined.length).toBeGreaterThan(90_000);
   });
 
+  it('inline (default) — times out after the await cap but the task keeps running (virtual detach)', async () => {
+    vi.useFakeTimers();
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const tasksCreate = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve({ id: 99, label: 'Run tests', status: 'running' }));
+    const { tools } = await buildServer({}, { tasksCreate });
+    const promise = callTool(tools, 'RunTask', { label: 'Run tests' });
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    const result = parseResult(await promise);
+    vi.useRealTimers();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Timed out after 30 minutes/);
+    expect(result.error).toMatch(/task 99/);
+    expect(result.error).toMatch(/not cancelled/);
+    expect(result.error).toMatch(/AwaitDetachedTask/);
+    expect(tasksCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ task_key: 'Run tests' }),
+      expect.anything()
+    );
+  });
+
   // The tool names the task and forwards args; the tasks service resolves the `run` script
   // from .baguette.yaml and appends the args to it (see appendTaskArgs).
   it('forwards a single file path arg to the tasks service', async () => {
@@ -994,10 +1018,11 @@ describe('AwaitDetachedTask', () => {
     };
     const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
     const promise = callTool(tools, 'AwaitDetachedTask', { taskId: 42 });
-    await vi.advanceTimersByTimeAsync(900_000);
+    await vi.advanceTimersByTimeAsync(1_800_000);
     const result = parseResult(await promise);
     vi.useRealTimers();
     expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not cancelled/);
     expect(result.error).toMatch(/KillTask/);
   });
 });

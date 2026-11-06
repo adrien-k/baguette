@@ -30,6 +30,8 @@ export function waitForTaskLines(task, { timeoutMs = MCP_AWAIT_TIMEOUT_MS } = {}
       timeoutId = setTimeout(() => {
         settle(fail(taskAwaitTimeoutMessage(task)));
       }, timeoutMs);
+      // Never keep the server process alive just for an abandoned wait.
+      if (typeof timeoutId.unref === 'function') timeoutId.unref();
     }
 
     unsubLog = task.onLog((_id, stream, data) => {

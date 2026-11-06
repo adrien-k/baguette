@@ -43,7 +43,7 @@ describe('waitForAgentTurnEnd', () => {
     await assertion;
   });
 
-  it('defaults to the MCP await timeout cap', () => {
-    expect(MCP_AWAIT_TIMEOUT_MS).toBe(900_000);
+  it('defaults to the MCP await timeout cap (30 minutes)', () => {
+    expect(MCP_AWAIT_TIMEOUT_MS).toBe(1_800_000);
   });
 });

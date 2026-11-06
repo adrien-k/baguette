@@ -1,9 +1,12 @@
 /**
- * Per-call wall-clock limit for Baguette MCP await tools
- * (AwaitSubagent, AwaitDetachedTask, StartSubagent with attach).
- * Call the same tool again to keep waiting; use StopSubagent / KillTask to cancel.
+ * Per-call wall-clock limit for Baguette MCP wait tools
+ * (StartSubagent with attach, AwaitSubagent, AwaitDetachedTask, RunTask without detach).
+ * On timeout the call hands back to the calling agent — the underlying subagent or
+ * task is *not* cancelled: the wait is virtually detached and it keeps running.
+ * The timeout response tells the agent to check progress and continue awaiting
+ * with the corresponding tool; kill it only if it looks stuck for no good reason.
  */
-export const MCP_AWAIT_TIMEOUT_MS = 900_000;
+export const MCP_AWAIT_TIMEOUT_MS = 1_800_000; // 30 minutes
 
 /** @deprecated Use MCP_AWAIT_TIMEOUT_MS */
 export const AGENT_TURN_WAIT_TIMEOUT_MS = MCP_AWAIT_TIMEOUT_MS;
@@ -21,8 +24,10 @@ export function agentTurnWaitTimeoutMessage(agent) {
   const minutes = mcpAwaitTimeoutMinutes();
   return (
     `Timed out after ${minutes} minutes waiting for ${idPart}${refPart} to finish. ` +
-    'The subagent may still be running. Read its last assistant message in the session ' +
-    '(GetSessionMessages for that agent) to judge progress, then call AwaitSubagent again to keep waiting or StopSubagent to cancel.'
+    'The subagent was not cancelled — the wait is detached and the turn keeps running in the background. ' +
+    'Read its last assistant message in the session (GetSessionMessages for that agent) to check progress, ' +
+    'then call AwaitSubagent again to continue waiting. ' +
+    'Use StopSubagent only if it looks stuck for no good reason.'
   );
 }
 
@@ -35,7 +40,9 @@ export function taskAwaitTimeoutMessage(task) {
   const minutes = mcpAwaitTimeoutMinutes();
   return (
     `Timed out after ${minutes} minutes waiting for ${idPart}${labelPart} to exit. ` +
-    'The task may still be running. Use ReadTaskOutput or TaskStatus to judge progress, ' +
-    'then call AwaitDetachedTask again to keep waiting or KillTask to stop it.'
+    'The task was not cancelled — the wait is detached and the task keeps running in the background. ' +
+    'Use ReadTaskOutput or TaskStatus (with the task id from ListRunningTasks) to check progress, ' +
+    'then call AwaitDetachedTask again to continue waiting. ' +
+    'Use KillTask only if it looks stuck for no good reason.'
   );
 }

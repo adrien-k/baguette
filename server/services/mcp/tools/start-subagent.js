@@ -12,7 +12,7 @@ function startSubagentBaseDescription() {
   const waitMinutes = mcpAwaitTimeoutMinutes();
   return (
     'Create a subagent (`agent_type` subagent) in a session and run its initial prompt. ' +
-    `Default attach: true waits until the turn finishes (up to ${waitMinutes} minutes per wait; on timeout use GetSessionMessages, then AwaitSubagent or StopSubagent). ` +
+    `Default attach: true waits until the turn finishes (up to ${waitMinutes} minutes per wait). On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last message (GetSessionMessages) to check progress, then call AwaitSubagent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ` +
     'attach: false returns immediately — then AwaitSubagent if you stay in this turn, or pass notify_parent: true if you will end your turn while it still runs (Baguette posts the result back as a new message when it finishes). ' +
     'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. '
   );
@@ -47,7 +47,7 @@ function startSubagentSchema(mode) {
       .boolean()
       .optional()
       .describe(
-        'If true (default), wait until the initial turn finishes. If false, return agent_id/ref immediately.'
+        `If true (default), wait until the initial turn finishes (up to ${mcpAwaitTimeoutMinutes()} minutes; on timeout the subagent keeps running — check progress and AwaitSubagent again). If false, return agent_id/ref immediately.`
       ),
     notify_parent: z
       .boolean()
