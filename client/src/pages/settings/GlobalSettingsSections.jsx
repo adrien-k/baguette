@@ -6,6 +6,7 @@ import {
   usersService,
   reposService,
   pluginsService,
+  skillsService,
   slackService,
 } from '../../feathers.js';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
@@ -528,6 +529,179 @@ export function UsersTab() {
           })}
         </div>
       </SettingsSection>
+    </div>
+  );
+}
+
+function asList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+export function SkillsTab() {
+  const [skills, setSkills] = useState([]);
+  const [label, setLabel] = useState('');
+  const [description, setDescription] = useState('');
+  const [content, setContent] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    skillsService
+      .find()
+      .then((data) => setSkills(asList(data)))
+      .catch((err) => toastError('Failed to load skills', err));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const resetForm = () => {
+    setLabel('');
+    setDescription('');
+    setContent('');
+    setEditingId(null);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const payload = {
+      label: label.trim(),
+      description: description.trim(),
+      content: content.trim(),
+    };
+    if (!payload.label || !payload.description || !payload.content) return;
+    setSaving(true);
+    try {
+      if (editingId) {
+        await skillsService.patch(editingId, payload);
+        toast.success('Saved skill');
+      } else {
+        await skillsService.create(payload);
+        toast.success('Created skill');
+      }
+      resetForm();
+      load();
+    } catch (err) {
+      toastError(editingId ? 'Failed to save skill' : 'Failed to create skill', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (skill) => {
+    setEditingId(skill.id);
+    setLabel(skill.label);
+    setDescription(skill.description);
+    setContent(skill.content);
+  };
+
+  const handleRemove = async (skill) => {
+    try {
+      await skillsService.remove(skill.id);
+      if (editingId === skill.id) resetForm();
+      load();
+    } catch (err) {
+      toastError('Failed to delete skill', err);
+    }
+  };
+
+  let submitLabel = 'Create';
+  if (saving) submitLabel = 'Saving…';
+  else if (editingId) submitLabel = 'Save';
+
+  return (
+    <div>
+      <SettingsTabHeader title="Skills">
+        Skills belong to your account; other users cannot see them. Agents can list your skills and
+        load the content when its description matches the task.
+      </SettingsTabHeader>
+
+      <div className="space-y-6">
+        <SettingsSection title="Create skill">
+          <form onSubmit={handleSave} className="space-y-3">
+            <Field label="Label" className="mb-0">
+              <input
+                type="text"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Review checklist"
+                className={INPUT_CLASS}
+              />
+            </Field>
+            <Field label="Description" className="mb-0">
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="When to use this skill"
+                className={INPUT_CLASS}
+              />
+            </Field>
+            <Field label="Content" className="mb-0">
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Instructions the agent should follow after it loads this skill."
+                className={`${INPUT_CLASS} min-h-[140px] font-mono text-xs`}
+              />
+            </Field>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={saving || !label.trim() || !description.trim() || !content.trim()}
+                className={PRIMARY_BUTTON_SIZED}
+              >
+                {submitLabel}
+              </button>
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-xs text-fg-muted hover:text-fg"
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          </form>
+        </SettingsSection>
+
+        <SettingsSection title="Your skills">
+          {skills.length === 0 ? (
+            <p className="text-faint text-sm text-center py-8">No skills yet</p>
+          ) : (
+            <div className="divide-y divide-line">
+              {skills.map((skill) => (
+                <div key={skill.id} className="flex items-start justify-between py-3 gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-fg font-medium">{skill.label}</div>
+                    <p className="text-xs text-faint mt-0.5">{skill.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(skill)}
+                      className="text-xs text-fg-muted hover:text-fg"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(skill)}
+                      className="text-xs text-danger hover:text-danger"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SettingsSection>
+      </div>
     </div>
   );
 }

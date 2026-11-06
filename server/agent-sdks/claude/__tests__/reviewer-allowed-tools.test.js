@@ -3,6 +3,8 @@ import { buildReviewerAgentTools } from '../../../services/mcp/registries/review
 
 /** Keep in sync with REVIEWER_ALLOWED_TOOLS in agent-service.ts (mcp__baguette__ prefix). */
 const REVIEWER_BAGUETTE_MCP_ALLOWED = new Set([
+  'ListSkills',
+  'ReadSkill',
   'CurrentSessionInfo',
   'CreateIssue',
   'ListIssues',

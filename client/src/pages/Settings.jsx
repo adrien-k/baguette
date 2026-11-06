@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Bot, GitBranch, Bell, KeyRound, Puzzle, Blocks, ScrollText, User } from 'lucide-react';
+import {
+  Bot,
+  BookOpen,
+  GitBranch,
+  Bell,
+  KeyRound,
+  Puzzle,
+  Blocks,
+  ScrollText,
+  User,
+} from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { usersService, reposService, userReposService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -11,7 +21,7 @@ import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { repoDisplayName, repoAccessModeLabel } from '../utils/repoDisplayName.js';
 import McpAccessSection from '../components/McpAccessSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
-import { SecretsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
+import { SecretsTab, SkillsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import AccountSettingsTab from './settings/AccountSettingsTab.jsx';
 import PromptsSettingsTab from './settings/PromptsSettingsTab.jsx';
@@ -456,6 +466,7 @@ const TABS = [
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'account', label: 'Account', icon: User },
+  { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'plugins', label: 'Plugins', icon: Puzzle },
 ];
 
@@ -553,6 +564,7 @@ export default function Settings() {
           {activeTab === 'account' && settings && (
             <AccountSettingsTab settings={settings} refreshAuth={refreshAuth} />
           )}
+          {activeTab === 'skills' && <SkillsTab />}
           {activeTab === 'plugins' && <PluginsTab />}
         </div>
       </div>

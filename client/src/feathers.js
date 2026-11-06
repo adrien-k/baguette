@@ -83,6 +83,7 @@ export const usersService = createService('users');
 export const usageModelPricingService = createService('usage-model-pricing');
 export const usageService = createService('usage');
 export const pluginsService = createService('admin/plugins');
+export const skillsService = createService('skills');
 export const slackService = createService('admin/slack');
 export const sessionIssuesService = createService('session-issues');
 export const sessionTodosService = createService('session-todos');

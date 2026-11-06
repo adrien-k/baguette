@@ -27,6 +27,7 @@ import {
   createRecomputeUsageCostsTool,
   createUpdateModelPricingTool,
 } from '../tools/model-pricing.js';
+import { createListSkillsTool, createReadSkillTool } from '../tools/skills.js';
 
 function sessionToolsFromContext(ctx) {
   return [
@@ -64,6 +65,8 @@ export function buildSessionIssueReadTools(session, app) {
 export function buildBaseAgentTools(user, app, { callerSession = null, callerAgent = null } = {}) {
   const ctx = createAccountContext(user, app, { callerSession, callerAgent });
   return [
+    createListSkillsTool(ctx),
+    createReadSkillTool(ctx),
     createListReposTool(ctx),
     createListBranchesTool(ctx),
     createListModelsTool(ctx),

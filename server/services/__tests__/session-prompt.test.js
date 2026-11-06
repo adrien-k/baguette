@@ -61,6 +61,8 @@ describe('buildSystemPromptAppend', () => {
     expect(typeof result).toBe('string');
     expect(result.length).toBeGreaterThan(0);
     expect(result).toContain('CurrentSessionInfo');
+    expect(result).toContain('ListSkills');
+    expect(result).toContain('ReadSkill');
   });
 
   it('includes commit and UpdateSession instructions when auto_push=1', async () => {
@@ -220,6 +222,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('do not modify repository files on disk');
     expect(result).toContain('not available');
     expect(result).not.toContain('End-of-turn shipping');
+    expect(result).toContain('ListSkills');
+    expect(result).toContain('ReadSkill');
   });
 });
 
@@ -241,5 +245,7 @@ describe('buildReviewSystemPromptAppend', () => {
     expect(result).toContain('Watch for SQL injection');
     expect(result).toContain('implement fixes');
     expect(result).toContain('submitted');
+    expect(result).toContain('ListSkills');
+    expect(result).toContain('ReadSkill');
   });
 });

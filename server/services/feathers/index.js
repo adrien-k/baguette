@@ -11,6 +11,7 @@ import { registerInstanceSettingsService } from './instance-settings.service.js'
 import { registerAgentConfigsService } from './agent-configs.service.js';
 import { registerAgentModelPresetsService } from './agent-model-presets.service.js';
 import { registerPluginsService } from './plugins.service.js';
+import { registerSkillsService } from './skills.service.js';
 import { registerSlackService } from './slack.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
 import { registerLoopsService } from './loops.service.js';
@@ -44,6 +45,7 @@ export function registerFeathersServices(app, { realtime = true } = {}) {
   registerReposService(app);
   registerUserReposService(app);
   registerPluginsService(app);
+  registerSkillsService(app);
   registerSlackService(app);
   registerLoopsService(app);
   registerSessionIssuesService(app);

@@ -1,6 +1,8 @@
 /** PascalCase Baguette MCP tool names (builder + base lists). Used for Cursor kind: mcp. */
 
 export const BAGUETTE_MCP_TOOL_NAMES = new Set([
+  'ListSkills',
+  'ReadSkill',
   'ListRepos',
   'ListBranches',
   'ListModels',

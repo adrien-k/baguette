@@ -23,6 +23,7 @@ const PUBLIC_SERVICES = [
   'queued-messages',
   'repos',
   'secrets',
+  'skills',
   'session-issues',
   'session-plans',
   'session-todos',

@@ -10,10 +10,11 @@ const migrationsPath = path.join(__dirname, '..');
 // First migration of the bootstrap-without-GitHub schema series.
 // Keep this distinct from other 078+ files landed on main (e.g. session_plans).
 const FIRST_BOOTSTRAP_MIGRATION = /^078_users_github_id_nullable/;
-const BOOTSTRAP_MIGRATION_FILE = /^(078_users_github_id_nullable|08[0-5]_)/;
+// migrate.latest() from the pre-078 stop applies every later file in one batch,
+// including migrations added after the original bootstrap series.
 const bootstrapBatchSize = fs
   .readdirSync(migrationsPath)
-  .filter((name) => BOOTSTRAP_MIGRATION_FILE.test(name)).length;
+  .filter((name) => name.endsWith('.js') && name >= '078_users_github_id_nullable').length;
 
 async function columnInfo(db, table) {
   const rows = await db.raw(`PRAGMA table_info(${table})`);

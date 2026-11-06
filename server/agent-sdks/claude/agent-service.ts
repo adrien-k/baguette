@@ -153,6 +153,8 @@ const REVIEWER_ALLOWED_TOOLS = [
   'Glob',
   'LS',
   ...commandsToAllowedTools(getAllowedCommandsFromUser()),
+  'mcp__baguette__ListSkills',
+  'mcp__baguette__ReadSkill',
   'mcp__baguette__CurrentSessionInfo',
   'mcp__baguette__CreateIssue',
   'mcp__baguette__ListIssues',
