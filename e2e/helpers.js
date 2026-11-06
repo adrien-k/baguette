@@ -338,8 +338,8 @@ export async function seedE2eUsageDashboard(page) {
     const otherUserId = Number(
       db
         .prepare(
-          `INSERT INTO users (github_id, username, approved)
-           VALUES (?, ?, 1)`
+          `INSERT INTO users (github_id, username, status)
+           VALUES (?, ?, 'approved')`
         )
         .run(9_000_001, 'e2e-other').lastInsertRowid
     );

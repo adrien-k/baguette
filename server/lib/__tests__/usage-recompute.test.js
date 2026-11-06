@@ -14,7 +14,7 @@ describe('recomputeUsageCosts', () => {
     const [userId] = await db('users').insert({
       github_id: 'recompute-user',
       username: 'bob',
-      approved: true,
+      status: 'approved',
     });
     const sessionId = await insertTestSession(db, {
       user_id: userId,
@@ -78,7 +78,7 @@ describe('recomputeUsageCosts', () => {
     const [userId] = await db('users').insert({
       github_id: 'claude-recompute',
       username: 'carol',
-      approved: true,
+      status: 'approved',
     });
     const sessionId = await insertTestSession(db, {
       user_id: userId,

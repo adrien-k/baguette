@@ -24,7 +24,7 @@ let app;
 let session;
 
 beforeEach(async () => {
-  const [userId] = await db('users').insert({ github_id: 9, username: 'mcp', approved: true });
+  const [userId] = await db('users').insert({ github_id: 9, username: 'mcp', status: 'approved' });
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   const [sessionId] = await db('sessions').insert({
     user_id: userId,

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Knex from 'knex';
+import { down as skillsDown } from '../086_skills.js';
 
 const migrationsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TARGET = /^086_skills/;
@@ -49,7 +50,9 @@ describe('086 skills', () => {
       ])
     );
 
-    await db.migrate.down();
+    // Roll back the skills migration itself (087_user_status now follows it in
+    // the chain, so a global migrate.down() would roll back that one instead).
+    await skillsDown(db);
     expect(await db.schema.hasTable('skills')).toBe(false);
   });
 });

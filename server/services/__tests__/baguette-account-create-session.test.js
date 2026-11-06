@@ -53,7 +53,7 @@ describe('CreateSession MCP model defaults', () => {
     await db('users').insert({
       github_id: 99,
       username: 'mcp-user',
-      approved: true,
+      status: 'approved',
     });
     user = await db('users').where({ username: 'mcp-user' }).first();
     claudeConfigId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });

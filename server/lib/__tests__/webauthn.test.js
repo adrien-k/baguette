@@ -62,7 +62,7 @@ beforeEach(async () => {
   const [id] = await db('users').insert({
     github_id: null,
     username: 'bootstrap',
-    approved: true,
+    status: 'approved',
     admin: 1,
   });
   user = await db('users').where({ id }).first();

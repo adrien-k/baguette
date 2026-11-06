@@ -73,7 +73,7 @@ beforeEach(async () => {
   vi.stubEnv('MOCK_AGENT_SLEEP_MS', '0');
   vi.stubEnv('MOCK_AGENT_STEP_DELAY_MS', '0');
 
-  await db('users').insert({ github_id: 901, username: 'mock-tester', approved: true });
+  await db('users').insert({ github_id: 901, username: 'mock-tester', status: 'approved' });
   const user = await db('users').where({ username: 'mock-tester' }).first();
   userId = user.id;
 

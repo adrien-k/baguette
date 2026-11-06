@@ -33,7 +33,7 @@ describe('user-last-ip', () => {
     const [id] = await db('users').insert({
       github_id: 1,
       username: 'alice',
-      approved: true,
+      status: 'approved',
       ...overrides,
     });
     return id;

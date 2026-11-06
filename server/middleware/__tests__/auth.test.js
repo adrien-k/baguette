@@ -36,18 +36,29 @@ describe('requireAuth', () => {
   }
 
   it('lets an approved req.user through', () => {
-    const { nexted, res } = run({ user: { id: 1, approved: true }, signedCookies: {} });
+    const { nexted, res } = run({ user: { id: 1, status: 'approved' }, signedCookies: {} });
 
     expect(nexted).toBe(true);
     expect(res.statusCode).toBeNull();
   });
 
   it('rejects a pending user with 403 and never calls next', () => {
-    const { nexted, res } = run({ pendingUser: { id: 2, approved: false }, signedCookies: {} });
+    const { nexted, res } = run({ pendingUser: { id: 2, status: 'pending' }, signedCookies: {} });
 
     expect(nexted).toBe(false);
     expect(res.statusCode).toBe(403);
     expect(res.body).toEqual({ error: 'Account pending approval' });
+  });
+
+  it('rejects a revoked user with 403 and a revoked error', () => {
+    const { nexted, res } = run({
+      pendingUser: { id: 3, status: 'revoked' },
+      signedCookies: {},
+    });
+
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Account access has been revoked' });
   });
 
   it('rejects anonymous requests with 401', () => {

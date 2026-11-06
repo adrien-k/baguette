@@ -25,8 +25,8 @@ describe('agent-model-presets service', () => {
     app = makeApp();
     await app.setup();
     await db('users').insert([
-      { github_id: 1, username: 'preset-a', approved: true },
-      { github_id: 2, username: 'preset-b', approved: true },
+      { github_id: 1, username: 'preset-a', status: 'approved' },
+      { github_id: 2, username: 'preset-b', status: 'approved' },
     ]);
     userId = (await db('users').where({ username: 'preset-a' }).first()).id;
     otherUserId = (await db('users').where({ username: 'preset-b' }).first()).id;

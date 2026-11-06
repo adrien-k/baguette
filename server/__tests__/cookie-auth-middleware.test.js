@@ -60,7 +60,7 @@ describe('cookieAuthMiddleware', () => {
   }
 
   it('sets req.user and req.feathers.user for an approved user', async () => {
-    const user = { id: 7, approved: 1 };
+    const user = { id: 7, status: 'approved' };
     const { req, next } = await run(feathersAppWith(user), 7);
 
     expect(req.user).toBe(user);
@@ -70,7 +70,7 @@ describe('cookieAuthMiddleware', () => {
   });
 
   it('sets only req.pendingUser for an unapproved user (no req.user, no req.feathers.user)', async () => {
-    const pending = { id: 8, approved: 0 };
+    const pending = { id: 8, status: 'pending' };
     const { req, next } = await run(feathersAppWith(pending), 8);
 
     expect(req.pendingUser).toBe(pending);
@@ -111,7 +111,7 @@ describe('cookieAuthMiddleware', () => {
   });
 
   it('sets neither identity without a cookie (anonymous)', async () => {
-    const { req, next } = await run(feathersAppWith({ id: 1, approved: 1 }), null);
+    const { req, next } = await run(feathersAppWith({ id: 1, status: 'approved' }), null);
 
     expect(req.user).toBeUndefined();
     expect(req.pendingUser).toBeUndefined();

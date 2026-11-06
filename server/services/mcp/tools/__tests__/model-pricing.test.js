@@ -19,7 +19,7 @@ let user;
 let ctx;
 
 beforeEach(async () => {
-  [user] = await db('users').insert({ github_id: '1', username: 'alice', approved: true });
+  [user] = await db('users').insert({ github_id: '1', username: 'alice', status: 'approved' });
   user = await db('users').where({ id: user }).first();
 
   const sessionId = await insertTestSession(db, {

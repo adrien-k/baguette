@@ -49,7 +49,7 @@ describe('Tasks service — task_key resolution', () => {
   beforeEach(async () => {
     loadBaguetteConfig.mockResolvedValue(CONFIG);
 
-    await db('users').insert({ github_id: 1001, username: 'alice', approved: true });
+    await db('users').insert({ github_id: 1001, username: 'alice', status: 'approved' });
     userId = (await db('users').where({ username: 'alice' }).first()).id;
 
     await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });

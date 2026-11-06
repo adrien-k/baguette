@@ -29,7 +29,7 @@ const db = createTestDb();
 
 async function seedSession(fields = {}) {
   await db('users')
-    .insert({ github_id: 1, username: 'alice', approved: true })
+    .insert({ github_id: 1, username: 'alice', status: 'approved' })
     .onConflict('github_id')
     .ignore();
   const user = await db('users').where({ username: 'alice' }).first();

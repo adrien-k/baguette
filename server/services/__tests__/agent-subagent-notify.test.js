@@ -65,7 +65,7 @@ const agentRow = async (id) => db('agents').where({ id }).first();
 
 beforeEach(async () => {
   handleMessageCreated = vi.fn().mockResolvedValue(undefined);
-  await db('users').insert({ github_id: 701, username: 'hold-tester', approved: true });
+  await db('users').insert({ github_id: 701, username: 'hold-tester', status: 'approved' });
   const user = await db('users').where({ username: 'hold-tester' }).first();
   userId = user.id;
 

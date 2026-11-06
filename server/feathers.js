@@ -4,6 +4,7 @@ import { getClientIp } from './lib/client-ip.js';
 import { touchUserLastIp } from './lib/user-last-ip.js';
 import { requirePublicService } from './services/feathers/public-services.js';
 import logger from './logger.js';
+import { isApprovedUser } from '../shared/user-status.js';
 
 function isNotFoundError(err) {
   return Number(err?.code) === 404 || err?.name === 'NotFound' || err?.className === 'not-found';
@@ -40,7 +41,7 @@ export function cookieAuthMiddleware(feathersApp) {
         res.clearCookie('userId');
         return next();
       }
-      if (!user.approved) {
+      if (!isApprovedUser(user)) {
         req.pendingUser = user;
         return next();
       }

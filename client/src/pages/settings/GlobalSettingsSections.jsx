@@ -22,6 +22,7 @@ import { formatRelativeTime } from '../../utils/dates.js';
 import { countryCodeToFlagEmoji } from '../../utils/countryFlag.js';
 import { repoAccessModeLabel } from '../../utils/repoDisplayName.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
 
 function formatUserLastIpLine(user) {
   if (!user.last_ip) return null;
@@ -380,9 +381,11 @@ export function UsersTab() {
   return (
     <div>
       <SettingsTabHeader title="Users">
+        People who can sign in to this Baguette instance.{' '}
         {githubConfigured
-          ? 'People who can sign in to this Baguette instance. New GitHub accounts must be approved by an admin before they can start sessions.'
-          : 'People who can sign in to this Baguette instance. Invite additional users with a one-time link; they add a passkey when they open it.'}
+          ? 'New GitHub accounts must be approved by an admin before they can start sessions.'
+          : 'Invite additional users with a one-time link; they add a passkey when they open it.'}{' '}
+        Revoked users stay revoked until an admin approves them again.
       </SettingsTabHeader>
 
       {!githubConfigured ? (
@@ -446,7 +449,8 @@ export function UsersTab() {
             const isLastAdmin = !!u.admin && adminCount <= 1;
             let accountStatus = 'pending';
             if (u.invite_pending) accountStatus = 'invited';
-            else if (u.approved) accountStatus = 'approved';
+            else if (u.status === USER_STATUS_APPROVED) accountStatus = 'approved';
+            else if (u.status === USER_STATUS_REVOKED) accountStatus = 'revoked';
             return (
               <div key={u.id} className="flex items-center justify-between py-3 gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -520,6 +524,19 @@ export function UsersTab() {
                         className="text-xs text-danger hover:text-danger"
                       >
                         Reject
+                      </button>
+                    </>
+                  ) : null}
+                  {accountStatus === 'revoked' ? (
+                    <>
+                      <span className="text-xs text-danger hidden sm:inline">Revoked</span>
+                      <span className="w-2 h-2 rounded-full bg-danger sm:hidden" />
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(u.id)}
+                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
+                      >
+                        Approve
                       </button>
                     </>
                   ) : null}

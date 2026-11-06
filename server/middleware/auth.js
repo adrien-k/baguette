@@ -1,3 +1,5 @@
+import { unapprovedAccountError } from '../lib/unapproved-account.js';
+
 /**
  * Express middleware for API routes that must never be reachable by a pending account.
  * Identity is resolved centrally by cookieAuthMiddleware:
@@ -9,7 +11,7 @@
 export function createRequireAuth() {
   return function requireAuth(req, res, next) {
     if (req.pendingUser) {
-      return res.status(403).json({ error: 'Account pending approval' });
+      return res.status(403).json({ error: unapprovedAccountError(req.pendingUser) });
     }
     if (req.user) return next();
     const userId = req.signedCookies?.userId;

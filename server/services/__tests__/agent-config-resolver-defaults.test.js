@@ -18,7 +18,7 @@ describe('resolveEffectiveAgentDefaults', () => {
   let cursorConfigId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 1, username: 'defaults-user', approved: true });
+    await db('users').insert({ github_id: 1, username: 'defaults-user', status: 'approved' });
     const user = await db('users').where({ username: 'defaults-user' }).first();
     userId = user.id;
     claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant' });
@@ -100,7 +100,7 @@ describe('assertAgentConfigOnCreate reviewer defaults', () => {
   let repoId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 3, username: 'create-user', approved: true });
+    await db('users').insert({ github_id: 3, username: 'create-user', status: 'approved' });
     const user = await db('users').where({ username: 'create-user' }).first();
     userId = user.id;
     claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant' });
@@ -133,7 +133,7 @@ describe('resolveAgentConfigIdForRepoSdk', () => {
   let claudeB;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 2, username: 'resolve-user', approved: true });
+    await db('users').insert({ github_id: 2, username: 'resolve-user', status: 'approved' });
     const user = await db('users').where({ username: 'resolve-user' }).first();
     userId = user.id;
     [repoId] = await db('repos').insert({

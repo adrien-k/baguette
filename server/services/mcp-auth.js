@@ -15,7 +15,7 @@ export async function findUserByMcpToken(db, token) {
   if (!token) return null;
   const rows = await db('users')
     .whereNotNull('mcp_api_token_encrypted')
-    .select('id', 'mcp_api_token_encrypted', 'approved');
+    .select('id', 'mcp_api_token_encrypted', 'status');
   for (const row of rows) {
     try {
       const stored = decrypt(row.mcp_api_token_encrypted);

@@ -21,6 +21,7 @@ import {
   MANIFEST_STATE_COOKIE_MAX_AGE_MS,
 } from '../lib/github-app-manifest.js';
 import { toSafePath } from '../lib/safe-path.js';
+import { unapprovedPreviewDenial } from '../lib/unapproved-account.js';
 import {
   buildPasskeyAuthenticationOptions,
   verifyPasskeyAuthentication,
@@ -34,6 +35,12 @@ import {
   countPasskeysForUser,
   instanceHasPasskeys,
 } from '../lib/webauthn.js';
+import {
+  USER_STATUS_APPROVED,
+  USER_STATUS_PENDING,
+  isApprovedUser,
+  resolveUserStatus,
+} from '../../shared/user-status.js';
 import { ensureMockAgentConfig } from '../agent-sdks/mock/mock-agent-config.js';
 import { isMockAgentSdkEnabled, MOCK_STANDARD_MODEL_ID } from '../../shared/mock-agent-sdk.js';
 import { createIpRateLimiter } from '../lib/ip-rate-limit.js';
@@ -179,7 +186,7 @@ export function createAuthRoutes(app) {
               username: identity.username,
               email: identity.email,
               access_token: identity.username === 'dev' ? devGhKey : '',
-              approved: true,
+              status: USER_STATUS_APPROVED,
               admin: true,
               onboarding_completed: true,
             },
@@ -374,7 +381,7 @@ export function createAuthRoutes(app) {
             avatar_url: ghUser.avatar_url,
             email: ghUser.email || null,
             access_token: accessToken,
-            approved: isFirstUser,
+            status: isFirstUser ? USER_STATUS_APPROVED : USER_STATUS_PENDING,
             admin: isFirstUser,
           },
           {}
@@ -421,7 +428,7 @@ export function createAuthRoutes(app) {
             {
               github_id: null,
               username: 'bootstrap',
-              approved: true,
+              status: USER_STATUS_APPROVED,
               admin: true,
               onboarding_completed: false,
             },
@@ -457,7 +464,7 @@ export function createAuthRoutes(app) {
     // Sent regardless of sign-in state so the login and pending screens can explain what
     // they are connecting to. Identity comes from the shared cookie middleware: req.user
     // is an approved user, req.pendingUser a signed-in but unapproved one (reported with
-    // approved:false so the client can show the approval screen — it holds no other
+    // status pending/revoked so the client can show the right screen — it holds no other
     // privileges server-side).
     const ghConfig = await getGithubAppConfig(db);
     const github = {
@@ -480,7 +487,8 @@ export function createAuthRoutes(app) {
         id: identity.id,
         username: identity.username,
         avatar_url: identity.avatar_url,
-        approved: !!identity.approved,
+        status: resolveUserStatus(identity),
+        approved: isApprovedUser(identity),
         admin: !!identity.admin,
         onboarding_completed: !!identity.onboarding_completed,
         color_scheme: identity.color_scheme === 'light' ? 'light' : 'dark',
@@ -525,7 +533,7 @@ export function createAuthRoutes(app) {
         user: {
           id: user.id,
           username: user.username,
-          approved: !!user.approved,
+          approved: isApprovedUser(user),
           admin: !!user.admin,
           onboarding_completed: !!user.onboarding_completed,
           is_first_user: await userIsFirst(user.id),
@@ -736,8 +744,7 @@ export function createAuthRoutes(app) {
     // proxy tokens for the preview subdomains.
     if (req.pendingUser) {
       return res.status(403).render('devserver-denied', {
-        title: 'Account pending approval',
-        message: 'An existing user must approve this account before previews can be opened.',
+        ...unapprovedPreviewDenial(req.pendingUser),
         backUrl: PUBLIC_HOST,
       });
     }

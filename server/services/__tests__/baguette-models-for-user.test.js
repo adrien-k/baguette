@@ -44,7 +44,7 @@ describe('listModelsForUser / loadModelsForSdk with agent_config_id', () => {
 
   beforeEach(async () => {
     listModels.mockClear();
-    await db('users').insert({ github_id: 1, username: 'u', approved: true });
+    await db('users').insert({ github_id: 1, username: 'u', status: 'approved' });
     user = await db('users').where({ username: 'u' }).first();
     configId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-api03-key' });
   });
@@ -84,7 +84,7 @@ describe('listModelsForUser / loadModelsForSdk with agent_config_id', () => {
   });
 
   it("does not list models using another user's agent_config_id", async () => {
-    await db('users').insert({ github_id: 2, username: 'other', approved: true });
+    await db('users').insert({ github_id: 2, username: 'other', status: 'approved' });
     const other = await db('users').where({ username: 'other' }).first();
     const otherConfigId = await insertTestAgentConfig(db, other.id, {
       apiKey: 'sk-ant-other',

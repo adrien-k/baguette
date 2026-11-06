@@ -101,8 +101,8 @@ describe('Loops service', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await db('users').insert([
-      { github_id: 1, username: 'alice', access_token_encrypted: 'x', approved: true },
-      { github_id: 2, username: 'bob', access_token_encrypted: 'x', approved: true },
+      { github_id: 1, username: 'alice', access_token_encrypted: 'x', status: 'approved' },
+      { github_id: 2, username: 'bob', access_token_encrypted: 'x', status: 'approved' },
     ]);
     aliceId = (await db('users').where({ username: 'alice' }).first()).id;
     bobId = (await db('users').where({ username: 'bob' }).first()).id;

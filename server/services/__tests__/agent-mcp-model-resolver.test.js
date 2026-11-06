@@ -23,7 +23,7 @@ describe('resolveMcpBuilderModel', () => {
   let repoId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 99, username: 'mcp-model', approved: true });
+    await db('users').insert({ github_id: 99, username: 'mcp-model', status: 'approved' });
     userId = (await db('users').where({ username: 'mcp-model' }).first()).id;
     configId = await ensureTestMockConfig(db, userId);
     await db('repos').insert({ full_name: 'org/r', repo_path: '/tmp/r' });
@@ -71,7 +71,7 @@ describe('resolveMcpStartSubagentModel', () => {
   let sessionId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 100, username: 'mcp-sub', approved: true });
+    await db('users').insert({ github_id: 100, username: 'mcp-sub', status: 'approved' });
     userId = (await db('users').where({ username: 'mcp-sub' }).first()).id;
     configId = await ensureTestMockConfig(db, userId);
     await db('repos').insert({ full_name: 'org/sub', repo_path: '/tmp/sub' });

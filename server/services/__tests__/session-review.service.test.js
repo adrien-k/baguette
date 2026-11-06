@@ -319,7 +319,7 @@ beforeEach(async () => {
   const [userId] = await db('users').insert({
     github_id: 3,
     username: 'rev',
-    approved: true,
+    status: 'approved',
   });
   user = await db('users').where({ id: userId }).first();
   const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');

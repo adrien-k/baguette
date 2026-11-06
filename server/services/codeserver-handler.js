@@ -2,6 +2,7 @@ import { PUBLIC_API_URL } from '../config.js';
 import { buildSessionHostname } from './preview.js';
 import { DEFAULT_TTL_MS } from './task.js';
 import logger from '../logger.js';
+import { isApprovedUser } from '../../shared/user-status.js';
 
 const CODE_DOMAIN_PREFIX = 'code';
 
@@ -36,7 +37,7 @@ export class CodeServerHandler {
         .get('db')('users')
         .where({ id: Number(userId) })
         .first();
-      return !!user?.approved;
+      return isApprovedUser(user);
     } catch (err) {
       logger.error(err, 'Code-server user lookup failed — failing closed');
       return false;

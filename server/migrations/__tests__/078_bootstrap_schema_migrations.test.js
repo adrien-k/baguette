@@ -122,12 +122,12 @@ describe('bootstrap schema migrations (078+)', () => {
     await db.migrate.latest();
 
     // github_id inserts still work.
-    await db('users').insert({ github_id: 43, username: 'bob', approved: true });
+    await db('users').insert({ github_id: 43, username: 'bob', status: 'approved' });
     // Duplicate github_id is still rejected.
     await expect(db('users').insert({ github_id: 43, username: 'bob2' })).rejects.toThrow();
     // Non-GitHub users can share NULL github_id.
-    await db('users').insert({ github_id: null, username: 'local1', approved: true });
-    await db('users').insert({ github_id: null, username: 'local2', approved: false });
+    await db('users').insert({ github_id: null, username: 'local1', status: 'approved' });
+    await db('users').insert({ github_id: null, username: 'local2', status: 'pending' });
     expect(await db('users').whereNull('github_id')).toHaveLength(2);
   });
 
@@ -150,7 +150,7 @@ describe('bootstrap schema migrations (078+)', () => {
     const [newId] = await db('users').insert({
       github_id: 44,
       username: 'newbie',
-      approved: false,
+      status: 'approved',
     });
     expect((await db('users').where({ id: newId }).first()).admin).toBe(0);
   });
@@ -239,7 +239,7 @@ describe('bootstrap schema migrations (078+)', () => {
       db('users').insert({
         github_id: 99,
         username: 'other',
-        approved: true,
+        status: 'approved',
         invite_token_hash: 'abc',
       })
     ).rejects.toThrow();

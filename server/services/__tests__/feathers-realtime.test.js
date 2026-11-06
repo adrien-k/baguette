@@ -188,8 +188,8 @@ describe('registerFeathersRealtime', () => {
 
   it('does not deliver another user’s session events to the wrong connection', async () => {
     await db('users').insert([
-      { github_id: 1, username: 'alice', approved: true },
-      { github_id: 2, username: 'bob', approved: true },
+      { github_id: 1, username: 'alice', status: 'approved' },
+      { github_id: 2, username: 'bob', status: 'approved' },
     ]);
     const alice = await db('users').where({ username: 'alice' }).first();
     const bob = await db('users').where({ username: 'bob' }).first();
@@ -222,8 +222,8 @@ describe('registerFeathersRealtime', () => {
 
   it('delivers shared session events to other authenticated connections', async () => {
     await db('users').insert([
-      { github_id: 11, username: 'alice-share', approved: true },
-      { github_id: 12, username: 'bob-share', approved: true },
+      { github_id: 11, username: 'alice-share', status: 'approved' },
+      { github_id: 12, username: 'bob-share', status: 'approved' },
     ]);
     const alice = await db('users').where({ username: 'alice-share' }).first();
     const bob = await db('users').where({ username: 'bob-share' }).first();
@@ -256,8 +256,8 @@ describe('registerFeathersRealtime', () => {
 
   it('delivers turn:complete for a shared session to other authenticated connections', async () => {
     await db('users').insert([
-      { github_id: 21, username: 'alice-turn', approved: true },
-      { github_id: 22, username: 'bob-turn', approved: true },
+      { github_id: 21, username: 'alice-turn', status: 'approved' },
+      { github_id: 22, username: 'bob-turn', status: 'approved' },
     ]);
     const alice = await db('users').where({ username: 'alice-turn' }).first();
     const bob = await db('users').where({ username: 'bob-turn' }).first();
@@ -290,8 +290,8 @@ describe('registerFeathersRealtime', () => {
 
   it('does not deliver turn:complete for a private session to other users', async () => {
     await db('users').insert([
-      { github_id: 31, username: 'alice-priv', approved: true },
-      { github_id: 32, username: 'bob-priv', approved: true },
+      { github_id: 31, username: 'alice-priv', status: 'approved' },
+      { github_id: 32, username: 'bob-priv', status: 'approved' },
     ]);
     const alice = await db('users').where({ username: 'alice-priv' }).first();
     const bob = await db('users').where({ username: 'bob-priv' }).first();
@@ -366,7 +366,7 @@ describe('AbortableSseService over HTTP', () => {
 
     const handler = createHandler(app, [errorHandler(), queryParser(), bodyParser()]);
     server = createServer(
-      toAbortableNodeHandler(handler, () => ({ user: { id: 1, approved: true } }))
+      toAbortableNodeHandler(handler, () => ({ user: { id: 1, status: 'approved' } }))
     );
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const { port } = server.address();
@@ -397,7 +397,7 @@ describe('AbortableSseService over HTTP', () => {
 
     const handler = createHandler(app, [errorHandler(), queryParser(), bodyParser()]);
     server = createServer(
-      toAbortableNodeHandler(handler, () => ({ user: { id: 1, approved: true } }), {
+      toAbortableNodeHandler(handler, () => ({ user: { id: 1, status: 'approved' } }), {
         heartbeatMs: 40,
       })
     );

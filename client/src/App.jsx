@@ -34,6 +34,7 @@ import { AgentConfigProvider } from './context/AgentConfigContext.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
 import { MENU_ITEM_ACCENT_CLASS, MENU_ITEM_CLASS, NAV_CLASS, PAGE_BG } from './utils/ui.js';
 import { GHOST_BUTTON_CLASS } from './utils/buttonStyles.js';
+import { USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
 
 function LoadingScreen() {
   return (
@@ -44,6 +45,7 @@ function LoadingScreen() {
 }
 
 function AccountPendingScreen({ user, logout }) {
+  const revoked = user.status === USER_STATUS_REVOKED;
   return (
     <div
       className={`min-h-screen ${PAGE_BG} flex items-center justify-center relative overflow-hidden`}
@@ -53,15 +55,17 @@ function AccountPendingScreen({ user, logout }) {
       </div>
       <div className="bg-nav rounded-2xl p-10 text-center max-w-sm w-full shadow-2xl border border-line relative">
         <BaguetteIcon className="w-16 h-16 mx-auto mb-4" />
-        <h1 className="text-3xl font-bold text-fg mb-2 font-display">Account Pending</h1>
+        <h1 className="text-3xl font-bold text-fg mb-2 font-display">
+          {revoked ? 'Access revoked' : 'Account Pending'}
+        </h1>
         <p className="text-fg-muted mb-8 text-sm">
-          {user?.username ? (
-            <>
-              <span className="text-heading font-medium">{user.username}</span> is awaiting admin
-              approval. Please check back later.
-            </>
+          {revoked ? (
+            'Your access to this Baguette instance has been revoked.'
           ) : (
-            'Your account is awaiting admin approval. Please check back later.'
+            <>
+              <span className="text-heading font-medium">{user?.username ?? 'Your account'}</span>{' '}
+              is awaiting admin approval. Please check back later.
+            </>
           )}
         </p>
         <button

@@ -151,7 +151,7 @@ describe('getClaudeEnv agent_config_id', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', HOST_API);
     vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', HOST_OAUTH);
 
-    await db('users').insert({ github_id: 1, username: 'alice', approved: true });
+    await db('users').insert({ github_id: 1, username: 'alice', status: 'approved' });
     user = await db('users').where({ username: 'alice' }).first();
 
     app = feathers();

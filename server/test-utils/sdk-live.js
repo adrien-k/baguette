@@ -82,7 +82,7 @@ async function seedLiveSession(db, sdk, env) {
     github_id: 800000 + Math.floor(Math.random() * 100000),
     username: `sdk-live-${sdk}`,
     email: `sdk-live-${sdk}@example.com`,
-    approved: true,
+    status: 'approved',
   });
 
   const worktreeRel = `repos/sdk-live-${sdk}/sessions/wt-${randomShortId()}`;

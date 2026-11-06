@@ -36,7 +36,7 @@ let app;
 let user1;
 
 beforeEach(async () => {
-  await db('users').insert({ github_id: 1, username: 'alice', approved: true });
+  await db('users').insert({ github_id: 1, username: 'alice', status: 'approved' });
   user1 = await db('users').where({ username: 'alice' }).first();
   app = makeApp();
   await app.setup();

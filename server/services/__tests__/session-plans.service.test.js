@@ -22,7 +22,7 @@ let user;
 let sessionId;
 
 beforeEach(async () => {
-  await db('users').insert({ github_id: 1, username: 'alice', approved: true });
+  await db('users').insert({ github_id: 1, username: 'alice', status: 'approved' });
   user = await db('users').where({ username: 'alice' }).first();
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   sessionId = await insertTestSession(db, {

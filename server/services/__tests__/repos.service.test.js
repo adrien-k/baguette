@@ -92,8 +92,8 @@ beforeEach(async () => {
   vi.clearAllMocks();
 
   await db('users').insert([
-    { github_id: 1, username: 'admin', approved: true, admin: 1 },
-    { github_id: 2, username: 'alice', approved: true, admin: 0 },
+    { github_id: 1, username: 'admin', status: 'approved', admin: 1 },
+    { github_id: 2, username: 'alice', status: 'approved', admin: 0 },
   ]);
   const admin = await db('users').where({ username: 'admin' }).first();
   const alice = await db('users').where({ username: 'alice' }).first();

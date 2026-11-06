@@ -14,17 +14,17 @@ describe('CodeServerHandler.allowUser', () => {
   }
 
   it('allows an existing approved user', async () => {
-    const handler = handlerFor({ 3: { id: 3, approved: 1 } });
+    const handler = handlerFor({ 3: { id: 3, status: 'approved' } });
     await expect(handler.allowUser('3')).resolves.toBe(true);
   });
 
   it('rejects a pending (unapproved) user', async () => {
-    const handler = handlerFor({ 3: { id: 3, approved: 0 } });
+    const handler = handlerFor({ 3: { id: 3, status: 'pending' } });
     await expect(handler.allowUser('3')).resolves.toBe(false);
   });
 
   it('rejects anonymous requests', async () => {
-    const handler = handlerFor({ 3: { id: 3, approved: 1 } });
+    const handler = handlerFor({ 3: { id: 3, status: 'approved' } });
     await expect(handler.allowUser(null)).resolves.toBe(false);
     await expect(handler.allowUser('')).resolves.toBe(false);
     await expect(handler.allowUser(undefined)).resolves.toBe(false);

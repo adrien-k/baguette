@@ -224,7 +224,7 @@ function makeApp(db) {
 }
 
 async function seedUserAndSession(db, { github_id, username, shortId, sessionPath = null } = {}) {
-  await db('users').insert({ github_id, username, approved: true });
+  await db('users').insert({ github_id, username, status: 'approved' });
   const user = await db('users').where({ username }).first();
 
   await db('repos')
@@ -277,7 +277,7 @@ describe('Sessions service - custom methods', () => {
     await db('users').insert({
       github_id: 1002,
       username: 'bob',
-      approved: true,
+      status: 'approved',
     });
     otherUserId = (await db('users').where({ username: 'bob' }).first()).id;
 
@@ -1216,7 +1216,7 @@ describe('Repos service - unlink', () => {
     await db('users').insert({
       github_id: 1002,
       username: 'bob',
-      approved: true,
+      status: 'approved',
     });
     otherUserId = (await db('users').where({ username: 'bob' }).first()).id;
 
@@ -1285,8 +1285,8 @@ describe('Sessions service - find, get, create', () => {
     loadBaguetteConfig.mockResolvedValue(null);
 
     await db('users').insert([
-      { github_id: 1001, username: 'alice', approved: true },
-      { github_id: 1002, username: 'bob', approved: true },
+      { github_id: 1001, username: 'alice', status: 'approved' },
+      { github_id: 1002, username: 'bob', status: 'approved' },
     ]);
     userId1 = (await db('users').where({ username: 'alice' }).first()).id;
     userId2 = (await db('users').where({ username: 'bob' }).first()).id;
@@ -1341,7 +1341,7 @@ describe('Sessions service - find, get, create', () => {
       await db('users').insert({
         github_id: 1003,
         username: 'carol',
-        approved: true,
+        status: 'approved',
       });
       const carol = await db('users').where({ username: 'carol' }).first();
 
@@ -3004,7 +3004,7 @@ describe('Sessions service - restartInterruptedSessions', () => {
     cursorHandleMessageCreated.mockResolvedValue(undefined);
     loadBaguetteConfig.mockResolvedValue(null);
 
-    await db('users').insert({ github_id: 2001, username: 'alice', approved: true });
+    await db('users').insert({ github_id: 2001, username: 'alice', status: 'approved' });
     userId = (await db('users').where({ username: 'alice' }).first()).id;
     await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;

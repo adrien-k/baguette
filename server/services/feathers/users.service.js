@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { KnexService } from '@feathersjs/knex';
-import { Forbidden, NotAuthenticated, NotFound, BadRequest } from 'feathers/errors';
+import { BadRequest, Forbidden, NotAuthenticated, NotFound } from 'feathers/errors';
 import { requireUser, requireAdmin, encryptFields, decryptFields } from './hooks.js';
 import { encrypt } from '../../lib/encrypt.js';
 import { MCP_HTTP_ENDPOINT } from '../../config.js';
@@ -28,6 +28,14 @@ import {
   challengeCookieHeaderFromParams,
   countPasskeysForUser,
 } from '../../lib/webauthn.js';
+import {
+  USER_STATUS_APPROVED,
+  USER_STATUS_PENDING,
+  USER_STATUS_REVOKED,
+  USER_STATUS_VALUES,
+  isApprovedUser,
+  resolveUserStatus,
+} from '../../../shared/user-status.js';
 
 /**
  * Users service (table: users). Admin-only. Supports listing, getting,
@@ -40,7 +48,7 @@ class UsersService extends KnexService {
 
   async approve(id, _params) {
     const db = this.options.Model;
-    await db('users').where({ id }).update({ approved: true });
+    await db('users').where({ id }).update({ status: USER_STATUS_APPROVED });
     return db('users').where({ id }).first();
   }
 
@@ -51,7 +59,7 @@ class UsersService extends KnexService {
     if (!!user.admin && (await countAdmins(db)) <= 1) {
       throw new Forbidden('Cannot revoke the last admin');
     }
-    await db('users').where({ id }).update({ approved: false });
+    await db('users').where({ id }).update({ status: USER_STATUS_REVOKED });
     return db('users').where({ id }).first();
   }
 
@@ -145,7 +153,7 @@ class UsersService extends KnexService {
       const [newId] = await db('users').insert({
         github_id: null,
         username,
-        approved: true,
+        status: USER_STATUS_APPROVED,
         admin: 0,
         onboarding_completed: false,
         invite_token_hash,
@@ -321,11 +329,42 @@ async function normalizeCursorModelPrefsPatch(context) {
   return context;
 }
 
+function normalizeUserStatusWrite(context) {
+  if (!context.data || typeof context.data !== 'object') return context;
+  // Status changes go through approve/reject, never patch.
+  if (context.method === 'patch') {
+    delete context.data.status;
+    delete context.data.approved;
+    delete context.data.revoked;
+    return context;
+  }
+  if (context.data.status != null) {
+    if (!USER_STATUS_VALUES.includes(context.data.status)) {
+      throw new BadRequest(
+        `Invalid user status "${context.data.status}". Must be one of: ${USER_STATUS_VALUES.join(', ')}`
+      );
+    }
+    delete context.data.approved;
+    delete context.data.revoked;
+    return context;
+  }
+  if (context.data.revoked) context.data.status = USER_STATUS_REVOKED;
+  else if (context.data.approved !== undefined) {
+    context.data.status = context.data.approved ? USER_STATUS_APPROVED : USER_STATUS_PENDING;
+  }
+  delete context.data.approved;
+  delete context.data.revoked;
+  return context;
+}
+
 function formatUserExternal(context) {
   const process = (user) => {
     if (!context.params.provider) return user;
     // access_token is always hidden from external callers (even masked)
     delete user.access_token;
+    user.status = resolveUserStatus(user);
+    user.approved = isApprovedUser(user);
+    delete user.revoked;
     user.invite_pending = Boolean(user.invite_token_hash);
     delete user.invite_token_hash;
     delete user.invite_expires_at;
@@ -411,6 +450,7 @@ const usersHooks = {
     get: [restrictGetToSelfOrAdmin],
     create: [
       requireAdmin,
+      normalizeUserStatusWrite,
       normalizeColorSchemePatch,
       normalizeCursorModelPrefsPatch,
       encryptUserSecrets,
@@ -423,6 +463,7 @@ const usersHooks = {
     patch: [
       restrictPatchToSelf,
       stripPrivilegedFieldsFromExternalPatch,
+      normalizeUserStatusWrite,
       normalizeColorSchemePatch,
       normalizeCursorModelPrefsPatch,
       normalizeUserAgentDefaultsPatch,

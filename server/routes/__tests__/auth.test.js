@@ -193,10 +193,11 @@ function testUsersService() {
         username: data.username,
         avatar_url: data.avatar_url ?? null,
         email: data.email ?? null,
-        approved: data.approved ? 1 : 0,
         admin: data.admin ? 1 : 0,
         onboarding_completed: data.onboarding_completed ? 1 : 0,
       };
+      if (data.status !== undefined) insert.status = data.status;
+      else if (data.approved !== undefined) insert.status = data.approved ? 'approved' : 'pending';
       if (data.access_token !== undefined) {
         insert.access_token_encrypted = data.access_token;
       }
@@ -206,7 +207,10 @@ function testUsersService() {
     async patch(id, data, params = {}) {
       const trx = params.transaction?.trx ?? db;
       const patch = { ...data };
-      if (patch.approved !== undefined) patch.approved = patch.approved ? 1 : 0;
+      if (patch.approved !== undefined) {
+        patch.status = patch.approved ? 'approved' : 'pending';
+        delete patch.approved;
+      }
       if (patch.admin !== undefined) patch.admin = patch.admin ? 1 : 0;
       if (patch.onboarding_completed !== undefined) {
         patch.onboarding_completed = patch.onboarding_completed ? 1 : 0;
@@ -274,7 +278,11 @@ describe('GET /auth/github/install', () => {
 
 describe('GET /auth/github/callback', () => {
   it('clears cached repo lists and re-authorizes on a code-less post-install return', async () => {
-    const [userId] = await db('users').insert({ github_id: 5, username: 'alice', approved: true });
+    const [userId] = await db('users').insert({
+      github_id: 5,
+      username: 'alice',
+      status: 'approved',
+    });
 
     const res = await get('/auth/github/callback?installation_id=42&setup_action=install', {
       cookie: `${signedUserCookie(userId)}; auth_redirect=%2Fsettings`,
@@ -292,7 +300,11 @@ describe('GET /auth/github/callback', () => {
   // Guards against a redirect loop: the authorize hop returns with a code and without
   // installation_id, so it must take the token-exchange path, not the re-authorize branch.
   it('does not re-authorize again once the authorize hop returns with a code', async () => {
-    const [userId] = await db('users').insert({ github_id: 5, username: 'alice', approved: true });
+    const [userId] = await db('users').insert({
+      github_id: 5,
+      username: 'alice',
+      status: 'approved',
+    });
     // Fail the token exchange so the handler stops before any GitHub user lookup; all this test
     // needs is proof that the re-authorize branch was not taken again. Only the GitHub call is
     // stubbed — `get` below goes through the same global fetch to reach the test server.
@@ -343,7 +355,11 @@ describe('GET /auth/proxy', () => {
   });
 
   it('redirects signed-in users to the session auth URL with a safe redirectTo only', async () => {
-    const [userId] = await db('users').insert({ github_id: 5, username: 'alice', approved: true });
+    const [userId] = await db('users').insert({
+      github_id: 5,
+      username: 'alice',
+      status: 'approved',
+    });
 
     const safe = await get('/auth/proxy?service=sess&redirectTo=%2Ffoo%3Fq%3D1', {
       cookie: signedUserCookie(userId),
@@ -365,13 +381,26 @@ describe('GET /auth/proxy', () => {
     const [pendingId] = await db('users').insert({
       github_id: 9,
       username: 'pending',
-      approved: false,
+      status: 'pending',
     });
 
     const res = await get('/auth/proxy?service=sess', { cookie: signedUserCookie(pendingId) });
 
     expect(res.status).toBe(403);
     expect(await res.text()).toContain('pending approval');
+  });
+
+  it('rejects a revoked account with revoked copy and no proxy token', async () => {
+    const [revokedId] = await db('users').insert({
+      github_id: 10,
+      username: 'revoked',
+      status: 'revoked',
+    });
+
+    const res = await get('/auth/proxy?service=sess', { cookie: signedUserCookie(revokedId) });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('access revoked');
   });
 
   it('sends a stale cookie (deleted user) to login and clears the cookie', async () => {
@@ -418,7 +447,7 @@ describe('GET /auth/me', () => {
   });
 
   it('marks bootstrap unavailable after a user exists', async () => {
-    await db('users').insert({ github_id: 1, username: 'only', approved: true });
+    await db('users').insert({ github_id: 1, username: 'only', status: 'approved' });
 
     const res = await get('/auth/me');
     const body = await res.json();
@@ -430,7 +459,7 @@ describe('GET /auth/me', () => {
     const [userId] = await db('users').insert({
       github_id: 1,
       username: 'with-passkey',
-      approved: true,
+      status: 'approved',
     });
     await db('user_passkeys').insert({
       user_id: userId,
@@ -448,7 +477,7 @@ describe('GET /auth/me', () => {
     const [userId] = await db('users').insert({
       github_id: 5,
       username: 'alice',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -458,6 +487,7 @@ describe('GET /auth/me', () => {
     expect(body.user).toMatchObject({
       id: userId,
       username: 'alice',
+      status: 'approved',
       approved: true,
       admin: true,
       color_scheme: 'dark',
@@ -476,11 +506,11 @@ describe('GET /auth/me', () => {
     expect(body.passkeys).toEqual({ available: false });
   });
 
-  it('reports a pending account with approved:false (the pending page reads this)', async () => {
+  it('reports a pending account with status pending (the pending page reads this)', async () => {
     const [pendingId] = await db('users').insert({
       github_id: 11,
       username: 'pendingme',
-      approved: false,
+      status: 'pending',
       admin: 0,
     });
 
@@ -490,11 +520,26 @@ describe('GET /auth/me', () => {
     expect(body.user).toMatchObject({
       id: pendingId,
       username: 'pendingme',
+      status: 'pending',
       approved: false,
-      admin: false,
-      github_linked: true,
-      passkey_count: 0,
-      is_first_user: true,
+    });
+  });
+
+  it('reports a revoked account with status revoked (the access-revoked page reads this)', async () => {
+    const [revokedId] = await db('users').insert({
+      github_id: 12,
+      username: 'revokedme',
+      status: 'revoked',
+    });
+
+    const res = await get('/auth/me', { cookie: signedUserCookie(revokedId) });
+
+    const body = await res.json();
+    expect(body.user).toMatchObject({
+      id: revokedId,
+      username: 'revokedme',
+      status: 'revoked',
+      approved: false,
     });
   });
 
@@ -502,13 +547,13 @@ describe('GET /auth/me', () => {
     const [firstId] = await db('users').insert({
       github_id: 1,
       username: 'first',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
     const [laterId] = await db('users').insert({
       github_id: null,
       username: 'later',
-      approved: true,
+      status: 'approved',
       admin: 0,
     });
 
@@ -540,7 +585,7 @@ describe('GET /auth/github/manifest', () => {
     const [userId] = await db('users').insert({
       github_id: 50,
       username: 'admin',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -561,7 +606,7 @@ describe('GET /auth/github/manifest', () => {
     const [userId] = await db('users').insert({
       github_id: 51,
       username: 'orgadmin',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -583,7 +628,7 @@ describe('GET /auth/github/manifest', () => {
     const [userId] = await db('users').insert({
       github_id: 52,
       username: 'member',
-      approved: true,
+      status: 'approved',
       admin: 0,
     });
 
@@ -627,7 +672,7 @@ describe('GET /auth/github/manifest/callback', () => {
     const [userId] = await db('users').insert({
       github_id: 60,
       username: 'setup',
-      approved: true,
+      status: 'approved',
       admin: 1,
       onboarding_completed: 0,
     });
@@ -673,7 +718,7 @@ describe('GET /auth/github/manifest/callback', () => {
     const [userId] = await db('users').insert({
       github_id: 61,
       username: 'notadmin',
-      approved: true,
+      status: 'approved',
       admin: 0,
     });
     const forbidden = await get('/auth/github/manifest/callback?code=abc', {
@@ -686,7 +731,7 @@ describe('GET /auth/github/manifest/callback', () => {
     const [userId] = await db('users').insert({
       github_id: 63,
       username: 'admin-csrf',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -709,7 +754,7 @@ describe('GET /auth/github/manifest/callback', () => {
     const [userId] = await db('users').insert({
       github_id: 64,
       username: 'admin-mismatch',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -748,7 +793,7 @@ describe('GET /auth/github/manifest/callback', () => {
     const [userId] = await db('users').insert({
       github_id: 62,
       username: 'admin2',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -798,7 +843,7 @@ describe('POST /auth/bootstrap', () => {
 
     const row = await db('users').where({ id: body.user.id }).first();
     expect(row.github_id).toBeNull();
-    expect(row.approved).toBe(1);
+    expect(row.status).toBe('approved');
     expect(row.admin).toBe(1);
     expect(row.last_ip).toBeTruthy();
     expect(row.last_ip_country).toBeNull();
@@ -837,7 +882,7 @@ describe('POST /auth/passkey/register/options and /auth/passkey/register/verify'
     const [userId] = await db('users').insert({
       github_id: null,
       username: 'bootstrap',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
     const sessionCookie = signedUserCookie(userId);
@@ -869,7 +914,7 @@ describe('POST /auth/passkey/register/options and /auth/passkey/register/verify'
     const [userId] = await db('users').insert({
       github_id: null,
       username: 'bootstrap',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -886,7 +931,7 @@ describe('POST /auth/passkey/options and /auth/passkey/verify', () => {
     const [userId] = await db('users').insert({
       github_id: null,
       username: 'passkey-user',
-      approved: false,
+      status: 'pending',
       admin: 0,
     });
     await db('user_passkeys').insert({
@@ -926,7 +971,7 @@ describe('GET /auth/invite/:token and passkey accept', () => {
     const [id] = await db('users').insert({
       github_id: null,
       username: 'later-user',
-      approved: true,
+      status: 'approved',
       admin: 0,
       invite_token_hash: hashInviteToken(token),
       invite_expires_at: expired ? new Date(Date.now() - 1000).toISOString() : inviteExpiresAt(),
@@ -1025,7 +1070,7 @@ describe('GET /auth/github/callback GitHub account linking', () => {
     const [bootstrapId] = await db('users').insert({
       github_id: null,
       username: 'bootstrap',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
 
@@ -1049,13 +1094,13 @@ describe('GET /auth/github/callback GitHub account linking', () => {
     const [bootstrapId] = await db('users').insert({
       github_id: null,
       username: 'bootstrap',
-      approved: true,
+      status: 'approved',
       admin: 1,
     });
     await db('users').insert({
       github_id: GITHUB_USER.id,
       username: 'other',
-      approved: true,
+      status: 'approved',
     });
 
     const fetchSpy = mockGithubOAuth();

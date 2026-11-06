@@ -19,8 +19,8 @@ beforeEach(async () => {
   app = feathers();
   app.set('db', db);
   await db('users').insert([
-    { id: 1, github_id: 1, username: 'admin', approved: true, admin: 1 },
-    { id: 2, github_id: 2, username: 'member', approved: true, admin: 0 },
+    { id: 1, github_id: 1, username: 'admin', status: 'approved', admin: 1 },
+    { id: 2, github_id: 2, username: 'member', status: 'approved', admin: 0 },
   ]);
   registerInstanceSettingsService(app);
   await app.setup();

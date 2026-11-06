@@ -69,7 +69,11 @@ describe('session last_activity_at from messages', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-29T12:00:00.000Z'));
     try {
-      const [userId] = await db('users').insert({ github_id: 9, username: 'act', approved: true });
+      const [userId] = await db('users').insert({
+        github_id: 9,
+        username: 'act',
+        status: 'approved',
+      });
       const [sessionId] = await db('sessions').insert({
         user_id: userId,
         repo_full_name: 'o/r',

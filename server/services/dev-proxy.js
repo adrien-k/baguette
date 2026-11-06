@@ -7,6 +7,8 @@ import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
 import { getClientIp } from '../lib/client-ip.js';
 import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
+import { unapprovedPreviewDenial } from '../lib/unapproved-account.js';
+import { isApprovedUser } from '../../shared/user-status.js';
 import { getLoopbackHost } from './port-utils.js';
 import { HEARTBEAT_INTERVAL_MS } from './task.js';
 
@@ -57,14 +59,14 @@ export class DevProxy {
       if (sign) {
         try {
           const userId = verifyProxyToken(sign);
-          if (await this._isApprovedUser(userId)) {
+          const user = await this._getUser(userId);
+          if (isApprovedUser(user)) {
             this._setProxyCookie(res, String(userId));
             const dest = toSafePath(req.query.redirectTo) ?? '/';
             return res.redirect(dest);
           }
           return res.status(403).render('devserver-denied', {
-            title: 'Account pending approval',
-            message: 'An existing user must approve this account before previews can be opened.',
+            ...unapprovedPreviewDenial(user),
             backUrl: PUBLIC_HOST,
           });
         } catch (e) {
@@ -211,18 +213,22 @@ export class DevProxy {
    * a revocation for up to its TTL. Fails closed: on lookup errors the user is treated as
    * unauthenticated (the request is redirected to sign-in, never waved through).
    */
-  async _isApprovedUser(userId) {
-    if (userId == null || userId === '') return false;
+  async _getUser(userId) {
+    if (userId == null || userId === '') return null;
     try {
-      const user = await this.app
+      return await this.app
         .get('db')('users')
         .where({ id: Number(userId) })
         .first();
-      return !!user?.approved;
     } catch (err) {
       logger.error(err, 'Proxy user lookup failed — failing closed');
-      return false;
+      return null;
     }
+  }
+
+  async _isApprovedUser(userId) {
+    const user = await this._getUser(userId);
+    return isApprovedUser(user);
   }
 
   async _resolveProxyAccess(handler, userId, clientIp) {

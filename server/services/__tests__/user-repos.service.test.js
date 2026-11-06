@@ -44,8 +44,8 @@ let userRepo1;
 
 beforeEach(async () => {
   await db('users').insert([
-    { github_id: 1, username: 'alice', approved: true },
-    { github_id: 2, username: 'bob', approved: true },
+    { github_id: 1, username: 'alice', status: 'approved' },
+    { github_id: 2, username: 'bob', status: 'approved' },
   ]);
   user1 = await db('users').where({ username: 'alice' }).first();
   user2 = await db('users').where({ username: 'bob' }).first();

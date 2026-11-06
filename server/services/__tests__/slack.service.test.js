@@ -20,7 +20,7 @@ let app;
 beforeEach(async () => {
   app = feathers();
   app.set('db', db);
-  await db('users').insert({ github_id: 1, username: 'admin', approved: true, admin: 1 });
+  await db('users').insert({ github_id: 1, username: 'admin', status: 'approved', admin: 1 });
   registerSlackService(app);
   await app.setup();
 });

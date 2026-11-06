@@ -79,9 +79,9 @@ let pendingUser;
 beforeEach(async () => {
   githubConfigMock.configured = false;
   await db('users').insert([
-    { github_id: 1, username: 'alice', approved: true, admin: 1 },
-    { github_id: 2, username: 'bob', approved: true, admin: 0 },
-    { github_id: 3, username: 'charlie', approved: false, admin: 0 },
+    { github_id: 1, username: 'alice', status: 'approved', admin: 1 },
+    { github_id: 2, username: 'bob', status: 'approved', admin: 0 },
+    { github_id: 3, username: 'charlie', status: 'pending', admin: 0 },
   ]);
   user1 = await db('users').where({ username: 'alice' }).first();
   user2 = await db('users').where({ username: 'bob' }).first();
@@ -113,6 +113,19 @@ describe('Users service - find', () => {
       expect(new Date(data[i - 1].created_at) >= new Date(data[i].created_at)).toBe(true);
     }
   });
+
+  it('exposes status and a derived approved boolean on external finds', async () => {
+    await app.service('users').reject(user2.id, params(user1));
+    const result = await app.service('users').find(params(user1));
+    const data = result.data ?? result;
+    const bob = data.find((u) => u.username === 'bob');
+    const charlie = data.find((u) => u.username === 'charlie');
+    expect(bob.status).toBe('revoked');
+    expect(bob.approved).toBe(false);
+    expect(bob.revoked).toBeUndefined();
+    expect(charlie.status).toBe('pending');
+    expect(charlie.approved).toBe(false);
+  });
 });
 
 describe('Users service - approve', () => {
@@ -120,7 +133,15 @@ describe('Users service - approve', () => {
     await app.service('users').approve(pendingUser.id, params(user1));
 
     const updated = await db('users').where({ id: pendingUser.id }).first();
-    expect(updated.approved).toBe(1); // SQLite stores booleans as 0/1
+    expect(updated.status).toBe('approved');
+  });
+
+  it('approving a revoked user restores approved status', async () => {
+    await app.service('users').reject(user2.id, params(user1));
+    await app.service('users').approve(user2.id, params(user1));
+
+    const updated = await db('users').where({ id: user2.id }).first();
+    expect(updated.status).toBe('approved');
   });
 
   it('non-admin cannot approve', async () => {
@@ -139,7 +160,34 @@ describe('Users service - reject', () => {
     await app.service('users').reject(user2.id, params(user1));
 
     const updated = await db('users').where({ id: user2.id }).first();
-    expect(updated.approved).toBe(0);
+    expect(updated.status).toBe('revoked');
+  });
+
+  it('rejecting a pending user persists revoked instead of leaving them pending', async () => {
+    await app.service('users').reject(pendingUser.id, params(user1));
+
+    const updated = await db('users').where({ id: pendingUser.id }).first();
+    expect(updated.status).toBe('revoked');
+  });
+
+  it('later profile patches do not clear a persisted revoked status', async () => {
+    await app.service('users').reject(user2.id, params(user1));
+    await app.service('users').patch(user2.id, { username: 'robert' }, {});
+
+    const updated = await db('users').where({ id: user2.id }).first();
+    expect(updated.username).toBe('robert');
+    expect(updated.status).toBe('revoked');
+  });
+
+  it('ignores status on patch so a user cannot self-approve', async () => {
+    await app.service('users').reject(user2.id, params(user1));
+    await app
+      .service('users')
+      .patch(user2.id, { status: 'approved', username: 'robert' }, params(user2));
+
+    const updated = await db('users').where({ id: user2.id }).first();
+    expect(updated.username).toBe('robert');
+    expect(updated.status).toBe('revoked');
   });
 
   it('non-admin cannot reject', async () => {
@@ -188,7 +236,7 @@ describe('Users service - create', () => {
   it('admin can create a new user', async () => {
     const result = await app
       .service('users')
-      .create({ github_id: 999, username: 'newuser', approved: false }, params(user1));
+      .create({ github_id: 999, username: 'newuser', status: 'pending' }, params(user1));
     expect(result.username).toBe('newuser');
     const row = await db('users').where({ username: 'newuser' }).first();
     expect(row).toBeTruthy();
@@ -198,7 +246,7 @@ describe('Users service - create', () => {
     await expectForbidden(
       app
         .service('users')
-        .create({ github_id: 999, username: 'newuser', approved: false }, params(user2))
+        .create({ github_id: 999, username: 'newuser', status: 'pending' }, params(user2))
     );
   });
 
@@ -206,6 +254,23 @@ describe('Users service - create', () => {
     await expect(
       app.service('users').create({ github_id: 999, username: 'newuser' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
+  });
+
+  it('rejects an unrecognized status on create instead of coercing it', async () => {
+    await expect(
+      app
+        .service('users')
+        .create({ github_id: 998, username: 'badstatus', status: 'active' }, params(user1))
+    ).rejects.toThrow('Invalid user status');
+    const row = await db('users').where({ username: 'badstatus' }).first();
+    expect(row).toBeFalsy();
+  });
+
+  it('keeps the legacy approved boolean mapped to status on create', async () => {
+    const legacy = await app
+      .service('users')
+      .create({ github_id: 997, username: 'legacyapproved', approved: true }, params(user1));
+    expect(legacy.status).toBe('approved');
   });
 });
 
@@ -292,7 +357,7 @@ describe('Users service - patch', () => {
 
   it('a user cannot patch another user', async () => {
     await expect(
-      app.service('users').patch(user2.id, { approved: false }, params(user1))
+      app.service('users').patch(user2.id, { status: 'pending' }, params(user1))
     ).rejects.toThrow('Can only patch own user');
   });
 
@@ -305,19 +370,23 @@ describe('Users service - patch', () => {
     expect(row.color_scheme).toBe('light');
   });
 
-  it('external patch cannot set github_id or approved', async () => {
+  it('external patch cannot set github_id or status', async () => {
     await app
       .service('users')
-      .patch(user2.id, { github_id: 99999, approved: false, color_scheme: 'light' }, params(user2));
+      .patch(
+        user2.id,
+        { github_id: 99999, status: 'pending', color_scheme: 'light' },
+        params(user2)
+      );
     const row = await db('users').where({ id: user2.id }).first();
     expect(row.github_id).toBe(2);
-    expect(row.approved).toBe(1);
+    expect(row.status).toBe('approved');
     expect(row.color_scheme).toBe('light');
   });
 
   it('unauthenticated patch is rejected', async () => {
     await expect(
-      app.service('users').patch(user2.id, { approved: false }, unauthParams)
+      app.service('users').patch(user2.id, { status: 'pending' }, unauthParams)
     ).rejects.toThrow('Not authenticated');
   });
 
@@ -495,7 +564,7 @@ describe('Users service - invite', () => {
     });
     const row = await db('users').where({ username: 'dana' }).first();
     expect(row.invite_token_hash).toBeTruthy();
-    expect(row.approved).toBe(1);
+    expect(row.status).toBe('approved');
 
     const listed = await app.service('users').get(row.id, params(user1));
     expect(listed.invite_pending).toBe(true);
