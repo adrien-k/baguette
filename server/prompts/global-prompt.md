@@ -54,3 +54,4 @@ Skills are instructions saved for this account under Settings → Skills. Their 
 - Call **`ListSkills`** to see each skill's label and description.
 - When a description matches the task, call **`ReadSkill`** with that exact label and follow the returned content.
 - Do not guess what a skill says. Load a skill only when it is relevant.
+- When the user asks to create, update (rename, reword, edit content), or delete a skill, use **`CreateSkill`**, **`UpdateSkill`**, or **`DeleteSkill`**.

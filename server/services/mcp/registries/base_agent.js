@@ -27,7 +27,13 @@ import {
   createRecomputeUsageCostsTool,
   createUpdateModelPricingTool,
 } from '../tools/model-pricing.js';
-import { createListSkillsTool, createReadSkillTool } from '../tools/skills.js';
+import {
+  createDeleteSkillTool,
+  createListSkillsTool,
+  createReadSkillTool,
+  createCreateSkillTool,
+  createUpdateSkillTool,
+} from '../tools/skills.js';
 
 function sessionToolsFromContext(ctx) {
   return [
@@ -67,6 +73,9 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
   return [
     createListSkillsTool(ctx),
     createReadSkillTool(ctx),
+    createCreateSkillTool(ctx),
+    createUpdateSkillTool(ctx),
+    createDeleteSkillTool(ctx),
     createListReposTool(ctx),
     createListBranchesTool(ctx),
     createListModelsTool(ctx),

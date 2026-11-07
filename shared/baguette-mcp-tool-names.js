@@ -3,6 +3,9 @@
 export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'ListSkills',
   'ReadSkill',
+  'CreateSkill',
+  'UpdateSkill',
+  'DeleteSkill',
   'ListRepos',
   'ListBranches',
   'ListModels',
