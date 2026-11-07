@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { MOCK_STANDARD_MODEL_ID } from '../shared/mock-agent-sdk.js';
 import { FIX_MODEL_PRICING_PROMPT } from '../shared/agent-model-pricing.js';
 import { devLogin, saveE2eScreenshot, seedE2eUsageDashboard } from './helpers.js';

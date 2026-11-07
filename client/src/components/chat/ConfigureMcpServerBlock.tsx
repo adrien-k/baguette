@@ -78,7 +78,7 @@ export default function ConfigureMcpServerBlock({
       <div className="flex items-center gap-2 px-3 sm:px-4 py-2 min-w-0">
         <span className="text-accent text-xs font-mono shrink-0">MCP server</span>
         {(failed || isError) && (
-          <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+          <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
             error
           </span>
         )}

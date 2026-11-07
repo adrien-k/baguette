@@ -77,7 +77,7 @@ function SubagentOpenCard({
       type="button"
       onClick={onOpen}
       title={`Open ${label}`}
-      className="inline-flex max-w-[14rem] min-w-0 items-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-100 transition-colors hover:bg-cyan-500/20 hover:border-cyan-500/50 cursor-pointer"
+      className="inline-flex max-w-[14rem] min-w-0 items-center gap-1.5 rounded-lg border border-info/40 bg-info/10 px-2.5 py-1.5 text-xs font-medium text-info transition-colors hover:bg-info/20 hover:border-info/60 cursor-pointer"
     >
       {cardBody}
     </button>
@@ -187,7 +187,7 @@ export default function SubagentMcpToolBlock({
             <span className="text-fg text-xs font-semibold truncate min-w-0">{detail}</span>
           ) : null}
           {showFailed && (
-            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
               error
             </span>
           )}
@@ -225,13 +225,13 @@ export default function SubagentMcpToolBlock({
           {mcpErrorMessage && (
             <div>
               {hasToolInput(args) && <div className="text-faint font-medium mb-0.5">Error</div>}
-              <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-red-950/30">
+              <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-soft-danger/60">
                 {mcpErrorMessage}
               </pre>
             </div>
           )}
           {showFailed && !mcpErrorMessage && result != null && (
-            <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-red-950/30">
+            <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-soft-danger/60">
               {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
             </pre>
           )}

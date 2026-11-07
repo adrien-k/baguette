@@ -144,15 +144,20 @@ function addUsageMetrics(acc, row) {
 // Categorical slots, assigned in fixed order and never cycled: the 9th series and
 // beyond fold into "Other". Validated for the dark chart surface (zinc-900) against
 // the lightness band, chroma floor, CVD separation and contrast.
+/**
+ * Chart series colors for the Usage graph. Charts stay on concrete steps (see
+ * index.css note) but each series gets a lighter dark-mode step so bars keep
+ * non-text contrast against zinc-950 instead of reading near-black.
+ */
 export const SERIES_COLORS = [
-  'bg-amber-600',
-  'bg-sky-600',
-  'bg-emerald-600',
-  'bg-violet-500',
-  'bg-rose-500',
-  'bg-fuchsia-500',
-  'bg-lime-600',
-  'bg-cyan-600',
+  'bg-amber-600 dark:bg-amber-400',
+  'bg-sky-600 dark:bg-sky-400',
+  'bg-emerald-600 dark:bg-emerald-400',
+  'bg-violet-500 dark:bg-violet-400',
+  'bg-rose-500 dark:bg-rose-400',
+  'bg-fuchsia-500 dark:bg-fuchsia-400',
+  'bg-lime-600 dark:bg-lime-400',
+  'bg-cyan-600 dark:bg-cyan-400',
 ];
 const OTHER_COLOR = 'bg-track';
 export const OTHER_KEY = '__other__';

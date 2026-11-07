@@ -55,7 +55,7 @@ function PrUpsertBlock({
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-accent text-xs font-mono shrink-0">Pull Request</span>
           {isError && (
-            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
               error
             </span>
           )}
@@ -102,7 +102,7 @@ function PrUpsertBlock({
           {result != null && isError && (
             <div>
               <div className="font-medium mb-1 text-danger">Error</div>
-              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-red-950/30">
+              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-soft-danger/60">
                 {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>
@@ -149,7 +149,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
           </span>
         ) : null}
         {isError && (
-          <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+          <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
             error
           </span>
         )}
@@ -164,7 +164,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
       </div>
       {isError && block.result != null && (
         <div className="px-3 sm:px-4 pb-2">
-          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-red-950/30 text-xs">
+          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-soft-danger/60 text-xs">
             {typeof block.result === 'string'
               ? block.result
               : JSON.stringify(block.result, null, 2)}

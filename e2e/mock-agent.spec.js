@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import {
   MOCK_AGENT_SUMMARY_TEXT,
   MOCK_E2E_CREATE_PLAN_PROMPT,
@@ -11,8 +11,13 @@ import {
   startMockBuilderSession,
 } from './helpers.js';
 
+const WIDE_VIEWPORT = { width: 1280, height: 800 };
+
 test.describe('mock agent chat', () => {
   test('dev login, local repo, mock session renders tool calls and summary', async ({ page }) => {
+    // Tall viewport so the fullPage capture spans the whole turn group (todo chips,
+    // file/write/edit/blocks and the closing summary are all visible together).
+    await page.setViewportSize({ width: 1280, height: 1500 });
     await devLogin(page);
 
     const repoId = await createLocalRepo(page);
@@ -25,8 +30,9 @@ test.describe('mock agent chat', () => {
     await expect(page.getByText('ConfigRepoPrompt').first()).toBeVisible();
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible();
     await expect(page.getByText(MOCK_E2E_CREATE_PLAN_PROMPT)).toBeVisible();
+    // Nested subagent work group currently renders with a singular "1 call".
     const nestedWorkGroup = page
-      .getByRole('button', { name: /Worked( for .*)? · \d+ calls/ })
+      .getByRole('button', { name: /Worked( for .*)? · \d+ calls?/ })
       .nth(1);
     await expect(nestedWorkGroup).toBeVisible();
     await nestedWorkGroup.click();
@@ -43,6 +49,7 @@ test.describe('mock agent chat', () => {
   });
 
   test('mock builder session then mock reviewer creates issues on Issues tab', async ({ page }) => {
+    await page.setViewportSize(WIDE_VIEWPORT);
     await devLogin(page);
 
     const repoId = await createLocalRepo(page);
@@ -60,5 +67,7 @@ test.describe('mock agent chat', () => {
       await expect(page.getByText(issue.title)).toBeVisible({ timeout: 120_000 });
     }
     await expect(page.getByText('Review in progress')).toBeHidden({ timeout: 120_000 });
+
+    await saveE2eScreenshot(page, 'review-issues-list.png', { fullPage: true });
   });
 });

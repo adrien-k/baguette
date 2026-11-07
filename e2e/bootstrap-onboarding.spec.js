@@ -1,5 +1,11 @@
-import { test, expect } from '@playwright/test';
-import { devLogin, saveE2eScreenshot, seedE2ePasskey, setE2eUserApproved } from './helpers.js';
+import { test, expect } from './fixtures.js';
+import {
+  devLogin,
+  saveE2eScreenshot,
+  seedE2ePasskey,
+  setE2eUserApproved,
+  settleForScreenshot,
+} from './helpers.js';
 
 const WIDE_VIEWPORT = { width: 1280, height: 800 };
 
@@ -22,7 +28,13 @@ test.describe('bootstrap onboarding without GitHub', () => {
     await page.setViewportSize(WIDE_VIEWPORT);
     await devLogin(page);
 
-    await page.locator('nav img.rounded-full').click();
+    // Avatar trigger: image when the user has one, letter fallback "dev" button otherwise.
+    const avatarTrigger = page
+      .locator('nav img.rounded-full')
+      .or(page.getByRole('button', { name: 'dev', exact: true }))
+      .first();
+    await expect(avatarTrigger).toBeVisible({ timeout: 30_000 });
+    await avatarTrigger.click();
     const settingsLink = page.getByRole('link', { name: 'Settings' });
     const adminLink = page.getByRole('link', { name: 'Admin' });
     await expect(settingsLink).toBeVisible();
@@ -49,10 +61,12 @@ test.describe('bootstrap onboarding without GitHub', () => {
     await expect(page.getByRole('heading', { name: 'GitHub App' })).toBeVisible();
     await expect(page.getByText('Not configured')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create GitHub App' })).toBeVisible();
+    await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'admin-github-app.png', { fullPage: true });
 
     await page.getByRole('button', { name: 'Secrets' }).click();
     await expect(page.getByRole('heading', { name: 'System-wide secrets' })).toBeVisible();
+    await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'admin-secrets.png', { fullPage: true });
 
     await page.goto('/settings?tab=account');
@@ -162,6 +176,9 @@ test.describe('bootstrap onboarding without GitHub', () => {
     await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible();
     await expect(page.locator('svg[viewBox="0 0 64 64"]')).toBeVisible();
     await saveE2eScreenshot(page, 'account-pending.png');
+    // Restore approval before logging out (cookie still authorizes reading the user) —
+    // serial tests after this one must not sign in to a pending account.
+    await setE2eUserApproved(page, true);
     await page.getByRole('button', { name: 'Log out' }).click();
     await expect(page.getByRole('heading', { name: 'Baguette' })).toBeVisible({ timeout: 30_000 });
   });

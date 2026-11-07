@@ -26,10 +26,10 @@ const TEXTAREA_CLASS =
 
 function composerAgentSwitcherBadgeClass(agent) {
   if (isSubagentBuilder(agent)) {
-    return 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200 hover:enabled:bg-cyan-500/20 hover:enabled:border-cyan-500/45';
+    return 'bg-info/10 border-info/30 text-info hover:enabled:bg-info/20 hover:enabled:border-info/45';
   }
   if (agent?.agent_type === 'reviewer') {
-    return 'bg-violet-500/15 border-violet-500/35 text-violet-200 hover:enabled:bg-violet-500/25 hover:enabled:border-violet-500/45';
+    return 'bg-merged/10 border-merged/30 text-merged hover:enabled:bg-merged/20 hover:enabled:border-merged/45';
   }
   return 'bg-brand/15 border-brand/40 text-accent hover:enabled:bg-brand/25 hover:enabled:border-brand/50';
 }

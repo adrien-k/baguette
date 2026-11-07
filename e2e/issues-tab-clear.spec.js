@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { MOCK_REVIEW_ISSUES } from '../shared/mock-agent-sdk.js';
 import {
   confirmClearReviewerChatModal,
@@ -6,6 +6,7 @@ import {
   devLogin,
   expectIssuesTabReviewerControls,
   openSessionAgentsPanel,
+  saveE2eScreenshotPath,
   screenshotIssuesTabReviewerControls,
   startMockBuilderSession,
 } from './helpers.js';
@@ -33,12 +34,19 @@ test.describe('Issues tab reset reviewer', () => {
     await expectIssuesTabReviewerControls(page);
 
     await page.setViewportSize(NARROW_VIEWPORT);
-    await screenshotIssuesTabReviewerControls(page, process.env.E2E_SCREENSHOT_PATH_NARROW, {
-      closeMobilePanel: true,
-    });
+    await screenshotIssuesTabReviewerControls(
+      page,
+      saveE2eScreenshotPath('issues-reviewer-narrow.png'),
+      {
+        closeMobilePanel: true,
+      }
+    );
 
     await page.setViewportSize(WIDE_VIEWPORT);
-    await screenshotIssuesTabReviewerControls(page, process.env.E2E_SCREENSHOT_PATH_WIDE);
+    await screenshotIssuesTabReviewerControls(
+      page,
+      saveE2eScreenshotPath('issues-reviewer-wide.png')
+    );
 
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
     await confirmClearReviewerChatModal(page);

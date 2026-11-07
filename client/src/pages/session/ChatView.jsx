@@ -964,7 +964,7 @@ export default function ChatView({
         </ChatMessagesViewport>
 
         {error && (
-          <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-danger text-xs">
+          <div className="shrink-0 px-3 py-2 bg-soft-danger border-t border-danger/60 text-danger text-xs">
             {error}
           </div>
         )}

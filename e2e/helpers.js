@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
+import { E2E_THEME, e2eThemeSuffix } from './fixtures.js';
 import {
   MOCK_ALT_PRIMARY_MODEL_ID,
   MOCK_CATALOG_ALT_API_KEY,
@@ -38,10 +39,28 @@ export function localRepoName() {
   return `e2e-mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Dev sign-in (NODE_ENV=development only). Lands on the dashboard with session cookie set. */
+/**
+ * Dev sign-in (NODE_ENV=development only). Lands on the dashboard with session cookie set.
+ *
+ * Under E2E_THEME (dark/light runs) the user's stored `color_scheme` is seeded *before*
+ * any app page loads, so ColorSchemeProvider adopts the run theme from the user record
+ * instead of flipping the theme mid-test (DB default is dark; localStorage alone would
+ * be overridden by the user preference once the user object loads). Written directly to
+ * the webServer sqlite: the users API patch 401s for pending users, and the theme is not
+ * a security boundary in the e2e DB.
+ */
 export async function devLogin(page, username = 'dev') {
   const path =
     username === 'dev' ? '/auth/dev' : `/auth/dev?username=${encodeURIComponent(username)}`;
+  if (E2E_THEME) {
+    const seedResponse = await page.request.get(path);
+    expect(seedResponse.ok()).toBe(true);
+    const me = await page.request.get('/auth/me').then((r) => {
+      expect(r.ok()).toBe(true);
+      return r.json();
+    });
+    if (me.user?.id) await setE2eUserColorScheme(me.user.id, E2E_THEME);
+  }
   const authResponse = await page.goto(path);
   expect(authResponse?.ok()).toBe(true);
   await page.waitForURL((url) => url.pathname === '/' || url.pathname === '', {
@@ -194,6 +213,26 @@ export async function sendSessionChatMessage(page, text) {
 
 const E2E_SCREENSHOTS_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'screenshots');
 
+/**
+ * Append the `-<theme>` suffix from E2E_THEME (dark/light) before the file
+ * extension so a themed capture run writes a parallel file set instead of
+ * overwriting the other theme's screenshots. Idempotent (skips if present).
+ */
+export function withE2eThemeSuffix(path) {
+  const suffix = e2eThemeSuffix();
+  if (!suffix) return path;
+  const ext = /\.(png|jpeg|jpg)$/.exec(path);
+  if (!ext) return path;
+  const stem = path.slice(0, -ext[0].length);
+  if (stem.endsWith(`-${E2E_THEME}`)) return path;
+  return `${stem}${suffix}${ext[0]}`;
+}
+
+/** Screenshot file path under `e2e/screenshots/`, themed from E2E_THEME. */
+export function saveE2eScreenshotPath(fileName) {
+  return withE2eThemeSuffix(join(E2E_SCREENSHOTS_DIR, fileName));
+}
+
 export function parseSessionIdFromUrl(url) {
   const match = String(url).match(/\/sessions\/([^/?]+)/);
   return match?.[1] ?? null;
@@ -277,7 +316,9 @@ export async function expectComposerAgentSwitcherSections(page, { timeout = 120_
  * `E2E_SCREENSHOT_PATH` when that env var is set (single-file override).
  */
 export async function saveE2eScreenshot(page, fileName, options = {}) {
-  const path = process.env.E2E_SCREENSHOT_PATH ?? join(E2E_SCREENSHOTS_DIR, fileName);
+  const path = process.env.E2E_SCREENSHOT_PATH
+    ? withE2eThemeSuffix(process.env.E2E_SCREENSHOT_PATH)
+    : saveE2eScreenshotPath(fileName);
   await mkdir(dirname(path), { recursive: true });
   await page.screenshot({ path, ...options });
   return path;
@@ -289,16 +330,29 @@ const E2E_DB_PATH = join(
   'baguette.sqlite3'
 );
 
-/** Flip `users.approved` for the signed-in account (Playwright webServer sqlite). */
+/** Set `users.color_scheme` directly in the webServer sqlite (theme runs). */
+export async function setE2eUserColorScheme(userId, scheme) {
+  const value = scheme === 'light' ? 'light' : 'dark';
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    db.prepare('UPDATE users SET color_scheme = ? WHERE id = ?').run(value, userId);
+  } finally {
+    db.close();
+  }
+}
+
+/** Flip the signed-in account's approval `status` (Playwright webServer sqlite). */
 export async function setE2eUserApproved(page, approved) {
   const me = await page.request.get('/auth/me').then((r) => r.json());
   const userId = me.user?.id;
   expect(userId).toBeTruthy();
 
+  const value = approved ? 'approved' : 'pending';
   const { default: Database } = await import('better-sqlite3');
   const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
   try {
-    db.prepare('UPDATE users SET approved = ? WHERE id = ?').run(approved ? 1 : 0, userId);
+    db.prepare('UPDATE users SET status = ? WHERE id = ?').run(value, userId);
   } finally {
     db.close();
   }
@@ -504,6 +558,36 @@ export async function createPresetModel(page, { description, configId, model }) 
   return await res.json();
 }
 
+/**
+ * Let hover/focus and color transitions settle before a screenshot: move the mouse
+ * off nav/links and give CSS `transition-colors` (~150ms) room to finish, so captures
+ * never land mid-fade (a stray half-faded pill can read like a second active tab).
+ */
+export async function settleForScreenshot(page, ms = 300) {
+  await page.mouse.move(4, 4);
+  await page.waitForTimeout(ms);
+}
+
+/**
+ * Wait for `text` to render in the current session chat, reloading the page if the
+ * live socket stream missed it (e.g. the ask-question tool row ran before the chat
+ * view mounted). Reload is safe: unanswered question cards persist server-side.
+ */
+export async function expectChatTextWithReload(page, text, timeout = 120_000) {
+  await expect
+    .poll(
+      async () => {
+        const locator = page.getByText(text);
+        if ((await locator.count()) > 0) return 'found';
+        await page.reload();
+        await page.waitForLoadState('domcontentloaded');
+        return (await page.getByText(text).count()) > 0 ? 'found' : 'not-found';
+      },
+      { timeout, intervals: [5_000, 5_000, 10_000] }
+    )
+    .toBe('found');
+}
+
 export async function ensureMockE2eConfigs(page) {
   const existing = await listAgentConfigs(page);
   let configA = existing.find((c) => c.label === MOCK_E2E_CONFIG_A_LABEL);
@@ -540,7 +624,7 @@ function repoComposerRoot(page) {
   return page.locator('form').filter({ has: page.getByPlaceholder(/Ask the agent/) });
 }
 
-function sessionComposerRoot(page) {
+export function sessionComposerRoot(page) {
   return page.locator('form').filter({ has: page.getByPlaceholder(/Message/) });
 }
 
@@ -672,6 +756,7 @@ export async function screenshotIssuesTabReviewerControls(
   { closeMobilePanel = false } = {}
 ) {
   if (!screenshotPath) return;
+  const path = withE2eThemeSuffix(screenshotPath);
   if (closeMobilePanel) {
     await ensureMobileSidePanelClosed(page);
     await page.getByRole('button', { name: 'Issues' }).click();
@@ -679,8 +764,8 @@ export async function screenshotIssuesTabReviewerControls(
       timeout: 30_000,
     });
   }
-  await mkdir(dirname(screenshotPath), { recursive: true });
-  await page.screenshot({ path: screenshotPath, fullPage: false });
+  await mkdir(dirname(path), { recursive: true });
+  await page.screenshot({ path, fullPage: false });
 }
 
 export async function confirmClearReviewerChatModal(page) {

@@ -204,7 +204,7 @@ export default function AskUserQuestionBlock({
   return (
     <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 border-b border-brand/10 flex items-center justify-between gap-2">
-        <p className="text-xs text-accent/70">
+        <p className="text-xs text-accent">
           {hasResult ? summaryLabel : 'The agent has a question'}
         </p>
         {hasResult && (

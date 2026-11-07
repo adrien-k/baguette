@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { MOCK_AGENT_SUMMARY_TEXT } from '../shared/mock-agent-sdk.js';
 import {
   addManualBuilderAgent,
@@ -67,9 +67,11 @@ test.describe('session agents (mock)', () => {
     await openSessionAgentsPanel(page);
     await expect(page.getByText('Subagents')).toBeVisible();
     await expect(page.locator('li').filter({ hasText: MOCK_E2E_SUBAGENT_NAME })).toBeVisible();
+    await saveE2eScreenshot(page, 'agents-panel-subagents.png');
 
     await selectAgentInPanel(page, MOCK_E2E_SUBAGENT_NAME);
     await expectMcpReadonlyComposer(page);
+    await saveE2eScreenshot(page, 'mcp-readonly-composer.png');
 
     await selectAgentInPanel(page, 'Main');
     await expect(await sessionChatComposer(page)).toBeVisible();

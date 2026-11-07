@@ -519,6 +519,18 @@ export async function runMockAgentTurn({
     rawResult: '<html>mock fetch</html>',
   });
 
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-todo-complete',
+    name: 'TodoWrite',
+    args: {
+      todos: [
+        { content: 'Exercise every tool kind', status: 'completed' },
+        { content: 'Finish with assistant summary', status: 'completed' },
+      ],
+    },
+    rawResult: { status: 'ok' },
+  });
+
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(mockAgentFullTurnClosingMessage());
   await writer.flushAssistant();

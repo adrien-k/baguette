@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { applyE2eTheme, test, expect } from './fixtures.js';
 import {
   createLocalRepo,
   devLogin,
@@ -21,6 +21,8 @@ test.describe('shared loops and sessions', () => {
 
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
+    // pageB comes from a manual context, so re-apply the E2E_THEME init script.
+    await applyE2eTheme(pageB);
     await devLoginAs(pageB, 'e2e-other');
     await pageB.goto('/');
     await expect(pageB.getByTitle('All sessions')).toBeVisible({ timeout: 30_000 });

@@ -49,13 +49,13 @@ function SessionTodoStatusLine({
   return (
     <div className="text-xs font-mono py-0.5 pl-1 flex items-center gap-1.5 text-faint flex-wrap">
       <span>↳</span>
-      <span className={showError ? 'text-red-700' : ''}>{heading}</span>
+      <span className={showError ? 'text-danger' : ''}>{heading}</span>
       {refList.map((ref) => (
         <span key={ref} className="text-faint tabular-nums">
           #{ref}
         </span>
       ))}
-      {showError && <span className="text-red-700">[error]</span>}
+      {showError && <span className="text-danger">[error]</span>}
       {isRunning && !showError && (
         <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
       )}

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { E2E_MCP_BEARER, startE2eMockMcpServer } from './mock-mcp-server.js';
 import { createLocalRepo, devLogin, saveE2eScreenshot } from './helpers.js';
 
