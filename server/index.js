@@ -14,7 +14,7 @@ import createMcpOAuthRoutes from './routes/mcp-oauth.js';
 import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';
 import createMcpRoutes from './routes/mcp.js';
-import createImagesRoutes from './routes/images.js';
+import createSessionImageRoutes from './routes/session-images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
@@ -82,7 +82,7 @@ expressApp.use(createMcpRoutes(feathersApp));
 expressApp.use(createSettingsRoutes(requireAuth));
 expressApp.use(createAuthRoutes(feathersApp));
 expressApp.use(createMcpOAuthRoutes(feathersApp));
-expressApp.use(createImagesRoutes());
+expressApp.use(createSessionImageRoutes(feathersApp, requireAuth));
 
 if (process.env.VITE_SERVER_ENABLED === 'true') {
   expressApp.get('/', (req, res) => {

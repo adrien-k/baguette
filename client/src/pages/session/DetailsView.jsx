@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Copy, GitBranch, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
-import { sessionsService } from '../../feathers.js';
+import {
+  findSessionImagePlaceholders,
+  hasSessionImagePlaceholders,
+  interpolateSessionImagePlaceholders,
+  localSessionImageUrl,
+} from '@baguette/shared/session-images.js';
+import { sessionsService, sessionImagesService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
 import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.tsx';
@@ -77,6 +83,33 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const [saving, setSaving] = useState(false);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const rawPrDescription = session?.pr_description?.trim() ?? '';
+  const [imageRows, setImageRows] = useState(null);
+
+  // Uploaded images are referenced by `{{image:<id>}}` placeholders in the
+  // description; resolve them for display (Details renders the public image
+  // URL while the GitHub body shows the attached asset).
+  useEffect(() => {
+    if (!session?.id || !hasSessionImagePlaceholders(rawPrDescription)) {
+      setImageRows(null);
+      return undefined;
+    }
+    let cancelled = false;
+    sessionImagesService
+      .find({ query: { session_id: session.id, $limit: 200 } })
+      .then((data) => {
+        if (!cancelled) setImageRows(Array.isArray(data) ? data : (data?.data ?? []));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setImageRows(null);
+          toastError('Failed to load session images', err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.id, rawPrDescription]);
 
   useEffect(() => {
     setTitle(session?.label ?? '');
@@ -135,7 +168,23 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
     setEditingTitle(false);
   };
 
-  const prDescription = session?.pr_description?.trim();
+  const prDescription = useMemo(() => {
+    if (!rawPrDescription) return rawPrDescription;
+    if (!hasSessionImagePlaceholders(rawPrDescription)) return rawPrDescription;
+    const bySlug = new Set(findSessionImagePlaceholders(rawPrDescription));
+    const rowsById = new Map();
+    for (const row of imageRows ?? []) {
+      if (bySlug.has(row.image_slug)) rowsById.set(row.image_slug, row);
+    }
+    return interpolateSessionImagePlaceholders(rawPrDescription, (imageSlug) => {
+      const row = rowsById.get(imageSlug);
+      if (!row) return null;
+      return {
+        url: row.github_url || localSessionImageUrl(row, window.location.origin),
+        alt_text: row.alt_text,
+      };
+    });
+  }, [rawPrDescription, imageRows]);
   const hasPr = !!(session?.pr_url || session?.pr_number != null);
   const showCost = usage?.breakdown?.some((row) => row.cost_usd > 0);
 

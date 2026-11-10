@@ -119,7 +119,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('`./.baguette/scripts/`');
     expect(result).toContain('./.baguette/agents/');
     expect(result).toContain('unless the user explicitly asks');
-    expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).toContain('no GitHub credentials');
+    expect(result).toContain('github.com/user-attachments');
   });
 
   it('documents Mermaid diagrams in messages and plans in the base prompt', async () => {
@@ -174,7 +175,7 @@ describe('buildSystemPromptAppend', () => {
     const result = await loadFullSubagentPromptTemplate();
     expect(result).toContain('Subagent role');
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
-    expect(result).not.toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).not.toContain('github.com/user-attachments');
     expect(result).not.toContain('Baguette repo configuration');
   });
 
@@ -187,7 +188,8 @@ describe('buildSystemPromptAppend', () => {
       },
       user: { access_token: 'tok' },
     });
-    expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).toContain('no GitHub credentials');
+    expect(result).toContain('github.com/user-attachments');
     expect(result).toContain('PrRead');
     expect(result).toContain('PrComments');
     expect(result).toContain('GitHub pull request template');

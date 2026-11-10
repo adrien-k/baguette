@@ -25,6 +25,7 @@ const PUBLIC_SERVICES = [
   'repos',
   'secrets',
   'skills',
+  'session-images',
   'session-issues',
   'session-plans',
   'session-todos',

@@ -19,6 +19,7 @@ import { registerLoopsService } from './loops.service.js';
 import { registerSessionIssuesService } from './session-issues.service.js';
 import { registerSessionTodosService } from './session-todos.service.js';
 import { registerSessionPlansService } from './session-plans.service.js';
+import { registerSessionImagesService } from './session-images.service.js';
 import { registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerUsageModelPricingService } from './usage-model-pricing.service.js';
 import { registerUsageService } from './usage.service.js';
@@ -53,6 +54,7 @@ export function registerFeathersServices(app, { realtime = true } = {}) {
   registerSessionIssuesService(app);
   registerSessionTodosService(app);
   registerSessionPlansService(app);
+  registerSessionImagesService(app);
   registerReviewAgentTurn(app);
   registerUsageModelPricingService(app);
   registerUsageService(app);

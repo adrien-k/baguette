@@ -96,7 +96,7 @@ export const TRUST_PROXY_HOPS = Math.max(
   0,
   Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10) || 0
 );
-/** API base URL reachable by browsers and external clients (MCP, uploaded images, etc.). */
+/** API base URL reachable by browsers and external clients (MCP, reviews, etc.). */
 export const PUBLIC_API_HOST =
   process.env.PUBLIC_API_HOST ||
   (process.env.PUBLIC_HOST

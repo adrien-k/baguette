@@ -1,6 +1,6 @@
 # GitHub CLI
 
-The session shell does **not** include the GitHub CLI (`gh`). Do not run `gh pr …`, `gh api …`, or other `gh` commands — they are not installed and will fail.
+The session shell has no GitHub credentials — do not run `gh pr …`, `gh api …`, or other `gh` commands from the shell; they cannot authenticate.
 
 For GitHub and pull-request work, use Baguette MCP tools instead (for example `PrRead`, `PrComments`, `PrWorkflows`, `PrWorkflowLogs`, `ListGithubPrs`, `GitPull`, `GitFetch`). Local `git` in the worktree is fine for status, diff, commit, and merge; authenticated remotes and the GitHub API go through MCP. Baguette pushes and syncs the PR after each turn when auto-push is enabled.
 
@@ -24,16 +24,18 @@ IMPORTANT: Do not run `git push`, `git pull`, or `git fetch` in the shell — us
 
 When you have a screenshot or image that illustrates the change (e.g. a UI before/after, a rendered chart, a Playwright screenshot), embed it in the PR description:
 
-1. Call `UploadImage` with `filePath` (relative to the worktree root) or `base64` + `mediaType`.
-2. The tool returns `{ url, markdown }`. Use the `markdown` value (`![alt](url)`) directly in the `description` passed to `UpdateSession`.
+1. Call `UploadImage` with `filePath` (relative to the worktree root) or `base64` + `mediaType`, and an `altText`. The tool stores the image for this session and returns a placeholder like `{{image:<id>}}`.
+2. Put that placeholder — verbatim, on its own line — in the `description` you pass to `UpdateSession`, where the image should show up. Do not wrap it in markdown image syntax; the alt text comes from the upload.
+
+When the PR description is synced to GitHub (push / end of turn), Baguette attaches each placeholder's image to the PR and rewrites the placeholder into a `![alt](https://github.com/user-attachments/assets/…)` reference. The attachment URL is cached, so later pushes reuse it instead of re-uploading.
 
 Example:
 
 ```
 UploadImage({ filePath: "screenshots/after.png", altText: "feature preview" })
-→ { url: "https://…/api/images/uuid.png", markdown: "![feature preview](https://…)" }
+→ { image_id: "…", placeholder: "{{image:5d4b…}}", markdown: "{{image:5d4b…}}" }
 
-UpdateSession({ label: "…", description: "…\n\n![feature preview](https://…)" })
+UpdateSession({ label: "…", description: "Dark/light parity:\n\n{{image:5d4b…}}" })
 ```
 
 Only upload images that genuinely help reviewers understand the change. Skip this step for pure backend or refactoring PRs where a screenshot adds no value.

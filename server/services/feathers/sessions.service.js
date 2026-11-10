@@ -67,6 +67,10 @@ import {
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { gitAuthFromRepo, isLocalRepo } from '../../../shared/repo-origin.js';
+import {
+  hasSessionImagePlaceholders,
+  interpolateSessionImagePlaceholders,
+} from '../../../shared/session-images.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import {
   computeSessionGitStatus,
@@ -1264,6 +1268,7 @@ export class SessionsService extends KnexService {
     this.emit('push:start', pushEvent);
     let pushOk = false;
     let pushFailure = null;
+    let imageAttachmentFailures = [];
     try {
       const cwd = resolveDataDirRelativePath(session.session_path);
       const user = await this.app.service('users').get(session.user_id, {});
@@ -1316,6 +1321,7 @@ export class SessionsService extends KnexService {
         const head = pushedBranch || session.remote_branch || session.local_branch;
         let userPrefix = '';
         let currentBaseBranch;
+        let existingPrBody = '';
         if (session.pr_number) {
           try {
             const existingPr = await getOpenPRByNumber(
@@ -1323,7 +1329,8 @@ export class SessionsService extends KnexService {
               session.repo_full_name,
               session.pr_number
             );
-            userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+            existingPrBody = existingPr?.body ?? '';
+            userPrefix = splitPrBody(existingPrBody).userPrefix;
             currentBaseBranch = existingPr?.base?.ref;
           } catch {
             // non-fatal — proceed without user prefix
@@ -1334,15 +1341,27 @@ export class SessionsService extends KnexService {
           : null;
         const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
         const usageLines = await loadSessionFooterUsageLines(this.app.get('db'), session);
+        const title = session.label || session.repo_full_name;
+        let body = buildPrBody(
+          userPrefix,
+          session.pr_description ?? '',
+          buildSessionFooter(session, { previewUrl, usageLines })
+        );
+        const hasImagePlaceholders = hasSessionImagePlaceholders(body);
+        if (hasImagePlaceholders && session.pr_number) {
+          ({ body, failures: imageAttachmentFailures } = await this.resolvePrImagePlaceholders(
+            session,
+            token,
+            session.pr_number,
+            body,
+            existingPrBody
+          ));
+        }
         const pr = await upsertPR(token, {
           repoFullName: session.repo_full_name,
           prNumber: session.pr_number,
-          title: session.label || session.repo_full_name,
-          body: buildPrBody(
-            userPrefix,
-            session.pr_description ?? '',
-            buildSessionFooter(session, { previewUrl, usageLines })
-          ),
+          title,
+          body,
           head: session.pr_number ? undefined : head,
           baseBranch: session.base_branch,
           currentBaseBranch,
@@ -1355,6 +1374,26 @@ export class SessionsService extends KnexService {
               { pr_url: pr.url, pr_number: pr.number, pr_status: 'open' },
               { provider: undefined, user: { id: session.user_id } }
             );
+          if (hasImagePlaceholders) {
+            // Images could only be attached once the PR existed — swap and sync one more time.
+            const { body: resolvedBody, failures } = await this.resolvePrImagePlaceholders(
+              session,
+              token,
+              pr.number,
+              body,
+              body
+            );
+            imageAttachmentFailures = failures;
+            if (resolvedBody !== body) {
+              await upsertPR(token, {
+                repoFullName: session.repo_full_name,
+                prNumber: pr.number,
+                title,
+                body: resolvedBody,
+                baseBranch: session.base_branch,
+              });
+            }
+          }
         }
       }
       await this.app
@@ -1377,8 +1416,47 @@ export class SessionsService extends KnexService {
           message: pushFailure.message,
           conflict: Boolean(pushFailure.data?.conflict),
         }),
+        ...(imageAttachmentFailures.length && { image_failures: imageAttachmentFailures }),
       });
     }
+  }
+
+  /**
+   * Attaches session images that the body still references as `{{image:…}}`
+   * placeholders to the pull request (via the gh CLI) and swaps the
+   * placeholders for the GitHub-hosted asset URLs. Unresolvable placeholders
+   * stay in the body so the next push retries them. Returns the swapped body
+   * plus any attach failures so push can surface them.
+   */
+  async resolvePrImagePlaceholders(session, token, prNumber, bodyWithPlaceholders, existingPrBody) {
+    let resolution = null;
+    try {
+      resolution = await this.app.service('session-images').resolveForPush(
+        {
+          session: { ...session, pr_number: prNumber },
+          token,
+          bodyWithPlaceholders,
+          existingPrBody,
+        },
+        { user: { id: session.user_id }, provider: undefined }
+      );
+    } catch (err) {
+      logger.warn({ err, session_id: session.id }, 'Resolving session image placeholders failed');
+      return { body: bodyWithPlaceholders, failures: [] };
+    }
+    const failures = resolution?.failures ?? [];
+    if (failures.length) {
+      logger.warn(
+        { session_id: session.id, failures },
+        'Some session images could not be attached to the PR'
+      );
+    }
+    const resolvedById = resolution?.resolved ?? {};
+    const body = interpolateSessionImagePlaceholders(
+      bodyWithPlaceholders,
+      (imageSlug) => resolvedById[imageSlug] ?? null
+    );
+    return { body, failures };
   }
 
   async getPrDetails(data, params) {

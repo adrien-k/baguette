@@ -24,6 +24,7 @@ import { registerAgentsService } from '../feathers/agents.service.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
+import { registerSessionImagesService } from '../feathers/session-images.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
 import {
@@ -99,6 +100,12 @@ vi.mock('../review-agent-turn.js', () => ({
 
 vi.mock('child_process', () => ({
   execFile: vi.fn((_cmd, _args, _opts, cb) => cb(null, { stdout: '', stderr: '' })),
+}));
+
+vi.mock('../../lib/image-asset-upload.js', () => ({
+  uploadImageAsset: vi.fn().mockResolvedValue({
+    url: 'https://github.com/user-attachments/assets/fresh-url',
+  }),
 }));
 
 vi.mock('../github.js', async (importOriginal) => {
@@ -220,6 +227,7 @@ function makeApp(db) {
   registerSessionsService(app);
   registerAgentsService(app);
   registerMessagesService(app);
+  registerSessionImagesService(app);
   return app;
 }
 
@@ -2470,6 +2478,66 @@ describe('Sessions service - find, get, create', () => {
           currentBaseBranch: 'main',
         })
       );
+    });
+
+    it('attaches referenced session images and swaps placeholders while pushing', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const imageSlug = 'test-image-slug';
+      await db('session_images').insert({
+        session_id: created.id,
+        image_slug: imageSlug,
+        file_ext: '.png',
+        media_type: 'image/png',
+        alt_text: 'feature preview',
+        github_url: null,
+        created_at: new Date().toISOString(),
+      });
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-image-push',
+        label: 'Title',
+        pr_description: 'Before\n\n{{image:test-image-slug}}\nAfter',
+        pr_number: 7,
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+      vi.mocked(getOpenPRByNumber).mockResolvedValueOnce({
+        title: 'Title',
+        body: 'old body',
+        base: { ref: 'main' },
+      });
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(upsertPR).toHaveBeenCalledTimes(1);
+      const upsertArgs = vi.mocked(upsertPR).mock.calls[0][1];
+      expect(upsertArgs.body).toContain(
+        '![feature preview](https://github.com/user-attachments/assets/fresh-url)'
+      );
+      expect(upsertArgs.body).not.toContain('{{image:');
+
+      const row = await db('session_images').where({ image_slug: imageSlug }).first();
+      expect(row.github_url).toBe('https://github.com/user-attachments/assets/fresh-url');
     });
 
     it('does not flush queued messages when onTurnComplete runs on an approval session', async () => {
