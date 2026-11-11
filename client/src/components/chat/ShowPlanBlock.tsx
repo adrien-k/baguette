@@ -2,14 +2,13 @@ import { useState } from 'react';
 import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { NEUTRAL_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 export default function ShowPlanBlock({
   heading = 'Plan ready for review',
   markdown,
   sessionId,
   agentId,
-  userReplied = false,
   interactive = true,
   isRunning = false,
   isError = false,
@@ -19,8 +18,7 @@ export default function ShowPlanBlock({
   markdown?: string | null;
   sessionId?: number | null;
   agentId?: number | null;
-  userReplied?: boolean;
-  /** When false, plan is informational only (no Run/Refine actions). */
+  /** When false (agent passed interactive: false), plan is informational — no Run action. */
   interactive?: boolean;
   isRunning?: boolean;
   isError?: boolean;
@@ -71,8 +69,8 @@ export default function ShowPlanBlock({
           <p className="text-sm text-faint italic">No plan content yet.</p>
         )}
       </div>
-      {interactive && !userReplied && !isError && (
-        <div className="px-3 sm:px-4 pb-4 pt-1 flex flex-wrap gap-2">
+      {interactive && !isError && (
+        <div className="px-3 sm:px-4 pb-4 pt-1 space-y-2">
           <button
             type="button"
             onClick={() => sendUserMessage('Proceed with the plan.')}
@@ -81,14 +79,9 @@ export default function ShowPlanBlock({
           >
             Run the plan
           </button>
-          <button
-            type="button"
-            onClick={() => sendUserMessage('Please refine the plan.')}
-            disabled={loading}
-            className={NEUTRAL_BUTTON_CLASS}
-          >
-            Refine the plan
-          </button>
+          <p className="text-xs text-faint">
+            or continue chatting with the agent to refine the plan
+          </p>
         </div>
       )}
     </div>

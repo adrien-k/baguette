@@ -425,7 +425,6 @@ export default function BaguetteMcpToolBlock({
         errorMessage={planErrorMessage}
         sessionId={sessionId != null ? Number(sessionId) : null}
         agentId={agentId}
-        userReplied={userReplied}
         interactive={interactive}
       />
     );
