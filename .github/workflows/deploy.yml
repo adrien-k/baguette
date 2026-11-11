@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'smplee' }}
 
+    env:
+      DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER || vars.DOMAIN }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -40,10 +44,10 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Add deploy server to known hosts
-        run: ssh-keyscan ${{ vars.DEPLOY_SERVER }} >> ~/.ssh/known_hosts
+        run: ssh-keyscan "$DEPLOY_SERVER" >> ~/.ssh/known_hosts
 
       - name: Renew SSL certificate
-        run: ssh ${{ vars.DEPLOY_USER || 'ubuntu' }}@${{ vars.DEPLOY_SERVER }} '/home/${{ vars.DEPLOY_USER || 'ubuntu' }}/acme.sh/renew.sh'
+        run: ssh "$DEPLOY_USER@$DEPLOY_SERVER" "/home/$DEPLOY_USER/acme.sh/renew.sh"
 
       # Build and push are split from deploy to avoid ECONNRESET on registry port forwarding.
       # A long build (~280s) drops the SSH tunnel Kamal uses to push the image, causing
@@ -51,8 +55,6 @@ jobs:
       # See: https://github.com/basecamp/kamal/discussions/1326
       - name: Build and push image
         env:
-          DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
           DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
           DOCKER_REGISTRY_SERVER: ${{ vars.DOCKER_REGISTRY_SERVER }}
@@ -66,8 +68,6 @@ jobs:
           AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.AUTH_GITHUB_CLIENT_SECRET }}
           AUTH_GITHUB_APP_SLUG: ${{ secrets.AUTH_GITHUB_APP_SLUG }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-          DEPLOY_SERVER: ${{ vars.DEPLOY_SERVER }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
           DOMAIN: ${{ vars.DOMAIN }}
           DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
           DOCKER_REGISTRY_SERVER: ${{ vars.DOCKER_REGISTRY_SERVER }}

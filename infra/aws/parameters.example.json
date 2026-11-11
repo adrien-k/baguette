@@ -34,5 +34,9 @@
   {
     "ParameterKey": "SshIngressCidr",
     "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "SsmKmsKeyArn",
+    "ParameterValue": ""
   }
 ]

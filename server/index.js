@@ -25,6 +25,7 @@ import {
 } from './lib/app-error-handler.js';
 import { createFeathersCookieAuth } from './lib/feathers-http-auth.js';
 import { unlessFeathersApiRoute } from './lib/unless-feathers-api-route.js';
+import { createApexRedirect } from './lib/apex-redirect.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
@@ -51,6 +52,8 @@ expressApp.set('devProxy', devProxy);
 expressApp.get('/up', (req, res) => {
   res.send('OK');
 });
+
+expressApp.use(createApexRedirect());
 
 expressApp.use(cookieParser(ENCRYPTION_KEY));
 
