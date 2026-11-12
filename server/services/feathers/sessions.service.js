@@ -69,6 +69,7 @@ import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { gitAuthFromRepo, isLocalRepo } from '../../../shared/repo-origin.js';
 import {
+  findSessionImagePlaceholders,
   hasSessionImagePlaceholders,
   interpolateSessionImagePlaceholders,
 } from '../../../shared/session-images.js';
@@ -1470,6 +1471,46 @@ export class SessionsService extends KnexService {
     return { title: pr.title, body: pr.body ?? '' };
   }
 
+  /**
+   * Limited description projection for the standalone description page
+   * (`/session/:id/description`, linked from the GitHub PR body).
+   *
+   * Any signed-in user may read it: the content mirrors the public PR body
+   * (label, pr_description, and the images the description references are all
+   * published on GitHub), so viewing does not require the session to be
+   * shared. Returns only description fields — never worktree paths, agent
+   * identity, or other session internals. `session_accessible` reports
+   * whether the viewer may also open the full session (owner or shared).
+   */
+  async getDescription(data, params) {
+    const rawId = data != null && typeof data === 'object' ? data.id : data;
+    const sessionId = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(sessionId)) throw new NotFound('Session not found');
+    const db = this.app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (!session) throw new NotFound('Session not found');
+
+    const prDescription = session.pr_description ?? '';
+    const imageSlugs = findSessionImagePlaceholders(prDescription);
+    const images = imageSlugs.length
+      ? await db('session_images')
+          .where({ session_id: session.id })
+          .whereIn('image_slug', imageSlugs)
+          .select('id', 'image_slug', 'file_ext', 'alt_text', 'github_url')
+      : [];
+
+    const viewerId = params?.user?.id ?? null;
+    return {
+      id: session.id,
+      label: session.label,
+      repo_full_name: session.repo_full_name,
+      pr_description: prDescription,
+      session_accessible:
+        viewerId != null && (session.user_id === viewerId || Boolean(session.is_shared)),
+      images,
+    };
+  }
+
   async restore(data, params) {
     const session = params.resolvedSession;
     if (!session.archived_at) {
@@ -2679,6 +2720,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'archive',
       'restore',
       'getPrDetails',
+      'getDescription',
       'previewStatus',
       'startPreviewService',
     ],

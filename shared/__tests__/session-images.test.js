@@ -6,6 +6,7 @@ import {
   interpolateSessionImagePlaceholders,
   stripSessionImagePlaceholders,
   localSessionImageUrl,
+  publicSessionImageUrl,
   sessionImageFileName,
   SESSION_IMAGE_MEDIA_TYPES,
 } from '../session-images.js';
@@ -53,6 +54,14 @@ describe('shared/session-images', () => {
       'https://bag.example.com/api/session-images/42/file'
     );
     expect(sessionImageFileName('abc', '.png')).toBe('abc.png');
+  });
+
+  it('builds the public image URL from a row', () => {
+    const row = { image_slug: 'abc', file_ext: '.png' };
+    expect(publicSessionImageUrl(row)).toBe('/api/images/abc.png');
+    expect(publicSessionImageUrl(row, 'https://bag.example.com/')).toBe(
+      'https://bag.example.com/api/images/abc.png'
+    );
   });
 
   it('maps all attachable media types to extensions', () => {

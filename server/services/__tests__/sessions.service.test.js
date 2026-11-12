@@ -1652,6 +1652,88 @@ describe('Sessions service - find, get, create', () => {
     });
   });
 
+  // ── getDescription (public description page) ─────────────────────────────
+
+  describe('getDescription', () => {
+    const descriptionBody = 'Parity fix\n\n{{image:shot-a}}';
+
+    beforeEach(async () => {
+      await db('sessions')
+        .where({ id: sessId1 })
+        .update({ label: 'Dark/light parity', pr_description: descriptionBody });
+      await db('session_images').insert([
+        {
+          session_id: sessId1,
+          image_slug: 'shot-a',
+          file_ext: '.png',
+          media_type: 'image/png',
+          alt_text: 'after',
+          github_url: null,
+          created_at: new Date().toISOString(),
+        },
+        {
+          session_id: sessId1,
+          image_slug: 'shot-unreferenced',
+          file_ext: '.png',
+          media_type: 'image/png',
+          alt_text: 'not in the description',
+          github_url: null,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    });
+
+    it('returns the description projection for the owner', async () => {
+      const result = await app.service('sessions').getDescription(sessId1, params({ id: userId1 }));
+
+      expect(result).toMatchObject({
+        id: sessId1,
+        label: 'Dark/light parity',
+        repo_full_name: 'test/repo',
+        pr_description: descriptionBody,
+        session_accessible: true,
+      });
+    });
+
+    it('returns the description to any signed-in user even when not shared', async () => {
+      const result = await app.service('sessions').getDescription(sessId1, params({ id: userId2 }));
+
+      expect(result.pr_description).toBe(descriptionBody);
+      expect(result.session_accessible).toBe(false);
+    });
+
+    it('marks a shared session accessible for another user', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+
+      const result = await app.service('sessions').getDescription(sessId1, params({ id: userId2 }));
+      expect(result.session_accessible).toBe(true);
+    });
+
+    it('returns only the image rows the description references', async () => {
+      const result = await app.service('sessions').getDescription(sessId1, params({ id: userId1 }));
+
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0]).toMatchObject({
+        image_slug: 'shot-a',
+        file_ext: '.png',
+        alt_text: 'after',
+        github_url: null,
+      });
+    });
+
+    it('rejects with NotFound for an unknown id', async () => {
+      await expect(
+        app.service('sessions').getDescription(99999, params({ id: userId1 }))
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('rejects when not authenticated', async () => {
+      await expect(
+        app.service('sessions').getDescription(sessId1, { provider: 'rest' })
+      ).rejects.toThrow('Not authenticated');
+    });
+  });
+
   // ── preview_url visibility ─────────────────────────────────────────────────
 
   describe('preview_url', () => {

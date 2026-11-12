@@ -1,87 +1,62 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { useGetSession } from '../hooks/useGetSession.js';
 import MarkdownContent from '../components/MarkdownContent.jsx';
+import { useSessionDescription } from '../hooks/useSessionDescription.js';
 import {
   findSessionImagePlaceholders,
   hasSessionImagePlaceholders,
   interpolateSessionImagePlaceholders,
-  localSessionImageUrl,
+  publicSessionImageUrl,
 } from '@baguette/shared/session-images.js';
-import { sessionImagesService } from '../feathers.js';
-import { toastError } from '../utils/toastError.jsx';
 import { PAGE_BG, TEXT_HEADING, TEXT_PRIMARY } from '../utils/ui.js';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../components/ChatMessagesViewport.jsx';
 import { localizeSessionImageUrls } from './session/sessionDescription.js';
 
-function SessionDescriptionBody({ session }) {
-  const rawPrDescription = session?.pr_description?.trim() ?? '';
-  const [imageRows, setImageRows] = useState(null);
+function SessionDescriptionBody({ description }) {
+  const rawPrDescription = description.pr_description?.trim() ?? '';
 
-  // `{{image:<id>}}` placeholders resolve against the session's stored image
-  // rows, mirroring the Details tab: a cached GitHub asset URL when the image
-  // was attached to the PR, the local session-scoped URL otherwise.
-  useEffect(() => {
-    if (!session?.id || !hasSessionImagePlaceholders(rawPrDescription)) {
-      setImageRows(null);
-      return undefined;
-    }
-    let cancelled = false;
-    sessionImagesService
-      .find({ query: { session_id: session.id, $limit: 200 } })
-      .then((data) => {
-        if (!cancelled) setImageRows(Array.isArray(data) ? data : (data?.data ?? []));
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setImageRows(null);
-          toastError('Failed to load session images', err);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.id, rawPrDescription]);
-
-  const description = useMemo(() => {
+  const descriptionMarkdown = useMemo(() => {
     // Legacy descriptions embed absolute `/api/images/…` URLs — load them
     // same-origin so they render even when their host is not reachable.
     const raw = localizeSessionImageUrls(rawPrDescription);
     if (!hasSessionImagePlaceholders(raw)) return raw;
     const bySlug = new Set(findSessionImagePlaceholders(raw));
     const rowsById = new Map();
-    for (const row of imageRows ?? []) {
+    for (const row of description.images ?? []) {
       if (bySlug.has(row.image_slug)) rowsById.set(row.image_slug, row);
     }
     return interpolateSessionImagePlaceholders(raw, (imageSlug) => {
       const row = rowsById.get(imageSlug);
       if (!row) return null;
       return {
-        url: row.github_url || localSessionImageUrl(row, window.location.origin),
+        // GitHub-hosted asset URL when the image was attached to the PR,
+        // otherwise the public image URL the instance serves unauthenticated —
+        // both render for any viewer of this page.
+        url: row.github_url || publicSessionImageUrl(row, window.location.origin),
         alt_text: row.alt_text,
       };
     });
-  }, [rawPrDescription, imageRows]);
+  }, [rawPrDescription, description.images]);
 
   const title =
-    session?.label?.trim() || session?.repo_full_name || `Session #${session?.id ?? ''}`;
+    description.label?.trim() || description.repo_full_name || `Session #${description.id}`;
   return (
     <div className={`flex-1 min-h-0 overflow-auto ${PAGE_BG}`}>
       <div className={`${SESSION_CONTENT_MAX_WIDTH_CLASS} px-4 py-6 space-y-5`}>
         <div>
           <Link
-            to={`/sessions/${session.id}`}
+            to={description.session_accessible ? `/sessions/${description.id}` : '/'}
             className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-fg transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" aria-hidden />
-            Back to session
+            {description.session_accessible ? 'Back to session' : 'Back to dashboard'}
           </Link>
           <h1 className={`mt-3 text-xl font-semibold ${TEXT_HEADING} break-words`}>{title}</h1>
         </div>
-        {description ? (
+        {descriptionMarkdown ? (
           <div className={`text-sm ${TEXT_PRIMARY} min-w-0`}>
-            <MarkdownContent>{description}</MarkdownContent>
+            <MarkdownContent>{descriptionMarkdown}</MarkdownContent>
           </div>
         ) : (
           <p className="text-sm text-faint">No description yet.</p>
@@ -91,10 +66,14 @@ function SessionDescriptionBody({ session }) {
   );
 }
 
-/** Full-page view of a session's PR description (e.g. opened from a GitHub PR link). */
+/**
+ * Full-page view of a session's PR description (e.g. opened from a GitHub PR
+ * link). Loads through the limited `sessions.getDescription` projection, so
+ * any signed-in user can view it — the session does not have to be shared.
+ */
 export default function SessionDescription() {
   const { id } = useParams();
-  const { session, loading, error } = useGetSession(id);
+  const { loading, error, description } = useSessionDescription(id);
 
   if (loading) {
     return (
@@ -103,7 +82,7 @@ export default function SessionDescription() {
       </div>
     );
   }
-  if (!session) {
+  if (!description) {
     return (
       <div className={`flex-1 min-h-0 overflow-auto ${PAGE_BG}`}>
         <div className={`${SESSION_CONTENT_MAX_WIDTH_CLASS} px-4 py-6 space-y-4`}>
@@ -122,5 +101,5 @@ export default function SessionDescription() {
       </div>
     );
   }
-  return <SessionDescriptionBody session={session} />;
+  return <SessionDescriptionBody description={description} />;
 }

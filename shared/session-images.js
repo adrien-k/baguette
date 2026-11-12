@@ -78,3 +78,13 @@ export function localSessionImageUrl(row, origin = '') {
 export function sessionImageFileName(imageSlug, fileExt) {
   return `${imageSlug}${fileExt}`;
 }
+
+/**
+ * The public, unauthenticated image URL the instance serves at
+ * `/api/images/:slug.ext` — the same URL embedded in PR bodies when image
+ * attach is disabled. Works for every viewer, signed in or not.
+ */
+export function publicSessionImageUrl(row, origin = '') {
+  const base = origin ? origin.replace(/\/$/, '') : '';
+  return `${base}/api/images/${row.image_slug}${row.file_ext}`;
+}

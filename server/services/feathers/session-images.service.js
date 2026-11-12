@@ -15,6 +15,7 @@ import {
   SESSION_IMAGE_MEDIA_TYPES,
   MAX_SESSION_IMAGE_BYTES,
   findSessionImagePlaceholders,
+  publicSessionImageUrl,
   sessionImageFileName,
 } from '../../../shared/session-images.js';
 import { uploadImageAsset } from '../../lib/image-asset-upload.js';
@@ -30,7 +31,7 @@ function normalizeAltText(raw) {
 
 /** Public image URL for a stored row (the non-attach publish path). */
 function publicImageUrl(row) {
-  return `${PUBLIC_API_URL}/api/images/${row.image_slug}${row.file_ext}`;
+  return publicSessionImageUrl(row, PUBLIC_API_URL);
 }
 
 class SessionImagesService extends KnexService {
