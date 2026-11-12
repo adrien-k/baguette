@@ -7,7 +7,11 @@ export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
 export const CHAT_WORK_VISIBLE_TAIL_CALLS = 10;
 
 /** Chat-pinned MCP tools: always visible, never inside Worked. Includes turn-ending tools. */
-const CHAT_PINNED_BAGUETTE_TOOLS = new Set([...TURN_ENDING_BAGUETTE_TOOLS, 'StartSubagent']);
+const CHAT_PINNED_BAGUETTE_TOOLS = new Set([
+  ...TURN_ENDING_BAGUETTE_TOOLS,
+  'StartSubagent',
+  'ConfigureMcpServer',
+]);
 
 function toolUseNameIs(name, shortName) {
   if (!name) return false;
@@ -71,10 +75,9 @@ function toolCallRowIsPinnedChatTool(msg) {
 
 function blockIsPinnedChatTool(block) {
   if (block._hidden) return false;
-  if (blockIsNamedMcpTool(block, 'CreatePlan')) return true;
-  if (blockIsNamedMcpTool(block, 'EditPlan')) return true;
-  if (blockIsNamedMcpTool(block, 'AskUserQuestions')) return true;
-  if (blockIsNamedMcpTool(block, 'StartSubagent')) return true;
+  for (const shortName of CHAT_PINNED_BAGUETTE_TOOLS) {
+    if (blockIsNamedMcpTool(block, shortName)) return true;
+  }
   if (block.type === 'tool_use') {
     const n = block.name;
     if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return true;
@@ -82,7 +85,7 @@ function blockIsPinnedChatTool(block) {
   return false;
 }
 
-/** CreatePlan, EditPlan, AskUserQuestions, or StartSubagent — always visible, never inside Worked. */
+/** CreatePlan, EditPlan, AskUserQuestions, StartSubagent, or ConfigureMcpServer — always visible, never inside Worked. */
 export function messageContainsPinnedChatTool(msg) {
   if (toolCallRowIsPinnedChatTool(msg)) return true;
   if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;

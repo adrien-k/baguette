@@ -362,6 +362,61 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(startSubagent)).toBe(false);
   });
 
+  it('does not collapse ConfigureMcpServer into a surrounding Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'tool_call',
+        kind: 'mcp',
+        name: 'mcp__baguette__ConfigureMcpServer',
+        args: { name: 'docs' },
+        id: 'cfg',
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.args.name).toBe('docs');
+  });
+
+  it('treats ConfigureMcpServer as a group boundary', () => {
+    const configureServer = {
+      type: 'tool_call',
+      kind: 'mcp',
+      name: 'mcp__baguette__ConfigureMcpServer',
+      args: { name: 'docs', start_oauth: true },
+      id: 'cfg',
+    };
+    expect(messageContainsPinnedChatTool(configureServer)).toBe(true);
+    expect(isChatGroupBoundary(configureServer)).toBe(true);
+    expect(isChatWorkMessage(configureServer)).toBe(false);
+  });
+
+  it('treats Cursor mcp meta-tool ConfigureMcpServer as a group boundary', () => {
+    const configureServer = {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mcp',
+            id: 'cfg',
+            input: { toolName: 'ConfigureMcpServer', args: { name: 'docs', start_oauth: true } },
+          },
+        ],
+      },
+    };
+    expect(messageContainsPinnedChatTool(configureServer)).toBe(true);
+    expect(isChatGroupBoundary(configureServer)).toBe(true);
+    expect(isChatWorkMessage(configureServer)).toBe(false);
+  });
+
   it('treats Cursor mcp meta-tool StartSubagent as a group boundary', () => {
     const startSubagent = {
       type: 'assistant',
