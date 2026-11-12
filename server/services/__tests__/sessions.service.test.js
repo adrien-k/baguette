@@ -102,6 +102,12 @@ vi.mock('child_process', () => ({
   execFile: vi.fn((_cmd, _args, _opts, cb) => cb(null, { stdout: '', stderr: '' })),
 }));
 
+// Push tests below exercise the image-attach resolution path.
+vi.mock('../../config.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, GITHUB_ENABLE_IMAGE_ATTACH: true };
+});
+
 vi.mock('../../lib/image-asset-upload.js', () => ({
   uploadImageAsset: vi.fn().mockResolvedValue({
     url: 'https://github.com/user-attachments/assets/fresh-url',

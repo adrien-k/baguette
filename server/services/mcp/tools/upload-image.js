@@ -63,9 +63,10 @@ export function createUploadImageTool(ctx) {
       '{{image:<id>}} placeholder. Provide either filePath (a path relative to the worktree root, ' +
       'e.g. a screenshot saved by a test or Playwright) or base64 + mediaType for raw image data. ' +
       'Embed the returned placeholder in the description passed to UpdateSession by ' +
-      'interpolating the image at the right spot: Baguette attaches the file to the pull request ' +
-      'and swaps the placeholder for a GitHub-hosted asset URL when the description syncs, and ' +
-      'the Details tab shows it from the local image URL.',
+      'interpolating the image at the right spot: Baguette resolves the placeholder into an ' +
+      'image reference when the description syncs — a GitHub-hosted asset URL when image ' +
+      'attach is enabled, a public image URL otherwise — and the Details tab shows it from ' +
+      'the local image URL.',
     schema: {
       filePath: z
         .string()

@@ -15,6 +15,7 @@ import Login from './pages/Login.jsx';
 import Invite from './pages/Invite.jsx';
 const System = lazy(() => import('./pages/System.jsx'));
 const Session = lazy(() => import('./pages/Session.jsx'));
+const SessionDescription = lazy(() => import('./pages/SessionDescription.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
 const Usage = lazy(() => import('./pages/Usage.jsx'));
@@ -328,6 +329,22 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sessions/:id/description"
+              element={
+                <ProtectedRoute>
+                  <SessionDescription />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/session/:id/description"
+              element={
+                <ProtectedRoute>
+                  <SessionDescription />
                 </ProtectedRoute>
               }
             />

@@ -5,7 +5,12 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { requireUser, scopeBySessionUser, only, disableExternal } from './hooks.js';
 import { requireOwnSessionForWrite } from './shared-access.js';
-import { DEFAULT_PAGINATE, IMAGES_DIR } from '../../config.js';
+import {
+  DEFAULT_PAGINATE,
+  GITHUB_ENABLE_IMAGE_ATTACH,
+  IMAGES_DIR,
+  PUBLIC_API_URL,
+} from '../../config.js';
 import {
   SESSION_IMAGE_MEDIA_TYPES,
   MAX_SESSION_IMAGE_BYTES,
@@ -21,6 +26,11 @@ function normalizeAltText(raw) {
       .trim()
       .slice(0, 500) || 'screenshot'
   );
+}
+
+/** Public image URL for a stored row (the non-attach publish path). */
+function publicImageUrl(row) {
+  return `${PUBLIC_API_URL}/api/images/${row.image_slug}${row.file_ext}`;
 }
 
 class SessionImagesService extends KnexService {
@@ -73,14 +83,22 @@ class SessionImagesService extends KnexService {
 
   /**
    * Push-time resolution for the images a PR body references through
-   * `{{image:<slug>}}` placeholders. Attaches images that are not anchored in
-   * the PR yet (never uploaded there, or dropped from the body since), caches
-   * the resulting GitHub URLs on their rows, and reports a slug → url map for
-   * body interpolation — plus every failure that left a placeholder behind.
+   * `{{image:<slug>}}` placeholders.
+   *
+   * With `attachImages` (GITHUB_ENABLE_IMAGE_ATTACH), images are attached to
+   * the PR via the GitHub attachments API and the hosted asset URL is cached
+   * on their rows. Otherwise each placeholder resolves to the public image
+   * URL without touching GitHub. Both modes report a slug → url map for body
+   * interpolation plus every failure that left a placeholder behind.
    * Internal only: called by the sessions service while syncing the PR body.
    */
   async resolveForPush(data) {
-    const { session, bodyWithPlaceholders, existingPrBody = '' } = data;
+    const {
+      session,
+      bodyWithPlaceholders,
+      existingPrBody = '',
+      attachImages = GITHUB_ENABLE_IMAGE_ATTACH,
+    } = data;
     const internal = { user: { id: session.user_id }, provider: undefined };
     const rows = await this.find({
       query: { session_id: session.id, $limit: 500 },
@@ -92,6 +110,10 @@ class SessionImagesService extends KnexService {
     const failures = [];
     for (const row of rows) {
       if (!bodyWithPlaceholders.includes(`{{image:${row.image_slug}}}`)) continue;
+      if (!attachImages) {
+        resolved[row.image_slug] = { url: publicImageUrl(row), alt_text: row.alt_text };
+        continue;
+      }
       if (row.github_url && existingPrBody.includes(row.github_url)) {
         resolved[row.image_slug] = { url: row.github_url, alt_text: row.alt_text };
         continue;

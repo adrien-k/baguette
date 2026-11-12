@@ -3,6 +3,7 @@ import { feathers } from 'feathers';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { PUBLIC_API_URL } from '../../config.js';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerSessionImagesService } from '../feathers/session-images.service.js';
@@ -131,7 +132,7 @@ describe('session-images resolveForPush', () => {
     });
   }
 
-  function callResolveForPush({ body, existing = '' }) {
+  function callResolveForPush({ body, existing = '', attach = true }) {
     return app.service('session-images').resolveForPush(
       {
         session: {
@@ -143,6 +144,7 @@ describe('session-images resolveForPush', () => {
         token: 'tok',
         bodyWithPlaceholders: body,
         existingPrBody: existing,
+        attachImages: attach,
       },
       { user: { id: user.id }, provider: undefined }
     );
@@ -216,5 +218,36 @@ describe('session-images resolveForPush', () => {
     expect(resolved['img-a'].url).toBe('https://github.com/user-attachments/assets/ZZZ');
     const row = await db('session_images').where({ image_slug: 'img-a' }).first();
     expect(row.github_url).toBe('https://github.com/user-attachments/assets/ZZZ');
+  });
+
+  it('publishes public image URLs without touching GitHub when attach is disabled', async () => {
+    await seedRow({
+      image_slug: 'img-a',
+      github_url: 'https://github.com/user-attachments/assets/AAA',
+    });
+    await seedRow({ image_slug: 'img-b' });
+
+    const { resolved, failures } = await callResolveForPush({
+      body: 'top\n\n{{image:img-a}}\n{{image:img-b}}\n{{image:ghost}}',
+      attach: false,
+    });
+
+    expect(resolved['img-a']).toEqual({
+      url: `${PUBLIC_API_URL}/api/images/img-a.png`,
+      alt_text: 'shot',
+    });
+    expect(resolved['img-b']).toEqual({
+      url: expect.stringMatching(/^https?:\/\//),
+      alt_text: 'shot',
+    });
+    expect(resolved['img-b'].url).toContain('/api/images/img-b.png');
+    expect(failures).toEqual([
+      { image_slug: 'ghost', message: expect.stringMatching(/no session image/) },
+    ]);
+    expect(uploadImageAssetMock).not.toHaveBeenCalled();
+    const a = await db('session_images').where({ image_slug: 'img-a' }).first();
+    expect(a.github_url).toBe('https://github.com/user-attachments/assets/AAA');
+    const b = await db('session_images').where({ image_slug: 'img-b' }).first();
+    expect(b.github_url).toBeNull();
   });
 });

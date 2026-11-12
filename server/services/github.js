@@ -3,7 +3,12 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { REPOS_DIR, resolveRepoPath, resolveDataDirRelativePath } from '../config.js';
+import {
+  REPOS_DIR,
+  PUBLIC_API_URL,
+  resolveRepoPath,
+  resolveDataDirRelativePath,
+} from '../config.js';
 import * as cache from '../lib/cache.js';
 import {
   buildLogRangeHeader,
@@ -14,6 +19,7 @@ import {
 } from './mcp-pagination.js';
 import { githubFetch } from './github-api.js';
 import { gitHubOriginFromFullName } from '../../shared/repo-origin.js';
+import { hasSessionImagePlaceholders } from '../../shared/session-images.js';
 
 export { configureWorktreeGitIdentity } from './git-identity.js';
 
@@ -2174,4 +2180,29 @@ export function buildSessionFooter(_session, { previewUrl = null, usageLines = [
 export function buildPrBody(userPrefix, baguetteContent, footer = '') {
   const baguetteSection = `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\n${baguetteContent}${footer}`;
   return userPrefix ? `${userPrefix}\n\n${baguetteSection}` : baguetteSection;
+}
+
+/** Markdown image (`![alt](url)`) or raw `<img>` tag. */
+const EMBEDDED_IMAGE_RE = /!\[[^\]]*\]\([^)]+\)|<img\b/i;
+
+/**
+ * GitHub may not render description images (unreachable host, unresolved
+ * `{{image:…}}` placeholder); the Baguette page always does.
+ */
+export function descriptionHasImage(markdown) {
+  const text = markdown ?? '';
+  return EMBEDDED_IMAGE_RE.test(text) || hasSessionImagePlaceholders(text);
+}
+
+export function baguetteDescriptionLink(sessionId) {
+  return (
+    `Images not showing? ` +
+    `[Open the full description in Baguette](${PUBLIC_API_URL}/session/${sessionId}/description)`
+  );
+}
+
+/** Prepends the Baguette description link when the description embeds an image. */
+export function withDescriptionLink(sessionId, baguetteContent) {
+  if (!descriptionHasImage(baguetteContent)) return baguetteContent ?? '';
+  return `${baguetteDescriptionLink(sessionId)}\n\n${baguetteContent}`;
 }

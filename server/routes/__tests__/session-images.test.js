@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { sign } from 'cookie-signature';
@@ -32,11 +32,62 @@ dbFacade.fn = { now: (...args) => dbMock.current.fn.now(...args) };
 vi.mock('../../db.js', () => ({ default: dbFacade }));
 
 import createSessionImageRoutes from '../session-images.js';
+import createImagesRoutes from '../images.js';
 import { createRequireAuth } from '../../middleware/auth.js';
 import { cookieAuthMiddleware } from '../../feathers.js';
 
 const db = createTestDb();
 const imagesDir = () => imagesDirCfg.imagesDir;
+
+describe('public images route', () => {
+  let server;
+  let baseUrl;
+
+  async function request(pathname) {
+    const res = await fetch(`${baseUrl}${pathname}`);
+    return {
+      status: res.status,
+      contentType: res.headers.get('content-type'),
+      text: await res.text(),
+    };
+  }
+
+  beforeAll(async () => {
+    fs.writeFileSync(path.join(imagesDir(), 'public-image-slug.png'), 'public-bytes');
+    const app = express();
+    app.use(createImagesRoutes());
+    server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise((resolve) => server?.close(resolve));
+  });
+
+  it('serves a stored upload with its content type without auth', async () => {
+    const res = await request('/api/images/public-image-slug.png');
+    expect(res.status).toBe(200);
+    expect(res.contentType).toBe('image/png');
+    expect(res.text).toBe('public-bytes');
+  });
+
+  it('rejects malformed ids before touching the filesystem', async () => {
+    // No extension.
+    expect((await request('/api/images/no-extension')).status).toBe(400);
+    expect((await request('/api/images/.hidden.png')).status).toBe(400);
+    // Slash traversal — encoded and literal — never reaches sendFile.
+    expect((await request('/api/images/..%2fsecret.png')).status).toBe(400);
+    expect((await request('/api/images/sub%2fsecret.txt')).status).toBe(400);
+    expect((await request('/api/images/a/b.png')).status).toBe(404);
+  });
+
+  it('404s unknown but valid ids', async () => {
+    const res = await request('/api/images/missing-public-slug.png');
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.text).error).toMatch(/Image not found/);
+  });
+});
 
 describe('session-images file route', () => {
   let server;

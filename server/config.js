@@ -96,7 +96,7 @@ export const TRUST_PROXY_HOPS = Math.max(
   0,
   Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10) || 0
 );
-/** API base URL reachable by browsers and external clients (MCP, reviews, etc.). */
+/** API base URL reachable by browsers and external clients (MCP, uploaded images, etc.). */
 export const PUBLIC_API_HOST =
   process.env.PUBLIC_API_HOST ||
   (process.env.PUBLIC_HOST
@@ -107,6 +107,14 @@ export const PUBLIC_API_HOST =
 export const PUBLIC_API_URL = /^https?:\/\//.test(PUBLIC_API_HOST)
   ? PUBLIC_API_HOST
   : `https://${PUBLIC_API_HOST}`;
+/**
+ * Undocumented opt-in: when truthy, push resolves `{{image:…}}` description placeholders
+ * by attaching the uploads to the session pull request (GitHub user-attachments).
+ * Default resolves them to public image URLs instead.
+ */
+export const GITHUB_ENABLE_IMAGE_ATTACH = ['true', '1'].includes(
+  process.env.GITHUB_ENABLE_IMAGE_ATTACH
+);
 /** Streamable HTTP MCP — always on the same public origin as the Baguette UI (`/api/mcp`). */
 export const MCP_HTTP_ENDPOINT = `${PUBLIC_HOST.replace(/\/$/, '')}/api/mcp`;
 

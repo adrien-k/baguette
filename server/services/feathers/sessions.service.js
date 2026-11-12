@@ -37,6 +37,7 @@ import {
   splitPrBody,
   buildPrBody,
   buildSessionFooter,
+  withDescriptionLink,
   resolveRestoreWorktreeBranches,
 } from '../github.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
@@ -1344,7 +1345,7 @@ export class SessionsService extends KnexService {
         const title = session.label || session.repo_full_name;
         let body = buildPrBody(
           userPrefix,
-          session.pr_description ?? '',
+          withDescriptionLink(session.id, session.pr_description ?? ''),
           buildSessionFooter(session, { previewUrl, usageLines })
         );
         const hasImagePlaceholders = hasSessionImagePlaceholders(body);
@@ -1422,11 +1423,11 @@ export class SessionsService extends KnexService {
   }
 
   /**
-   * Attaches session images that the body still references as `{{image:…}}`
-   * placeholders to the pull request (via the gh CLI) and swaps the
-   * placeholders for the GitHub-hosted asset URLs. Unresolvable placeholders
-   * stay in the body so the next push retries them. Returns the swapped body
-   * plus any attach failures so push can surface them.
+   * Resolves `{{image:…}}` placeholders the body still references and swaps
+   * them for image URLs (GitHub-hosted asset URLs when image attach is
+   * enabled, public image URLs otherwise). Unresolvable placeholders stay in
+   * the body so the next push retries them. Returns the swapped body plus any
+   * resolution failures so push can surface them.
    */
   async resolvePrImagePlaceholders(session, token, prNumber, bodyWithPlaceholders, existingPrBody) {
     let resolution = null;
@@ -1448,7 +1449,7 @@ export class SessionsService extends KnexService {
     if (failures.length) {
       logger.warn(
         { session_id: session.id, failures },
-        'Some session images could not be attached to the PR'
+        'Some session images could not be resolved for the PR'
       );
     }
     const resolvedById = resolution?.resolved ?? {};

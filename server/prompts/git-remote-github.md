@@ -27,7 +27,7 @@ When you have a screenshot or image that illustrates the change (e.g. a UI befor
 1. Call `UploadImage` with `filePath` (relative to the worktree root) or `base64` + `mediaType`, and an `altText`. The tool stores the image for this session and returns a placeholder like `{{image:<id>}}`.
 2. Put that placeholder — verbatim, on its own line — in the `description` you pass to `UpdateSession`, where the image should show up. Do not wrap it in markdown image syntax; the alt text comes from the upload.
 
-When the PR description is synced to GitHub (push / end of turn), Baguette attaches each placeholder's image to the PR and rewrites the placeholder into a `![alt](https://github.com/user-attachments/assets/…)` reference. The attachment URL is cached, so later pushes reuse it instead of re-uploading.
+When the PR description is synced to GitHub (push / end of turn), Baguette resolves each placeholder into an image reference in the PR body — attached to the pull request or published as an image URL, depending on the instance configuration.
 
 Example:
 
