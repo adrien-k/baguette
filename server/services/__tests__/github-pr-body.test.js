@@ -6,6 +6,7 @@ import {
   buildSessionFooter,
   buildPrBody,
 } from '../github.js';
+import { PUBLIC_HOST } from '../../config.js';
 
 describe('splitPrBody', () => {
   it('strips baguette footer from baguette content', () => {
@@ -58,6 +59,30 @@ describe('buildSessionFooter', () => {
         '_cursor / `gpt-5` · In: 10k · Out: 2k · Cache read: 1k · Cache write: 0 · Cost: $0.12_',
       ].join('\n')
     );
+  });
+
+  it('puts the Open Session link on the preview line', () => {
+    const footer = buildSessionFooter(
+      { id: 1 },
+      { previewUrl: 'https://session.example.com/', usageLines: ['claude / `a` · Cost: $0'] }
+    );
+    const lines = footer.split('\n');
+    const preview = lines.indexOf(
+      `_Preview: https://session.example.com/ | [Open Session](${PUBLIC_HOST}/sessions/1)_`
+    );
+    expect(preview).toBeGreaterThan(-1);
+    expect(lines[preview + 1]).toBe('_claude / `a` · Cost: $0_');
+  });
+
+  it('shows only the Open Session link when there is no preview', () => {
+    const footer = buildSessionFooter({ id: 2 });
+    expect(footer).toContain(`_[Open Session](${PUBLIC_HOST}/sessions/2)_`);
+    expect(footer).not.toContain('Preview:');
+  });
+
+  it('omits the Open Session link when the session has no id', () => {
+    const footer = buildSessionFooter({}, { previewUrl: 'https://session.example.com/' });
+    expect(footer).not.toContain('Open Session');
   });
 
   it('includes preview URL only when no usage lines', () => {
