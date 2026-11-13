@@ -59,7 +59,7 @@ export function loaderText({ state, activity, elapsedMs }) {
 }
 
 /** The native status line; Slack puts the app's name in front: "Baguette is cooking…". */
-export function nativeStatusText({ state, activity, elapsedMs }) {
+function nativeStatusText({ state, activity, elapsedMs }) {
   const base =
     state === 'provisioning'
       ? 'is heating up the oven (setting up the workspace)…'

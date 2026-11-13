@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { DATA_DIR } from '../config.js';
 
-export const SLACK_FILES_DIR = path.join(DATA_DIR, 'slack-files');
+const SLACK_FILES_DIR = path.join(DATA_DIR, 'slack-files');
 
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 60_000;

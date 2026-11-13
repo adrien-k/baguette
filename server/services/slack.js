@@ -42,7 +42,7 @@ export class SlackApiError extends Error {
   }
 }
 
-export const SLACK_REQUEST_TIMEOUT_MS = 15_000;
+const SLACK_REQUEST_TIMEOUT_MS = 15_000;
 
 async function request(token, method, url, init) {
   if (!token) throw new SlackApiError(method, 'not_authed');
