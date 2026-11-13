@@ -6,7 +6,7 @@ const db = createTestDb();
 
 describe('loadSecretsForUser', () => {
   beforeEach(async () => {
-    await db('users').insert({ github_id: 1, username: 'alice', approved: true });
+    await db('users').insert({ github_id: 1, username: 'alice', status: 'approved' });
   });
 
   it('lets personal secrets override global keys', async () => {

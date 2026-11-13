@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { registerAllSdkPlugins } from '../../agent-sdks/index.js';
 import {
   mergeUsageForPrFooter,
   formatPrFooterUsageLine,
   formatPrFooterUsageLines,
+  formatSlackFooterUsageSummary,
 } from '../pr-footer-usage.js';
+
+registerAllSdkPlugins();
 
 const builderFastParams = JSON.stringify([{ id: 'fast', value: 'true' }]);
 const reviewerSlowParams = JSON.stringify([{ id: 'fast', value: 'false' }]);
@@ -183,5 +187,41 @@ describe('formatPrFooterUsageLine', () => {
     expect(line).toContain('cursor / `composer-2.5` (Fast)');
     expect(line).toContain('In: 1.5k');
     expect(line).toContain('Cost: $0.0042');
+  });
+});
+
+describe('formatSlackFooterUsageSummary', () => {
+  it('lists distinct models by cost and total session cost', () => {
+    const summary = formatSlackFooterUsageSummary(
+      mergeUsageForPrFooter([
+        {
+          agent_type: 'builder',
+          agent_sdk: 'cursor',
+          model: 'composer-2.5',
+          model_params: null,
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: 1.2,
+        },
+        {
+          agent_type: 'reviewer',
+          agent_sdk: 'claude',
+          model: 'claude-opus-5',
+          model_params: null,
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: 0.3,
+        },
+      ])
+    );
+    expect(summary).toBe('composer-2.5, claude-opus-5 · $1.50');
+  });
+
+  it('returns null when there is no usage', () => {
+    expect(formatSlackFooterUsageSummary([])).toBeNull();
   });
 });

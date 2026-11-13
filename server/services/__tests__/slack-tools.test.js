@@ -112,7 +112,7 @@ describe('SlackPostMessage', () => {
     expect(args.channel).toBe('ID:#eng');
     expect(args.threadTs).toBeUndefined();
     expect(args.text).toContain('FYI');
-    expect(args.text).toContain(`session ${sessionId}`);
+    expect(args.text).toContain(`baguette#${sessionId}`);
   });
 
   it('can reply in a given thread', async () => {
@@ -189,8 +189,8 @@ describe('secrets never go to Slack through the tools', () => {
   });
 
   it('both tools remind the agent in their description', () => {
-    const post = createSlackPostMessageTool({ slackApps: [], app: {} });
-    const edit = createSlackEditMessageTool({ slackApps: [], app: {} });
+    const post = createSlackPostMessageTool({ slackApps: [], app: { get: () => db } });
+    const edit = createSlackEditMessageTool({ slackApps: [], app: { get: () => db } });
     expect(post.description).toContain('NEVER post secrets');
     expect(edit.description).toContain('Never put secrets');
   });

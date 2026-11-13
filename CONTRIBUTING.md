@@ -23,6 +23,10 @@ npm run migrate
 npm run dev
 ```
 
+### Live agent-SDK integration tests
+
+Optional **live agent-SDK tests** (`*.live.test.js`) call a real model and skip unless set. Copy the `SDK_TESTS_*` block from `.env.example` (Claude / Cursor / Pi keys + model; `SDK_TESTS_MOCK=1` for the mock SDK). Do not set them in CI unless you intend to pay for those calls. The `agents-integration-test` Baguette task runs Pi, Claude, and Cursor live tests on cheap OpenCode Go / Cursor models using those secrets.
+
 ## Code style
 
 - No framework, no unnecessary abstraction. Keep it simple.

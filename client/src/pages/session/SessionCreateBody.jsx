@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import BuilderForm from '../../components/BuilderForm.jsx';
 
 export default function SessionCreateBody({
@@ -12,6 +13,8 @@ export default function SessionCreateBody({
   loading,
   isGlobal,
 }) {
+  const [searchParams] = useSearchParams();
+  const defaultPrompt = isGlobal ? searchParams.get('prompt') || '' : '';
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-page">
       {creatingSession && (
@@ -45,6 +48,7 @@ export default function SessionCreateBody({
           repoFullName={builderRepoFullName}
           isGlobal={isGlobal}
           allowRepoChoice={builderAllowRepoChoice}
+          defaultPrompt={defaultPrompt}
         />
       </div>
     </div>

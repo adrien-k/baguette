@@ -79,7 +79,8 @@ export function AgentConfigProvider({ children }) {
     (configId) => {
       if (configId == null || configId === '') return [];
       const entry = modelCache[String(configId)];
-      return entry?.models ?? [];
+      const list = entry?.models;
+      return Array.isArray(list) ? list : [];
     },
     [modelCache]
   );

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { feathers } from 'feathers';
+
+// This file pulls in the full agent-sdk plugin graph, so its per-test setup
+// runs long. Under full-suite parallelism that can exceed the 5s default.
+vi.setConfig({ testTimeout: 20000 });
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
@@ -9,7 +13,7 @@ vi.mock('../../lib/cache.js', () => ({
   clear: vi.fn(async () => {}),
 }));
 
-vi.mock('../anthropic-models.js', () => ({
+vi.mock('../../agent-sdks/claude/anthropic-models.js', () => ({
   listModels: vi.fn(async () => ({
     models: [{ id: 'claude-sonnet-4-5', display_name: 'Sonnet' }],
     rejected_models: [],
@@ -18,7 +22,7 @@ vi.mock('../anthropic-models.js', () => ({
 }));
 
 const { listModelsForUser, loadModelsForSdk } = await import('../baguette-models-for-user.js');
-const { listModels } = await import('../anthropic-models.js');
+const { listModels } = await import('../../agent-sdks/claude/anthropic-models.js');
 
 const db = createTestDb();
 
@@ -40,7 +44,7 @@ describe('listModelsForUser / loadModelsForSdk with agent_config_id', () => {
 
   beforeEach(async () => {
     listModels.mockClear();
-    await db('users').insert({ github_id: 1, username: 'u', approved: true });
+    await db('users').insert({ github_id: 1, username: 'u', status: 'approved' });
     user = await db('users').where({ username: 'u' }).first();
     configId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-api03-key' });
   });
@@ -80,7 +84,7 @@ describe('listModelsForUser / loadModelsForSdk with agent_config_id', () => {
   });
 
   it("does not list models using another user's agent_config_id", async () => {
-    await db('users').insert({ github_id: 2, username: 'other', approved: true });
+    await db('users').insert({ github_id: 2, username: 'other', status: 'approved' });
     const other = await db('users').where({ username: 'other' }).first();
     const otherConfigId = await insertTestAgentConfig(db, other.id, {
       apiKey: 'sk-ant-other',

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from 'react-rout
 import { Loader2 } from 'lucide-react';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
-import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
+import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE, SHARED_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
@@ -51,6 +51,7 @@ import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
   isGlobalSession,
   isAllSessionsPath,
+  isSharedWithMePath,
   isNewSessionRouteId,
   agentsScopePathFromPathname,
   isLoopHomePathname,
@@ -66,6 +67,7 @@ import { SESSION_MAIN_MIN_WIDTH } from '../utils/sessionLayout.js';
 import { useGetLoops } from '../hooks/useGetLoops.js';
 import { diffFileDisplayPath } from '../utils/paths.js';
 import { autoPushEnabledForRepo, isLocalRepo } from '../utils/repoDisplayName.js';
+import { isSessionPushToolReadonly } from '../utils/sessionPushGitStatus.js';
 import { parseMessageRow } from '@baguette/shared/parse-message-row.ts';
 import { isGlobalSessionDisabledView } from './session/sessionViews.js';
 
@@ -75,6 +77,7 @@ export default function Session() {
   const isNewSessionRoute = isNewSessionRouteId(routeSessionId) || isSessionHomePathname(pathname);
   const isNewLoopRoute = isNewLoopRouteId(routeLoopId) || isLoopHomePathname(pathname);
   const fromAllSessions = isAllSessionsPath(pathname);
+  const fromSharedWithMe = isSharedWithMePath(pathname);
   const isGlobalSessionsRoute = pathname.startsWith('/global/');
   const {
     homeUrl,
@@ -95,6 +98,7 @@ export default function Session() {
     hasMore: hasMoreSessions,
     loadMore: loadMoreSessions,
     refetch: refetchSessions,
+    listScope,
   } = useSessionsContext();
   const { selectedRepo, setSelectedRepo, repos } = useRepoContext();
 
@@ -102,11 +106,13 @@ export default function Session() {
     if (!isLoopsView) return null;
     const isAll = selectedRepo === ALL_REPOS;
     const isGlobal = selectedRepo === GLOBAL_SCOPE;
-    if (isAll) return {};
-    if (isGlobal) return { is_global: true };
-    if (selectedRepo) return { repo_full_name: selectedRepo };
+    const isShared = selectedRepo === SHARED_SCOPE || fromSharedWithMe;
+    const scope = { list_scope: listScope };
+    if (isAll || isShared) return scope;
+    if (isGlobal) return { ...scope, is_global: true };
+    if (selectedRepo) return { ...scope, repo_full_name: selectedRepo };
     return null;
-  }, [isLoopsView, selectedRepo]);
+  }, [isLoopsView, selectedRepo, listScope, fromSharedWithMe]);
   const { loops, loaded: loopsLoaded, reload: reloadLoops } = useGetLoops(loopsQuery);
   const loopWorkspace = useLoopWorkspace({
     routeLoopId: isLoopsView ? routeLoopId : undefined,
@@ -124,7 +130,7 @@ export default function Session() {
     const parsed = Number(routeSessionId);
     return Number.isFinite(parsed) ? parsed : null;
   }, [isNewSessionRoute, routeSessionId]);
-  const { agents, primaryBuilder, reviewer } = useSessionAgents(sessionId);
+  const { agents, loading: agentsLoading, primaryBuilder, reviewer } = useSessionAgents(sessionId);
   const agentParam = searchParams.get('agent');
   const activeAgent = useMemo(() => {
     if (!agents.length) return null;
@@ -140,7 +146,9 @@ export default function Session() {
     loadMore,
     loadingMore,
     hasMore,
-  } = useGetMessages(sessionId, activeAgent?.id ?? null);
+  } = useGetMessages(sessionId, activeAgent?.id ?? null, {
+    skip: Boolean(sessionId) && agentsLoading && agents.length === 0,
+  });
   const chatViewOpen = activeView === 'chat';
   const agentLabelById = useMemo(() => {
     const map = new Map();
@@ -220,6 +228,7 @@ export default function Session() {
   const shouldLoadBranchCommits = sidePanelTab === 'commits' || activeView === 'diff';
   const shouldLoadChangedFiles = sidePanelTab === 'files' || activeView === 'diff';
   const gitSession = session ?? sessionFromHook;
+  const pushToolReadonly = isSessionPushToolReadonly(gitSession);
   const { configOptions } = useAgentConfigs();
   const {
     commits: branchCommits,
@@ -309,7 +318,8 @@ export default function Session() {
   // its id) lags behind the URL for a few renders. Treat that window as loading so the
   // chat shows a loader instead of the previous session's conversation.
   const switchingSession = !!sessionId && !isNewSessionRoute && session?.id !== sessionId;
-  const chatLoading = switchingSession || messagesLoading;
+  const agentsPending = Boolean(sessionId) && agentsLoading && agents.length === 0;
+  const chatLoading = switchingSession || agentsPending || messagesLoading;
 
   // If loadMore produced only hidden/filtered messages, keep pulling until something visible appears
   const activeViewTabRef = useRef(null);
@@ -328,6 +338,11 @@ export default function Session() {
 
   useEffect(() => {
     setSession(null);
+    setError(null);
+    setShowPushModal(false);
+    setPushRequest(null);
+    setActiveTaskModal(null);
+    setPendingTaskConfirm(null);
   }, [routeSessionId]);
 
   useEffect(() => {
@@ -432,7 +447,13 @@ export default function Session() {
     if (String(sessionFromHook.id) !== String(routeSessionId)) return;
     if (!sessionNeedsLastViewedUpdate(sessionFromHook)) return;
     const activityAt = sessionActivityAt(sessionFromHook);
-    sessionsService.patch(sessionFromHook.id, { last_viewed_at: activityAt }).catch(() => {});
+    sessionsService
+      .patch(sessionFromHook.id, { last_viewed_at: activityAt })
+      .then((updated) => {
+        if (updated?.id == null) return;
+        sessionsService.emit('patched', updated);
+      })
+      .catch(() => {});
   }, [isNewSessionRoute, sessionLoading, sessionFromHook, routeSessionId]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
@@ -441,6 +462,10 @@ export default function Session() {
     if (!isSessionHomePathname(pathname)) return;
     if (pathname === '/global') {
       if (selectedRepo !== GLOBAL_SCOPE) setSelectedRepo(GLOBAL_SCOPE);
+      return;
+    }
+    if (pathname === '/shared') {
+      if (selectedRepo !== SHARED_SCOPE) setSelectedRepo(SHARED_SCOPE);
       return;
     }
     if (repoId) {
@@ -461,6 +486,10 @@ export default function Session() {
       if (selectedRepo !== GLOBAL_SCOPE) setSelectedRepo(GLOBAL_SCOPE);
       return;
     }
+    if (scopePath === '/shared' || pathname.startsWith('/shared/loops')) {
+      if (selectedRepo !== SHARED_SCOPE) setSelectedRepo(SHARED_SCOPE);
+      return;
+    }
     const repoMatch = scopePath.match(/^\/repos\/(\d+)/);
     if (repoMatch) {
       if (!repos.length) return;
@@ -474,6 +503,10 @@ export default function Session() {
   // Keep All sessions context on /sessions/:id so the logo and picker stay on `/`.
   useEffect(() => {
     if (isSessionHomePathname(pathname)) return;
+    if (fromSharedWithMe) {
+      if (selectedRepo !== SHARED_SCOPE) setSelectedRepo(SHARED_SCOPE);
+      return;
+    }
     if (fromAllSessions) {
       if (selectedRepo !== ALL_REPOS) setSelectedRepo(ALL_REPOS);
       return;
@@ -484,7 +517,15 @@ export default function Session() {
     }
     if (!sessionRepo) return;
     if (selectedRepo !== sessionRepo) setSelectedRepo(sessionRepo);
-  }, [pathname, fromAllSessions, sessionFromHook, sessionRepo, selectedRepo, setSelectedRepo]);
+  }, [
+    pathname,
+    fromAllSessions,
+    fromSharedWithMe,
+    sessionFromHook,
+    sessionRepo,
+    selectedRepo,
+    setSelectedRepo,
+  ]);
 
   const [pendingAgentConfigId, setPendingAgentConfigId] = useState(null);
   const [switchingAgentSdk, setSwitchingAgentSdk] = useState(false);
@@ -598,6 +639,23 @@ export default function Session() {
   const handleViewTaskLogs = (taskId) => {
     setActiveTaskModal(taskId);
   };
+
+  const selectTask = useCallback(
+    (taskId) => {
+      if (taskId == null) return;
+      setActiveTaskModal(taskId);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('panel', 'tasks');
+          return next;
+        },
+        { replace: true }
+      );
+      setShowTasks(true);
+    },
+    [setSearchParams, setShowTasks]
+  );
 
   const linkedSessionRepo =
     session?.repo_id != null || session?.repo_full_name
@@ -759,23 +817,24 @@ export default function Session() {
     setShowBaguetteConfigModal(true);
   }, [setShowBaguetteConfigModal]);
 
-  const builderIsGlobal = isNewSessionRoute
-    ? pathname === '/global' || (!fromAllSessions && isGlobalSessionsRoute)
-    : fromAllSessions
-      ? false
-      : isGlobalSession(session);
-  const builderRepoFullName = isNewSessionRoute
-    ? fromAllSessions
-      ? null
-      : repoId
-        ? (repos.find((r) => String(r.id) === String(repoId))?.full_name ?? null)
-        : null
-    : fromAllSessions
-      ? null
-      : isGlobalSession(session)
-        ? null
-        : session?.repo_full_name;
-  const builderAllowRepoChoice = fromAllSessions;
+  let builderIsGlobal;
+  if (isNewSessionRoute) {
+    builderIsGlobal =
+      pathname === '/global' || (!fromAllSessions && !fromSharedWithMe && isGlobalSessionsRoute);
+  } else if (fromAllSessions || fromSharedWithMe) {
+    builderIsGlobal = false;
+  } else {
+    builderIsGlobal = isGlobalSession(session);
+  }
+  let builderRepoFullName = null;
+  if (isNewSessionRoute) {
+    if (!fromAllSessions && !fromSharedWithMe && repoId) {
+      builderRepoFullName = repos.find((r) => String(r.id) === String(repoId))?.full_name ?? null;
+    }
+  } else if (!fromAllSessions && !fromSharedWithMe && !isGlobalSession(session)) {
+    builderRepoFullName = session?.repo_full_name;
+  }
+  const builderAllowRepoChoice = fromAllSessions || fromSharedWithMe;
 
   const handleCreateSession = async ({
     isGlobal,
@@ -789,7 +848,9 @@ export default function Session() {
     branchName,
     autoPush,
     plugins,
+    mcpServers,
     agentConfigId,
+    isShared,
   }) => {
     const params = isGlobal
       ? {
@@ -812,6 +873,8 @@ export default function Session() {
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;
     if (plugins?.length) params.plugins = plugins;
+    if (mcpServers && typeof mcpServers === 'object') params.mcp_servers = mcpServers;
+    if (isShared) params.is_shared = true;
     if (files?.length) {
       try {
         params.initial_files = await Promise.all(files.map(fileToContentBlock));
@@ -920,6 +983,7 @@ export default function Session() {
       session,
       repoId,
       fromAllSessions,
+      fromSharedWithMe,
     });
     navigate(firstSession ? sessionUrl(firstSession.id) : homeUrl);
   }, [
@@ -928,6 +992,7 @@ export default function Session() {
     session,
     repoId,
     fromAllSessions,
+    fromSharedWithMe,
     navigate,
     sessionUrl,
     homeUrl,
@@ -945,9 +1010,12 @@ export default function Session() {
       : isNewSessionRoute || Boolean(session));
 
   const isReadonly =
-    !isNewSessionRoute && (!!session?.archived_at || session?.status === 'archiving');
+    !isNewSessionRoute &&
+    (!!gitSession?.archived_at ||
+      gitSession?.status === 'archiving' ||
+      gitSession?.status === 'archived');
   const isArchiving =
-    !isNewSessionRoute && !session?.archived_at && session?.status === 'archiving';
+    !isNewSessionRoute && !gitSession?.archived_at && gitSession?.status === 'archiving';
 
   useLayoutEffect(() => {
     if (isNewSessionRoute) return;
@@ -1065,6 +1133,7 @@ export default function Session() {
           handlePush={handlePush}
           pushing={pushing}
           commitsToPush={commitsToPush}
+          pushToolReadonly={pushToolReadonly}
           session={session}
           prInfo={prInfo}
         />
@@ -1115,6 +1184,7 @@ export default function Session() {
           hasMoreSessions={hasMoreSessions}
           sessionsLength={sessions.length}
           onLoadMoreSessions={loadMoreSessions}
+          listScope={listScope}
         />
 
         <div
@@ -1190,6 +1260,7 @@ export default function Session() {
               session &&
               activeView === 'chat' && (
                 <ChatView
+                  key={session.id}
                   messages={messages}
                   loading={chatLoading}
                   loadMore={loadMore}
@@ -1199,6 +1270,8 @@ export default function Session() {
                   activeAgent={activeAgent}
                   agents={agents}
                   onSelectAgent={selectAgent}
+                  tasks={tasks}
+                  onSelectTask={selectTask}
                   systemPrompt={systemPrompt}
                   onViewChange={setView}
                   readonly={isReadonly}
@@ -1221,11 +1294,13 @@ export default function Session() {
               session &&
               activeView === 'review' && (
                 <ReviewView
+                  key={session.id}
                   session={session}
                   readonly={isReadonly}
                   issues={sessionIssues}
                   issuesLoading={sessionIssuesLoading}
                   onOpenReviewerChat={selectAgent}
+                  onReviewerCleared={handleReviewerCleared}
                 />
               )}
             {!isLoopsView &&
@@ -1234,6 +1309,7 @@ export default function Session() {
               session &&
               activeView === 'diff' && (
                 <DiffView
+                  key={session.id}
                   session={session}
                   selectedCommit={selectedDiffCommit}
                   commits={branchCommits}
@@ -1249,7 +1325,7 @@ export default function Session() {
                   diffHasFetched={sessionDiffHasFetched}
                   onRefreshDiff={refreshSessionDiff}
                   fileByFile={sessionDiffFileByFile}
-                  changedFiles={diffFiles}
+                  changedFiles={diffFiles ?? []}
                   selectedFile={diffSelectorFile}
                   onSelectedFileChange={setSelectedDiffFile}
                   scrollToFile={scrollToDiffFile}
@@ -1267,6 +1343,7 @@ export default function Session() {
               session &&
               activeView === 'preview' && (
                 <PreviewView
+                  key={session.id}
                   session={session}
                   readonly={isReadonly}
                   onViewLogs={handleViewTaskLogs}
@@ -1276,13 +1353,20 @@ export default function Session() {
               !isNewSessionRoute &&
               !awaitingSession &&
               session &&
-              activeView === 'plan' && <PlanView session={session} readonly={isReadonly} />}
+              activeView === 'plan' && (
+                <PlanView key={session.id} session={session} readonly={isReadonly} />
+              )}
             {!isLoopsView &&
               !isNewSessionRoute &&
               !awaitingSession &&
               session &&
               activeView === 'details' && (
-                <DetailsView session={session} readonly={isReadonly} onSessionUpdate={setSession} />
+                <DetailsView
+                  key={session.id}
+                  session={session}
+                  readonly={isReadonly}
+                  onSessionUpdate={setSession}
+                />
               )}
           </div>
 
@@ -1319,6 +1403,7 @@ export default function Session() {
               className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-brand/50 active:bg-brand/70"
             />
             <SessionSidePanel
+              key={sessionId}
               sidePanelTab={sidePanelTab}
               onSidePanelTabChange={setSidePanelTab}
               onClose={hideSidePanel}
@@ -1396,6 +1481,7 @@ export default function Session() {
         onTaskKill={handleTaskKill}
         onTaskRetry={handleTaskRetry}
         onCloseTaskLog={() => setActiveTaskModal(null)}
+        readonly={isReadonly}
         showBaguetteConfigModal={showBaguetteConfigModal}
         onCloseBaguetteConfig={() => setShowBaguetteConfigModal(false)}
       />

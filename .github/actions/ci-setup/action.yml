@@ -1,0 +1,19 @@
+name: CI setup
+description: Install Node.js dependencies (run actions/checkout in the job first)
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24.22.1'
+        cache: 'npm'
+        cache-dependency-path: |
+          package-lock.json
+          client/package-lock.json
+
+    - name: Install dependencies
+      env:
+        NODE_ENV: development
+      run: npm ci && npm ci --prefix client
+      shell: bash

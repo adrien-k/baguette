@@ -10,7 +10,7 @@ export function createAwaitDetachedTaskTool(ctx) {
     name: 'AwaitDetachedTask',
     description:
       `Block until a detached baguette task (from RunTask with detach: true) exits (up to ${waitMinutes} minutes per call), then return exitCode/stdoutLines/stderrLines like an inline RunTask. ` +
-      'On timeout the task may still be running: use ReadTaskOutput or TaskStatus to judge progress, then AwaitDetachedTask again or KillTask to stop it. ' +
+      'On timeout the task is NOT cancelled — the wait is virtually detached and the task keeps running: use ReadTaskOutput or TaskStatus to check progress, then AwaitDetachedTask again to continue waiting, or KillTask only if it looks stuck for no good reason. ' +
       'Prefer calling this before ending your turn when a detached build or command must finish.',
     schema: {
       taskId: z.number().int().describe('Task ID from RunTask (detach: true) or ListRunningTasks'),

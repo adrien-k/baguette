@@ -13,15 +13,15 @@ function EditDiffPreview({
   onExpand?: () => void;
 }) {
   const parts = diffLines(oldString ?? '', newString ?? '');
-  const lines: { prefix: string; cls: string; line: string }[] = [];
+  const lines: { prefix: string; cls: string; line: string; changed: boolean }[] = [];
   for (const part of parts) {
     if (part.added || part.removed) {
       const prefix = part.added ? '+' : '-';
-      const cls = part.added ? 'text-green-400' : 'text-danger';
+      const cls = part.added ? 'text-success' : 'text-danger';
       const raw = part.value.split('\n');
       if (raw[raw.length - 1] === '') raw.pop();
       for (const line of raw) {
-        lines.push({ prefix, cls, line });
+        lines.push({ prefix, cls, line, changed: true });
         if (lines.length >= maxLines) break;
       }
     }
@@ -65,20 +65,19 @@ function DiffStringView({
   onExpand?: () => void;
 }) {
   const lines = (diffString || '').split('\n');
-  const displayLines: { cls: string; text: string }[] = [];
+  const displayLines: { cls: string; text: string; changed: boolean }[] = [];
   for (const line of lines) {
     if (line.startsWith('---') || line.startsWith('+++')) continue;
     const ch = line[0];
-    if (ch === '+') displayLines.push({ cls: 'text-green-400', text: line });
-    else if (ch === '-') displayLines.push({ cls: 'text-danger', text: line });
-    else if (line.startsWith('@@')) displayLines.push({ cls: 'text-cyan-500/80', text: line });
-    else displayLines.push({ cls: 'text-faint', text: line });
+    if (ch === '+') displayLines.push({ cls: 'text-success', text: line, changed: true });
+    else if (ch === '-') displayLines.push({ cls: 'text-danger', text: line, changed: true });
+    else if (line.startsWith('@@'))
+      displayLines.push({ cls: 'text-info/80', text: line, changed: false });
+    else displayLines.push({ cls: 'text-faint', text: line, changed: false });
     if (maxLines && displayLines.length >= maxLines) break;
   }
   const totalChanged = lines.filter((l) => l[0] === '+' || l[0] === '-').length;
-  const remaining =
-    totalChanged -
-    displayLines.filter((l) => l.cls.includes('green') || l.cls.includes('red')).length;
+  const remaining = totalChanged - displayLines.filter((l) => l.changed).length;
   return (
     <pre className={`px-3 sm:px-4 pb-2 text-xs font-mono bg-transparent ${DIFF_LINE_WRAP_CLASS}`}>
       {displayLines.map((l, i) => (

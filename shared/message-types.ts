@@ -4,7 +4,7 @@
  * This module is the single source of truth for every message that Baguette
  * stores, transports, or renders. It is deliberately provider-agnostic: no
  * Claude or Cursor SDK shape appears here. Conversion in that direction lives
- * in `server/services/claude/claude-mapping.ts` and `server/services/cursor/cursor-mapping.ts`,
+ * in `server/agent-sdks/claude/mapping.ts` and `server/agent-sdks/cursor/mapping.ts`,
  * which map a provider event to one or more `MessageOp` values — the only
  * vocabulary the persistence layer understands.
  *

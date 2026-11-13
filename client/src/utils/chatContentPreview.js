@@ -1,4 +1,4 @@
-/** Default collapsed preview length for long markdown in chat (assistant text, PrUpsert body, etc.). */
+/** Default collapsed preview length for long markdown in chat (assistant text, UpdateSession body, etc.). */
 export const CHAT_CONTENT_PREVIEW_LINES = 8;
 
 function isFenceLine(line) {

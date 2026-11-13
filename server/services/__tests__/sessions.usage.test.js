@@ -2,16 +2,23 @@
  * Usage recording for Claude sessions, driven by the SDK `result` message.
  *
  * Baguette runs `query({ prompt: channel })` with an async-iterable channel, i.e.
- * streaming-input mode, where `total_cost_usd` and `modelUsage` are running
- * totals for the whole query rather than per-turn figures. Each turn's row is
- * therefore the difference from the previous result.
+ * streaming-input mode, where `modelUsage` is a running total for the whole query
+ * rather than per-turn figures. Each turn's token row is the difference from the
+ * previous result; USD is estimated from the model pricing table.
  */
-import { describe, it, expect, vi } from 'vitest';
-import { feathers } from 'feathers';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { ensureReviewerAgentRow } from '../agents-db.js';
 import { SessionsService } from '../feathers/sessions.service.js';
 import { emptyTurnUsage } from '../turn-usage.js';
+import { ClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
+import { CursorAgentService } from '../../agent-sdks/cursor/agent-service.ts';
+import { clearAllUsageTotals } from '../../agent-sdks/claude/usage-totals.js';
+import { estimateAgentTurnCostUsd } from '../../../shared/agent-model-pricing.js';
+
+afterEach(() => {
+  clearAllUsageTotals();
+});
 
 vi.mock('../../logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -79,20 +86,50 @@ async function seed() {
   return { userId, sessionId, agentConfigId };
 }
 
-function makeService() {
-  const app = feathers();
-  app.set('db', db);
+function makeUsageHarness() {
   const patch = vi.fn(async (id, data) => {
     await db('sessions').where({ id }).update(data);
     return await db('sessions').where({ id }).first();
   });
-  const service = new SessionsService({ Model: db, name: 'sessions' });
-  service.setup({ get: (k) => (k === 'db' ? db : undefined), service: () => ({ patch }) });
-  service._patch = patch;
-  return service;
+  const sessions = new SessionsService({ Model: db, name: 'sessions' });
+  const sessionsApi = {
+    patch,
+    insertUsageRow: (...args) => sessions.insertUsageRow(...args),
+  };
+  const app = {
+    get: (k) => (k === 'db' ? db : undefined),
+    service: () => sessionsApi,
+  };
+  sessions.setup(app);
+  sessions._patch = patch;
+
+  const claude = new ClaudeAgentService();
+  claude.setup(app);
+  const cursor = new CursorAgentService();
+  cursor.setup(app);
+  return { sessions, claude, cursor };
 }
 
 const usageRows = (sessionId) => db('usage').where({ session_id: sessionId }).orderBy('id');
+
+function estimatedClaudeCost(
+  input,
+  output,
+  cacheRead = 0,
+  cacheWrite = 0,
+  model = 'claude-opus-5'
+) {
+  return estimateAgentTurnCostUsd(
+    {
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+    },
+    model,
+    {}
+  );
+}
 
 const claudeTurnModel = { model: 'sonnet', modelParams: null };
 
@@ -103,10 +140,10 @@ function claudeRecordOpts(agentConfigId, extra = {}) {
 describe('claude usage recording', () => {
   it('records the first turn in full', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200, 50, 10) } }),
       claudeRecordOpts(agentConfigId, { patchSessionCost: true })
@@ -114,7 +151,7 @@ describe('claude usage recording', () => {
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
-    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.12, 6);
+    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(estimatedClaudeCost(1000, 200, 50, 10), 6);
     expect(rows[0].input_tokens).toBe(1000);
     expect(rows[0].output_tokens).toBe(200);
     expect(rows[0].cache_read_tokens).toBe(50);
@@ -126,15 +163,15 @@ describe('claude usage recording', () => {
 
   it('records only the increment on the second turn', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
       claudeRecordOpts(agentConfigId)
     );
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.3, models: { 'claude-opus-5': modelUsage(2500, 450) } }),
       claudeRecordOpts(agentConfigId)
@@ -142,48 +179,49 @@ describe('claude usage recording', () => {
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
-    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.18, 6);
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(estimatedClaudeCost(1500, 250), 6);
     expect(rows[1].input_tokens).toBe(1500);
     expect(rows[1].output_tokens).toBe(250);
   });
 
-  it('keeps the session total equal to the last cumulative figure', async () => {
+  it('accumulates estimated session total across turns', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { sessions, claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
       claudeRecordOpts(agentConfigId, { patchSessionCost: true })
     );
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.3, models: { 'claude-opus-5': modelUsage(2500, 450) } }),
       claudeRecordOpts(agentConfigId, { patchSessionCost: true })
     );
 
+    const expectedTotal = estimatedClaudeCost(1000, 200) + estimatedClaudeCost(1500, 250);
     const totals = await db('usage')
       .where({ session_id: sessionId })
       .sum('cost_usd as total')
       .first();
-    expect(parseFloat(totals.total)).toBeCloseTo(0.3, 6);
+    expect(parseFloat(totals.total)).toBeCloseTo(expectedTotal, 6);
 
-    const patched = service._patch.mock.calls.at(-1)[1];
-    expect(patched.total_cost_usd).toBeCloseTo(0.3, 6);
+    const patched = sessions._patch.mock.calls.at(-1)[1];
+    expect(patched.total_cost_usd).toBeCloseTo(expectedTotal, 6);
   });
 
   it('treats a reset counter after a resume as fresh work', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.5, models: { 'claude-opus-5': modelUsage(5000, 900) } }),
       claudeRecordOpts(agentConfigId)
     );
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.02, models: { 'claude-opus-5': modelUsage(100, 20) } }),
       claudeRecordOpts(agentConfigId)
@@ -191,44 +229,67 @@ describe('claude usage recording', () => {
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
-    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.02, 6);
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(estimatedClaudeCost(100, 20), 6);
     expect(rows[1].input_tokens).toBe(100);
   });
 
-  it('records tokens for a turn that was not billed', async () => {
+  it('estimates cost from tokens even when SDK billed USD is 0', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { sessions, claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
+    const expected = estimatedClaudeCost(800, 60);
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0, models: { 'claude-opus-5': modelUsage(800, 60) } }),
-      claudeRecordOpts(agentConfigId)
+      claudeRecordOpts(agentConfigId, { patchSessionCost: true })
+    );
+
+    const rows = await usageRows(sessionId);
+    expect(rows).toHaveLength(1);
+    expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(expected, 6);
+    expect(rows[0].total_tokens).toBe(860);
+    expect(sessions._patch).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({ total_cost_usd: expect.any(Number) }),
+      expect.anything()
+    );
+  });
+
+  it('records zero cost when the Claude model is not in the pricing table', async () => {
+    const { sessionId, agentConfigId } = await seed();
+    const { sessions, claude } = makeUsageHarness();
+    const session = await db('sessions').where({ id: sessionId }).first();
+
+    await claude.recordTurnUsage(
+      session,
+      resultPayload({ cost: 0.5, models: { 'unknown-claude-model': modelUsage(800, 60) } }),
+      claudeRecordOpts(agentConfigId, {
+        turnModel: { model: 'unknown-claude-model', modelParams: null },
+        patchSessionCost: true,
+      })
     );
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
     expect(parseFloat(rows[0].cost_usd)).toBe(0);
+    expect(rows[0].model).toBe('unknown-claude-model');
     expect(rows[0].total_tokens).toBe(860);
-    expect(service._patch).not.toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ total_cost_usd: expect.anything() }),
-      expect.anything()
-    );
+    expect(sessions._patch).not.toHaveBeenCalled();
   });
 
   it('writes no row for a turn that moved neither cost nor tokens', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     const same = { 'claude-opus-5': modelUsage(1000, 200) };
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: same }),
       claudeRecordOpts(agentConfigId)
     );
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: same }),
       claudeRecordOpts(agentConfigId)
@@ -239,16 +300,16 @@ describe('claude usage recording', () => {
 
   it('onMessageCreated does not insert usage from result rows', async () => {
     const { sessionId } = await seed();
-    const service = makeService();
+    const { sessions } = makeUsageHarness();
 
-    await service.onMessageCreated({
+    await sessions.onMessageCreated({
       session_id: sessionId,
       type: 'turn_result',
       message_json: JSON.stringify(resultPayload({ cost: 0.5, models: {} })),
     });
 
     expect(await usageRows(sessionId)).toHaveLength(0);
-    expect(service._patch).not.toHaveBeenCalled();
+    expect(sessions._patch).not.toHaveBeenCalled();
   });
 
   it('stores the passed agentConfigId on the usage row', async () => {
@@ -266,10 +327,10 @@ describe('claude usage recording', () => {
     await db('agents')
       .where({ session_id: sessionId, is_primary: 1 })
       .update({ agent_config_id: configB });
-    const service = makeService();
+    const { claude } = makeUsageHarness();
     const session = await sessionForUsage(sessionId);
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
       claudeRecordOpts(configA)
@@ -282,10 +343,10 @@ describe('claude usage recording', () => {
 
   it('records review usage without mixing chat running totals', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { claude } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       resultPayload({ cost: 0.12, models: { 'claude-opus-5': modelUsage(1000, 200) } }),
       claudeRecordOpts(agentConfigId)
@@ -296,7 +357,7 @@ describe('claude usage recording', () => {
       status: 'completed',
       agent_config_id: agentConfigId,
     });
-    await service.recordClaudeUsage(
+    await claude.recordTurnUsage(
       session,
       { total_cost_usd: 0.01, modelUsage: { 'claude-opus-5': modelUsage(10, 5) } },
       claudeRecordOpts(agentConfigId, {
@@ -310,7 +371,7 @@ describe('claude usage recording', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].agent_type).toBe('builder');
     expect(rows[1].agent_type).toBe('reviewer');
-    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.01, 6);
+    expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(estimatedClaudeCost(10, 5), 6);
     expect(rows[1].input_tokens).toBe(10);
     expect(rows[1].output_tokens).toBe(5);
   });
@@ -334,7 +395,7 @@ describe('cursor usage recording', () => {
 
   it('estimates per-turn cost from the pricing table', async () => {
     const { sessionId, agentConfigId } = await seedCursor();
-    const service = makeService();
+    const { sessions, cursor } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
       ...emptyTurnUsage(),
@@ -346,7 +407,7 @@ describe('cursor usage recording', () => {
       model: 'gpt-5.4-nano',
     };
 
-    await service.recordCursorUsage(session, turnUsage, {
+    await cursor.recordTurnUsage(session, turnUsage, {
       agentConfigId,
       turnModel: { model: 'gpt-5.4-nano', modelParams: null },
       patchSessionCost: true,
@@ -359,7 +420,7 @@ describe('cursor usage recording', () => {
     expect(rows[0].total_tokens).toBe(8016);
     expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.00161526, 5);
     expect(rows[0].agent_sdk).toBe('cursor');
-    expect(service._patch).toHaveBeenCalledWith(
+    expect(sessions._patch).toHaveBeenCalledWith(
       sessionId,
       expect.objectContaining({ total_cost_usd: expect.any(Number) }),
       expect.anything()
@@ -368,7 +429,7 @@ describe('cursor usage recording', () => {
 
   it('records zero cost when the model is not in the pricing table', async () => {
     const { sessionId, agentConfigId } = await seedCursor({ model: 'composer-2' });
-    const service = makeService();
+    const { sessions, cursor } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
       ...emptyTurnUsage(),
@@ -377,7 +438,7 @@ describe('cursor usage recording', () => {
       model: 'composer-2',
     };
 
-    await service.recordCursorUsage(session, turnUsage, {
+    await cursor.recordTurnUsage(session, turnUsage, {
       agentConfigId,
       turnModel: { model: 'composer-2', modelParams: null },
       patchSessionCost: true,
@@ -386,27 +447,27 @@ describe('cursor usage recording', () => {
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(1);
     expect(parseFloat(rows[0].cost_usd)).toBe(0);
-    expect(service._patch).not.toHaveBeenCalled();
+    expect(sessions._patch).not.toHaveBeenCalled();
   });
 
   it('records nothing when there are no tokens and no priced cost', async () => {
     const { sessionId, agentConfigId } = await seedCursor();
-    const service = makeService();
+    const { sessions, cursor } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
-    await service.recordCursorUsage(session, emptyTurnUsage(), {
+    await cursor.recordTurnUsage(session, emptyTurnUsage(), {
       agentConfigId,
       turnModel: { model: 'gpt-5.4-nano', modelParams: null },
       patchSessionCost: true,
     });
 
     expect(await usageRows(sessionId)).toHaveLength(0);
-    expect(service._patch).not.toHaveBeenCalled();
+    expect(sessions._patch).not.toHaveBeenCalled();
   });
 
   it('accumulates session total across priced turns', async () => {
     const { sessionId, agentConfigId } = await seedCursor();
-    const service = makeService();
+    const { sessions, cursor } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
       ...emptyTurnUsage(),
@@ -420,15 +481,15 @@ describe('cursor usage recording', () => {
       turnModel: { model: 'gpt-5.4-nano', modelParams: null },
       patchSessionCost: true,
     };
-    await service.recordCursorUsage(session, turnUsage, cursorOpts);
+    await cursor.recordTurnUsage(session, turnUsage, cursorOpts);
     await db('sessions').where({ id: sessionId }).update({ total_cost_usd: 0.2 });
-    await service.recordCursorUsage(session, turnUsage, cursorOpts);
+    await cursor.recordTurnUsage(session, turnUsage, cursorOpts);
 
     const rows = await usageRows(sessionId);
     expect(rows).toHaveLength(2);
     expect(parseFloat(rows[0].cost_usd)).toBeCloseTo(0.2, 6);
     expect(parseFloat(rows[1].cost_usd)).toBeCloseTo(0.2, 6);
-    expect(service._patch).toHaveBeenLastCalledWith(
+    expect(sessions._patch).toHaveBeenLastCalledWith(
       sessionId,
       { total_cost_usd: 0.4 },
       expect.anything()
@@ -440,7 +501,7 @@ describe('cursor usage recording', () => {
       model: 'composer-2.5',
       model_params: JSON.stringify([{ id: 'fast', value: 'false' }]),
     });
-    const service = makeService();
+    const { cursor } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
     const turnUsage = {
       ...emptyTurnUsage(),
@@ -453,7 +514,7 @@ describe('cursor usage recording', () => {
       modelParams: JSON.stringify([{ id: 'fast', value: 'true' }]),
     };
 
-    await service.recordCursorUsage(session, turnUsage, {
+    await cursor.recordTurnUsage(session, turnUsage, {
       turnModel,
       agentConfigId,
       patchSessionCost: true,
@@ -466,11 +527,11 @@ describe('cursor usage recording', () => {
 
   it('stores the turn model when token usage did not name one', async () => {
     const { sessionId, agentConfigId } = await seedCursor({ model: 'composer-2' });
-    const service = makeService();
+    const { cursor } = makeUsageHarness();
     const session = await sessionForUsage(sessionId);
     const turnUsage = { ...emptyTurnUsage(), total_tokens: 40 };
 
-    await service.recordCursorUsage(session, turnUsage, {
+    await cursor.recordTurnUsage(session, turnUsage, {
       agentConfigId,
       turnModel: { model: 'composer-2', modelParams: null },
       patchSessionCost: true,
@@ -484,7 +545,7 @@ describe('cursor usage recording', () => {
 describe('sessionUsage', () => {
   it('aggregates usage by model and builder vs reviewer agent_type', async () => {
     const { sessionId } = await seed();
-    const service = makeService();
+    const { sessions } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
 
     await db('usage').insert([
@@ -514,7 +575,7 @@ describe('sessionUsage', () => {
       },
     ]);
 
-    const usage = await service.sessionUsage(null, {
+    const usage = await sessions.sessionUsage(null, {
       user: { id: session.user_id },
       resolvedSession: session,
     });
@@ -524,7 +585,7 @@ describe('sessionUsage', () => {
 
   it('returns per-agent cost totals in by_agent', async () => {
     const { sessionId, agentConfigId } = await seed();
-    const service = makeService();
+    const { sessions } = makeUsageHarness();
     const session = await db('sessions').where({ id: sessionId }).first();
     const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
     const reviewer = await ensureReviewerAgentRow(db, sessionId, {
@@ -553,7 +614,7 @@ describe('sessionUsage', () => {
       },
     ]);
 
-    const usage = await service.sessionUsage(null, {
+    const usage = await sessions.sessionUsage(null, {
       user: { id: session.user_id },
       resolvedSession: session,
     });

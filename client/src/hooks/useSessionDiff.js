@@ -3,6 +3,7 @@ import { sessionsService } from '../feathers.js';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
 import { useMarkSessionDiffStaleOnFileTools } from './useMarkSessionDiffStaleOnFileTools.js';
+import { sameScopeId } from '../utils/boundScope.js';
 
 /** @typedef {null | 'viewing' | 'background'} DiffStaleMode */
 
@@ -37,10 +38,12 @@ export function useSessionDiff(
     ? null
     : `${sessionId}:${selectedCommit}:${selectedFile ?? ''}:${refreshNonce}`;
 
-  const hasFetched = cache !== null;
-  const stale = staleMode !== null;
-  const fileByFile = cache?.fileByFile ?? false;
-  const diffFile = cache?.diffFile ?? null;
+  const liveCache = cache && sameScopeId(String(cache.key).split(':')[0], sessionId) ? cache : null;
+  const scopeMismatch = Boolean(sessionId) && !skip && cache != null && liveCache == null;
+  const hasFetched = liveCache !== null;
+  const stale = liveCache !== null && staleMode !== null;
+  const fileByFile = liveCache?.fileByFile ?? false;
+  const diffFile = liveCache?.diffFile ?? null;
 
   const markStale = useCallback(() => {
     const mode = enabledRef.current ? 'viewing' : 'background';
@@ -92,15 +95,14 @@ export function useSessionDiff(
     sessionsService
       .diff(payload)
       .then((res) => {
-        if (!cancelled) {
-          setCache({
-            key: fetchKey,
-            diff: res.diff || '',
-            fileByFile: !!res.file_by_file,
-            diffFile: res.file_path || null,
-          });
-          syncStaleMode(null);
-        }
+        if (cancelled || !sameScopeId(sessionId, fetchKey?.split(':')[0])) return;
+        setCache({
+          key: fetchKey,
+          diff: res.diff || '',
+          fileByFile: !!res.file_by_file,
+          diffFile: res.file_path || null,
+        });
+        syncStaleMode(null);
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Failed to load diff');
@@ -134,11 +136,11 @@ export function useSessionDiff(
   }, []);
 
   return {
-    diff: cache?.diff ?? null,
+    diff: liveCache?.diff ?? null,
     fileByFile,
     diffFile,
-    loading,
-    error,
+    loading: skip || !enabled ? false : loading || scopeMismatch,
+    error: scopeMismatch ? null : error,
     stale,
     hasFetched,
     refresh,

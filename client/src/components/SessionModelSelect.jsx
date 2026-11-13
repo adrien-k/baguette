@@ -21,6 +21,13 @@ import { hasAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
+import { useSdkMetas } from '../hooks/useSdkMetas.js';
+
+function modelDescriptionTooltip(model, label) {
+  const description = typeof model?.description === 'string' ? model.description.trim() : '';
+  if (!description || description === label) return undefined;
+  return description;
+}
 
 function parseModelParams(params) {
   if (params == null || params === '') return null;
@@ -166,12 +173,12 @@ export default function SessionModelSelect({
   const selectedAgentConfig = isUnset
     ? null
     : agentConfigOptions?.find((o) => String(o.key) === String(agentConfigKey));
+  const { getMeta } = useSdkMetas();
   const agentSdk = selectedAgentConfig?.sdk ?? (isUnset ? null : agentConfigKey);
-  const isCursor = agentSdk === 'cursor';
-  const isPi = agentSdk === 'pi';
-  const isClaude = agentSdk === 'claude';
-  const usesModelParamVariants = isCursor || isPi || isClaude;
-  const usesAgentPricingTable = isCursor || isPi;
+  const sdkMeta = getMeta(agentSdk);
+  const usesModelParamVariants = sdkMeta?.supportsModelParams === true;
+  const usesAgentPricingTable = sdkMeta?.usesAgentPricingTable === true;
+  const appliesUserModelPrefs = sdkMeta?.appliesUserModelPrefs === true;
   const selectedModelId = model || null;
   const selectedModelObj = models.find((m) => m.id === selectedModelId);
   const variants = useMemo(() => selectedModelObj?.variants ?? [], [selectedModelObj]);
@@ -194,7 +201,11 @@ export default function SessionModelSelect({
     (selectedModelId && hasAgentModelPricing(selectedModelId, currentParams));
 
   const modelOptions = useMemo(() => {
-    const opts = models.map((m) => ({ value: m.id, label: m.display_name }));
+    const opts = models.map((m) => ({
+      value: m.id,
+      label: m.display_name,
+      title: modelDescriptionTooltip(m, m.display_name),
+    }));
     if (selectedModelId && !models.some((m) => m.id === selectedModelId)) {
       opts.push({ value: selectedModelId, label: selectedModelId });
     }
@@ -212,6 +223,8 @@ export default function SessionModelSelect({
     [agentConfigOptions]
   );
 
+  const modelLocked = typeof onModelChange !== 'function';
+  const pickerDisabled = disabled || modelLocked;
   const showAgentConfigPicker = Boolean(onAgentConfigChange && agentConfigOptions?.length);
   const isSmUp = useMediaQuery('(min-width: 640px)');
   const showAutoPush = showAutoPushParam && onAutoPushChange;
@@ -256,8 +269,8 @@ export default function SessionModelSelect({
           valueLabel: formatParamDisplayValue(paramId, currentValue),
           options,
           onSelect: (value) => {
-            if (!selectedModelId || disabled) return;
-            const prefKey = isCursor ? prefKeyForParamId(paramId) : null;
+            if (!selectedModelId || pickerDisabled) return;
+            const prefKey = appliesUserModelPrefs ? prefKeyForParamId(paramId) : null;
             if (prefKey && onCursorModelPrefChange) {
               onCursorModelPrefChange(prefKey, prefValueFromParamValue(paramId, value));
             }
@@ -276,12 +289,12 @@ export default function SessionModelSelect({
     return items;
   }, [
     usesModelParamVariants,
-    isCursor,
+    appliesUserModelPrefs,
     variants,
     orderedParamIds,
     currentParams,
     selectedModelId,
-    disabled,
+    pickerDisabled,
     onCursorModelPrefChange,
     onModelChange,
   ]);
@@ -308,13 +321,16 @@ export default function SessionModelSelect({
   }
 
   const pickModel = (newId) => {
-    if (disabled || isUnset || !newId || newId === selectedModelId) return;
+    if (pickerDisabled || isUnset || !newId || newId === selectedModelId) return;
     const newModelObj = models.find((m) => m.id === newId);
-    onModelChange(newId, paramsJsonForModelChange(newModelObj, cursorModelPrefs));
+    onModelChange(
+      newId,
+      paramsJsonForModelChange(newModelObj, appliesUserModelPrefs ? cursorModelPrefs : undefined)
+    );
   };
 
   const pickAgentConfig = (nextKey) => {
-    if (disabled || !nextKey || nextKey === agentConfigKey || !onAgentConfigChange) return;
+    if (pickerDisabled || !nextKey || nextKey === agentConfigKey || !onAgentConfigChange) return;
     onAgentConfigChange(nextKey);
   };
 
@@ -342,7 +358,7 @@ export default function SessionModelSelect({
                     options={agentConfigMenuOptions}
                     value={agentConfigKey ?? ''}
                     onChange={pickAgentConfig}
-                    disabled={disabled}
+                    disabled={pickerDisabled}
                   />
                 ) : null
               }
@@ -360,14 +376,21 @@ export default function SessionModelSelect({
               }}
               ariaLabel={showAgentConfigPicker ? 'Choose agent and model' : 'Choose model'}
               placement="top-start"
-              triggerTitle={modelTriggerLabel}
-              disabled={disabled}
+              triggerTitle={
+                modelDescriptionTooltip(selectedModelObj, modelTriggerLabel) ?? modelTriggerLabel
+              }
+              disabled={pickerDisabled}
+              hideChevron={pickerDisabled}
               shrinkableTrigger
               triggerClassName="text-xs text-faint hover:text-secondary leading-none py-1 disabled:opacity-50 disabled:pointer-events-none min-w-[70px] max-w-full"
             />
           </div>
           {showParamPicker && (
-            <ComposerParamPicker items={dropdownItems} disabled={disabled} placement="top-start" />
+            <ComposerParamPicker
+              items={dropdownItems}
+              disabled={pickerDisabled}
+              placement="top-start"
+            />
           )}
           {showClear && (
             <ParamPrefClearButton
@@ -387,7 +410,7 @@ export default function SessionModelSelect({
             <span className="inline-flex items-center p-1">
               <ParamToggleSwitch
                 checked={autoPushOn}
-                disabled={disabled || autoPushDisabled}
+                disabled={pickerDisabled || autoPushDisabled}
                 ariaLabel="Auto-push"
                 onToggle={() => {
                   if (autoPushDisabled) return;

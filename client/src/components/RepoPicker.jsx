@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { isLoopsPath } from '@baguette/shared/session-scope.js';
 import { Bot, Layers, Plus } from 'lucide-react';
-import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
+import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE, SHARED_SCOPE } from '../context/RepoContext.jsx';
 import RepoDropdown, { repoDropdownRepoSections } from './RepoDropdown.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import { repoDisplayName } from '../utils/repoDisplayName.js';
@@ -10,7 +10,7 @@ import { repoDisplayName } from '../utils/repoDisplayName.js';
 const ICON_CLS = 'w-3.5 h-3.5 shrink-0';
 
 function navIcon(value) {
-  if (value === ALL_REPOS) return <Layers className={ICON_CLS} />;
+  if (value === ALL_REPOS || value === SHARED_SCOPE) return <Layers className={ICON_CLS} />;
   if (value === GLOBAL_SCOPE) return <Bot className={ICON_CLS} />;
   return <GithubIcon className={ICON_CLS} />;
 }
@@ -47,6 +47,11 @@ export default function RepoPicker({
             label: 'All sessions',
             icon: <Layers className={ICON_CLS} />,
           },
+          {
+            value: SHARED_SCOPE,
+            label: 'Shared with me',
+            icon: <Layers className={ICON_CLS} />,
+          },
         ],
       });
     }
@@ -70,13 +75,22 @@ export default function RepoPicker({
     const hit = flat.find((o) => o.value === String(current));
     if (hit) {
       let label = hit.label;
-      if (showOrgInLabel && current && current !== ALL_REPOS && current !== GLOBAL_SCOPE) {
+      if (
+        showOrgInLabel &&
+        current &&
+        current !== ALL_REPOS &&
+        current !== GLOBAL_SCOPE &&
+        current !== SHARED_SCOPE
+      ) {
         label = uniqueLabel(current);
       }
       return { label, icon: hit.icon };
     }
     if (current === ALL_REPOS) {
       return { label: 'All sessions', icon: navIcon(ALL_REPOS) };
+    }
+    if (current === SHARED_SCOPE) {
+      return { label: 'Shared with me', icon: navIcon(SHARED_SCOPE) };
     }
     if (current === GLOBAL_SCOPE) {
       return { label: 'Global', icon: navIcon(GLOBAL_SCOPE) };
@@ -93,6 +107,7 @@ export default function RepoPicker({
     if (syncContext) setSelectedRepo(next);
     if (navigateOnSelect) {
       if (next === ALL_REPOS) navigate(onLoops ? '/loops' : '/');
+      else if (next === SHARED_SCOPE) navigate(onLoops ? '/shared/loops' : '/shared');
       else if (next === GLOBAL_SCOPE) navigate(onLoops ? '/global/loops' : '/global');
       else {
         const repo = repos.find((r) => r.full_name === next);

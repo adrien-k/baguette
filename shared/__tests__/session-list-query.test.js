@@ -37,6 +37,23 @@ describe('sessionsListQueryFromPath', () => {
     expect(sessionsListQueryFromPath('/global/loops')).toMatchObject({ is_global: true });
     expect(sessionsListQueryFromPath('/repos/4/loops/7')).toMatchObject({ repo_id: 4 });
   });
+
+  it('uses shared list_scope on /shared routes', () => {
+    expect(sessionsListQueryFromPath('/shared')).toEqual({
+      include_archived: true,
+      include_loop_runs: true,
+      all_sessions: true,
+      list_scope: 'shared',
+    });
+    expect(sessionsListQueryFromPath('/shared/sessions/abc')).toMatchObject({
+      all_sessions: true,
+      list_scope: 'shared',
+    });
+    expect(sessionsListQueryFromPath('/shared/loops')).toMatchObject({
+      all_sessions: true,
+      list_scope: 'shared',
+    });
+  });
 });
 
 describe('sessionMatchesListQuery', () => {
@@ -78,5 +95,29 @@ describe('sessionMatchesListQuery', () => {
         repos
       )
     ).toBe(false);
+  });
+
+  it('filters by list_scope against the current user', () => {
+    const alice = { id: 1, user_id: 10, is_shared: 1, is_global: true };
+    const bobOwn = { id: 2, user_id: 20, is_shared: 0, is_global: true };
+    const query = { all_sessions: true, include_archived: true, include_loop_runs: true };
+    expect(
+      sessionMatchesListQuery(alice, { ...query, list_scope: 'mine' }, repos, { currentUserId: 20 })
+    ).toBe(false);
+    expect(
+      sessionMatchesListQuery(alice, { ...query, list_scope: 'shared' }, repos, {
+        currentUserId: 20,
+      })
+    ).toBe(true);
+    expect(
+      sessionMatchesListQuery(alice, { ...query, list_scope: 'shared' }, repos, {
+        currentUserId: 10,
+      })
+    ).toBe(false);
+    expect(
+      sessionMatchesListQuery(bobOwn, { ...query, list_scope: 'mine' }, repos, {
+        currentUserId: 20,
+      })
+    ).toBe(true);
   });
 });

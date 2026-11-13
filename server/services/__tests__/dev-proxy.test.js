@@ -254,14 +254,14 @@ describe('DevProxy approved-user gating', () => {
   }
 
   it('treats a proxy cookie naming an approved user as authenticated', async () => {
-    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 1 } }), []);
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, status: 'approved' } }), []);
     const Handler = stubHandlerClass();
     const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
     expect(access).toMatchObject({ userId: '7', needsAuth: false, ipBypass: false });
   });
 
   it('treats a proxy cookie naming a pending user as anonymous (needsAuth)', async () => {
-    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 0 } }), []);
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, status: 'pending' } }), []);
     const Handler = stubHandlerClass();
     const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
     expect(access).toMatchObject({ userId: null, needsAuth: true, ipBypass: false });
@@ -275,7 +275,7 @@ describe('DevProxy approved-user gating', () => {
   });
 
   it('falls through to the handler IP bypass when the cookie user is not approved', async () => {
-    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 0 } }), []);
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, status: 'pending' } }), []);
     const Handler = stubHandlerClass({ allowIpPublicAccess: async () => true });
     const access = await proxy._resolveProxyAccess(new Handler(), '7', clientIp);
     expect(access).toMatchObject({ userId: null, needsAuth: false, ipBypass: true });
@@ -297,7 +297,9 @@ describe('DevProxy approved-user gating', () => {
   }
 
   it('/_baguette/auth sets the proxy cookie for an approved token holder', async () => {
-    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, approved: 1 } }), [stubHandlerClass()]);
+    const proxy = new DevProxy(appWithUsers({ 7: { id: 7, status: 'approved' } }), [
+      stubHandlerClass(),
+    ]);
     const req = {
       path: '/_baguette/auth',
       query: { sign: signProxyToken(7) },
@@ -314,7 +316,9 @@ describe('DevProxy approved-user gating', () => {
   });
 
   it('/_baguette/auth rejects a token for an unapproved user without setting a cookie', async () => {
-    const proxy = new DevProxy(appWithUsers({ 8: { id: 8, approved: 0 } }), [stubHandlerClass()]);
+    const proxy = new DevProxy(appWithUsers({ 8: { id: 8, status: 'pending' } }), [
+      stubHandlerClass(),
+    ]);
     const req = {
       path: '/_baguette/auth',
       query: { sign: signProxyToken(8) },
@@ -330,6 +334,29 @@ describe('DevProxy approved-user gating', () => {
     expect(res.render).toHaveBeenCalledWith(
       'devserver-denied',
       expect.objectContaining({ title: 'Account pending approval' })
+    );
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it('/_baguette/auth rejects a revoked user with revoked copy and no cookie', async () => {
+    const proxy = new DevProxy(appWithUsers({ 9: { id: 9, status: 'revoked' } }), [
+      stubHandlerClass(),
+    ]);
+    const req = {
+      path: '/_baguette/auth',
+      query: { sign: signProxyToken(9) },
+      signedCookies: {},
+      headers: {},
+      url: '/',
+    };
+    const res = middlewareRes();
+
+    await proxy.middleware(req, res, () => {});
+
+    expect(res.statusCode).toBe(403);
+    expect(res.render).toHaveBeenCalledWith(
+      'devserver-denied',
+      expect.objectContaining({ title: 'Account access revoked' })
     );
     expect(res.cookie).not.toHaveBeenCalled();
   });

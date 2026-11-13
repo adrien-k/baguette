@@ -1,12 +1,15 @@
 import { z } from 'zod';
 import { stringifyModelParamsForStorage } from '../../../../shared/agent-session-defaults.js';
-import { resolveCursorModelParams } from '../../../../shared/model-variants.js';
-import { resolveClaudeAgentModelParams } from '../../claude-model-params.js';
-import { resolvePiAgentModelParams } from '../../pi-model-params.js';
-import { parseCursorModelPrefsJson } from '../../agent-preferences.js';
+import { getSdkPlugin } from '../../../agent-sdks/registry.js';
+import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
+import { normalizeSubagentDefaultMode } from '../../../../shared/subagent-default-mode.js';
 import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
+import {
+  agentCreatedModelClause,
+  agentCreatedModelSchemaFields,
+} from '../lib/agent-created-model-fields.js';
 import { ok, fail } from '../lib/result.js';
 
 /** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
@@ -34,18 +37,24 @@ async function continueInSlackThread(app, fromSessionId, newSessionId) {
   }
 }
 
+function createSessionDescription(mode) {
+  return (
+    'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
+    'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch. ' +
+    `${agentCreatedModelClause(mode, 'session')} ` +
+    'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
+    'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).'
+  );
+}
+
 export function createCreateSessionTool(ctx) {
-  const { app, userId, userParams, requireRepoAccess, loadRepoWithKeys, callerSession } = ctx;
+  const { app, userId, userParams, user, requireRepoAccess, loadRepoWithKeys, callerSession } = ctx;
+  const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
   // Callers (e.g. Slack) may supply their own model resolution for when no default is configured.
   const resolveBuilderModel = ctx.resolveBuilderModel ?? resolveMcpBuilderModel;
   return {
     name: 'CreateSession',
-    description:
-      'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
-      'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch. ' +
-      'Optional preset_model_id from ListPresetModels, else Settings → Agent session defaults. ' +
-      'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
-      'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).',
+    description: createSessionDescription(mode),
     schema: {
       repo_id: z
         .number()
@@ -67,11 +76,7 @@ export function createCreateSessionTool(ctx) {
         .optional()
         .describe('Start a global session in the shared repos folder (no git/PR tools)'),
       initial_prompt: z.string().describe('Initial user prompt for the agent'),
-      preset_model_id: z
-        .number()
-        .int()
-        .optional()
-        .describe('Preset model id from ListPresetModels'),
+      ...agentCreatedModelSchemaFields(mode),
       create_new_branch: z
         .boolean()
         .optional()
@@ -79,6 +84,10 @@ export function createCreateSessionTool(ctx) {
       branch_name: z.string().optional().describe('Optional new branch name'),
       auto_push: z.boolean().optional().describe('Auto-push commits (default true)'),
       plugins: z.array(z.string()).optional().describe('Plugin ids to enable'),
+      is_shared: z
+        .boolean()
+        .optional()
+        .describe('When true, every authenticated user on this instance can open the session'),
     },
     handler: async ({
       repo_id,
@@ -87,10 +96,14 @@ export function createCreateSessionTool(ctx) {
       is_global = false,
       initial_prompt,
       preset_model_id,
+      agent_config_id,
+      model,
+      model_params,
       create_new_branch = true,
       branch_name,
       auto_push = true,
       plugins,
+      is_shared,
     }) => {
       if (!is_global && repo_id == null) {
         return fail('repo_id is required unless is_global is true');
@@ -128,7 +141,11 @@ export function createCreateSessionTool(ctx) {
       try {
         resolved = await resolveBuilderModel(db, userId, {
           preset_model_id: preset_model_id ?? null,
+          agent_config_id: agent_config_id ?? null,
+          model: model ?? null,
+          model_params: model_params ?? null,
           repo_id: is_global ? null : repo_id,
+          app,
         });
       } catch (err) {
         return fail(err.message);
@@ -148,33 +165,17 @@ export function createCreateSessionTool(ctx) {
 
       let modelParams = stringifyModelParamsForStorage(resolved.model_params);
       if (!modelParams && resolved.model) {
-        const prefs = parseCursorModelPrefsJson(fullUser.agent_preferences);
+        await ensureBuiltInSdkPluginsRegistered();
+        const plugin = getSdkPlugin(agent_sdk);
         try {
           const models = await loadModelsForSdk(fullUser, agent_sdk, null, app, {
             agentConfigId: resolved.agent_config_id,
           });
-          let resolvedParams;
-          if (agent_sdk === 'cursor') {
-            resolvedParams = resolveCursorModelParams({
-              models,
-              modelId: resolved.model,
-              modelParamsJson: undefined,
-              cursorModelPrefs: prefs,
-            });
-          } else if (agent_sdk === 'claude') {
-            resolvedParams = resolveClaudeAgentModelParams({
-              models,
-              modelId: resolved.model,
-              modelParams: undefined,
-              cursorModelPrefs: prefs,
-            });
-          } else if (agent_sdk === 'pi') {
-            resolvedParams = resolvePiAgentModelParams({
-              models,
-              modelId: resolved.model,
-              modelParams: undefined,
-            });
-          }
+          const resolvedParams = plugin?.resolveModelParams?.({
+            models,
+            modelId: resolved.model,
+            user: fullUser,
+          });
           modelParams = stringifyModelParamsForStorage(resolvedParams);
         } catch {
           // Model list unavailable — session still starts with model id only (no variant params).
@@ -198,6 +199,7 @@ export function createCreateSessionTool(ctx) {
       if (modelParams) payload.model_params = modelParams;
       if (!is_global && branch_name) payload.branch_name = branch_name;
       if (plugins?.length) payload.plugins = plugins;
+      if (is_shared) payload.is_shared = true;
 
       try {
         const session = await app.service('sessions').create(payload, {

@@ -270,7 +270,7 @@ describe('GET /api/slack/install', () => {
   });
 
   it('does not treat an unapproved user as logged in', async () => {
-    const userId = await insertUser(db, { approved: false });
+    const userId = await insertUser(db, { status: 'pending' });
     const id = await appWithOAuth();
     expect((await get(`/api/slack/install?app_id=${id}`, { userId })).status).toBe(401);
   });
@@ -427,7 +427,7 @@ describe('linking a Slack account', () => {
     });
 
     it('does not accept an account that is not approved yet', async () => {
-      const userId = await insertUser(db, { approved: false });
+      const userId = await insertUser(db, { status: 'pending' });
       const appId = await insertSlackApp(db);
       expect((await get(`/api/slack/link?token=${linkToken(appId)}`, { userId })).status).toBe(401);
     });
@@ -472,7 +472,7 @@ describe('linking a Slack account', () => {
     });
 
     it('does not link an account that is not approved yet', async () => {
-      const userId = await insertUser(db, { approved: false });
+      const userId = await insertUser(db, { status: 'pending' });
       const appId = await insertSlackApp(db);
       expect((await confirm(linkToken(appId), { userId })).status).toBe(401);
       expect(await db('slack_user_links')).toHaveLength(0);

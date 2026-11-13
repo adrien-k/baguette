@@ -174,6 +174,37 @@ export function activeAgentsRunningLabel(count) {
   return `${count} agents running`;
 }
 
+/**
+ * Split session agents for the composer switcher: running turns first, then idle.
+ * @param {SessionAgentSummary[]} agents
+ * @returns {{ running: SessionAgentSummary[]; other: SessionAgentSummary[] }}
+ */
+export function partitionSessionAgentsByRunning(agents) {
+  const running = [];
+  const other = [];
+  for (const agent of agents) {
+    if (isAgentTurnActive(agent.status)) running.push(agent);
+    else other.push(agent);
+  }
+  return { running, other };
+}
+
+/**
+ * When both running and idle agents exist, group menu rows under section headings.
+ * @template T
+ * @param {SessionAgentSummary[]} agents
+ * @param {(agent: SessionAgentSummary) => T} mapOption
+ * @returns {{ heading: string; options: T[] }[] | null} `null` when a single group suffices.
+ */
+export function agentSwitcherDropdownSections(agents, mapOption) {
+  const { running, other } = partitionSessionAgentsByRunning(agents);
+  if (!running.length || !other.length) return null;
+  return [
+    { heading: 'Running', options: running.map(mapOption) },
+    { heading: 'Idle', options: other.map(mapOption) },
+  ];
+}
+
 export function isReviewInProgressForSession(session) {
   if (!session || session.archived_at) return false;
   const reviewer = reviewerFromSession(session);

@@ -20,7 +20,7 @@ export async function fetchAgentConfigModels({
   if (refresh) payload.refresh = true;
   const result = await agentConfigsService.listModels(payload);
   return {
-    models: result?.models ?? [],
-    rejected_models: result?.rejected_models ?? [],
+    models: Array.isArray(result?.models) ? result.models : [],
+    rejected_models: Array.isArray(result?.rejected_models) ? result.rejected_models : [],
   };
 }

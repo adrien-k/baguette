@@ -144,7 +144,7 @@ export async function resolveExplicitBuilderDefaults(db, userId, _repoId = null)
   return null;
 }
 
-/** Account subagent default for MCP StartSubagent. */
+/** Account policy for models on agent-created sessions, loops, and subagents. */
 export async function resolveEffectiveSubagentDefaultSettings(db, userId, _repoId = null) {
   const user = await db('users')
     .where({ id: userId })
@@ -272,7 +272,7 @@ export async function assertAgentConfigOnCreate(context) {
     const { ensureTestClaudeConfig, ensureTestPiConfig, insertTestAgentConfig } =
       await import('../test-utils/agent-configs.js');
     if (sdkHint === 'mock') {
-      const { ensureMockAgentConfig } = await import('./mock-agent-config.js');
+      const { ensureMockAgentConfig } = await import('../agent-sdks/mock/mock-agent-config.js');
       agentConfigId = await ensureMockAgentConfig(db, userId);
     } else if (sdkHint === 'pi') {
       agentConfigId = await ensureTestPiConfig(db, userId);

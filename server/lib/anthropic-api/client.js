@@ -26,7 +26,7 @@ export async function anthropicApiRequest(config, method, path, options = {}) {
       if (value != null) url.searchParams.set(key, String(value));
     }
   }
-  const headers = { ...anthropicApiAuthHeaders(config) };
+  const headers = { ...anthropicApiAuthHeaders(config), ...(options.extraHeaders ?? {}) };
   let body;
   if (options.body !== undefined) {
     headers['content-type'] = 'application/json';

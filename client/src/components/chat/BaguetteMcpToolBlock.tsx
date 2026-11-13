@@ -7,16 +7,13 @@ import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
 import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
-import BashToolBlock from './BashToolBlock.tsx';
 import ShowPlanBlock from './ShowPlanBlock.tsx';
 import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
-
-function formatRunTaskCommand(label: string, runArgs?: unknown) {
-  const parts = Array.isArray(runArgs)
-    ? runArgs.filter((a): a is string => typeof a === 'string')
-    : [];
-  return parts.length > 0 ? `${label} ${parts.join(' ')}` : label;
-}
+import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
+import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
+import TaskMcpToolBlock from './TaskMcpToolBlock.tsx';
+import ConfigureMcpServerBlock from './ConfigureMcpServerBlock.tsx';
+import { parseMcpJsonResult, type McpResultData } from '../../utils/parseMcpJsonResult.ts';
 
 const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   critical: 'bg-danger/15 text-danger border-danger/35',
@@ -25,62 +22,12 @@ const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   low: 'bg-control/80 text-fg-muted border-strong/80',
 };
 
-/** Loose shape of parsed MCP JSON results consumed by the blocks below. */
-type McpResultData = {
-  issue?: { severity?: string; title?: string; id?: string | number };
-  ok?: boolean;
-  message?: string;
-  url?: string;
-  [key: string]: unknown;
-};
-
 /** Block-local view of a baguette/mcp tool call: plain data, no message-shape coupling. */
 export type McpBlockData = {
   result?: unknown;
   isError?: boolean;
   input?: Record<string, unknown>;
 };
-
-function parseJsonObject(text: unknown): McpResultData | null {
-  if (typeof text !== 'string' || !text.trim().startsWith('{')) return null;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    return parsed && typeof parsed === 'object' ? (parsed as McpResultData) : null;
-  } catch {
-    return null;
-  }
-}
-
-function mcpDataHasPayload(data: Record<string, unknown>): boolean {
-  return (
-    data.todo != null ||
-    data.todos != null ||
-    data.markdown != null ||
-    data.ok === true ||
-    data.ok === false ||
-    data.error != null
-  );
-}
-
-function parseMcpJsonResult(result: unknown): McpResultData | null {
-  if (result == null) return null;
-  if (typeof result === 'object') {
-    const obj = result as McpResultData & { data?: unknown; content?: unknown };
-    const fromContent = parseJsonObject(obj.content);
-
-    if (obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
-      const data = obj.data as Record<string, unknown>;
-      if (mcpDataHasPayload(data)) {
-        return fromContent ? { ...fromContent, ...data } : (data as McpResultData);
-      }
-    }
-
-    if (fromContent) return fromContent;
-    return obj;
-  }
-  if (typeof result !== 'string' || !result.trim()) return null;
-  return parseJsonObject(result);
-}
 
 function PrUpsertBlock({
   title,
@@ -108,7 +55,7 @@ function PrUpsertBlock({
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-accent text-xs font-mono shrink-0">Pull Request</span>
           {isError && (
-            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
               error
             </span>
           )}
@@ -155,7 +102,7 @@ function PrUpsertBlock({
           {result != null && isError && (
             <div>
               <div className="font-medium mb-1 text-danger">Error</div>
-              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-red-950/30">
+              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-soft-danger/60">
                 {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>
@@ -202,7 +149,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
           </span>
         ) : null}
         {isError && (
-          <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+          <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
             error
           </span>
         )}
@@ -217,7 +164,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
       </div>
       {isError && block.result != null && (
         <div className="px-3 sm:px-4 pb-2">
-          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-red-950/30 text-xs">
+          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-soft-danger/60 text-xs">
             {typeof block.result === 'string'
               ? block.result
               : JSON.stringify(block.result, null, 2)}
@@ -391,6 +338,10 @@ export default function BaguetteMcpToolBlock({
   sessionId,
   agentId,
   userReplied = false,
+  agents,
+  onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   tool: string;
   args?: Record<string, unknown>;
@@ -400,8 +351,44 @@ export default function BaguetteMcpToolBlock({
   sessionId?: number | string | null;
   agentId?: number | null;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   const mcpResult = parseMcpJsonResult(result);
+
+  // AskUserQuestions routes through the Cursor `mcp` meta-tool (tool name in
+  // args.tool) and historically was kind: 'mcp'; render the question card for
+  // both shapes instead of a quiet MCP row.
+  if (toolShortName === 'AskUserQuestion' || toolShortName === 'AskUserQuestions') {
+    return (
+      <AskUserQuestionBlock
+        questions={args.questions}
+        sessionId={sessionId != null ? Number(sessionId) : null}
+        agentId={agentId}
+        userReplied={userReplied}
+      />
+    );
+  }
 
   if (
     toolShortName === 'CreateTodo' ||
@@ -448,6 +435,10 @@ export default function BaguetteMcpToolBlock({
     return <CreateIssueBlock block={{ result, isError, input: args }} />;
   }
 
+  if (toolShortName === 'ConfigureMcpServer') {
+    return <ConfigureMcpServerBlock args={args} result={result} isError={isError} />;
+  }
+
   if (toolShortName === 'PrUpsert') {
     return (
       <PrUpsertBlock
@@ -459,30 +450,33 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
-  if (toolShortName === 'RunTask') {
-    const label = (args.label as string | undefined) ?? 'RunTask';
-    const runArgs = (args.args as unknown[]) ?? [];
+  if (toolShortName === 'RunTask' || toolShortName === 'AwaitDetachedTask') {
     return (
-      <BashToolBlock
-        badgeLabel="RunTask"
-        command={formatRunTaskCommand(label, runArgs)}
+      <TaskMcpToolBlock
+        toolName={toolShortName}
+        args={args}
         result={result}
+        parsedResult={mcpResult}
         isError={isError}
         startedAt={startedAt}
+        tasks={tasks}
+        onSelectTask={onSelectTask}
       />
     );
   }
 
-  if (toolShortName === 'AwaitDetachedTask') {
-    const taskId = args.taskId;
-    const label = taskId != null ? `Await task #${taskId}` : 'AwaitDetachedTask';
+  if (toolShortName === 'StartSubagent' || toolShortName === 'AwaitSubagent') {
     return (
-      <BashToolBlock
-        badgeLabel="AwaitDetachedTask"
-        command={label}
+      <SubagentMcpToolBlock
+        toolName={toolShortName}
+        args={args}
         result={result}
+        parsedResult={mcpResult}
         isError={isError}
         startedAt={startedAt}
+        parentAgentId={agentId}
+        agents={agents}
+        onSelectAgent={onSelectAgent}
       />
     );
   }

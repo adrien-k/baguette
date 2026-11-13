@@ -7,8 +7,8 @@ export function createGitPushTool(ctx) {
     app,
     session,
     getSession,
-    getToken,
-    requireGitHubRepo,
+    getGitAuth,
+    requireRemoteRepo,
     patchSession,
     absoluteSessionPath,
   } = ctx;
@@ -31,12 +31,12 @@ export function createGitPushTool(ctx) {
         ),
     },
     handler: async ({ branch, force } = {}) => {
-      const localErr = await requireGitHubRepo();
+      const localErr = await requireRemoteRepo();
       if (localErr) return localErr;
       if (!session.auto_push) {
         return ok({
           message:
-            'Auto-push is disabled. Changes have been committed locally. The user can push manually or enable auto-push using the controls at the bottom of the chat. Call PrUpsert with an appropriate title and description — it saves them to the session even when auto-push is off.',
+            'Auto-push is disabled. Changes have been committed locally. The user can push manually or enable auto-push using the controls at the bottom of the chat. Call UpdateSession with an appropriate title and description — it saves them to the session even when auto-push is off.',
         });
       }
 
@@ -60,7 +60,7 @@ export function createGitPushTool(ctx) {
 
       let result;
       try {
-        result = await gitPush(absoluteSessionPath, await getToken(), {
+        result = await gitPush(absoluteSessionPath, await getGitAuth(), {
           force: force === 'lease',
           ...(sessionBranch ? { branch: sessionBranch } : {}),
         });
@@ -72,7 +72,7 @@ export function createGitPushTool(ctx) {
       if (freshSession?.pr_status === 'merged') {
         return ok({
           ...result,
-          hint: 'The previous PR for this session has been merged. You should: 1) call GitPull to sync with the latest changes from the remote branch and merge the base branch — resolve any conflicts, commit, and push again if needed, then 2) call PrUpsert to open a new pull request for the current changes.',
+          hint: 'The previous PR for this session has been merged. You should: 1) call GitPull to sync with the latest changes from the remote branch and merge the base branch — resolve any conflicts, commit, and push again if needed, then 2) call UpdateSession with a title and description; Baguette will open a new pull request after the turn.',
         });
       }
       return ok(result);

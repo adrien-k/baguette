@@ -1,3 +1,5 @@
+import { patchAgentInternal } from './feathers/agents.service.js';
+
 /** Agent turn status while waiting for AskUserQuestions or plan confirmation. */
 const AGENT_AWAITING_USER_STATUS = 'approval';
 
@@ -8,7 +10,6 @@ const AGENT_AWAITING_USER_STATUS = 'approval';
  */
 async function markBuilderAgentAwaitingUser(app, agentId, userId) {
   if (!agentId || !userId) return;
-  const { patchAgentInternal } = await import('./feathers/agents.service.js');
   await patchAgentInternal(app, agentId, { status: AGENT_AWAITING_USER_STATUS }, userId);
 }
 

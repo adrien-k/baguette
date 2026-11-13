@@ -14,6 +14,10 @@ import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyl
 import { CARD_MUTED_CLASS, TEXT_HEADING, TEXT_PRIMARY } from '../../utils/ui.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { formatTokens, formatUsd, AGENT_TYPE_LABELS } from '../../utils/usageSeries.js';
+import McpSessionServers from '../../components/McpSessionServers.jsx';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
+import Toggle from '../../components/Toggle.jsx';
 
 const SECTION_HEADING_CLASS = 'text-xs font-medium uppercase tracking-wide text-faint';
 
@@ -197,6 +201,9 @@ function SlackCard({ session, readonly }) {
 }
 
 export default function DetailsView({ session, readonly, onSessionUpdate }) {
+  const { currentUser } = useCurrentUser();
+  const isOwner = isSessionOwner(session, currentUser);
+  const settingsLocked = readonly || !isOwner;
   const defaultTitle =
     session?.label || (isGlobalSession(session) ? 'Global session' : session?.repo_full_name) || '';
   const displayTitle = session?.label?.trim() || defaultTitle;
@@ -241,7 +248,7 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const titleDirty = title.trim() !== (session?.label ?? '').trim();
 
   const handleSaveTitle = async () => {
-    if (!session?.id || readonly || !titleDirty) {
+    if (!session?.id || settingsLocked || !titleDirty) {
       setEditingTitle(false);
       return;
     }
@@ -273,7 +280,7 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
       <div className={`${SESSION_CONTENT_MAX_WIDTH_CLASS} space-y-4`}>
         <DetailsCard label="Description">
           <div className="space-y-3">
-            {editingTitle && !readonly ? (
+            {editingTitle && !settingsLocked ? (
               <div className="space-y-2">
                 <TextInput
                   type="text"
@@ -317,7 +324,7 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
                 <h1 className={`text-xl font-semibold ${TEXT_HEADING} min-w-0 break-words`}>
                   {displayTitle}
                 </h1>
-                {!readonly && (
+                {!settingsLocked && (
                   <button
                     type="button"
                     onClick={() => setEditingTitle(true)}
@@ -345,6 +352,32 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
               <p className="text-faint">No description yet.</p>
             )}
           </div>
+        </DetailsCard>
+
+        <DetailsCard label="Sharing">
+          {isOwner && !readonly ? (
+            <Toggle
+              checked={!!session?.is_shared}
+              onChange={async (next) => {
+                if (!session?.id) return;
+                try {
+                  const updated = await sessionsService.patch(session.id, { is_shared: next });
+                  onSessionUpdate?.(updated);
+                } catch (err) {
+                  toastError('Failed to update sharing', err);
+                }
+              }}
+              label="Shared"
+              title="Everyone on this Baguette instance can open this."
+              className="gap-2"
+            />
+          ) : (
+            <p className="text-sm text-secondary">
+              {session?.is_shared
+                ? `Shared${session?.owner?.username ? ` by ${session.owner.username}` : ''}`
+                : 'Private'}
+            </p>
+          )}
         </DetailsCard>
 
         <DetailsCard label="Git">
@@ -383,6 +416,14 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
         </DetailsCard>
 
         <SlackCard session={session} readonly={readonly} />
+
+        <DetailsCard label="MCP servers">
+          <McpSessionServers
+            session={session}
+            readonly={readonly}
+            onSessionUpdate={onSessionUpdate}
+          />
+        </DetailsCard>
 
         <DetailsCard label="Usage">
           {usageLoading ? (

@@ -124,6 +124,9 @@ class AgentsService extends KnexService {
     if (!name) throw new BadRequest('name is required');
     if (!initialPrompt) throw new BadRequest('initial_prompt is required');
 
+    const waitForCompletion = data.wait_for_completion !== false;
+    const notifyParent = data.notify_parent === true;
+
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
     const db = this.app.get('db');
     const parentAgentId = await resolveStartSubagentParentId(
@@ -134,7 +137,11 @@ class AgentsService extends KnexService {
     const resolved = await resolveMcpStartSubagentModel(db, params.user.id, {
       session_id: sessionId,
       preset_model_id: data.preset_model_id ?? null,
+      agent_config_id: data.agent_config_id ?? null,
+      model: data.model ?? null,
+      model_params: data.model_params ?? null,
       repo_id: session.repo_id ?? null,
+      app: this.app,
     });
 
     const modelParamsStored = stringifyModelParamsForStorage(resolved.model_params);
@@ -148,6 +155,7 @@ class AgentsService extends KnexService {
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
+        notify_parent: notifyParent,
         ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
       },
       { ...params, provider: 'rest' }
@@ -175,7 +183,6 @@ class AgentsService extends KnexService {
       throw err;
     }
 
-    const waitForCompletion = data.wait_for_completion !== false;
     if (!waitForCompletion) {
       const fresh = await getAgentById(this.app.get('db'), agent.id);
       return {
@@ -183,6 +190,7 @@ class AgentsService extends KnexService {
         ref: agent.ref,
         status: fresh?.status ?? agent.status,
         session_id: sessionId,
+        notify_parent: Boolean(fresh?.notify_parent),
       };
     }
 
@@ -236,6 +244,7 @@ class AgentsService extends KnexService {
         name: row.name,
         status: row.status,
         parent_agent_id: row.parent_agent_id ?? null,
+        notify_parent: Boolean(row.notify_parent),
       })),
     };
   }
@@ -258,6 +267,7 @@ const CREATE_FIELDS = [
   'initial_prompt',
   'name',
   'parent_agent_id',
+  'notify_parent',
 ];
 
 async function stashReviewerCreateExtras(context) {
@@ -344,6 +354,8 @@ async function validateCreate(context) {
     const name = context.data.name?.trim();
     if (!name) throw new BadRequest('name is required for a subagent');
     context.data.is_primary = 0;
+    // Only subagents report back to a parent on completion (StartSubagent notify_parent).
+    context.data.notify_parent = context.data.notify_parent ? 1 : 0;
     if (context.data.parent_agent_id != null) {
       context.data.parent_agent_id = await resolveStartSubagentParentId(
         db,
@@ -353,6 +365,7 @@ async function validateCreate(context) {
     }
   } else {
     delete context.data.parent_agent_id;
+    delete context.data.notify_parent;
   }
   if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
@@ -425,6 +438,24 @@ async function stopReviewerBeforeRemove(app, row, user) {
   await getReviewAgentTurn(app).stopReviewerAgent(session, row);
 }
 
+/** Collaborators may stop a run; only the owner can create, reconfigure, or delete agents. */
+async function requireOwnSessionForWrite(context) {
+  if (!context.params?.provider) return context;
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const db = context.app.get('db');
+  let sessionId = context.data?.session_id;
+  if (context.id != null) {
+    const agent = await getAgentById(db, context.id);
+    if (!agent) throw new NotFound('Agent not found');
+    sessionId = agent.session_id;
+  }
+  if (sessionId == null) return context;
+  const session = await db('sessions').where({ id: sessionId, user_id: userId }).first();
+  if (!session) throw new NotFound('Session not found');
+  return context;
+}
+
 async function beforeRemove(context) {
   const row = await context.service.get(context.id, { user: context.params.user });
   if (!row) throw new NotFound('Agent not found');
@@ -436,7 +467,7 @@ async function beforeRemove(context) {
   }
   const db = context.app.get('db');
   if (row.agent_type === 'reviewer') {
-    context.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(row.id));
+    context.app.service('sessions').resetUsageTotals(reviewTurnKey(row.id));
   }
   await db('session_messages').where({ agent_id: row.id }).delete();
   await db('queued_messages').where({ agent_id: row.id }).delete();
@@ -450,6 +481,7 @@ const agentsHooks = {
     find: [],
     get: [],
     create: [
+      requireOwnSessionForWrite,
       pickCreateFields,
       stashReviewerCreateExtras,
       allocateAgentRef,
@@ -458,8 +490,13 @@ const agentsHooks = {
       normalizeModelParams,
       resolveSdkOnConfigChange,
     ],
-    patch: [only(EXTERNAL_PATCH_FIELDS), normalizeModelParams, resolveSdkOnConfigChange],
-    remove: [beforeRemove],
+    patch: [
+      requireOwnSessionForWrite,
+      only(EXTERNAL_PATCH_FIELDS),
+      normalizeModelParams,
+      resolveSdkOnConfigChange,
+    ],
+    remove: [requireOwnSessionForWrite, beforeRemove],
     stop: [requireUser],
   },
   after: {

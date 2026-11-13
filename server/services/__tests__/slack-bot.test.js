@@ -276,7 +276,7 @@ describe('people who are not linked to Baguette', () => {
 
   it('get it when their Baguette account is not approved', async () => {
     const w = await world();
-    await db('users').where({ id: w.ownerId }).update({ approved: false });
+    await db('users').where({ id: w.ownerId }).update({ status: 'pending' });
     await w.bot.handleEventCallback(w.slackApp, tag());
     expect(slack.postEphemeral).toHaveBeenCalledTimes(1);
     expect(sessionTool.create).not.toHaveBeenCalled();
@@ -734,7 +734,7 @@ describe('suggestions from other people in the thread', () => {
     const w = await world();
     const sessionId = await w.boundThread();
     await w.approve(sessionId, 'USTRANGER');
-    await db('users').where({ id: w.ownerId }).update({ approved: false });
+    await db('users').where({ id: w.ownerId }).update({ status: 'pending' });
     await w.bot.handleEventCallback(w.slackApp, talk({ user: 'USTRANGER' }));
     expect(w.messages).toHaveLength(0);
   });

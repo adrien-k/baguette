@@ -6,6 +6,7 @@
  * private "log in to Baguette" nudge. Once a session runs in a thread, anyone in it can send it
  * suggestions, while the session's owner stays in charge.
  */
+import { isApprovedUser } from '../../shared/user-status.js';
 import logger from '../logger.js';
 import { PUBLIC_HOST } from '../config.js';
 import { getPrimaryBuilderAgent } from './agents-db.js';
@@ -117,7 +118,7 @@ export function createSlackBot(app) {
     if (userId == null) return null;
     try {
       const user = await app.service('users').get(userId, {});
-      return user?.approved ? user : null;
+      return user && isApprovedUser(user) ? user : null;
     } catch {
       return null;
     }

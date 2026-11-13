@@ -112,6 +112,11 @@ export default function RunningTasksDropdown() {
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <TaskDockerIcon task={task} className="w-3 h-3" />
+                            {task.id != null ? (
+                              <span className="text-faint font-mono text-[11px] shrink-0">
+                                #{task.id}
+                              </span>
+                            ) : null}
                             <code className="text-xs text-heading truncate block min-w-0">
                               {task.label || task.command}
                             </code>

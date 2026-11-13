@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as cache from '../../lib/cache.js';
 import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
 import { AGENT_CONFIG_DELETED_MESSAGE } from '../agent-config-deleted.js';
 import { loadOwnedAgentConfigDecrypted } from '../agent-context.js';
+import { registerSdkPlugin } from '../../agent-sdks/registry.js';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
+import { ANTHROPIC_API_KEY_ENV } from '../../../shared/agent-config-api-key-env.js';
+
+registerSdkPlugin(claudeAgentSdkPlugin);
 
 const db = createTestDb();
 const params = (user) => ({ provider: 'rest', user });
@@ -12,6 +18,17 @@ function makeApp() {
   const app = feathers();
   app.set('db', db);
   registerAgentConfigsService(app);
+  app.service('agent-configs').registerSdk({
+    key: 'claude',
+    label: 'Claude',
+    service_path: 'claude-agent',
+  });
+  app.service('agent-configs').registerSdk({
+    key: 'cursor',
+    label: 'Cursor',
+    service_path: 'cursor-agent',
+    credentialSchema: { envVarOptions: null, defaultEnvVar: null, hasApiUrl: false },
+  });
   return app;
 }
 
@@ -19,7 +36,7 @@ let app;
 let user1;
 
 beforeEach(async () => {
-  await db('users').insert({ github_id: 1, username: 'alice', approved: true });
+  await db('users').insert({ github_id: 1, username: 'alice', status: 'approved' });
   user1 = await db('users').where({ username: 'alice' }).first();
   app = makeApp();
   await app.setup();
@@ -62,6 +79,12 @@ describe('agent-configs create validation', () => {
     expect(created.label).toBe('My Gateway');
     const row = await db('agent_configs').where({ id: created.id }).first();
     expect(row.label).toBe('My Gateway');
+  });
+
+  it('rejects an unknown sdk on create', async () => {
+    await expect(
+      app.service('agent-configs').create({ label: 'Nope', sdk: 'unknown-sdk' }, params(user1))
+    ).rejects.toMatchObject({ name: 'BadRequest', message: 'Unknown agent SDK "unknown-sdk"' });
   });
 });
 
@@ -178,5 +201,59 @@ describe('agent-configs remove', () => {
       name: 'BadRequest',
       message: AGENT_CONFIG_DELETED_MESSAGE,
     });
+  });
+});
+
+describe('agent-configs credential schema', () => {
+  it('defaults api_key_env_var from the plugin schema on create', async () => {
+    const created = await app
+      .service('agent-configs')
+      .create({ label: 'Claude Env', sdk: 'claude' }, params(user1));
+    expect(created.api_key_env_var).toBe(ANTHROPIC_API_KEY_ENV);
+    const row = await db('agent_configs').where({ id: created.id }).first();
+    expect(row.api_key_env_var).toBe(ANTHROPIC_API_KEY_ENV);
+  });
+
+  it('stores null api_key_env_var when the schema has no default', async () => {
+    const created = await app
+      .service('agent-configs')
+      .create(
+        { label: 'Cursor Env', sdk: 'cursor', api_key_env_var: 'CURSOR_API_KEY' },
+        params(user1)
+      );
+    expect(created.api_key_env_var).toBeNull();
+    const row = await db('agent_configs').where({ id: created.id }).first();
+    expect(row.api_key_env_var).toBeNull();
+  });
+
+  it('exposes getSdkMetas as a custom method', async () => {
+    const metas = await app.service('agent-configs').getSdkMetas({}, params(user1));
+    const keys = metas.map((m) => m.key);
+    expect(keys).toEqual(expect.arrayContaining(['claude', 'cursor']));
+    const claude = metas.find((m) => m.key === 'claude');
+    expect(claude.credentialSchema.hasApiUrl).toBe(true);
+    expect(claude.adaptTools).toBeUndefined();
+  });
+});
+
+describe('agent-configs provider cache', () => {
+  it('clears the SDK provider catalog after create and patch', async () => {
+    const spy = vi.spyOn(cache, 'clear').mockResolvedValue(undefined);
+    const created = await app.service('agent-configs').create(
+      {
+        label: 'Cache Claude',
+        sdk: 'claude',
+        api_key: 'sk-ant-cache',
+        api_url: 'https://api.anthropic.com',
+      },
+      params(user1)
+    );
+    expect(spy).toHaveBeenCalledWith('anthropic-models:https://api.anthropic.com');
+    spy.mockClear();
+    await app
+      .service('agent-configs')
+      .patch(created.id, { label: 'Cache Claude 2' }, params(user1));
+    expect(spy).toHaveBeenCalledWith('anthropic-models:https://api.anthropic.com');
+    spy.mockRestore();
   });
 });

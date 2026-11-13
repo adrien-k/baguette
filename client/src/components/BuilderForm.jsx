@@ -6,10 +6,11 @@ import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
-import { agentConfigsService, pluginsService } from '../feathers.js';
+import { agentConfigsService, mcpServersService, pluginsService } from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
+import { useSdkMetas } from '../hooks/useSdkMetas.js';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { toastError } from '../utils/toastError.jsx';
 import { useRepoContext, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
@@ -31,6 +32,7 @@ import {
   stringifyModelParams,
 } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 
@@ -127,6 +129,11 @@ export default function BuilderForm({
     'prompt',
     editingLoop?.prompt ?? defaultPrompt ?? ''
   );
+  useEffect(() => {
+    const trimmed = String(defaultPrompt || '').trim();
+    if (!trimmed || editingLoop) return;
+    setInitialPrompt(trimmed);
+  }, [defaultPrompt, editingLoop, setInitialPrompt]);
   const [showMore, setShowMore] = globalState.useState('showMore', false);
   const [branchName, setBranchName] = persistentState.useState('branchName', '', {
     persistWhen: hasPromptText,
@@ -157,6 +164,8 @@ export default function BuilderForm({
     { persistWhen: hasPromptText }
   );
   const [availablePlugins, setAvailablePlugins] = useState([]);
+  const [mcpCatalog, setMcpCatalog] = useState([]);
+  const [mcpEnabled, setMcpEnabled] = useState({});
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
   const [modeState, setModeState] = useState(editingLoop ? 'loop' : 'session');
@@ -165,17 +174,25 @@ export default function BuilderForm({
   const [sessionStartMode, setSessionStartMode] = useState('new-branch');
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
+  const [isShared, setIsShared] = persistentState.useState('isShared', !!editingLoop?.is_shared, {
+    persistWhen: hasPromptText,
+  });
+  const loopReadOnly = Boolean(
+    editingLoop && userSettings && !isSessionOwner(editingLoop, userSettings)
+  );
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
   // another SDK's list.
   const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
   const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { getMeta } = useSdkMetas();
   const selectedConfig =
     configOptions.find((c) => c.key === String(agentConfigId)) ?? configOptions[0] ?? null;
   const agentSdk = selectedConfig?.sdk ?? '';
-  const isCursor = agentSdk === 'cursor';
-  const usesModelParams = agentSdk === 'cursor' || agentSdk === 'claude' || agentSdk === 'pi';
+  const sdkMeta = getMeta(agentSdk);
+  const usesModelParams = sdkMeta?.supportsModelParams === true;
+  const appliesUserModelPrefs = sdkMeta?.appliesUserModelPrefs === true;
 
   const applyConfigAndModel = (nextConfigId, modelId, paramsJson) => {
     if (nextConfigId) setAgentConfigIdRaw(String(nextConfigId));
@@ -299,14 +316,18 @@ export default function BuilderForm({
     const current = models.find((m) => m.id === model);
     if (current) {
       if (usesModelParams && !modelParamsJson) {
-        setModelParamsJson(paramsJsonForModelChange(current, cursorModelPrefs));
+        setModelParamsJson(
+          paramsJsonForModelChange(current, appliesUserModelPrefs ? cursorModelPrefs : undefined)
+        );
       }
       return;
     }
     const fallback = defaultModelForSdk(models);
     if (!fallback) return;
     setModel(fallback.id);
-    setModelParamsJson(paramsJsonForModelChange(fallback, cursorModelPrefs));
+    setModelParamsJson(
+      paramsJsonForModelChange(fallback, appliesUserModelPrefs ? cursorModelPrefs : undefined)
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [models, modelsStale]);
 
@@ -317,10 +338,40 @@ export default function BuilderForm({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    mcpServersService
+      .find()
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res?.data ?? [];
+        setMcpCatalog(rows);
+        const stored = editingLoop?.mcp_servers;
+        const useStored = stored && typeof stored === 'object';
+        const next = {};
+        for (const server of rows) {
+          const key = String(server.id);
+          if (useStored) next[key] = stored[key] === true || stored[server.id] === true;
+          else next[key] = !!server.enabled;
+        }
+        setMcpEnabled(next);
+      })
+      .catch((err) => {
+        if (!cancelled) toastError('Failed to load MCP servers', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Reload defaults when opening a different loop. A new session form uses Settings toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingLoop?.id]);
+
   const isLoop = mode === 'loop';
   // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions = (!isGlobal && !isLoop) || availablePlugins.length > 0;
+  const hasMoreOptions =
+    (!isGlobal && !isLoop) || availablePlugins.length > 0 || mcpCatalog.length > 0;
   const canSubmit =
+    !loopReadOnly &&
     !loading &&
     hasAgentConfig &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
@@ -333,6 +384,11 @@ export default function BuilderForm({
     setFiles([]);
     setFileError(null);
     setLoopName('');
+    if (!editingLoop) {
+      const next = {};
+      for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
+      setMcpEnabled(next);
+    }
   };
 
   const buildPayload = ({ createNewBranch = true }) => {
@@ -347,7 +403,7 @@ export default function BuilderForm({
       }
     })();
     let finalParams = parsedParams;
-    if (isCursor) {
+    if (appliesUserModelPrefs) {
       finalParams = applyParamOverrides(
         parsedParams ?? [],
         cursorModelPrefs,
@@ -365,7 +421,9 @@ export default function BuilderForm({
       createNewBranch,
       branchName: branchName || undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
+      isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
+      mcpServers: mcpEnabled,
       agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
   };
@@ -395,6 +453,8 @@ export default function BuilderForm({
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
+        mcp_servers: payload.mcpServers ?? {},
+        is_shared: payload.isShared,
         ...schedulePayload(schedule),
       };
     }
@@ -411,6 +471,8 @@ export default function BuilderForm({
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
+      mcp_servers: payload.mcpServers ?? {},
+      is_shared: payload.isShared,
       ...schedulePayload(schedule),
     };
   };
@@ -544,9 +606,12 @@ export default function BuilderForm({
             <span className="truncate">
               Editing loop
               {editingLoop.name ? <span className="text-faint"> · {editingLoop.name}</span> : ''}
+              {loopReadOnly && editingLoop.owner?.username ? (
+                <span className="text-faint"> · shared by {editingLoop.owner.username}</span>
+              ) : null}
             </span>
           </div>
-          {onDeleteLoop && (
+          {onDeleteLoop && !loopReadOnly && (
             <button
               type="button"
               onClick={onDeleteLoop}
@@ -697,14 +762,24 @@ export default function BuilderForm({
         )}
       </div>
 
+      <Toggle
+        checked={isShared}
+        onChange={setIsShared}
+        disabled={loopReadOnly}
+        label="Shared"
+        title="Everyone on this Baguette instance can open this."
+        className="gap-2"
+      />
+
       {isLoop && (
         <>
-          <LoopScheduleFields schedule={schedule} onChange={setSchedule} />
+          <LoopScheduleFields schedule={schedule} onChange={setSchedule} disabled={loopReadOnly} />
 
           <div className="flex items-center gap-4">
             <Toggle
               checked={singleSession}
               onChange={setSingleSession}
+              disabled={loopReadOnly}
               label="Single session"
               className="gap-2"
             />
@@ -759,6 +834,46 @@ export default function BuilderForm({
                     />
                   </div>
                 </>
+              )}
+
+              {mcpCatalog.length > 0 && (
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-secondary mb-1.5">
+                    MCP servers
+                  </label>
+                  <div className="space-y-1.5">
+                    {mcpCatalog.map((server) => (
+                      <label
+                        key={server.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!mcpEnabled[String(server.id)]}
+                          onChange={(e) =>
+                            setMcpEnabled((prev) => ({
+                              ...prev,
+                              [String(server.id)]: e.target.checked,
+                            }))
+                          }
+                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                        />
+                        <span className="text-sm text-secondary leading-tight">
+                          <span className="font-medium text-heading">{server.name}</span>
+                          <span className="block text-xs font-normal text-faint mt-0.5">
+                            {server.url}
+                            {server.transport === 'sse' ? ' · not attached on Pi' : ''}
+                          </span>
+                          {server.description ? (
+                            <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
+                              {server.description}
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {availablePlugins.length > 0 && (

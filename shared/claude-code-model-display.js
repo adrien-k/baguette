@@ -83,7 +83,7 @@ function isDefaultPickerLabel(displayName) {
  * @returns {string}
  */
 export function claudeCodeModelDisplayName({ displayName, description, resolvedModel, value }) {
-  const name = (displayName || '').trim();
+  const name = firstDescriptionHeadline(displayName) || (displayName || '').trim();
   if (!name) return '';
 
   if (isDefaultPickerLabel(name)) return name;

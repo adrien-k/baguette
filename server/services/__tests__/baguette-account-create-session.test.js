@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 
-vi.mock('../anthropic-models.js', () => ({
+vi.mock('../../agent-sdks/claude/anthropic-models.js', () => ({
   listModels: vi.fn().mockResolvedValue({
     models: [{ id: 'sonnet', display_name: 'Sonnet' }],
     rejected_models: [],
   }),
 }));
 const listCursorModels = vi.fn().mockResolvedValue([]);
-vi.mock('../cursor-models.js', () => ({
+vi.mock('../../agent-sdks/cursor/models.js', () => ({
   listCursorModels: (...args) => listCursorModels(...args),
 }));
 
@@ -57,7 +57,7 @@ describe('CreateSession MCP model defaults', () => {
     await db('users').insert({
       github_id: 99,
       username: 'mcp-user',
-      approved: true,
+      status: 'approved',
     });
     user = await db('users').where({ username: 'mcp-user' }).first();
     claudeConfigId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });
@@ -157,7 +157,7 @@ describe('CreateSession MCP model defaults', () => {
       })
     );
     expect(result?.ok).toBe(false);
-    expect(String(result?.error ?? result?.message ?? '')).toMatch(/Session defaults/i);
+    expect(String(result?.error ?? result?.message ?? '')).toMatch(/Builder default/i);
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -206,6 +206,68 @@ describe('CreateSession MCP model defaults', () => {
       expect.any(Object)
     );
   });
+
+  it('uses a listed model when agent-created policy is any', async () => {
+    await db('users').where({ id: user.id }).update({ subagent_default_mode: 'any' });
+    const tools = buildBaguetteAccountToolList({ id: user.id, subagent_default_mode: 'any' }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    expect(createSession.schema.model).toBeDefined();
+    expect(createSession.schema.agent_config_id).toBeDefined();
+    await createSession.handler({
+      repo_id: 1,
+      base_branch: 'main',
+      initial_prompt: 'hello',
+      agent_config_id: claudeConfigId,
+      model: 'sonnet',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: claudeConfigId, model: 'sonnet' }),
+      expect.any(Object)
+    );
+  });
+
+  it('rejects an unknown model when agent-created policy is any', async () => {
+    await db('users').where({ id: user.id }).update({ subagent_default_mode: 'any' });
+    const tools = buildBaguetteAccountToolList({ id: user.id, subagent_default_mode: 'any' }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    const result = parseMcpToolResult(
+      await createSession.handler({
+        repo_id: 1,
+        base_branch: 'main',
+        initial_prompt: 'hello',
+        agent_config_id: claudeConfigId,
+        model: 'not-a-model',
+      })
+    );
+    expect(result?.ok).toBe(false);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the fixed model for new sessions when the policy is config', async () => {
+    await db('users')
+      .where({ id: user.id })
+      .update({
+        subagent_default_mode: 'config',
+        subagent_default_config_id: claudeConfigId,
+        subagent_default_model: JSON.stringify({ model: 'haiku', model_params: null }),
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+      });
+    const tools = buildBaguetteAccountToolList(
+      { id: user.id, subagent_default_mode: 'config' },
+      app
+    );
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    await createSession.handler({
+      repo_id: 1,
+      base_branch: 'main',
+      initial_prompt: 'hello',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: claudeConfigId, model: 'haiku' }),
+      expect.any(Object)
+    );
+  });
 });
 
 describe('CreateSession used by the Slack bot and by sessions living in Slack threads', () => {
@@ -216,7 +278,7 @@ describe('CreateSession used by the Slack bot and by sessions living in Slack th
   let slackBot;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 77, username: 'slack-user', approved: true });
+    await db('users').insert({ github_id: 77, username: 'slack-user', status: 'approved' });
     user = await db('users').where({ username: 'slack-user' }).first();
     configId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-ant-test' });
     await db('repos').insert({

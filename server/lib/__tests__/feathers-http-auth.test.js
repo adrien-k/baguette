@@ -52,7 +52,7 @@ describe('createFeathersCookieAuth', () => {
   it('skips users.get when Express already attached an approved user', async () => {
     const get = vi.fn();
     const middleware = createFeathersCookieAuth({ service: () => ({ get }) });
-    const user = { id: 7, approved: true };
+    const user = { id: 7, status: 'approved' };
     const context = makeContext({
       headers: { cookie: signedUserCookie(7) },
       params: { user, clientIp: '10.0.0.8' },
@@ -66,7 +66,7 @@ describe('createFeathersCookieAuth', () => {
   });
 
   it('loads an approved user from the signed cookie when params.user is missing', async () => {
-    const user = { id: 3, approved: true };
+    const user = { id: 3, status: 'approved' };
     const get = vi.fn().mockResolvedValue(user);
     const middleware = createFeathersCookieAuth({
       service: (name) => {
@@ -85,7 +85,7 @@ describe('createFeathersCookieAuth', () => {
   });
 
   it('exposes a pending (unapproved) cookie identity as params.pendingUser, never params.user', async () => {
-    const pending = { id: 5, approved: false };
+    const pending = { id: 5, status: 'pending' };
     const get = vi.fn().mockResolvedValue(pending);
     const middleware = createFeathersCookieAuth({ service: () => ({ get }) });
     const context = makeContext({ headers: { cookie: signedUserCookie(5) } });
@@ -97,7 +97,7 @@ describe('createFeathersCookieAuth', () => {
   });
 
   it('demotes a non-approved identity passed in via params (defensive)', async () => {
-    const pending = { id: 9, approved: false };
+    const pending = { id: 9, status: 'pending' };
     const get = vi.fn();
     const middleware = createFeathersCookieAuth({ service: () => ({ get }) });
     const context = makeContext({ params: { user: pending } });

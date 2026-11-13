@@ -1,9 +1,9 @@
-import { defaultAgentConfigApiKeyEnvVar } from '@baguette/shared/agent-config-api-key-env.js';
-
 /**
  * Unsaved credential fields for test connection / list models (merged server-side).
+ * Branch on plugin `credentialSchema`, not sdk keys.
  * @param {object} opts
  * @param {string} opts.sdk
+ * @param {{ hasApiUrl?: boolean, envVarOptions?: Array<{ value: string }> | null, defaultEnvVar?: string | null } | null | undefined} opts.schema
  * @param {object | null | undefined} opts.savedConfig
  * @param {string} opts.apiUrl
  * @param {string | null} opts.apiKey
@@ -11,35 +11,32 @@ import { defaultAgentConfigApiKeyEnvVar } from '@baguette/shared/agent-config-ap
  * @param {string} opts.apiKeyEnvVar
  */
 export function buildAgentConfigCredentialOverrides({
-  sdk,
+  schema,
   savedConfig,
   apiUrl,
   apiKey,
   apiKeyDirty,
   apiKeyEnvVar,
 }) {
-  if (sdk === 'mock') return {};
-
   const fields = {};
 
-  if (sdk === 'claude') {
+  if (schema?.hasApiUrl) {
     const savedUrl = savedConfig?.api_url ?? '';
-    if (apiUrl.trim() !== String(savedUrl).trim()) {
-      fields.api_url = apiUrl.trim();
+    if (String(apiUrl ?? '').trim() !== String(savedUrl).trim()) {
+      fields.api_url = String(apiUrl ?? '').trim();
     }
   }
 
   if (apiKeyDirty) {
     fields.api_key = apiKey ?? '';
-    if (sdk === 'claude' && apiKeyEnvVar) {
+    if (schema?.envVarOptions?.length && apiKeyEnvVar) {
       fields.api_key_env_var = apiKeyEnvVar;
     }
   }
 
-  if (sdk === 'pi') {
-    const savedPiEnv =
-      savedConfig?.api_key_env_var ?? defaultAgentConfigApiKeyEnvVar(savedConfig?.sdk ?? 'pi');
-    if (apiKeyEnvVar !== savedPiEnv) {
+  if (schema?.envVarOptions?.length) {
+    const savedEnv = savedConfig?.api_key_env_var ?? schema.defaultEnvVar;
+    if (apiKeyEnvVar !== savedEnv) {
       fields.api_key_env_var = apiKeyEnvVar;
     }
   }
@@ -50,6 +47,7 @@ export function buildAgentConfigCredentialOverrides({
 /** Request body for agent-configs.testConnectivity (saved row or draft from the form). */
 export function buildAgentConfigConnectivityRequest({
   sdk,
+  schema,
   savedConfig,
   apiUrl,
   apiKey,
@@ -58,7 +56,7 @@ export function buildAgentConfigConnectivityRequest({
   agentConfigId,
 }) {
   const overrides = buildAgentConfigCredentialOverrides({
-    sdk,
+    schema,
     savedConfig,
     apiUrl,
     apiKey,
@@ -69,7 +67,7 @@ export function buildAgentConfigConnectivityRequest({
   if (trimmedKey) {
     overrides.api_key = trimmedKey;
   }
-  if (sdk === 'pi' && apiKeyEnvVar) {
+  if (schema?.envVarOptions?.length && apiKeyEnvVar) {
     overrides.api_key_env_var = apiKeyEnvVar;
   }
   if (agentConfigId != null) {

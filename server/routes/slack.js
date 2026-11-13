@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isApprovedUser } from '../../shared/user-status.js';
 import logger from '../logger.js';
 import { PUBLIC_HOST } from '../config.js';
 import { buildAuthorizeUrl, oauthAccess, slackRedirectUri } from '../services/slack.js';
@@ -41,7 +42,7 @@ export default function createSlackRoutes(app, bot) {
     if (!userId) return null;
     try {
       const user = await app.service('users').get(userId, {});
-      return user?.approved ? user : null;
+      return user && isApprovedUser(user) ? user : null;
     } catch {
       return null;
     }

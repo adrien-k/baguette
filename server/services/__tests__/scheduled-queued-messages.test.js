@@ -55,7 +55,7 @@ let sessionId;
 beforeEach(async () => {
   vi.clearAllMocks();
 
-  await db('users').insert({ github_id: 101, username: 'alice', approved: true });
+  await db('users').insert({ github_id: 101, username: 'alice', status: 'approved' });
   const alice = await db('users').where({ username: 'alice' }).first();
   userId = alice.id;
 

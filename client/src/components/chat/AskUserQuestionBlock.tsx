@@ -5,11 +5,64 @@ import { toastError } from '../../utils/toastError.jsx';
 
 export type AskUserQuestion = {
   question: string;
+  header?: string;
   options?: { label: string; description?: string }[];
   multiSelect?: boolean;
 };
 
 type AnswerState = { selected: Set<string> | string | null; otherText: string };
+
+type AskUserOption = { label: string; description?: string };
+
+function normalizeOption(raw: unknown): AskUserOption | null {
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof (raw as { label?: unknown }).label !== 'string') return null;
+  return raw as AskUserOption;
+}
+
+function normalizeOptions(raw: unknown): AskUserOption[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(normalizeOption).filter((opt): opt is AskUserOption => opt != null);
+}
+
+function normalizeQuestion(raw: unknown): AskUserQuestion | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const q = raw as AskUserQuestion;
+  const questionText = typeof q.question === 'string' && q.question.length > 0 ? q.question : null;
+  const headerText = typeof q.header === 'string' && q.header.length > 0 ? q.header : null;
+  const text = questionText ?? headerText ?? null;
+  if (text == null) return null;
+  return {
+    question: text,
+    multiSelect: Boolean(q.multiSelect),
+    options: normalizeOptions(q.options),
+  };
+}
+
+/**
+ * Sanitize the raw `questions` tool-args payload. The value comes straight from
+ * an LLM tool call, so it can be any shape: an object instead of an array, a
+ * JSON string, `{ questions: [...] }`, a single question object, or entries
+ * missing required fields. Rendering must never crash the session page over
+ * malformed input (an `a.map is not a function` crash in the useState
+ * initializer previously white-screened every session view).
+ */
+function normalizeQuestions(raw: unknown): AskUserQuestion[] {
+  let value: unknown = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  const wrapper =
+    value != null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+  if (Array.isArray(wrapper?.questions)) value = wrapper.questions; // double-wrapped `{ questions: [...] }`
+  // Single question object → one-question list; other junk drops out below.
+  const list: unknown[] = Array.isArray(value) ? value : [value];
+  return list.map(normalizeQuestion).filter((q): q is AskUserQuestion => q != null);
+}
 
 function buildAnswerMessage(questions: AskUserQuestion[], answers: AnswerState[]): string {
   return questions
@@ -51,12 +104,13 @@ export default function AskUserQuestionBlock({
   agentId,
   userReplied = false,
 }: {
-  questions?: AskUserQuestion[] | null;
+  /** Raw tool-args payload — LLM-controlled and untrusted; sanitized by normalizeQuestions. */
+  questions?: unknown;
   sessionId?: number | null;
   agentId?: number | null;
   userReplied?: boolean;
 }) {
-  const questions = questionsProp ?? [];
+  const questions = normalizeQuestions(questionsProp);
   const hasResult = userReplied;
   const [expanded, setExpanded] = useState(false);
 
@@ -150,7 +204,7 @@ export default function AskUserQuestionBlock({
   return (
     <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 border-b border-brand/10 flex items-center justify-between gap-2">
-        <p className="text-xs text-accent/70">
+        <p className="text-xs text-accent">
           {hasResult ? summaryLabel : 'The agent has a question'}
         </p>
         {hasResult && (

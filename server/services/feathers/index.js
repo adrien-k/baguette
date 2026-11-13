@@ -6,13 +6,13 @@ import { registerSecretsService } from './secrets.service.js';
 import { registerUsersService } from './users.service.js';
 import { registerReposService } from './repos.service.js';
 import { registerUserReposService } from './user-repos.service.js';
-import { registerClaudeAgentService } from './claude-agent.service.ts';
-import { registerCursorAgentService } from './cursor-agent.service.ts';
-import { registerPiAgentService } from './pi-agent.service.ts';
-import { registerMockAgentService } from './mock-agent.service.ts';
+import { registerAgentSdkServices } from '../../agent-sdks/index.js';
+import { registerInstanceSettingsService } from './instance-settings.service.js';
 import { registerAgentConfigsService } from './agent-configs.service.js';
+import { registerMcpServersService } from './mcp-servers.service.js';
 import { registerAgentModelPresetsService } from './agent-model-presets.service.js';
 import { registerPluginsService } from './plugins.service.js';
+import { registerSkillsService } from './skills.service.js';
 import { registerSlackService } from './slack.service.js';
 import { registerSlackThreadsService } from './slack-threads.service.js';
 import { registerQueuedMessagesService } from './queued-messages.service.js';
@@ -28,24 +28,27 @@ import { registerFeathersRealtime } from './realtime.js';
 /**
  * Register Feathers services, SSE, and channel publishers.
  * Call before feathersApp.setup(server).
+ *
+ * @param {{ realtime?: boolean }} [opts] Set `realtime: false` in tests that
+ *   should not bind SSE publishers (those import the process-wide `db.js`).
  */
-export function registerFeathersServices(app) {
+export function registerFeathersServices(app, { realtime = true } = {}) {
   registerMessagesService(app);
   registerAgentsService(app);
   registerSessionsService(app);
   registerQueuedMessagesService(app);
   registerAgentConfigsService(app);
+  registerMcpServersService(app);
+  registerInstanceSettingsService(app);
   registerAgentModelPresetsService(app);
-  registerClaudeAgentService(app);
-  registerCursorAgentService(app);
-  registerPiAgentService(app);
-  registerMockAgentService(app);
+  registerAgentSdkServices(app);
   registerTasksService(app);
   registerSecretsService(app);
   registerUsersService(app);
   registerReposService(app);
   registerUserReposService(app);
   registerPluginsService(app);
+  registerSkillsService(app);
   registerSlackService(app);
   registerSlackThreadsService(app);
   registerLoopsService(app);
@@ -58,5 +61,5 @@ export function registerFeathersServices(app) {
 
   app.service('sessions').registerActivityMessageListeners(app);
 
-  registerFeathersRealtime(app);
+  if (realtime) registerFeathersRealtime(app);
 }

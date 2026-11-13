@@ -37,13 +37,15 @@
   --palette-brand: var(--color-amber-500);
   --palette-brand-hover: var(--color-amber-400);
   --palette-on-brand: var(--color-zinc-950);
-  --palette-ok: var(--color-emerald-600);
-  --palette-ok-hover: var(--color-emerald-500);
+  /* White on green: emerald-700 keeps the white-on-solid look ≥ 5:1 (600 was 3.74). */
+  --palette-ok: var(--color-emerald-700);
+  --palette-ok-hover: var(--color-emerald-800);
   --palette-err: var(--color-red-600);
   --palette-err-hover: var(--color-red-500);
   --palette-on-solid: #ffffff;
-  --palette-track: var(--color-zinc-300);
   --palette-knob: #ffffff;
+  /* zinc-400 keeps disabled off-tracks visible on zinc-100 chrome. */
+  --palette-track: var(--color-zinc-400);
   --palette-soft-accent: var(--color-amber-50);
   --palette-task-pending: var(--color-amber-500);
   --palette-task-pending-bg: var(--color-amber-400);
@@ -66,7 +68,8 @@ html[data-theme='dark'] {
   --palette-fg: #ffffff;
   --palette-fg-secondary: var(--color-zinc-300);
   --palette-fg-muted: var(--color-zinc-400);
-  --palette-fg-faint: var(--color-zinc-500);
+  /* zinc-400 clears AA at the 10–12px sizes where faint is used. */
+  --palette-fg-faint: var(--color-zinc-400);
   --palette-fg-heading: var(--color-zinc-200);
   --palette-accent: var(--color-amber-400);
   --palette-success: var(--color-emerald-400);
@@ -77,8 +80,9 @@ html[data-theme='dark'] {
   --palette-brand: var(--color-amber-500);
   --palette-brand-hover: var(--color-amber-400);
   --palette-on-brand: var(--color-zinc-950);
-  --palette-ok: var(--color-emerald-600);
-  --palette-ok-hover: var(--color-emerald-500);
+  /* Same emerald-700 fill as light so the white-on-solid look stays ≥ 5:1. */
+  --palette-ok: var(--color-emerald-700);
+  --palette-ok-hover: var(--color-emerald-800);
   --palette-err: var(--color-red-600);
   --palette-err-hover: var(--color-red-500);
   --palette-on-solid: #ffffff;
@@ -177,6 +181,12 @@ html[data-theme='dark'] {
 
   html[data-theme='dark'] select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  /* Native checks trade the browser default (blue/teal) for the brand accent. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--palette-brand);
   }
 
   a[href],

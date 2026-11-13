@@ -8,13 +8,11 @@ import { feathers } from 'feathers';
 import { BadRequest, NotFound } from 'feathers/errors';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerLoopsService } from '../feathers/loops.service.js';
-import {
-  claudeTiedSessionLoopCompaction,
-  directPromptTiedSessionLoopCompaction,
-} from '../feathers/loop-compaction.ts';
+import { directPromptTiedSessionLoopCompaction } from '../feathers/loop-compaction.ts';
+import { claudeTiedSessionLoopCompaction } from '../../agent-sdks/claude/loop-compaction.ts';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
-import { registerAgentSdk } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk } from '../../agent-sdks/registry.js';
 import { getPRStatus } from '../github.js';
 
 vi.mock('../github.js', async (importOriginal) => {
@@ -103,8 +101,8 @@ describe('Loops service', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await db('users').insert([
-      { github_id: 1, username: 'alice', access_token_encrypted: 'x', approved: true },
-      { github_id: 2, username: 'bob', access_token_encrypted: 'x', approved: true },
+      { github_id: 1, username: 'alice', access_token_encrypted: 'x', status: 'approved' },
+      { github_id: 2, username: 'bob', access_token_encrypted: 'x', status: 'approved' },
     ]);
     aliceId = (await db('users').where({ username: 'alice' }).first()).id;
     bobId = (await db('users').where({ username: 'bob' }).first()).id;
@@ -298,6 +296,59 @@ describe('Loops service', () => {
       );
     });
 
+    it('lets another user get a shared loop but not patch it', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ is_shared: true }), params(aliceId));
+      expect(loop.is_shared).toBe(true);
+      expect(loop.owner).toMatchObject({ id: aliceId, username: 'alice' });
+
+      const got = await app.service('loops').get(loop.id, params(bobId));
+      expect(got.id).toBe(loop.id);
+
+      const shared = await app
+        .service('loops')
+        .find({ ...params(bobId), query: { list_scope: 'shared' } });
+      expect(shared.data.map((row) => row.id)).toContain(loop.id);
+
+      await expect(
+        app.service('loops').patch(loop.id, { enabled: false }, params(bobId))
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('copies is_shared onto spawned sessions and syncs a tied single-session', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ is_shared: true, enabled: false }), params(aliceId));
+      const spawned = await app.service('loops')._startSession(loop, { id: aliceId });
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ is_shared: true, loop_id: loop.id }),
+        expect.anything()
+      );
+      expect(spawned.is_shared).toBe(true);
+
+      const sessionId = await insertTestSession(db, {
+        user_id: aliceId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'tied',
+        short_id: 'tiedsh',
+        is_shared: 0,
+      });
+      const tied = await app
+        .service('loops')
+        .create(
+          loopData({ single_session: true, session_id: sessionId, is_shared: false }),
+          params(aliceId)
+        );
+      await app.service('loops').patch(tied.id, { is_shared: true }, params(aliceId));
+      expect(sessionsPatch).toHaveBeenCalledWith(
+        sessionId,
+        { is_shared: true },
+        expect.objectContaining({ user: { id: aliceId } })
+      );
+    });
+
     it('nullifies loop_id on sessions spawned by the loop when it is deleted', async () => {
       const loop = await app.service('loops').create(loopData(), params(aliceId));
       const spawnedId = await seedSession({ short_id: 'spawn1', loop_id: loop.id });
@@ -463,6 +514,37 @@ describe('Loops service', () => {
       expect(row.last_session_id).toBe(77);
       expect(row.last_run_at).toBeTruthy();
       expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('reuses the loop MCP snapshot instead of current defaults', async () => {
+      const [serverId] = await db('user_mcp_servers').insert({
+        user_id: aliceId,
+        name: 'docs',
+        transport: 'http',
+        url: 'https://mcp.example/docs',
+        enabled: 0,
+      });
+      const loop = await makeDueLoop({
+        mcp_servers: { [serverId]: true },
+      });
+      await db('user_mcp_servers').insert({
+        user_id: aliceId,
+        name: 'later',
+        transport: 'http',
+        url: 'https://mcp.example/later',
+        enabled: 1,
+      });
+
+      await app.service('loops').runDue();
+
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loop_id: loop.id,
+          mcp_servers: { [String(serverId)]: true },
+          mcp_servers_locked: true,
+        }),
+        expect.anything()
+      );
     });
 
     it('skips disabled loops and loops that are not due yet', async () => {

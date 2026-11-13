@@ -6,6 +6,7 @@ import {
   usersService,
   reposService,
   pluginsService,
+  skillsService,
   slackService,
 } from '../../feathers.js';
 import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
@@ -16,6 +17,21 @@ import TextInput from '../../components/TextInput.jsx';
 import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
 import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { BANNER_WARN, INPUT_CLASS, TEXT_MUTED, TEXT_PRIMARY } from '../../utils/ui.js';
+import UserAvatar from '../../components/UserAvatar.jsx';
+import { formatRelativeTime } from '../../utils/dates.js';
+import { countryCodeToFlagEmoji } from '../../utils/countryFlag.js';
+import { repoAccessModeLabel } from '../../utils/repoDisplayName.js';
+import { useAuth } from '../../hooks/useAuth.jsx';
+import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
+
+function formatUserLastIpLine(user) {
+  if (!user.last_ip) return null;
+  const flag = countryCodeToFlagEmoji(user.last_ip_country);
+  const ipPart = [flag, user.last_ip].filter(Boolean).join(' ');
+  const rel = formatRelativeTime(user.last_seen_at);
+  if (rel) return `${ipPart} · ${rel}`;
+  return ipPart;
+}
 
 function SecretRow({ secret, onDelete }) {
   return (
@@ -89,8 +105,9 @@ function SecretAddForm({ title, scope, onAdded }) {
   );
 }
 
-export function SecretsTab() {
+export function SecretsTab({ scope = 'personal' }) {
   const [variables, setVariables] = useState([]);
+  const isGlobal = scope === 'global';
 
   const load = () => {
     secretsService
@@ -110,50 +127,52 @@ export function SecretsTab() {
     }
   };
 
-  const globalSecrets = variables.filter((v) => v.user_id == null);
-  const personalSecrets = variables.filter((v) => v.user_id != null);
+  const list = variables.filter((v) => (isGlobal ? v.user_id == null : v.user_id != null));
 
   return (
     <div>
       <SettingsTabHeader title="Secrets">
-        Secrets are available in <code className="text-secondary">.baguette.yaml</code> config where
-        they can be assigned to environment variables. Personal secrets override system-wide secrets
-        with the same key.
+        {isGlobal ? (
+          <>
+            System-wide secrets are available in{' '}
+            <code className="text-secondary">.baguette.yaml</code> config where they can be assigned
+            to environment variables. Personal secrets in Settings override the same key for that
+            user.
+          </>
+        ) : (
+          <>
+            Secrets are available in <code className="text-secondary">.baguette.yaml</code> config
+            where they can be assigned to environment variables. Personal secrets override
+            system-wide secrets with the same key.
+          </>
+        )}
       </SettingsTabHeader>
 
-      <div className="space-y-6">
-        <SettingsSection
-          title="System-wide secrets"
-          description="Shared across all users and sessions on this Baguette instance."
-        >
-          <div className="divide-y divide-line">
-            {globalSecrets.length === 0 && (
-              <p className="text-faint text-sm text-center py-8">
-                No system-wide secrets configured
-              </p>
-            )}
-            {globalSecrets.map((v) => (
-              <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
-            ))}
-          </div>
-          <SecretAddForm title="Add system-wide secret" scope="global" onAdded={load} />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Personal secrets"
-          description="Only for your account. Same key as a system-wide secret wins for your sessions."
-        >
-          <div className="divide-y divide-line">
-            {personalSecrets.length === 0 && (
-              <p className="text-faint text-sm text-center py-8">No personal secrets yet</p>
-            )}
-            {personalSecrets.map((v) => (
-              <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
-            ))}
-          </div>
-          <SecretAddForm title="Add personal secret" scope="personal" onAdded={load} />
-        </SettingsSection>
-      </div>
+      <SettingsSection
+        title={isGlobal ? 'System-wide secrets' : 'Personal secrets'}
+        headerAside={isGlobal ? <SystemWideBadge /> : undefined}
+        description={
+          isGlobal
+            ? 'Shared across all users and sessions on this Baguette instance.'
+            : 'Only for your account. Same key as a system-wide secret wins for your sessions.'
+        }
+      >
+        <div className="divide-y divide-line">
+          {list.length === 0 && (
+            <p className="text-faint text-sm text-center py-8">
+              {isGlobal ? 'No system-wide secrets configured' : 'No personal secrets yet'}
+            </p>
+          )}
+          {list.map((v) => (
+            <SecretRow key={v.id} secret={v} onDelete={handleDelete} />
+          ))}
+        </div>
+        <SecretAddForm
+          title={isGlobal ? 'Add system-wide secret' : 'Add personal secret'}
+          scope={isGlobal ? 'global' : 'personal'}
+          onAdded={load}
+        />
+      </SettingsSection>
     </div>
   );
 }
@@ -195,73 +214,113 @@ export function AllRepositoriesSection() {
   };
 
   return (
-    <SettingsSection
-      title="All repositories"
-      headerAside={<SystemWideBadge />}
-      description="Repositories registered system-wide. Deleting one removes all sessions, worktrees, and the clone for all users."
-    >
-      <div className="divide-y divide-line">
-        {repos.length === 0 && (
-          <p className="text-faint text-sm text-center py-8">No repositories registered</p>
-        )}
-        {repos.map((r) => (
-          <div key={r.id} className="flex items-center justify-between py-3 gap-3">
-            <div className="min-w-0">
-              <code className="text-sm text-fg font-medium">{r.full_name}</code>
-              <div className="text-xs text-faint mt-0.5">
-                {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
+    <div>
+      <SettingsTabHeader title="Repositories">
+        Repositories registered on this instance. Deleting one removes all sessions, worktrees, and
+        the clone for every user.
+      </SettingsTabHeader>
+      <SettingsSection
+        title="All repositories"
+        headerAside={<SystemWideBadge />}
+        description="Who linked each repository, how many sessions it has, and whether the clone is on disk."
+      >
+        <div className="divide-y divide-line">
+          {repos.length === 0 && (
+            <p className="text-faint text-sm text-center py-8">No repositories registered</p>
+          )}
+          {repos.map((r) => (
+            <div key={r.id} className="flex items-center justify-between py-3 gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <code className="text-sm text-fg font-medium">{r.full_name}</code>
+                  <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
+                    {repoAccessModeLabel(r)}
+                  </span>
+                </div>
+                <div className="text-xs text-faint mt-0.5">
+                  {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
+                </div>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {(r.users ?? []).length === 0 ? (
+                    <span className="text-xs text-faint">No linked users</span>
+                  ) : (
+                    (r.users ?? []).map((u) => (
+                      <span
+                        key={u.id}
+                        className="inline-flex items-center gap-1 text-xs text-faint min-w-0"
+                      >
+                        {u.avatar_url ? (
+                          <img
+                            src={u.avatar_url}
+                            alt=""
+                            className="w-4 h-4 rounded-full shrink-0"
+                          />
+                        ) : null}
+                        <span className="truncate">{u.username}</span>
+                      </span>
+                    ))
+                  )}
+                </div>
               </div>
+              <button
+                onClick={() => setConfirmDelete(r)}
+                disabled={deletingId !== null}
+                className="text-xs text-danger hover:text-danger disabled:opacity-50 shrink-0"
+              >
+                Delete
+              </button>
             </div>
-            <button
-              onClick={() => setConfirmDelete(r)}
-              disabled={deletingId !== null}
-              className="text-xs text-danger hover:text-danger disabled:opacity-50 shrink-0"
-            >
-              Delete
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {confirmDelete && (
-        <Modal maxWidth="max-w-md" padding="p-5">
-          <ModalHeader title="Delete repository?" onClose={() => setConfirmDelete(null)} />
-          <p className={`${TEXT_MUTED} text-sm mb-4`}>
-            <strong className={TEXT_PRIMARY}>{confirmDelete.full_name}</strong> and all its data
-            will be permanently removed for all users.
-          </p>
-          <div className={`${BANNER_WARN} rounded-lg px-3 py-2 text-sm text-warning`}>
-            This will delete all sessions linked to this repo, their worktrees, and the main clone.
-            This cannot be undone.
-          </div>
-          <ModalActions className="flex justify-end gap-2 mt-4">
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(null)}
-              className="px-4 py-2 text-sm text-secondary hover:text-fg"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteConfirm}
-              disabled={deletingId !== null}
-              className={DANGER_BUTTON_CLASS}
-            >
-              {deletingId !== null ? 'Deleting…' : 'Delete repository'}
-            </button>
-          </ModalActions>
-        </Modal>
-      )}
-    </SettingsSection>
+        {confirmDelete && (
+          <Modal maxWidth="max-w-md" padding="p-5">
+            <ModalHeader title="Delete repository?" onClose={() => setConfirmDelete(null)} />
+            <p className={`${TEXT_MUTED} text-sm mb-4`}>
+              <strong className={TEXT_PRIMARY}>{confirmDelete.full_name}</strong> and all its data
+              will be permanently removed for all users.
+            </p>
+            <div className={`${BANNER_WARN} rounded-lg px-3 py-2 text-sm text-warning`}>
+              This will delete all sessions linked to this repo, their worktrees, and the main
+              clone. This cannot be undone.
+            </div>
+            <ModalActions className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 text-sm text-secondary hover:text-fg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                disabled={deletingId !== null}
+                className={DANGER_BUTTON_CLASS}
+              >
+                {deletingId !== null ? 'Deleting…' : 'Delete repository'}
+              </button>
+            </ModalActions>
+          </Modal>
+        )}
+      </SettingsSection>
+    </div>
   );
 }
 
 export function UsersTab() {
+  const { github } = useAuth();
+  const githubConfigured = Boolean(github?.configured);
   const [users, setUsers] = useState([]);
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteResult, setInviteResult] = useState(null);
 
   const load = () => {
-    usersService.find().then((d) => setUsers(d.data));
+    usersService
+      .find()
+      .then((d) => setUsers(d.data))
+      .catch((err) => toastError('Failed to load users', err));
   };
 
   useEffect(load, []);
@@ -284,64 +343,382 @@ export function UsersTab() {
     }
   };
 
+  const handleSetAdmin = async (id, admin) => {
+    try {
+      // Feathers custom method body: POST /users with X-Service-Method: setAdmin
+      await usersService.setAdmin({ id, admin });
+      load();
+    } catch (err) {
+      toastError(admin ? 'Failed to grant admin' : 'Failed to remove admin', err);
+    }
+  };
+
+  const handleInvite = async (payload) => {
+    setInviteBusy(true);
+    try {
+      const result = await usersService.invite(payload);
+      setInviteResult(result);
+      if (payload.username) setInviteUsername('');
+      load();
+    } catch (err) {
+      toastError('Failed to create invite', err);
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const copyInviteUrl = async () => {
+    if (!inviteResult?.invite_url) return;
+    try {
+      await navigator.clipboard.writeText(inviteResult.invite_url);
+    } catch (err) {
+      toastError('Failed to copy invite link', err);
+    }
+  };
+
+  const adminCount = users.filter((u) => !!u.admin).length;
+
   return (
     <div>
       <SettingsTabHeader title="Users">
-        People who can sign in to this Baguette instance. New users must be approved before they can
-        start sessions.
+        People who can sign in to this Baguette instance.{' '}
+        {githubConfigured
+          ? 'New GitHub accounts must be approved by an admin before they can start sessions.'
+          : 'Invite additional users with a one-time link; they add a passkey when they open it.'}{' '}
+        Revoked users stay revoked until an admin approves them again.
       </SettingsTabHeader>
+
+      {!githubConfigured ? (
+        <SettingsSection
+          title="Invite a user"
+          description="The link works once. Generating a new link for the same username replaces the previous one."
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const username = inviteUsername.trim();
+              if (!username) return;
+              handleInvite({ username });
+            }}
+            className="flex flex-col sm:flex-row gap-3"
+          >
+            <TextInput
+              value={inviteUsername}
+              onChange={(e) => setInviteUsername(e.target.value)}
+              placeholder="username"
+              autoComplete="off"
+              className="sm:w-56"
+            />
+            <button
+              type="submit"
+              disabled={inviteBusy || !inviteUsername.trim()}
+              className={`${PRIMARY_BUTTON_SIZED} shrink-0`}
+            >
+              {inviteBusy ? 'Creating…' : 'Create invite'}
+            </button>
+          </form>
+          {inviteResult?.invite_url ? (
+            <div className="space-y-2 mt-4">
+              <p className="text-xs text-warning bg-soft-accent/30 border border-warning/50 rounded-lg px-3 py-2">
+                {inviteResult.message || 'Copy this invite link now — it will not be shown again.'}
+              </p>
+              <div className="flex gap-2 items-start">
+                <code className="flex-1 text-xs bg-control border border-strong rounded-lg px-3 py-2 text-heading break-all">
+                  {inviteResult.invite_url}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyInviteUrl}
+                  className="shrink-0 text-xs bg-control-hover hover:bg-track text-fg px-3 py-2 rounded-lg"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection title="Accounts">
         <div className="divide-y divide-line">
           {users.length === 0 && (
             <p className="text-faint text-sm text-center py-8">No users found</p>
           )}
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center justify-between py-3 gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-sm text-fg font-medium truncate">{u.username}</div>
-                  <div className="text-xs text-faint">
-                    Joined {new Date(u.created_at).toLocaleDateString()}
+          {users.map((u) => {
+            const lastIpLine = formatUserLastIpLine(u);
+            const isLastAdmin = !!u.admin && adminCount <= 1;
+            let accountStatus = 'pending';
+            if (u.invite_pending) accountStatus = 'invited';
+            else if (u.status === USER_STATUS_APPROVED) accountStatus = 'approved';
+            else if (u.status === USER_STATUS_REVOKED) accountStatus = 'revoked';
+            return (
+              <div key={u.id} className="flex items-center justify-between py-3 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <UserAvatar user={u} size="lg" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-sm text-fg font-medium truncate">{u.username}</div>
+                      {u.admin ? <span className="text-xs text-accent shrink-0">Admin</span> : null}
+                    </div>
+                    <div className="text-xs text-faint">
+                      Joined {new Date(u.created_at).toLocaleDateString()}
+                    </div>
+                    {lastIpLine && (
+                      <div className="text-xs text-faint font-mono truncate">{lastIpLine}</div>
+                    )}
                   </div>
                 </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleSetAdmin(u.id, !u.admin)}
+                    disabled={isLastAdmin}
+                    title={isLastAdmin ? 'Cannot demote the last admin' : undefined}
+                    className="text-xs text-fg-muted hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {u.admin ? 'Remove admin' : 'Make admin'}
+                  </button>
+                  {accountStatus === 'invited' ? (
+                    <>
+                      <span className="text-xs text-accent hidden sm:inline">Invited</span>
+                      <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
+                      <button
+                        type="button"
+                        onClick={() => handleInvite({ id: u.id })}
+                        disabled={inviteBusy}
+                        className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
+                      >
+                        New invite link
+                      </button>
+                    </>
+                  ) : null}
+                  {accountStatus === 'approved' ? (
+                    <>
+                      <span className="text-xs text-success hidden sm:inline">Approved</span>
+                      <span className="w-2 h-2 rounded-full bg-ok sm:hidden" />
+                      <button
+                        type="button"
+                        onClick={() => handleReject(u.id)}
+                        disabled={isLastAdmin}
+                        title={isLastAdmin ? 'Cannot revoke the last admin' : undefined}
+                        className="text-xs text-danger hover:text-danger ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Revoke
+                      </button>
+                    </>
+                  ) : null}
+                  {accountStatus === 'pending' ? (
+                    <>
+                      <span className="text-xs text-accent hidden sm:inline">Pending</span>
+                      <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(u.id)}
+                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReject(u.id)}
+                        className="text-xs text-danger hover:text-danger"
+                      >
+                        Reject
+                      </button>
+                    </>
+                  ) : null}
+                  {accountStatus === 'revoked' ? (
+                    <>
+                      <span className="text-xs text-danger hidden sm:inline">Revoked</span>
+                      <span className="w-2 h-2 rounded-full bg-danger sm:hidden" />
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(u.id)}
+                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
+                      >
+                        Approve
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                {u.approved ? (
-                  <>
-                    <span className="text-xs text-success hidden sm:inline">Approved</span>
-                    <span className="w-2 h-2 rounded-full bg-ok sm:hidden" />
-                    <button
-                      onClick={() => handleReject(u.id)}
-                      className="text-xs text-danger hover:text-danger ml-1"
-                    >
-                      Revoke
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xs text-accent hidden sm:inline">Pending</span>
-                    <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
-                    <button
-                      onClick={() => handleApprove(u.id)}
-                      className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleReject(u.id)}
-                      className="text-xs text-danger hover:text-danger"
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </SettingsSection>
+    </div>
+  );
+}
+
+function asList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+export function SkillsTab() {
+  const [skills, setSkills] = useState([]);
+  const [label, setLabel] = useState('');
+  const [description, setDescription] = useState('');
+  const [content, setContent] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    skillsService
+      .find()
+      .then((data) => setSkills(asList(data)))
+      .catch((err) => toastError('Failed to load skills', err));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const resetForm = () => {
+    setLabel('');
+    setDescription('');
+    setContent('');
+    setEditingId(null);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const payload = {
+      label: label.trim(),
+      description: description.trim(),
+      content: content.trim(),
+    };
+    if (!payload.label || !payload.description || !payload.content) return;
+    setSaving(true);
+    try {
+      if (editingId) {
+        await skillsService.patch(editingId, payload);
+        toast.success('Saved skill');
+      } else {
+        await skillsService.create(payload);
+        toast.success('Created skill');
+      }
+      resetForm();
+      load();
+    } catch (err) {
+      toastError(editingId ? 'Failed to save skill' : 'Failed to create skill', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (skill) => {
+    setEditingId(skill.id);
+    setLabel(skill.label);
+    setDescription(skill.description);
+    setContent(skill.content);
+  };
+
+  const handleRemove = async (skill) => {
+    try {
+      await skillsService.remove(skill.id);
+      if (editingId === skill.id) resetForm();
+      load();
+    } catch (err) {
+      toastError('Failed to delete skill', err);
+    }
+  };
+
+  let submitLabel = 'Create';
+  if (saving) submitLabel = 'Saving…';
+  else if (editingId) submitLabel = 'Save';
+
+  return (
+    <div>
+      <SettingsTabHeader title="Skills">
+        Skills belong to your account; other users cannot see them. Agents can list your skills and
+        load the content when its description matches the task.
+      </SettingsTabHeader>
+
+      <div className="space-y-6">
+        <SettingsSection title="Create skill">
+          <form onSubmit={handleSave} className="space-y-3">
+            <Field label="Label" className="mb-0">
+              <input
+                type="text"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Review checklist"
+                className={INPUT_CLASS}
+              />
+            </Field>
+            <Field label="Description" className="mb-0">
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="When to use this skill"
+                className={INPUT_CLASS}
+              />
+            </Field>
+            <Field label="Content" className="mb-0">
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Instructions the agent should follow after it loads this skill."
+                className={`${INPUT_CLASS} min-h-[140px] font-mono text-xs`}
+              />
+            </Field>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={saving || !label.trim() || !description.trim() || !content.trim()}
+                className={PRIMARY_BUTTON_SIZED}
+              >
+                {submitLabel}
+              </button>
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-xs text-fg-muted hover:text-fg"
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          </form>
+        </SettingsSection>
+
+        <SettingsSection title="Your skills">
+          {skills.length === 0 ? (
+            <p className="text-faint text-sm text-center py-8">No skills yet</p>
+          ) : (
+            <div className="divide-y divide-line">
+              {skills.map((skill) => (
+                <div key={skill.id} className="flex items-start justify-between py-3 gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-fg font-medium">{skill.label}</div>
+                    <p className="text-xs text-faint mt-0.5">{skill.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(skill)}
+                      className="text-xs text-fg-muted hover:text-fg"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(skill)}
+                      className="text-xs text-danger hover:text-danger"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SettingsSection>
+      </div>
     </div>
   );
 }
@@ -418,9 +795,9 @@ export function PluginsTab() {
   return (
     <div>
       <SettingsTabHeader title="Plugins">
-        Install Claude Code plugins from GitHub. Plugins are system-wide — available to all users
-        when starting new sessions. Each plugin must contain a{' '}
-        <code className="text-secondary">.claude-plugin/plugin.json</code> file.
+        Install Claude Code plugins from GitHub. Plugins are instance-wide — any approved user can
+        install them, and they are available to all users when starting new sessions. Each plugin
+        must contain a <code className="text-secondary">.claude-plugin/plugin.json</code> file.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -792,166 +1169,175 @@ export function SlackTab() {
   if (!apps) return <p className="text-faint text-sm text-center py-8">Loading…</p>;
 
   return (
-    <SettingsSection
-      title="Slack"
-      headerAside={<SystemWideBadge />}
-      description={
-        <>
-          Install a Slack app so people can tag it in a channel to start sessions (each person links
-          their own Baguette account the first time), and so agents can post updates. The{' '}
-          <code className="text-secondary">SlackPostMessage</code> tool only appears in sessions
-          once an app has a bot token. Bot scopes:{' '}
-          <code className="text-fg-muted">{SLACK_SCOPES}</code>.
-        </>
-      }
-    >
-      {apps.length === 0 && (
-        <p className="text-faint text-sm text-center py-8">No Slack apps configured</p>
-      )}
-      {apps.map((app) => (
-        <SlackAppCard key={app.id} app={app} onChanged={load} />
-      ))}
+    <div>
+      <SettingsTabHeader title="Slack">
+        Connect Slack apps so people can tag the bot to start sessions (each person links their own
+        Baguette account the first time) and agents can post updates. Instance-wide — available to
+        every session once at least one app is saved.
+      </SettingsTabHeader>
+      <SettingsSection
+        title="Apps"
+        headerAside={<SystemWideBadge />}
+        description={
+          <>
+            The <code className="text-secondary">SlackPostMessage</code> tool only appears in
+            sessions once an app has a bot token. Bot scopes:{' '}
+            <code className="text-fg-muted">{SLACK_SCOPES}</code>.
+          </>
+        }
+      >
+        {apps.length === 0 && (
+          <p className="text-faint text-sm text-center py-8">No Slack apps configured</p>
+        )}
+        {apps.map((app) => (
+          <SlackAppCard key={app.id} app={app} onChanged={load} />
+        ))}
 
-      {showAddForm ? (
-        <form onSubmit={handleAdd}>
-          <h4 className="text-xs font-medium text-fg-muted mb-2">Add Slack app</h4>
+        {showAddForm ? (
+          <form onSubmit={handleAdd}>
+            <h4 className="text-xs font-medium text-fg-muted mb-2">Add Slack app</h4>
 
-          <Field label="Name">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="baguette"
-              className={inputClass}
-            />
-          </Field>
+            <Field label="Name">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="baguette"
+                className={inputClass}
+              />
+            </Field>
 
-          <Field
-            label="App-level token (Socket Mode)"
-            hint={
-              <>
-                Slack app →{' '}
-                <span className="text-fg-muted">Basic Information → App-Level Tokens</span> with the
-                connections:write scope (starts with xapp-). Needs Socket Mode enabled.
-              </>
-            }
-          >
-            <input
-              type="password"
-              value={newAppToken}
-              onChange={(e) => setNewAppToken(e.target.value)}
-              placeholder="xapp-…"
-              autoComplete="off"
-              className={`${inputClass} font-mono`}
-            />
-          </Field>
-
-          <Field
-            label="Bot user OAuth token"
-            hint={
-              <>
-                Slack app →{' '}
-                <span className="text-fg-muted">
-                  OAuth &amp; Permissions → Bot User OAuth Token
-                </span>{' '}
-                (starts with xoxb-).
-              </>
-            }
-          >
-            <input
-              type="password"
-              value={newToken}
-              onChange={(e) => setNewToken(e.target.value)}
-              placeholder="xoxb-…"
-              autoComplete="off"
-              className={`${inputClass} font-mono`}
-            />
-          </Field>
-
-          <details className="mb-4">
-            <summary className="text-xs font-medium text-fg-muted cursor-pointer mb-2">
-              Advanced: public URL setup (Events API + Add to Slack)
-            </summary>
             <Field
-              label="Client ID"
+              label="App-level token (Socket Mode)"
               hint={
                 <>
-                  From your Slack app under{' '}
-                  <span className="text-fg-muted">Basic Information → App Credentials</span>.
+                  Slack app →{' '}
+                  <span className="text-fg-muted">Basic Information → App-Level Tokens</span> with
+                  the connections:write scope (starts with xapp-). Needs Socket Mode enabled.
                 </>
               }
             >
               <input
-                type="text"
-                value={newClientId}
-                onChange={(e) => setNewClientId(e.target.value)}
+                type="password"
+                value={newAppToken}
+                onChange={(e) => setNewAppToken(e.target.value)}
+                placeholder="xapp-…"
                 autoComplete="off"
                 className={`${inputClass} font-mono`}
               />
             </Field>
 
-            <Field label="Client secret">
+            <Field
+              label="Bot user OAuth token"
+              hint={
+                <>
+                  Slack app →{' '}
+                  <span className="text-fg-muted">
+                    OAuth &amp; Permissions → Bot User OAuth Token
+                  </span>{' '}
+                  (starts with xoxb-).
+                </>
+              }
+            >
               <input
                 type="password"
-                value={newClientSecret}
-                onChange={(e) => setNewClientSecret(e.target.value)}
+                value={newToken}
+                onChange={(e) => setNewToken(e.target.value)}
+                placeholder="xoxb-…"
                 autoComplete="off"
                 className={`${inputClass} font-mono`}
               />
             </Field>
 
-            <Field label="Signing secret">
-              <input
-                type="password"
-                value={newSigningSecret}
-                onChange={(e) => setNewSigningSecret(e.target.value)}
-                autoComplete="off"
-                className={`${inputClass} font-mono`}
-              />
-            </Field>
-          </details>
+            <details className="mb-4">
+              <summary className="text-xs font-medium text-fg-muted cursor-pointer mb-2">
+                Advanced: public URL setup (Events API + Add to Slack)
+              </summary>
+              <Field
+                label="Client ID"
+                hint={
+                  <>
+                    From your Slack app under{' '}
+                    <span className="text-fg-muted">Basic Information → App Credentials</span>.
+                  </>
+                }
+              >
+                <input
+                  type="text"
+                  value={newClientId}
+                  onChange={(e) => setNewClientId(e.target.value)}
+                  autoComplete="off"
+                  className={`${inputClass} font-mono`}
+                />
+              </Field>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              type="submit"
-              disabled={saving || !canAdd}
-              className={`${PRIMARY_BUTTON_SIZED} disabled:bg-disabled disabled:text-faint`}
-            >
-              {saving ? 'Adding…' : 'Add'}
-            </button>
-            <button
-              type="button"
-              onClick={closeAddForm}
-              disabled={saving}
-              className="text-sm text-secondary hover:text-fg disabled:text-faint px-3 py-2"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      ) : (
-        <button type="button" onClick={() => setShowAddForm(true)} className={PRIMARY_BUTTON_SIZED}>
-          Add Slack app
-        </button>
-      )}
+              <Field label="Client secret">
+                <input
+                  type="password"
+                  value={newClientSecret}
+                  onChange={(e) => setNewClientSecret(e.target.value)}
+                  autoComplete="off"
+                  className={`${inputClass} font-mono`}
+                />
+              </Field>
 
-      <div>
-        <h4 className="text-xs font-medium text-fg-muted mb-2">Tools exposed to agents</h4>
-        <p className="text-sm text-faint">
-          <code className="text-fg-muted">SlackPostMessage</code> — post a message to a channel.
-          Requires a channel id or <code className="text-fg-muted">#name</code>
-          {apps.length > 1 ? (
-            <>
-              {' '}
-              and an <code className="text-fg-muted">app</code> name (
-              {apps.map((a) => a.name).join(', ')}).
-            </>
-          ) : (
-            '.'
-          )}{' '}
-          Every message carries a footer linking back to the session that posted it.
-        </p>
-      </div>
-    </SettingsSection>
+              <Field label="Signing secret">
+                <input
+                  type="password"
+                  value={newSigningSecret}
+                  onChange={(e) => setNewSigningSecret(e.target.value)}
+                  autoComplete="off"
+                  className={`${inputClass} font-mono`}
+                />
+              </Field>
+            </details>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="submit"
+                disabled={saving || !canAdd}
+                className={`${PRIMARY_BUTTON_SIZED} disabled:bg-disabled disabled:text-faint`}
+              >
+                {saving ? 'Adding…' : 'Add'}
+              </button>
+              <button
+                type="button"
+                onClick={closeAddForm}
+                disabled={saving}
+                className="text-sm text-secondary hover:text-fg disabled:text-faint px-3 py-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAddForm(true)}
+            className={PRIMARY_BUTTON_SIZED}
+          >
+            Add Slack app
+          </button>
+        )}
+
+        <div>
+          <h4 className="text-xs font-medium text-fg-muted mb-2">Tools exposed to agents</h4>
+          <p className="text-sm text-faint">
+            <code className="text-fg-muted">SlackPostMessage</code> — post a message to a channel.
+            Requires a channel id or <code className="text-fg-muted">#name</code>
+            {apps.length > 1 ? (
+              <>
+                {' '}
+                and an <code className="text-fg-muted">app</code> name (
+                {apps.map((a) => a.name).join(', ')}).
+              </>
+            ) : (
+              '.'
+            )}{' '}
+            Every message carries a footer linking back to the session that posted it.
+          </p>
+        </div>
+      </SettingsSection>
+    </div>
   );
 }

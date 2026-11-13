@@ -117,6 +117,8 @@ describe('usage.breakdown', () => {
     expect(scoped).toEqual([
       {
         day: day.slice(0, 10),
+        user_id: USER,
+        username: 'alice',
         repo_full_name: 'acme/alpha',
         agent_config_id: claudeConfigId,
         agent_config_label: 'Alice Claude',
@@ -309,6 +311,68 @@ describe('usage.breakdown', () => {
     expect(scoped[0].repo_full_name).toBe('');
     expect(scoped[0].total_tokens).toBe(40);
   });
+
+  it('includes user_id and username on breakdown rows', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, user_id: USER, created_at: day },
+      { repo: 'acme/alpha', cost: 2, user_id: OTHER_USER, created_at: day },
+    ]);
+
+    const rows = await svc.breakdown({}, params(USER));
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.user_id === USER)).toMatchObject({
+      username: 'alice',
+      cost_usd: 1,
+    });
+    expect(rows.find((r) => r.user_id === OTHER_USER)).toMatchObject({
+      username: 'bob',
+      cost_usd: 2,
+    });
+  });
+
+  it('filters by model and treats __unknown__ as empty model ids', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, input: 10, output: 0, model: 'opus', created_at: day },
+      { repo: 'acme/alpha', cost: 2, input: 20, output: 0, model: 'haiku', created_at: day },
+      { repo: 'acme/alpha', cost: 3, input: 30, output: 0, model: null, created_at: day },
+    ]);
+
+    const opus = await svc.breakdown({ model: 'opus' }, params(USER));
+    expect(opus).toHaveLength(1);
+    expect(opus[0].model).toBe('opus');
+    expect(opus[0].total_tokens).toBe(10);
+
+    const unknown = await svc.breakdown({ model: '__unknown__' }, params(USER));
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0].model).toBe('');
+    expect(unknown[0].total_tokens).toBe(30);
+  });
+
+  it('filters builder vs subagent with agent_type', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/alpha', cost: 1, input: 100, output: 0, created_at: day },
+      {
+        repo: 'acme/alpha',
+        cost: 2,
+        input: 40,
+        output: 0,
+        created_at: day,
+        agent_type: 'subagent',
+      },
+    ]);
+
+    const all = await svc.breakdown({}, params(USER));
+    expect(all.find((r) => r.agent_type === 'builder').total_tokens).toBe(100);
+    expect(all.find((r) => r.agent_type === 'subagent').total_tokens).toBe(40);
+
+    const sub = await svc.breakdown({ agent_type: 'subagent' }, params(USER));
+    expect(sub).toHaveLength(1);
+    expect(sub[0].agent_type).toBe('subagent');
+    expect(sub[0].total_tokens).toBe(40);
+  });
 });
 
 describe('usage.usageUsers', () => {
@@ -327,6 +391,24 @@ describe('usage.usageUsers', () => {
     expect(bobOnly).toHaveLength(1);
     expect(bobOnly[0].user_id).toBe(OTHER_USER);
     expect(bobOnly[0].username).toBe('bob');
+  });
+});
+
+describe('usage.usageModels', () => {
+  it('returns distinct models in the window and supports search', async () => {
+    const day = daysAgo(1);
+    await insertUsage([
+      { repo: 'acme/a', cost: 1, model: 'opus', created_at: day },
+      { repo: 'acme/b', cost: 1, model: 'haiku', created_at: day },
+      { repo: 'acme/c', cost: 1, model: null, created_at: day },
+    ]);
+
+    const all = await svc.usageModels({ days: '30' }, params(USER));
+    expect(all.map((r) => r.model).sort()).toEqual(['', 'haiku', 'opus']);
+
+    const opusOnly = await svc.usageModels({ days: '30', q: 'opu' }, params(USER));
+    expect(opusOnly).toHaveLength(1);
+    expect(opusOnly[0].model).toBe('opus');
   });
 });
 

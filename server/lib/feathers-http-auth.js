@@ -2,6 +2,7 @@ import { parseCookie } from 'cookie';
 import { unsign } from 'cookie-signature';
 import { ENCRYPTION_KEY } from '../config.js';
 import { clientIpFrom } from './client-ip.js';
+import { isApprovedUser } from '../../shared/user-status.js';
 
 function readSignedUserId(cookies, secret) {
   const value = cookies.userId;
@@ -31,11 +32,11 @@ export function createFeathersCookieAuth(feathersApp) {
 
     // Defensive: an unapproved identity handed in via params must be demoted before any
     // service hook can mistake it for an authenticated user.
-    if (context.params.user && !context.params.user.approved) {
+    if (context.params.user && !isApprovedUser(context.params.user)) {
       context.params.pendingUser = context.params.user;
       delete context.params.user;
     }
-    if (context.params.user?.approved) {
+    if (isApprovedUser(context.params.user)) {
       return next();
     }
 
@@ -48,7 +49,7 @@ export function createFeathersCookieAuth(feathersApp) {
 
     try {
       const user = await feathersApp.service('users').get(userId, {});
-      if (user?.approved) {
+      if (isApprovedUser(user)) {
         context.params.user = user;
       } else if (user) {
         context.params.pendingUser = user;

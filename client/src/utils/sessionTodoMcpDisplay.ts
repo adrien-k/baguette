@@ -131,8 +131,21 @@ export function resolveSessionTodoForTool(
 
   const content = todoContentFromArgs(args);
   const title = todoTitleFromArgs(args);
-  if (toolName === 'CreateTodo' && content) {
-    return { content, title: title ?? undefined, status: displayStatus };
+  if ((toolName === 'CreateTodo' || toolName === 'UpdateTodo') && content) {
+    let status = displayStatus;
+    if (toolName === 'UpdateTodo') {
+      const argStatus = nestedField(args, 'status');
+      if (typeof argStatus === 'string' && argStatus.trim()) {
+        status = argStatus.trim();
+      }
+    }
+    const ref = todoRefFromArgs(args);
+    return {
+      content,
+      title: title ?? undefined,
+      status,
+      ...(ref != null ? { ref } : {}),
+    };
   }
 
   return null;

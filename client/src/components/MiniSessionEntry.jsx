@@ -8,6 +8,9 @@ import SessionListIndicator, { SessionUnreadDot } from './SessionListIndicator.j
 import ReviewInProgressBadge, { isReviewInProgress } from './ReviewInProgressBadge.jsx';
 import { SessionLoopIcon } from './SessionLoopIndicator.jsx';
 import { sessionListPromptPreview } from '../pages/session/sessionListDisplay.js';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import { LIST_SCOPE_SHARED, isSessionOwner } from '@baguette/shared/session-sharing.js';
+import ListOwnerLabel from './ListOwnerLabel.jsx';
 
 export default function MiniSessionEntry({
   session: s,
@@ -15,7 +18,11 @@ export default function MiniSessionEntry({
   onArchive,
   hideRepoBadge = false,
   suppressUnreadWhenOpen = false,
+  listScope,
 }) {
+  const { currentUser } = useCurrentUser();
+  const isOwner = isSessionOwner(s, currentUser);
+  const showOwner = listScope === LIST_SCOPE_SHARED || !isOwner;
   const isArchived = !!s.archived_at;
   const isArchiving = !isArchived && s.status === 'archiving';
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
@@ -32,6 +39,7 @@ export default function MiniSessionEntry({
     >
       <div className="flex items-center gap-2">
         <SessionListIndicator session={s} />
+        {showOwner && <ListOwnerLabel owner={s.owner} />}
         <Link to={sessionUrl(s.id)} className="flex-1 min-w-0 leading-snug text-left">
           {showRepo && (
             <span className="block truncate">
@@ -57,9 +65,9 @@ export default function MiniSessionEntry({
           <div className="shrink-0">
             {isSessionStoppable(s) ? (
               <StopSession session={s} />
-            ) : (
+            ) : isOwner ? (
               <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
-            )}
+            ) : null}
           </div>
         )}
       </div>

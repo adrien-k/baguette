@@ -13,7 +13,7 @@ export default function AskUserAnswerBlock({
   return (
     <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 border-b border-brand/10">
-        <p className="text-xs text-accent/70">Your answers</p>
+        <p className="text-xs text-accent">Your answers</p>
       </div>
       <div className="px-3 sm:px-4 py-3 space-y-2 text-sm text-fg">
         {list.length > 0

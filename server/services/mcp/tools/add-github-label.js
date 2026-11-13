@@ -3,7 +3,7 @@ import { addLabelsToPR } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createAddGithubLabelTool(ctx) {
-  const { getRepo, getToken, requireGitHubRepo } = ctx;
+  const { getRepo, getToken, requireGitHubApi } = ctx;
   return {
     name: 'AddGithubLabel',
     description: 'Add one or more labels to a pull request. Labels must already exist on the repo.',
@@ -12,7 +12,7 @@ export function createAddGithubLabelTool(ctx) {
       labels: z.array(z.string()).min(1).describe('Label names to add'),
     },
     handler: async ({ pr_number, labels } = {}) => {
-      const localErr = await requireGitHubRepo();
+      const localErr = await requireGitHubApi();
       if (localErr) return localErr;
       const repo = await getRepo();
       if (!repo?.full_name) return fail('No repo linked to this session.');

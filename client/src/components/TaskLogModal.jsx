@@ -140,6 +140,9 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
             <div className="min-w-0 flex flex-col gap-0.5">
               <div className="flex items-center gap-1.5 min-w-0">
                 <TaskDockerIcon task={task} />
+                {task.id != null ? (
+                  <span className="text-faint font-mono text-[11px] shrink-0">#{task.id}</span>
+                ) : null}
                 <code className="text-sm text-heading truncate min-w-0">
                   {task.label || task.command}
                 </code>
@@ -169,7 +172,7 @@ export default function TaskLogModal({ task, session, onKill, onRetry, onClose }
             {!isTaskTerminal(task.status) && endLabel && (
               <span className={`text-xs font-medium ${endLabel.className}`}>{endLabel.text}</span>
             )}
-            {isTaskStoppable(task.status) && (
+            {onKill && isTaskStoppable(task.status) && (
               <button
                 onClick={() => onKill(task.id)}
                 className="text-danger hover:text-danger opacity-60 hover:opacity-100 transition-all"

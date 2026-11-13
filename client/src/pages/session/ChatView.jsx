@@ -40,16 +40,17 @@ import ChatQuickActionButton, {
 } from '../../components/chat/ChatQuickActionButton.tsx';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
-import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
 import PrDraftToggleButton, {
   canTogglePrDraftStatus,
 } from '../../components/PrDraftToggleButton.jsx';
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
-import { useGetSessionTodos } from '../../hooks/useGetSessionTodos.js';
+import { useComposerSessionTodos } from '../../hooks/useComposerSessionTodos.js';
 import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
@@ -123,6 +124,8 @@ export default function ChatView({
   activeAgent,
   agents = [],
   onSelectAgent,
+  tasks = [],
+  onSelectTask,
   systemPrompt,
   onViewChange,
   readonly,
@@ -138,6 +141,8 @@ export default function ChatView({
   pushing = false,
   onDeletePermanently,
 }) {
+  const { currentUser } = useCurrentUser();
+  const isOwner = isSessionOwner(session, currentUser);
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
   );
@@ -192,12 +197,17 @@ export default function ChatView({
     setComposerModelParams(agentSource?.model_params ?? null);
   }, [activeAgent?.id, agentSource?.model, agentSource?.model_params]);
 
-  const composerTurnFields = () =>
-    builderMessageCreateFields(session, {
-      model: composerModel,
-      model_params: composerModelParams,
+  const composerTurnFields = () => {
+    const model = isOwner ? composerModel : (agentSource?.model ?? composerModel);
+    const modelParams = isOwner
+      ? composerModelParams
+      : (agentSource?.model_params ?? composerModelParams);
+    return builderMessageCreateFields(session, {
+      model,
+      model_params: modelParams,
       agent: activeAgent,
     });
+  };
 
   const handleComposerModelChange = (modelId, modelParamsJson) => {
     setComposerModel(modelId);
@@ -206,7 +216,7 @@ export default function ChatView({
   };
 
   useEffect(() => {
-    if (!session?.id || modelsStale || !models.length) return;
+    if (!isOwner || !session?.id || modelsStale || !models.length) return;
     const current = agentSource?.model;
     if (current && models.some((m) => m.id === current)) return;
     const fallback = defaultModelForSdk(models);
@@ -235,6 +245,10 @@ export default function ChatView({
   const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
   const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
+  const runningAgentCount = useMemo(
+    () => agents.filter((a) => isAgentTurnActive(a.status)).length,
+    [agents]
+  );
   const agentDisplayName = activeAgent
     ? agentDisplayTitle(activeAgent)
     : agentSource?.agent_sdk
@@ -243,16 +257,24 @@ export default function ChatView({
   const hasInputMessage = Boolean(input.trim());
   const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
   const chatSessionId = session?.id;
+  const chatSessionIdRef = useRef(chatSessionId);
+  useEffect(() => {
+    chatSessionIdRef.current = chatSessionId;
+  }, [chatSessionId]);
 
   useEffect(() => {
     if (!chatSessionId) {
       setTiedLoops([]);
       return;
     }
+    let cancelled = false;
     const load = () => {
+      const sessionId = chatSessionId;
       loopsService
-        .find({ query: { session_id: chatSessionId, single_session: true, $limit: 50 } })
-        .then((d) => setTiedLoops(d.data ?? d))
+        .find({ query: { session_id: sessionId, single_session: true, $limit: 50 } })
+        .then((d) => {
+          if (!cancelled) setTiedLoops(d.data ?? d);
+        })
         .catch(() => {});
     };
     load();
@@ -260,6 +282,7 @@ export default function ChatView({
     loopsService.on('patched', load);
     loopsService.on('removed', load);
     return () => {
+      cancelled = true;
       loopsService.off('created', load);
       loopsService.off('patched', load);
       loopsService.off('removed', load);
@@ -268,16 +291,24 @@ export default function ChatView({
 
   const reloadQueuedMessages = useCallback(() => {
     if (!chatSessionId) return;
+    const sessionId = chatSessionId;
     queuedMessagesService
-      .find({ query: { session_id: chatSessionId, $sort: { created_at: 1 }, $limit: 50 } })
-      .then((res) => setQueue(res.data ?? res))
+      .find({ query: { session_id: sessionId, $sort: { created_at: 1 }, $limit: 50 } })
+      .then((res) => {
+        if (chatSessionIdRef.current !== sessionId) return;
+        setQueue(res.data ?? res);
+      })
       .catch(() => {});
   }, [chatSessionId]);
 
   useRefetchOnSseReconnect(reloadQueuedMessages, Boolean(chatSessionId));
 
   useEffect(() => {
-    if (!chatSessionId) return;
+    if (!chatSessionId) {
+      setQueue([]);
+      return;
+    }
+    setQueue([]);
     reloadQueuedMessages();
 
     const onCreated = (item) => {
@@ -327,22 +358,23 @@ export default function ChatView({
     return queue.filter((item) => item.agent_id === activeAgent.id);
   }, [queue, activeAgent]);
 
-  const { todos: sessionOpenTodos } = useGetSessionTodos(chatSessionId, {
-    enabled: chatSessionId != null,
-    openOnly: true,
-  });
+  const { todos: composerTodos, loading: composerTodosLoading } = useComposerSessionTodos(
+    chatSessionId,
+    activeAgent,
+    { enabled: chatSessionId != null }
+  );
 
   const sessionTodoCounts = useMemo(() => {
     let open = 0;
     let inProgress = 0;
-    for (const row of sessionOpenTodos) {
+    let completed = 0;
+    for (const row of composerTodos) {
       if (row.status === 'pending') open += 1;
       else if (row.status === 'in_progress') inProgress += 1;
+      else if (row.status === 'completed') completed += 1;
     }
-    return { open, inProgress };
-  }, [sessionOpenTodos]);
-
-  const sessionTodoTotal = sessionTodoCounts.open + sessionTodoCounts.inProgress;
+    return { open, inProgress, completed };
+  }, [composerTodos]);
 
   const runningBashDock = collectRunningBashToolsForDock(messages, chatDisplayItems, {
     sessionPath: session?.absolute_session_path,
@@ -754,6 +786,10 @@ export default function ChatView({
                     sessionId={session.id}
                     agentName={agentDisplayName}
                     pinnedRunningBashIds={pinnedRunningBashIds}
+                    agents={agents}
+                    onSelectAgent={onSelectAgent}
+                    tasks={tasks}
+                    onSelectTask={onSelectTask}
                   />
                 ) : (
                   <ChatMessage
@@ -766,6 +802,10 @@ export default function ChatView({
                     messageIndex={item.index}
                     allMessages={displayMessages}
                     pinnedRunningBashIds={pinnedRunningBashIds}
+                    agents={agents}
+                    onSelectAgent={onSelectAgent}
+                    tasks={tasks}
+                    onSelectTask={onSelectTask}
                   />
                 )
               )}
@@ -788,7 +828,7 @@ export default function ChatView({
                   </button>
                 </div>
               )}
-              {session?.archived_at && (
+              {session?.archived_at && isOwner && (
                 <div className="flex gap-2 flex-wrap py-2">
                   <Tooltip content="Recreate the worktree on the same branch and resume this session.">
                     <button
@@ -833,14 +873,16 @@ export default function ChatView({
                       }
                       className={CHAT_ACTION_BUTTON_CLASS}
                     />
-                    <ChatQuickActionButton
-                      icon={GitMerge}
-                      label="Merge"
-                      tooltip="Merge the pull request into the base branch."
-                      onClick={openMergeFlow}
-                      disabled={checkingUnpushedForMerge}
-                      className={CHAT_ACTION_BUTTON_CLASS}
-                    />
+                    {isOwner && (
+                      <ChatQuickActionButton
+                        icon={GitMerge}
+                        label="Merge"
+                        tooltip="Merge the pull request into the base branch."
+                        onClick={openMergeFlow}
+                        disabled={checkingUnpushedForMerge}
+                        className={CHAT_ACTION_BUTTON_CLASS}
+                      />
+                    )}
                     <ChatQuickActionButton
                       icon={CircleCheck}
                       label="Check CI"
@@ -889,12 +931,12 @@ export default function ChatView({
                         />
                       </>
                     )}
-                    {canTogglePrDraftStatus(session) && (
+                    {isOwner && canTogglePrDraftStatus(session) && (
                       <PrDraftToggleButton session={session} className={CHAT_ACTION_BUTTON_CLASS} />
                     )}
                     <ChatPushChangesButton
                       session={session}
-                      readonly={readonly}
+                      readonly={readonly || !isOwner}
                       onPush={onPush}
                       pushing={pushing}
                       commitsToPush={commitsToPush}
@@ -910,6 +952,10 @@ export default function ChatView({
                   items={runningBashDock}
                   sessionPath={session?.absolute_session_path}
                   sessionId={session?.id}
+                  agents={agents}
+                  onSelectAgent={onSelectAgent}
+                  tasks={tasks}
+                  onSelectTask={onSelectTask}
                 />
               )}
               <div ref={messagesEndRef} />
@@ -918,39 +964,43 @@ export default function ChatView({
         </ChatMessagesViewport>
 
         {error && (
-          <div className="shrink-0 px-3 py-2 bg-red-900/30 border-t border-red-700 text-danger text-xs">
+          <div className="shrink-0 px-3 py-2 bg-soft-danger border-t border-danger/60 text-danger text-xs">
             {error}
           </div>
         )}
 
         {!readonly && session && !showMessageComposer && activeSubagent && (
-          <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
-            <div className={`w-full ${CHAT_COLUMN_CLASS}`}>
-              <div className="rounded-lg border border-strong bg-control overflow-hidden">
-                <p className="px-3 pt-2.5 pb-1 text-xs text-faint text-center">
-                  This agent only accepts new messages via MCP. Switch to another agent to chat in
-                  Baguette.
-                </p>
-                <div className="px-2 sm:px-3 pb-2 pt-0.5">
-                  <SessionModelSelect
-                    agentConfigKey={
-                      agentSource?.agent_config_id != null
-                        ? String(agentSource.agent_config_id)
-                        : agentSource?.agent_sdk
-                    }
-                    model={composerModel}
-                    params={composerModelParams}
-                    models={models}
-                    agentConfigOptions={agentConfigOptions}
-                    configsLoading={configsLoading}
-                    modelsLoading={modelsLoading}
-                    disabled
-                    className="min-w-0"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <AgentMessageComposer
+            value=""
+            onChange={() => {}}
+            onSubmit={(e) => e.preventDefault()}
+            mcpReadOnly
+            disabled
+            hint="This agent only accepts new messages via MCP. Switch to another agent to chat in Baguette."
+            agentName={activeAgent?.name}
+            agentType={activeAgent?.agent_type}
+            agents={agents}
+            selectedAgentId={activeAgent?.id}
+            onSelectAgent={onSelectAgent}
+            runningAgentCount={runningAgentCount}
+            agentOptionCostLabel={agentUsageCostLabel}
+            agentHeaderEnd={
+              activeAgentCostLabel ? (
+                <span className="text-[11px] tabular-nums text-faint">{activeAgentCostLabel}</span>
+              ) : null
+            }
+            agentConfigKey={
+              agentSource?.agent_config_id != null
+                ? String(agentSource.agent_config_id)
+                : agentSource?.agent_sdk
+            }
+            model={composerModel}
+            params={composerModelParams}
+            models={models}
+            agentConfigOptions={agentConfigOptions}
+            configsLoading={configsLoading}
+            modelsLoading={modelsLoading}
+          />
         )}
         {!readonly && session && showMessageComposer && (
           <div className="relative z-[2] shrink-0 bg-page pb-3 sm:pb-4 pt-1">
@@ -969,10 +1019,12 @@ export default function ChatView({
                   onExpandedChange={setQueueDrawerExpanded}
                 />
               )}
-              {sessionTodoTotal > 0 && (
+              {composerTodos.length > 0 && (
                 <SessionTodosDrawer
                   sessionId={chatSessionId}
                   counts={sessionTodoCounts}
+                  todos={composerTodos}
+                  loading={composerTodosLoading}
                   expanded={todosDrawerExpanded}
                   onExpandedChange={setTodosDrawerExpanded}
                 />
@@ -1001,6 +1053,7 @@ export default function ChatView({
                     agents={agents}
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
+                    runningAgentCount={runningAgentCount}
                     agentOptionCostLabel={agentUsageCostLabel}
                     agentHeaderEnd={
                       activeAgentCostLabel ? (
@@ -1020,10 +1073,10 @@ export default function ChatView({
                     models={models}
                     cursorModelPrefs={cursorModelPrefs}
                     onCursorModelPrefChange={onCursorModelPrefChange}
-                    onModelChange={handleComposerModelChange}
-                    onAutoPushChange={onAutoPushChange}
+                    onModelChange={isOwner ? handleComposerModelChange : undefined}
+                    onAutoPushChange={isOwner ? onAutoPushChange : undefined}
                     autoPushDisabled={autoPushDisabled}
-                    onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
+                    onAgentConfigChange={readonly || !isOwner ? undefined : onAgentConfigChange}
                     agentConfigOptions={agentConfigOptions}
                     configsLoading={configsLoading}
                     modelsLoading={modelsLoading}

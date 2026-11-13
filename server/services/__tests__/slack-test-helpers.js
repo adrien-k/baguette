@@ -15,7 +15,7 @@ export async function insertUser(db, overrides = {}) {
   const [id] = await db('users').insert({
     github_id: 1000 + n,
     username: `user${n}`,
-    approved: true,
+    status: 'approved',
     ...overrides,
   });
   return id;

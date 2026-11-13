@@ -137,7 +137,7 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     <div className="space-y-4">
       <DefaultAgentPicker
         title="Builder default"
-        description="Pre-fills the dashboard builder and MCP CreateSession when you omit agent_config_id."
+        description="Pre-fills the dashboard builder. Agents use it for new sessions and loops when Agent-created sessions and subagents is set to inherit."
         inheritLabel="Use last session's model"
         inheritModeDescription="No account default; pre-fill from your most recent session."
         configId={agentConfigId}
@@ -162,7 +162,7 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         modelModeRadioName="reviewer-default-model-mode"
       />
       <SubagentDefaultPicker
-        description="How MCP StartSubagent resolves models."
+        description="Limits which model an agent can use when it starts a subagent or creates a session or loop."
         mode={subagentMode}
         onModeChange={setSubagentMode}
         configId={subagentConfigId}

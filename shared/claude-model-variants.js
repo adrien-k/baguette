@@ -1,10 +1,22 @@
 import { buildVariantsFromParamAxes } from './model-variant-axes.js';
 
-const DEFAULT_CLAUDE_PARAMS = [
-  { id: 'effort', value: 'high' },
-  { id: 'fast', value: 'false' },
-  { id: 'context', value: '200k' },
-];
+const CLAUDE_DEFAULT_FAST = 'false';
+const CLAUDE_DEFAULT_CONTEXT = '200k';
+
+/**
+ * Heuristic effort levels when the model list carries no SDK effort metadata
+ * (Anthropic gateway rows, older SDK lists). Mirrors Anthropic's per-model table:
+ *
+ * - `low|medium|high|xhigh|max` — Fable 5/5.1, Mythos 5/5.1, Opus 5.5/5/4.8/4.7,
+ *   Sonnet 5.5/5, Haiku 5.5
+ * - `max` without `xhigh` — Opus 4.6, Sonnet 4.6
+ * - `low|medium|high` — other effort-capable models (Opus 4.5, Sonnet 4/4.5, Haiku 4.5)
+ */
+const XHIGH_EFFORT_PATTERN = /opus-4-[78]|opus-5|sonnet-5|haiku-5|fable|mythos/;
+const MAX_EFFORT_PATTERN = /opus-4-[678]|opus-5|sonnet-4-6|sonnet-5|haiku-5|fable|mythos/;
+
+/** Anthropic API default effort is `medium` on Opus 5.5 and Haiku 5.5, `high` elsewhere. */
+const MEDIUM_DEFAULT_EFFORT_PATTERN = /opus-5-5|haiku-5-5/;
 
 function normalizeModelId(modelId) {
   return String(modelId ?? '')
@@ -56,19 +68,39 @@ export function claudeModelVariantAxes(modelInfo, modelId) {
 
 function claudeHeuristicSupportsEffort(modelId) {
   const id = normalizeModelId(modelId);
-  return /opus|sonnet|fable|haiku/.test(id);
+  return /opus|sonnet|fable|mythos|haiku/.test(id);
 }
 
 function claudeHeuristicEffortLevels(modelId) {
   const id = normalizeModelId(modelId);
   const levels = ['low', 'medium', 'high'];
-  if (/opus-4-7|sonnet-5|fable/.test(id)) levels.push('xhigh');
-  if (/opus-4-[678]|sonnet-4-6|fable/.test(id)) levels.push('max');
+  if (XHIGH_EFFORT_PATTERN.test(id)) levels.push('xhigh');
+  if (MAX_EFFORT_PATTERN.test(id)) levels.push('max');
   return levels;
 }
 
 function claudeHeuristicSupportsFast(modelId) {
   return normalizeModelId(modelId).includes('opus-4-7');
+}
+
+function claudeHeuristicDefaultEffort(modelId) {
+  if (MEDIUM_DEFAULT_EFFORT_PATTERN.test(normalizeModelId(modelId))) return 'medium';
+  return 'high';
+}
+
+/**
+ * Default effort for a model, clamped to the levels actually offered (SDK metadata may
+ * expose a narrower list than the heuristics would pick from).
+ *
+ * @param {string} modelId
+ * @param {string[] | undefined} effortValues
+ */
+function claudeDefaultEffort(modelId, effortValues) {
+  const preferred = claudeHeuristicDefaultEffort(modelId);
+  if (!Array.isArray(effortValues) || !effortValues.length) return preferred;
+  if (effortValues.includes(preferred)) return preferred;
+  if (effortValues.includes('high')) return 'high';
+  return effortValues[0];
 }
 
 /**
@@ -77,7 +109,12 @@ function claudeHeuristicSupportsFast(modelId) {
 export function attachClaudeModelVariants(model) {
   const axes = claudeModelVariantAxes(model._claudeModelInfo, model.id);
   if (!axes.length) return model;
-  const defaults = DEFAULT_CLAUDE_PARAMS.filter((p) => axes.some((a) => a.id === p.id));
-  const variants = buildVariantsFromParamAxes(axes, { defaultParams: defaults });
+  const effortValues = axes.find((a) => a.id === 'effort')?.values;
+  const defaultParams = [
+    { id: 'effort', value: claudeDefaultEffort(model.id, effortValues) },
+    { id: 'fast', value: CLAUDE_DEFAULT_FAST },
+    { id: 'context', value: CLAUDE_DEFAULT_CONTEXT },
+  ].filter((p) => axes.some((a) => a.id === p.id));
+  const variants = buildVariantsFromParamAxes(axes, { defaultParams });
   return { ...model, variants };
 }

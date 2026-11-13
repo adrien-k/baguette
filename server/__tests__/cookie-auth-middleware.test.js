@@ -1,5 +1,30 @@
 import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../logger.js', () => ({
+  default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const touchChain = {
+  where: vi.fn(function () {
+    return touchChain;
+  }),
+  select: vi.fn(function () {
+    return touchChain;
+  }),
+  first: vi.fn(async () => null),
+  update: vi.fn(async () => 1),
+};
+vi.mock('../db.js', () => ({
+  default: Object.assign(
+    vi.fn(() => touchChain),
+    {
+      fn: { now: vi.fn(() => new Date().toISOString()) },
+    }
+  ),
+}));
+
 import { cookieAuthMiddleware } from '../feathers.js';
+import logger from '../logger.js';
 
 /**
  * The shared cookie middleware classifies a signed session cookie into exactly one of
@@ -24,13 +49,18 @@ describe('cookieAuthMiddleware', () => {
   }
 
   function run(app, userId) {
-    const req = { signedCookies: userId != null ? { userId: String(userId) } : {}, headers: {} };
+    const req = {
+      signedCookies: userId != null ? { userId: String(userId) } : {},
+      headers: {},
+      socket: { remoteAddress: '127.0.0.1' },
+    };
+    const res = { clearCookie: vi.fn() };
     const next = vi.fn();
-    return cookieAuthMiddleware(app)(req, {}, next).then(() => ({ req, next }));
+    return cookieAuthMiddleware(app)(req, res, next).then(() => ({ req, res, next }));
   }
 
   it('sets req.user and req.feathers.user for an approved user', async () => {
-    const user = { id: 7, approved: 1 };
+    const user = { id: 7, status: 'approved' };
     const { req, next } = await run(feathersAppWith(user), 7);
 
     expect(req.user).toBe(user);
@@ -40,7 +70,7 @@ describe('cookieAuthMiddleware', () => {
   });
 
   it('sets only req.pendingUser for an unapproved user (no req.user, no req.feathers.user)', async () => {
-    const pending = { id: 8, approved: 0 };
+    const pending = { id: 8, status: 'pending' };
     const { req, next } = await run(feathersAppWith(pending), 8);
 
     expect(req.pendingUser).toBe(pending);
@@ -49,14 +79,16 @@ describe('cookieAuthMiddleware', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('sets neither identity for a deleted user (stale cookie) and records the 404', async () => {
-    const { req, next } = await run(feathersAppWith(null), 99);
+  it('treats a deleted user as anonymous, clears the stale cookie, and does not warn', async () => {
+    logger.warn.mockClear();
+    const { req, res, next } = await run(feathersAppWith(null), 99);
 
     expect(req.user).toBeUndefined();
     expect(req.pendingUser).toBeUndefined();
     expect(req.feathers.user).toBeUndefined();
-    expect(req.identityLookupError).toBeInstanceOf(Error);
-    expect(req.identityLookupError.code).toBe(404);
+    expect(req.identityLookupError).toBeUndefined();
+    expect(res.clearCookie).toHaveBeenCalledWith('userId');
+    expect(logger.warn).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
 
@@ -67,16 +99,19 @@ describe('cookieAuthMiddleware', () => {
         get: vi.fn(() => Promise.reject(boom)),
       }),
     };
-    const { req, next } = await run(app, 7);
+    logger.warn.mockClear();
+    const { req, res, next } = await run(app, 7);
 
     expect(req.user).toBeUndefined();
     expect(req.pendingUser).toBeUndefined();
     expect(req.identityLookupError).toBe(boom);
+    expect(res.clearCookie).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenCalledTimes(1);
   });
 
   it('sets neither identity without a cookie (anonymous)', async () => {
-    const { req, next } = await run(feathersAppWith({ id: 1, approved: 1 }), null);
+    const { req, next } = await run(feathersAppWith({ id: 1, status: 'approved' }), null);
 
     expect(req.user).toBeUndefined();
     expect(req.pendingUser).toBeUndefined();

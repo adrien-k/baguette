@@ -46,6 +46,16 @@ import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
+import { parseMcpServersMap } from '../mcp-server-config.js';
+import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
+import {
+  attachOwners,
+  attachViewerLastViewed,
+  handleSessionLastViewedPatch,
+  scopeByOwnerOrShared,
+  stampWasShared,
+  takeListScope,
+} from './shared-access.js';
 import {
   DEFAULT_PAGINATE,
   DATA_DIR,
@@ -59,7 +69,7 @@ import {
 } from '../agent-session-routing.js';
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
-import { isLocalRepo } from '../../../shared/repo-origin.js';
+import { gitAuthFromRepo, isLocalRepo } from '../../../shared/repo-origin.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import {
   computeSessionGitStatus,
@@ -78,6 +88,7 @@ import {
 import { patchAgentInternal } from './agents.service.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { getReviewAgentTurn } from '../review-agent-turn.js';
+import { listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
@@ -96,17 +107,11 @@ import {
 import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { delta, diffModelUsage } from '../turn-usage.js';
-import { applyCursorUsageDerivation } from '../../../shared/cursor-token-adjustment.js';
-import { estimateUsageRowCostUsd } from '../../lib/usage-row-cost.js';
-import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
-import { usagePricingSnapshotForCost } from '../../lib/usage-pricing-snapshot.js';
 import { getAgentById } from '../agents-db.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
 import { resolveSessionDiffResponse } from '../session-diff.js';
-import { readSessionPlanMarkdown } from '../session-plan.js';
 import {
   buildLoopUserMessageJson,
   loopUserRowSubtypeFromMessageJson,
@@ -147,10 +152,6 @@ const ARCHIVED_STATUS = 'archived';
 export class SessionsService extends KnexService {
   constructor(options) {
     super(options);
-    // Last result message's running totals per session, for differencing the next
-    // one. Held in memory only: a restart also restarts the agent's own counters,
-    // so an absent entry and a reset counter line up.
-    this._lastResultTotals = new Map();
     /** @type {Record<number, number>} When `onActivity` last ran per session (ms since epoch). */
     this._sessionActivityLastBumpMs = Object.create(null);
     /** Sessions the agent asked to close; archived once their current turn ends. */
@@ -238,37 +239,50 @@ export class SessionsService extends KnexService {
    * A session left in `running` has no agent process behind it after a reboot, so it
    * would otherwise sit there forever. Sessions in `approval` are waiting on the user and are
    * left unchanged. Sessions whose agent conversation can be resumed
-   * (`claude_session_id` / `cursor_agent_id`) are restarted by injecting a follow-up user message
+   * (stored SDK session id on the agent row) are restarted by injecting a follow-up user message
    * that tells the agent to pick up where it left off; the rest fall back to being marked stopped.
    * Reviewer agents left in `running` are resumed the same way when a SDK session id is stored on the agent row.
+   * Non-primary builders and subagents left mid-turn are captured before any resume: the
+   * primary's restart prompt reports them, then resumable ones are restarted the same way
+   * (after the primaries) and the rest are marked stopped.
    *
    * Call this after `app.setup()` — restarting reaches into the agent services, which need their
    * own `setup()` to have run first.
    */
   async restartInterruptedSessions() {
     const db = this.app.get('db');
-    const counts = { restarted: 0, stopped: 0, failed: 0 };
+    const counts = {
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    };
     await this._abandonUnfinishedProvisioning(counts);
     await this._completeInterruptedArchives(counts);
     await this._repairArchivedSessionStatus();
+    // Capture interrupted children before anything is resumed: the snapshot drives both
+    // the primary's restart prompt and the settle pass, and keeps children spawned by
+    // resumed primaries out of scope.
+    const staleChildren = await this._listStaleChildAgents();
     let interrupted;
     try {
       interrupted = await db('sessions')
         .join('agents', 'agents.session_id', 'sessions.id')
         .where('agents.is_primary', 1)
-        .whereIn('agents.status', ['running', 'approval'])
+        .where('agents.status', 'running')
         .whereNull('sessions.archived_at')
         .select('sessions.id', 'sessions.user_id', 'agents.id as builder_agent_id');
     } catch (err) {
       logger.error(err, 'Failed to load interrupted sessions on startup');
-      return counts;
+      interrupted = [];
     }
 
     // Sequential: each restart spawns an agent process, so a burst of them on boot would
     // compete for CPU and API rate limits.
     for (const session of interrupted) {
       try {
-        if (await this._restartInterruptedSession(session)) counts.restarted++;
+        if (await this._restartInterruptedSession(session, { staleChildren })) counts.restarted++;
         else counts.stopped++;
       } catch (err) {
         // Recovery is best-effort per session — one bad session must not strand the others.
@@ -276,7 +290,8 @@ export class SessionsService extends KnexService {
         logger.error({ err, sessionId: session.id }, 'Failed to recover interrupted session');
       }
     }
-    if (interrupted.length > 0) {
+    await this._settleStaleChildAgents(staleChildren, counts);
+    if (interrupted.length > 0 || staleChildren.length > 0) {
       logger.info(counts, 'Recovered interrupted session(s) on startup');
     }
 
@@ -289,7 +304,7 @@ export class SessionsService extends KnexService {
    * Restart a single interrupted session. Returns true if it was resumed, false if it was
    * only marked stopped (nothing to resume from).
    */
-  async _restartInterruptedSession(partial) {
+  async _restartInterruptedSession(partial, { staleChildren = [] } = {}) {
     const session = await this.app.get('db')('sessions').where({ id: partial.id }).first();
     if (!session) return false;
     const userParams = { user: { id: session.user_id } };
@@ -307,6 +322,13 @@ export class SessionsService extends KnexService {
       return false;
     }
 
+    const restartPrompt =
+      RESTART_PROMPT +
+      (await this._childRestartNote(
+        session,
+        staleChildren.filter((child) => child.session_id === session.id)
+      ));
+
     await this._postStatusMessage(session.id, userParams, 'Server restarted — resuming session');
     try {
       const created = await this.app.service('messages').create(
@@ -317,7 +339,7 @@ export class SessionsService extends KnexService {
           message_json: JSON.stringify({
             type: 'user',
             source: 'baguette',
-            message: { role: 'user', content: RESTART_PROMPT },
+            message: { role: 'user', content: restartPrompt },
             title: 'Server restarted',
           }),
           ...sessionMessageIdentity(builder),
@@ -391,6 +413,132 @@ export class SessionsService extends KnexService {
         .update({ status: ARCHIVED_STATUS });
     } catch (err) {
       logger.error(err, 'Failed to repair archived session status on startup');
+    }
+  }
+
+  /**
+   * Non-primary builders and subagents have no process behind them after a reboot and
+   * nothing re-spawns them. Capture every child left mid-turn (`running` only; `approval`
+   * children are waiting on the user and are left unchanged) in any session — the primary's
+   * restart prompt reports them, then
+   * `_settleStaleChildAgents` resumes the resumable ones and stops the rest.
+   */
+  async _listStaleChildAgents() {
+    const db = this.app.get('db');
+    try {
+      return await db('agents')
+        .whereIn('agent_type', ['builder', 'subagent'])
+        .where('is_primary', 0)
+        .where('status', 'running')
+        .select('*');
+    } catch (err) {
+      logger.error(err, 'Failed to load stale child agents on startup');
+      return [];
+    }
+  }
+
+  /** Resumability of a stale child agent (SDK transcript id persisted on its row). */
+  async _childAgentResumable(session, child) {
+    try {
+      const agentService = await getAgentServiceForAgent(this.app, child);
+      if (typeof agentService?.isInterruptedSessionResumable !== 'function') return false;
+      return await agentService.isInterruptedSessionResumable(session, { agent: child });
+    } catch (err) {
+      logger.warn(
+        { agentId: child.id, err: err?.message },
+        'Failed to check child agent resumability'
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Bullet list for the primary's restart prompt describing each interrupted child, so
+   * the resumed primary knows which of its subagents are coming back and which are gone.
+   */
+  async _childRestartNote(session, children) {
+    if (!children.length) return '';
+    const lines = [];
+    for (const child of children) {
+      const label = child.ref != null ? `#${child.ref} "${child.name}"` : `"${child.name}"`;
+      const resumable = await this._childAgentResumable(session, child);
+      lines.push(
+        resumable
+          ? `- ${label} — interrupted; it will be resumed automatically`
+          : `- ${label} — interrupted; it could not be resumed and was stopped`
+      );
+    }
+    return [
+      '',
+      'Other agents in this session were also interrupted by the restart:',
+      ...lines,
+      'Re-synchronize with ListSubagents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
+    ].join('\n');
+  }
+
+  /**
+   * Resume what can be resumed of the interrupted children captured at boot; stop the rest.
+   * Runs after the primaries are resumed: a resumed `notify_parent` child that finishes
+   * early must not wake its parent before the parent's own restart prompt has been
+   * injected (the wake would start a parent turn and the injection would be rejected as
+   * a turn mismatch).
+   */
+  async _settleStaleChildAgents(staleChildren, counts) {
+    for (const child of staleChildren) {
+      try {
+        const session = await this.app
+          .get('db')('sessions')
+          .where({ id: child.session_id })
+          .first();
+        const primary = session
+          ? await getPrimaryBuilderAgent(this.app.get('db'), session.id)
+          : null;
+        if (isBuilderAgentAwaitingUser(primary)) {
+          continue;
+        }
+        const dispatchable =
+          session && !session.archived_at && !(session.repo_full_name && !session.session_path);
+        if (!dispatchable || !(await this._childAgentResumable(session, child))) {
+          await this._stopChildAgent(child);
+          counts.childrenStopped++;
+          continue;
+        }
+        await this._restartChildAgent(session, child);
+        counts.childrenRestarted++;
+      } catch (err) {
+        logger.error({ err, agentId: child.id }, 'Failed to settle stale child agent on startup');
+      }
+    }
+  }
+
+  async _stopChildAgent(child) {
+    await this.app
+      .get('db')('agents')
+      .where({ id: child.id })
+      .update({ status: 'stopped', active_turn_id: null });
+  }
+
+  /** Same injection pattern as the primary restart: persist the nudge, then dispatch manually. */
+  async _restartChildAgent(session, child) {
+    const userParams = { user: { id: session.user_id } };
+    const created = await this.app.service('messages').create(
+      {
+        session_id: session.id,
+        type: 'user',
+        subtype: 'baguette',
+        message_json: JSON.stringify({
+          type: 'user',
+          source: 'baguette',
+          message: { role: 'user', content: RESTART_PROMPT },
+          title: 'Server restarted',
+        }),
+        ...sessionMessageIdentity(child),
+      },
+      { ...userParams, _skipAgentDispatch: true }
+    );
+    const childService = await getAgentServiceForAgent(this.app, child);
+    if (typeof childService?.handleMessageCreated === 'function') {
+      await childService.handleMessageCreated(created);
     }
   }
 
@@ -894,12 +1042,12 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
+      const auth = await sessionGitAuth(this.app, session, user);
       const currentBranch = session.remote_branch || session.local_branch;
       await Promise.all([
-        session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
+        session.base_branch ? gitFetch(cwd, auth, session.base_branch).catch(() => {}) : null,
         currentBranch && currentBranch !== session.base_branch
-          ? gitFetch(cwd, token, currentBranch).catch(() => {})
+          ? gitFetch(cwd, auth, currentBranch).catch(() => {})
           : null,
       ]);
       const commitSha =
@@ -950,8 +1098,8 @@ export class SessionsService extends KnexService {
     try {
       if (!commitSha && session.base_branch) {
         const user = await this.app.service('users').get(session.user_id, {});
-        const token = getGithubToken(user);
-        await gitFetch(cwd, token, session.base_branch).catch(() => {});
+        const auth = await sessionGitAuth(this.app, session, user);
+        await gitFetch(cwd, auth, session.base_branch).catch(() => {});
       }
       const files = commitSha
         ? await gitShowCommitNumstat(cwd, commitSha)
@@ -1103,12 +1251,12 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
+      const auth = await sessionGitAuth(this.app, session, user);
       const currentBranch = session.remote_branch || session.local_branch;
       await Promise.all([
-        session.base_branch ? gitFetch(cwd, token, session.base_branch).catch(() => {}) : null,
+        session.base_branch ? gitFetch(cwd, auth, session.base_branch).catch(() => {}) : null,
         currentBranch && currentBranch !== session.base_branch
-          ? gitFetch(cwd, token, currentBranch).catch(() => {})
+          ? gitFetch(cwd, auth, currentBranch).catch(() => {})
           : null,
       ]);
       const commits = await gitLogSinceBase(cwd, session.base_branch);
@@ -1126,18 +1274,13 @@ export class SessionsService extends KnexService {
     const cwd = resolveDataDirRelativePath(session.session_path);
     try {
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
+      const auth = await sessionGitAuth(this.app, session, user);
       const branch = data.branch || session.remote_branch || session.local_branch;
-      if (branch) await gitFetch(cwd, token, branch).catch(() => {});
+      if (branch) await gitFetch(cwd, auth, branch).catch(() => {});
       return await gitLocalAndRemoteSha(cwd, branch || null);
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
     }
-  }
-
-  async getPlan(_data, params) {
-    const session = params.resolvedSession;
-    return readSessionPlanMarkdown(this.app, session);
   }
 
   /**
@@ -1236,7 +1379,11 @@ export class SessionsService extends KnexService {
       const cwd = resolveDataDirRelativePath(session.session_path);
       const user = await this.app.service('users').get(session.user_id, {});
       const token = getGithubToken(user);
-      if (!token) throw new BadRequest('No GitHub token configured');
+      const auth = await sessionGitAuth(this.app, session, user);
+      if (auth.mode === 'local') throw new BadRequest('This repository has no remote to push to');
+      if (auth.mode === 'github' && !auth.token) {
+        throw new BadRequest('No GitHub token configured');
+      }
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
       const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
@@ -1248,7 +1395,7 @@ export class SessionsService extends KnexService {
       let pushedBranch = branch || session.remote_branch || session.local_branch;
       if (forceGit || commitsToPush > 0) {
         try {
-          const result = await gitPush(cwd, token, {
+          const result = await gitPush(cwd, auth, {
             branch,
             force: forceMode === 'lease',
             forceOverwrite: forceMode === 'force',
@@ -1276,9 +1423,10 @@ export class SessionsService extends KnexService {
         pushOk = true;
         return { ok: true };
       }
-      if (session.label || session.pr_description != null || session.pr_number) {
+      if (token && (session.label || session.pr_description != null || session.pr_number)) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
         let userPrefix = '';
+        let currentBaseBranch;
         if (session.pr_number) {
           try {
             const existingPr = await getOpenPRByNumber(
@@ -1287,6 +1435,7 @@ export class SessionsService extends KnexService {
               session.pr_number
             );
             userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+            currentBaseBranch = existingPr?.base?.ref;
           } catch {
             // non-fatal — proceed without user prefix
           }
@@ -1307,6 +1456,7 @@ export class SessionsService extends KnexService {
           ),
           head: session.pr_number ? undefined : head,
           baseBranch: session.base_branch,
+          currentBaseBranch,
         });
         if (!session.pr_number) {
           await this.app
@@ -1381,8 +1531,13 @@ export class SessionsService extends KnexService {
         : null;
       if (!repo) throw new BadRequest('Session has no associated repository');
       const user = await this.app.service('users').get(session.user_id, {});
-      const token = getGithubToken(user);
-      if (!token) throw new BadRequest('No GitHub token configured');
+      const auth = gitAuthFromRepo(repo, {
+        token: getGithubToken(user),
+        userId: user?.id,
+      });
+      if (auth.mode === 'github' && !auth.token) {
+        throw new BadRequest('No GitHub token configured');
+      }
 
       const { branch, localBranch } = await resolveRestoreWorktreeBranches(
         resolveRepoPath(repo),
@@ -1394,7 +1549,7 @@ export class SessionsService extends KnexService {
         repo,
         branch,
         session.short_id,
-        token,
+        auth,
         { localBranch, baseBranch: session.base_branch }
       );
       dbUpdate.local_branch = localBranch;
@@ -1452,6 +1607,7 @@ export class SessionsService extends KnexService {
       }
       await trx('usage').where({ session_id: sessionId }).update({ session_id: null });
       await trx('queued_messages').where({ session_id: sessionId }).delete();
+      await trx('session_user_state').where({ session_id: sessionId }).delete();
       await trx('session_messages').where({ session_id: sessionId }).delete();
       await trx('session_issues').where({ session_id: sessionId }).delete();
       await trx('session_todos').where({ session_id: sessionId }).delete();
@@ -1463,7 +1619,7 @@ export class SessionsService extends KnexService {
     });
 
     this.app.service('tasks').deleteSessionTasks(sessionId);
-    this._lastResultTotals.delete(sessionId);
+    this.resetUsageTotals(sessionId);
 
     this.emit('removed', { id: sessionId });
     return { ok: true, id: sessionId };
@@ -1517,192 +1673,46 @@ export class SessionsService extends KnexService {
   }
 
   /**
-   * Incremental Claude cost/tokens for one finished turn's final SDK `result`.
-   * Called from claude-agent after the query stream ends (see `_recordClaudeTurnUsage`).
+   * Insert a usage row assembled by an SDK plugin / agent service, then optionally
+   * add `costUsd` to `sessions.total_cost_usd`. Derivation (Claude token deltas,
+   * Cursor token adjustment, model-rate pricing) stays on the plugin.
    *
-   * `total_cost_usd` and `modelUsage` are running totals for the query, so this
-   * turn's share is the difference from the last result for `totalsKey`. See
-   * server/services/turn-usage.js.
-   *
-   * TODO: should rather be implemented on the claude-agent service
-   * @returns {Promise<number>} cost delta written to `usage.cost_usd`
+   * @param {{ id: number, user_id: number, repo_full_name?: string|null }} session
+   * @param {Record<string, unknown>} rowFields usage columns (`cost_usd`, tokens, `agent_sdk`, …)
+   * @param {{ patchSessionCost?: boolean, costUsd?: number }} [opts]
+   * @returns {Promise<number>} cost used for the optional session total patch
    */
-  async recordClaudeUsage(
-    session,
-    result,
-    { turnModel, totalsKey, patchSessionCost, agentConfigId, agentId } = {}
-  ) {
-    if (!session || !result) return 0;
-    const key = totalsKey ?? session.id;
-    const prev = this._lastResultTotals.get(key) ?? { cost: 0, models: {} };
-    const costUpdate = delta(prev.cost, result.total_cost_usd);
-    const turnUsage = diffModelUsage(prev.models, result.modelUsage);
-    this._lastResultTotals.set(key, {
-      cost: Number(result.total_cost_usd) || 0,
-      models: result.modelUsage ?? {},
-    });
-    if (costUpdate <= 0 && turnUsage.total_tokens <= 0) return 0;
-
+  async insertUsageRow(session, rowFields, { patchSessionCost = false, costUsd } = {}) {
+    if (!session) return 0;
     const db = this.app.get('db');
-    const agent =
-      agentId != null
-        ? await getAgentById(db, agentId)
-        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
-    const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const snapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
-
-    const row = {
+    const cost = Number(costUsd ?? rowFields.cost_usd ?? 0) || 0;
+    await db('usage').insert({
       session_id: session.id,
       user_id: session.user_id,
       repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(costUpdate, 0),
-      agent_sdk: agent?.agent_sdk ?? 'claude',
-      agent_type,
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      model: snapshot.model,
-      model_params: snapshot.model_params,
-      agent_config_id: requireAgentConfigId(agentConfigId),
-    };
-    if (agent?.id != null) row.agent_id = agent.id;
-    await db('usage').insert(row);
-
-    if (patchSessionCost && costUpdate > 0) {
+      ...rowFields,
+    });
+    if (patchSessionCost && cost > 0) {
       const latest = await db('sessions').where({ id: session.id }).first();
       await this.app
         .service('sessions')
         .patch(
           session.id,
-          { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUpdate },
+          { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + cost },
           { provider: undefined, user: { id: session.user_id } }
         );
     }
-    return costUpdate;
+    return cost;
   }
 
   /**
-   * One Cursor turn: token totals from the run stream plus USD estimated from our pricing table.
-   * Local Cursor agents cannot report billed USD via `agent.getUsage()` (feature_unavailable).
-   *
-   * TODO: should rather be implemented on the cursor-agent service
-   * @param {Record<string, unknown>} turnUsage per-turn accumulator; derivation mutates it in place
-   * @returns {Promise<number>} cost delta written to `usage.cost_usd`
+   * Drop SDK running-total maps for a chat session or review turn. Plugins that
+   * do not track totals no-op (`resetUsageTotals` is optional).
    */
-  async recordCursorUsage(
-    session,
-    turnUsage,
-    { turnModel, patchSessionCost, agentConfigId, agentId } = {}
-  ) {
-    if (!session || !turnUsage) return 0;
-
-    applyCursorUsageDerivation(turnUsage);
-    const db = this.app.get('db');
-    const agent =
-      agentId != null
-        ? await getAgentById(db, agentId)
-        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
-    const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot);
-
-    if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
-
-    const row = {
-      session_id: session.id,
-      user_id: session.user_id,
-      repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(costUsd, 0),
-      agent_sdk: 'cursor',
-      agent_type,
-      agent_config_id: requireAgentConfigId(agentConfigId),
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      raw_token_usage: turnUsage.raw_token_usage,
-      model: pricingSnapshot.model,
-      model_params: pricingSnapshot.model_params,
-    };
-    if (agent?.id != null) row.agent_id = agent.id;
-    await db('usage').insert(row);
-
-    if (!patchSessionCost || costUsd <= 0) return costUsd;
-
-    const latest = await db('sessions').where({ id: session.id }).first();
-    await this.app
-      .service('sessions')
-      .patch(
-        session.id,
-        { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUsd },
-        { provider: undefined, user: { id: session.user_id } }
-      );
-    return costUsd;
-  }
-
-  /**
-   * One Pi turn: token totals from `turn_end` events, USD from the shared agent pricing table.
-   * @param {Record<string, unknown>} turnUsage
-   * @returns {Promise<number>}
-   */
-  async recordPiUsage(
-    session,
-    turnUsage,
-    { turnModel, patchSessionCost, agentConfigId, agentId } = {}
-  ) {
-    if (!session || !turnUsage) return 0;
-
-    const db = this.app.get('db');
-    const agent =
-      agentId != null
-        ? await getAgentById(db, agentId)
-        : await db('agents').where({ session_id: session.id, is_primary: 1 }).first();
-    const agent_type = normalizeUsageAgentType(agent?.agent_type);
-    const pricingSnapshot = usagePricingSnapshotForCost(turnModel, turnUsage);
-    const costUsd = await estimateUsageRowCostUsd(db, turnUsage, pricingSnapshot);
-
-    if (costUsd <= 0 && (turnUsage.total_tokens ?? 0) <= 0) return 0;
-
-    const row = {
-      session_id: session.id,
-      user_id: session.user_id,
-      repo_full_name: session.repo_full_name,
-      cost_usd: Math.max(costUsd, 0),
-      agent_sdk: 'pi',
-      agent_type,
-      agent_config_id: requireAgentConfigId(agentConfigId),
-      input_tokens: turnUsage.input_tokens,
-      output_tokens: turnUsage.output_tokens,
-      cache_read_tokens: turnUsage.cache_read_tokens,
-      cache_write_tokens: turnUsage.cache_write_tokens,
-      reasoning_tokens: turnUsage.reasoning_tokens,
-      total_tokens: turnUsage.total_tokens,
-      model: pricingSnapshot.model,
-      model_params: pricingSnapshot.model_params,
-    };
-    if (agent?.id != null) row.agent_id = agent.id;
-    await db('usage').insert(row);
-
-    if (!patchSessionCost || costUsd <= 0) return costUsd;
-
-    const latest = await db('sessions').where({ id: session.id }).first();
-    await this.app
-      .service('sessions')
-      .patch(
-        session.id,
-        { total_cost_usd: parseFloat(latest?.total_cost_usd ?? 0) + costUsd },
-        { provider: undefined, user: { id: session.user_id } }
-      );
-    return costUsd;
-  }
-
-  resetClaudeUsageTotals(totalsKey) {
-    this._lastResultTotals.delete(totalsKey);
+  resetUsageTotals(totalsKey) {
+    for (const plugin of listSdkPlugins()) {
+      plugin.resetUsageTotals?.(totalsKey);
+    }
   }
 
   /** Archive `sessionId` after its current turn completes (so the final reply is still delivered). */
@@ -1788,7 +1798,8 @@ export class SessionsService extends KnexService {
     if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
-    if (!getGithubToken(user)) return;
+    const auth = await sessionGitAuth(this.app, session, user);
+    if (auth.mode === 'github' && !auth.token) return;
 
     let commitsToPush;
     try {
@@ -1854,6 +1865,7 @@ export class SessionsService extends KnexService {
 }
 
 async function requireOwnSession(context) {
+  if (context.params.skipOwnerPatch) return context;
   const db = context.app.get('db');
   const id = context.id;
   const userId = context.params.user?.id;
@@ -1864,10 +1876,28 @@ async function requireOwnSession(context) {
   const session = await db('sessions').where({ id, user_id: userId }).first();
   if (!session) throw new NotFound('Session not found');
   context.params.ownSession = session;
+  context.params.was_shared = !!session.is_shared;
   // Clear params.knex: scopeByUser set it to a SELECT builder which gets consumed
   // by _patch's UPDATE step, causing _findOrGet to return 0 rows. Ownership is
   // already verified above, so the plain id-based query in _patch is sufficient.
   delete context.params.knex;
+  return context;
+}
+
+async function requireOwnResolvedSession(context) {
+  const userId = context.params.user?.id;
+  if (!userId || !context.params.provider) return context;
+  const session = context.params.resolvedSession;
+  if (!session || session.user_id !== userId) {
+    throw new NotFound('Session not found');
+  }
+  return context;
+}
+
+function coerceIsSharedOnWrite(context) {
+  if ('is_shared' in (context.data || {})) {
+    context.data.is_shared = context.data.is_shared ? 1 : 0;
+  }
   return context;
 }
 
@@ -1885,6 +1915,16 @@ async function sessionRepoIsLocal(app, session) {
   if (!session?.repo_id) return isLocalRepo(session?.repo_full_name);
   const repo = await app.get('db')('repos').where({ id: session.repo_id }).first();
   return isLocalRepo(repo ?? session.repo_full_name);
+}
+
+async function sessionGitAuth(app, session, user) {
+  const repo = session?.repo_id
+    ? await app.get('db')('repos').where({ id: session.repo_id }).first()
+    : null;
+  return gitAuthFromRepo(repo, {
+    token: getGithubToken(user),
+    userId: user?.id ?? session?.user_id ?? null,
+  });
 }
 
 /**
@@ -2056,8 +2096,9 @@ async function provisionSessionEnvironment(app, session, params) {
   const token = getGithubToken(user);
   const repo = await db('repos').where({ full_name: repoFullName }).first();
   if (!repo) throw new BadRequest(`Repository "${repoFullName}" is not registered`);
+  const auth = gitAuthFromRepo(repo, { token, userId: user?.id });
 
-  const userParams = { provider: undefined, user };
+  const userParams = { provider: undefined, user, _skipPrMetadataTouch: true };
   let patch = {};
 
   if (continueExistingBranch) {
@@ -2077,7 +2118,7 @@ async function provisionSessionEnvironment(app, session, params) {
       repo,
       workingBranch,
       shortId,
-      token,
+      auth,
       { localBranch, baseBranch: baseBranchForWorktree }
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
@@ -2105,7 +2146,7 @@ async function provisionSessionEnvironment(app, session, params) {
       repo,
       baseBranch,
       shortId,
-      token
+      auth
     );
     await configureWorktreeGitIdentity(absoluteWorktreePath, user);
     patch.session_path = path.relative(DATA_DIR, absoluteWorktreePath);
@@ -2392,6 +2433,8 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
     is_preview_users_public: hasPreview ? (session.is_preview_users_public ?? true) : false,
     is_global: Boolean(session.is_global),
+    mcp_servers: parseMcpServersMap(session.mcp_servers),
+    is_shared: Boolean(session.is_shared),
     codeserver_url:
       absoluteSessionPath && !isGlobalSession(session)
         ? getCodeserverUrl(absoluteSessionPath)
@@ -2451,6 +2494,27 @@ function serializePlugins(context) {
   return context;
 }
 
+async function snapshotMcpServers(context) {
+  const userId = context.params.user?.id ?? context.data.user_id;
+  const db = context.app.get('db');
+  if (context.method === 'patch') {
+    if (context.data.mcp_servers === undefined) return context;
+    const existing = await db('sessions').where({ id: context.id }).first();
+    context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+      override: context.data.mcp_servers,
+      existing: existing?.mcp_servers,
+    });
+    return context;
+  }
+  const requestedLock = context.data.mcp_servers_locked === true;
+  delete context.data.mcp_servers_locked;
+  context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+    override: context.data.mcp_servers,
+    locked: requestedLock && !context.params.provider,
+  });
+  return context;
+}
+
 function normalizeModelFields(context) {
   for (const key of ['model_params', 'review_model_params']) {
     if (context.data[key] !== undefined) {
@@ -2474,15 +2538,9 @@ function normalizeModelFields(context) {
   return context;
 }
 
-const BUILDER_AGENT_SESSION_FIELDS = [
-  'agent_config_id',
-  'agent_sdk',
-  'model',
-  'model_params',
-  'claude_session_id',
-  'cursor_agent_id',
-  'pi_session_id',
-];
+function builderAgentSessionFields() {
+  return ['agent_config_id', 'agent_sdk', 'model', 'model_params', ...storedSessionIdColumns()];
+}
 const REVIEWER_AGENT_SESSION_FIELDS = [
   'review_agent_config_id',
   'review_agent_sdk',
@@ -2498,7 +2556,7 @@ const REVIEW_SESSION_FIELD_TO_AGENT = {
 
 async function stashBuilderAgentFieldsOnCreate(context) {
   const builderStash = {};
-  for (const key of BUILDER_AGENT_SESSION_FIELDS) {
+  for (const key of builderAgentSessionFields()) {
     if (context.data[key] !== undefined) {
       builderStash[key] = context.data[key];
       delete context.data[key];
@@ -2550,9 +2608,9 @@ async function mergeSessionAgentFields(context) {
       out.agent_sdk = builder.agent_sdk;
       out.model = builder.model;
       out.model_params = builder.model_params;
-      out.claude_session_id = builder.claude_session_id;
-      out.cursor_agent_id = builder.cursor_agent_id;
-      out.pi_session_id = builder.pi_session_id;
+      for (const col of storedSessionIdColumns()) {
+        out[col] = builder[col] ?? null;
+      }
       out.builder_agent_id = builder.id;
     }
     if (reviewer) {
@@ -2584,7 +2642,7 @@ async function redirectAgentFieldsOnSessionPatch(context) {
   const db = context.app.get('db');
   const sessionId = context.id;
   const builderPatch = {};
-  for (const key of BUILDER_AGENT_SESSION_FIELDS) {
+  for (const key of builderAgentSessionFields()) {
     if (context.data[key] !== undefined) {
       builderPatch[key] = context.data[key];
       delete context.data[key];
@@ -2607,9 +2665,9 @@ async function redirectAgentFieldsOnSessionPatch(context) {
       const prevSdk = builder.agent_sdk || 'claude';
       const nextSdk = builderPatch.agent_sdk ?? prevSdk;
       if (nextSdk !== prevSdk) {
-        builderPatch.claude_session_id = null;
-        builderPatch.cursor_agent_id = null;
-        builderPatch.pi_session_id = null;
+        for (const col of storedSessionIdColumns()) {
+          builderPatch[col] = null;
+        }
       }
       await patchAgentInternal(context.app, builder.id, builderPatch, userId);
     }
@@ -2673,7 +2731,6 @@ export function registerSessionsService(app, path = 'sessions') {
       'setSlackApprovals',
       'branchCommits',
       'shas',
-      'getPlan',
       'createDefaultBuilderMessage',
       'merge',
       'setPrDraft',
@@ -2747,23 +2804,30 @@ function applyGroupSort(context) {
 
 const sessionsHooks = {
   before: {
-    all: [requireUser, sanitizeSessionFindQuery, scopeByUser],
-    find: [applySessionListFilters, applyGroupSort],
+    all: [requireUser, sanitizeSessionFindQuery],
+    find: [takeListScope, scopeByOwnerOrShared, applySessionListFilters, applyGroupSort],
+    get: [scopeByOwnerOrShared],
     create: [
+      scopeByUser,
+      coerceIsSharedOnWrite,
       ensureShortId,
       seedLastActivityOnCreate,
       validateSessionCreate,
       assertAgentConfigOnCreate,
       serializePlugins,
+      snapshotMcpServers,
       extractInitialFiles,
       normalizeModelFields,
       stashBuilderAgentFieldsOnCreate,
     ],
     patch: [
+      handleSessionLastViewedPatch,
       requireOwnSession,
+      coerceIsSharedOnWrite,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
+      snapshotMcpServers,
       normalizeModelFields,
     ],
     stop: [resolveSessionFromData],
@@ -2777,31 +2841,44 @@ const sessionsHooks = {
     setSlackApprovals: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
-    getPlan: [resolveSessionFromData],
     createDefaultBuilderMessage: [
       normalizeCreateDefaultBuilderMessageData,
       schemaHooks.validateData(createDefaultBuilderMessageDataValidator),
       resolveSessionFromData,
     ],
-    merge: [resolveSessionFromData],
-    setPrDraft: [resolveSessionFromData],
-    push: [resolveSessionFromData],
-    archive: [resolveSessionFromData],
-    restore: [resolveSessionFromData],
+    merge: [resolveSessionFromData, requireOwnResolvedSession],
+    setPrDraft: [resolveSessionFromData, requireOwnResolvedSession],
+    push: [resolveSessionFromData, requireOwnResolvedSession],
+    archive: [resolveSessionFromData, requireOwnResolvedSession],
+    restore: [resolveSessionFromData, requireOwnResolvedSession],
     getPrDetails: [resolveSessionFromData],
     previewStatus: [resolveSessionFromData],
-    startPreviewService: [resolveSessionFromData],
+    startPreviewService: [resolveSessionFromData, requireOwnResolvedSession],
   },
   after: {
-    find: [mergeSessionAgentFields, addHasWebserver],
-    get: [refreshPrStatusAfterGet, mergeSessionAgentFields, addHasWebserver],
+    find: [attachOwners, attachViewerLastViewed, mergeSessionAgentFields, addHasWebserver],
+    get: [
+      attachOwners,
+      attachViewerLastViewed,
+      refreshPrStatusAfterGet,
+      mergeSessionAgentFields,
+      addHasWebserver,
+    ],
     create: [
+      attachOwners,
       insertPrimaryBuilderAfterCreate,
       mergeSessionAgentFields,
       scheduleSessionProvisioning,
       addHasWebserver,
     ],
-    patch: [mergeSessionAgentFields, syncSessionSettingsAfterPatch, addHasWebserver],
+    patch: [
+      attachOwners,
+      attachViewerLastViewed,
+      mergeSessionAgentFields,
+      syncSessionSettingsAfterPatch,
+      addHasWebserver,
+      stampWasShared,
+    ],
   },
 };
 
@@ -2829,7 +2906,10 @@ async function persistSystemPrompt(context) {
   if (!session) return context;
   if (!session.repo_full_name && !isGlobalSession(session)) return context;
 
-  const promptAppend = await buildSystemPromptAppend(session);
+  const promptAppend = await buildSystemPromptAppend(session, {
+    db: context.app.get('db'),
+    app: context.app,
+  });
 
   if (!promptAppend) return context;
 

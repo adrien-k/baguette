@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Archive, Check, Loader2, X } from 'lucide-react';
 import { sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
-import { fetchSessionCommitsToPush } from '../utils/sessionCommitsToPush.js';
+import { fetchSessionGitStatus } from '../utils/sessionCommitsToPush.js';
 import ArchiveConfirmModal from './ArchiveConfirmModal.jsx';
+import { formatCommitsNotOnAnyRemote } from './UnpushedCommitsWarning.jsx';
 
 export default function ArchiveSession({ session, onArchive }) {
   const [archiving, setArchiving] = useState(false);
@@ -67,9 +68,9 @@ export default function ArchiveSession({ session, onArchive }) {
 
     setChecking(true);
     try {
-      const commitsToPush = await fetchSessionCommitsToPush(session);
-      setUnpushedCount(commitsToPush);
-      if (commitsToPush > 0 || hasDraftPr) {
+      const { commitsNotOnAnyRemote } = await fetchSessionGitStatus(session);
+      setUnpushedCount(commitsNotOnAnyRemote);
+      if (commitsNotOnAnyRemote > 0 || hasDraftPr) {
         setPendingConfirm(false);
         setShowConfirmModal(true);
         setChecking(false);
@@ -85,13 +86,11 @@ export default function ArchiveSession({ session, onArchive }) {
   };
 
   const confirmTitle = (() => {
-    if (checking) return 'Checking for unpushed commits…';
+    if (checking) return 'Checking for commits not on any remote…';
     if (archiving || isArchiving) return 'Archiving…';
     const parts = ['Confirm archive'];
     if (unpushedCount > 0) {
-      parts.push(
-        `${unpushedCount} unpushed commit${unpushedCount === 1 ? '' : 's'} will stay local only`
-      );
+      parts.push(`${formatCommitsNotOnAnyRemote(unpushedCount)} will stay local only`);
     }
     return parts.join(' · ');
   })();

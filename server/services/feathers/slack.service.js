@@ -1,5 +1,5 @@
 import { BadRequest, NotFound } from 'feathers/errors';
-import { encryptFields, decryptFields, requireUser } from './hooks.js';
+import { encryptFields, decryptFields, requireUser, requireAdmin } from './hooks.js';
 import { authTest, slackEventsUrl, slackRedirectUri } from '../slack.js';
 import { decrypt, encrypt } from '../../lib/encrypt.js';
 
@@ -215,7 +215,7 @@ function addInstallInfo(context) {
 
 const slackHooks = {
   before: {
-    all: [requireUser],
+    all: [requireUser, requireAdmin],
     create: [
       pickSlackAppFields,
       requireNameOnCreate,

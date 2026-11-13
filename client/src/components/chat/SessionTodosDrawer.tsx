@@ -2,26 +2,36 @@ import { ChevronDown, ChevronUp, ListTodo } from 'lucide-react';
 import SessionTodosPanel from '../session/SessionTodosPanel.jsx';
 import type { SessionTodoCounts } from './session-todo-counts.ts';
 
+type ComposerTodo = {
+  id?: number;
+  ref?: number;
+  status?: string;
+};
+
 function drawerSummary(counts: SessionTodoCounts): string {
   const parts = [];
   if (counts.open > 0) parts.push(`${counts.open} open`);
   if (counts.inProgress > 0) parts.push(`${counts.inProgress} in progress`);
+  if (counts.completed > 0) parts.push(`${counts.completed} completed`);
   return parts.join(' · ');
 }
 
 export default function SessionTodosDrawer({
   sessionId,
   counts,
+  todos,
+  loading = false,
   expanded,
   onExpandedChange,
 }: {
   sessionId?: number | string | null;
   counts: SessionTodoCounts;
+  todos: ComposerTodo[];
+  loading?: boolean;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
 }) {
-  const total = counts.open + counts.inProgress;
-  if (total <= 0 || sessionId == null) return null;
+  if (todos.length <= 0 || sessionId == null) return null;
 
   const summary = drawerSummary(counts);
 
@@ -48,7 +58,12 @@ export default function SessionTodosDrawer({
           role="region"
           aria-label="Session todos"
         >
-          <SessionTodosPanel sessionId={sessionId} emptyMessage="No open todos." openOnly />
+          <SessionTodosPanel
+            sessionId={sessionId}
+            emptyMessage="No open todos."
+            todos={todos}
+            loading={loading}
+          />
         </div>
       )}
     </div>

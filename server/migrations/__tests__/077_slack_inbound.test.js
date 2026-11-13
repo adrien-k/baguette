@@ -34,7 +34,7 @@ const insertSession = (userId) =>
   });
 
 async function seed() {
-  const [userId] = await db('users').insert({ github_id: 1, username: 'u', approved: true });
+  const [userId] = await db('users').insert({ github_id: 1, username: 'u', status: 'approved' });
   const [appId] = await db('slack_apps').insert({ name: 'a', bot_token_encrypted: 'x' });
   return { userId, appId };
 }
@@ -101,7 +101,7 @@ describe('077: inbound Slack', () => {
   });
 
   it('rolls back and re-applies cleanly', async () => {
-    await db.migrate.down();
+    await db.migrate.down({ name: '077_slack_inbound.js' });
     expect(await tables()).not.toContain('slack_threads');
     expect(await tables()).not.toContain('slack_user_links');
     expect(await columns('slack_apps')).not.toContain('client_id');

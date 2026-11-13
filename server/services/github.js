@@ -34,15 +34,56 @@ export function sanitizeGitError(token, err) {
   return err;
 }
 
-async function gitWithToken(token, args, opts) {
-  if (!token) {
-    return execFileAsync('git', args, opts);
+/**
+ * Normalize a git auth argument: a token string (or null) is GitHub HTTPS / local,
+ * an object `{ mode, token, userId }` selects github | local.
+ */
+export function normalizeGitAuth(tokenOrAuth) {
+  if (tokenOrAuth && typeof tokenOrAuth === 'object') {
+    const mode = tokenOrAuth.mode ?? (tokenOrAuth.token ? 'github' : 'local');
+    return { ...tokenOrAuth, mode };
   }
+  if (typeof tokenOrAuth === 'string' && tokenOrAuth) {
+    return { mode: 'github', token: tokenOrAuth };
+  }
+  return { mode: 'local', token: tokenOrAuth ?? null };
+}
+
+/** Auth for a repo: GitHub HTTPS extraheader when a token is present, else plain git. */
+function authForRepo(_repo, tokenOrAuth) {
+  return normalizeGitAuth(tokenOrAuth);
+}
+
+/**
+ * Build git argv + exec options for `gitWithAuth` without running git.
+ * GitHub mode adds the HTTPS extraheader; local mode is plain git.
+ */
+export function buildGitAuthInvocation(auth, args, opts = {}) {
+  if (auth?.mode === 'github' && auth.token) {
+    return {
+      args: [...gitAuthArgs(auth.token), ...args],
+      opts,
+    };
+  }
+  return { args: [...args], opts };
+}
+
+export async function gitWithAuth(auth, args, opts = {}) {
+  const resolved = normalizeGitAuth(auth);
+  const invocation = buildGitAuthInvocation(resolved, args, opts);
   try {
-    return await execFileAsync('git', [...gitAuthArgs(token), ...args], opts);
+    return await execFileAsync('git', invocation.args, invocation.opts);
   } catch (err) {
-    throw sanitizeGitError(token, err);
+    if (resolved.mode === 'github' && resolved.token) {
+      throw sanitizeGitError(resolved.token, err);
+    }
+    throw err;
   }
+}
+
+/** Thin wrapper for GitHub-HTTPS / local call sites that still pass a token string. */
+export async function gitWithToken(token, args, opts) {
+  return gitWithAuth({ mode: token ? 'github' : 'local', token }, args, opts);
 }
 
 let _lfsAvailable = null;
@@ -62,6 +103,10 @@ function repoUrl(repoFullName) {
   const url = gitHubOriginFromFullName(repoFullName);
   if (!url) throw new Error(`Not a GitHub repository full name: ${repoFullName}`);
   return url;
+}
+
+function cloneRemoteUrl(repo) {
+  return repoUrl(repo.full_name);
 }
 
 /** Alphanumeric and dashes only, for directory names. Stored on repo record. */
@@ -213,12 +258,14 @@ export function clearBranchesCache(scope) {
 
 /**
  * Ensures the main repo clone exists on disk (`repos/<stripped>/main`, full checkout).
- * If already cloned, returns the path immediately. Otherwise clones from GitHub.
+ * If already cloned, returns the path immediately. Otherwise clones from the remote.
  *
- * @param {object} repo - { full_name, stripped_name, repo_path? }
- * @param {string} token
+ * @param {object} repo - { full_name, stripped_name, repo_path?, origin?, access_mode? }
+ * @param {string | null | { mode?: string, token?: string, userId?: number }} tokenOrAuth
+ *   String token / null keeps GitHub HTTPS / local behavior.
  */
-export async function ensureMainClone(repo, token) {
+export async function ensureMainClone(repo, tokenOrAuth) {
+  const auth = authForRepo(repo, tokenOrAuth);
   const mainRepoPath = resolveRepoPath(repo) ?? mainRepoPathForStripped(repo.stripped_name);
 
   try {
@@ -234,12 +281,12 @@ export async function ensureMainClone(repo, token) {
   } catch {
     /* path may not exist */
   }
-  await gitWithToken(token, ['clone', repoUrl(repo.full_name), mainRepoPath], {
+  await gitWithAuth(auth, ['clone', cloneRemoteUrl(repo), mainRepoPath], {
     stdio: 'pipe',
   });
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'fetch', '--all'], { cwd: mainRepoPath, stdio: 'pipe' });
+      await gitWithAuth(auth, ['lfs', 'fetch', '--all'], { cwd: mainRepoPath, stdio: 'pipe' });
     } catch {
       /* repo may not use LFS */
     }
@@ -350,7 +397,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   // 2. Capture the exact remote SHA so we can update the (potentially stale) local branch ref.
   const tempRef = `refs/baguette-fetch/${worktreeId}`;
   try {
-    await gitWithToken(token, ['fetch', 'origin', `+${branch}:${tempRef}`], {
+    await gitWithAuth(token, ['fetch', 'origin', `+${branch}:${tempRef}`], {
       cwd: mainRepoPath,
       stdio: 'pipe',
     });
@@ -382,7 +429,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   // Also fetch the base branch so origin/<baseBranch> is up to date for merge-base diffs
   if (baseBranch && baseBranch !== branch) {
     try {
-      await gitWithToken(
+      await gitWithAuth(
         token,
         ['fetch', 'origin', `+${baseBranch}:refs/remotes/origin/${baseBranch}`],
         { cwd: mainRepoPath, stdio: 'pipe' }
@@ -394,7 +441,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
 
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'fetch', 'origin', branch], {
+      await gitWithAuth(token, ['lfs', 'fetch', 'origin', branch], {
         cwd: mainRepoPath,
         stdio: 'pipe',
       });
@@ -566,7 +613,7 @@ export async function getOpenPR(token, repoFullName, branch) {
  */
 export async function remoteHasNewCommits(worktreePath, remoteBranch, token, _repoFullName) {
   try {
-    await gitWithToken(token, ['fetch', 'origin', remoteBranch], {
+    await gitWithAuth(token, ['fetch', 'origin', remoteBranch], {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -585,7 +632,7 @@ export async function remoteHasNewCommits(worktreePath, remoteBranch, token, _re
 
 export async function gitPull(worktreePath, remoteBranch, token) {
   try {
-    await gitWithToken(token, ['ls-remote', '--exit-code', 'origin', remoteBranch], {
+    await gitWithAuth(token, ['ls-remote', '--exit-code', 'origin', remoteBranch], {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -593,13 +640,13 @@ export async function gitPull(worktreePath, remoteBranch, token) {
     return { ok: true, message: 'Remote branch not found, skipping pull' };
   }
 
-  await gitWithToken(token, ['pull', '--no-rebase', 'origin', remoteBranch], {
+  await gitWithAuth(token, ['pull', '--no-rebase', 'origin', remoteBranch], {
     cwd: worktreePath,
     stdio: 'pipe',
   });
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'pull'], { cwd: worktreePath, stdio: 'pipe' });
+      await gitWithAuth(token, ['lfs', 'pull'], { cwd: worktreePath, stdio: 'pipe' });
     } catch {
       /* repo may not use LFS */
     }
@@ -611,7 +658,7 @@ export async function gitFetch(worktreePath, token, branch) {
   const args = branch
     ? ['fetch', 'origin', `+${branch}:refs/remotes/origin/${branch}`]
     : ['fetch', '--all'];
-  const { stdout: output } = await gitWithToken(token, args, {
+  const { stdout: output } = await gitWithAuth(token, args, {
     cwd: worktreePath,
     stdio: 'pipe',
   });
@@ -642,7 +689,7 @@ export async function gitPush(
   pushArgs.push('origin', refspec);
 
   try {
-    await gitWithToken(token, pushArgs, {
+    await gitWithAuth(token, pushArgs, {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -672,6 +719,25 @@ export async function gitPush(
 const MAX_DIFF_BUFFER_SIZE = 5 * 1024 * 1024;
 
 /**
+ * Returns the number of commits on HEAD that are not on any remote-tracking ref.
+ * Commits already reachable from another remote branch (for example a stacked
+ * parent) are not counted, even if `origin/<session remote_branch>` was never pushed.
+ * @returns {Promise<number>}
+ */
+export async function gitCommitsNotOnAnyRemote(worktreePath) {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
+      { maxBuffer: 256 }
+    );
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Returns the number of local commits not yet on the session remote branch.
  * When `remoteBranch` is set, counts `origin/<remoteBranch>..HEAD` so a unique
  * local worktree branch is not treated as fully unpushed. Falls back to
@@ -697,12 +763,7 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
         /* origin/<remoteBranch> missing — count commits not on any remote */
       }
     }
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
-      { maxBuffer: 256 }
-    );
-    return parseInt(stdout.trim(), 10) || 0;
+    return gitCommitsNotOnAnyRemote(worktreePath);
   } catch {
     return 0;
   }
@@ -1957,17 +2018,28 @@ export async function getPRWorkflowLogs(
 }
 
 /**
+ * GitHub emits a second pull_request.synchronize when a PATCH includes `base`,
+ * even if the branch name is unchanged and a git push just updated HEAD.
+ * Only retarget when the desired base differs from the PR's current base.
+ */
+export function prBasePatchField(baseBranch, currentBaseBranch) {
+  if (!baseBranch || !currentBaseBranch || baseBranch === currentBaseBranch) return undefined;
+  return baseBranch;
+}
+
+/**
  * Create or update a pull request via the GitHub API.
  * @returns {{ url: string, number: number }}
  */
 export async function upsertPR(
   token,
-  { repoFullName, prNumber, title, body, head, baseBranch, reopen = false }
+  { repoFullName, prNumber, title, body, head, baseBranch, currentBaseBranch, reopen = false }
 ) {
   if (prNumber) {
     const patchBody = { title, body };
     if (reopen) patchBody.state = 'open';
-    if (baseBranch) patchBody.base = baseBranch;
+    const base = prBasePatchField(baseBranch, currentBaseBranch);
+    if (base) patchBody.base = base;
     const res = await githubFetch(
       `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
       {

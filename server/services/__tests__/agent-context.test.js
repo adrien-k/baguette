@@ -22,7 +22,7 @@ describe('loadOwnedAgentConfigDecrypted', () => {
   let configId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 1, username: 'owner', approved: true });
+    await db('users').insert({ github_id: 1, username: 'owner', status: 'approved' });
     owner = await db('users').where({ username: 'owner' }).first();
     configId = await insertTestAgentConfig(db, owner.id, { apiKey: 'sk-ant-owner' });
   });
@@ -34,7 +34,7 @@ describe('loadOwnedAgentConfigDecrypted', () => {
   });
 
   it("does not decrypt another user's agent config", async () => {
-    await db('users').insert({ github_id: 2, username: 'attacker', approved: true });
+    await db('users').insert({ github_id: 2, username: 'attacker', status: 'approved' });
     const attacker = await db('users').where({ username: 'attacker' }).first();
     await expect(loadOwnedAgentConfigDecrypted(configId, attacker.id, db)).rejects.toThrow(
       'Agent configuration not found'

@@ -6,8 +6,8 @@ import { loopsService, sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { isFeathersNotFound } from '../utils/feathersErrors.js';
 import { useFilterRoutes } from './useFilterRoutes.js';
-import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE } from '../context/RepoContext.jsx';
-import { isAllSessionsPath } from '@baguette/shared/session-scope.js';
+import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE, SHARED_SCOPE } from '../context/RepoContext.jsx';
+import { isAllSessionsPath, isSharedWithMePath } from '@baguette/shared/session-scope.js';
 import {
   describeSchedule,
   formatLoopRunSubtitle,
@@ -28,6 +28,7 @@ export function useLoopWorkspace({ routeLoopId, isNewLoopRoute = false, loops = 
   const { loopEditUrl, loopsHomeUrl } = useFilterRoutes();
   const { selectedRepo } = useRepoContext();
   const fromAllSessions = isAllSessionsPath(pathname);
+  const fromSharedWithMe = isSharedWithMePath(pathname);
 
   const workspaceOpen = isNewLoopRoute || Boolean(routeLoopId);
 
@@ -112,20 +113,24 @@ export function useLoopWorkspace({ routeLoopId, isNewLoopRoute = false, loops = 
 
   const builderIsGlobal = useMemo(() => {
     if (editingLoop) return !!editingLoop.is_global;
-    if (fromAllSessions) return false;
+    if (fromAllSessions || fromSharedWithMe) return false;
     return selectedRepo === GLOBAL_SCOPE || pathname.startsWith('/global/loops');
-  }, [editingLoop, fromAllSessions, selectedRepo, pathname]);
+  }, [editingLoop, fromAllSessions, fromSharedWithMe, selectedRepo, pathname]);
 
   const builderRepoFullName = useMemo(() => {
     if (editingLoop) {
       return editingLoop.is_global ? null : editingLoop.repo_full_name;
     }
-    if (fromAllSessions || selectedRepo === ALL_REPOS) return null;
-    if (selectedRepo === GLOBAL_SCOPE) return null;
+    if (fromAllSessions || fromSharedWithMe || selectedRepo === ALL_REPOS) return null;
+    if (selectedRepo === GLOBAL_SCOPE || selectedRepo === SHARED_SCOPE) return null;
     return selectedRepo;
-  }, [editingLoop, fromAllSessions, selectedRepo]);
+  }, [editingLoop, fromAllSessions, fromSharedWithMe, selectedRepo]);
 
-  const builderAllowRepoChoice = fromAllSessions || selectedRepo === ALL_REPOS;
+  const builderAllowRepoChoice =
+    fromAllSessions ||
+    fromSharedWithMe ||
+    selectedRepo === ALL_REPOS ||
+    selectedRepo === SHARED_SCOPE;
 
   const setLoopTab = (tab) => {
     setSearchParams(

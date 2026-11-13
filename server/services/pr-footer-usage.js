@@ -1,5 +1,5 @@
-import { parseModelParamsJson } from '../../shared/cursor-model-pricing.js';
 import { normalizeUsageAgentType } from '../../shared/usage-agent-type.js';
+import { getSdkPlugin } from '../agent-sdks/registry.js';
 
 function formatTokens(n) {
   const value = Number(n) || 0;
@@ -16,8 +16,8 @@ function formatUsd(n) {
   return `$${value.toFixed(0)}`;
 }
 
-function cursorFastFromModelParams(modelParams) {
-  return parseModelParamsJson(modelParams).fast === 'true';
+function usageLabelExtras(row) {
+  return getSdkPlugin(row.agent_sdk)?.usageLabelExtras?.(row) ?? {};
 }
 
 /**
@@ -52,7 +52,8 @@ async function querySessionUsageByModel(db, sessionId) {
 }
 
 /**
- * Merge usage rows that share agent type, agent_sdk, model, and Cursor fast flag (from stored model_params).
+ * Merge usage rows that share agent type, agent_sdk, model, and plugin extras
+ * (e.g. Cursor `fast` from `usageLabelExtras`).
  *
  * @param {ReturnType<typeof querySessionUsageByModel> extends Promise<infer T> ? T : never} rows
  */
@@ -61,7 +62,7 @@ export function mergeUsageForPrFooter(rows) {
 
   for (const row of rows) {
     const agent_type = normalizeUsageAgentType(row.agent_type);
-    const fast = row.agent_sdk === 'cursor' ? cursorFastFromModelParams(row.model_params) : false;
+    const fast = usageLabelExtras(row).fast === true;
     const key = `${agent_type}\0${row.agent_sdk}\0${row.model}\0${fast ? '1' : '0'}`;
     const prev = merged.get(key);
     if (prev) {
@@ -140,4 +141,44 @@ export async function loadSessionFooterUsageLines(db, session) {
   const rows = await querySessionUsageByModel(db, session.id);
   if (!rows.length) return [];
   return formatPrFooterUsageLines(mergeUsageForPrFooter(rows));
+}
+
+function formatSlackModelLabel(row) {
+  if (row.fast) {
+    return `${row.model} (Fast)`;
+  }
+  return row.model;
+}
+
+/**
+ * One-line models + session cost for Slack message footers.
+ *
+ * @param {ReturnType<typeof mergeUsageForPrFooter>} rows
+ * @returns {string | null}
+ */
+export function formatSlackFooterUsageSummary(rows) {
+  if (!rows.length) return null;
+  const modelLabels = [];
+  const seen = new Set();
+  const sorted = [...rows].sort((a, b) => b.cost_usd - a.cost_usd);
+  for (const row of sorted) {
+    const label = formatSlackModelLabel(row);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    modelLabels.push(label);
+  }
+  const totalCost = rows.reduce((sum, row) => sum + row.cost_usd, 0);
+  return `${modelLabels.join(', ')} · ${formatUsd(totalCost)}`;
+}
+
+/**
+ * @param {import('knex').Knex} db
+ * @param {Record<string, unknown>} session
+ * @returns {Promise<string | null>}
+ */
+export async function loadSessionSlackFooterUsageSummary(db, session) {
+  if (!session?.id) return null;
+  const rows = await querySessionUsageByModel(db, session.id);
+  if (!rows.length) return null;
+  return formatSlackFooterUsageSummary(mergeUsageForPrFooter(rows));
 }

@@ -214,29 +214,88 @@ describe('buildSeries by agent_type', () => {
       ['reviewer', 3],
     ]);
   });
+
+  it('labels subagent series', () => {
+    const mixed = [
+      row('2026-09-20', 'acme/alpha', 1, 5),
+      { ...row('2026-09-20', 'acme/alpha', 1, 2), agent_type: 'subagent' },
+    ];
+    const { series } = buildSeries(mixed, 'agent_type');
+    expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
+      ['builder', 'Builder', 5],
+      ['subagent', 'Subagent', 2],
+    ]);
+  });
+});
+
+describe('buildSeries by user', () => {
+  it('stacks one series per user', () => {
+    const mixed = [
+      { ...row('2026-09-20', 'acme/alpha', 1, 5), user_id: 1, username: 'alice' },
+      { ...row('2026-09-20', 'acme/beta', 1, 3), user_id: 2, username: 'bob' },
+      { ...row('2026-09-21', 'acme/alpha', 1, 2), user_id: 1, username: 'alice' },
+    ];
+    const { series, byDay } = buildSeries(mixed, 'user');
+    expect(series.map((s) => [s.key, s.label, s.total])).toEqual([
+      ['1', 'alice', 7],
+      ['2', 'bob', 3],
+    ]);
+    expect([...byDay.get('2026-09-20')]).toEqual([
+      ['1', 5],
+      ['2', 3],
+    ]);
+  });
 });
 
 describe('aggregateUsage', () => {
-  it('collapses days into one row per repo, agent, and activity', () => {
+  it('collapses days into one row per repository by default', () => {
     const aggregated = aggregateUsage([
       row('2026-09-20', 'acme/alpha', 1, 3),
       row('2026-09-21', 'acme/alpha', 1, 2),
       { ...row('2026-09-21', 'acme/alpha', 1, 4), agent_type: 'reviewer' },
     ]);
-    expect(aggregated.map((r) => [r.repo_full_name, r.agent_type, r.total_tokens])).toEqual([
-      ['acme/alpha', 'builder', 5],
-      ['acme/alpha', 'reviewer', 4],
+    expect(aggregated.map((r) => [r.repo_full_name, r.total_tokens])).toEqual([['acme/alpha', 9]]);
+  });
+
+  it('groups by user when dimension is user', () => {
+    const aggregated = aggregateUsage(
+      [
+        { ...row('2026-09-20', 'acme/alpha', 1, 3), user_id: 1, username: 'alice' },
+        { ...row('2026-09-21', 'acme/beta', 1, 2), user_id: 1, username: 'alice' },
+        { ...row('2026-09-21', 'acme/alpha', 1, 4), user_id: 2, username: 'bob' },
+      ],
+      { dimension: 'user' }
+    );
+    expect(aggregated.map((r) => [r.username, r.total_tokens])).toEqual([
+      ['alice', 5],
+      ['bob', 4],
     ]);
   });
 
-  it('can split the same repo/agent/activity across models', () => {
+  it('groups by agent type including subagent', () => {
+    const aggregated = aggregateUsage(
+      [
+        row('2026-09-20', 'acme/alpha', 1, 3),
+        { ...row('2026-09-21', 'acme/alpha', 1, 2), agent_type: 'subagent' },
+        { ...row('2026-09-21', 'acme/alpha', 1, 4), agent_type: 'reviewer' },
+      ],
+      { dimension: 'agent_type' }
+    );
+    expect(aggregated.map((r) => [r.agent_type, r.total_tokens])).toEqual([
+      ['reviewer', 4],
+      ['builder', 3],
+      ['subagent', 2],
+    ]);
+  });
+
+  it('can split across models', () => {
     const aggregated = aggregateUsage(
       [
         { ...row('2026-09-20', 'acme/alpha', 1, 3), model: 'opus' },
         { ...row('2026-09-21', 'acme/alpha', 1, 2), model: 'opus' },
         { ...row('2026-09-21', 'acme/alpha', 1, 4), model: 'haiku' },
       ],
-      { byModel: true }
+      { dimension: 'model' }
     );
     expect(aggregated.map((r) => [r.model, r.total_tokens])).toEqual([
       ['opus', 5],

@@ -14,6 +14,7 @@ export function serializeTodo(row) {
     id: row.id,
     ref: row.ref,
     session_id: row.session_id,
+    plan_id: row.plan_id ?? null,
     title: row.title ?? null,
     content: row.content,
     status: row.status,

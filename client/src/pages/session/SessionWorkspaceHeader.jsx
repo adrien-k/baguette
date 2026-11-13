@@ -8,6 +8,8 @@ import SessionStatusIndicator from '../../components/SessionStatusIndicator.jsx'
 import SessionTools from '../../components/SessionTools.jsx';
 import { SessionLoopBadge } from '../../components/SessionLoopIndicator.jsx';
 import { sessionHeaderTitle } from './sessionListDisplay.js';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 
 const CREATE_WORKSPACE_HEADER_TITLE_CLASS =
   'min-w-0 truncate text-sm font-semibold leading-snug text-fg md:text-base';
@@ -27,9 +29,12 @@ export default function SessionWorkspaceHeader({
   handlePush,
   pushing,
   commitsToPush,
+  pushToolReadonly = false,
   session,
   prInfo,
 }) {
+  const { currentUser } = useCurrentUser();
+  const canManageSession = isSessionOwner(headerSession || session, currentUser);
   return (
     <div className="shrink-0 border-b border-line bg-surface pl-3 pr-3 py-2 md:pl-6">
       {isLoopsView ? (
@@ -44,11 +49,11 @@ export default function SessionWorkspaceHeader({
             </div>
           </div>
         ) : routeLoopId ? (
-          <div className="flex items-start justify-between gap-2 min-h-11">
+          <div className="flex items-center justify-between gap-2 min-h-11">
             <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
               <Link
                 to={loopsHomeUrl}
-                className="md:hidden shrink-0 text-faint hover:text-secondary mt-0.5"
+                className="md:hidden shrink-0 text-faint hover:text-secondary"
               >
                 <ChevronLeft className="w-5 h-5" />
               </Link>
@@ -113,12 +118,9 @@ export default function SessionWorkspaceHeader({
           </div>
         </div>
       ) : headerSession ? (
-        <div className="flex items-start justify-between gap-2 min-h-11">
+        <div className="flex items-center justify-between gap-2 min-h-11">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <Link
-              to={homeUrl}
-              className="md:hidden shrink-0 text-faint hover:text-secondary mt-0.5"
-            >
+            <Link to={homeUrl} className="md:hidden shrink-0 text-faint hover:text-secondary">
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -173,7 +175,7 @@ export default function SessionWorkspaceHeader({
             session={headerSession}
             tools={['pr', 'preview', 'code', 'push']}
             hideLabelBelowSm
-            readonly={!!headerSession.archived_at || headerSession.status === 'archiving'}
+            readonly={pushToolReadonly || !canManageSession}
             onPush={handlePush}
             pushing={pushing}
             commitsToPush={commitsToPush}

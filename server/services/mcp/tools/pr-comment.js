@@ -7,7 +7,7 @@ import { ok, fail } from '../lib/result.js';
 const execFileAsync = promisify(execFile);
 
 export function createPrCommentTool(ctx) {
-  const { getSession, getToken, withSessionHeader, absoluteSessionPath } = ctx;
+  const { getSession, getToken, requireGitHubApi, withSessionHeader, absoluteSessionPath } = ctx;
   return {
     name: 'PrComment',
     description:
@@ -31,6 +31,8 @@ export function createPrCommentTool(ctx) {
         ),
     },
     handler: async ({ body, path: filePath, line, side }) => {
+      const localErr = await requireGitHubApi();
+      if (localErr) return localErr;
       const session = await getSession();
       if (!session?.pr_number) return fail('No pull request associated with this session.');
       const token = await getToken();

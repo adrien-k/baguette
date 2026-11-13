@@ -33,6 +33,8 @@ import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import { diffFileDisplayPath, diffFileScrollId } from '../../utils/paths.js';
 const DIFF_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-5xl mx-auto';
 import { DIFF_FILE_BODY_CLASS, DIFF_LINE_WRAP_CLASS } from '../../utils/diffLineWrap.js';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 
 const DIFF_HUNK_ROW = 'text-info bg-info/10';
 const DIFF_HUNK_NUM = 'text-info/70';
@@ -535,6 +537,8 @@ export default function DiffView({
   cursorModelPrefs,
   onCursorModelPrefChange,
 }) {
+  const { currentUser } = useCurrentUser();
+  const canManageSession = isSessionOwner(session, currentUser);
   const { primaryBuilder } = useSessionAgents(session?.id);
   const composerAgentConfigId = useMemo(
     () => primaryBuilder?.agent_config_id ?? session?.agent_config_id,
@@ -545,7 +549,9 @@ export default function DiffView({
   const modelsLoading = modelsStale && !models.length;
 
   useEffect(() => {
-    if (!session?.id || modelsStale || !models.length || !primaryBuilder?.id) return;
+    if (!canManageSession || !session?.id || modelsStale || !models.length || !primaryBuilder?.id) {
+      return;
+    }
     const current = primaryBuilder.model;
     if (current && models.some((m) => m.id === current)) return;
     const fallback = defaultModelForSdk(models);
@@ -656,8 +662,8 @@ export default function DiffView({
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
-        onModelChange={onModelChange}
-        onAgentConfigChange={readonly ? undefined : onAgentConfigChange}
+        onModelChange={canManageSession ? onModelChange : undefined}
+        onAgentConfigChange={readonly || !canManageSession ? undefined : onAgentConfigChange}
         agentConfigOptions={agentConfigOptions}
         configsLoading={configsLoading}
         modelsLoading={modelsLoading}
@@ -867,8 +873,8 @@ export default function DiffView({
         <div className="shrink-0 border-t border-line px-4 py-3">
           <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} flex items-center justify-end gap-2`}>
             <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
-            {!readonly && <PrDraftToggleButton session={session} />}
-            {!isMerged && canMerge && !readonly && (
+            {canManageSession && !readonly && <PrDraftToggleButton session={session} />}
+            {!isMerged && canMerge && !readonly && canManageSession && (
               <button
                 onClick={openMergeFlow}
                 disabled={checkingUnpushedForMerge}

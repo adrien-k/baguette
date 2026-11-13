@@ -8,8 +8,9 @@ import { toAbortableNodeHandler } from './lib/feathers-node-handler.js';
 import { getClientIp } from './lib/client-ip.js';
 
 import logger from './logger.js';
-import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
+import { SDK_QUERY_CLOSED_MESSAGE } from './agent-sdks/claude/claude-agent-sdk-constants.js';
 import { createAuthRoutes } from './routes/auth.js';
+import createMcpOAuthRoutes from './routes/mcp-oauth.js';
 import { PUBLIC_HOST, ENCRYPTION_KEY } from './config.js';
 import createSettingsRoutes from './routes/settings.js';
 import createMcpRoutes from './routes/mcp.js';
@@ -32,6 +33,7 @@ import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
 import { LoopScheduler } from './services/loop-scheduler.js';
 import db from './db.js';
+import { seedInstanceSettings, getGithubAppConfig } from './lib/instance-settings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +98,7 @@ expressApp.use(createMcpRoutes(feathersApp));
 expressApp.use(createSlackRoutes(feathersApp, slackBot));
 expressApp.use(createSettingsRoutes(requireAuth));
 expressApp.use(createAuthRoutes(feathersApp));
+expressApp.use(createMcpOAuthRoutes(feathersApp));
 expressApp.use(createImagesRoutes());
 
 if (process.env.VITE_SERVER_ENABLED === 'true') {
@@ -158,6 +161,13 @@ feathersApp.setup(server).then(
   async () => {
     slackBot.start();
     slackSocket.start();
+    await seedInstanceSettings(db);
+    const github = await getGithubAppConfig(db);
+    if (!github.configured) {
+      logger.warn(
+        'GitHub App not configured — GitHub sign-in disabled until credentials are saved.'
+      );
+    }
     await feathersApp.service('sessions').restartInterruptedSessions();
     loopScheduler.start();
   },

@@ -12,7 +12,7 @@ async function seedSession(sessionShortId) {
   const [userId] = await db('users').insert({
     github_id: 1,
     username: 't',
-    approved: true,
+    status: 'approved',
   });
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   const sessionId = await insertTestSession(db, {

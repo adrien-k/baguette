@@ -8,14 +8,19 @@ import { registerSlackService } from '../feathers/slack.service.js';
 
 const db = createTestDb();
 
-const params = { provider: 'rest', user: { id: 1 } };
+const params = { provider: 'rest', user: { id: 1, admin: 1 } };
 const unauthParams = { provider: 'rest' };
+
+function expectForbidden(promise) {
+  return expect(promise).rejects.toThrow(/Admin required|Forbidden/);
+}
 
 let app;
 
 beforeEach(async () => {
   app = feathers();
   app.set('db', db);
+  await db('users').insert({ github_id: 1, username: 'admin', status: 'approved', admin: 1 });
   registerSlackService(app);
   await app.setup();
 });
@@ -32,12 +37,16 @@ describe('find', () => {
   it('rejects unauthenticated access', async () => {
     await expect(service().find(unauthParams)).rejects.toThrow('Not authenticated');
   });
+
+  it('rejects non-admin access', async () => {
+    await expectForbidden(service().find({ provider: 'rest', user: { id: 1, admin: 0 } }));
+  });
 });
 
 describe('who can manage Slack apps', () => {
-  const member = { provider: 'rest', user: { id: 2 } };
+  const member = { provider: 'rest', user: { id: 2, admin: 1 } };
 
-  it('any signed-in user can, as everyone can approve accounts', async () => {
+  it('an admin can manage apps', async () => {
     const created = await service().create({ name: 'acme', bot_token: 'xoxb-one' }, member);
     expect((await service().get(created.id, member)).name).toBe('acme');
     await service().patch(created.id, { name: 'renamed' }, member);
@@ -339,8 +348,8 @@ describe('OAuth and Socket Mode credentials', () => {
 describe('linkUser', () => {
   it('connects a Slack user to a Baguette user, and moves the link when asked again', async () => {
     const created = await service().create({ name: 'acme', bot_token: 'xoxb-one' }, params);
-    const [first] = await db('users').insert({ github_id: 1, username: 'a', approved: true });
-    const [second] = await db('users').insert({ github_id: 2, username: 'b', approved: true });
+    const [first] = await db('users').insert({ github_id: 11, username: 'a', status: 'approved' });
+    const [second] = await db('users').insert({ github_id: 12, username: 'b', status: 'approved' });
 
     await service().linkUser({ slack_app_id: created.id, slack_user_id: 'U1', user_id: first });
     await service().linkUser({ slack_app_id: created.id, slack_user_id: 'U1', user_id: second });

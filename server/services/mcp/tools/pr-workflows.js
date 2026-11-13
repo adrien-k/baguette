@@ -24,7 +24,7 @@ const workflowStatus = z.enum([
 ]);
 
 export function createPrWorkflowsTool(ctx) {
-  const { getSession, getToken, requireGitHubRepo } = ctx;
+  const { getSession, getToken, requireGitHubApi } = ctx;
   return {
     name: 'PrWorkflows',
     description:
@@ -75,7 +75,7 @@ export function createPrWorkflowsTool(ctx) {
       wait_timeout_seconds: waitTimeoutSeconds,
       per_page: perPage,
     } = {}) => {
-      const localErr = await requireGitHubRepo();
+      const localErr = await requireGitHubApi();
       if (localErr) return localErr;
       const session = await getSession();
       const branch = session?.remote_branch || session?.local_branch;

@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test } from './fixtures.js';
 import {
   MOCK_E2E_CONFIG_A_LABEL,
   MOCK_E2E_CONFIG_B_LABEL,
@@ -15,9 +15,12 @@ import {
   ensureMockE2eConfigs,
   expectComposerShowsModel,
   expectMcpReadonlyComposer,
+  openComposerModelMenu,
   patchUserSessionDefaults,
+  saveE2eScreenshot,
   selectAgentInPanel,
   sendSubagentPromptAndWait,
+  sessionComposerRoot,
   setupAccountModelDefaults,
   startMockReviewFromIssuesTab,
   startMockSessionOnRepo,
@@ -84,6 +87,9 @@ test.describe('model selection (mock)', () => {
       show: ['Mock Standard', 'Mock Secondary'],
       hide: ['Mock Alt Primary'],
     });
+    await openComposerModelMenu(page, sessionComposerRoot(page));
+    await saveE2eScreenshot(page, 'composer-model-menu.png');
+    await page.keyboard.press('Escape');
     await switchSessionComposerConfig(page, MOCK_E2E_CONFIG_B_LABEL);
     await expectComposerShowsModel(page, 'Mock Alt Primary');
     await expectComposerModelMenuLists(page, {

@@ -181,7 +181,7 @@ export default function DiffLineComposer({
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
-        onModelChange={handleComposerModelChange}
+        onModelChange={onModelChange ? handleComposerModelChange : undefined}
         onAgentConfigChange={onAgentConfigChange}
         agentConfigOptions={agentConfigOptions}
         configsLoading={configsLoading}

@@ -60,7 +60,7 @@ export function createSlackPostMessageTool(ctx) {
         channel: channelId,
         threadTs,
         // Updates inside the session's own thread need no origin footer; elsewhere they do.
-        text: bound ? text : slack.withSlackFooter(text, s),
+        text: bound ? text : await slack.withSlackFooter(text, s),
       });
       const permalink = await slack
         .slackGetPermalink(slackApp.bot_token, { channel: channelId, ts })

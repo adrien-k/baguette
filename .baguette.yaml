@@ -27,6 +27,18 @@ config:
       lint-exports:
         run: pnpm run lint:exports
         description: Scans the full JS/TS module graph resolver — typically ~45–60s and high CPU/RAM
+      agents-integration-test:
+        description: Live SDK suite — listModels, connectivity, builder + reviewer turns (~$0.02/run as of 2026-10-31). Not part of run-tests.
+        run: pnpm vitest run server/agent-sdks/pi/__tests__/pi.live.test.js server/agent-sdks/claude/__tests__/claude.live.test.js server/agent-sdks/cursor/__tests__/cursor.live.test.js
+        env:
+          SDK_TESTS_CURSOR_API_KEY: '${{ baguette.secrets.CURSOR_API_KEY }}'
+          SDK_TESTS_CURSOR_MODEL: glm-5p3-flash
+          SDK_TESTS_PI_API_KEY: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
+          SDK_TESTS_PI_MODEL: opencode-go/glm-5.3-flash
+          SDK_TESTS_PI_API_KEY_ENV_VAR: OPENCODE_GO_API_KEY
+          SDK_TESTS_CLAUDE_AUTH_TOKEN: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
+          SDK_TESTS_CLAUDE_API_URL: 'https://opencode.ai/inference/go/anthropic'
+          SDK_TESTS_CLAUDE_MODEL: claude-haiku-5-5
       migrate-dev-environment:
         run: pnpm run migrate
       dev-data:load:

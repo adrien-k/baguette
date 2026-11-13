@@ -4,6 +4,7 @@ import { getActiveAgents } from '../system-information.js';
 import {
   fetchUsageAgentConfigs,
   fetchUsageBreakdown,
+  fetchUsageModels,
   fetchUsageUsers,
   parseUsageFilters,
 } from '../../lib/usage-queries.js';
@@ -40,11 +41,17 @@ class UsageService {
     const { days, search } = parseUsageFilters(data, params.query);
     return fetchUsageUsers(db, { days, search });
   }
+
+  async usageModels(data = {}, params = {}) {
+    const db = this.app.get('db');
+    const { days, search, userId } = parseUsageFilters(data, params.query);
+    return fetchUsageModels(db, { days, search, userId });
+  }
 }
 
 export function registerUsageService(app, path = 'usage') {
   app.use(path, new UsageService(), {
-    methods: ['breakdown', 'agentConfigs', 'activeAgents', 'usageUsers'],
+    methods: ['breakdown', 'agentConfigs', 'activeAgents', 'usageUsers', 'usageModels'],
   });
   app.service(path).hooks({
     before: {

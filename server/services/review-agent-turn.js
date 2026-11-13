@@ -1,13 +1,7 @@
 import { BadRequest } from 'feathers/errors';
 import logger from '../logger.js';
-import { getAllowedCommandsFromUser } from './agent-settings.js';
 import { buildReviewSystemPromptAppend } from './session-prompt.js';
 import { getEffectiveReviewPrompt } from './effective-user-prompts.js';
-import {
-  buildReviewerMcpServer,
-  buildReviewerCursorCustomTools,
-  buildReviewerPiCustomTools,
-} from './baguette-mcp-server.js';
 import { isGlobalSession } from '../../shared/session-scope.js';
 import {
   BAGUETTE_REVIEW_START_CONTENT,
@@ -18,23 +12,7 @@ import { agentServicePathForSession } from './agent-session-routing.js';
 import { loadOwnedAgentConfig } from './agent-config-resolver.js';
 import { getReviewerAgent } from './agents-db.js';
 import { patchAgentInternal } from './feathers/agents.service.js';
-
-function commandsToAllowedTools(commands) {
-  return commands.map((cmd) => `Bash(${cmd}*)`);
-}
-
-const REVIEWER_ALLOWED_TOOLS = [
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  ...commandsToAllowedTools(getAllowedCommandsFromUser()),
-  'mcp__baguette__CreateIssue',
-  'mcp__baguette__ListIssues',
-  'mcp__baguette__ReadIssue',
-  'mcp__baguette__UpdateIssue',
-  'mcp__baguette__CloseIssue',
-];
+import { getSdkPlugin, listSdkPlugins } from '../agent-sdks/registry.js';
 
 export function reviewTurnKey(agentId) {
   return `review:${agentId}`;
@@ -72,12 +50,14 @@ function reviewerRowIdentity(agent, data = {}, agentSdk = null) {
   });
 }
 
-function reviewerHasStoredSession(agent) {
-  return Boolean(agent?.claude_session_id || agent?.cursor_agent_id || agent?.pi_session_id);
+function reviewerHasStoredSession(agent, sdk = agent?.agent_sdk) {
+  const hasStored = getSdkPlugin(sdk)?.hasStoredSession;
+  if (!hasStored) return false;
+  return Boolean(hasStored(agent));
 }
 
 function reviewTurnAgentMetadata(agentSdk, { model, modelParams }) {
-  const supportsParams = agentSdk === 'cursor' || agentSdk === 'claude' || agentSdk === 'pi';
+  const supportsParams = getSdkPlugin(agentSdk)?.supportsModelParams === true;
   return {
     agent_sdk: agentSdk,
     model: model ?? null,
@@ -137,68 +117,18 @@ class ReviewAgentTurn {
     return config.sdk;
   }
 
-  async buildClaudeQueryOptions(
-    session,
-    agent,
-    { model, modelParams, claudeEnv, extraPrompt } = {}
-  ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt);
-    const resolvedParams = modelParams !== undefined ? modelParams : (agent?.model_params ?? null);
-    const turnAgent = reviewTurnAgentMetadata('claude', { model, modelParams: resolvedParams });
-    return await this.app.service('claude-agent').buildQueryOptions(session, {
-      systemPrompt,
-      mcpServer: buildReviewerMcpServer(session, this.app, turnAgent),
-      allowedTools: REVIEWER_ALLOWED_TOOLS,
-      settingSources: [],
-      ...(agent?.claude_session_id ? { resume: agent.claude_session_id } : {}),
-      model,
-      modelParams: resolvedParams,
-      permissionMode: 'acceptEdits',
-      claudeEnv,
-    });
-  }
-
-  async buildPiReviewAgentOptions(
-    session,
-    agent,
-    { model, modelParams, agentConfigId, extraPrompt } = {}
-  ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt);
-    const resolvedParams = modelParams !== undefined ? modelParams : (agent?.model_params ?? null);
-    const turnAgent = reviewTurnAgentMetadata('pi', { model, modelParams: resolvedParams });
-    const piAgent = this.app.service('pi-agent');
-    return await piAgent.buildAgentOptions(session, {
-      model,
-      modelParams: resolvedParams,
-      agentConfigId,
-      channel: 'review',
-      customTools: buildReviewerPiCustomTools(session, this.app, turnAgent),
-      storedPiSessionId: agent?.pi_session_id,
-      appendSystemPrompt: systemPrompt ? [systemPrompt] : [],
-    });
-  }
-
-  async buildCursorReviewAgentOptions(
-    session,
-    agent,
-    { model, modelParams, agentConfigId, extraPrompt } = {}
-  ) {
-    const systemPrompt = await this._prepareReviewPrompt(session, agent, extraPrompt);
-    const cursorAgent = this.app.service('cursor-agent');
-    const rulesRoot = await cursorAgent.writePromptRule(session, 'review', {
-      description: 'Baguette review rules (always applied)',
-      body: systemPrompt,
-    });
-    const turnAgent = reviewTurnAgentMetadata('cursor', { model, modelParams });
-    return await cursorAgent.buildAgentOptions(session, {
-      customTools: buildReviewerCursorCustomTools(session, this.app, turnAgent),
-      settingSources: [],
-      dirs: rulesRoot ? [rulesRoot] : [],
-      model,
-      modelParams,
-      agentConfigId,
-      channel: 'review',
-    });
+  /**
+   * SDK-agnostic review prompt + turn metadata. Agent services build their own
+   * query/agent options from this (tools, resume, settingSources, …).
+   */
+  async prepareReviewContext(session, agent, extras = {}) {
+    const systemPrompt = await this._prepareReviewPrompt(session, agent, extras.extraPrompt);
+    const sdk = extras.agentSdk ?? agent?.agent_sdk;
+    const model = extras.model !== undefined ? extras.model : (agent?.model ?? null);
+    const modelParams =
+      extras.modelParams !== undefined ? extras.modelParams : (agent?.model_params ?? null);
+    const turnAgent = reviewTurnAgentMetadata(sdk, { model, modelParams });
+    return { systemPrompt, extraPrompt: extras.extraPrompt, turnAgent };
   }
 
   async stopReviewerAgent(session, reviewer) {
@@ -266,7 +196,11 @@ class ReviewAgentTurn {
 
   async _prepareReviewPrompt(session, reviewer, extraPrompt) {
     const userPrompt = await this._userReviewPrompt(session, extraPrompt);
-    const systemPrompt = await buildReviewSystemPromptAppend(session, userPrompt);
+    const systemPrompt = await buildReviewSystemPromptAppend(session, userPrompt, {
+      db: this.app.get('db'),
+      app: this.app,
+      agentSdk: reviewer?.agent_sdk ?? null,
+    });
     if (reviewer && !reviewerHasStoredSession(reviewer)) {
       await this._persist(session, reviewer, {
         type: 'system',
@@ -316,17 +250,12 @@ class ReviewAgentTurn {
     }
     if (agentId == null) return;
     const key = reviewTurnKey(agentId);
-    if ('claude-agent' in this.app.services) {
-      await this.app.service('claude-agent').stopTurn(key);
-    }
-    if ('cursor-agent' in this.app.services) {
-      await this.app.service('cursor-agent').stopTurn(key);
-    }
-    if ('pi-agent' in this.app.services) {
-      await this.app.service('pi-agent').stopTurn(key);
-    }
-    if ('mock-agent' in this.app.services) {
-      await this.app.service('mock-agent').stopTurn(key);
+    for (const plugin of listSdkPlugins()) {
+      const path = plugin.servicePath;
+      if (!path || !(path in this.app.services)) continue;
+      const svc = this.app.service(path);
+      if (typeof svc.stopTurn !== 'function') continue;
+      await svc.stopTurn(key);
     }
   }
 

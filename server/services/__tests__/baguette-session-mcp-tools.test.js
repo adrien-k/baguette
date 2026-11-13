@@ -42,7 +42,7 @@ describe('baguette session MCP tools', () => {
   let tools;
 
   beforeEach(async () => {
-    [userId] = await db('users').insert({ github_id: 99, username: 'mcp', approved: true });
+    [userId] = await db('users').insert({ github_id: 99, username: 'mcp', status: 'approved' });
     const claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant-test' });
     await db('users')
       .where({ id: userId })

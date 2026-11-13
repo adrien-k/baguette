@@ -1,19 +1,22 @@
 /**
  * Pure helpers for turning an agent SDK's usage report into one `usage` row.
  *
- * Both SDKs report usage *cumulatively* rather than per turn:
+ * Cursor and Claude report usage *cumulatively* rather than per turn:
  *
  *  - Cursor turn tokens come from the run stream (`SDKUsageMessage`), not
  *    `agent.getUsage()` (local agents cannot report billed USD there).
- *  - The Claude SDK's `total_cost_usd` and `modelUsage` are "cumulative across
- *    turns in streaming-input sessions — each result carries the running total so
- *    far, so read the latest result rather than summing across results". Baguette
- *    runs `query({ prompt: channel })` with an async-iterable channel, which is
- *    streaming-input mode, so this applies to every Claude session.
+ *  - The Claude SDK's `modelUsage` is "cumulative across turns in streaming-input
+ *    sessions — each result carries the running total so far, so read the latest
+ *    result rather than summing across results". Baguette runs
+ *    `query({ prompt: channel })` with an async-iterable channel, which is
+ *    streaming-input mode, so this applies to every Claude session. Cost is
+ *    estimated from the token delta and the model pricing table, not from
+ *    `total_cost_usd` on the SDK result.
  *
- * So a turn's own figures are always a difference against the previous snapshot.
- * The counter also restarts from zero when a session is resumed on a fresh query,
- * which `delta()` detects and treats as a fresh start rather than a negative.
+ * So a turn's own token figures are always a difference against the previous
+ * snapshot. The counter also restarts from zero when a session is resumed on a
+ * fresh query, which `delta()` detects and treats as a fresh start rather than a
+ * negative.
  */
 
 /** A turn's token totals, keyed by `usage` table column name. */

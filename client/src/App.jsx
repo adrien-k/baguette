@@ -1,14 +1,24 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
-import { Settings as SettingsIcon, LogOut, ChartNoAxesCombined, Monitor } from 'lucide-react';
+import {
+  Settings as SettingsIcon,
+  Shield,
+  LogOut,
+  ChartNoAxesCombined,
+  CircleDollarSign,
+  Monitor,
+} from 'lucide-react';
 import NavbarTasksAndStats from './components/NavbarTasksAndStats.jsx';
 import Login from './pages/Login.jsx';
+import Invite from './pages/Invite.jsx';
 const System = lazy(() => import('./pages/System.jsx'));
 const Session = lazy(() => import('./pages/Session.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Admin = lazy(() => import('./pages/Admin.jsx'));
 const Usage = lazy(() => import('./pages/Usage.jsx'));
+const ModelPricing = lazy(() => import('./pages/ModelPricing.jsx'));
 const Onboarding = lazy(() => import('./pages/Onboarding.jsx'));
 import { SessionsProvider } from './context/SessionsContext.jsx';
 import { RepoProvider } from './context/RepoContext.jsx';
@@ -17,11 +27,14 @@ import RepoPicker from './components/RepoPicker.jsx';
 import GitHubBadCredentialsListener from './components/GitHubBadCredentialsListener.jsx';
 import BaguetteIcon from './components/svg/BaguetteIcon.jsx';
 import ColorSchemeToggle from './components/ColorSchemeToggle.jsx';
+import UserAvatar from './components/UserAvatar.jsx';
 import { ColorSchemeProvider } from './hooks/useColorScheme.jsx';
 import { CurrentUserProvider } from './context/CurrentUserContext.jsx';
 import { AgentConfigProvider } from './context/AgentConfigContext.jsx';
 import { DROPDOWN_PANEL_CLASS } from './utils/dropdownPanel.js';
-import { MENU_ITEM_CLASS, NAV_CLASS, PAGE_BG } from './utils/ui.js';
+import { MENU_ITEM_ACCENT_CLASS, MENU_ITEM_CLASS, NAV_CLASS, PAGE_BG } from './utils/ui.js';
+import { GHOST_BUTTON_CLASS } from './utils/buttonStyles.js';
+import { USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
 
 function LoadingScreen() {
   return (
@@ -32,21 +45,36 @@ function LoadingScreen() {
 }
 
 function AccountPendingScreen({ user, logout }) {
+  const revoked = user.status === USER_STATUS_REVOKED;
   return (
-    <div className={`min-h-screen ${PAGE_BG} flex items-center justify-center`}>
-      <div className="bg-nav rounded-xl p-8 text-center max-w-md">
-        <img src={user.avatar_url} alt="" className="w-14 h-14 rounded-full mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-fg mb-2">Account Pending</h2>
-        <p className="text-fg-muted mb-6">
-          Your account is awaiting admin approval. Please check back later.
+    <div
+      className={`min-h-screen ${PAGE_BG} flex items-center justify-center relative overflow-hidden`}
+    >
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-[500px] h-[500px] bg-brand/[0.06] rounded-full blur-3xl" />
+      </div>
+      <div className="bg-nav rounded-2xl p-10 text-center max-w-sm w-full shadow-2xl border border-line relative">
+        <BaguetteIcon className="w-16 h-16 mx-auto mb-4" />
+        <h1 className="text-3xl font-bold text-fg mb-2 font-display">
+          {revoked ? 'Access revoked' : 'Account Pending'}
+        </h1>
+        <p className="text-fg-muted mb-8 text-sm">
+          {revoked ? (
+            'Your access to this Baguette instance has been revoked.'
+          ) : (
+            <>
+              <span className="text-heading font-medium">{user?.username ?? 'Your account'}</span>{' '}
+              is awaiting admin approval. Please check back later.
+            </>
+          )}
         </p>
         <button
           type="button"
           onClick={logout}
-          className="inline-flex items-center gap-2 text-sm text-fg-muted hover:text-fg transition-colors"
+          className={`${GHOST_BUTTON_CLASS} w-full inline-flex items-center justify-center gap-2`}
         >
           <LogOut className="w-4 h-4" />
-          Sign out
+          Log out
         </button>
       </div>
     </div>
@@ -77,6 +105,8 @@ function Nav() {
 
   if (!user) return null;
 
+  const onOnboarding = location.pathname === '/onboarding';
+
   return (
     <nav className={`${NAV_CLASS} relative z-40 shrink-0`}>
       <div className="px-4 flex xl:grid xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3 h-14 min-w-0">
@@ -94,59 +124,66 @@ function Nav() {
             <div className="hidden sm:block shrink-0">
               <ColorSchemeToggle />
             </div>
-            <RepoPicker className="shrink" shrinkableTrigger />
-            <div className="relative flex items-center gap-2 sm:gap-3 shrink-0">
-              <div className="relative" ref={userMenuRef}>
-                <button
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-control/50 transition-colors"
-                >
-                  <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
-                  <span className="hidden sm:block text-secondary text-sm">{user.username}</span>
-                </button>
-                {userMenuOpen && (
-                  <div
-                    className={`absolute right-0 top-full mt-1 w-48 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+            {onOnboarding ? null : <RepoPicker className="shrink" shrinkableTrigger />}
+            {onOnboarding ? null : (
+              <div className="relative flex items-center gap-2 sm:gap-3 shrink-0">
+                <div className="relative" ref={userMenuRef}>
+                  <button
+                    onClick={() => setUserMenuOpen(!userMenuOpen)}
+                    className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-control/50 transition-colors"
                   >
-                    <div className="sm:hidden">
-                      <ColorSchemeToggle menuItem />
+                    <UserAvatar user={user} size="md" />
+                    <span className="hidden sm:block text-secondary text-sm">{user.username}</span>
+                  </button>
+                  {userMenuOpen && (
+                    <div
+                      className={`absolute right-0 top-full mt-1 w-52 ${DROPDOWN_PANEL_CLASS} py-1 z-50`}
+                    >
+                      <div className="sm:hidden">
+                        <ColorSchemeToggle menuItem />
+                      </div>
+                      <div className="border-t border-strong mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
+                        <Link to="/usage" className={MENU_ITEM_CLASS}>
+                          <ChartNoAxesCombined className="w-4 h-4 text-faint" />
+                          Usage
+                        </Link>
+                        <Link to="/model-pricing" className={MENU_ITEM_CLASS}>
+                          <CircleDollarSign className="w-4 h-4 text-faint" />
+                          Model pricing
+                        </Link>
+                        <Link to="/system" className={MENU_ITEM_CLASS}>
+                          <Monitor className="w-4 h-4 text-faint" />
+                          System
+                        </Link>
+                        <Link to="/settings" className={MENU_ITEM_CLASS}>
+                          <SettingsIcon className="w-4 h-4 text-faint" />
+                          Settings
+                        </Link>
+                      </div>
+                      {user.admin ? (
+                        <div className="border-t border-strong mt-1 pt-1">
+                          <Link to="/admin" className={MENU_ITEM_ACCENT_CLASS}>
+                            <Shield className="w-4 h-4" />
+                            Admin
+                          </Link>
+                        </div>
+                      ) : null}
+                      <div className="border-t border-strong mt-1 pt-1">
+                        <button onClick={logout} className={MENU_ITEM_CLASS}>
+                          <LogOut className="w-4 h-4 text-faint" />
+                          Sign out
+                        </button>
+                      </div>
                     </div>
-                    <div className="border-t border-strong mt-1 pt-1 sm:border-t-0 sm:mt-0 sm:pt-0">
-                      <Link to="/usage" className={MENU_ITEM_CLASS}>
-                        <ChartNoAxesCombined className="w-4 h-4 text-faint" />
-                        Usage
-                      </Link>
-                      <Link to="/system" className={MENU_ITEM_CLASS}>
-                        <Monitor className="w-4 h-4 text-faint" />
-                        System
-                      </Link>
-                      <Link to="/settings" className={MENU_ITEM_CLASS}>
-                        <SettingsIcon className="w-4 h-4 text-faint" />
-                        Settings
-                      </Link>
-                    </div>
-                    <div className="border-t border-strong mt-1 pt-1">
-                      <button onClick={logout} className={MENU_ITEM_CLASS}>
-                        <LogOut className="w-4 h-4 text-faint" />
-                        Sign out
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
     </nav>
   );
-}
-
-function AdminRedirect() {
-  const [searchParams] = useSearchParams();
-  const rawTab = searchParams.get('tab') || 'secrets';
-  const tab = rawTab === 'slack' ? 'integrations' : rawTab;
-  return <Navigate to={`/settings?tab=${tab}`} replace />;
 }
 
 function ProtectedRoute({ children }) {
@@ -187,7 +224,51 @@ function AppRoutes() {
               }
             />
             <Route
+              path="/invite/:token"
+              element={
+                user ? (
+                  <Navigate to="/" />
+                ) : (
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Invite />
+                  </div>
+                )
+              }
+            />
+            <Route
               path="/"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared/sessions/:id"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared/loops"
+              element={
+                <ProtectedRoute>
+                  <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shared/loops/:loopId"
               element={
                 <ProtectedRoute>
                   <Session />
@@ -303,6 +384,16 @@ function AppRoutes() {
               }
             />
             <Route
+              path="/model-pricing"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <ModelPricing />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/system"
               element={
                 <ProtectedRoute>
@@ -312,8 +403,26 @@ function AppRoutes() {
                 </ProtectedRoute>
               }
             />
-            <Route path="/admin" element={<AdminRedirect />} />
-            <Route path="/admin/*" element={<AdminRedirect />} />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Admin />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/*"
+              element={
+                <ProtectedRoute>
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <Admin />
+                  </div>
+                </ProtectedRoute>
+              }
+            />
             <Route path="/account" element={<Navigate to="/settings" replace />} />
             <Route
               path="/onboarding"

@@ -35,7 +35,7 @@ export default function PlanReviewBlock({
   return (
     <div className="rounded-lg border border-brand/20 bg-soft-accent/10 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 border-b border-brand/10">
-        <p className="text-xs text-accent/70">Plan ready for review</p>
+        <p className="text-xs text-accent">Plan ready for review</p>
       </div>
       <div className="px-3 sm:px-4 py-3 overflow-auto max-h-[50vh]">
         {markdown?.trim() ? (

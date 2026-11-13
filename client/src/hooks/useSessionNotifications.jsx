@@ -6,6 +6,7 @@ import { agentsService, sessionsService } from '../feathers.js';
 import { reviewerFromSession, reviewerCompletedTransition } from '../utils/sessionAgents.js';
 import { requestNotificationPermission, showBrowserNotification } from '../utils/notifications.js';
 import { useFilterRoutes } from './useFilterRoutes.js';
+import { nextTrackedStatus } from '../utils/sessionRealtime.js';
 
 function isTabHidden() {
   return document.visibilityState === 'hidden';
@@ -183,19 +184,25 @@ export function useSessionNotifications(sessions, loading) {
 
   useEffect(() => {
     const onPatched = (session) => {
-      const prev = prevStatusRef.current.get(session.id);
-      if (prev !== undefined && prev !== session.status) {
-        if (session.status === 'completed') notifyCompleted(session);
-        if (session.status === 'failed') notifyFailed(session);
+      if (!session?.id) return;
+      if ('status' in session) {
+        const { next, changed } = nextTrackedStatus(
+          prevStatusRef.current.get(session.id),
+          session.status
+        );
+        if (changed && next === 'completed') notifyCompleted(session);
+        if (changed && next === 'failed') notifyFailed(session);
+        prevStatusRef.current.set(session.id, next);
       }
-      prevStatusRef.current.set(session.id, session.status);
 
-      const nextReviewStatus = reviewerFromSession(session)?.status;
-      const prevReview = prevReviewStatusRef.current.get(session.id);
-      if (reviewerCompletedTransition(prevReview, nextReviewStatus)) {
-        notifyReviewCompleted(session);
+      if ('review_status' in session || 'agents' in session || 'reviewer_agent_id' in session) {
+        const nextReviewStatus = reviewerFromSession(session)?.status;
+        const prevReview = prevReviewStatusRef.current.get(session.id);
+        if (reviewerCompletedTransition(prevReview, nextReviewStatus)) {
+          notifyReviewCompleted(session);
+        }
+        prevReviewStatusRef.current.set(session.id, nextReviewStatus);
       }
-      prevReviewStatusRef.current.set(session.id, nextReviewStatus);
     };
 
     const onAgentPatched = (agent) => {

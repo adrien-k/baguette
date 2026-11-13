@@ -1,9 +1,21 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
+import { requireOwnSessionForWrite } from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { assertTodoStatus } from '../session-todos.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
+
+async function resolveTodoPlanId(db, sessionId, planId) {
+  if (planId == null || planId === '') return null;
+  const id = Number(planId);
+  if (!Number.isInteger(id) || id < 1) {
+    throw new BadRequest('Invalid plan_id');
+  }
+  const plan = await db('session_plans').where({ id, session_id: sessionId }).first();
+  if (!plan) throw new BadRequest('plan_id not found in session');
+  return id;
+}
 
 class SessionTodosService extends KnexService {
   async create(data, params) {
@@ -19,6 +31,7 @@ class SessionTodosService extends KnexService {
       }
     }
     const ref = await nextSessionItemRef(this.options.Model, 'session_todos', data.session_id);
+    const planId = await resolveTodoPlanId(this.options.Model, data.session_id, data.plan_id);
     return super.create(
       {
         session_id: data.session_id,
@@ -27,6 +40,7 @@ class SessionTodosService extends KnexService {
         content,
         status: data.status ?? 'pending',
         sort_order: data.sort_order ?? 0,
+        plan_id: planId,
       },
       params
     );
@@ -49,6 +63,14 @@ class SessionTodosService extends KnexService {
       if (!content) throw new BadRequest('content is required');
       patch.content = content;
     }
+    if (patch.plan_id !== undefined) {
+      const existing = await this.get(id, params);
+      patch.plan_id = await resolveTodoPlanId(
+        this.options.Model,
+        existing.session_id,
+        patch.plan_id
+      );
+    }
     return super.patch(id, patch, params);
   }
 }
@@ -66,7 +88,12 @@ export function registerSessionTodosService(app, path = 'session-todos') {
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeBySessionUser],
-      patch: [only(['title', 'content', 'status', 'sort_order'])],
+      create: [requireOwnSessionForWrite],
+      patch: [
+        requireOwnSessionForWrite,
+        only(['title', 'content', 'status', 'sort_order', 'plan_id']),
+      ],
+      remove: [requireOwnSessionForWrite],
     },
   });
 }

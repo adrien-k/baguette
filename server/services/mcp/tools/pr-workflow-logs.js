@@ -8,7 +8,7 @@ import {
 import { ok, fail } from '../lib/result.js';
 
 export function createPrWorkflowLogsTool(ctx) {
-  const { getSession, getToken, requireGitHubRepo } = ctx;
+  const { getSession, getToken, requireGitHubApi } = ctx;
   return {
     name: 'PrWorkflowLogs',
     description: `Get logs for a workflow run job. Pass job_id or job_name (from PrWorkflows run jobs) to read one job; otherwise returns failed jobs when any failed, else all jobs. Defaults to the last ${DEFAULT_LOG_BYTES} bytes. When endByte is omitted, returns max(${MAX_LOG_RANGE_BYTES}, bytes from startByte through EOF). When both startByte and endByte are set, the range is capped at ${MAX_LOG_RANGE_BYTES} bytes. Negative indices count from the end; do not combine a negative startByte with a non-negative endByte.`,
@@ -42,7 +42,7 @@ export function createPrWorkflowLogsTool(ctx) {
         ),
     },
     handler: async ({ runId, jobId, jobName, allJobs, startByte, endByte }) => {
-      const localErr = await requireGitHubRepo();
+      const localErr = await requireGitHubApi();
       if (localErr) return localErr;
       const validationError = validateLogByteRange({ startByte, endByte });
       if (validationError) return fail(validationError);

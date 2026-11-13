@@ -56,4 +56,17 @@ describe('touchPrMetadataUpdatedAtOnPatch', () => {
     touchPrMetadataUpdatedAtOnPatch(context);
     expect(data.pr_metadata_updated_at).toBeUndefined();
   });
+
+  it('does not set timestamp when the patch loads fields from GitHub (_skipPrMetadataTouch)', () => {
+    const data = { label: 'Loaded from PR', base_branch: 'develop' };
+    const context = {
+      data,
+      params: {
+        _skipPrMetadataTouch: true,
+        ownSession: { label: null, pr_description: null, base_branch: 'main' },
+      },
+    };
+    touchPrMetadataUpdatedAtOnPatch(context);
+    expect(data.pr_metadata_updated_at).toBeUndefined();
+  });
 });

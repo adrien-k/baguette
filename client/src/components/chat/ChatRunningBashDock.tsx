@@ -12,10 +12,36 @@ export default function ChatRunningBashDock({
   items,
   sessionPath,
   sessionId,
+  agents,
+  onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   items?: RunningToolDockItem[];
   sessionPath?: string | null;
   sessionId?: number | null;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   if (!items?.length) return null;
 
@@ -32,6 +58,10 @@ export default function ChatRunningBashDock({
           message={message}
           sessionPath={sessionPath}
           sessionId={sessionId ?? undefined}
+          agents={agents}
+          onSelectAgent={onSelectAgent}
+          tasks={tasks}
+          onSelectTask={onSelectTask}
         />
       ))}
     </div>

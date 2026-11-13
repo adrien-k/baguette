@@ -12,7 +12,7 @@ describe('mcp-auth', () => {
     const [id] = await db('users').insert({
       github_id: Date.now(),
       username: 'mcp-test',
-      approved: true,
+      status: 'approved',
     });
     userId = id;
   });

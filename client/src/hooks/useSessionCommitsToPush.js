@@ -1,21 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sessionsService } from '../feathers.js';
+import { shouldSkipSessionCommitsToPush } from '../utils/sessionPushGitStatus.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
-
-function shouldSkipCommitsToPush(session) {
-  if (!session?.id) return true;
-  if (session.is_global) return true;
-  return (
-    session.status === 'provisioning' ||
-    session.status === 'archiving' ||
-    session.status === 'archived'
-  );
-}
 
 /** Unpushed commit count for the session push badge; refreshes when a turn completes. */
 export function useSessionCommitsToPush(session) {
   const sessionId = session?.id;
-  const skip = shouldSkipCommitsToPush(session);
+  const skip = shouldSkipSessionCommitsToPush(session);
   const [commitsToPush, setCommitsToPush] = useState(0);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
@@ -23,6 +14,10 @@ export function useSessionCommitsToPush(session) {
     setRefreshNonce((n) => n + 1);
   }, []);
   useInvalidateOnSessionTurnComplete(sessionId, invalidate);
+
+  useEffect(() => {
+    setCommitsToPush(0);
+  }, [sessionId]);
 
   useEffect(() => {
     if (sessionId == null) return;
@@ -38,7 +33,6 @@ export function useSessionCommitsToPush(session) {
 
   useEffect(() => {
     if (skip) {
-      setCommitsToPush(0);
       return;
     }
     let cancelled = false;
@@ -55,7 +49,6 @@ export function useSessionCommitsToPush(session) {
 
   const refreshCommitsToPush = useCallback(async () => {
     if (skip || !sessionId) {
-      setCommitsToPush(0);
       return;
     }
     const status = await sessionsService.sessionGitStatus(sessionId);
