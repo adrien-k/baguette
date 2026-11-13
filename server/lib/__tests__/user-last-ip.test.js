@@ -97,6 +97,37 @@ describe('user-last-ip', () => {
       expect(rowAfterSecond.last_seen_at).toEqual(rowAfterFirst.last_seen_at);
     });
 
+    describe('zone-less SQLite timestamps in a non-UTC timezone', () => {
+      const originalTz = process.env.TZ;
+      const sqliteUtc = (msAgo) =>
+        new Date(Date.now() - msAgo).toISOString().slice(0, 19).replace('T', ' ');
+
+      beforeEach(() => {
+        process.env.TZ = 'Europe/Prague';
+      });
+
+      afterEach(() => {
+        if (originalTz === undefined) delete process.env.TZ;
+        else process.env.TZ = originalTz;
+      });
+
+      it('debounces when last_seen_at (UTC, no zone marker) is recent', async () => {
+        const userId = await insertUser({
+          last_ip: '203.0.113.9',
+          last_seen_at: sqliteUtc(60 * 1000),
+        });
+        expect(await touchUserLastIp(db, userId, '203.0.113.9')).toBe(false);
+      });
+
+      it('updates when last_seen_at (UTC, no zone marker) is older than the debounce window', async () => {
+        const userId = await insertUser({
+          last_ip: '203.0.113.9',
+          last_seen_at: sqliteUtc(10 * 60 * 1000),
+        });
+        expect(await touchUserLastIp(db, userId, '203.0.113.9')).toBe(true);
+      });
+    });
+
     it('force bypasses debounce', async () => {
       vi.stubEnv('TRUST_EDGE_COUNTRY', '1');
       const userId = await insertUser();
