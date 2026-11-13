@@ -71,6 +71,7 @@ export default function SessionWorkspaceModals({
           autoPush={sessionAutoPushOn}
           autoPushDisabled={sessionIsLocalRepo}
           onAutoPushChange={onAutoPushChange}
+          hasExistingPr={!!session?.pr_number}
           onConfirm={onPushConfirmed}
           onCancel={onPushCancel}
         />

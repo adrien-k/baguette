@@ -1283,6 +1283,8 @@ export class SessionsService extends KnexService {
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
       const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
+      // Only governs creating a *new* PR; an existing PR is always kept in sync.
+      const createPr = data?.createPr !== false;
       let commitsToPush = 0;
       if (!forceGit) {
         ({ commitsToPush } = await computeSessionGitStatus(session));
@@ -1314,12 +1316,16 @@ export class SessionsService extends KnexService {
         }
       } else if (
         !needsMetadataSync &&
-        !(session.label || session.pr_description != null || session.pr_number)
+        !session.pr_number &&
+        !(createPr && (session.label || session.pr_description != null))
       ) {
         pushOk = true;
         return { ok: true };
       }
-      if (token && (session.label || session.pr_description != null || session.pr_number)) {
+      if (
+        token &&
+        (session.pr_number || (createPr && (session.label || session.pr_description != null)))
+      ) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
         let userPrefix = '';
         let currentBaseBranch;

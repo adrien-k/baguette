@@ -25,14 +25,21 @@ export default function PushConfirmModal({
   autoPush,
   autoPushDisabled = false,
   onAutoPushChange,
+  hasExistingPr = false,
   onConfirm,
   onCancel,
 }) {
   const [forceMode, setForceMode] = useState(initialForceMode || '');
   const [branch, setBranch] = useState(initialBranch || '');
+  const [createPr, setCreatePr] = useState(true);
   const [localSha, setLocalSha] = useState(null);
   const [remoteSha, setRemoteSha] = useState(null);
   const [loadingShas, setLoadingShas] = useState(false);
+
+  let prPhrase = ' and update the PR.';
+  if (!hasExistingPr) {
+    prPhrase = createPr ? ' and create the PR.' : '';
+  }
 
   const { branches, loading: loadingBranches } = useGetBranches(repo);
 
@@ -80,7 +87,7 @@ export default function PushConfirmModal({
         ) : (
           'changes'
         )}{' '}
-        to GitHub and create/update the PR.
+        to GitHub{prPhrase}
       </p>
 
       <div className="flex flex-col gap-3 mb-0 mt-4">
@@ -132,6 +139,25 @@ export default function PushConfirmModal({
           </div>
         )}
 
+        {!hasExistingPr && (
+          <label
+            className={`flex items-center justify-between gap-3 rounded-lg border ${HAIRLINE} bg-control/40 px-3 py-2.5 cursor-pointer`}
+          >
+            <div className="min-w-0">
+              <p className={`text-sm ${TEXT_HEADING}`}>Create PR if it does not exist</p>
+              <p className={`text-xs ${TEXT_FAINT} leading-snug`}>
+                Opens a draft pull request for the pushed branch
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={createPr}
+              onChange={(e) => setCreatePr(e.target.checked)}
+              className="w-4 h-4 shrink-0 rounded border-strong bg-control text-ok focus:ring-ok/50"
+            />
+          </label>
+        )}
+
         {onAutoPushChange && (
           <div
             className={`flex items-center justify-between gap-3 rounded-lg border ${HAIRLINE} bg-control/40 px-3 py-2.5`}
@@ -164,7 +190,9 @@ export default function PushConfirmModal({
         </button>
         <button
           type="button"
-          onClick={() => onConfirm({ forceMode: forceMode || null, branch: branch || null })}
+          onClick={() =>
+            onConfirm({ forceMode: forceMode || null, branch: branch || null, createPr })
+          }
           className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
             isPureForce
               ? 'bg-err hover:bg-err-hover text-on-solid'

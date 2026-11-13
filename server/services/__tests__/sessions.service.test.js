@@ -2568,6 +2568,135 @@ describe('Sessions service - find, get, create', () => {
       );
     });
 
+    it('push with createPr false does not create a PR for a session without one', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-no-pr-push',
+        label: 'Title',
+        pr_description: 'Body',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      const result = await app.service('sessions').push(
+        { id: created.id, createPr: false },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(gitPush).not.toHaveBeenCalled();
+      expect(upsertPR).not.toHaveBeenCalled();
+      const row = await db('sessions').where({ id: created.id }).first();
+      expect(row.pr_number).toBeNull();
+      expect(row.last_pushed_at).toBeNull();
+    });
+
+    it('push with createPr false still syncs an existing PR', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-existing-pr-push',
+        label: 'Title',
+        pr_description: 'Body',
+        pr_number: 7,
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+      vi.mocked(getOpenPRByNumber).mockResolvedValueOnce({
+        title: 'Title',
+        body: '',
+        base: { ref: 'main' },
+      });
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id, createPr: false },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitPush).not.toHaveBeenCalled();
+      expect(upsertPR).toHaveBeenCalledTimes(1);
+      expect(upsertPR).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ prNumber: 7 })
+      );
+    });
+
+    it('push without createPr creates a PR when the session has none', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-create-pr-push',
+        label: 'Title',
+        pr_description: 'Body',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitPush).not.toHaveBeenCalled();
+      expect(upsertPR).toHaveBeenCalledTimes(1);
+      expect(upsertPR).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ prNumber: null, baseBranch: 'main' })
+      );
+      const row = await db('sessions').where({ id: created.id }).first();
+      expect(row.pr_number).toBe(1);
+      expect(row.pr_status).toBe('open');
+    });
+
     it('attaches referenced session images and swaps placeholders while pushing', async () => {
       await db('repos')
         .where({ id: repoId })

@@ -682,13 +682,13 @@ export default function Session() {
     setShowPushModal(true);
   };
 
-  const handlePushConfirmed = async ({ forceMode, branch } = {}) => {
+  const handlePushConfirmed = async ({ forceMode, branch, createPr } = {}) => {
     if (!session?.id || pushing) return;
     setShowPushModal(false);
     setPushRequest(null);
     beginLocalPush();
     try {
-      await sessionsService.push({ id: session.id, forceMode, branch });
+      await sessionsService.push({ id: session.id, forceMode, branch, createPr });
       await refreshCommitsToPush();
       toast.success('Pushed successfully');
     } catch (err) {
