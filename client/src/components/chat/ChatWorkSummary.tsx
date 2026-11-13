@@ -1,8 +1,25 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import { formatTaskDuration } from '../../utils/dates.js';
 import ChatMessage from '../ChatMessage.tsx';
 import type { ChatMessageView } from '@baguette/shared/session-messages.ts';
+
+type SessionAgent = {
+  id: number;
+  ref?: number;
+  name?: string;
+  agent_type?: string;
+  status?: string;
+};
+
+type SessionTask = {
+  id: number;
+  label?: string | null;
+  task_key?: string | null;
+  status?: string;
+  command?: string;
+};
 
 export default function ChatWorkSummary({
   messages,
@@ -13,8 +30,11 @@ export default function ChatWorkSummary({
   sessionPath,
   sessionId,
   agentName,
-  agentType,
   pinnedRunningBashIds,
+  agents,
+  onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   messages: ChatMessageView[];
   indices: number[];
@@ -24,12 +44,16 @@ export default function ChatWorkSummary({
   sessionPath?: string | null;
   sessionId?: number | null;
   agentName?: string;
-  agentType?: string | null;
   pinnedRunningBashIds?: Set<string>;
+  agents?: SessionAgent[];
+  onSelectAgent?: (agent: SessionAgent) => void;
+  tasks?: SessionTask[];
+  onSelectTask?: (taskId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const duration = formatTaskDuration(durationMs);
   const callsLabel = callCount === 1 ? '1 call' : `${callCount} calls`;
+  const innerItems = useMemo(() => groupChatDisplayMessages(messages), [messages]);
 
   let label = 'Worked';
   if (duration) label += ` for ${duration}`;
@@ -51,20 +75,44 @@ export default function ChatWorkSummary({
       </button>
       {expanded && (
         <div className="space-y-2 border-t border-line/80 px-2 py-2">
-          {messages.map((msg, i) => {
-            const index = indices[i];
+          {innerItems.map((item) => {
+            if (item.kind === 'work') {
+              const nestedIndices = item.indices.map((k) => indices[k]);
+              return (
+                <ChatWorkSummary
+                  key={`work-${nestedIndices[0]}`}
+                  messages={item.messages}
+                  indices={nestedIndices}
+                  callCount={item.callCount}
+                  durationMs={item.durationMs}
+                  displayMessages={displayMessages}
+                  sessionPath={sessionPath}
+                  sessionId={sessionId}
+                  agentName={agentName}
+                  pinnedRunningBashIds={pinnedRunningBashIds}
+                  agents={agents}
+                  onSelectAgent={onSelectAgent}
+                  tasks={tasks}
+                  onSelectTask={onSelectTask}
+                />
+              );
+            }
+            const index = indices[item.index];
             return (
               <ChatMessage
-                key={indices[i]}
-                message={msg}
+                key={index}
+                message={item.message}
                 isLatestMessage={index === displayMessages.length - 1}
                 sessionPath={sessionPath}
                 sessionId={sessionId}
                 agentName={agentName}
                 messageIndex={index}
                 allMessages={displayMessages}
-                agentType={agentType}
                 pinnedRunningBashIds={pinnedRunningBashIds}
+                agents={agents}
+                onSelectAgent={onSelectAgent}
+                tasks={tasks}
+                onSelectTask={onSelectTask}
               />
             );
           })}

@@ -14,7 +14,7 @@ describe('recomputeUsageCosts', () => {
     const [userId] = await db('users').insert({
       github_id: 'recompute-user',
       username: 'bob',
-      approved: true,
+      status: 'approved',
     });
     const sessionId = await insertTestSession(db, {
       user_id: userId,
@@ -63,8 +63,8 @@ describe('recomputeUsageCosts', () => {
     const result = await recomputeUsageCosts(db, { modelId: 'batch-model' });
     expect(result.updated_rows).toBe(2);
     expect(result.affected_sessions).toBe(1);
-    expect(result.claude_usage_excluded).toBe(true);
-    expect(result.skipped_claude_rows).toBe(0);
+    expect(result).not.toHaveProperty('claude_usage_excluded');
+    expect(result).not.toHaveProperty('skipped_claude_rows');
 
     const usageRows = await db('usage').where({ session_id: sessionId }).orderBy('id');
     expect(parseFloat(usageRows[0].cost_usd)).toBeCloseTo(1, 6);
@@ -74,11 +74,11 @@ describe('recomputeUsageCosts', () => {
     expect(parseFloat(session.total_cost_usd)).toBeCloseTo(1.5, 6);
   });
 
-  it('reports skipped Claude rows in the response', async () => {
+  it('recomputes Claude rows from stored tokens', async () => {
     const [userId] = await db('users').insert({
-      github_id: 'claude-skip',
+      github_id: 'claude-recompute',
       username: 'carol',
-      approved: true,
+      status: 'approved',
     });
     const sessionId = await insertTestSession(db, {
       user_id: userId,
@@ -90,17 +90,22 @@ describe('recomputeUsageCosts', () => {
       session_id: sessionId,
       user_id: userId,
       repo_full_name: 'acme/app',
-      model: 'claude-only',
+      model: 'claude-opus-5',
       agent_sdk: 'claude',
-      input_tokens: 100,
+      input_tokens: 1_000_000,
       output_tokens: 0,
-      total_tokens: 100,
+      total_tokens: 1_000_000,
       cost_usd: 0.5,
     });
 
-    const result = await recomputeUsageCosts(db, { modelId: 'claude-only' });
-    expect(result.updated_rows).toBe(0);
-    expect(result.skipped_claude_rows).toBe(1);
-    expect(result.claude_usage_excluded).toBe(true);
+    const result = await recomputeUsageCosts(db, { modelId: 'claude-opus-5' });
+    expect(result.updated_rows).toBe(1);
+    expect(result.affected_sessions).toBe(1);
+
+    const row = await db('usage').where({ session_id: sessionId }).first();
+    expect(parseFloat(row.cost_usd)).toBeCloseTo(5, 6);
+
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(parseFloat(session.total_cost_usd)).toBeCloseTo(5, 6);
   });
 });

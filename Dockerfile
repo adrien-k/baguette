@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS base
+FROM node:24.22.1-bookworm-slim AS base
 
 FROM base AS builder
 
@@ -33,6 +33,8 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libseccomp-dev \
     libjemalloc2 \
+    libpq-dev \
+    libpq5 \
     libreadline-dev \
     libsqlite3-0 \
     libssl-dev \
@@ -67,7 +69,7 @@ RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_S
     && dpkg -i /tmp/code-server.deb \
     && rm /tmp/code-server.deb
 
-RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.202 playwright
+RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.310 playwright
 
 # Install Chromium and its system dependencies for Playwright
 RUN npx playwright install --with-deps chromium

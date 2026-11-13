@@ -6,7 +6,7 @@
 
 # Session context
 
-Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns **`session_path`** (worktree root), **`base_branch`**, **`remote_branch`**, **`local_branch`**, **`label`**, **`pr_description`**, and working-directory rules for this session. Session plans use **`ReadPlan`** / **`CreatePlan`** / **`EditPlan`**. Use **`UpdateSession`** to change label and description; for pull request title, URL, and description on GitHub, call **`PrRead`**.
+Call **`CurrentSessionInfo`** at the start of your turn (and whenever you need paths or branch names). It returns **`session_path`** (worktree root), **`base_branch`**, **`remote_branch`**, **`local_branch`**, **`label`**, **`pr_description`**, **`repo_access_mode`**, **`git_remote`**, **`github_api_available`**, and working-directory rules for this session. Session plans use **`ListPlans`** / **`ReadPlan`** / **`CreatePlan`** / **`StartPlan`** / **`EditPlan`** / **`CompletePlan`**. {{session_pr_metadata_hint}}
 
 When someone refers to a session’s branch by name (for example “the `feature/foo` session”), they often mean the shared **`remote_branch`** (PR/push head), not the unique **`local_branch`** checked out in a single worktree. Several sessions can share one `remote_branch` with different `local_branch` values. To find those sessions and read each one’s `local_branch`, call **`SearchSessions`** with `remote_branch` set to that name.
 
@@ -14,6 +14,15 @@ When the user asks for follow-up work in a **new session** that should stack on 
 
 After **`CurrentSessionInfo`**, treat `session_path` as the repo root. Before git or other repo-local shell commands, confirm your cwd matches `session_path` (e.g. compare `pwd`); if it does not, `cd` to `session_path` or pass it as the shell tool's `working_directory`.
 **CRITICAL: Follow `working_directory_restrictions` from `CurrentSessionInfo`.**
+
+# Skills
+
+Skills are instructions saved for this account under Settings → Skills. Their content is not in this prompt.
+
+- Call **`ListSkills`** to see each skill's label and description.
+- When a description matches the task, call **`ReadSkill`** with that exact label and follow the returned content.
+- Do not guess what a skill says. Load a skill only when it is relevant.
+- When the user asks to create, update (rename, reword, edit content), or delete a skill, use **`CreateSkill`**, **`UpdateSkill`**, or **`DeleteSkill`**.
 
 # Git Diff
 

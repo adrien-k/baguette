@@ -6,7 +6,6 @@ import InjectedUserTurnBlock from './InjectedUserTurnBlock.jsx';
  */
 export default function BaguetteBlock({
   message,
-  agentType,
 }: {
   message: {
     title?: string | null;
@@ -16,14 +15,6 @@ export default function BaguetteBlock({
     model_params?: unknown;
     agent_config_id?: number | null;
   };
-  agentType?: string | null;
 }) {
-  return (
-    <InjectedUserTurnBlock
-      label="Baguette"
-      defaultTitle="Baguette"
-      message={message}
-      agentType={agentType}
-    />
-  );
+  return <InjectedUserTurnBlock label="Baguette" defaultTitle="Baguette" message={message} />;
 }

@@ -1,12 +1,22 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 
-export function createUpdateSessionTool(ctx) {
+const UPDATE_SESSION_DESCRIPTION_GITHUB =
+  'Update this session’s title (`label`), pull request `description`, and/or diff/PR `base_branch` in Baguette. Baguette syncs title and description to GitHub after the turn ends (when auto-push is on); changing `base_branch` updates the stored diff base immediately and applies to the GitHub PR on the next push. Call **`CurrentSessionInfo`** to read the current values before updating. The description must reflect the **entire** branch diff against the base branch, not only this turn. **Follow the repo GitHub PR template** when one exists; otherwise use ## Why, ## Summary (bullet lists for the full branch), and ## Test plan (only critical manual cases automated tests cannot cover).';
+
+const UPDATE_SESSION_DESCRIPTION_NO_API =
+  'Update this session’s title (`label`), description, and/or `base_branch` in Baguette. Title and description are stored on the session only; they are not synced to GitHub. Call **`CurrentSessionInfo`** to read the current values before updating. The description must reflect the **entire** branch diff against the base branch, not only this turn. Use ## Why, ## Summary (bullet lists for the full branch), and ## Test plan (only critical manual cases automated tests cannot cover).';
+
+export function updateSessionDescription({ githubApiAvailable = true } = {}) {
+  if (!githubApiAvailable) return UPDATE_SESSION_DESCRIPTION_NO_API;
+  return UPDATE_SESSION_DESCRIPTION_GITHUB;
+}
+
+export function createUpdateSessionTool(ctx, { githubApiAvailable = true } = {}) {
   const { patchSession } = ctx;
   return {
     name: 'UpdateSession',
-    description:
-      'Update this session’s title (`label`), pull request `description`, and/or diff/PR `base_branch` in Baguette. Baguette syncs title and description to GitHub after the turn ends (when auto-push is on); changing `base_branch` updates the stored diff base immediately and applies to the GitHub PR on the next push. Call **`CurrentSessionInfo`** to read the current values before updating. The description must reflect the **entire** branch diff against the base branch, not only this turn. **Follow the repo GitHub PR template** when one exists; otherwise use ## Why, ## Summary (bullet lists for the full branch), and ## Test plan (only critical manual cases automated tests cannot cover).',
+    description: updateSessionDescription({ githubApiAvailable }),
     schema: {
       label: z.string().optional().describe('Session title / PR title'),
       description: z.string().optional().describe('Also used as the pull request description.'),

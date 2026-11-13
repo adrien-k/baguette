@@ -1,6 +1,7 @@
-import { NotFound, BadRequest } from '@feathersjs/errors';
+import { NotFound, BadRequest } from 'feathers/errors';
 import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS, BASE_TASK_TIMEOUT_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
+import { requireOwnSessionForWrite } from './shared-access.js';
 import { resolveDataDirRelativePath } from '../../config.js';
 import {
   loadBaguetteConfig,
@@ -319,7 +320,7 @@ export class TasksService {
     return result;
   }
 
-  /** Get a single task by id, verifying the user owns its session. */
+  /** Get a single task by id, verifying the user can access its session. */
   async get(id, params) {
     const task = this.getTask(id);
     if (!task) throw new NotFound(`Task ${id} not found`);
@@ -535,7 +536,7 @@ export class TasksService {
     return pub;
   }
 
-  /** Remove a task from memory (kills its process if still running). */
+  /** Remove a task from memory (kills its process if still running). External callers must own the session. */
   async remove(id, params) {
     const pub = await this.get(id, params); // verifies ownership
     this.deleteTask(id);
@@ -569,7 +570,9 @@ const tasksHooks = {
     all: [requireUser],
     // `task_key` names a .baguette.yaml task (command/ports/label resolved server-side);
     // `command` is the ad-hoc "Run a command…" escape hatch.
-    create: [only(['session_id', 'task_key', 'command', 'args'])],
+    create: [only(['session_id', 'task_key', 'command', 'args']), requireOwnSessionForWrite],
     patch: [disableExternal],
+    remove: [requireOwnSessionForWrite],
+    kill: [requireOwnSessionForWrite],
   },
 };

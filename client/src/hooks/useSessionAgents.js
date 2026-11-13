@@ -1,34 +1,62 @@
 import { useState, useEffect, useCallback } from 'react';
 import { agentsService } from '../feathers.js';
 import { toastFeathersError } from '../utils/toastError.jsx';
+import {
+  boundScopeLoading,
+  boundScopeValue,
+  rowsForSession,
+  sameScopeId,
+  scopeKeyOf,
+} from '../utils/boundScope.js';
+import { useScopeRequest } from './useScopeRequest.js';
 
 function normalizeList(res) {
   return Array.isArray(res) ? res : (res?.data ?? []);
 }
 
 export function useSessionAgents(sessionId) {
+  const requestedKey = sessionId == null ? '' : scopeKeyOf(sessionId);
+  const { begin, isKeyCurrent } = useScopeRequest(requestedKey);
   const [agents, setAgents] = useState([]);
+  const [loadedKey, setLoadedKey] = useState('');
   const [loading, setLoading] = useState(false);
 
   const reload = useCallback(() => {
     if (!sessionId) {
+      begin('');
       setAgents([]);
+      setLoadedKey('');
+      setLoading(false);
       return;
     }
+    const key = requestedKey;
+    const isCurrent = begin(key);
     setLoading(true);
     agentsService
       .find({ query: { session_id: sessionId, $sort: { ref: 1 }, $limit: 100 } })
-      .then((res) => setAgents(normalizeList(res)))
-      .catch((err) => toastFeathersError('Failed to load agents', err))
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+      .then((res) => {
+        if (!isCurrent()) return;
+        setAgents(normalizeList(res));
+        setLoadedKey(key);
+      })
+      .catch((err) => {
+        if (!isCurrent()) return;
+        toastFeathersError('Failed to load agents', err);
+        setAgents([]);
+        setLoadedKey(key);
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
+  }, [sessionId, requestedKey, begin]);
 
   useEffect(() => {
     reload();
     if (!sessionId) return undefined;
+    const key = requestedKey;
 
     const onChange = (row) => {
-      if (row.session_id !== sessionId) return;
+      if (!sameScopeId(row.session_id, sessionId) || !isKeyCurrent(key)) return;
       reload();
     };
     agentsService.on('created', onChange);
@@ -39,11 +67,24 @@ export function useSessionAgents(sessionId) {
       agentsService.off('patched', onChange);
       agentsService.off('removed', onChange);
     };
-  }, [sessionId, reload]);
+  }, [sessionId, reload, requestedKey, isKeyCurrent]);
 
+  const scopedAgents = boundScopeValue(
+    requestedKey,
+    loadedKey,
+    rowsForSession(agents, sessionId),
+    []
+  );
+  const agentsLoading = boundScopeLoading(requestedKey, loadedKey, loading);
   const primaryBuilder =
-    agents.find((a) => a.is_primary) ?? agents.find((a) => a.agent_type === 'builder');
-  const reviewer = agents.find((a) => a.agent_type === 'reviewer');
+    scopedAgents.find((a) => a.is_primary) ?? scopedAgents.find((a) => a.agent_type === 'builder');
+  const reviewer = scopedAgents.find((a) => a.agent_type === 'reviewer');
 
-  return { agents, loading, reload, primaryBuilder, reviewer };
+  return {
+    agents: scopedAgents,
+    loading: agentsLoading,
+    reload,
+    primaryBuilder,
+    reviewer,
+  };
 }

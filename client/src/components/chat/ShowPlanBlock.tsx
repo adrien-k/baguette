@@ -2,13 +2,15 @@ import { useState } from 'react';
 import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
-import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import { NEUTRAL_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
 export default function ShowPlanBlock({
   heading = 'Plan ready for review',
   markdown,
   sessionId,
+  agentId,
   userReplied = false,
+  interactive = true,
   isRunning = false,
   isError = false,
   errorMessage = null,
@@ -16,7 +18,10 @@ export default function ShowPlanBlock({
   heading?: string;
   markdown?: string | null;
   sessionId?: number | null;
+  agentId?: number | null;
   userReplied?: boolean;
+  /** When false, plan is informational only (no Run/Refine actions). */
+  interactive?: boolean;
   isRunning?: boolean;
   isError?: boolean;
   errorMessage?: string | null;
@@ -30,6 +35,7 @@ export default function ShowPlanBlock({
       await sessionsService.createDefaultBuilderMessage({
         id: sessionId,
         content: text,
+        ...(agentId != null ? { agent_id: agentId } : {}),
       });
     } catch (err) {
       toastError('Failed to send message', err);
@@ -40,7 +46,7 @@ export default function ShowPlanBlock({
   return (
     <div
       className={`rounded-lg border overflow-hidden ${
-        isError ? 'border-danger/60 bg-red-950/10' : 'border-brand/20 bg-soft-accent/10'
+        isError ? 'border-danger/60 bg-soft-danger/50' : 'border-brand/20 bg-soft-accent/10'
       }`}
     >
       <div
@@ -48,7 +54,7 @@ export default function ShowPlanBlock({
           isError ? 'border-danger/30' : 'border-brand/10'
         }`}
       >
-        <p className={`text-xs ${isError ? 'text-danger' : 'text-accent/70'}`}>{heading}</p>
+        <p className={`text-xs ${isError ? 'text-danger' : 'text-accent'}`}>{heading}</p>
         {isError && <span className="text-danger text-xs font-medium">error</span>}
         {isRunning && (
           <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
@@ -65,7 +71,7 @@ export default function ShowPlanBlock({
           <p className="text-sm text-faint italic">No plan content yet.</p>
         )}
       </div>
-      {!userReplied && !isError && (
+      {interactive && !userReplied && !isError && (
         <div className="px-3 sm:px-4 pb-4 pt-1 flex flex-wrap gap-2">
           <button
             type="button"
@@ -79,7 +85,7 @@ export default function ShowPlanBlock({
             type="button"
             onClick={() => sendUserMessage('Please refine the plan.')}
             disabled={loading}
-            className={SECONDARY_BUTTON_CLASS}
+            className={NEUTRAL_BUTTON_CLASS}
           >
             Refine the plan
           </button>

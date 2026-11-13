@@ -42,7 +42,7 @@ export type SessionMessageRow = {
   /** Model snapshot for user rows; legacy rows carry extra SDK fields. */
   model?: string | null;
   model_params?: unknown;
-  agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
+  agent_sdk?: string | null;
   agent_config_id?: number | null;
   /** Raw SDK columns that survive on legacy rows (uuid, parent_tool_use_id, …). */
   [key: string]: unknown;
@@ -62,8 +62,11 @@ export type MessageViewMeta = {
   tool_status?: ToolCallStatus | null;
   tool_started_at?: string | null;
   tool_ended_at?: string | null;
-  agent_sdk?: 'claude' | 'cursor' | 'pi' | null;
+  agent_id?: number | null;
+  agent_sdk?: string | null;
   agent_config_id?: number | null;
+  author_user_id?: number | null;
+  author?: { id: number; username: string; avatar_url?: string | null } | null;
 };
 
 /** Typed tool_call row view: the payload plus row meta (call_id lands here too). */

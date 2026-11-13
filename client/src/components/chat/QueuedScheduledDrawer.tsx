@@ -22,7 +22,6 @@ export default function QueuedScheduledDrawer({
   queue,
   tiedLoops,
   session,
-  agentType,
   onDelete,
   onSendNow,
   onEdit,
@@ -34,7 +33,6 @@ export default function QueuedScheduledDrawer({
   queue: Record<string, unknown>[];
   tiedLoops: Record<string, unknown>[];
   session?: Record<string, unknown> | null;
-  agentType?: string | null;
   onDelete?: (id: number) => unknown;
   onSendNow?: (id: number) => unknown;
   onEdit?: (id: number, messageJson: string) => unknown;
@@ -74,7 +72,6 @@ export default function QueuedScheduledDrawer({
           <QueuedMessages
             queue={queue}
             session={session}
-            agentType={agentType}
             onDelete={onDelete}
             onSendNow={onSendNow}
             onEdit={onEdit}

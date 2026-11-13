@@ -1,4 +1,4 @@
-import { NotFound } from '@feathersjs/errors';
+import { NotFound } from 'feathers/errors';
 import db from '../db.js';
 import { throwIfAgentConfigDeleted } from './agent-config-deleted.js';
 import { decryptAgentConfigRow } from './agent-config-env.js';

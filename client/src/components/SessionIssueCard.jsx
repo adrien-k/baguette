@@ -9,7 +9,7 @@ import ComposerTextarea from './ComposerTextarea.jsx';
 const SEVERITY_CLASS = {
   critical: 'bg-danger/15 text-danger border-danger/35',
   high: 'bg-warning/15 text-warning border-warning/35',
-  medium: 'bg-brand/15 text-warning border-brand/35',
+  medium: 'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/35',
   low: 'bg-control/80 text-fg-muted border-strong/80',
 };
 

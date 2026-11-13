@@ -2,7 +2,7 @@
  * Scheduled queued messages: kind=scheduled rows dispatched on send_at via messages.create.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
@@ -55,7 +55,7 @@ let sessionId;
 beforeEach(async () => {
   vi.clearAllMocks();
 
-  await db('users').insert({ github_id: 101, username: 'alice', approved: true });
+  await db('users').insert({ github_id: 101, username: 'alice', status: 'approved' });
   const alice = await db('users').where({ username: 'alice' }).first();
   userId = alice.id;
 

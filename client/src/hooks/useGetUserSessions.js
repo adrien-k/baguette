@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { agentsService, sessionsService } from '../feathers.js';
+import { applyAgentPatchToSession } from '../utils/sessionAgents.js';
 import { sortSessionsForList } from '@baguette/shared/session-sort.js';
 import { sessionMatchesListQuery } from '@baguette/shared/session-list-query.js';
+import { applySessionRealtimeList } from '../utils/sessionRealtime.js';
 import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
 
 const PAGE_SIZE = 50;
@@ -14,7 +16,7 @@ function queryKey(query) {
  * Returns sessions for the current user, filtered on the server.
  * `listQuery` is sent on every page; only `$skip` / `$limit` change on load more.
  */
-export function useGetUserSessions(listQuery = {}, { repos } = {}) {
+export function useGetUserSessions(listQuery = {}, { repos, currentUserId } = {}) {
   const [sessions, setSessions] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -22,10 +24,12 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
   const skipRef = useRef(0);
   const listQueryRef = useRef(listQuery);
   const reposRef = useRef(repos);
+  const currentUserIdRef = useRef(currentUserId);
   useEffect(() => {
     listQueryRef.current = listQuery;
     reposRef.current = repos;
-  }, [listQuery, repos]);
+    currentUserIdRef.current = currentUserId;
+  }, [listQuery, repos, currentUserId]);
   const listKey = queryKey(listQuery);
 
   const fetchPage = useCallback((skip, replace, { silent = false } = {}) => {
@@ -84,7 +88,9 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
   useEffect(() => {
     setSessions((prev) => {
       const filtered = prev.filter((s) =>
-        sessionMatchesListQuery(s, listQueryRef.current, reposRef.current)
+        sessionMatchesListQuery(s, listQueryRef.current, reposRef.current, {
+          currentUserId: currentUserIdRef.current,
+        })
       );
       if (filtered.length === prev.length) return prev;
       return sortSessionsForList(filtered);
@@ -93,23 +99,17 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
 
   useEffect(() => {
     const matches = (session) =>
-      sessionMatchesListQuery(session, listQueryRef.current, reposRef.current);
+      sessionMatchesListQuery(session, listQueryRef.current, reposRef.current, {
+        currentUserId: currentUserIdRef.current,
+      });
 
     const mergeRealtime = (session) => {
       setSessions((prev) => {
-        const exists = prev.some((s) => s.id === session.id);
-        if (!matches(session)) {
-          if (!exists) return prev;
-          skipRef.current = Math.max(0, skipRef.current - 1);
-          return sortSessionsForList(prev.filter((s) => s.id !== session.id));
+        const { next, skipDelta } = applySessionRealtimeList(prev, session, matches);
+        if (skipDelta) {
+          skipRef.current = Math.max(0, skipRef.current + skipDelta);
         }
-        if (exists) {
-          return sortSessionsForList(
-            prev.map((s) => (s.id === session.id ? { ...s, ...session } : s))
-          );
-        }
-        skipRef.current += 1;
-        return sortSessionsForList([session, ...prev]);
+        return sortSessionsForList(next);
       });
     };
 
@@ -118,10 +118,6 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
     const onPatched = (session) => mergeRealtime(session);
     const onRemoved = (session) => {
       if (!session?.id) return;
-      if (session.archived_at) {
-        mergeRealtime(session);
-        return;
-      }
       setSessions((prev) => {
         if (!prev.some((s) => s.id === session.id)) return prev;
         skipRef.current = Math.max(0, skipRef.current - 1);
@@ -134,26 +130,8 @@ export function useGetUserSessions(listQuery = {}, { repos } = {}) {
       setSessions((prev) => {
         const idx = prev.findIndex((s) => s.id === agent.session_id);
         if (idx < 0) return prev;
-        const session = prev[idx];
-        const agents = Array.isArray(session.agents) ? [...session.agents] : [];
-        const agentIdx = agents.findIndex((a) => a.id === agent.id);
-        const summary = {
-          id: agent.id,
-          name: agent.name,
-          agent_type: agent.agent_type,
-          status: agent.status,
-          is_primary: agent.is_primary,
-        };
-        if (agentIdx >= 0) agents[agentIdx] = summary;
-        else agents.push(summary);
-        const reviewer = agents.find((a) => a.agent_type === 'reviewer');
-        const next = {
-          ...session,
-          agents,
-          review_status: reviewer?.status ?? session.review_status,
-          reviewer_agent_id: reviewer?.id ?? session.reviewer_agent_id,
-        };
-        return sortSessionsForList(prev.map((s) => (s.id === session.id ? next : s)));
+        const next = applyAgentPatchToSession(prev[idx], agent);
+        return sortSessionsForList(prev.map((s) => (s.id === next.id ? next : s)));
       });
     };
 

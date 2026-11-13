@@ -3,7 +3,7 @@
  * @param {unknown} obj
  * @returns {string | null}
  */
-function extractMcpTextContent(obj) {
+export function extractMcpTextContent(obj) {
   if (!obj || typeof obj !== 'object') return null;
   const content = obj.content;
   if (typeof content === 'string') return content;

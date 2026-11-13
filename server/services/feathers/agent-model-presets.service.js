@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
+import { BadRequest, Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
@@ -85,6 +85,24 @@ async function beforePatch(context) {
   return context;
 }
 
+/**
+ * scopeByUser sets params.knex; @feathersjs/knex _patch re-fetches with id $in but _find
+ * ignores params.query when params.knex is set, so the post-patch find returns wrong rows
+ * and throws NotFound. Verify ownership, then clear knex (same as user-repos / loops).
+ */
+async function requireOwnPreset(context) {
+  if (context.method !== 'patch' || context.id == null) return context;
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const row = await context.app
+    .get('db')('agent_model_presets')
+    .where({ id: context.id, user_id: userId })
+    .first();
+  if (!row) throw new NotFound('Preset not found');
+  delete context.params.knex;
+  return context;
+}
+
 async function beforeRemove(context) {
   const row = await context.service.get(context.id, { user: context.params.user });
   if (!row) throw new NotFound('Preset not found');
@@ -110,7 +128,7 @@ export function registerAgentModelPresetsService(app, path = 'agent-model-preset
     before: {
       all: [requireUser, scopeByUser],
       create: [beforeCreate, assertOwnedConfig, normalizeModelParams],
-      patch: [only(PATCH_FIELDS), beforePatch, normalizeModelParams],
+      patch: [requireOwnPreset, only(PATCH_FIELDS), beforePatch, normalizeModelParams],
       remove: [beforeRemove],
     },
     after: {

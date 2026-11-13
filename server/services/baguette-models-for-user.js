@@ -60,7 +60,7 @@ function modelEntriesFromList(models, sdk, agentConfigId, usage) {
  *
  * @param {object} user
  * @param {object} repo
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  */
 export async function listModelsForUser(user, repo, app, { agentConfigId = null } = {}) {
   const knex = app.get('db');
@@ -117,7 +117,7 @@ export async function listModelsForUser(user, repo, app, { agentConfigId = null 
  * @param {object} user
  * @param {string} _agentSdk
  * @param {Record<string, unknown>} _repo
- * @param {import('@feathersjs/feathers').Application} app
+ * @param {import('feathers').Application} app
  */
 export async function loadModelsForSdk(user, _agentSdk, _repo, app, { agentConfigId = null } = {}) {
   if (agentConfigId == null) return [];

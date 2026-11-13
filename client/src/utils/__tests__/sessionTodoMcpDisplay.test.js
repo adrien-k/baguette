@@ -3,9 +3,12 @@ import {
   resolveSessionTodoForTool,
   todoContentFromArgs,
   todoIdFromArgs,
+  todoRefsFromArgs,
   todoTitleFromArgs,
+  updateTodoStatusOnlyHeading,
 } from '../sessionTodoMcpDisplay.ts';
 import { sessionTodoTitle } from '../sessionTodoDisplay.ts';
+import { parseMcpJsonResult } from '../parseMcpJsonResult.ts';
 
 describe('todoTitleFromArgs', () => {
   it('reads flat title', () => {
@@ -43,6 +46,22 @@ describe('todoIdFromArgs', () => {
   });
 });
 
+describe('todoRefsFromArgs', () => {
+  it('dedupes refs from flat args', () => {
+    expect(todoRefsFromArgs({ refs: [1, 2, 1] })).toEqual([1, 2]);
+  });
+});
+
+describe('updateTodoStatusOnlyHeading', () => {
+  it('returns heading for status-only updates', () => {
+    expect(updateTodoStatusOnlyHeading({ status: 'in_progress' })).toBe('Todo in progress');
+  });
+
+  it('returns null when title or content is set', () => {
+    expect(updateTodoStatusOnlyHeading({ status: 'completed', content: 'New body' })).toBeNull();
+  });
+});
+
 describe('resolveSessionTodoForTool', () => {
   it('uses args.content after completion when result todo is missing', () => {
     const todo = resolveSessionTodoForTool(
@@ -74,5 +93,35 @@ describe('resolveSessionTodoForTool', () => {
       }
     );
     expect(todo?.content).toBe('first');
+  });
+
+  it('uses args content for UpdateTodo when result todo is missing', () => {
+    const todo = resolveSessionTodoForTool(
+      'UpdateTodo',
+      { ref: 7, title: 'Cards', content: '## Body\nDetails', status: 'in_progress' },
+      { ok: true, todos: [] }
+    );
+    expect(todo?.content).toContain('Body');
+    expect(todo?.title).toBe('Cards');
+    expect(todo?.status).toBe('in_progress');
+    expect(todo?.ref).toBe(7);
+  });
+
+  it('uses todo from wrapped UpdateTodo MCP payload', () => {
+    const wrapped = {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            todo: { id: 1, ref: 7, content: 'From wrapped API', status: 'completed' },
+          }),
+        },
+      ],
+    };
+    const mcpResult = parseMcpJsonResult(wrapped);
+    const todo = resolveSessionTodoForTool('UpdateTodo', { ref: 7 }, mcpResult);
+    expect(todo?.content).toBe('From wrapped API');
+    expect(todo?.status).toBe('completed');
   });
 });

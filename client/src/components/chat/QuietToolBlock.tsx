@@ -40,9 +40,9 @@ export default function QuietToolBlock({
     >
       <div className="flex items-center gap-1.5 text-faint">
         <span>{icon ?? '↳'}</span>
-        <span className={isError ? 'text-red-700' : ''}>{label}</span>
+        <span className={isError ? 'text-danger' : ''}>{label}</span>
         {detail && <span className="truncate text-faint">{detail}</span>}
-        {isError && <span className="text-red-700 ml-0.5">[error]</span>}
+        {isError && <span className="text-danger ml-0.5">[error]</span>}
         {isRunning && !isError && (
           <div className="w-2.5 h-2.5 border border-strong border-t-faint rounded-full animate-spin shrink-0" />
         )}

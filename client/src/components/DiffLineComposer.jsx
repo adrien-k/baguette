@@ -67,7 +67,7 @@ export default function DiffLineComposer({
   }, [onClose]);
 
   const agent = builderAgent ?? null;
-  const isRunning = agent?.status === 'running' || agent?.status === 'approval';
+  const isRunning = agent?.status === 'running';
   const isProvisioning = session?.status === 'provisioning';
   const canSendDraft = Boolean(session?.id && !sending);
   const composerTurnFields = () =>
@@ -181,7 +181,7 @@ export default function DiffLineComposer({
         models={models}
         cursorModelPrefs={cursorModelPrefs}
         onCursorModelPrefChange={onCursorModelPrefChange}
-        onModelChange={handleComposerModelChange}
+        onModelChange={onModelChange ? handleComposerModelChange : undefined}
         onAgentConfigChange={onAgentConfigChange}
         agentConfigOptions={agentConfigOptions}
         configsLoading={configsLoading}

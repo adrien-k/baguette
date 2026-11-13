@@ -1,12 +1,39 @@
 /** Navbar / dashboard: list sessions across every repository. */
 export const ALL_REPOS = '__all__';
 
+/** Navbar / dashboard: sessions and loops others have shared with the current user. */
+export const SHARED_SCOPE = '__shared__';
+
 /** URL segment for the in-app “new session” form (`…/sessions/new`). */
 export const NEW_SESSION_ROUTE_ID = 'new';
+
+/** URL segment for the in-app “new loop” form (`…/loops/new`). */
+export const NEW_LOOP_ROUTE_ID = 'new';
 
 export function isNewSessionRouteId(routeValue) {
   return routeValue === NEW_SESSION_ROUTE_ID;
 }
+
+export function isNewLoopRouteId(routeValue) {
+  return routeValue === NEW_LOOP_ROUTE_ID;
+}
+
+/** Session workspace home (list + new-session form): `/`, `/global`, `/shared`, `/repos/:id`. */
+export function isSessionHomePathname(pathname) {
+  if (!pathname) return false;
+  if (pathname === '/' || pathname === '/global' || pathname === '/shared') return true;
+  return /^\/repos\/\d+$/.test(pathname);
+}
+
+/** Loops workspace home (list + new-loop form): `/loops`, `/global/loops`, `/shared/loops`, `/repos/:id/loops`. */
+export function isLoopHomePathname(pathname) {
+  if (!pathname) return false;
+  if (pathname === '/loops' || pathname === '/global/loops' || pathname === '/shared/loops') {
+    return true;
+  }
+  return /^\/repos\/\d+\/loops$/.test(pathname);
+}
+
 /** Navbar / dashboard: sessions that are not tied to a single repository. */
 export const GLOBAL_SCOPE = '__global__';
 
@@ -34,17 +61,33 @@ export function isAllSessionsPath(pathname) {
   return scopePath === '/' || scopePath.startsWith('/sessions/');
 }
 
-/** Dashboard home for agents in the current picker scope (All sessions, Global, or a repo). */
-export function homeUrlForScope({ fromAllSessions, selectedRepo, repoId } = {}) {
+/** True on Shared with me (`/shared`, `/shared/sessions/:id`, `/shared/loops/…`). */
+export function isSharedWithMePath(pathname) {
+  if (!pathname) return false;
+  const scopePath = agentsScopePathFromPathname(pathname);
+  return scopePath === '/shared' || scopePath.startsWith('/shared/');
+}
+
+/** Dashboard home for agents in the current picker scope (All sessions, Shared with me, Global, or a repo). */
+export function homeUrlForScope({ fromAllSessions, fromSharedWithMe, selectedRepo, repoId } = {}) {
+  if (fromSharedWithMe) return '/shared';
   if (fromAllSessions || selectedRepo === ALL_REPOS || !selectedRepo) return '/';
+  if (selectedRepo === SHARED_SCOPE) return '/shared';
   if (selectedRepo === GLOBAL_SCOPE) return '/global';
   if (repoId == null) return '/';
   return `/repos/${repoId}`;
 }
 
 /** Dashboard home for loops in the current picker scope. */
-export function loopsHomeUrlForScope({ fromAllSessions, selectedRepo, repoId } = {}) {
+export function loopsHomeUrlForScope({
+  fromAllSessions,
+  fromSharedWithMe,
+  selectedRepo,
+  repoId,
+} = {}) {
+  if (fromSharedWithMe) return '/shared/loops';
   if (fromAllSessions || selectedRepo === ALL_REPOS || !selectedRepo) return '/loops';
+  if (selectedRepo === SHARED_SCOPE) return '/shared/loops';
   if (selectedRepo === GLOBAL_SCOPE) return '/global/loops';
   if (repoId == null) return '/loops';
   return `/repos/${repoId}/loops`;
@@ -86,13 +129,14 @@ export function sessionHref(session, { fromAllSessions } = {}) {
 export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSession',
   'UpdateIssueStatus',
-  'CreatePlan',
-  'EditPlan',
   'StartSubagent',
   'CreateSession',
   'CreateLoop',
   'UpdateLoop',
   'DeleteLoop',
+  'CreateSkill',
+  'UpdateSkill',
+  'DeleteSkill',
   'ConfigRepoPrompt',
   'PrComment',
   'PrReview',
@@ -110,7 +154,6 @@ export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   'GitPull',
   'GitPush',
   'GitFetch',
-  'PrUpsert',
   'PrComments',
   'PrMarkCommentViewed',
   'PrComment',

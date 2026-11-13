@@ -1,7 +1,7 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { throwIfAgentConfigDeleted } from './agent-config-deleted.js';
 import { decryptAgentConfigRow } from './agent-config-env.js';
-import { parseAgentDefaultModelJson } from '../../shared/agent-default-model.js';
+import { resolveAccountDefaultModel } from '../../shared/agent-default-model.js';
 import { coerceModelParams } from '../../shared/agent-session-defaults.js';
 
 export function parseSessionModelId(modelField) {
@@ -93,7 +93,10 @@ async function userDefaultAgentFields(db, userId) {
     .whereNull('deleted_at')
     .first();
   if (!config) return null;
-  const { model, model_params } = parseAgentDefaultModelJson(user.agent_default_model);
+  const { model, model_params } = resolveAccountDefaultModel(
+    user.agent_default_model,
+    config.default_model
+  );
   return {
     agent_config_id: user.agent_default_config_id,
     agent_sdk: config.sdk,
@@ -114,7 +117,10 @@ async function userDefaultReviewerFields(db, userId) {
     .whereNull('deleted_at')
     .first();
   if (!config) return null;
-  const { model, model_params } = parseAgentDefaultModelJson(user.reviewer_default_model);
+  const { model, model_params } = resolveAccountDefaultModel(
+    user.reviewer_default_model,
+    config.default_model
+  );
   return {
     review_agent_config_id: user.reviewer_default_config_id,
     review_agent_sdk: config.sdk,
@@ -138,7 +144,7 @@ export async function resolveExplicitBuilderDefaults(db, userId, _repoId = null)
   return null;
 }
 
-/** Account subagent default for MCP StartSubagent. */
+/** Account policy for models on agent-created sessions, loops, and subagents. */
 export async function resolveEffectiveSubagentDefaultSettings(db, userId, _repoId = null) {
   const user = await db('users')
     .where({ id: userId })
@@ -266,7 +272,7 @@ export async function assertAgentConfigOnCreate(context) {
     const { ensureTestClaudeConfig, ensureTestPiConfig, insertTestAgentConfig } =
       await import('../test-utils/agent-configs.js');
     if (sdkHint === 'mock') {
-      const { ensureMockAgentConfig } = await import('./mock-agent-config.js');
+      const { ensureMockAgentConfig } = await import('../agent-sdks/mock/mock-agent-config.js');
       agentConfigId = await ensureMockAgentConfig(db, userId);
     } else if (sdkHint === 'pi') {
       agentConfigId = await ensureTestPiConfig(db, userId);

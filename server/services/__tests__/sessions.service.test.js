@@ -12,8 +12,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
-import { feathers } from '@feathersjs/feathers';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { feathers } from 'feathers';
+import { BadRequest } from 'feathers/errors';
 import { createTestDb, insertTestSession, testSessionAgentDefaults } from '../../test-utils/db.js';
 import {
   generateSessionShortId,
@@ -25,12 +25,15 @@ import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
-import { registerAgentSdk } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
 import {
   BAGUETTE_DESCRIPTION_MARKER,
   BAGUETTE_FOOTER_MARKER,
   createWorktree,
+  gitPush,
+  upsertPR,
   getOpenPR,
+  getOpenPRByNumber,
   getPRStatus,
   mergePR,
   markPRDraft,
@@ -39,10 +42,30 @@ import {
   removeWorktree,
 } from '../github.js';
 
+registerSdkPlugin({
+  key: 'claude',
+  label: 'Claude',
+  servicePath: 'claude-agent',
+  storedSessionIdColumn: 'claude_session_id',
+});
+registerSdkPlugin({
+  key: 'cursor',
+  label: 'Cursor',
+  servicePath: 'cursor-agent',
+  storedSessionIdColumn: 'cursor_agent_id',
+});
+registerSdkPlugin({
+  key: 'pi',
+  label: 'Pi',
+  servicePath: 'pi-agent',
+  storedSessionIdColumn: 'pi_session_id',
+});
+
 // ── Module-level mocks ────────────────────────────────────────────────────────
 
 const {
   stopSession,
+  stopTurn,
   syncSessionSettingsFromPatch,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
@@ -52,6 +75,7 @@ const {
   resumeInterruptedReviews,
 } = vi.hoisted(() => ({
   stopSession: vi.fn().mockResolvedValue(undefined),
+  stopTurn: vi.fn().mockResolvedValue(undefined),
   syncSessionSettingsFromPatch: vi.fn(),
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   readBaguetteConfigRaw: vi.fn().mockResolvedValue({ missing: true }),
@@ -83,6 +107,8 @@ vi.mock('../github.js', async (importOriginal) => {
     ...actual,
     removeWorktree: vi.fn().mockResolvedValue(undefined),
     createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
+    gitPush: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-branch' }),
+    upsertPR: vi.fn().mockResolvedValue({ url: 'https://github.com/o/r/pull/1', number: 1 }),
     getOpenPRByNumber: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
     getPRStatus: vi.fn().mockResolvedValue('open'),
@@ -112,7 +138,7 @@ const params = (user) => ({ provider: 'rest', user });
 
 const claudeHandleMessageCreated = vi.fn().mockResolvedValue(undefined);
 const cursorHandleMessageCreated = vi.fn().mockResolvedValue(undefined);
-const deleteSessionTasks = vi.fn();
+const deleteSessionTasks = vi.fn().mockResolvedValue(undefined);
 const usersServiceGet = vi.fn().mockResolvedValue({ id: 1, access_token: 'test-token' });
 // Not Feathers methods (like the real service): called directly by sessions.service.
 const findRunningTask = vi.fn().mockReturnValue(null);
@@ -154,6 +180,7 @@ function makeApp(db) {
     'claude-agent',
     {
       stopSession,
+      stopTurn,
       handleMessageCreated: claudeHandleMessageCreated,
       syncSessionSettingsFromPatch,
       generateSessionMetadata,
@@ -162,6 +189,7 @@ function makeApp(db) {
     {
       methods: [
         'stopSession',
+        'stopTurn',
         'handleMessageCreated',
         'syncSessionSettingsFromPatch',
         'generateSessionMetadata',
@@ -196,7 +224,7 @@ function makeApp(db) {
 }
 
 async function seedUserAndSession(db, { github_id, username, shortId, sessionPath = null } = {}) {
-  await db('users').insert({ github_id, username, approved: true });
+  await db('users').insert({ github_id, username, status: 'approved' });
   const user = await db('users').where({ username }).first();
 
   await db('repos')
@@ -249,7 +277,7 @@ describe('Sessions service - custom methods', () => {
     await db('users').insert({
       github_id: 1002,
       username: 'bob',
-      approved: true,
+      status: 'approved',
     });
     otherUserId = (await db('users').where({ username: 'bob' }).first()).id;
 
@@ -275,22 +303,116 @@ describe('Sessions service - custom methods', () => {
       expect(agentAfter.active_turn_id).toBeNull();
     });
 
+    it('session stop also stops extra builders', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: primary.id }).update({ status: 'running', active_turn_id: 1 });
+      const [extraId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'running',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 1,
+        active_turn_id: 1,
+      });
+
+      await app.service('sessions').stop(sessId, params({ id: userId }));
+
+      const extraAfter = await db('agents').where({ id: extraId }).first();
+      expect(extraAfter.status).toBe('stopped');
+      expect(extraAfter.active_turn_id).toBeNull();
+    });
+
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').stop(99999, params({ id: userId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').stop(sessId, params({ id: otherUserId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
       await expect(app.service('sessions').stop(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
+    });
+  });
+
+  describe('agents.stop', () => {
+    it('stops the primary builder without stopping extra builders', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: primary.id }).update({ status: 'running', active_turn_id: 1 });
+      const [extraId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'running',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 1,
+        active_turn_id: 1,
+      });
+
+      const result = await app
+        .service('agents')
+        .stop({ agent_id: primary.id }, params({ id: userId }));
+
+      expect(result).toEqual({ ok: true, agent_id: primary.id });
+      expect(stopTurn).toHaveBeenCalledWith(sessId, expect.anything());
+      const primaryAfter = await db('agents').where({ id: primary.id }).first();
+      expect(primaryAfter.status).toBe('stopped');
+      expect(primaryAfter.active_turn_id).toBeNull();
+      const extraAfter = await db('agents').where({ id: extraId }).first();
+      expect(extraAfter.status).toBe('running');
+      expect(extraAfter.active_turn_id).toBe(1);
+      const sessionAfter = await db('sessions').where({ id: sessId }).first();
+      expect(sessionAfter.status).toBe('active');
+    });
+
+    it('stops active subagents spawned by the stopped parent agent', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      await db('agents').where({ id: primary.id }).update({ status: 'running', active_turn_id: 1 });
+      const [subId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Child subagent',
+        agent_type: 'subagent',
+        is_primary: 0,
+        status: 'running',
+        parent_agent_id: primary.id,
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 1,
+        active_turn_id: 1,
+      });
+
+      const result = await app
+        .service('agents')
+        .stop({ agent_id: primary.id }, params({ id: userId }));
+
+      expect(result).toEqual({ ok: true, agent_id: primary.id });
+      expect(stopTurn).toHaveBeenCalledWith(subId, expect.anything());
+      expect(stopTurn).toHaveBeenCalledWith(sessId, expect.anything());
+      const subAfter = await db('agents').where({ id: subId }).first();
+      expect(subAfter.status).toBe('stopped');
+      expect(subAfter.active_turn_id).toBeNull();
+      const primaryAfter = await db('agents').where({ id: primary.id }).first();
+      expect(primaryAfter.status).toBe('stopped');
     });
   });
 
@@ -321,7 +443,7 @@ describe('Sessions service - custom methods', () => {
         app
           .service('sessions')
           .createDefaultBuilderMessage({ id: sessId, content: '   ' }, params({ id: userId }))
-      ).rejects.toThrow(BadRequest);
+      ).rejects.toBeBadRequestError();
     });
 
     it('creates ask_user_answer with structured answers', async () => {
@@ -359,6 +481,74 @@ describe('Sessions service - custom methods', () => {
           params({ id: userId })
         )
       ).rejects.toThrow();
+    });
+
+    it('targets the given session agent instead of the primary builder', async () => {
+      const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+      const [extraBuilderId] = await db('agents').insert({
+        session_id: sessId,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'stopped',
+        agent_sdk: primary.agent_sdk,
+        model: 'extra-model',
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+        current_turn_id: 0,
+      });
+      const answers = [{ question: 'Pick one', value: 'A' }];
+
+      const result = await app.service('sessions').createDefaultBuilderMessage(
+        {
+          id: sessId,
+          content: '**Pick one**: A',
+          subtype: 'ask_user_answer',
+          answers,
+          agent_id: extraBuilderId,
+        },
+        params({ id: userId })
+      );
+
+      expect(result.agent_id).toBe(extraBuilderId);
+      expect(result.model).toBe('extra-model');
+      expect(result.agent_id).not.toBe(primary.id);
+    });
+
+    it('rejects agent_id that is not in the session', async () => {
+      await expect(
+        app.service('sessions').createDefaultBuilderMessage(
+          {
+            id: sessId,
+            content: '**Pick one**: A',
+            subtype: 'ask_user_answer',
+            answers: [{ question: 'Pick one', value: 'A' }],
+            agent_id: 99999,
+          },
+          params({ id: userId })
+        )
+      ).rejects.toBeBadRequestError();
+    });
+
+    it('rejects agent_id belonging to another session', async () => {
+      const other = await seedUserAndSession(db, {
+        github_id: 1099,
+        username: 'carol',
+        shortId: 'carol1',
+      });
+      const otherBuilder = await db('agents')
+        .where({ session_id: other.sessId, is_primary: 1 })
+        .first();
+
+      await expect(
+        app
+          .service('sessions')
+          .createDefaultBuilderMessage(
+            { id: sessId, content: 'Proceed with the plan.', agent_id: otherBuilder.id },
+            params({ id: userId })
+          )
+      ).rejects.toBeBadRequestError();
     });
   });
 
@@ -489,13 +679,13 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').commands(99999, params({ id: userId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').commands(sessId, params({ id: otherUserId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
   });
 
@@ -590,7 +780,15 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').startPreviewService({ id: sessId }, params({ id: otherUserId }))
-      ).rejects.toBeInstanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('rejects with NotFound when a collaborator starts preview on a shared session', async () => {
+      await db('sessions').where({ id: sessId }).update({ is_shared: 1 });
+      await expect(
+        app.service('sessions').startPreviewService({ id: sessId }, params({ id: otherUserId }))
+      ).rejects.toBeNotFoundError();
+      expect(tasksCreate).not.toHaveBeenCalled();
     });
   });
 
@@ -802,13 +1000,13 @@ describe('Sessions service - custom methods', () => {
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').archive(99999, params({ id: userId }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects with NotFound when session belongs to another user', async () => {
       await expect(
         app.service('sessions').archive(sessId, params({ id: otherUserId }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -1018,7 +1216,7 @@ describe('Repos service - unlink', () => {
     await db('users').insert({
       github_id: 1002,
       username: 'bob',
-      approved: true,
+      status: 'approved',
     });
     otherUserId = (await db('users').where({ username: 'bob' }).first()).id;
 
@@ -1087,8 +1285,8 @@ describe('Sessions service - find, get, create', () => {
     loadBaguetteConfig.mockResolvedValue(null);
 
     await db('users').insert([
-      { github_id: 1001, username: 'alice', approved: true },
-      { github_id: 1002, username: 'bob', approved: true },
+      { github_id: 1001, username: 'alice', status: 'approved' },
+      { github_id: 1002, username: 'bob', status: 'approved' },
     ]);
     userId1 = (await db('users').where({ username: 'alice' }).first()).id;
     userId2 = (await db('users').where({ username: 'bob' }).first()).id;
@@ -1143,7 +1341,7 @@ describe('Sessions service - find, get, create', () => {
       await db('users').insert({
         github_id: 1003,
         username: 'carol',
-        approved: true,
+        status: 'approved',
       });
       const carol = await db('users').where({ username: 'carol' }).first();
 
@@ -1378,13 +1576,13 @@ describe('Sessions service - find, get, create', () => {
     it("throws NotFound when getting another user's session", async () => {
       await expect(
         app.service('sessions').get(sessId2, params({ id: userId1 }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('throws NotFound for a non-existent id', async () => {
-      await expect(app.service('sessions').get(99999, params({ id: userId1 }))).rejects.instanceOf(
-        NotFound
-      );
+      await expect(
+        app.service('sessions').get(99999, params({ id: userId1 }))
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -1526,13 +1724,13 @@ describe('Sessions service - find, get, create', () => {
     it("throws NotFound when patching another user's session", async () => {
       await expect(
         app.service('sessions').patch(sessId2, { status: 'completed' }, params({ id: userId1 }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('throws NotFound for a non-existent id', async () => {
       await expect(
         app.service('sessions').patch(99999, { status: 'completed' }, params({ id: userId1 }))
-      ).rejects.instanceOf(NotFound);
+      ).rejects.toBeNotFoundError();
     });
 
     it('rejects when not authenticated', async () => {
@@ -1645,6 +1843,81 @@ describe('Sessions service - find, get, create', () => {
     });
   });
 
+  describe('sharing', () => {
+    it('lets another user get a shared session and lists it under list_scope=shared', async () => {
+      await app.service('sessions').patch(sessId1, { is_shared: true }, params({ id: userId1 }));
+
+      const got = await app.service('sessions').get(sessId1, params({ id: userId2 }));
+      expect(got.id).toBe(sessId1);
+      expect(got.is_shared).toBe(true);
+      expect(got.owner).toMatchObject({ id: userId1, username: 'alice' });
+
+      const mine = await app.service('sessions').find({
+        query: { list_scope: 'mine' },
+        ...params({ id: userId2 }),
+      });
+      expect((mine.data ?? mine).map((s) => s.id)).not.toContain(sessId1);
+
+      const shared = await app.service('sessions').find({
+        query: { list_scope: 'shared' },
+        ...params({ id: userId2 }),
+      });
+      expect((shared.data ?? shared).map((s) => s.id)).toContain(sessId1);
+
+      const ownerMine = await app.service('sessions').find({
+        query: { list_scope: 'mine' },
+        ...params({ id: userId1 }),
+      });
+      expect((ownerMine.data ?? ownerMine).map((s) => s.id)).toContain(sessId1);
+    });
+
+    it('does not let a collaborator archive or patch settings', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+      await expect(
+        app.service('sessions').archive(sessId1, params({ id: userId2 }))
+      ).rejects.toBeNotFoundError();
+      await expect(
+        app.service('sessions').patch(sessId1, { label: 'hijack' }, params({ id: userId2 }))
+      ).rejects.toBeNotFoundError();
+    });
+
+    it('isolates last_viewed_at per viewer', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+      const aliceViewed = '2026-03-01T00:00:00.000Z';
+      const bobViewed = '2026-03-02T00:00:00.000Z';
+      await app
+        .service('sessions')
+        .patch(sessId1, { last_viewed_at: aliceViewed }, params({ id: userId1 }));
+      await app
+        .service('sessions')
+        .patch(sessId1, { last_viewed_at: bobViewed }, params({ id: userId2 }));
+
+      const alice = await app.service('sessions').get(sessId1, params({ id: userId1 }));
+      const bob = await app.service('sessions').get(sessId1, params({ id: userId2 }));
+      expect(alice.last_viewed_at).toBe(aliceViewed);
+      expect(bob.last_viewed_at).toBe(bobViewed);
+      const ownerRow = await db('sessions').where({ id: sessId1 }).first();
+      expect(ownerRow.last_viewed_at).toBe(aliceViewed);
+    });
+
+    it('upserts concurrent last_viewed_at patches without a primary-key error', async () => {
+      await db('sessions').where({ id: sessId1 }).update({ is_shared: 1 });
+      const first = '2026-03-01T00:00:00.000Z';
+      const second = '2026-03-02T00:00:00.000Z';
+      await Promise.all([
+        app.service('sessions').patch(sessId1, { last_viewed_at: first }, params({ id: userId2 })),
+        app.service('sessions').patch(sessId1, { last_viewed_at: second }, params({ id: userId2 })),
+      ]);
+      const bob = await app.service('sessions').get(sessId1, params({ id: userId2 }));
+      expect([first, second]).toContain(bob.last_viewed_at);
+      const rows = await db('session_user_state').where({
+        session_id: sessId1,
+        user_id: userId2,
+      });
+      expect(rows).toHaveLength(1);
+    });
+  });
+
   // ── create ─────────────────────────────────────────────────────────────────
 
   describe('create', () => {
@@ -1656,6 +1929,40 @@ describe('Sessions service - find, get, create', () => {
       expect(session.user_id).toBe(userId1);
       expect(session.repo_full_name).toBe('test/repo');
       expect(session.base_branch).toBe('main');
+    });
+
+    it('snapshots MCP server defaults and applies create overrides', async () => {
+      const [onId] = await db('user_mcp_servers').insert({
+        user_id: userId1,
+        name: 'docs',
+        transport: 'http',
+        url: 'https://mcp.example/docs',
+        enabled: 1,
+      });
+      const [offId] = await db('user_mcp_servers').insert({
+        user_id: userId1,
+        name: 'logs',
+        transport: 'sse',
+        url: 'https://mcp.example/logs',
+        enabled: 0,
+      });
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          mcp_servers: { [onId]: false, [offId]: true, 99999: true },
+        }),
+        params({ id: userId1 })
+      );
+      expect(session.mcp_servers).toEqual({
+        [String(onId)]: false,
+        [String(offId)]: true,
+      });
+
+      const patched = await app
+        .service('sessions')
+        .patch(session.id, { mcp_servers: { [onId]: true } }, params({ id: userId1 }));
+      expect(patched.mcp_servers[String(onId)]).toBe(true);
+      expect(patched.mcp_servers[String(offId)]).toBe(true);
     });
 
     it('persists builder agent sdk and model at create', async () => {
@@ -1941,11 +2248,12 @@ describe('Sessions service - find, get, create', () => {
       pushSpy.mockRestore();
     });
 
-    it('skips auto-push when there are no commits to push', async () => {
+    it('skips auto-push when there are no commits and PR metadata is in sync', async () => {
       const created = await app
         .service('sessions')
         .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
 
+      const syncedAt = new Date().toISOString();
       await db('sessions').where({ id: created.id }).update({
         session_path: '/tmp/wt-auto-push-no-commits',
         auto_push: 1,
@@ -1953,6 +2261,8 @@ describe('Sessions service - find, get, create', () => {
         label: 'Title only',
         pr_description: 'Body without new commits',
         pr_number: 42,
+        last_pushed_at: syncedAt,
+        pr_metadata_updated_at: syncedAt,
       });
 
       vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
@@ -1964,6 +2274,202 @@ describe('Sessions service - find, get, create', () => {
       await app.service('sessions').onTurnComplete(created.id);
       expect(pushSpy).not.toHaveBeenCalled();
       pushSpy.mockRestore();
+    });
+
+    it('auto-pushes when PR metadata changed but there are no new commits', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({
+          session_path: '/tmp/wt-auto-push-pr-metadata',
+          auto_push: 1,
+          status: 'completed',
+          label: 'Updated title',
+          pr_description: 'Updated body',
+          pr_number: 42,
+          last_pushed_at: new Date(Date.now() - 60_000).toISOString(),
+          pr_metadata_updated_at: new Date().toISOString(),
+        });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push').mockResolvedValue({ ok: true });
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      pushSpy.mockRestore();
+    });
+
+    it('does not auto-push a continued session whose PR metadata was only loaded from GitHub', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      getOpenPR.mockResolvedValueOnce({
+        number: 42,
+        html_url: 'https://github.com/test/repo/pull/42',
+        title: 'Feature PR',
+        base_ref: 'develop',
+        draft: false,
+      });
+
+      const created = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({ session_path: '/tmp/wt-continue-no-push', auto_push: 1, status: 'completed' });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+    });
+
+    it('auto-pushes a continued session when there are commits even if metadata was only loaded', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      getOpenPR.mockResolvedValueOnce({
+        number: 42,
+        html_url: 'https://github.com/test/repo/pull/42',
+        title: 'Feature PR',
+        base_ref: 'develop',
+        draft: false,
+      });
+
+      const created = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({ session_path: '/tmp/wt-continue-commits', auto_push: 1, status: 'completed' });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 2,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push').mockResolvedValue({ ok: true });
+      await app.service('sessions').onTurnComplete(created.id);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      pushSpy.mockRestore();
+    });
+
+    it('does not auto-push when a non-primary builder completes a turn', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const primary = await db('agents').where({ session_id: created.id, is_primary: 1 }).first();
+      const [extraId] = await db('agents').insert({
+        session_id: created.id,
+        ref: 2,
+        name: 'Extra',
+        agent_type: 'builder',
+        is_primary: 0,
+        status: 'completed',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+      });
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-extra-builder',
+        auto_push: 1,
+        status: 'completed',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 2,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id, extraId);
+      expect(pushSpy).not.toHaveBeenCalled();
+      pushSpy.mockRestore();
+    });
+
+    it('syncs PR metadata without git push when there are no new commits', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions')
+        .where({ id: created.id })
+        .update({
+          session_path: '/tmp/wt-metadata-only-push',
+          label: 'Title',
+          pr_description: 'Body',
+          pr_number: 7,
+          last_pushed_at: new Date(Date.now() - 60_000).toISOString(),
+          pr_metadata_updated_at: new Date().toISOString(),
+        });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+      vi.mocked(getOpenPRByNumber).mockResolvedValueOnce({
+        title: 'Title',
+        body: '',
+        base: { ref: 'main' },
+      });
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitPush).not.toHaveBeenCalled();
+      expect(upsertPR).toHaveBeenCalledTimes(1);
+      expect(upsertPR).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          baseBranch: sessionRow.base_branch,
+          currentBaseBranch: 'main',
+        })
+      );
     });
 
     it('does not flush queued messages when onTurnComplete runs on an approval session', async () => {
@@ -2065,8 +2571,9 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('creates a first message when initial_prompt is provided', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
 
       await app
         .service('sessions')
@@ -2079,11 +2586,13 @@ describe('Sessions service - find, get, create', () => {
       expect(userMsgCall).toBeTruthy();
       const parsed = JSON.parse(userMsgCall[0].message_json);
       expect(parsed.message.content).toBe('Please add tests');
+      createMessage.mockRestore();
     });
 
     it('does not create a first message when initial_prompt is empty', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
 
       const session = await app
         .service('sessions')
@@ -2096,6 +2605,7 @@ describe('Sessions service - find, get, create', () => {
       expect(session.label).toBe(`New session #${session.id}`);
       const savedRow = await db('sessions').where({ id: session.id }).first();
       expect(session.remote_branch).toBe(`task-${savedRow.short_id}`);
+      createMessage.mockRestore();
     });
 
     it('does not generate metadata for a global session without initial_prompt', async () => {
@@ -2146,7 +2656,7 @@ describe('Sessions service - find, get, create', () => {
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/foo',
         expect.any(String),
-        null,
+        expect.objectContaining({ mode: 'local' }),
         { localBranch: `feature/foo-${savedRow.short_id}`, baseBranch: 'develop' }
       );
       expect(session.local_branch).toBe(`feature/foo-${savedRow.short_id}`);
@@ -2156,6 +2666,47 @@ describe('Sessions service - find, get, create', () => {
       expect(session.pr_url).toBe('https://github.com/test/repo/pull/42');
       expect(session.label).toBe('Feature PR');
       expect(generateSessionMetadata).not.toHaveBeenCalled();
+    });
+
+    it('create_new_branch=false does not mark PR metadata as updated when loading an open PR', async () => {
+      getOpenPR.mockResolvedValueOnce({
+        number: 42,
+        html_url: 'https://github.com/test/repo/pull/42',
+        title: 'Feature PR',
+        base_ref: 'develop',
+        draft: false,
+      });
+
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      const row = await db('sessions').where({ id: session.id }).first();
+      expect(row.pr_number).toBe(42);
+      expect(row.label).toBe('Feature PR');
+      expect(row.pr_metadata_updated_at).toBeNull();
+    });
+
+    it('create_new_branch=false does not mark PR metadata as updated without an open PR', async () => {
+      getOpenPR.mockResolvedValueOnce(null);
+
+      const session = await app.service('sessions').create(
+        sessionData({
+          repo_id: repoId,
+          base_branch: 'feature/foo',
+          create_new_branch: false,
+        }),
+        params({ id: userId1 })
+      );
+
+      const row = await db('sessions').where({ id: session.id }).first();
+      expect(row.label).toBe('Continuing: feature/foo');
+      expect(row.pr_metadata_updated_at).toBeNull();
     });
 
     it('create_new_branch=false strips baguette PR markers into pr_description', async () => {
@@ -2219,14 +2770,15 @@ describe('Sessions service - find, get, create', () => {
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/bar',
         expect.any(String),
-        null,
+        expect.objectContaining({ mode: 'local' }),
         { localBranch: `feature/bar-${savedRow.short_id}`, baseBranch: 'mainline' }
       );
     });
 
     it('persists a system prompt message before the first user message', async () => {
-      const createMessage = vi.fn().mockResolvedValue({ id: 99 });
-      app.use('messages', { create: createMessage });
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
 
       await app
         .service('sessions')
@@ -2246,6 +2798,7 @@ describe('Sessions service - find, get, create', () => {
       const promptIdx = createMessage.mock.calls.indexOf(promptCall);
       const userMsgIdx = createMessage.mock.calls.findIndex(([data]) => data.type === 'user');
       expect(promptIdx).toBeLessThan(userMsgIdx);
+      createMessage.mockRestore();
     });
 
     it('creates a global session in the repos folder without a worktree clone', async () => {
@@ -2329,7 +2882,7 @@ describe('Sessions service - find, get, create', () => {
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/taken',
         savedRow.short_id,
-        null,
+        expect.objectContaining({ mode: 'local' }),
         expect.objectContaining({ localBranch: session.local_branch })
       );
     });
@@ -2459,13 +3012,33 @@ describe('Sessions service - restartInterruptedSessions', () => {
   // ignore anything that is not a user message, so assert on those only.
   const userDispatches = (mock) => mock.mock.calls.filter(([message]) => message.type === 'user');
 
+  /** Insert a non-primary agent (extra builder or subagent) mid-turn in a session. */
+  const insertChild = async (sessId, overrides = {}) => {
+    const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+    const [id] = await db('agents').insert({
+      session_id: sessId,
+      ref: overrides.ref ?? 2,
+      name: overrides.name ?? 'Helper',
+      agent_type: overrides.agent_type ?? 'subagent',
+      is_primary: 0,
+      status: overrides.status ?? 'running',
+      agent_config_id: primary.agent_config_id,
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      current_turn_id: 0,
+      parent_agent_id: primary.id,
+      claude_session_id: overrides.claude_session_id ?? null,
+    });
+    return id;
+  };
+
   beforeEach(async () => {
     vi.clearAllMocks();
     claudeHandleMessageCreated.mockResolvedValue(undefined);
     cursorHandleMessageCreated.mockResolvedValue(undefined);
     loadBaguetteConfig.mockResolvedValue(null);
 
-    await db('users').insert({ github_id: 2001, username: 'alice', approved: true });
+    await db('users').insert({ github_id: 2001, username: 'alice', status: 'approved' });
     userId = (await db('users').where({ username: 'alice' }).first()).id;
     await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
     repoId = (await db('repos').where({ full_name: 'test/repo' }).first()).id;
@@ -2480,7 +3053,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect(await statusTextsFor(sessId)).toEqual(['Server restarted — resuming session']);
     expect(resumeInterruptedReviews).toHaveBeenCalled();
 
@@ -2498,7 +3077,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 0, failed: 0 });
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     const dispatched = userDispatches(cursorHandleMessageCreated);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0][0].session_id).toBe(sessId);
@@ -2510,7 +3095,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
     expect(userDispatches(claudeHandleMessageCreated)).toHaveLength(0);
 
@@ -2525,7 +3116,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect(userDispatches(cursorHandleMessageCreated)).toHaveLength(0);
   });
 
@@ -2537,7 +3134,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
     expect(await statusTextsFor(sessId)).toEqual([
       'Server restarted — resuming session',
@@ -2546,14 +3149,20 @@ describe('Sessions service - restartInterruptedSessions', () => {
   });
 
   it('leaves sessions waiting on user approval alone on restart', async () => {
-    const sessId = await seedSession({ status: 'approval', claude_session_id: 'claude-abc' });
+    const sessId = await seedSession({ claude_session_id: 'claude-abc' });
+    await db('agents').where({ session_id: sessId, is_primary: 1 }).update({ status: 'approval' });
 
     expect(await app.service('sessions').restartInterruptedSessions()).toEqual({
       restarted: 0,
       stopped: 0,
       failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
     });
-    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('approval');
+    expect((await db('agents').where({ session_id: sessId, is_primary: 1 }).first()).status).toBe(
+      'approval'
+    );
+    expect(await messagesFor(sessId)).toHaveLength(0);
     expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
   });
 
@@ -2568,7 +3177,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 0, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
     expect(await db('session_messages')).toHaveLength(0);
   });
@@ -2578,7 +3193,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: sessId }).first()).status).toBe('failed');
     expect(removeWorktree).toHaveBeenCalled();
   });
@@ -2588,7 +3209,13 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 0, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     const row = await db('sessions').where({ id: sessId }).first();
     expect(row.archived_at).toBeTruthy();
     expect(row.status).toBe('archived');
@@ -2618,7 +3245,133 @@ describe('Sessions service - restartInterruptedSessions', () => {
 
     const result = await app.service('sessions').restartInterruptedSessions();
 
-    expect(result).toEqual({ restarted: 1, stopped: 1, failed: 0 });
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
     expect((await db('sessions').where({ id: healthy }).first()).status).toBe('running');
+  });
+
+  it('resumes an interrupted subagent and reports it in the primary restart prompt', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc', session_path: '/tmp/wt' });
+    const primary = await db('agents').where({ session_id: sessId, is_primary: 1 }).first();
+    const childId = await insertChild(sessId, { claude_session_id: 'child-claude-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 1,
+      childrenStopped: 0,
+    });
+    expect((await db('agents').where({ id: childId }).first()).status).toBe('running');
+
+    const dispatched = userDispatches(claudeHandleMessageCreated);
+    expect(dispatched).toHaveLength(2);
+    const primaryPrompt = JSON.parse(
+      dispatched.find(([m]) => m.agent_id === primary.id)[0].message_json
+    );
+    expect(primaryPrompt.content).toContain('#2 "Helper"');
+    expect(primaryPrompt.content).toMatch(/will be resumed automatically/);
+    const childPrompt = JSON.parse(
+      dispatched.find(([m]) => m.agent_id === childId)[0].message_json
+    );
+    expect(childPrompt.content).toMatch(/interrupted your previous turn/);
+  });
+
+  it('marks a non-resumable subagent stopped and says so in the restart prompt', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc' });
+    await insertChild(sessId, { name: 'Flaky' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 1,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 1,
+    });
+
+    const dispatched = userDispatches(claudeHandleMessageCreated);
+    expect(dispatched).toHaveLength(1); // primary only — the child has no transcript to resume
+    const primaryPrompt = JSON.parse(dispatched[0][0].message_json);
+    expect(primaryPrompt.content).toMatch(/could not be resumed and was stopped/);
+    const child = await db('agents').where({ session_id: sessId, is_primary: 0 }).first();
+    expect(child.status).toBe('stopped');
+  });
+
+  it('omits the subagent section when the session has no interrupted children', async () => {
+    await seedSession({ claude_session_id: 'claude-abc' });
+
+    await app.service('sessions').restartInterruptedSessions();
+
+    const dispatched = userDispatches(claudeHandleMessageCreated);
+    expect(dispatched).toHaveLength(1);
+    const primaryPrompt = JSON.parse(dispatched[0][0].message_json);
+    expect(primaryPrompt.content).not.toMatch(/Other agents in this session/);
+  });
+
+  it('resumes children even when the primary had nothing to resume', async () => {
+    const sessId = await seedSession({ claude_session_id: null, session_path: '/tmp/wt' });
+    await insertChild(sessId, { claude_session_id: 'child-claude-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 1,
+      failed: 0,
+      childrenRestarted: 1,
+      childrenStopped: 0,
+    });
+    expect((await db('sessions').where({ id: sessId }).first()).status).toBe('stopped');
+    // Only the child is dispatched; the primary fell back to the stopped path.
+    expect(userDispatches(claudeHandleMessageCreated)).toHaveLength(1);
+  });
+
+  it('stops children of archived sessions instead of resuming them', async () => {
+    const sessId = await seedSession({
+      claude_session_id: 'claude-abc',
+      archived_at: new Date().toISOString(),
+    });
+    await insertChild(sessId, { claude_session_id: 'child-claude-1' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 1,
+    });
+    expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
+    const child = await db('agents').where({ session_id: sessId, is_primary: 0 }).first();
+    expect(child.status).toBe('stopped');
+  });
+
+  it('leaves an approval-waiting subagent alone on restart', async () => {
+    const sessId = await seedSession({ claude_session_id: 'claude-abc', session_path: '/tmp/wt' });
+    await db('agents').where({ session_id: sessId, is_primary: 1 }).update({ status: 'approval' });
+    await insertChild(sessId, { claude_session_id: 'child-claude-1', status: 'approval' });
+
+    const result = await app.service('sessions').restartInterruptedSessions();
+
+    expect(result).toEqual({
+      restarted: 0,
+      stopped: 0,
+      failed: 0,
+      childrenRestarted: 0,
+      childrenStopped: 0,
+    });
+    expect(claudeHandleMessageCreated).not.toHaveBeenCalled();
+    const child = await db('agents').where({ session_id: sessId, is_primary: 0 }).first();
+    expect(child.status).toBe('approval');
   });
 });

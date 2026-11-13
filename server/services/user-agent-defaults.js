@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import {
   parseAgentDefaultModelJson,
   stringifyAgentDefaultModel,
@@ -6,6 +6,7 @@ import {
 import { loadOwnedAgentConfig } from './agent-config-resolver.js';
 import { validateAgentSessionDefaults } from './agent-session-defaults.js';
 import {
+  SUBAGENT_DEFAULT_ANY,
   SUBAGENT_DEFAULT_CONFIG,
   SUBAGENT_DEFAULT_INHERIT,
   SUBAGENT_DEFAULT_MODE_VALUES,
@@ -131,9 +132,9 @@ async function normalizeAgentDefaultsPatch(context) {
     if (data.subagent_default_mode == null || data.subagent_default_mode === '') {
       data.subagent_default_mode = SUBAGENT_DEFAULT_INHERIT;
     } else {
-      const mode = normalizeSubagentDefaultMode(data.subagent_default_mode);
+      const mode = String(data.subagent_default_mode).trim().toLowerCase();
       if (!SUBAGENT_DEFAULT_MODE_VALUES.includes(mode)) {
-        throw new BadRequest('subagent_default_mode must be inherit, config, or preset');
+        throw new BadRequest('subagent_default_mode must be inherit, config, preset, or any');
       }
       data.subagent_default_mode = mode;
     }
@@ -152,7 +153,11 @@ async function normalizeAgentDefaultsPatch(context) {
       : existing.subagent_default_mode
   );
 
-  if (subagentMode === SUBAGENT_DEFAULT_INHERIT || subagentMode === SUBAGENT_DEFAULT_PRESET) {
+  if (
+    subagentMode === SUBAGENT_DEFAULT_INHERIT ||
+    subagentMode === SUBAGENT_DEFAULT_PRESET ||
+    subagentMode === SUBAGENT_DEFAULT_ANY
+  ) {
     if (data.subagent_default_mode !== undefined) {
       data.subagent_default_config_id = null;
       data.subagent_default_model = null;

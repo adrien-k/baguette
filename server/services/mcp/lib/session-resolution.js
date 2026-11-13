@@ -5,6 +5,8 @@ export const SESSION_LIST_COLUMNS = [
   'repo_id',
   'repo_full_name',
   'is_global',
+  'is_shared',
+  'user_id',
   'base_branch',
   'local_branch',
   'remote_branch',
@@ -53,7 +55,15 @@ export async function requireOwnedSessionById(app, session_id, userId) {
 }
 
 export function applySessionSearchFilters(query, filters, userId) {
-  query.where('sessions.user_id', userId);
+  if (filters.list_scope === 'shared') {
+    query.where('sessions.is_shared', 1).whereNot('sessions.user_id', userId);
+  } else if (filters.list_scope === 'mine') {
+    query.where('sessions.user_id', userId);
+  } else {
+    query.where(function ownerOrShared() {
+      this.where('sessions.user_id', userId).orWhere('sessions.is_shared', 1);
+    });
+  }
   if (!filters.include_archived) query.whereNull('sessions.archived_at');
   if (filters.repo_id != null) query.where('sessions.repo_id', filters.repo_id);
   if (filters.is_global) query.where('sessions.is_global', true);

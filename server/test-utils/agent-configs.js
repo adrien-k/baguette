@@ -1,10 +1,10 @@
 import { encrypt } from '../lib/encrypt.js';
 import { accountAgentConfigLabel } from '../../shared/agent-config-labels.js';
-import { defaultAgentConfigApiKeyEnvVar } from '../../shared/agent-config-api-key-env.js';
 import {
   ANTHROPIC_API_KEY_ENV,
   ANTHROPIC_AUTH_TOKEN_ENV,
 } from '../../shared/agent-config-api-key-env.js';
+import { DEFAULT_PI_API_KEY_ENV_VAR } from '../../shared/pi-api-key-env-vars.js';
 
 /**
  * Insert a test agent_configs row (credentials for Claude/Cursor/Pi in migrated schema).
@@ -23,11 +23,13 @@ export async function insertTestAgentConfig(
   const envVar =
     apiKeyEnvVar !== undefined
       ? apiKeyEnvVar
-      : sdk === 'cursor'
+      : sdk === 'cursor' || sdk === 'mock'
         ? null
         : apiKey?.startsWith('tok')
           ? ANTHROPIC_AUTH_TOKEN_ENV
-          : defaultAgentConfigApiKeyEnvVar(sdk);
+          : sdk === 'pi'
+            ? DEFAULT_PI_API_KEY_ENV_VAR
+            : ANTHROPIC_API_KEY_ENV;
   const [id] = await db('agent_configs').insert({
     user_id: userId,
     label: label ?? accountAgentConfigLabel(sdk),
@@ -64,7 +66,7 @@ export async function ensureTestPiConfig(db, userId, apiKey = 'pi-test-key') {
 
 /** Mock config when ENABLE_MOCK_AGENT is set (tests / e2e). */
 export async function ensureTestMockConfig(db, userId) {
-  const { ensureMockAgentConfig } = await import('../services/mock-agent-config.js');
+  const { ensureMockAgentConfig } = await import('../agent-sdks/mock/mock-agent-config.js');
   const id = await ensureMockAgentConfig(db, userId);
   if (!id) {
     return insertTestAgentConfig(db, userId, {

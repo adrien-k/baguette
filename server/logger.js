@@ -4,10 +4,18 @@ import pretty from 'pino-pretty';
 const isDev = process.env.NODE_ENV !== 'production';
 const isTest = process.env.NODE_ENV === 'test';
 
-// In-process pretty stream (no worker thread): pino transports run in a worker, and
-// `node --watch` posts messages from workers that thread-stream treats as fatal.
-const stream = isDev && !isTest ? pretty({ colorize: true }) : undefined;
+function createLogger() {
+  if (isTest) {
+    return pino({ level: 'silent' });
+  }
+  if (isDev) {
+    // Destination stream, not `transport`: pino-pretty's worker thread races
+    // `node --watch` restarts (thread-stream: "this should not happen: undefined").
+    return pino({ level: 'info' }, pretty({ colorize: true }));
+  }
+  return pino({ level: 'info' });
+}
 
-const logger = pino({ level: isTest ? 'silent' : 'info' }, stream);
+const logger = createLogger();
 
 export default logger;

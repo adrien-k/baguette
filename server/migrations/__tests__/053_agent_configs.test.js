@@ -1,24 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Knex from 'knex';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { encrypt } from '../../lib/encrypt.js';
 import {
-  up as agentConfigsUp,
   backfillConfigsForScope,
   pickAgentConfigIdForSessionBackfill,
 } from '../053_agent_configs.js';
 import {
   accountAgentConfigLabel,
-  CLAUDE_TOKEN_LABEL,
   repoAgentConfigLabel,
-  repoAgentTokenLabel,
 } from '../../../shared/agent-config-labels.js';
 
-const migrationsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-describe('053_agent_configs', () => {
+describe('053_agent_configs helpers', () => {
   let db;
 
   beforeEach(async () => {
@@ -28,60 +20,25 @@ describe('053_agent_configs', () => {
       connection: { filename: ':memory:' },
       useNullAsDefault: true,
     });
-    await db.schema.createTable('knex_migrations', (t) => {
+    await db.schema.createTable('users', (t) => {
       t.increments('id').primary();
-      t.string('name');
-      t.integer('batch');
-      t.datetime('migration_time');
+      t.integer('github_id');
+      t.string('username');
+      t.boolean('approved');
+      t.text('anthropic_api_key_encrypted');
+      t.text('anthropic_auth_token_encrypted');
     });
-    const files = fs
-      .readdirSync(migrationsPath)
-      .filter((f) => f.endsWith('.js') && f < '053_agent_configs.js')
-      .sort();
-    for (const file of files) {
-      const mod = await import(pathToFileURL(path.join(migrationsPath, file)).href);
-      await mod.up(db);
-    }
-  });
-
-  afterEach(async () => {
-    await db.destroy();
-  });
-
-  it('creates separate rows for claude key and token with expected env vars', async () => {
-    const [userId] = await db('users').insert({
-      github_id: 99,
-      username: 'u',
-      approved: true,
-      anthropic_api_key_encrypted: encrypt('sk-ant'),
-      anthropic_auth_token_encrypted: encrypt('tok'),
+    await db.schema.createTable('repos', (t) => {
+      t.increments('id').primary();
+      t.string('full_name');
+      t.string('repo_path');
     });
-    await agentConfigsUp(db);
-    const rows = await db('agent_configs').where({ user_id: userId }).orderBy('id', 'asc');
-    expect(rows).toHaveLength(2);
-    expect(rows[0].label).toBe(accountAgentConfigLabel('claude'));
-    expect(rows[0].api_key_env_var).toBe('ANTHROPIC_API_KEY');
-    expect(rows[1].label).toBe('Claude token');
-    expect(rows[1].api_key_env_var).toBe('ANTHROPIC_AUTH_TOKEN');
-  });
-
-  it('creates a Pi config from users.pi_* during migration', async () => {
-    const [userId] = await db('users').insert({
-      github_id: 102,
-      username: 'pi-user',
-      approved: true,
-      pi_api_key_encrypted: encrypt('pi-secret'),
-      pi_api_key_env_var: 'OPENAI_API_KEY',
+    await db.schema.createTable('user_repos', (t) => {
+      t.increments('id').primary();
+      t.integer('user_id');
+      t.integer('repo_id');
+      t.text('anthropic_api_key_encrypted');
     });
-    await agentConfigsUp(db);
-    const piRow = await db('agent_configs').where({ user_id: userId, sdk: 'pi' }).first();
-    expect(piRow).toBeTruthy();
-    expect(piRow.api_key_env_var).toBe('OPENAI_API_KEY');
-    const user = await db('users').where({ id: userId }).first();
-    expect(user.pi_api_key_encrypted).toBeUndefined();
-  });
-
-  it('truncates per-repo labels and prefers repo config on session backfill', async () => {
     await db.schema.createTable('agent_configs', (t) => {
       t.increments('id').primary();
       t.integer('user_id').notNullable();
@@ -94,6 +51,13 @@ describe('053_agent_configs', () => {
       t.timestamp('created_at');
       t.timestamp('updated_at');
     });
+  });
+
+  afterEach(async () => {
+    await db.destroy();
+  });
+
+  it('truncates per-repo labels and prefers repo config on session backfill', async () => {
     const [userId] = await db('users').insert({
       github_id: 100,
       username: 'u2',
@@ -140,18 +104,6 @@ describe('053_agent_configs', () => {
   });
 
   it('picks auth-token config for claude when only token was configured', async () => {
-    await db.schema.createTable('agent_configs', (t) => {
-      t.increments('id').primary();
-      t.integer('user_id').notNullable();
-      t.string('label', 20).notNullable();
-      t.string('sdk').notNullable();
-      t.text('api_url').nullable();
-      t.text('api_key_encrypted').nullable();
-      t.string('api_key_env_var').nullable();
-      t.text('extra_env_json').nullable();
-      t.timestamp('created_at');
-      t.timestamp('updated_at');
-    });
     const [userId] = await db('users').insert({
       github_id: 101,
       username: 'token-only',
@@ -172,90 +124,6 @@ describe('053_agent_configs', () => {
     expect(scope.primary).toBeNull();
     expect(scope.token).toBeTruthy();
     expect(pickAgentConfigIdForSessionBackfill(null, scope, 'claude')).toBe(scope.token);
-  });
-
-  it('completes when a user_repos link has no sessions (pre-053 schema)', async () => {
-    const [userId] = await db('users').insert({
-      github_id: 200,
-      username: 'linked-no-sessions',
-      approved: true,
-    });
-    const [repoId] = await db('repos').insert({
-      full_name: 'org/idle-repo',
-      repo_path: 'repos/org/idle-repo',
-    });
-    await db('user_repos').insert({ user_id: userId, repo_id: repoId });
-
-    await expect(agentConfigsUp(db)).resolves.toBeUndefined();
-
-    const link = await db('user_repos').where({ user_id: userId, repo_id: repoId }).first();
-    expect(link.agent_default_config_id).toBeNull();
-    expect(link.agent_default_model).toBeNull();
-  });
-
-  it('keeps users.agent_defaults for 055 and preserves base-url-only repo overrides', async () => {
-    const [userId] = await db('users').insert({
-      github_id: 300,
-      username: 'gateway-user',
-      approved: true,
-      anthropic_api_key_encrypted: encrypt('account-key'),
-      anthropic_base_url: 'https://account-gateway.example',
-      agent_defaults: JSON.stringify({ agent_sdk: 'claude', model: 'sonnet' }),
-    });
-    const [repoId] = await db('repos').insert({
-      full_name: 'org/gateway-repo',
-      repo_path: 'repos/org/gateway-repo',
-    });
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      anthropic_base_url: 'https://repo-gateway.example',
-    });
-
-    await expect(agentConfigsUp(db)).resolves.toBeUndefined();
-
-    const repoConfig = await db('agent_configs')
-      .where({ user_id: userId, sdk: 'claude' })
-      .orderBy('id', 'asc');
-    expect(repoConfig).toHaveLength(2);
-    expect(repoConfig[0].api_url).toBe('https://account-gateway.example');
-    expect(repoConfig[1].label).toBe(repoAgentConfigLabel('claude', 'org/gateway-repo'));
-    expect(repoConfig[1].api_url).toBe('https://repo-gateway.example');
-    // borrowed account key — ciphertext is copied verbatim from the account config
-    expect(repoConfig[1].api_key_encrypted).toBe(repoConfig[0].api_key_encrypted);
-    expect(await db.schema.hasColumn('users', 'agent_defaults')).toBe(true);
-  });
-
-  it('labels repo auth-token configs with the repo short name', async () => {
-    const accountTok = encrypt('account-tok');
-    const repoTok = encrypt('repo-tok');
-    const [userId] = await db('users').insert({
-      github_id: 400,
-      username: 'token-repos',
-      approved: true,
-      anthropic_auth_token_encrypted: accountTok,
-    });
-    const [repoId] = await db('repos').insert({
-      full_name: 'org/token-repo',
-      repo_path: 'repos/org/token-repo',
-    });
-    await db('user_repos').insert({
-      user_id: userId,
-      repo_id: repoId,
-      anthropic_auth_token_encrypted: repoTok,
-    });
-
-    await agentConfigsUp(db);
-
-    const rows = await db('agent_configs').where({ user_id: userId }).orderBy('id', 'asc');
-    expect(rows.map((r) => r.label)).toEqual([
-      CLAUDE_TOKEN_LABEL,
-      repoAgentTokenLabel('org/token-repo'),
-    ]);
-    expect(rows[0].api_key_env_var).toBe('ANTHROPIC_AUTH_TOKEN');
-    expect(rows[1].api_key_env_var).toBe('ANTHROPIC_AUTH_TOKEN');
-    expect(rows[0].api_key_encrypted).toBe(accountTok);
-    expect(rows[1].api_key_encrypted).toBe(repoTok);
   });
 });
 

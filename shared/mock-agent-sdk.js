@@ -10,6 +10,7 @@ export function mockAgentFullTurnClosingMessage() {
 - \`${MOCK_E2E_QUICK_TURN_PROMPT}\` — short turn (no tool tour)
 - \`${MOCK_E2E_SUBAGENT_PROMPT}\` — StartSubagent via MCP
 - \`${MOCK_E2E_CREATE_PLAN_PROMPT}\` — CreatePlan UI; then **Run the plan** or reply \`Proceed with the plan.\`
+- \`${MOCK_E2E_CREATE_PLAN_NON_INTERACTIVE_PROMPT}\` — CreatePlan with \`interactive: false\`; turn continues (no Run/Refine)
 - \`${MOCK_E2E_ASK_QUESTION_PROMPT}\` — AskUserQuestions UI; pick an option to submit answers`;
 }
 
@@ -54,6 +55,13 @@ export const MOCK_E2E_CREATE_PLAN_PROMPT = 'e2e mock create a plan';
 export const MOCK_E2E_PLAN_MARKDOWN = '# E2E mock plan\n\n1. First step\n2. Second step\n';
 export const MOCK_E2E_PLAN_RUN_SUMMARY = 'E2E mock plan run complete.';
 
+/** E2e: CreatePlan with interactive false + follow-on tools in the same turn. */
+export const MOCK_E2E_CREATE_PLAN_NON_INTERACTIVE_PROMPT = 'e2e mock create a non-interactive plan';
+export const MOCK_E2E_PLAN_NON_INTERACTIVE_MARKDOWN =
+  '# E2E mock orchestration plan\n\n1. Create todos\n2. Delegate via StartSubagent\n';
+export const MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY =
+  'E2E non-interactive plan saved; turn continued.';
+
 /** E2e: AskUserQuestions MCP + inline answer follow-up. */
 export const MOCK_E2E_ASK_QUESTION_PROMPT = 'e2e mock ask me a question';
 export const MOCK_E2E_ASK_QUESTION_TEXT = 'Which e2e path should we take?';
@@ -84,11 +92,14 @@ export function mockUserPromptText(parsed) {
   return '';
 }
 
-/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer'} */
+/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create-non-interactive' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer'} */
 export function mockAgentScenarioForPrompt(promptText) {
   const text = (promptText ?? '').trim().toLowerCase();
   if (text.includes(MOCK_E2E_SUBAGENT_PROMPT.toLowerCase())) return 'subagent-e2e';
   if (text.includes(MOCK_E2E_QUICK_TURN_PROMPT.toLowerCase())) return 'quick';
+  if (text.includes(MOCK_E2E_CREATE_PLAN_NON_INTERACTIVE_PROMPT.toLowerCase())) {
+    return 'plan-create-non-interactive';
+  }
   if (text.includes(MOCK_E2E_CREATE_PLAN_PROMPT.toLowerCase())) return 'plan-create';
   if (text === 'proceed with the plan.') return 'plan-run';
   if (text.includes(MOCK_E2E_ASK_QUESTION_PROMPT.toLowerCase())) return 'ask-question';

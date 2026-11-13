@@ -4,13 +4,13 @@ import {
   mapClaudeMessage,
   claudeBuildToolCallStart,
   claudeBuildToolCallComplete,
-} from '../../server/services/claude/claude-mapping.ts';
+} from '../../server/agent-sdks/claude/mapping.ts';
 import {
   mapCursorEvent,
   cursorBuildToolCallStart,
   cursorBuildToolCallComplete,
   cursorBuildToolCallProgress,
-} from '../../server/services/cursor/cursor-mapping.ts';
+} from '../../server/agent-sdks/cursor/mapping.ts';
 
 const claudeBuilders = {
   buildToolCallStart: claudeBuildToolCallStart,

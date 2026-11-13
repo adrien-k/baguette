@@ -10,7 +10,7 @@ describe('trimSessionMessagesForArchive', () => {
   let reviewerAgentId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 1, username: 'u1', approved: true });
+    await db('users').insert({ github_id: 1, username: 'u1', status: 'approved' });
     const user = await db('users').where({ username: 'u1' }).first();
     const [repoId] = await db('repos').insert({
       full_name: 'org/repo',

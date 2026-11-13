@@ -1,42 +1,21 @@
-import { defaultAgentConfigApiKeyEnvVar } from '../../shared/agent-config-api-key-env.js';
-import { isMockAgentSdkEnabled, listMockModels } from '../../shared/mock-agent-sdk.js';
-import { listClaudeModels } from './claude-gateway-models.js';
-import { listCursorModels, refreshCursorModels } from './cursor-models.js';
-import { listPiModels } from './pi-models.js';
+import { getSdkPlugin } from '../agent-sdks/registry.js';
+import { ensureBuiltInSdkPluginsRegistered } from '../agent-sdks/ensure-builtins-registered.js';
 
 /**
- * List models for an agent SDK using a decrypted agent_configs row (plus draft overrides).
+ * List models for an agent SDK using a decrypted agent_configs row (plus draft
+ * overrides). Delegates to the SDK plugin registered in `agent-sdks/index.js`.
  * @param {string} sdk
  * @param {object | null | undefined} config — decrypted agent_config shape
- * @param {{ refresh?: boolean }} [opts]
+ * @param {{ refresh?: boolean, user?: object | null }} [opts]
  */
 export async function listModelsForAgentConfig(sdk, config, { refresh = false, user = null } = {}) {
-  if (sdk === 'mock') {
-    if (!isMockAgentSdkEnabled()) return { models: [], rejected_models: [] };
-    const catalogKey = config?.api_key?.trim() || '';
-    return { models: listMockModels(catalogKey), rejected_models: [] };
+  await ensureBuiltInSdkPluginsRegistered();
+  const plugin = getSdkPlugin(sdk);
+  if (!plugin?.listModels) return { models: [], rejected_models: [] };
+  // SDKs that read keyed catalogs (mock) work with an empty api_key; the rest
+  // only list models once a credential exists.
+  if (plugin.requiresApiKey !== false && !config?.api_key) {
+    return { models: [], rejected_models: [] };
   }
-  if (!config?.api_key) return { models: [], rejected_models: [] };
-  switch (sdk) {
-    case 'claude': {
-      const result = await listClaudeModels(config, { refresh, user });
-      return result;
-    }
-    case 'cursor': {
-      const models = refresh
-        ? await refreshCursorModels(config.api_key)
-        : await listCursorModels(config.api_key);
-      return { models: models ?? [], rejected_models: [] };
-    }
-    case 'pi': {
-      const models = await listPiModels(
-        config.api_key,
-        config.api_key_env_var || defaultAgentConfigApiKeyEnvVar('pi'),
-        { refresh, config }
-      );
-      return { models: models ?? [], rejected_models: [] };
-    }
-    default:
-      return { models: [], rejected_models: [] };
-  }
+  return plugin.listModels(config, { refresh, user });
 }

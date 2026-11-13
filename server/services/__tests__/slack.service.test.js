@@ -2,20 +2,25 @@
  * Integration tests for the admin Slack apps CRUD service.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSlackService } from '../feathers/slack.service.js';
 
 const db = createTestDb();
 
-const params = { provider: 'rest', user: { id: 1 } };
+const params = { provider: 'rest', user: { id: 1, admin: 1 } };
 const unauthParams = { provider: 'rest' };
+
+function expectForbidden(promise) {
+  return expect(promise).rejects.toThrow(/Admin required|Forbidden/);
+}
 
 let app;
 
 beforeEach(async () => {
   app = feathers();
   app.set('db', db);
+  await db('users').insert({ github_id: 1, username: 'admin', status: 'approved', admin: 1 });
   registerSlackService(app);
   await app.setup();
 });
@@ -31,6 +36,10 @@ describe('find', () => {
 
   it('rejects unauthenticated access', async () => {
     await expect(service().find(unauthParams)).rejects.toThrow('Not authenticated');
+  });
+
+  it('rejects non-admin access', async () => {
+    await expectForbidden(service().find({ provider: 'rest', user: { id: 1, admin: 0 } }));
   });
 });
 

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Bot, CheckCircle, ChevronDown, ChevronRight, Square } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Bot, CheckCircle, ChevronDown, ChevronRight, Loader2, Square, Trash2 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { agentsService, messagesService, sessionIssuesService } from '../../feathers.js';
 import {
@@ -12,31 +12,41 @@ import Alert from '../../components/Alert.jsx';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { COMPOSER_STOP_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { sortIssuesBySeverity } from '@baguette/shared/session-issues.js';
 import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
+import { useSdkMetas } from '../../hooks/useSdkMetas.js';
+import { sdkDisplayName } from '@baguette/shared/agent-config-labels.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
 import { modelPatchFromConfigDefault } from '../../utils/agentConfigDefaultModel.js';
+import { resolveAccountDefaultModel } from '@baguette/shared/agent-default-model.js';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import { useSessionAgents } from '../../hooks/useSessionAgents.js';
-import { isAgentTurnActive } from '../../utils/sessionAgents.js';
+import { canRemoveAgentWhenIdle, isAgentTurnActive } from '../../utils/sessionAgents.js';
 import { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import SessionIssueCard from '../../components/SessionIssueCard.jsx';
 import ReviewLatestChangesButton from '../../components/ReviewLatestChangesButton.jsx';
+import ClearReviewerChatConfirmModal from '../../components/ClearReviewerChatConfirmModal.jsx';
 import { INLINE_SECONDARY_LINK_CLASS } from '../../utils/ui.js';
 
 const REVIEW_FOCUS_PLACEHOLDER = 'Anything specific to focus on? (optional)';
 
-function effectiveReviewerDefaults(userSettings) {
-  if (userSettings?.reviewer_default_config_id != null) {
-    return {
-      configId: userSettings.reviewer_default_config_id,
-      model: userSettings.reviewer_default_model?.model ?? null,
-      modelParams: userSettings.reviewer_default_model?.model_params ?? null,
-    };
-  }
-  return null;
+function effectiveReviewerDefaults(userSettings, configOptions) {
+  if (userSettings?.reviewer_default_config_id == null) return null;
+  const config = configOptions?.find(
+    (c) => Number(c.key) === Number(userSettings.reviewer_default_config_id)
+  );
+  const resolved = resolveAccountDefaultModel(
+    userSettings.reviewer_default_model,
+    config?.default_model
+  );
+  return {
+    configId: userSettings.reviewer_default_config_id,
+    model: resolved.model ?? null,
+    modelParams: resolved.model_params ?? null,
+  };
 }
 
 const ISSUE_SECTION_HEADING_CLASS = 'text-xs font-medium text-faint uppercase tracking-wide';
@@ -60,10 +70,12 @@ export default function ReviewView({
   issues,
   issuesLoading,
   onOpenReviewerChat,
+  onReviewerCleared,
 }) {
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { hash } = useLocation();
   const { currentUser: userSettings } = useCurrentUser();
+  const isOwner = isSessionOwner(session, userSettings);
   const [starting, setStarting] = useState(false);
   const [closedCount, setClosedCount] = useState(0);
   const [closedCountLoading, setClosedCountLoading] = useState(false);
@@ -72,6 +84,8 @@ export default function ReviewView({
   const [closedLoading, setClosedLoading] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [reviewingNewCommits, setReviewingNewCommits] = useState(false);
+  const [showClearReviewerConfirm, setShowClearReviewerConfirm] = useState(false);
+  const [clearingReviewer, setClearingReviewer] = useState(false);
   const { reviewer } = useSessionAgents(session?.id);
   const [savingIssueId, setSavingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
@@ -80,18 +94,20 @@ export default function ReviewView({
   const [reviewUserMessage, setReviewUserMessage] = reviewPersist.useState('focus', '');
 
   const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { getMeta } = useSdkMetas();
   const agentConfigOptions = configOptions;
 
   const [reviewConfigId, setReviewConfigId] = useState(null);
   const [reviewModel, setReviewModel] = useState('');
   const [reviewModelParams, setReviewModelParams] = useState(null);
   const [reviewAgentSdk, setReviewAgentSdk] = useState(null);
+  const reviewSdkLabel = sdkDisplayName(reviewAgentSdk, getMeta(reviewAgentSdk)?.label);
   const { models, stale: modelsStale } = useAgentConfigModels(reviewConfigId);
   const fallbackConfigId = agentConfigOptions[0]?.key ?? null;
 
   useEffect(() => {
     if (!session?.id) return;
-    const reviewerDefaults = effectiveReviewerDefaults(userSettings);
+    const reviewerDefaults = effectiveReviewerDefaults(userSettings, agentConfigOptions);
     const configId =
       reviewer?.agent_config_id ??
       session.review_agent_config_id ??
@@ -162,7 +178,7 @@ export default function ReviewView({
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [hash, issuesLoading, issues]);
 
-  const refreshClosedCount = () => {
+  const refreshClosedCount = useCallback(() => {
     if (!session?.id) {
       setClosedCount(0);
       setClosedCountLoading(false);
@@ -177,11 +193,11 @@ export default function ReviewView({
       })
       .catch(() => {})
       .finally(() => setClosedCountLoading(false));
-  };
+  }, [session]);
 
   useEffect(() => {
     refreshClosedCount();
-  }, [session?.id]);
+  }, [refreshClosedCount]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -195,7 +211,7 @@ export default function ReviewView({
     };
     sessionIssuesService.on('patched', onIssueClosed);
     return () => sessionIssuesService.off('patched', onIssueClosed);
-  }, [session?.id]);
+  }, [session?.id, refreshClosedCount]);
 
   const loadClosedIssues = async () => {
     if (!session?.id || closedLoading) return;
@@ -305,6 +321,23 @@ export default function ReviewView({
     }
   };
 
+  const canClearReviewer =
+    !readonly && reviewer != null && canRemoveAgentWhenIdle(reviewer) && !clearingReviewer;
+
+  const handleConfirmClearReviewer = async () => {
+    if (!reviewer?.id || !canClearReviewer) return;
+    setClearingReviewer(true);
+    try {
+      await agentsService.remove(reviewer.id);
+      setShowClearReviewerConfirm(false);
+      onReviewerCleared?.();
+    } catch (err) {
+      toastError('Failed to clear reviewer chat', err);
+    } finally {
+      setClearingReviewer(false);
+    }
+  };
+
   const handleReviewNewCommits = async () => {
     if (!session?.id || reviewingNewCommits || isRunning) return;
     if (!reviewer?.id) {
@@ -367,7 +400,7 @@ export default function ReviewView({
   };
 
   useEffect(() => {
-    if (!session?.id || readonly || modelsStale || !models.length) return;
+    if (!isOwner || !session?.id || readonly || modelsStale || !models.length) return;
     if (!reviewModel) return;
     if (models.some((m) => m.id === reviewModel)) return;
     const fallback = defaultModelForSdk(models);
@@ -416,7 +449,7 @@ export default function ReviewView({
           <div className={`${CHAT_COLUMN_CLASS} py-4 sm:py-6 space-y-4`}>
             {userSettings && !hasSdkKey && (
               <Alert variant="alert">
-                Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                Add a {reviewSdkLabel} API key in{' '}
                 <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
               </Alert>
             )}
@@ -449,9 +482,9 @@ export default function ReviewView({
                 models={models}
                 cursorModelPrefs={cursorModelPrefs}
                 onCursorModelPrefChange={setCursorModelPref}
-                onModelChange={handleReviewModelChange}
+                onModelChange={isOwner ? handleReviewModelChange : undefined}
                 agentConfigOptions={agentConfigOptions}
-                onAgentConfigChange={handleReviewConfigChange}
+                onAgentConfigChange={isOwner ? handleReviewConfigChange : undefined}
                 configsLoading={configsLoading}
                 modelsLoading={modelsStale && !models.length}
                 canSend={canStartReview}
@@ -467,11 +500,29 @@ export default function ReviewView({
           <div className={`${CHAT_COLUMN_CLASS} py-3 sm:py-4`}>
             <div className="@container w-full">
               <div className={REVIEW_CONTROLS_ROW_CLASS}>
-                <ReviewLatestChangesButton
-                  disabled={reviewingNewCommits}
-                  loading={reviewingNewCommits}
-                  onReview={handleReviewNewCommits}
-                />
+                <div className="flex w-full min-w-0 flex-row flex-nowrap items-center gap-x-3 gap-y-2 @min-[36rem]:w-auto">
+                  <ReviewLatestChangesButton
+                    disabled={reviewingNewCommits || clearingReviewer}
+                    loading={reviewingNewCommits}
+                    onReview={handleReviewNewCommits}
+                  />
+                  {canClearReviewer && (
+                    <button
+                      type="button"
+                      title="Reset reviewer chat"
+                      disabled={reviewingNewCommits || clearingReviewer}
+                      onClick={() => setShowClearReviewerConfirm(true)}
+                      className={`inline-flex shrink-0 items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50 ${INLINE_SECONDARY_LINK_CLASS}`}
+                    >
+                      {clearingReviewer ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      )}
+                      Reset
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={openReviewerChat}
@@ -492,7 +543,7 @@ export default function ReviewView({
             <div className="@container w-full bg-nav border border-line rounded-lg p-4 sm:p-5 space-y-4">
               {userSettings && !hasSdkKey && (
                 <Alert variant="alert">
-                  Add a {reviewAgentSdk === 'cursor' ? 'Cursor' : 'Claude'} API key in{' '}
+                  Add a {reviewSdkLabel} API key in{' '}
                   <Link to="/settings?tab=agent">Settings → Agent</Link> to run a review.
                 </Alert>
               )}
@@ -587,6 +638,15 @@ export default function ReviewView({
           )}
         </div>
       </div>
+      {showClearReviewerConfirm && (
+        <ClearReviewerChatConfirmModal
+          loading={clearingReviewer}
+          onCancel={() => {
+            if (!clearingReviewer) setShowClearReviewerConfirm(false);
+          }}
+          onConfirm={handleConfirmClearReviewer}
+        />
+      )}
     </div>
   );
 }

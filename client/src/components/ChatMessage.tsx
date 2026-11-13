@@ -4,7 +4,6 @@ import type {
   TypedMessageView,
 } from '@baguette/shared/session-messages.ts';
 import UserMessageContent, { userMessagePlainText } from './chat/UserMessageContent.tsx';
-import MarkdownContent from './MarkdownContent.jsx';
 import CollapsibleMarkdown from './chat/CollapsibleMarkdown.tsx';
 import ThinkingBlock from './chat/ThinkingBlock.tsx';
 import ToolCallBlock from './chat/ToolCallBlock.tsx';
@@ -21,6 +20,28 @@ import InjectedUserTurnBlock from './chat/InjectedUserTurnBlock.jsx';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
+import TurnErrorMessage from './chat/TurnErrorMessage.tsx';
+import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import UserAvatar from './UserAvatar.jsx';
+
+function UserAuthorLabel({
+  author,
+}: {
+  author?: { id?: number; username?: string; avatar_url?: string | null } | null;
+}) {
+  const { currentUser } = useCurrentUser();
+  const isSelf =
+    author?.id != null && currentUser?.id != null && String(author.id) === String(currentUser.id);
+  if (!author || isSelf) {
+    return <span className="shrink-0">You</span>;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <UserAvatar user={author} size="sm" />
+      <span className="truncate">{author.username}</span>
+    </span>
+  );
+}
 
 export type ChatMessageProps = {
   message: ChatMessageView;
@@ -30,23 +51,41 @@ export type ChatMessageProps = {
   agentName?: string;
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
-  agentType?: string | null;
   pinnedRunningBashIds?: Set<string>;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 };
 
 function UserMessageModelBadge({
   message,
-  agentType,
 }: {
   message: MessageViewMeta & {
     model?: string | null;
     model_params?: unknown;
   };
-  agentType: ChatMessageProps['agentType'];
 }) {
   return (
     <MessageTurnModelBadge
-      agentType={agentType}
       model={message.model}
       modelParams={message.model_params}
       agentConfigId={message.agent_config_id}
@@ -55,31 +94,18 @@ function UserMessageModelBadge({
   );
 }
 
-function TypedUserMessage({
-  message,
-  agentType,
-}: {
-  message: TypedMessageView & { type: 'user' };
-  agentType: ChatMessageProps['agentType'];
-}) {
+function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'user' } }) {
   const isBaguette = message.source === 'baguette' || message.subtype === 'baguette';
   if (isBaguette) {
-    return <BaguetteBlock message={message} agentType={agentType} />;
+    return <BaguetteBlock message={message} />;
   }
 
   if (isLoopUserMessage(message)) {
-    return (
-      <InjectedUserTurnBlock
-        label="Loop"
-        defaultTitle="Loop run"
-        message={message}
-        agentType={agentType}
-      />
-    );
+    return <InjectedUserTurnBlock label="Loop" defaultTitle="Loop run" message={message} />;
   }
 
   if (isMcpUserMessage(message)) {
-    return <McpAgentBlock message={message} agentType={agentType} />;
+    return <McpAgentBlock message={message} />;
   }
 
   if (message.subtype === 'ask_user_answer') {
@@ -89,7 +115,7 @@ function TypedUserMessage({
       <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
         <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="shrink-0">You</span>
+            <UserAuthorLabel author={message.author} />
             {message.created_at && (
               <MessageTimestamp
                 createdAt={message.created_at}
@@ -97,7 +123,7 @@ function TypedUserMessage({
               />
             )}
           </div>
-          <UserMessageModelBadge message={message} agentType={agentType} />
+          <UserMessageModelBadge message={message} />
         </div>
         <AskUserAnswerBlock answers={answers} fallbackText={userText} />
       </div>
@@ -109,7 +135,7 @@ function TypedUserMessage({
     <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
       <div className="text-xs text-success mb-1 font-medium flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="shrink-0">You</span>
+          <UserAuthorLabel author={message.author} />
           {message.created_at && (
             <MessageTimestamp
               createdAt={message.created_at}
@@ -118,9 +144,7 @@ function TypedUserMessage({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 min-w-0">
-          {isHumanUserMessage(message) && (
-            <UserMessageModelBadge message={message} agentType={agentType} />
-          )}
+          {isHumanUserMessage(message) && <UserMessageModelBadge message={message} />}
           {userText && <CopyButton text={userText} />}
         </div>
       </div>
@@ -192,6 +216,10 @@ function TypedMessage(
     agentName = 'Agent',
     pinnedRunningBashIds,
     userReplied,
+    agents,
+    onSelectAgent,
+    tasks,
+    onSelectTask,
   } = props;
   switch (message.type) {
     case 'plan':
@@ -199,6 +227,7 @@ function TypedMessage(
         <PlanReviewBlock
           markdown={message.markdown}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );
@@ -212,6 +241,10 @@ function TypedMessage(
           sessionPath={sessionPath}
           sessionId={sessionId ?? undefined}
           userReplied={userReplied}
+          agents={agents}
+          onSelectAgent={onSelectAgent}
+          tasks={tasks}
+          onSelectTask={onSelectTask}
         />
       );
     }
@@ -250,26 +283,21 @@ function TypedMessage(
     }
 
     case 'user':
-      return <TypedUserMessage message={message} agentType={props.agentType} />;
+      return <TypedUserMessage message={message} />;
 
     case 'turn_result': {
       const isError = message.status === 'error';
-      return (
-        <>
-          <div
-            className={`text-center text-xs opacity-70 ${isError ? 'text-danger' : 'text-success'}`}
-          >
-            <span className="font-medium">{isError ? 'Error' : 'Completed'}</span>
-            {message.total_cost_usd != null && (
-              <span className="ml-2 text-faint">(${message.total_cost_usd.toFixed(4)})</span>
-            )}
+      if (isError && message.error_message) {
+        return (
+          <div className="flex justify-center px-2">
+            <TurnErrorMessage errorMessage={message.error_message} />
           </div>
-          {isError && message.error_message && (
-            <div className="mt-1 text-fg-muted text-xs">
-              <MarkdownContent>{message.error_message}</MarkdownContent>
-            </div>
-          )}
-        </>
+        );
+      }
+      return (
+        <div className="text-center text-xs opacity-70 text-success">
+          <span className="font-medium">Completed</span>
+        </div>
       );
     }
 

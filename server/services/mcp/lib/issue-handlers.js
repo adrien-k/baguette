@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { ok, fail } from './result.js';
 import { sortIssuesBySeverity } from '../../../../shared/session-issues.js';
 import { serializeIssue, issueAgentMetadataFromTurn, isIssueClosed } from '../../session-issues.js';

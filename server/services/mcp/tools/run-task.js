@@ -1,15 +1,24 @@
 import { z } from 'zod';
 import { isGlobalSession } from '../../../../shared/session-scope.js';
+import {
+  MCP_AWAIT_TIMEOUT_MS,
+  mcpAwaitTimeoutMinutes,
+  taskAwaitTimeoutMessage,
+} from '../../../../shared/mcp-await-timeout.js';
 import { loadBaguetteConfig, getAvailableTasks } from '../../baguette-config.js';
 import { ok, fail } from '../lib/result.js';
 import { streamToLines } from '../lib/stream-to-lines.js';
 
 export function createRunTaskTool(ctx) {
   const { app, session } = ctx;
+  const waitMinutes = mcpAwaitTimeoutMinutes();
   return {
     name: 'RunTask',
     description:
-      'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Tasks listed in the target task’s `depends-on` are started automatically and awaited until ready when you run that label — do not RunTask those dependencies separately. Baguette stops dependency-only tasks automatically when no task has been using them for more than 15 minutes. Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline. detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, await completion with AwaitDetachedTask, stop with KillTask. Before ending your turn, usually AwaitDetachedTask or KillTask any detached tasks you started (except dev servers you intend to keep).',
+      'Run a command defined in this repo’s `.baguette.yaml` by label (from ListProjectCommands). Use the built-in Bash/shell tool for ad-hoc shell — not this MCP tool. Runs in the session worktree with session env and shows in the command panel. Tasks listed in the target task’s `depends-on` are started automatically and awaited until ready when you run that label — do not RunTask those dependencies separately. Baguette stops dependency-only tasks automatically when no task has been using them for more than 5 minutes. ' +
+      `Default (detach: false): wait for exit and return exitCode/stdoutLines/stderrLines inline — the wait times out after ${waitMinutes} minutes, but the task is NOT cancelled: the wait is virtually detached and the task keeps running; check ReadTaskOutput/TaskStatus and call AwaitDetachedTask again to keep waiting, or KillTask only if it looks stuck for no good reason. ` +
+      `detach: true for long-running work (dev servers, slow builds): returns taskId; poll ReadTaskOutput/TaskStatus, await completion with AwaitDetachedTask (also ${waitMinutes} min per call), stop with KillTask. ` +
+      'Before ending your turn, usually AwaitDetachedTask or KillTask any detached tasks you started (except dev servers you intend to keep).',
     schema: {
       label: z.string().describe('Task key exactly as returned by ListProjectCommands'),
       args: z
@@ -24,10 +33,13 @@ export function createRunTaskTool(ctx) {
         .boolean()
         .optional()
         .describe(
-          'If true, run as a detached baguette task and return taskId immediately (use ReadTaskOutput/TaskStatus or AwaitDetachedTask). Default false: wait for exit and return output inline.'
+          `If true, run as a detached baguette task and return taskId immediately (use ReadTaskOutput/TaskStatus or AwaitDetachedTask). Default false: wait for exit and return output inline (same ${waitMinutes}-minute wait cap as the await tools).`
         ),
     },
     handler: async ({ label, args = [], env: extraEnv, detach = false }) => {
+      // The inline wait has the same wall-clock cap as the await tools: when it fires we
+      // resolve with a steering message and leave the task running (virtual detach),
+      // so the agent can check progress and keep waiting via AwaitDetachedTask.
       if (isGlobalSession(session)) {
         return fail('RunTask requires a repo session with a .baguette.yaml worktree');
       }
@@ -63,8 +75,27 @@ export function createRunTaskTool(ctx) {
 
       let stdout = '';
       let stderr = '';
+      let taskId = null;
 
       return new Promise((resolve) => {
+        let timeoutId = null;
+        const settle = (result) => {
+          if (timeoutId != null) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          resolve(result);
+        };
+
+        // Same wall-clock cap as the await tools: on timeout we just stop waiting —
+        // the task is never cancelled (virtual detach) and keeps running.
+        timeoutId = setTimeout(
+          () => settle(fail(taskAwaitTimeoutMessage({ id: taskId, label }))),
+          MCP_AWAIT_TIMEOUT_MS
+        );
+        // Never keep the server process alive just for an abandoned wait.
+        if (typeof timeoutId.unref === 'function') timeoutId.unref();
+
         app
           .service('tasks')
           .create(
@@ -75,8 +106,10 @@ export function createRunTaskTool(ctx) {
                 else stderr += data;
               },
               onExit: (id, exitCode) =>
-                resolve(
+                settle(
                   ok({
+                    taskId: id,
+                    label,
                     exitCode,
                     stdoutLines: streamToLines(stdout),
                     stderrLines: streamToLines(stderr),
@@ -85,7 +118,10 @@ export function createRunTaskTool(ctx) {
             },
             { user: { id: session.user_id } }
           )
-          .catch((err) => resolve(fail(err.message)));
+          .then((task) => {
+            taskId = task?.id ?? taskId;
+          })
+          .catch((err) => settle(fail(err.message)));
       });
     },
   };

@@ -1,3 +1,5 @@
+import { getSdkPlugin } from '../agent-sdks/registry.js';
+
 export const ISSUE_STATUSES = ['opened', 'submitted', 'ignored', 'resolved', 'closed'];
 /** Statuses the reviewer may set via UpdateIssue (use CloseIssue to archive). */
 export const REVIEWER_UPDATE_STATUSES = ['opened', 'submitted', 'ignored', 'resolved'];
@@ -29,13 +31,11 @@ export function assertIssueSeverity(severity) {
 /** Snapshot from the review turn MCP tool closure (not the session row). */
 export function issueAgentMetadataFromTurn(turnAgent = {}) {
   const agent_sdk = turnAgent.agent_sdk ?? null;
+  const supportsParams = getSdkPlugin(agent_sdk)?.supportsModelParams === true;
   return {
     agent_sdk,
     model: turnAgent.model ?? null,
-    model_params:
-      agent_sdk === 'cursor' || agent_sdk === 'claude' || agent_sdk === 'pi'
-        ? (turnAgent.model_params ?? null)
-        : null,
+    model_params: supportsParams ? (turnAgent.model_params ?? null) : null,
   };
 }
 

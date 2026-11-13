@@ -1,4 +1,3 @@
-import express from '@feathersjs/express';
 import logger from '../logger.js';
 import { GitHubBadCredentialsError } from '../errors/github-errors.js';
 
@@ -124,8 +123,10 @@ export function devErrorPlainText(err) {
 function devJsonErrorHandler(error, req, res) {
   const code = !Number.isNaN(Number.parseInt(error.code, 10))
     ? Number.parseInt(error.code, 10)
-    : 500;
-  const output = { ...error.toJSON() };
+    : httpStatus(error);
+  const output = error.toJSON
+    ? { ...error.toJSON() }
+    : { name: error.name || 'Error', message: error.message || 'Internal Server Error' };
   if (code >= 500) enrichDevServerError(output, error);
   res.status(code).set('Content-Type', 'application/json').json(output);
 }
@@ -137,20 +138,22 @@ function devHtmlErrorHandler(error, req, res) {
   res.status(code).type('text/plain').send(devErrorPlainText(error));
 }
 
+function feathersJsonError(err, req, res) {
+  const code = !Number.isNaN(Number.parseInt(err.code, 10))
+    ? Number.parseInt(err.code, 10)
+    : httpStatus(err);
+  if (isDevEnvironment() && req.accepts('json')) {
+    return devJsonErrorHandler(err, req, res);
+  }
+  const errorData = err.toJSON ? err.toJSON() : { message: errorMessage(err) };
+  res.status(code).json(errorData);
+}
+
 /**
- * Express error middleware: handleAppError then Feathers JSON error formatting.
+ * Express error middleware: handleAppError then Feathers-style JSON error formatting.
  */
 export function createExpressErrorHandler(app) {
   const isDev = isDevEnvironment();
-  const feathersHandler = express.errorHandler({
-    logger: false,
-    ...(isDev
-      ? {
-          html: devHtmlErrorHandler,
-          json: devJsonErrorHandler,
-        }
-      : {}),
-  });
   return (err, req, res, next) => {
     if (res.headersSent) return next(err);
     handleAppError(app, err, { userId: req.user?.id });
@@ -161,6 +164,9 @@ export function createExpressErrorHandler(app) {
     if (err?.stderr) {
       err.message = errorMessage(err);
     }
-    feathersHandler(err, req, res, next);
+    if (isDev && req.accepts('html') && !req.accepts('json')) {
+      return devHtmlErrorHandler(err, req, res);
+    }
+    feathersJsonError(err, req, res);
   };
 }

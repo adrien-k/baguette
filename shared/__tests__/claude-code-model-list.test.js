@@ -33,6 +33,11 @@ describe('normalizeClaudeCodePickerModelId', () => {
   it('keeps valid opus[1m]', () => {
     expect(normalizeClaudeCodePickerModelId('opus[1m]', pickerIds)).toBe('opus[1m]');
   });
+
+  it('maps legacy opus[1m] to opus when the SDK list only has opus', () => {
+    const ids = new Set(['default', 'opus', 'sonnet']);
+    expect(normalizeClaudeCodePickerModelId('opus[1m]', ids)).toBe('opus');
+  });
 });
 
 describe('mapClaudeCodeSdkModelToListEntry', () => {

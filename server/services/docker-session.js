@@ -231,7 +231,7 @@ const DOCKER_BOOLEAN_RUN_OPTIONS = new Set(['privileged']);
 function canonicalDockerRunOptionKey(key) {
   const trimmed = String(key).trim();
   if (!trimmed) throw new Error('container run option keys must be non-empty');
-  return trimmed.toLowerCase();
+  return trimmed.toLowerCase().replace(/-/g, '_');
 }
 
 /** Docker CLI flag for a canonical snake_case option key (`cap_add` → `--cap-add`). */

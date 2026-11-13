@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { sessionsService } from '../feathers.js';
 import { toastFeathersError } from '../utils/toastError.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurnComplete.js';
+import { scopeKeyOf } from '../utils/boundScope.js';
+import { useScopedResource } from './useScopedResource.js';
 
 /**
  * Branch commits vs session base. Fetches when `enabled` is true (Diff tab or Commits
@@ -11,53 +13,36 @@ import { useInvalidateOnSessionTurnComplete } from './useInvalidateOnSessionTurn
 export function useSessionBranchCommits(session, enabled = false) {
   const sessionId = session?.id;
   const skip = !sessionId || isGlobalSession(session ?? {});
-  const [commits, setCommits] = useState(undefined);
-  const [loading, setLoading] = useState(false);
-  const [refreshNonce, setRefreshNonce] = useState(0);
+  const requestedKey = skip || !sessionId ? '' : scopeKeyOf(sessionId);
+  const [revision, setRevision] = useState(0);
 
   const invalidate = useCallback(() => {
-    setRefreshNonce((n) => n + 1);
+    setRevision((n) => n + 1);
   }, []);
   useInvalidateOnSessionTurnComplete(sessionId, invalidate);
 
-  useEffect(() => {
-    setCommits(undefined);
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (skip) {
-      setCommits([]);
-      setLoading(false);
-      return;
-    }
-    if (!enabled) {
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    sessionsService
-      .branchCommits(sessionId)
-      .then((res) => {
-        if (!cancelled) setCommits(res.commits ?? []);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setCommits([]);
-          toastFeathersError('Failed to load commits', err);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [skip, sessionId, refreshNonce, enabled]);
+  const { data: commits, loading } = useScopedResource(requestedKey, {
+    empty: undefined,
+    enabled: enabled && !skip,
+    revision,
+    load: async () => {
+      try {
+        const res = await sessionsService.branchCommits(sessionId);
+        return res.commits ?? [];
+      } catch (err) {
+        toastFeathersError('Failed to load commits', err);
+        return [];
+      }
+    },
+  });
 
   const refresh = useCallback(() => {
-    setRefreshNonce((n) => n + 1);
+    setRevision((n) => n + 1);
   }, []);
 
-  return { commits, loading, refresh };
+  return {
+    commits: skip ? [] : commits,
+    loading: skip ? false : loading,
+    refresh,
+  };
 }

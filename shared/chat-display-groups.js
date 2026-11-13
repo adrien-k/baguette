@@ -1,5 +1,13 @@
+import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp-tool-names.js';
+
 /** Minimum tool calls in a run before it collapses into a work summary. */
 export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
+
+/** How many of the newest tool calls stay expanded in an open (in-progress or expanded) work run. */
+export const CHAT_WORK_VISIBLE_TAIL_CALLS = 10;
+
+/** Chat-pinned MCP tools: always visible, never inside Worked. Includes turn-ending tools. */
+const CHAT_PINNED_BAGUETTE_TOOLS = new Set([...TURN_ENDING_BAGUETTE_TOOLS, 'StartSubagent']);
 
 function toolUseNameIs(name, shortName) {
   if (!name) return false;
@@ -50,6 +58,37 @@ function messageIsToolCallRow(msg) {
   return msg?.type === 'tool_call';
 }
 
+function toolCallRowShortName(msg) {
+  if (msg.kind === 'mcp') return msg.args?.tool ?? baguetteMcpShortName(msg.name);
+  return baguetteMcpShortName(msg.name) || msg.name;
+}
+
+function toolCallRowIsPinnedChatTool(msg) {
+  if (!messageIsToolCallRow(msg)) return false;
+  if (msg.kind === 'ask_user') return true;
+  return CHAT_PINNED_BAGUETTE_TOOLS.has(toolCallRowShortName(msg));
+}
+
+function blockIsPinnedChatTool(block) {
+  if (block._hidden) return false;
+  if (blockIsNamedMcpTool(block, 'CreatePlan')) return true;
+  if (blockIsNamedMcpTool(block, 'EditPlan')) return true;
+  if (blockIsNamedMcpTool(block, 'AskUserQuestions')) return true;
+  if (blockIsNamedMcpTool(block, 'StartSubagent')) return true;
+  if (block.type === 'tool_use') {
+    const n = block.name;
+    if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return true;
+  }
+  return false;
+}
+
+/** CreatePlan, EditPlan, AskUserQuestions, or StartSubagent — always visible, never inside Worked. */
+export function messageContainsPinnedChatTool(msg) {
+  if (toolCallRowIsPinnedChatTool(msg)) return true;
+  if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
+  return msg.message.content.some(blockIsPinnedChatTool);
+}
+
 /** Message whose visible tools include PrUpsert (MCP or legacy bash op). */
 export function messageContainsPrUpsert(msg) {
   if (messageIsToolCallRow(msg)) return blockIsPrUpsert(msg);
@@ -97,12 +136,17 @@ export function isChatAnchorMessage(msg) {
  * @param {object} [context] When grouping, pass `{ messages, index }` so only the last PrUpsert is a boundary.
  */
 export function isChatGroupBoundary(msg, context) {
-  return isChatAnchorMessage(msg) || prUpsertIsDisplayBoundary(msg, context);
+  return (
+    isChatAnchorMessage(msg) ||
+    prUpsertIsDisplayBoundary(msg, context) ||
+    messageContainsPinnedChatTool(msg)
+  );
 }
 
 /** Tool-only assistant turns plus system/result noise between group boundaries. */
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
+  if (messageContainsPinnedChatTool(msg)) return false;
   if (prUpsertIsDisplayBoundary(msg, context)) return false;
   if (msg.type === 'result' || msg.type === 'turn_result') return true;
   if (msg.type === 'tool_call') return true;
@@ -111,19 +155,35 @@ export function isChatWorkMessage(msg, context) {
   return false;
 }
 
-function countToolCallsInMessages(messages) {
+function toolCallCountInMessage(msg) {
+  if (msg?.type === 'tool_call') return 1;
+  if (msg?.type !== 'assistant' || !Array.isArray(msg.message?.content)) return 0;
   let n = 0;
-  for (const msg of messages) {
-    if (msg.type === 'tool_call') {
-      n += 1;
-      continue;
-    }
-    if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) continue;
-    for (const block of msg.message.content) {
-      if (block.type === 'tool_use' && !block._hidden) n += 1;
-    }
+  for (const block of msg.message.content) {
+    if (block.type === 'tool_use' && !block._hidden) n += 1;
   }
   return n;
+}
+
+function countToolCallsInMessages(messages) {
+  let n = 0;
+  for (const msg of messages) n += toolCallCountInMessage(msg);
+  return n;
+}
+
+/**
+ * Index in `run` where the visible tail starts so the tail holds at most `tailCalls` tool calls.
+ * Returns 0 when the whole run fits in the tail.
+ */
+export function findWorkRunVisibleTailStart(run, tailCalls = CHAT_WORK_VISIBLE_TAIL_CALLS) {
+  let callsFromEnd = 0;
+  for (let k = run.length - 1; k >= 0; k--) {
+    const n = toolCallCountInMessage(run[k]);
+    if (n === 0) continue;
+    callsFromEnd += n;
+    if (callsFromEnd >= tailCalls) return k;
+  }
+  return 0;
 }
 
 function workSpanDurationMs(messages) {
@@ -134,6 +194,41 @@ function workSpanDurationMs(messages) {
     .filter((t) => !Number.isNaN(t));
   if (times.length < 2) return 0;
   return Math.max(...times) - Math.min(...times);
+}
+
+function pushWorkItem(items, messages, startIndex, callCount) {
+  items.push({
+    kind: 'work',
+    messages,
+    indices: messages.map((_, k) => startIndex + k),
+    callCount,
+    durationMs: workSpanDurationMs(messages),
+  });
+}
+
+function pushMessageItems(items, messages, startIndex) {
+  for (let k = 0; k < messages.length; k++) {
+    items.push({ kind: 'message', message: messages[k], index: startIndex + k });
+  }
+}
+
+function pushWorkRun(items, run, startIndex, { collapseAll }) {
+  const callCount = countToolCallsInMessages(run);
+  if (collapseAll && callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS) {
+    pushWorkItem(items, run, startIndex, callCount);
+    return;
+  }
+  if (callCount > CHAT_WORK_VISIBLE_TAIL_CALLS) {
+    const split = findWorkRunVisibleTailStart(run);
+    const prefix = run.slice(0, split);
+    const prefixCalls = countToolCallsInMessages(prefix);
+    if (prefixCalls > 0) {
+      pushWorkItem(items, prefix, startIndex, prefixCalls);
+      pushMessageItems(items, run.slice(split), startIndex + split);
+      return;
+    }
+  }
+  pushMessageItems(items, run, startIndex);
 }
 
 /**
@@ -161,24 +256,10 @@ export function groupChatDisplayMessages(messages) {
     let j = i;
     while (j < messages.length && isChatWorkMessage(messages[j], groupContext(j))) j += 1;
     const run = messages.slice(i, j);
-    const indices = run.map((_, k) => i + k);
-    const callCount = countToolCallsInMessages(run);
     const hasFutureBoundary = messages
       .slice(j)
       .some((m, k) => isChatGroupBoundary(m, groupContext(j + k)));
-    if (hasFutureBoundary && callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS) {
-      items.push({
-        kind: 'work',
-        messages: run,
-        indices,
-        callCount,
-        durationMs: workSpanDurationMs(run),
-      });
-    } else {
-      for (let k = 0; k < run.length; k++) {
-        items.push({ kind: 'message', message: run[k], index: i + k });
-      }
-    }
+    pushWorkRun(items, run, i, { collapseAll: hasFutureBoundary });
     i = j;
   }
   return items;

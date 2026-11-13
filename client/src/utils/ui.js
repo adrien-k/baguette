@@ -32,6 +32,8 @@ export const INLINE_SECONDARY_LINK_CLASS = `text-xs ${TEXT_SECONDARY} ${HOVER_TE
 
 export const MENU_ITEM_CLASS = `flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm ${TEXT_SECONDARY} ${HOVER_TEXT} hover:bg-control-hover/50 transition-colors`;
 
+export const MENU_ITEM_ACCENT_CLASS = `flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm ${TEXT_ACCENT} hover:text-accent hover:bg-soft-accent/40 transition-colors`;
+
 const FOCUS_RING_BRAND = 'focus:outline-none focus:ring-2 focus:ring-brand/50';
 /** @deprecated use FOCUS_RING_BRAND */
 const CONTROL_SURFACE = 'bg-control border border-strong';

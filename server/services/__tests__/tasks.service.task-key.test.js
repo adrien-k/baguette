@@ -5,8 +5,8 @@
  * label are resolved server-side. A raw `command` stays available for ad-hoc runs.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
-import { BadRequest } from '@feathersjs/errors';
+import { feathers } from 'feathers';
+import { BadRequest } from 'feathers/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerTasksService } from '../feathers/tasks.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
@@ -16,7 +16,7 @@ import { loadBaguetteConfig } from '../baguette-config.js';
 // Prevent actual process spawning
 vi.spyOn(Task.prototype, 'start').mockReturnValue(undefined);
 
-vi.mock('../feathers/claude-agent.service.ts', () => ({
+vi.mock('../../agent-sdks/claude/agent-service.ts', () => ({
   getSessionEnv: vi.fn().mockResolvedValue({}),
 }));
 
@@ -49,7 +49,7 @@ describe('Tasks service — task_key resolution', () => {
   beforeEach(async () => {
     loadBaguetteConfig.mockResolvedValue(CONFIG);
 
-    await db('users').insert({ github_id: 1001, username: 'alice', approved: true });
+    await db('users').insert({ github_id: 1001, username: 'alice', status: 'approved' });
     userId = (await db('users').where({ username: 'alice' }).first()).id;
 
     await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });

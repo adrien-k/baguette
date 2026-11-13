@@ -68,7 +68,11 @@ export async function fetch(cacheKey, ttlSeconds, actualFetch) {
   })();
 
   inFlight.set(cacheKey, promise);
-  promise.finally(() => inFlight.delete(cacheKey));
+  // `.finally()` chains a second promise that would flip any failure of the
+  // first — even one already handled by the consumer above — into an unhandled
+  // rejection. The `.catch()` detaches it safely without affecting the value
+  // returned to callers.
+  promise.finally(() => inFlight.delete(cacheKey)).catch(() => {});
   return promise;
 }
 

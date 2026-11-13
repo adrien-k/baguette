@@ -7,7 +7,7 @@ import {
   resolveEffectiveAgentDefaults,
   resolveSessionFormDefaults,
 } from '../agent-config-resolver.js';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { repoAgentConfigLabel } from '../../../shared/agent-config-labels.js';
 
 const db = createTestDb();
@@ -18,7 +18,7 @@ describe('resolveEffectiveAgentDefaults', () => {
   let cursorConfigId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 1, username: 'defaults-user', approved: true });
+    await db('users').insert({ github_id: 1, username: 'defaults-user', status: 'approved' });
     const user = await db('users').where({ username: 'defaults-user' }).first();
     userId = user.id;
     claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant' });
@@ -26,6 +26,26 @@ describe('resolveEffectiveAgentDefaults', () => {
       sdk: 'cursor',
       apiKey: 'cursor-key',
       apiKeyEnvVar: null,
+    });
+  });
+
+  it('falls back to agent config default_model when account default has config only', async () => {
+    await db('agent_configs')
+      .where({ id: cursorConfigId })
+      .update({
+        default_model: JSON.stringify({ model: 'composer', model_params: null }),
+      });
+    await db('users').where({ id: userId }).update({
+      agent_default_config_id: cursorConfigId,
+      agent_default_model: null,
+    });
+
+    const resolved = await resolveEffectiveAgentDefaults(db, userId);
+    expect(resolved).toMatchObject({
+      agent_config_id: cursorConfigId,
+      agent_sdk: 'cursor',
+      model: 'composer',
+      source: 'user',
     });
   });
 
@@ -80,7 +100,7 @@ describe('assertAgentConfigOnCreate reviewer defaults', () => {
   let repoId;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 3, username: 'create-user', approved: true });
+    await db('users').insert({ github_id: 3, username: 'create-user', status: 'approved' });
     const user = await db('users').where({ username: 'create-user' }).first();
     userId = user.id;
     claudeConfigId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant' });
@@ -113,7 +133,7 @@ describe('resolveAgentConfigIdForRepoSdk', () => {
   let claudeB;
 
   beforeEach(async () => {
-    await db('users').insert({ github_id: 2, username: 'resolve-user', approved: true });
+    await db('users').insert({ github_id: 2, username: 'resolve-user', status: 'approved' });
     const user = await db('users').where({ username: 'resolve-user' }).first();
     userId = user.id;
     [repoId] = await db('repos').insert({

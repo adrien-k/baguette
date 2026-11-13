@@ -7,6 +7,8 @@ import { ENCRYPTION_KEY, PUBLIC_HOST } from '../config.js';
 import { getClientIp } from '../lib/client-ip.js';
 import { SseManager } from '../lib/sse-manager.js';
 import { toSafePath } from '../lib/safe-path.js';
+import { unapprovedPreviewDenial } from '../lib/unapproved-account.js';
+import { isApprovedUser } from '../../shared/user-status.js';
 import { getLoopbackHost } from './port-utils.js';
 import { HEARTBEAT_INTERVAL_MS } from './task.js';
 
@@ -57,9 +59,16 @@ export class DevProxy {
       if (sign) {
         try {
           const userId = verifyProxyToken(sign);
-          this._setProxyCookie(res, String(userId));
-          const dest = toSafePath(req.query.redirectTo) ?? '/';
-          return res.redirect(dest);
+          const user = await this._getUser(userId);
+          if (isApprovedUser(user)) {
+            this._setProxyCookie(res, String(userId));
+            const dest = toSafePath(req.query.redirectTo) ?? '/';
+            return res.redirect(dest);
+          }
+          return res.status(403).render('devserver-denied', {
+            ...unapprovedPreviewDenial(user),
+            backUrl: PUBLIC_HOST,
+          });
         } catch (e) {
           logger.error(e, 'Proxy auth token error');
         }
@@ -197,8 +206,35 @@ export class DevProxy {
 
   // ── Internals ─────────────────────────────────────────────────────────────────
 
+  /**
+   * True when `userId` names an existing, approved user. The signed `baguette_proxy` cookie
+   * is the proxy's only identity source, so it is re-verified against the users table on
+   * every request — approval is the instance's privilege boundary and a cookie can outlive
+   * a revocation for up to its TTL. Fails closed: on lookup errors the user is treated as
+   * unauthenticated (the request is redirected to sign-in, never waved through).
+   */
+  async _getUser(userId) {
+    if (userId == null || userId === '') return null;
+    try {
+      return await this.app
+        .get('db')('users')
+        .where({ id: Number(userId) })
+        .first();
+    } catch (err) {
+      logger.error(err, 'Proxy user lookup failed — failing closed');
+      return null;
+    }
+  }
+
+  async _isApprovedUser(userId) {
+    const user = await this._getUser(userId);
+    return isApprovedUser(user);
+  }
+
   async _resolveProxyAccess(handler, userId, clientIp) {
-    if (userId) return { userId, clientIp, needsAuth: false, ipBypass: false };
+    if (userId && (await this._isApprovedUser(userId))) {
+      return { userId, clientIp, needsAuth: false, ipBypass: false };
+    }
     const state = this.states.get(handler.key);
     if (handler.allowIpPublicAccess) {
       try {

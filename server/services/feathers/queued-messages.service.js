@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only, disableExternal } from './hooks.js';
+import { scopeByAccessibleSession } from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import logger from '../../logger.js';
 import { requireQueuedMessageIdentity } from './message-identity.js';
@@ -190,8 +191,8 @@ const queuedMessagesHooks = {
       ]),
       validateSessionOwnership,
     ],
-    find: [scopeByUser],
-    get: [scopeByUser],
+    find: [scopeByAccessibleSession],
+    get: [scopeByAccessibleSession],
     patch: [scopeByUser, requireOwnQueuedMessage, only(['message_json'])],
     remove: [scopeByUser],
   },

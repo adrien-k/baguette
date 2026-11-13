@@ -47,6 +47,19 @@ export function agentNameMatchesType(name, agentType) {
   return normalized === type || normalized === label;
 }
 
+/** Default name for a secondary builder from the first words of the user's prompt. */
+export function agentTitleFromPrompt(prompt, maxWords = 4) {
+  const words = String(prompt ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return 'Builder';
+  const title = words.slice(0, maxWords).join(' ');
+  const maxLen = 120;
+  if (title.length <= maxLen) return title;
+  return `${title.slice(0, maxLen - 1)}…`;
+}
+
 /** Primary label for lists and composer chrome. */
 export function agentDisplayTitle(agent) {
   if (!agent) return 'Agent';
@@ -70,8 +83,14 @@ export function agentMenuOptionLabel(agent) {
   return prefix ? `${prefix}${label}` : label;
 }
 
+/** Agent is executing a turn (streaming tools / model output). */
 export function isAgentTurnActive(status) {
-  return status === 'running' || status === 'approval';
+  return status === 'running';
+}
+
+/** Turn ended on AskUserQuestions / CreatePlan / EditPlan — waiting on the user. */
+export function isAgentAwaitingUser(status) {
+  return status === 'approval';
 }
 
 export function isPrimaryAgent(agent) {
@@ -102,7 +121,7 @@ export function isAnyAgentRunning(session) {
   return countActiveAgentsForSession(session) > 0;
 }
 
-/** Agents with an active turn (`running` or `approval`) on this session. */
+/** Agents currently executing a turn on this session. */
 export function countActiveAgentsForSession(session) {
   if (!session || session.archived_at) return 0;
   const agents = sessionAgents(session);
@@ -110,14 +129,80 @@ export function countActiveAgentsForSession(session) {
     return agents.filter((a) => isAgentTurnActive(a.status)).length;
   }
   let count = 0;
-  if (session.review_status && isAgentTurnActive(session.review_status)) count += 1;
+  if (session.review_status === 'running') count += 1;
   if (session.status === 'running') count += 1;
   return count;
+}
+
+export function isAnyAgentAwaitingUser(session) {
+  if (!session || session.archived_at) return false;
+  const agents = sessionAgents(session);
+  if (agents.length > 0) {
+    return agents.some((a) => isAgentAwaitingUser(a.status));
+  }
+  return session.status === 'approval' || session.review_status === 'approval';
+}
+
+/** Merge a realtime `agents` service patch into a session DTO (embedded `agents` list). */
+export function applyAgentPatchToSession(session, agent) {
+  if (!session?.id || !agent?.session_id || session.id !== agent.session_id) {
+    return session;
+  }
+  const agents = Array.isArray(session.agents) ? [...session.agents] : [];
+  const agentIdx = agents.findIndex((a) => a.id === agent.id);
+  const summary = {
+    id: agent.id,
+    ref: agent.ref,
+    name: agent.name,
+    agent_type: agent.agent_type,
+    status: agent.status,
+    is_primary: agent.is_primary,
+  };
+  if (agentIdx >= 0) agents[agentIdx] = { ...agents[agentIdx], ...summary };
+  else agents.push(summary);
+  const reviewer = agents.find((a) => a.agent_type === 'reviewer');
+  return {
+    ...session,
+    agents,
+    review_status: reviewer?.status ?? session.review_status,
+    reviewer_agent_id: reviewer?.id ?? session.reviewer_agent_id,
+  };
 }
 
 export function activeAgentsRunningLabel(count) {
   if (count === 1) return '1 agent running';
   return `${count} agents running`;
+}
+
+/**
+ * Split session agents for the composer switcher: running turns first, then idle.
+ * @param {SessionAgentSummary[]} agents
+ * @returns {{ running: SessionAgentSummary[]; other: SessionAgentSummary[] }}
+ */
+export function partitionSessionAgentsByRunning(agents) {
+  const running = [];
+  const other = [];
+  for (const agent of agents) {
+    if (isAgentTurnActive(agent.status)) running.push(agent);
+    else other.push(agent);
+  }
+  return { running, other };
+}
+
+/**
+ * When both running and idle agents exist, group menu rows under section headings.
+ * @template T
+ * @param {SessionAgentSummary[]} agents
+ * @param {(agent: SessionAgentSummary) => T} mapOption
+ * @returns {{ heading: string; options: T[] }[] | null} `null` when a single group suffices.
+ */
+export function agentSwitcherDropdownSections(agents, mapOption) {
+  const { running, other } = partitionSessionAgentsByRunning(agents);
+  if (!running.length || !other.length) return null;
+  return [
+    { heading: 'Running', options: running.map(mapOption) },
+    { heading: 'Idle', options: other.map(mapOption) },
+  ];
 }
 
 export function isReviewInProgressForSession(session) {

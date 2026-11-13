@@ -1,12 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   CHAT_WORK_COLLAPSE_MIN_CALLS,
+  CHAT_WORK_VISIBLE_TAIL_CALLS,
   groupChatDisplayMessages,
   isChatAnchorMessage,
   isChatGroupBoundary,
   isChatWorkMessage,
+  messageContainsPinnedChatTool,
   messageContainsPrUpsert,
 } from '../chat-display-groups.js';
+
+function toolCallRow(id, extras = {}) {
+  return { type: 'tool_call', name: 'Read', id, call_id: String(id), ...extras };
+}
 
 describe('chat display grouping', () => {
   it('classifies assistant with text as anchor and tool-only as work', () => {
@@ -84,6 +90,52 @@ describe('chat display grouping', () => {
     expect(messageContainsPrUpsert(prUpsert)).toBe(true);
     expect(isChatGroupBoundary(prUpsert)).toBe(true);
     expect(isChatWorkMessage(prUpsert)).toBe(false);
+  });
+
+  it('does not collapse CreatePlan into a surrounding Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'tool_call',
+        kind: 'mcp',
+        name: 'mcp__baguette__CreatePlan',
+        args: { tool: 'CreatePlan', markdown: '# Plan' },
+        id: 'plan',
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.kind).toBe('mcp');
+  });
+
+  it('does not collapse AskUserQuestions (ask_user) into a Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'tool_call',
+        kind: 'ask_user',
+        name: 'AskUserQuestions',
+        args: { questions: [{ question: 'Pick one', options: [{ label: 'A' }] }] },
+        id: 'ask',
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.kind).toBe('ask_user');
   });
 
   it('treats CreateIssue as a regular work tool (not a group boundary)', () => {
@@ -234,5 +286,98 @@ describe('chat display grouping', () => {
     const grouped = groupChatDisplayMessages(messages);
     expect(grouped).toHaveLength(2);
     expect(grouped.every((g) => g.kind === 'message')).toBe(true);
+  });
+
+  it('keeps only the last 10 tool calls visible in an open work run', () => {
+    const extra = 5;
+    const total = CHAT_WORK_VISIBLE_TAIL_CALLS + extra;
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      ...Array.from({ length: total }, (_, i) => toolCallRow(i + 1)),
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped[0].kind).toBe('message');
+    expect(grouped[1].kind).toBe('work');
+    expect(grouped[1].callCount).toBe(extra);
+    expect(grouped.slice(2)).toHaveLength(CHAT_WORK_VISIBLE_TAIL_CALLS);
+    expect(grouped.slice(2).every((g) => g.kind === 'message')).toBe(true);
+    expect(grouped.at(-1).message.id).toBe(total);
+  });
+
+  it('does not collapse an open run of at most 10 tool calls', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      ...Array.from({ length: CHAT_WORK_VISIBLE_TAIL_CALLS }, (_, i) => toolCallRow(i + 1)),
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.every((g) => g.kind === 'message')).toBe(true);
+    expect(grouped).toHaveLength(1 + CHAT_WORK_VISIBLE_TAIL_CALLS);
+  });
+
+  it('still fully collapses a completed run even when it exceeds the visible tail', () => {
+    const total = CHAT_WORK_VISIBLE_TAIL_CALLS + 4;
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      ...Array.from({ length: total }, (_, i) => toolCallRow(i + 1)),
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(total);
+  });
+
+  it('does not collapse StartSubagent into a surrounding Worked group', () => {
+    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+      type: 'tool_use',
+      name: 'Bash',
+      id: `b${i}`,
+    }));
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: manyTools } },
+      {
+        type: 'tool_call',
+        kind: 'mcp',
+        name: 'mcp__baguette__StartSubagent',
+        args: { tool: 'StartSubagent', name: 'Scout' },
+        id: 'sub',
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[2].message.args.tool).toBe('StartSubagent');
+  });
+
+  it('treats StartSubagent as a group boundary', () => {
+    const startSubagent = {
+      type: 'tool_call',
+      kind: 'mcp',
+      name: 'mcp__baguette__StartSubagent',
+      args: { tool: 'StartSubagent', name: 'Scout' },
+      id: 'sub',
+    };
+    expect(messageContainsPinnedChatTool(startSubagent)).toBe(true);
+    expect(isChatGroupBoundary(startSubagent)).toBe(true);
+    expect(isChatWorkMessage(startSubagent)).toBe(false);
+  });
+
+  it('treats Cursor mcp meta-tool StartSubagent as a group boundary', () => {
+    const startSubagent = {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mcp',
+            id: 'sub',
+            input: { toolName: 'StartSubagent', args: { name: 'Scout' } },
+          },
+        ],
+      },
+    };
+    expect(messageContainsPinnedChatTool(startSubagent)).toBe(true);
+    expect(isChatGroupBoundary(startSubagent)).toBe(true);
+    expect(isChatWorkMessage(startSubagent)).toBe(false);
   });
 });

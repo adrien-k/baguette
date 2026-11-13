@@ -14,7 +14,7 @@ export function createReadTaskOutputTool(ctx) {
     name: 'ReadTaskOutput',
     description:
       `Read the log output of a running or exited baguette task. Defaults to the last ${DEFAULT_LOG_BYTES} bytes. ` +
-      `When endByte is omitted, returns max(5000, bytes from startByte through EOF). When both startByte and endByte are set, ` +
+      `When endByte is omitted, returns max(${MAX_LOG_RANGE_BYTES}, bytes from startByte through EOF). When both startByte and endByte are set, ` +
       `the range is capped at ${MAX_LOG_RANGE_BYTES} bytes. Negative indices count from the end; do not combine a negative ` +
       'startByte with a non-negative endByte. Omit session_id for the current session; pass session_id to read logs from ' +
       'another owned session (e.g. from a global triage session). Use ListRunningTasks to discover running task ids.',
@@ -33,13 +33,13 @@ export function createReadTaskOutputTool(ctx) {
         .number()
         .optional()
         .describe(
-          'Start byte (0-based). Negative values count from the end. Omit both bounds for the last 5000 bytes.'
+          `Start byte (0-based). Negative values count from the end. Omit both bounds for the last ${DEFAULT_LOG_BYTES} bytes.`
         ),
       endByte: z
         .number()
         .optional()
         .describe(
-          'Inclusive end byte (optional). Negative values count from the end. When omitted, end is startByte + max(5000, bytes remaining until EOF). Must be negative if startByte is negative.'
+          `Inclusive end byte (optional). Negative values count from the end. When omitted, end is startByte + max(${MAX_LOG_RANGE_BYTES}, bytes remaining until EOF). Must be negative if startByte is negative.`
         ),
     },
     handler: async ({ session_id, taskId, task_key, startByte, endByte }) => {

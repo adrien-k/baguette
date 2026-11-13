@@ -15,4 +15,16 @@ describe('splitPreviewLines', () => {
     expect(result.remaining).toBe(3);
     expect(result.preview).toBe(lines.slice(0, CHAT_CONTENT_PREVIEW_LINES).join('\n'));
   });
+
+  it('extends preview through a mermaid fence instead of splitting mid-chart', () => {
+    const before = Array.from({ length: CHAT_CONTENT_PREVIEW_LINES - 2 }, (_, i) => `p${i}`);
+    const mermaidBody = ['  A --> B', '  B --> C', '  C --> D', '  D --> E'];
+    const after = ['tail1', 'tail2'];
+    const lines = [...before, '```mermaid', ...mermaidBody, '```', ...after];
+    const text = lines.join('\n');
+    const result = splitPreviewLines(text, CHAT_CONTENT_PREVIEW_LINES);
+    const previewLineCount = before.length + 1 + mermaidBody.length + 1;
+    expect(result.preview).toBe(lines.slice(0, previewLineCount).join('\n'));
+    expect(result.remaining).toBe(after.length);
+  });
 });

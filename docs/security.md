@@ -6,6 +6,16 @@ Baguette wraps Claude Code, and inherits its security model: Claude runs as a co
 
 Because of this, **treat Baguette like any other server that runs untrusted code** — the risk surface is similar to a CI runner or a self-hosted code sandbox.
 
+## Bootstrap and first visitor
+
+A fresh install can boot with **no required env**. The first visitor claims the instance as admin (optionally gated by `BOOTSTRAP_PASSWORD`). That password is a one-time first-visitor gate: it stays in the process environment and is never copied to disk. Set it on public hosts so a stranger cannot own the instance.
+
+Later users are not admins. Without a GitHub App the admin invites them from **Admin → Users** with a one-time link; the invitee adds a passkey. With a GitHub App, later users sign in with GitHub and wait for approval. Admins manage users, the GitHub App, global secrets, Slack, and instance repositories.
+
+## Encryption key file
+
+Cookie signing and encrypted secrets (GitHub App client secret/PEM, PATs, Slack tokens) use `${DATA_DIR}/encryption.key` (mode `0600`). First boot generates that file if it is missing. After init the process reads **only the file**. Losing it makes cookies and secrets unreadable; Baguette never regenerates over an existing file.
+
 ## Secrets and tokens
 
 - **Do not put sensitive secrets into `.baguette.yaml` `session.env`**. Those values end up in the Claude agent's environment, where any shell tool call can potentially read them (e.g. `env`, `printenv`, shell scripts in the repo). Use them only for secrets that are genuinely required to run the application under test.

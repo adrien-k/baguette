@@ -1,4 +1,8 @@
-/** Solid go-action button (Merge PR, Run plan, Fix issue, etc.) — matches DiffView Merge PR. */
+/**
+ * Solid go-action button (Merge PR, Run plan, Fix issue, etc.) — matches DiffView Merge PR.
+ * White text per design preference; `--palette-ok` is emerald-700 so white clears AA
+ * (5.1:1 at rest, ~7:1 on hover) in both themes.
+ */
 export const SECONDARY_BUTTON_CLASS =
   'inline-flex items-center gap-1.5 px-3 py-1.5 bg-ok hover:bg-ok-hover text-on-solid text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
