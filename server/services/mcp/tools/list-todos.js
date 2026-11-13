@@ -7,7 +7,7 @@ export function createListTodosTool(ctx) {
   return {
     name: 'ListTodos',
     description:
-      'List session todos that are open (pending or in progress). session_id is required. Use ref from the list with ProcessTodo or CompleteTodo.',
+      "List session todos (pending, in_progress, and completed), including `plan_id`. session_id is required. When this agent is on an open plan, returns that plan's todos (including completed). Prefer the pending and in_progress items when deciding what to work on next. Use ref from the list with UpdateTodo (mark completed when done).",
     schema: {
       session_id: z.number().int().describe('Session id'),
     },
@@ -18,7 +18,7 @@ export function createListTodosTool(ctx) {
         userId
       );
       if (sessionError) return sessionError;
-      return createTodoHandlers(session, app).listTodos();
+      return createTodoHandlers(session, app, { callerAgent: ctx.callerAgent }).listTodos();
     },
   };
 }

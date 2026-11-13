@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, Forbidden, NotFound } from '@feathersjs/errors';
+import { BadRequest, Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
+import { requireOwnSessionForWrite } from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { issueFixAgentPrompt, issuesFixAllAgentPrompt } from '../../../shared/session-issues.js';
 import {
@@ -165,7 +166,10 @@ export function registerSessionIssuesService(app, path = 'session-issues') {
       all: [requireUser, scopeBySessionUser],
       find: [validateFindStatus, excludeClosedSessionIssues],
       create: [rejectExternalCreate],
-      patch: [only(['status', 'title', 'description', 'severity'])],
+      patch: [requireOwnSessionForWrite, only(['status', 'title', 'description', 'severity'])],
+      remove: [requireOwnSessionForWrite],
+      askAgentToFix: [requireOwnSessionForWrite],
+      askAgentToFixAll: [requireOwnSessionForWrite],
     },
     after: {
       get: [hideClosedIssueOnGet],

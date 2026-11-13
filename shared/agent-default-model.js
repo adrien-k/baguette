@@ -35,3 +35,10 @@ export function stringifyAgentDefaultModel({ model, model_params }) {
   if (!m && !params?.length) return null;
   return JSON.stringify({ model: m, model_params: params ?? null });
 }
+
+/** Account defaults: explicit stored model wins; else agent_configs.default_model. */
+export function resolveAccountDefaultModel(storedRaw, configDefaultRaw) {
+  const stored = parseAgentDefaultModelJson(storedRaw);
+  if (stored.model) return stored;
+  return parseAgentDefaultModelJson(configDefaultRaw);
+}

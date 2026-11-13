@@ -13,6 +13,13 @@ export function createCreateTodoTool(h) {
         .describe(
           'What to do (markdown). Concrete task only—no cwd, working_directory, or system-prompt boilerplate.'
         ),
+      plan_id: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          'Optional plan id. If omitted and this agent has an open current plan (StartPlan), the todo is attached there.'
+        ),
     },
     handler: h.createTodo,
   };

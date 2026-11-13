@@ -23,7 +23,7 @@ export function createSlackPostMessageTool(ctx) {
       const s = await slack.getSession();
       const { ts } = await slack.slackPostMessage(slackApp.bot_token, {
         channel: channelId,
-        text: slack.withSlackFooter(text, s),
+        text: await slack.withSlackFooter(text, s),
       });
       const permalink = await slack
         .slackGetPermalink(slackApp.bot_token, {

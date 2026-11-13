@@ -3,7 +3,7 @@ import { listRepoPRs } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createListGithubPrsTool(ctx) {
-  const { getRepo, getToken, requireGitHubRepo } = ctx;
+  const { getRepo, getToken, requireGitHubApi } = ctx;
   return {
     name: 'ListGithubPrs',
     description:
@@ -22,7 +22,7 @@ export function createListGithubPrsTool(ctx) {
       text: z.string().optional().describe('Full-text search query'),
     },
     handler: async ({ state = 'open', author, label, base, text } = {}) => {
-      const localErr = await requireGitHubRepo();
+      const localErr = await requireGitHubApi();
       if (localErr) return localErr;
       const repo = await getRepo();
       if (!repo?.full_name) return fail('No repo linked to this session.');

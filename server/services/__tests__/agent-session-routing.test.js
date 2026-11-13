@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
@@ -27,7 +27,7 @@ describe('agent-session-routing', () => {
 
   beforeEach(async () => {
     app = makeApp();
-    await db('users').insert({ github_id: 1, username: 'dispatch-user', approved: true });
+    await db('users').insert({ github_id: 1, username: 'dispatch-user', status: 'approved' });
     const user = await db('users').where({ username: 'dispatch-user' }).first();
     userId = user.id;
     configId = await insertTestAgentConfig(db, userId, { apiKey: 'sk-ant' });

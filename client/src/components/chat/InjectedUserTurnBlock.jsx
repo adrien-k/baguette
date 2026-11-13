@@ -3,7 +3,7 @@ import { useState } from 'react';
 import MessageTurnModelBadge from './MessageTurnModelBadge.jsx';
 
 /** Collapsed Baguette- or loop-injected user turn (shared accent styling). */
-export default function InjectedUserTurnBlock({ label, defaultTitle, message, agentType }) {
+export default function InjectedUserTurnBlock({ label, defaultTitle, message }) {
   const [expanded, setExpanded] = useState(false);
   const title = message.title || defaultTitle;
   const content = typeof message.content === 'string' ? message.content : '';
@@ -21,7 +21,6 @@ export default function InjectedUserTurnBlock({ label, defaultTitle, message, ag
         </div>
         <div className="flex items-center gap-2 shrink-0 min-w-0">
           <MessageTurnModelBadge
-            agentType={agentType}
             model={message.model}
             modelParams={message.model_params}
             agentConfigId={message.agent_config_id}

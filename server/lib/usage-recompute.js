@@ -43,37 +43,22 @@ async function refreshSessionTotalCosts(db, sessionIds) {
   );
 }
 
-/**
- * @param {import('knex').Knex} db
- * @param {string|null} modelId
- */
-async function countSkippedClaudeUsageRows(db, modelId) {
-  let query = db('usage').where('agent_sdk', 'claude');
-  if (modelId) query = query.where('model', modelId);
-  const row = await query.count('* as count').first();
-  return Number(row?.count ?? 0);
-}
-
-function recomputeResult({ modelId, updatedRows, affectedSessions, skippedClaudeRows }) {
+function recomputeResult({ modelId, updatedRows, affectedSessions }) {
   return {
     updated_rows: updatedRows,
     affected_sessions: affectedSessions,
     model_id: modelId ?? null,
-    claude_usage_excluded: true,
-    skipped_claude_rows: skippedClaudeRows,
   };
 }
 
 /**
  * Recompute `usage.cost_usd` from stored tokens and refresh `sessions.total_cost_usd`.
- * Claude rows keep SDK-reported `cost_usd` and are skipped.
  *
  * @param {import('knex').Knex} db
  * @param {{ modelId?: string|null, dryRun?: boolean }} [options]
  */
 export async function recomputeUsageCosts(db, { modelId = null, dryRun = false } = {}) {
-  const skippedClaudeRows = await countSkippedClaudeUsageRows(db, modelId);
-  let query = usageQueryWithAgentPricing(db).orderBy('u.id').whereNot('u.agent_sdk', 'claude');
+  let query = usageQueryWithAgentPricing(db).orderBy('u.id');
 
   if (modelId) query = query.where('u.model', modelId);
 
@@ -83,7 +68,6 @@ export async function recomputeUsageCosts(db, { modelId = null, dryRun = false }
       modelId,
       updatedRows: 0,
       affectedSessions: 0,
-      skippedClaudeRows,
     });
   }
 
@@ -109,6 +93,5 @@ export async function recomputeUsageCosts(db, { modelId = null, dryRun = false }
     modelId,
     updatedRows: updates.length,
     affectedSessions: affectedSessionIds.size,
-    skippedClaudeRows,
   });
 }

@@ -37,8 +37,9 @@ export function useAgentActivityRefresh(reload) {
     const onPatched = (session) => {
       if (!session?.id) return;
       const prev = prevByIdRef.current.get(session.id);
-      prevByIdRef.current.set(session.id, session);
-      if (activeSlotsChanged(prev, session)) refresh();
+      const merged = prev ? { ...prev, ...session } : session;
+      prevByIdRef.current.set(session.id, merged);
+      if (activeSlotsChanged(prev, merged)) refresh();
     };
 
     const onCreated = (session) => {

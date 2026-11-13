@@ -1,35 +1,45 @@
-import { isTurnEndingBaguetteTool } from '../../../../shared/baguette-mcp-tool-names.js';
+import { baguetteToolPausesForUserAfterSuccess } from '../../../../shared/baguette-mcp-tool-names.js';
 import { baguetteMcpToolSucceeded } from '../../baguette-mcp-tool-result.js';
 import { markAwaitingUserAfterTurnEndingTool } from '../../agent-awaiting-user.js';
-import { getPrimaryBuilderAgent, getReviewerAgent } from '../../agents-db.js';
+import { builderChatActiveKey, listAgentsForSession } from '../../agents-db.js';
 import { reviewTurnKey } from '../../review-agent-turn.js';
+import { servicePathForSdk } from '../../../agent-sdks/registry.js';
+import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 
-function agentServiceForSdk(app, sdk) {
-  if (sdk === 'claude') return app.service('claude-agent');
-  if (sdk === 'cursor') return app.service('cursor-agent');
-  if (sdk === 'pi') return app.service('pi-agent');
-  return null;
+async function agentServiceForSdk(app, sdk) {
+  await ensureBuiltInSdkPluginsRegistered();
+  const path = servicePathForSdk(sdk);
+  try {
+    return app.service(path);
+  } catch {
+    return null;
+  }
 }
 
 async function resolveActiveSessionState(app, sessionId) {
   const db = app.get('db');
   const candidates = [];
 
-  const builder = await getPrimaryBuilderAgent(db, sessionId);
-  if (builder?.agent_sdk) {
-    candidates.push({ sdk: builder.agent_sdk, keys: [sessionId], agentId: builder.id });
-  }
-  const reviewer = await getReviewerAgent(db, sessionId);
-  if (reviewer?.agent_sdk) {
-    candidates.push({
-      sdk: reviewer.agent_sdk,
-      keys: [reviewTurnKey(reviewer.id)],
-      agentId: reviewer.id,
-    });
+  const agents = await listAgentsForSession(db, sessionId);
+  for (const agent of agents) {
+    if (!agent.agent_sdk) continue;
+    if (agent.agent_type === 'reviewer') {
+      candidates.push({
+        sdk: agent.agent_sdk,
+        keys: [reviewTurnKey(agent.id)],
+        agentId: agent.id,
+      });
+    } else if (agent.agent_type === 'builder' || agent.agent_type === 'subagent') {
+      candidates.push({
+        sdk: agent.agent_sdk,
+        keys: [builderChatActiveKey(agent)],
+        agentId: agent.id,
+      });
+    }
   }
 
   for (const { sdk, keys, agentId } of candidates) {
-    const agentService = agentServiceForSdk(app, sdk);
+    const agentService = await agentServiceForSdk(app, sdk);
     if (!agentService?.getActiveSession) continue;
     for (const key of keys) {
       const state = agentService.getActiveSession(key);
@@ -52,7 +62,7 @@ async function markAwaitingUserAfterTurnEndingBaguetteTool(app, session) {
 function wrapBaguetteToolHandler(session, app, name, handler) {
   return async (args) => {
     const result = await handler(args);
-    if (isTurnEndingBaguetteTool(name) && baguetteMcpToolSucceeded(result)) {
+    if (baguetteToolPausesForUserAfterSuccess(name, args) && baguetteMcpToolSucceeded(result)) {
       await markAwaitingUserAfterTurnEndingBaguetteTool(app, session);
     }
     return result;

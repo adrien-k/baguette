@@ -1,6 +1,12 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only } from './hooks.js';
+import {
+  attachOwners,
+  scopeByOwnerOrShared,
+  stampWasShared,
+  takeListScope,
+} from './shared-access.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 import { computeNextRun, normalizeSchedule, parseDaysOfWeek } from '../loop-schedule.js';
 import logger from '../../logger.js';
@@ -11,6 +17,9 @@ import { getAgentServiceForSession } from '../agent-session-routing.js';
 import { getPrimaryBuilderAgent } from '../agents-db.js';
 import { loadOwnedAgentConfig, resolveAgentConfigIdForRepoSdk } from '../agent-config-resolver.js';
 import { isLocalRepo } from '../../../shared/repo-origin.js';
+import { resolveSessionPrStatus } from '../session-pr-status.js';
+import { parseMcpServersMap } from '../mcp-server-config.js';
+import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -27,6 +36,7 @@ const WRITABLE_FIELDS = [
   'model',
   'model_params',
   'plugins',
+  'mcp_servers',
   'schedule_type',
   'interval_minutes',
   'time_of_day',
@@ -34,6 +44,7 @@ const WRITABLE_FIELDS = [
   'timezone',
   'enabled',
   'session_id',
+  'is_shared',
 ];
 
 const SCHEDULE_FIELDS = [
@@ -149,6 +160,17 @@ class LoopsService extends KnexService {
     if (builder && BUSY_AGENT_STATUSES.has(builder.status)) {
       return { skipped: 'Previous run was still in progress — skipped this occurrence' };
     }
+    const prStatus = await resolveSessionPrStatus(this.app, tied, user, {
+      treatStoredClosedAsTerminal: true,
+      logLabel: 'PR status refresh for loop run',
+    });
+    if (prStatus === 'closed' || prStatus === 'merged') {
+      logger.info(
+        { loopId: loop.id, sessionId: tied.id, prStatus },
+        'Tied session PR is closed or merged — starting a new session'
+      );
+      return { sessionId: (await this._startSession(loop, user)).id };
+    }
 
     const userParams = { user: { id: loop.user_id } };
     const promptMessage = buildLoopUserMessageJson(loop.prompt, {
@@ -197,6 +219,7 @@ const BOOLEAN_QUERY_FIELDS = [
   'single_session',
   'is_global',
   'created_from_session',
+  'is_shared',
 ];
 
 /** REST query strings (`"true"`) do not match SQLite integer booleans. */
@@ -251,6 +274,11 @@ function sessionDataFromLoop(loop) {
   if (loop.model_params) data.model_params = loop.model_params;
   const plugins = parseJsonArray(loop.plugins);
   if (plugins?.length) data.plugins = plugins;
+  if (loop.mcp_servers != null && loop.mcp_servers !== '') {
+    data.mcp_servers = parseMcpServersMap(loop.mcp_servers);
+    data.mcp_servers_locked = true;
+  }
+  data.is_shared = !!loop.is_shared;
   return data;
 }
 
@@ -301,6 +329,25 @@ function serializePlugins(context) {
   return context;
 }
 
+async function snapshotMcpServers(context) {
+  const userId = context.params.user?.id ?? context.data.user_id;
+  const db = context.app.get('db');
+  if (context.method === 'patch') {
+    if (!('mcp_servers' in context.data)) return context;
+    const existing = await db('loops').where({ id: context.id }).first();
+    context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+      override: context.data.mcp_servers,
+      existing: existing?.mcp_servers,
+    });
+    return context;
+  }
+  context.data.mcp_servers = await sessionMcpServersColumn(db, userId, {
+    override: context.data.mcp_servers,
+    locked: false,
+  });
+  return context;
+}
+
 async function resolveRepo(context) {
   if (context.data.is_global) {
     context.data.repo_id = null;
@@ -335,7 +382,7 @@ async function normalizeAgentConfigOnLoopWrite(context) {
     const { ensureTestClaudeConfig, ensureTestPiConfig, insertTestAgentConfig } =
       await import('../../test-utils/agent-configs.js');
     if (sdkHint === 'mock') {
-      const { ensureMockAgentConfig } = await import('../mock-agent-config.js');
+      const { ensureMockAgentConfig } = await import('../../agent-sdks/mock/mock-agent-config.js');
       configId = await ensureMockAgentConfig(db, userId);
     } else if (sdkHint === 'pi') {
       configId = await ensureTestPiConfig(db, userId);
@@ -373,6 +420,7 @@ function normalizeCreate(context) {
   data.enabled = data.enabled === undefined ? true : !!data.enabled;
   data.create_new_branch = data.create_new_branch === undefined ? true : !!data.create_new_branch;
   data.auto_push = data.auto_push === undefined ? true : !!data.auto_push;
+  data.is_shared = !!data.is_shared;
   const repo = context.params.resolvedRepo;
   if (!data.is_global && isLocalRepo(repo ?? data.repo_full_name)) {
     data.auto_push = false;
@@ -403,6 +451,7 @@ async function requireOwnLoop(context) {
     .first();
   if (!loop) throw new NotFound('Loop not found');
   context.params.existingLoop = loop;
+  context.params.was_shared = !!loop.is_shared;
   if (loop.repo_id) {
     context.params.loopRepo = await context.app
       .get('db')('repos')
@@ -431,7 +480,13 @@ function normalizePatch(context) {
   if (context.params.provider && 'session_id' in data) delete data.session_id;
 
   if ('prompt' in data && !data.prompt?.trim()) throw new BadRequest('prompt is required');
-  for (const field of ['enabled', 'create_new_branch', 'auto_push', 'single_session']) {
+  for (const field of [
+    'enabled',
+    'create_new_branch',
+    'auto_push',
+    'single_session',
+    'is_shared',
+  ]) {
     if (field in data) data[field] = !!data[field];
   }
   const loopRepo = context.params.loopRepo;
@@ -483,11 +538,16 @@ function formatLoop(loop) {
     ...loop,
     days_of_week: parseDaysOfWeek(loop.days_of_week),
     plugins: parseJsonArray(loop.plugins) ?? [],
+    mcp_servers:
+      loop.mcp_servers == null || loop.mcp_servers === ''
+        ? null
+        : parseMcpServersMap(loop.mcp_servers),
     enabled: !!loop.enabled,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
     single_session: !!loop.single_session,
     is_global: !!loop.is_global,
+    is_shared: !!loop.is_shared,
     created_from_session: !!loop.created_from_session,
     session_id: loop.session_id ?? null,
     last_session_id: loop.last_session_id ?? null,
@@ -520,6 +580,19 @@ function writeLoopsToResult(context, loops) {
 
 function attachedSessionId(loop) {
   return loop.session_id || loop.last_session_id || null;
+}
+
+async function syncTiedSessionShare(context) {
+  const existing = context.params.existingLoop;
+  const loop = context.result;
+  if (!existing?.single_session || !existing.session_id || !loop) return context;
+  if (!!existing.is_shared === !!loop.is_shared) return context;
+  const user = context.params.user;
+  if (!user?.id) return context;
+  await context.app
+    .service('sessions')
+    .patch(existing.session_id, { is_shared: !!loop.is_shared }, { user });
+  return context;
 }
 
 async function attachTiedSessions(context) {
@@ -559,32 +632,39 @@ async function orderByNewestFirst(context) {
 const loopsHooks = {
   before: {
     all: [requireUser],
-    find: [coerceBooleanQuery, scopeByUser, scopeActiveSessionLoops, orderByNewestFirst],
-    get: [scopeByUser, scopeActiveSessionLoops],
+    find: [
+      takeListScope,
+      coerceBooleanQuery,
+      scopeByOwnerOrShared,
+      scopeActiveSessionLoops,
+      orderByNewestFirst,
+    ],
+    get: [scopeByOwnerOrShared, scopeActiveSessionLoops],
     create: [
       only(WRITABLE_FIELDS),
       scopeByUser,
       resolveTiedSession,
       resolveRepo,
       serializePlugins,
+      snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizeCreate,
     ],
     patch: [
-      scopeByUser,
       requireOwnLoop,
       only(WRITABLE_FIELDS),
       serializePlugins,
+      snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizePatch,
     ],
-    remove: [scopeByUser, requireOwnLoop, clearSessionLoopReferences],
+    remove: [requireOwnLoop, clearSessionLoopReferences],
   },
   after: {
-    find: [formatResult, attachTiedSessions],
-    get: [formatResult, attachTiedSessions],
-    create: [formatResult, attachTiedSessions],
-    patch: [formatResult, attachTiedSessions],
+    find: [formatResult, attachTiedSessions, attachOwners],
+    get: [formatResult, attachTiedSessions, attachOwners],
+    create: [formatResult, attachTiedSessions, attachOwners],
+    patch: [formatResult, attachTiedSessions, attachOwners, syncTiedSessionShare, stampWasShared],
     remove: [formatResult],
   },
 };

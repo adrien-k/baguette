@@ -3,7 +3,7 @@ import { addReactionToComment } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createPrMarkCommentViewedTool(ctx) {
-  const { getSession, getToken } = ctx;
+  const { getSession, getToken, requireGitHubApi } = ctx;
   return {
     name: 'PrMarkCommentViewed',
     description:
@@ -17,6 +17,8 @@ export function createPrMarkCommentViewedTool(ctx) {
         ),
     },
     handler: async ({ commentId, commentType }) => {
+      const localErr = await requireGitHubApi();
+      if (localErr) return localErr;
       const session = await getSession();
       if (!session?.pr_number) return fail('No pull request associated with this session.');
       const result = await addReactionToComment(

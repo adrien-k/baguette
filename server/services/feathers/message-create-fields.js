@@ -1,8 +1,8 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 import { resolveTurnModel } from '../../../shared/turn-model.js';
-import { agentSdkSupportsModelParams } from '../../../shared/agent-sdk-model-params.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { getPrimaryBuilderAgent } from '../agents-db.js';
+import { getSdkPlugin } from '../../agent-sdks/registry.js';
 
 /** Row column value for an agent config id: integer, or null. */
 function coerceAgentConfigId(raw) {
@@ -63,7 +63,7 @@ export function sessionMessageIdentity(agent, overrides = {}) {
       : agentSdkForAgent(agent);
   if (!model) throw new BadRequest('model is required');
   const row = { agent_id: agent.id, agent_sdk, model };
-  if (modelParams != null && agentSdkSupportsModelParams(agent_sdk)) {
+  if (modelParams != null && getSdkPlugin(agent_sdk)?.supportsModelParams === true) {
     row.model_params = modelParams;
   }
   row.agent_config_id =
@@ -81,6 +81,16 @@ function assertIdentityFields(data) {
   }
 }
 
+function applyAgentIdentity(data, agent) {
+  const identity = sessionMessageIdentity(agent);
+  data.agent_id = identity.agent_id;
+  data.agent_sdk = identity.agent_sdk;
+  data.model = identity.model;
+  if (identity.model_params !== undefined) data.model_params = identity.model_params;
+  else delete data.model_params;
+  data.agent_config_id = identity.agent_config_id;
+}
+
 /** Validate agent_sdk, model, and agent_id on messages.create. */
 export async function requireMessageIdentity(context) {
   const data = context.data;
@@ -90,14 +100,37 @@ export async function requireMessageIdentity(context) {
   data.agent_id = await resolveMessageAgentIdForSession(db, data.session_id, data.agent_id);
   delete data.agent_type;
 
+  const agent = await db('agents').where({ id: data.agent_id }).first();
+  if (!agent) throw new BadRequest('Agent not found');
+
+  const userId = context.params.user?.id;
+  const session = await db('sessions').where({ id: data.session_id }).first();
+  const isOwner = session != null && userId != null && String(session.user_id) === String(userId);
+  const collaboratorWrite = Boolean(context.params.provider) && !isOwner;
+
+  if (collaboratorWrite) {
+    applyAgentIdentity(data, agent);
+  }
+
   assertIdentityFields(data);
+
+  if (data.type === 'user' && userId) {
+    data.author_user_id = userId;
+  } else {
+    delete data.author_user_id;
+  }
+
+  if (collaboratorWrite) return context;
 
   if (data.agent_config_id != null && data.agent_config_id !== '') {
     const configId = coerceAgentConfigId(data.agent_config_id);
     if (configId == null) {
       data.agent_config_id = null;
     } else {
-      await loadOwnedAgentConfig(context.app.get('db'), configId, context.params.user?.id);
+      const agentConfigId = coerceAgentConfigId(agent.agent_config_id);
+      if (agentConfigId !== configId) {
+        await loadOwnedAgentConfig(db, configId, userId);
+      }
       data.agent_config_id = configId;
     }
   }

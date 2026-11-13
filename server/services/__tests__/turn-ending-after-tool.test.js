@@ -2,13 +2,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { createTestDb } from '../../test-utils/db.js';
 import { insertSessionWithPrimaryBuilder } from '../../test-utils/session-agents.js';
-import { CursorAgentService } from '../feathers/cursor-agent.service.ts';
-import { PiAgentService } from '../feathers/pi-agent.service.ts';
+import { CursorAgentService } from '../../agent-sdks/cursor/agent-service.ts';
+import { PiAgentService } from '../../agent-sdks/pi/agent-service.ts';
 
 describe('turn end after CreatePlan / AskUserQuestions', () => {
   describe('CursorAgentService._runTurn', () => {
     const db = createTestDb();
-    let recordCursorUsage;
     let agentPatch;
     let app;
 
@@ -40,7 +39,6 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         session_path: 'sessions/wt',
       });
 
-      recordCursorUsage = vi.fn().mockResolvedValue(undefined);
       agentPatch = vi.fn().mockResolvedValue({});
       app = {
         get: (key) => (key === 'db' ? db : undefined),
@@ -50,7 +48,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
               patch: vi.fn().mockResolvedValue({}),
               onTurnStart: async () => {},
               onTurnComplete: async () => {},
-              recordCursorUsage,
+              insertUsageRow: vi.fn().mockResolvedValue(0),
             };
           }
           if (name === 'agents') {
@@ -65,6 +63,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
     it('records usage and skips completed patch when awaiting user', async () => {
       const service = new CursorAgentService();
       service.setup(app);
+      const recordTurnUsage = vi.spyOn(service, 'recordTurnUsage').mockResolvedValue(undefined);
 
       vi.spyOn(service, '_sessionAgentOptions').mockResolvedValue({});
       vi.spyOn(service, 'createOrResumeAgent').mockResolvedValue({});
@@ -94,7 +93,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         }
       );
 
-      expect(recordCursorUsage).toHaveBeenCalled();
+      expect(recordTurnUsage).toHaveBeenCalled();
       const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
       expect(completedPatch).toBeUndefined();
     });
@@ -102,13 +101,11 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
 
   describe('PiAgentService._runTurn', () => {
     const piDb = createTestDb();
-    let recordPiUsage;
     let agentPatch;
     let app;
 
     beforeEach(async () => {
       vi.clearAllMocks();
-      recordPiUsage = vi.fn().mockResolvedValue(0);
       agentPatch = vi.fn().mockResolvedValue({});
       await piDb('users').insert({ id: 2, github_id: 2, username: 'p' });
       await piDb('agent_configs').insert({
@@ -146,7 +143,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
               patch: vi.fn().mockResolvedValue({}),
               onTurnStart: async () => {},
               onTurnComplete: async () => {},
-              recordPiUsage,
+              insertUsageRow: vi.fn().mockResolvedValue(0),
               emit: vi.fn(),
             };
           }
@@ -172,6 +169,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
       const service = new PiAgentService();
       service.app = app;
       service.setup(service.app);
+      const recordTurnUsage = vi.spyOn(service, 'recordTurnUsage').mockResolvedValue(0);
 
       vi.spyOn(service, 'buildAgentOptions').mockResolvedValue({
         cwd: '/tmp',
@@ -208,7 +206,7 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
         { turnId: 11, channel: 'chat', agent: builder }
       );
 
-      expect(recordPiUsage).toHaveBeenCalled();
+      expect(recordTurnUsage).toHaveBeenCalled();
       const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
       expect(completedPatch).toBeUndefined();
     });

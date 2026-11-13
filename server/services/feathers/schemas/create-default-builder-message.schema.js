@@ -17,6 +17,8 @@ const createDefaultBuilderMessageDataSchema = Type.Object(
     subtype: Type.Optional(Type.String({ minLength: 1 })),
     answers: Type.Optional(Type.Array(askUserAnswerRowSchema)),
     force: Type.Optional(Type.Boolean()),
+    /** When set, target this session agent instead of the primary builder. */
+    agent_id: Type.Optional(Type.Integer({ minimum: 1 })),
   },
   { $id: 'CreateDefaultBuilderMessageData', additionalProperties: false }
 );

@@ -12,35 +12,39 @@ import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
 import { agentConfigsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { sdkDisplayName } from '@baguette/shared/agent-config-labels.js';
-import { isMockAgentSdkEnabled } from '@baguette/shared/mock-agent-sdk.js';
-import {
-  CLAUDE_API_KEY_ENV_OPTIONS,
-  defaultAgentConfigApiKeyEnvVar,
-  PI_API_KEY_ENV_VARS,
-} from '@baguette/shared/agent-config-api-key-env.js';
 import {
   buildAgentConfigConnectivityRequest,
   buildAgentConfigCredentialOverrides,
 } from '../../utils/agentConfigCredentialOverrides.js';
 import { agentConfigSecretPlaceholder } from '../../utils/agentConfigSecretPlaceholder.js';
+import { useSdkMetas } from '../../hooks/useSdkMetas.js';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { INPUT_CLASS } from '../../utils/ui.js';
 
-const BASE_SDK_OPTIONS = [
-  { value: 'claude', label: 'Claude' },
-  { value: 'cursor', label: 'Cursor' },
-  { value: 'pi', label: 'Pi' },
-];
+function envVarSelectOptions(schema) {
+  return (schema?.envVarOptions ?? []).map((o) => ({
+    value: o.value ?? o.env,
+    label: `${o.label ?? o.value ?? o.env} (${o.value ?? o.env})`,
+  }));
+}
+
+function extraEnvJsonText(value, pretty = false) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (pretty) return JSON.stringify(value, null, 2);
+  return JSON.stringify(value);
+}
 
 export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpdated, onDelete }) {
   const isEdit = Boolean(config?.id);
+  const { pickerMetas, getMeta, loading: metasLoading, error: metasError } = useSdkMetas();
   const [liveConfig, setLiveConfig] = useState(config);
   const [label, setLabel] = useState('');
-  const [sdk, setSdk] = useState('claude');
+  const [sdk, setSdk] = useState('');
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState(null);
   const [apiKeyDirty, setApiKeyDirty] = useState(false);
-  const [apiKeyEnvVar, setApiKeyEnvVar] = useState(defaultAgentConfigApiKeyEnvVar('claude'));
+  const [apiKeyEnvVar, setApiKeyEnvVar] = useState('');
   const [extraEnvJson, setExtraEnvJson] = useState('');
   const [logo, setLogo] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -49,69 +53,55 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
   /** Previous SDK when syncing default label on SDK change (create flow only). */
   const prevSdkForLabelRef = useRef(null);
 
-  const sdkOptions = useMemo(() => {
-    const opts = [...BASE_SDK_OPTIONS];
-    if (isMockAgentSdkEnabled()) opts.push({ value: 'mock', label: 'Mock' });
-    return opts;
-  }, []);
+  const schema = getMeta(sdk)?.credentialSchema ?? null;
+  const envOptions = useMemo(() => envVarSelectOptions(schema), [schema]);
+  const hasEnvVarSelect = envOptions.length > 0;
+  const useSearchableEnvSelect = envOptions.length > 4;
 
-  const piEnvOptions = useMemo(
-    () =>
-      PI_API_KEY_ENV_VARS.map((e) => ({
-        value: e.env,
-        label: `${e.label} (${e.env})`,
-      })),
-    []
+  const sdkOptions = useMemo(
+    () => pickerMetas.map((m) => ({ value: m.key, label: m.label })),
+    [pickerMetas]
   );
+
+  useEffect(() => {
+    if (metasError) toastError('Failed to load agent SDKs', metasError);
+  }, [metasError]);
 
   useEffect(() => {
     setLiveConfig(config);
     if (config) {
+      const meta = pickerMetas.find((m) => m.key === config.sdk);
+      const nextSchema = meta?.credentialSchema;
       setLabel(config.label ?? '');
-      setSdk(config.sdk ?? 'claude');
+      setSdk(config.sdk ?? '');
       setApiUrl(config.api_url ?? '');
       setApiKey(null);
       setApiKeyDirty(false);
-      setApiKeyEnvVar(
-        config.sdk === 'cursor'
-          ? defaultAgentConfigApiKeyEnvVar('claude')
-          : (config.api_key_env_var ?? defaultAgentConfigApiKeyEnvVar(config.sdk ?? 'claude'))
-      );
-      setExtraEnvJson(
-        config.extra_env_json
-          ? typeof config.extra_env_json === 'string'
-            ? config.extra_env_json
-            : JSON.stringify(config.extra_env_json, null, 2)
-          : ''
-      );
+      setApiKeyEnvVar(config.api_key_env_var ?? nextSchema?.defaultEnvVar ?? '');
+      setExtraEnvJson(extraEnvJsonText(config.extra_env_json, true));
       setLogo(config.logo ?? null);
       setMoreOpen(
         Boolean(config.logo) ||
           Boolean(config.api_url?.trim()) ||
-          Boolean(
-            config.extra_env_json &&
-            String(
-              typeof config.extra_env_json === 'string'
-                ? config.extra_env_json
-                : JSON.stringify(config.extra_env_json)
-            ).trim()
-          )
+          Boolean(extraEnvJsonText(config.extra_env_json).trim())
       );
-      prevSdkForLabelRef.current = config.sdk ?? 'claude';
+      prevSdkForLabelRef.current = config.sdk ?? '';
       return;
     }
     prevSdkForLabelRef.current = null;
-    setLabel(sdkDisplayName('claude'));
-    setSdk('claude');
+    const first = pickerMetas[0];
+    const firstSdk = first?.key ?? '';
+    setLabel(sdkDisplayName(firstSdk, first?.label));
+    setSdk(firstSdk);
     setApiUrl('');
     setApiKey(null);
     setApiKeyDirty(false);
-    setApiKeyEnvVar(defaultAgentConfigApiKeyEnvVar('claude'));
+    setApiKeyEnvVar(first?.credentialSchema?.defaultEnvVar ?? '');
     setExtraEnvJson('');
     setLogo(null);
     setMoreOpen(false);
     setDraftDefaultModel(null);
-  }, [config]);
+  }, [config, pickerMetas]);
 
   useEffect(() => {
     if (isEdit) return;
@@ -121,16 +111,18 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
       return;
     }
     if (prevSdk === sdk) return;
+    const prevMeta = getMeta(prevSdk);
+    const nextMeta = getMeta(sdk);
     setLabel((current) => {
       const trimmed = current.trim();
-      if (!trimmed || trimmed === sdkDisplayName(prevSdk)) {
-        return sdkDisplayName(sdk);
+      if (!trimmed || trimmed === sdkDisplayName(prevSdk, prevMeta?.label)) {
+        return sdkDisplayName(sdk, nextMeta?.label);
       }
       return current;
     });
-    setApiKeyEnvVar(defaultAgentConfigApiKeyEnvVar(sdk));
+    setApiKeyEnvVar(nextMeta?.credentialSchema?.defaultEnvVar ?? '');
     prevSdkForLabelRef.current = sdk;
-  }, [sdk, isEdit]);
+  }, [sdk, isEdit, getMeta]);
 
   const handleConfigPatched = (updated) => {
     setLiveConfig(updated);
@@ -143,11 +135,9 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
       const payload = {
         label: label.trim(),
         sdk,
-        api_url: sdk === 'claude' ? apiUrl.trim() || null : null,
+        api_url: schema?.hasApiUrl ? apiUrl.trim() || null : null,
         api_key_env_var:
-          sdk === 'cursor' || sdk === 'mock'
-            ? null
-            : apiKeyEnvVar.trim() || defaultAgentConfigApiKeyEnvVar(sdk),
+          schema?.defaultEnvVar == null ? null : apiKeyEnvVar.trim() || schema.defaultEnvVar,
       };
       if (extraEnvJson.trim()) {
         try {
@@ -180,7 +170,9 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
     }
   };
 
-  const secretPlaceholder = agentConfigSecretPlaceholder(sdk, apiKeyEnvVar);
+  const secretPlaceholder = agentConfigSecretPlaceholder(schema, apiKeyEnvVar);
+  const secretLabel = schema?.secretLabel ?? 'API key';
+  const secretHint = schema?.secretHint ?? null;
 
   const pickerConfig = liveConfig?.id ? liveConfig : null;
   const agentConfigId = config?.id ?? liveConfig?.id ?? null;
@@ -188,14 +180,14 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
   const credentialOverrides = useMemo(
     () =>
       buildAgentConfigCredentialOverrides({
-        sdk,
+        schema,
         savedConfig: config,
         apiUrl,
         apiKey,
         apiKeyDirty,
         apiKeyEnvVar,
       }),
-    [sdk, config, apiUrl, apiKey, apiKeyDirty, apiKeyEnvVar]
+    [schema, config, apiUrl, apiKey, apiKeyDirty, apiKeyEnvVar]
   );
 
   const renderSdkOption = (option) => (
@@ -209,6 +201,7 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
     () =>
       buildAgentConfigConnectivityRequest({
         sdk,
+        schema,
         savedConfig: config,
         apiUrl,
         apiKey,
@@ -216,8 +209,10 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
         apiKeyEnvVar,
         agentConfigId,
       }),
-    [sdk, config, apiUrl, apiKey, apiKeyDirty, apiKeyEnvVar, agentConfigId]
+    [sdk, schema, config, apiUrl, apiKey, apiKeyDirty, apiKeyEnvVar, agentConfigId]
   );
+
+  const envVarFieldLabel = envOptions.length > 4 ? 'Provider env var' : 'Credential type';
 
   return (
     <Modal maxWidth="max-w-lg" padding="p-5">
@@ -237,9 +232,9 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
           options={sdkOptions}
           value={sdk}
           onChange={setSdk}
-          disabled={isEdit || saving}
+          disabled={isEdit || saving || metasLoading}
           disabledText="SDK cannot be changed after creation"
-          placeholder="Select SDK…"
+          placeholder={metasLoading ? 'Loading SDKs…' : 'Select SDK…'}
           emptyText="No matching SDKs"
           getOptionValue={(o) => o.value}
           getOptionLabel={(o) => o.label}
@@ -247,72 +242,42 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
           renderSelected={renderSdkOption}
         />
       </Field>
-      {sdk === 'claude' ? (
-        <Field label="Credential type">
-          <select
-            className={INPUT_CLASS}
-            value={apiKeyEnvVar}
-            onChange={(e) => setApiKeyEnvVar(e.target.value)}
-          >
-            {CLAUDE_API_KEY_ENV_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label} ({o.value})
-              </option>
-            ))}
-          </select>
+      {hasEnvVarSelect ? (
+        <Field label={envVarFieldLabel}>
+          {useSearchableEnvSelect ? (
+            <SearchableSelect
+              options={envOptions}
+              value={apiKeyEnvVar}
+              onChange={setApiKeyEnvVar}
+              getOptionValue={(o) => o.value}
+              getOptionLabel={(o) => o.label}
+              placeholder="Select provider…"
+            />
+          ) : (
+            <select
+              className={INPUT_CLASS}
+              value={apiKeyEnvVar}
+              onChange={(e) => setApiKeyEnvVar(e.target.value)}
+            >
+              {envOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
       ) : null}
-      {sdk === 'pi' ? (
-        <Field label="Provider env var">
-          <SearchableSelect
-            options={piEnvOptions}
-            value={apiKeyEnvVar}
-            onChange={setApiKeyEnvVar}
-            getOptionValue={(o) => o.value}
-            getOptionLabel={(o) => o.label}
-            placeholder="Select provider…"
-          />
-        </Field>
-      ) : null}
-      {sdk === 'mock' ? (
-        <Field
-          label="Mock catalog key"
-          hint="Optional. Use mock-catalog-alt for the alternate dev model list."
-        >
-          <MaskedSecretInput
-            maskedValue={config?.api_key ?? null}
-            placeholder="mock-catalog-alt"
-            onChange={(val, dirty) => {
-              setApiKey(val);
-              setApiKeyDirty(dirty);
-            }}
-          />
-        </Field>
-      ) : null}
-      {sdk !== 'mock' && sdk !== 'cursor' ? (
-        <Field label="API key">
-          <MaskedSecretInput
-            maskedValue={config?.api_key ?? null}
-            placeholder={secretPlaceholder}
-            onChange={(val, dirty) => {
-              setApiKey(val);
-              setApiKeyDirty(dirty);
-            }}
-          />
-        </Field>
-      ) : null}
-      {sdk === 'cursor' ? (
-        <Field label="API key">
-          <MaskedSecretInput
-            maskedValue={config?.api_key ?? null}
-            placeholder={secretPlaceholder}
-            onChange={(val, dirty) => {
-              setApiKey(val);
-              setApiKeyDirty(dirty);
-            }}
-          />
-        </Field>
-      ) : null}
+      <Field label={secretLabel} hint={secretHint || undefined}>
+        <MaskedSecretInput
+          maskedValue={config?.api_key ?? null}
+          placeholder={secretPlaceholder}
+          onChange={(val, dirty) => {
+            setApiKey(val);
+            setApiKeyDirty(dirty);
+          }}
+        />
+      </Field>
       <Field label="Connection">
         <AgentTestButton sdk={sdk} testRequest={connectivityRequest} />
       </Field>
@@ -344,7 +309,7 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
             <Field label="Logo" hint="Shown in the model picker; defaults to the SDK mark.">
               <AgentConfigLogoPicker sdk={sdk} value={logo} onChange={setLogo} disabled={saving} />
             </Field>
-            {sdk === 'claude' ? (
+            {schema?.hasApiUrl ? (
               <Field
                 label="API base URL"
                 hint="Routing non-Anthropic models through the Claude SDK can produce incorrect usage and cost figures. Prefer the Pi SDK for accurate billing."
@@ -388,7 +353,7 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
             type="button"
             className={PRIMARY_BUTTON_SIZED}
             onClick={handleSave}
-            disabled={saving || !label.trim()}
+            disabled={saving || !label.trim() || !sdk}
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

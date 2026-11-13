@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 
 /**
  * Apply ordered search/replace patches to stored plan markdown.

@@ -7,16 +7,13 @@ import MarkdownContent from '../MarkdownContent.jsx';
 import { ansiToHtml } from '../../utils/ansi.js';
 import { splitPreviewLines } from '../../utils/chatContentPreview.js';
 import QuietToolBlock, { hasToolInput, formatToolInput } from './QuietToolBlock.tsx';
-import BashToolBlock from './BashToolBlock.tsx';
 import ShowPlanBlock from './ShowPlanBlock.tsx';
 import SessionTodoToolBlock from './SessionTodoToolBlock.tsx';
-
-function formatRunTaskCommand(label: string, runArgs?: unknown) {
-  const parts = Array.isArray(runArgs)
-    ? runArgs.filter((a): a is string => typeof a === 'string')
-    : [];
-  return parts.length > 0 ? `${label} ${parts.join(' ')}` : label;
-}
+import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
+import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
+import TaskMcpToolBlock from './TaskMcpToolBlock.tsx';
+import ConfigureMcpServerBlock from './ConfigureMcpServerBlock.tsx';
+import { parseMcpJsonResult, type McpResultData } from '../../utils/parseMcpJsonResult.ts';
 
 const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   critical: 'bg-danger/15 text-danger border-danger/35',
@@ -25,62 +22,12 @@ const ISSUE_SEVERITY_CLASS: Record<string, string> = {
   low: 'bg-control/80 text-fg-muted border-strong/80',
 };
 
-/** Loose shape of parsed MCP JSON results consumed by the blocks below. */
-type McpResultData = {
-  issue?: { severity?: string; title?: string; id?: string | number };
-  ok?: boolean;
-  message?: string;
-  url?: string;
-  [key: string]: unknown;
-};
-
 /** Block-local view of a baguette/mcp tool call: plain data, no message-shape coupling. */
 export type McpBlockData = {
   result?: unknown;
   isError?: boolean;
   input?: Record<string, unknown>;
 };
-
-function parseJsonObject(text: unknown): McpResultData | null {
-  if (typeof text !== 'string' || !text.trim().startsWith('{')) return null;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    return parsed && typeof parsed === 'object' ? (parsed as McpResultData) : null;
-  } catch {
-    return null;
-  }
-}
-
-function mcpDataHasPayload(data: Record<string, unknown>): boolean {
-  return (
-    data.todo != null ||
-    data.todos != null ||
-    data.markdown != null ||
-    data.ok === true ||
-    data.ok === false ||
-    data.error != null
-  );
-}
-
-function parseMcpJsonResult(result: unknown): McpResultData | null {
-  if (result == null) return null;
-  if (typeof result === 'object') {
-    const obj = result as McpResultData & { data?: unknown; content?: unknown };
-    const fromContent = parseJsonObject(obj.content);
-
-    if (obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
-      const data = obj.data as Record<string, unknown>;
-      if (mcpDataHasPayload(data)) {
-        return fromContent ? { ...fromContent, ...data } : (data as McpResultData);
-      }
-    }
-
-    if (fromContent) return fromContent;
-    return obj;
-  }
-  if (typeof result !== 'string' || !result.trim()) return null;
-  return parseJsonObject(result);
-}
 
 function PrUpsertBlock({
   title,
@@ -108,7 +55,7 @@ function PrUpsertBlock({
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-accent text-xs font-mono shrink-0">Pull Request</span>
           {isError && (
-            <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+            <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
               error
             </span>
           )}
@@ -155,7 +102,7 @@ function PrUpsertBlock({
           {result != null && isError && (
             <div>
               <div className="font-medium mb-1 text-danger">Error</div>
-              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-red-950/30">
+              <pre className="whitespace-pre-wrap overflow-auto max-h-80 rounded p-2 text-danger bg-soft-danger/60">
                 {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
               </pre>
             </div>
@@ -202,7 +149,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
           </span>
         ) : null}
         {isError && (
-          <span className="shrink-0 text-danger text-xs font-medium bg-red-950/40 px-1.5 py-0.5 rounded">
+          <span className="shrink-0 text-danger text-xs font-medium bg-soft-danger px-1.5 py-0.5 rounded">
             error
           </span>
         )}
@@ -217,7 +164,7 @@ function CreateIssueBlock({ block }: { block: McpBlockData }) {
       </div>
       {isError && block.result != null && (
         <div className="px-3 sm:px-4 pb-2">
-          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-red-950/30 text-xs">
+          <pre className="whitespace-pre-wrap overflow-auto max-h-40 rounded p-2 text-danger bg-soft-danger/60 text-xs">
             {typeof block.result === 'string'
               ? block.result
               : JSON.stringify(block.result, null, 2)}
@@ -240,6 +187,8 @@ function UploadImageBlock({
   const [open, setOpen] = useState(false);
   const imageUrl = mcpResult?.url as string | undefined;
   const altText = (block.input?.altText as string | undefined) ?? 'uploaded image';
+  const filePath = block.input?.filePath as string | undefined;
+  const detail = filePath ?? (imageUrl ? 'uploaded' : undefined);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -252,51 +201,50 @@ function UploadImageBlock({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close]);
 
-  if (!imageUrl) {
-    return (
+  return (
+    <>
       <QuietToolBlock
-        icon="🖼"
         label="UploadImage"
+        detail={detail}
         isError={block.isError}
         result={block.result}
         input={block.input}
       />
-    );
-  }
-
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="block mt-1 rounded border border-strong overflow-hidden hover:border-faint transition-colors cursor-zoom-in"
-      >
-        <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
-      </button>
-      {open &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-            onClick={close}
-          >
+      {imageUrl ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="block mt-1 ml-3 rounded border border-strong overflow-hidden hover:border-faint transition-colors cursor-zoom-in bg-inset/30"
+        >
+          <img src={imageUrl} alt={altText} className="max-w-xs max-h-48 object-contain" />
+        </button>
+      ) : null}
+      {open && imageUrl
+        ? createPortal(
             <div
-              className="relative max-w-[90vw] max-h-[90vh]"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 sm:p-8"
+              onClick={close}
+              role="dialog"
+              aria-modal="true"
+              aria-label={altText}
             >
               <button
+                type="button"
                 onClick={close}
-                className="absolute -top-8 right-0 text-fg-muted hover:text-fg text-sm"
+                className="absolute top-4 right-4 text-fg-muted hover:text-fg text-sm font-mono z-10"
               >
                 ✕ close
               </button>
               <img
                 src={imageUrl}
                 alt={altText}
-                className="max-w-full max-h-[85vh] rounded border border-strong object-contain"
+                className="max-w-full max-h-full object-contain"
+                onClick={(e) => e.stopPropagation()}
               />
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body
+          )
+        : null}
     </>
   );
 }
@@ -388,7 +336,12 @@ export default function BaguetteMcpToolBlock({
   isError = false,
   startedAt,
   sessionId,
+  agentId,
   userReplied = false,
+  agents,
+  onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   tool: string;
   args?: Record<string, unknown>;
@@ -396,14 +349,51 @@ export default function BaguetteMcpToolBlock({
   isError?: boolean;
   startedAt?: string | null;
   sessionId?: number | string | null;
+  agentId?: number | null;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   const mcpResult = parseMcpJsonResult(result);
 
+  // AskUserQuestions routes through the Cursor `mcp` meta-tool (tool name in
+  // args.tool) and historically was kind: 'mcp'; render the question card for
+  // both shapes instead of a quiet MCP row.
+  if (toolShortName === 'AskUserQuestion' || toolShortName === 'AskUserQuestions') {
+    return (
+      <AskUserQuestionBlock
+        questions={args.questions}
+        sessionId={sessionId != null ? Number(sessionId) : null}
+        agentId={agentId}
+        userReplied={userReplied}
+      />
+    );
+  }
+
   if (
     toolShortName === 'CreateTodo' ||
-    toolShortName === 'ProcessTodo' ||
-    toolShortName === 'CompleteTodo'
+    toolShortName === 'UpdateTodo' ||
+    toolShortName === 'DeleteTodo'
   ) {
     return (
       <SessionTodoToolBlock
@@ -421,6 +411,7 @@ export default function BaguetteMcpToolBlock({
     const markdownFromArgs =
       typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '';
     const markdown = markdownFromResult || (toolShortName === 'CreatePlan' ? markdownFromArgs : '');
+    const interactive = args.interactive !== false;
     const heading = toolShortName === 'CreatePlan' ? 'Plan created' : 'Plan updated';
     const planFailed = mcpResult?.ok === false;
     const planErrorMessage =
@@ -433,13 +424,19 @@ export default function BaguetteMcpToolBlock({
         isError={isError || planFailed}
         errorMessage={planErrorMessage}
         sessionId={sessionId != null ? Number(sessionId) : null}
+        agentId={agentId}
         userReplied={userReplied}
+        interactive={interactive}
       />
     );
   }
 
   if (toolShortName === 'CreateIssue') {
     return <CreateIssueBlock block={{ result, isError, input: args }} />;
+  }
+
+  if (toolShortName === 'ConfigureMcpServer') {
+    return <ConfigureMcpServerBlock args={args} result={result} isError={isError} />;
   }
 
   if (toolShortName === 'PrUpsert') {
@@ -453,30 +450,33 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
-  if (toolShortName === 'RunTask') {
-    const label = (args.label as string | undefined) ?? 'RunTask';
-    const runArgs = (args.args as unknown[]) ?? [];
+  if (toolShortName === 'RunTask' || toolShortName === 'AwaitDetachedTask') {
     return (
-      <BashToolBlock
-        badgeLabel="RunTask"
-        command={formatRunTaskCommand(label, runArgs)}
+      <TaskMcpToolBlock
+        toolName={toolShortName}
+        args={args}
         result={result}
+        parsedResult={mcpResult}
         isError={isError}
         startedAt={startedAt}
+        tasks={tasks}
+        onSelectTask={onSelectTask}
       />
     );
   }
 
-  if (toolShortName === 'AwaitDetachedTask') {
-    const taskId = args.taskId;
-    const label = taskId != null ? `Await task #${taskId}` : 'AwaitDetachedTask';
+  if (toolShortName === 'StartSubagent' || toolShortName === 'AwaitSubagent') {
     return (
-      <BashToolBlock
-        badgeLabel="AwaitDetachedTask"
-        command={label}
+      <SubagentMcpToolBlock
+        toolName={toolShortName}
+        args={args}
         result={result}
+        parsedResult={mcpResult}
         isError={isError}
         startedAt={startedAt}
+        parentAgentId={agentId}
+        agents={agents}
+        onSelectAgent={onSelectAgent}
       />
     );
   }

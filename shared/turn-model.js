@@ -2,8 +2,8 @@
  * Model for one agent turn: explicit fields on the message/queue/loop row, else the
  * session default. Creating a message with an explicit model must not patch the session.
  *
- * Explicit `model` on a row selects that model for the turn (`model_params` may be null for
- * Claude). Cursor turns usually set both. Omit both to use the session default.
+ * Explicit `model` on a row selects that model for the turn (`model_params` may be null).
+ * SDKs with `requiresModelParamsOnTurn` usually set both. Omit both to use the session default.
  */
 
 /** Baguette-injected user message (collapsed Baguette block in chat). */
@@ -96,18 +96,18 @@ export function resolveTurnModel(source, session) {
 /**
  * Strict model snapshot for one turn, taken from the message row only — no session
  * fallback. Turns never inherit the session default at run time: rows snapshot their
- * model when created. Cursor turns additionally require `model_params` on the row.
+ * model when created. SDKs with `requiresModelParamsOnTurn` also require `model_params`.
  *
  * @param {Record<string, unknown>} row - message / queued row carrying model + model_params
- * @param {{ sdk?: string|null }} [opts]
+ * @param {{ sdk?: string|null, requiresModelParamsOnTurn?: boolean }} [opts]
  */
-export function requireTurnModelFromRow(row, { sdk } = {}) {
+export function requireTurnModelFromRow(row, { sdk, requiresModelParamsOnTurn } = {}) {
   const pair = readTurnModelPair(row);
   if (!pair.hasModel) {
     throw new Error(`Message is missing model for this turn${sdk ? ` (${sdk})` : ''}`);
   }
-  if (sdk === 'cursor' && !pair.hasParams) {
-    throw new Error('Message is missing model_params for this Cursor turn');
+  if (requiresModelParamsOnTurn && !pair.hasParams) {
+    throw new Error(`Message is missing model_params for this turn${sdk ? ` (${sdk})` : ''}`);
   }
   return { model: pair.model, modelParams: pair.modelParams };
 }

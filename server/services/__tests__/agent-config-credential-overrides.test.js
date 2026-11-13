@@ -5,6 +5,11 @@ import {
   draftAgentConfigForConnectivityTest,
   resolveListModelsRequest,
 } from '../agent-config-credential-overrides.js';
+import { registerSdkPlugin } from '../../agent-sdks/registry.js';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
+import { ANTHROPIC_API_KEY_ENV } from '../../../shared/agent-config-api-key-env.js';
+
+registerSdkPlugin(claudeAgentSdkPlugin);
 
 describe('agent-config-credential-overrides', () => {
   it('parses config column keys only', () => {
@@ -64,6 +69,12 @@ describe('agent-config-credential-overrides', () => {
     });
     expect(draft.sdk).toBe('claude');
     expect(draft.api_key).toBe('sk-test');
+    expect(draft.api_key_env_var).toBe(ANTHROPIC_API_KEY_ENV);
+  });
+
+  it('uses null api_key_env_var when the plugin schema has no default', () => {
+    const draft = draftAgentConfigForConnectivityTest('cursor');
+    expect(draft.api_key_env_var).toBeNull();
   });
 
   it('accepts config column overrides', () => {

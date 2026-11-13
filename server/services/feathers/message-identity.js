@@ -6,11 +6,6 @@ export async function scopeAgentDefaultFind(context) {
   const query = { ...(context.params.query || {}) };
   delete query.agent_type;
 
-  if (query.include_all_agents) {
-    delete query.include_all_agents;
-    context.params.query = query;
-    return context;
-  }
   if (query.agent_id != null) {
     context.params.query = query;
     return context;

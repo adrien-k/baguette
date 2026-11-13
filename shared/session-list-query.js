@@ -2,11 +2,18 @@ import {
   agentsScopePathFromPathname,
   isAllSessionsPath,
   isGlobalSession,
+  isSharedWithMePath,
 } from './session-scope.js';
 import { isSessionShownInAllSessionsView } from './session-all-sessions.js';
+import { LIST_SCOPE_SHARED, normalizeListScope } from './session-sharing.js';
 
 /** Custom `sessions.find` keys (not table columns). Stripped before Knex applies the query. */
-export const SESSION_LIST_QUERY_FLAGS = ['include_archived', 'include_loop_runs', 'all_sessions'];
+export const SESSION_LIST_QUERY_FLAGS = [
+  'include_archived',
+  'include_loop_runs',
+  'all_sessions',
+  'list_scope',
+];
 
 export function queryFlagEnabled(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
@@ -18,14 +25,19 @@ export function queryFlagDisabled(value) {
 
 /**
  * Feathers query for the dashboard / session sidebar list.
- * Scope comes from the URL; archived and loop-run toggles from filter state.
+ * Scope comes from the URL; archived sessions and loop runs are always included.
  */
-export function sessionsListQueryFromPath(pathname, { showArchived, showLoopRuns } = {}) {
+export function sessionsListQueryFromPath(pathname) {
   const query = {
-    include_archived: !!showArchived,
-    include_loop_runs: showLoopRuns !== false,
+    include_archived: true,
+    include_loop_runs: true,
   };
   const scopePath = agentsScopePathFromPathname(pathname);
+  if (isSharedWithMePath(pathname)) {
+    query.all_sessions = true;
+    query.list_scope = LIST_SCOPE_SHARED;
+    return query;
+  }
   if (!scopePath || isAllSessionsPath(pathname)) {
     query.all_sessions = true;
     return query;
@@ -44,10 +56,18 @@ export function sessionsListQueryFromPath(pathname, { showArchived, showLoopRuns
 }
 
 /** Client-side match for socket create/patch against the active list query. */
-export function sessionMatchesListQuery(session, query = {}, repos) {
+export function sessionMatchesListQuery(session, query = {}, repos, { currentUserId } = {}) {
   if (!session) return false;
   if (queryFlagDisabled(query.include_archived) && session.archived_at) return false;
   if (queryFlagDisabled(query.include_loop_runs) && session.loop_id) return false;
+  if (currentUserId != null) {
+    const own = String(session.user_id) === String(currentUserId);
+    if (normalizeListScope(query.list_scope) === LIST_SCOPE_SHARED) {
+      if (!session.is_shared || own) return false;
+    } else if (!own) {
+      return false;
+    }
+  }
   if (queryFlagEnabled(query.all_sessions)) {
     return isSessionShownInAllSessionsView(session, repos);
   }

@@ -1,8 +1,9 @@
 # Local smoke test of the production image (single port 3000, built-in static assets).
 #
 # Prerequisites:
-#   - Copy .env.example to .env and set AUTH_GITHUB_*, ENCRYPTION_KEY (32+ chars).
-#   - GitHub App callback URL: http://localhost:3000/auth/github/callback
+#   - Optional .env (PUBLIC_HOST is set below). No required secrets.
+#   - Optional BOOTSTRAP_PASSWORD for the first visitor on a public host (env-only).
+#   - Persist the volume below (`DATA_DIR=/data`) across restarts.
 #
 # Run:
 #   docker compose -f docker-compose.local.yml up --build

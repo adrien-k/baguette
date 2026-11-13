@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { Forbidden, NotFound } from '@feathersjs/errors';
+import { Forbidden, NotFound } from 'feathers/errors';
 import { requireUser, maskValue } from './hooks.js';
 import { DEFAULT_PAGINATE } from '../../config.js';
 
@@ -10,19 +10,28 @@ import { DEFAULT_PAGINATE } from '../../config.js';
 class SecretsService extends KnexService {
   async find(params) {
     const userId = params.user?.id;
-    const rows = await this.options
-      .Model('secrets')
-      .where((qb) => {
+    const isAdmin = !!params.user?.admin;
+    const query = this.options.Model('secrets').orderBy('key');
+    if (isAdmin) {
+      query.where((qb) => {
         qb.whereNull('user_id');
         if (userId) qb.orWhere({ user_id: userId });
-      })
-      .orderBy('key');
+      });
+    } else if (userId) {
+      query.where({ user_id: userId });
+    } else {
+      return { data: [], total: 0, limit: 0, skip: 0 };
+    }
+    const rows = await query;
     return { data: rows, total: rows.length, limit: rows.length, skip: 0 };
   }
 
   async get(id, params) {
     const row = await this.options.Model('secrets').where({ id }).first();
     if (!row) throw new NotFound('Secret not found');
+    if (row.user_id == null && params.provider && !params.user?.admin) {
+      throw new Forbidden('Admin required');
+    }
     if (row.user_id != null && String(row.user_id) !== String(params.user?.id)) {
       throw new Forbidden('Not allowed to access this secret');
     }
@@ -80,9 +89,30 @@ function maskSecretValues(context) {
   return context;
 }
 
+function requireAdminForGlobalSecretCreate(context) {
+  if (!context.params.provider) return context;
+  if (context.data?.scope === 'global' && !context.params.user?.admin) {
+    throw new Forbidden('Admin required');
+  }
+  return context;
+}
+
+async function requireAdminForGlobalSecretMutate(context) {
+  if (!context.params.provider) return context;
+  if (context.method === 'create') return context;
+  const row = await context.app.get('db')('secrets').where({ id: context.id }).first();
+  if (row?.user_id == null && !context.params.user?.admin) {
+    throw new Forbidden('Admin required');
+  }
+  return context;
+}
+
 const secretsHooks = {
   before: {
     all: [requireUser],
+    create: [requireAdminForGlobalSecretCreate],
+    patch: [requireAdminForGlobalSecretMutate],
+    remove: [requireAdminForGlobalSecretMutate],
   },
   after: {
     find: [maskSecretValues],

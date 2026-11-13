@@ -3,7 +3,7 @@ import { fetchSessionCommitsToPush } from '../utils/sessionCommitsToPush.js';
 import { toastError } from '../utils/toastError.jsx';
 
 /**
- * Gate opening the merge PR flow: warn when there are unpushed commits (same check as archive).
+ * Gate opening the merge PR flow: warn when HEAD is ahead of the session remote branch.
  */
 export function useMergePrEntry(session) {
   const [checkingUnpushed, setCheckingUnpushed] = useState(false);

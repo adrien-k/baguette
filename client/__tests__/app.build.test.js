@@ -6,12 +6,19 @@ import path from 'path';
 
 const clientDir = path.resolve(fileURLToPath(import.meta.url), '../../..');
 
+// CI runners give Node a small default V8 heap (~2 GB); the full app build
+// GC-thrashes and OOMs under that cap. Raise the heap for this spawn only.
+const NODE_OPTIONS = [process.env.NODE_OPTIONS, '--max-old-space-size=4096']
+  .filter(Boolean)
+  .join(' ');
+
 describe('frontend build', () => {
   it('vite build succeeds (no unresolved imports)', () => {
     const result = spawnSync('npm', ['run', 'build'], {
       cwd: clientDir,
       encoding: 'utf-8',
-      timeout: 120_000,
+      timeout: 240_000,
+      env: { ...process.env, NODE_OPTIONS },
     });
 
     if (result.status !== 0) {
@@ -24,5 +31,5 @@ describe('frontend build', () => {
     const sw = readFileSync(swPath, 'utf-8');
     expect(sw).not.toMatch(/url:"index\.html"/);
     expect(sw).not.toContain('NavigationRoute');
-  }, 120_000);
+  }, 240_000);
 });

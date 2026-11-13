@@ -1,4 +1,4 @@
-import { BadRequest } from '@feathersjs/errors';
+import { BadRequest } from 'feathers/errors';
 
 export const AGENT_CONFIG_DELETED_MESSAGE = 'Agent configuration was deleted';
 

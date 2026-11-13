@@ -4,6 +4,7 @@
  * @param {object} props
  * @param {import('react').ReactNode} [props.repo]
  * @param {import('react').ReactNode} [props.indicator] — left-column status icon, aligned with the title
+ * @param {import('react').ReactNode} [props.owner] — owner avatar between status and title
  * @param {import('react').ReactNode} props.title
  * @param {import('react').ReactNode} [props.subtitle] — e.g. last activity
  * @param {import('react').ReactNode} [props.titleExtras] — badges beside the title row
@@ -18,6 +19,7 @@
 export default function SessionCardLayout({
   repo,
   indicator,
+  owner,
   title,
   subtitle,
   titleExtras,
@@ -74,6 +76,11 @@ export default function SessionCardLayout({
         {indicator != null ? (
           <span className="shrink-0 cursor-default inline-flex items-center text-sm leading-snug h-[1lh]">
             {indicator}
+          </span>
+        ) : null}
+        {owner != null ? (
+          <span className="shrink-0 cursor-default inline-flex items-center text-sm leading-snug h-[1lh]">
+            {owner}
           </span>
         ) : null}
         <div className="min-w-0 flex-1">

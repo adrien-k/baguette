@@ -1,6 +1,12 @@
 import { ChevronDown, ChevronUp, ListTodo } from 'lucide-react';
 import SessionTodosPanel from '../session/SessionTodosPanel.jsx';
-import type { SessionTodoCounts } from './SessionTodoCountCard.tsx';
+import type { SessionTodoCounts } from './session-todo-counts.ts';
+
+type ComposerTodo = {
+  id?: number;
+  ref?: number;
+  status?: string;
+};
 
 function drawerSummary(counts: SessionTodoCounts): string {
   const parts = [];
@@ -13,16 +19,19 @@ function drawerSummary(counts: SessionTodoCounts): string {
 export default function SessionTodosDrawer({
   sessionId,
   counts,
+  todos,
+  loading = false,
   expanded,
   onExpandedChange,
 }: {
   sessionId?: number | string | null;
   counts: SessionTodoCounts;
+  todos: ComposerTodo[];
+  loading?: boolean;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
 }) {
-  const total = counts.open + counts.inProgress + counts.completed;
-  if (total <= 0 || sessionId == null) return null;
+  if (todos.length <= 0 || sessionId == null) return null;
 
   const summary = drawerSummary(counts);
 
@@ -49,7 +58,12 @@ export default function SessionTodosDrawer({
           role="region"
           aria-label="Session todos"
         >
-          <SessionTodosPanel sessionId={sessionId} emptyMessage="No todos." />
+          <SessionTodosPanel
+            sessionId={sessionId}
+            emptyMessage="No open todos."
+            todos={todos}
+            loading={loading}
+          />
         </div>
       )}
     </div>

@@ -6,9 +6,19 @@ import {
   MOCK_STANDARD_MODEL_ID,
 } from '../../../shared/mock-agent-sdk.js';
 
+const listCursorModels = vi.fn();
+const refreshCursorModels = vi.fn();
+
+vi.mock('../../agent-sdks/cursor/models.js', () => ({
+  listCursorModels: (...args) => listCursorModels(...args),
+  refreshCursorModels: (...args) => refreshCursorModels(...args),
+}));
+
 describe('listModelsForAgentConfig', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.stubEnv('ENABLE_MOCK_AGENT', 'true');
+    const { registerAllSdkPlugins } = await import('../../agent-sdks/index.js');
+    registerAllSdkPlugins();
   });
 
   afterEach(() => {
@@ -27,5 +37,16 @@ describe('listModelsForAgentConfig', () => {
     });
     expect(models.some((m) => m.id === MOCK_ALT_PRIMARY_MODEL_ID)).toBe(true);
     expect(models.some((m) => m.id === MOCK_STANDARD_MODEL_ID)).toBe(false);
+  });
+
+  it('awaits async Cursor model list (not a Promise in models)', async () => {
+    listCursorModels.mockResolvedValue([{ id: 'composer-2', display_name: 'Composer 2' }]);
+    const { models } = await listModelsForAgentConfig('cursor', {
+      sdk: 'cursor',
+      api_key: 'test-key',
+    });
+    expect(listCursorModels).toHaveBeenCalledWith('test-key');
+    expect(Array.isArray(models)).toBe(true);
+    expect(models).toEqual([{ id: 'composer-2', display_name: 'Composer 2' }]);
   });
 });

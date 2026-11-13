@@ -20,7 +20,7 @@ const unusedExportIgnorePaths = [
   // Knex loads migration up/down by convention, not static imports.
   'server/migrations',
   // Pi loads this extension entry via jiti at runtime.
-  'server/pi/extensions/lunaroute-chat',
+  'server/agent-sdks/pi/extensions/lunaroute-chat',
 ];
 
 const importXUnusedExportSettings = {

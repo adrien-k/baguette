@@ -8,12 +8,11 @@
  * - remove: soft-deletes a repo and its active sessions
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerReposService } from '../feathers/repos.service.js';
 import { registerUsersService } from '../feathers/users.service.js';
 import { encrypt } from '../../lib/encrypt.js';
-import { NotFound } from '@feathersjs/errors';
 
 vi.mock('../agent-settings.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -37,6 +36,7 @@ vi.mock('../github.js', async (importOriginal) => {
     clearBranchesCache: vi.fn(),
     listBranches: vi.fn(),
     ensureMainClone: vi.fn(),
+    initLocalRepo: vi.fn(),
     toStrippedName: vi.fn(
       (name) =>
         name
@@ -58,6 +58,7 @@ import {
   clearBranchesCache,
   listBranches,
   ensureMainClone,
+  initLocalRepo,
 } from '../github.js';
 
 const db = createTestDb();
@@ -91,13 +92,15 @@ beforeEach(async () => {
   vi.clearAllMocks();
 
   await db('users').insert([
-    { github_id: 1, username: 'admin', approved: true },
-    { github_id: 2, username: 'alice', approved: true },
+    { github_id: 1, username: 'admin', status: 'approved', admin: 1 },
+    { github_id: 2, username: 'alice', status: 'approved', admin: 0 },
   ]);
   const admin = await db('users').where({ username: 'admin' }).first();
   const alice = await db('users').where({ username: 'alice' }).first();
   adminUser.id = admin.id;
+  adminUser.admin = admin.admin;
   regularUser.id = alice.id;
+  regularUser.admin = alice.admin;
 
   app = makeApp(db);
   await app.setup();
@@ -127,6 +130,7 @@ describe('Repos service - find', () => {
     expect(repo.full_name).toBe('alice/foo');
     expect(repo.session_count).toBe(0);
     expect(repo.exists_on_fs).toBe(false);
+    expect(repo.access_mode).toBe('github');
   });
 
   it('counts only non-deleted sessions', async () => {
@@ -413,6 +417,8 @@ describe('Repos service - create', () => {
     );
     expect(result.repo.full_name).toBe('alice/new');
     expect(result.repo.stripped_name).toBe('alice-new');
+    expect(result.repo.access_mode).toBe('github');
+    expect(result.repo.origin).toBe('https://github.com/alice/new.git');
     expect(result.hasBaguetteConfig).toBe(false);
   });
 
@@ -452,6 +458,68 @@ describe('Repos service - create', () => {
   });
 });
 
+describe('Repos service - createLocal', () => {
+  it('sets access_mode local and a null origin', async () => {
+    initLocalRepo.mockResolvedValue('/repos/scratch/main');
+    const result = await app.service('repos').createLocal({ name: 'scratch' }, params(regularUser));
+    expect(initLocalRepo).toHaveBeenCalled();
+    expect(result.repo.full_name).toBe('scratch');
+    expect(result.repo.access_mode).toBe('local');
+    expect(result.repo.origin).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findAll — instance-wide repo list (admin only)
+// ---------------------------------------------------------------------------
+
+describe('Repos service - findAll', () => {
+  it('admin can list all repos', async () => {
+    await db('repos').insert({
+      full_name: 'alice/foo',
+      repo_path: '/nonexistent/path',
+      stripped_name: 'alice-foo',
+    });
+    const result = await app.service('repos').findAll(null, params(adminUser));
+    expect(result).toHaveLength(1);
+    expect(result[0].full_name).toBe('alice/foo');
+    expect(result[0].users).toEqual([]);
+  });
+
+  it('includes linked users with id, username, and avatar_url', async () => {
+    const [repoId] = await db('repos').insert({
+      full_name: 'acme/app',
+      repo_path: '/nonexistent/path',
+      stripped_name: 'acme-app',
+    });
+    await db('users').where({ id: adminUser.id }).update({
+      avatar_url: 'https://example.com/admin.png',
+    });
+    await db('users').where({ id: regularUser.id }).update({
+      avatar_url: 'https://example.com/alice.png',
+    });
+    await db('user_repos').insert([
+      { user_id: adminUser.id, repo_id: repoId },
+      { user_id: regularUser.id, repo_id: repoId },
+    ]);
+
+    const result = await app.service('repos').findAll(null, params(adminUser));
+    expect(result).toHaveLength(1);
+    expect(result[0].session_count).toBe(0);
+    expect(result[0].exists_on_fs).toBe(false);
+    expect(result[0].users).toEqual([
+      { id: adminUser.id, username: 'admin', avatar_url: 'https://example.com/admin.png' },
+      { id: regularUser.id, username: 'alice', avatar_url: 'https://example.com/alice.png' },
+    ]);
+  });
+
+  it('non-admin cannot findAll', async () => {
+    await expect(app.service('repos').findAll(null, params(regularUser))).rejects.toThrow(
+      /Admin required|Forbidden/
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // remove — soft-delete repo and its sessions
 // ---------------------------------------------------------------------------
@@ -488,21 +556,18 @@ describe('Repos service - remove', () => {
   });
 
   it('throws NotFound for an unknown repo id', async () => {
-    await expect(app.service('repos').remove(99999, params(adminUser))).rejects.toBeInstanceOf(
-      NotFound
-    );
+    await expect(app.service('repos').remove(99999, params(adminUser))).rejects.toBeNotFoundError();
   });
 
-  it('any authenticated user can remove a repo', async () => {
+  it('non-admin cannot remove a repo instance-wide', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/old',
       repo_path: '/nonexistent',
       stripped_name: 'alice-old',
     });
-    const result = await app.service('repos').remove(repoId, params(regularUser));
-    expect(result).toEqual({ ok: true });
-    const row = await db('repos').where({ id: repoId }).first();
-    expect(row.deleted_at).toBeTruthy();
+    await expect(app.service('repos').remove(repoId, params(regularUser))).rejects.toThrow(
+      /Admin required|Forbidden/
+    );
   });
 
   it('unauthenticated remove is rejected', async () => {
@@ -573,9 +638,7 @@ describe('Repos service - get', () => {
   });
 
   it('returns 404 for an unknown repo id', async () => {
-    await expect(app.service('repos').get(99999, params(regularUser))).rejects.toBeInstanceOf(
-      NotFound
-    );
+    await expect(app.service('repos').get(99999, params(regularUser))).rejects.toBeNotFoundError();
   });
 
   it('unauthenticated get is rejected', async () => {

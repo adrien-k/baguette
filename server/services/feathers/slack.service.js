@@ -1,5 +1,5 @@
-import { BadRequest, NotFound } from '@feathersjs/errors';
-import { encryptFields, decryptFields, requireUser } from './hooks.js';
+import { BadRequest, NotFound } from 'feathers/errors';
+import { encryptFields, decryptFields, requireUser, requireAdmin } from './hooks.js';
 import { authTest } from '../slack.js';
 import { decrypt } from '../../lib/encrypt.js';
 
@@ -118,7 +118,7 @@ const decryptToken = decryptFields({ bot_token: 'bot_token_encrypted' });
 
 const slackHooks = {
   before: {
-    all: [requireUser],
+    all: [requireUser, requireAdmin],
     create: [
       pickSlackAppFields,
       requireNameOnCreate,

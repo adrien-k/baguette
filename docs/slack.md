@@ -1,6 +1,6 @@
 # Slack integration
 
-Baguette can post to Slack on your behalf. The integration is configured under **Settings → Integrations**;
+Baguette can post to Slack on your behalf. The integration is configured under **Admin → Slack**;
 agents reach it through a `SlackPostMessage` tool on the built-in `baguette` MCP server.
 
 You can register multiple Slack apps (for example one bot per workspace). The tool is only added to
@@ -24,10 +24,10 @@ a session's tool list once at least one app is saved.
 
 ## Configuring Baguette
 
-Under **Settings → Integrations**, add an app:
+Under **Admin → Slack**, add an app:
 
 - **Name** — how agents refer to this app (must be unique).
-- **Bot user OAuth token** — the `xoxb-…` token. It is encrypted at rest with `ENCRYPTION_KEY` and
+- **Bot user OAuth token** — the `xoxb-…` token. It is encrypted at rest with the instance key and
   is never returned to the browser, only a mask. Save it, then hit **Test connection** to confirm
   the workspace and bot identity.
 
@@ -46,7 +46,8 @@ unknown name comes back with the list of channels the bot can actually reach.
 
 Message text uses Slack [mrkdwn](https://api.slack.com/reference/surfaces/formatting): `*bold*`,
 `_italic_`, `` `code` ``, and `<https://url|label>` for links. Every message gets a footer linking
-back to the session that posted it.
+back to the session (`baguette#<id>`) with models used and total session cost when usage is recorded
+(fallback: the session’s agent model).
 
 Slack API failures (missing scope, bot not in channel, revoked token, …) are returned to the agent
 as tool errors with a recovery hint instead of interrupting the turn.

@@ -3,6 +3,7 @@ import {
   postMessage as slackPostMessage,
   resolveChannelId as slackResolveChannelId,
 } from '../../slack.js';
+import { loadSessionSlackFooterUsageSummary } from '../../pr-footer-usage.js';
 import { PUBLIC_HOST } from '../../../config.js';
 import { fail } from './result.js';
 
@@ -36,6 +37,7 @@ export function slackHandler(handler) {
 
 export function createSlackHelpers(ctx) {
   const { app, getSession, describeAgent, slackApps: initialSlackApps } = ctx;
+  const db = app.get('db');
 
   const sessionUrl = (s) => `${PUBLIC_HOST}/sessions/${s.id}`;
 
@@ -67,8 +69,11 @@ export function createSlackHelpers(ctx) {
   };
 
   /** Slack messages carry their origin so a human can jump from the thread to the session. */
-  const withSlackFooter = (text, s) =>
-    `${text}\n\n_via <${sessionUrl(s)}|baguette> · ${describeAgent(s)} · session ${s.id}_`;
+  const withSlackFooter = async (text, s) => {
+    const usageSummary = await loadSessionSlackFooterUsageSummary(db, s);
+    const details = usageSummary ?? describeAgent(s);
+    return `${text}\n\n_via <${sessionUrl(s)}|baguette#${s.id}> · ${details}_`;
+  };
 
   return {
     slackAppHint,

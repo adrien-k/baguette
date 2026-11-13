@@ -22,14 +22,14 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
         <SettingsSection
           title="Session defaults"
-          description="Default agent configuration and model for new sessions and the Issues reviewer. Scope defaults to all repositories or a single linked repo; unset values inherit from the broader scope or your most recent session."
+          description="Default models for the dashboard builder and the Issues reviewer, and which models an agent may use when it creates a session, loop, or subagent."
         >
           <AgentDefaultsSection settings={settings} onSave={onSave} />
         </SettingsSection>
 
         <SettingsSection
           title="Preset models"
-          description="Favorite agent configuration, model, and parameters with a short description. MCP tools reference these by id instead of raw model fields."
+          description="Favorite agent configuration, model, and parameters with a short description. Agents pass these by id when Agent-created sessions and subagents allows presets."
         >
           <AgentPresetModelsSection />
         </SettingsSection>

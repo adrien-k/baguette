@@ -51,6 +51,15 @@ describe('claudeCodeModelDisplayName', () => {
     expect(claudeCodeModelDisplayName({ displayName: 'Sonnet', description: null })).toBe('Sonnet');
   });
 
+  it('strips marketing copy when the SDK puts it in displayName', () => {
+    expect(
+      claudeCodeModelDisplayName({
+        displayName: 'Sonnet 5 · Efficient for routine tasks · $2/$10 per Mtok',
+        description: null,
+      })
+    ).toBe('Sonnet 5');
+  });
+
   it('uses resolvedModel for patch versions when description only has major', () => {
     expect(
       claudeCodeModelDisplayName({

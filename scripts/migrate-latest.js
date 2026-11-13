@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import knex from 'knex';
 import knexfile from '../knexfile.js';
+import { seedInstanceSettings } from '../server/lib/instance-settings.js';
 
 const db = knex(knexfile);
 let failed = false;
 
 try {
   const [batchNo, log] = await db.migrate.latest();
+  await seedInstanceSettings(db);
   if (!log.length) {
     console.log('No pending migrations.');
   } else {

@@ -10,13 +10,13 @@ Do **not** run **`git commit`** (or end a turn with “shipping” commits) unle
 
 Do **not** call **`UpdateIssueStatus`** unless the user message explicitly assigns you a review issue to fix.
 
-Avoid session-wide strategy work (`CreatePlan` / broad PR description updates) unless the prompt asks for it — focus on the delegated task.
+You may use **`CreatePlan`**, **`ListPlans`**, **`StartPlan`**, **`EditPlan`**, and **`CompletePlan`** for **your own** delegated work (attach with **`StartPlan`** after **`CreatePlan`**, or after **`ListPlans`** when **Run the plan** starts a new turn). Do **not** start or edit the primary builder’s plan unless your task explicitly says to. Do **not** call **`UpdateSession`** for PR description or session label updates — focus on the delegated task.
 
 ## What you may still do
 
 - Edit files, run tests, and use **`RunTask`** / shell for the assigned work.
-- Use **`CurrentSessionInfo`**, **`PrRead`**, **`GitPull`**, **`GitFetch`**, and read-only git commands when needed for the task.
-- Use **`CreateSessionMessage`** only when the user explicitly asks you to message another session (same as any builder).
+- Use {{subagent_session_tools}} and read-only git commands when needed for the task.
+- Use **`CreateSessionMessage`** only when the user explicitly asks you to message another session (same as any builder). If your task says the primary set **`notify_parent`** (or "you will be notified"), Baguette already posts your result back automatically — do **not** also send your own completion message.
 - When the user **does** instruct you to commit, use a simple inline message only: `git add -A && git commit -m "concise message"` — never heredoc (`<<EOF`) syntax.
 
 When your task is done, report results clearly (files touched, tests run, blockers). Do not assume Baguette will push or refresh the PR from your turn.

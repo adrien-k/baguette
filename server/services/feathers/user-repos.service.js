@@ -1,5 +1,5 @@
 import { KnexService } from '@feathersjs/knex';
-import { NotFound } from '@feathersjs/errors';
+import { NotFound } from 'feathers/errors';
 import { requireUser, scopeByUser, only } from './hooks.js';
 
 const WRITABLE_USER_REPO_FIELDS = ['show_in_all_sessions'];

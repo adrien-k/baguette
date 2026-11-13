@@ -26,28 +26,28 @@ markdown, user-payload normalizer) never imports from `server/`.
 
 ## Where each piece lives
 
-### Stream turns — `server/services/{claude,cursor}/`
+### Stream turns — `server/agent-sdks/{claude,cursor,pi}/`
 
 Owns the SDK-specific event source.
 
-- **`claude/claude-sdk-turn.ts`** — `processClaudeQueryStream`. Iterates over the
+- **`claude/sdk-turn.ts`** — `processClaudeQueryStream`. Iterates over the
   Claude SDK query stream and yields raw events for the agent service to consume.
   Extracted from `claude-agent.service.ts._consumeQuery` so the SDK loop is in one
   place, alongside its Cursor counterpart.
-- **`cursor/cursor-sdk-turn.ts`** — `processCursorRunStream`. Same shape, for the
+- **`cursor/sdk-turn.ts`** — `processCursorRunStream`. Same shape, for the
   Cursor SDK.
-- **`pi/pi-sdk-turn.ts`** — `processPiSessionStream`. Same shape, for the Pi coding agent.
+- **`pi/sdk-turn.ts`** — `processPiSessionStream`. Same shape, for the Pi coding agent.
 
 These files import the SDK types directly (`@anthropic-ai/claude-agent-sdk`,
 `@cursor/sdk`, `@earendil-works/pi-coding-agent`). Nothing else under `server/services/` does.
 
-### Event → `MessageOp` mapping — `server/services/{claude,cursor}/*.mapping.ts`
+### Event → `MessageOp` mapping — `server/agent-sdks/{claude,cursor,pi}/mapping.ts`
 
 Translates one raw SDK event into one or more provider-neutral operations.
 
-- **`claude-mapping.ts` → `mapClaudeMessage(sdkMsg): MessageOp[]`**
-- **`cursor-mapping.ts` → `mapCursorEvent(sdkMsg): MessageOp[]`**
-- **`pi-mapping.ts` → `mapPiEvent(sdkMsg): MessageOp[]`**
+- **`claude/mapping.ts` → `mapClaudeMessage(sdkMsg): MessageOp[]`**
+- **`cursor/mapping.ts` → `mapCursorEvent(sdkMsg): MessageOp[]`**
+- **`pi/mapping.ts` → `mapPiEvent(sdkMsg): MessageOp[]`**
 
 `MessageOp` is the discriminated union in `shared/message-types.ts`. Variants
 include `assistant_text`, `tool_start`, `tool_result`, `thinking_tokens`,
@@ -104,7 +104,7 @@ handles:
 The writer never imports from `server/` or `shared/message-mappers.ts` — those
 files do not exist anymore.
 
-### Op → `ToolCallPayload` builders — `server/services/{claude,cursor}/*.mapping.ts`
+### Op → `ToolCallPayload` builders — `server/agent-sdks/{claude,cursor,pi}/mapping.ts`
 
 Each provider owns its `buildToolCallStart` / `buildToolCallComplete` pair. Both
 are pure functions: `buildToolCallStart` takes a call id plus the raw
@@ -195,20 +195,20 @@ Cursor's `updateTodos` lands on the same row shape through
 
 ## What lives where, at a glance
 
-| Concern                     | Location                                                         |
-| --------------------------- | ---------------------------------------------------------------- |
-| Claude SDK types            | `server/services/claude/claude-mapping.ts`, `claude-sdk-turn.ts` |
-| Cursor SDK types            | `server/services/cursor/cursor-mapping.ts`, `cursor-sdk-turn.ts` |
-| Stream turns                | `server/services/{claude,cursor}/*-sdk-turn.ts`                  |
-| Event → `MessageOp` mappers | `server/services/{claude,cursor}/*-mapping.ts`                   |
-| `ToolCallPayload` builders  | same files (one provider-owned pair per file)                    |
-| Provider-agnostic writer    | `shared/message-stream-writer.ts`                                |
-| Builder injection           | `server/services/message-writer-factory.ts`                      |
-| Canonical typed vocabulary  | `shared/message-types.ts`                                        |
-| Plan markdown extraction    | `shared/plan-markdown.ts`                                        |
-| User payload normalization  | `shared/normalize-user-payload.js`                               |
-| Chat rendering              | `client/src/components/chat/*.tsx` (dispatches on `kind`)        |
-| Running-tool dock / badges  | `shared/running-tools.js`, `client/src/components/chat/*Dock*`   |
+| Concern                     | Location                                                       |
+| --------------------------- | -------------------------------------------------------------- |
+| Claude SDK types            | `server/agent-sdks/claude/mapping.ts`, `sdk-turn.ts`           |
+| Cursor SDK types            | `server/agent-sdks/cursor/mapping.ts`, `sdk-turn.ts`           |
+| Stream turns                | `server/agent-sdks/{claude,cursor,pi}/sdk-turn.ts`             |
+| Event → `MessageOp` mappers | `server/agent-sdks/{claude,cursor,pi}/mapping.ts`              |
+| `ToolCallPayload` builders  | same files (one provider-owned pair per file)                  |
+| Provider-agnostic writer    | `shared/message-stream-writer.ts`                              |
+| Builder injection           | `server/services/message-writer-factory.ts`                    |
+| Canonical typed vocabulary  | `shared/message-types.ts`                                      |
+| Plan markdown extraction    | `shared/plan-markdown.ts`                                      |
+| User payload normalization  | `shared/normalize-user-payload.js`                             |
+| Chat rendering              | `client/src/components/chat/*.tsx` (dispatches on `kind`)      |
+| Running-tool dock / badges  | `shared/running-tools.js`, `client/src/components/chat/*Dock*` |
 
 ## Adding a new tool kind
 

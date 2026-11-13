@@ -61,21 +61,25 @@ describe('requireTurnModelFromRow', () => {
     ).toThrow('Message is missing model for this turn (claude)');
   });
 
-  it('requires model_params on the row for Cursor turns', () => {
+  it('requires model_params when requiresModelParamsOnTurn is set', () => {
     expect(
       requireTurnModelFromRow(
         { model: 'composer', model_params: '[{"id":"max"}]' },
         {
           sdk: 'cursor',
+          requiresModelParamsOnTurn: true,
         }
       )
     ).toEqual({ model: 'composer', modelParams: '[{"id":"max"}]' });
-    expect(() => requireTurnModelFromRow({ model: 'composer' }, { sdk: 'cursor' })).toThrow(
-      'Message is missing model_params for this Cursor turn'
-    );
+    expect(() =>
+      requireTurnModelFromRow(
+        { model: 'composer' },
+        { sdk: 'cursor', requiresModelParamsOnTurn: true }
+      )
+    ).toThrow('Message is missing model_params for this turn (cursor)');
   });
 
-  it('does not require model_params for other SDKs', () => {
+  it('does not require model_params when the flag is unset', () => {
     expect(requireTurnModelFromRow({ model: 'pi-main' }, { sdk: 'pi' })).toEqual({
       model: 'pi-main',
       modelParams: null,

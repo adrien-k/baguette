@@ -34,15 +34,56 @@ export function sanitizeGitError(token, err) {
   return err;
 }
 
-async function gitWithToken(token, args, opts) {
-  if (!token) {
-    return execFileAsync('git', args, opts);
+/**
+ * Normalize a git auth argument: a token string (or null) is GitHub HTTPS / local,
+ * an object `{ mode, token, userId }` selects github | local.
+ */
+export function normalizeGitAuth(tokenOrAuth) {
+  if (tokenOrAuth && typeof tokenOrAuth === 'object') {
+    const mode = tokenOrAuth.mode ?? (tokenOrAuth.token ? 'github' : 'local');
+    return { ...tokenOrAuth, mode };
   }
+  if (typeof tokenOrAuth === 'string' && tokenOrAuth) {
+    return { mode: 'github', token: tokenOrAuth };
+  }
+  return { mode: 'local', token: tokenOrAuth ?? null };
+}
+
+/** Auth for a repo: GitHub HTTPS extraheader when a token is present, else plain git. */
+function authForRepo(_repo, tokenOrAuth) {
+  return normalizeGitAuth(tokenOrAuth);
+}
+
+/**
+ * Build git argv + exec options for `gitWithAuth` without running git.
+ * GitHub mode adds the HTTPS extraheader; local mode is plain git.
+ */
+export function buildGitAuthInvocation(auth, args, opts = {}) {
+  if (auth?.mode === 'github' && auth.token) {
+    return {
+      args: [...gitAuthArgs(auth.token), ...args],
+      opts,
+    };
+  }
+  return { args: [...args], opts };
+}
+
+export async function gitWithAuth(auth, args, opts = {}) {
+  const resolved = normalizeGitAuth(auth);
+  const invocation = buildGitAuthInvocation(resolved, args, opts);
   try {
-    return await execFileAsync('git', [...gitAuthArgs(token), ...args], opts);
+    return await execFileAsync('git', invocation.args, invocation.opts);
   } catch (err) {
-    throw sanitizeGitError(token, err);
+    if (resolved.mode === 'github' && resolved.token) {
+      throw sanitizeGitError(resolved.token, err);
+    }
+    throw err;
   }
+}
+
+/** Thin wrapper for GitHub-HTTPS / local call sites that still pass a token string. */
+export async function gitWithToken(token, args, opts) {
+  return gitWithAuth({ mode: token ? 'github' : 'local', token }, args, opts);
 }
 
 let _lfsAvailable = null;
@@ -62,6 +103,10 @@ function repoUrl(repoFullName) {
   const url = gitHubOriginFromFullName(repoFullName);
   if (!url) throw new Error(`Not a GitHub repository full name: ${repoFullName}`);
   return url;
+}
+
+function cloneRemoteUrl(repo) {
+  return repoUrl(repo.full_name);
 }
 
 /** Alphanumeric and dashes only, for directory names. Stored on repo record. */
@@ -213,12 +258,14 @@ export function clearBranchesCache(scope) {
 
 /**
  * Ensures the main repo clone exists on disk (`repos/<stripped>/main`, full checkout).
- * If already cloned, returns the path immediately. Otherwise clones from GitHub.
+ * If already cloned, returns the path immediately. Otherwise clones from the remote.
  *
- * @param {object} repo - { full_name, stripped_name, repo_path? }
- * @param {string} token
+ * @param {object} repo - { full_name, stripped_name, repo_path?, origin?, access_mode? }
+ * @param {string | null | { mode?: string, token?: string, userId?: number }} tokenOrAuth
+ *   String token / null keeps GitHub HTTPS / local behavior.
  */
-export async function ensureMainClone(repo, token) {
+export async function ensureMainClone(repo, tokenOrAuth) {
+  const auth = authForRepo(repo, tokenOrAuth);
   const mainRepoPath = resolveRepoPath(repo) ?? mainRepoPathForStripped(repo.stripped_name);
 
   try {
@@ -234,12 +281,12 @@ export async function ensureMainClone(repo, token) {
   } catch {
     /* path may not exist */
   }
-  await gitWithToken(token, ['clone', repoUrl(repo.full_name), mainRepoPath], {
+  await gitWithAuth(auth, ['clone', cloneRemoteUrl(repo), mainRepoPath], {
     stdio: 'pipe',
   });
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'fetch', '--all'], { cwd: mainRepoPath, stdio: 'pipe' });
+      await gitWithAuth(auth, ['lfs', 'fetch', '--all'], { cwd: mainRepoPath, stdio: 'pipe' });
     } catch {
       /* repo may not use LFS */
     }
@@ -350,7 +397,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   // 2. Capture the exact remote SHA so we can update the (potentially stale) local branch ref.
   const tempRef = `refs/baguette-fetch/${worktreeId}`;
   try {
-    await gitWithToken(token, ['fetch', 'origin', `+${branch}:${tempRef}`], {
+    await gitWithAuth(token, ['fetch', 'origin', `+${branch}:${tempRef}`], {
       cwd: mainRepoPath,
       stdio: 'pipe',
     });
@@ -382,7 +429,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
   // Also fetch the base branch so origin/<baseBranch> is up to date for merge-base diffs
   if (baseBranch && baseBranch !== branch) {
     try {
-      await gitWithToken(
+      await gitWithAuth(
         token,
         ['fetch', 'origin', `+${baseBranch}:refs/remotes/origin/${baseBranch}`],
         { cwd: mainRepoPath, stdio: 'pipe' }
@@ -394,7 +441,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
 
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'fetch', 'origin', branch], {
+      await gitWithAuth(token, ['lfs', 'fetch', 'origin', branch], {
         cwd: mainRepoPath,
         stdio: 'pipe',
       });
@@ -566,7 +613,7 @@ export async function getOpenPR(token, repoFullName, branch) {
  */
 export async function remoteHasNewCommits(worktreePath, remoteBranch, token, _repoFullName) {
   try {
-    await gitWithToken(token, ['fetch', 'origin', remoteBranch], {
+    await gitWithAuth(token, ['fetch', 'origin', remoteBranch], {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -585,7 +632,7 @@ export async function remoteHasNewCommits(worktreePath, remoteBranch, token, _re
 
 export async function gitPull(worktreePath, remoteBranch, token) {
   try {
-    await gitWithToken(token, ['ls-remote', '--exit-code', 'origin', remoteBranch], {
+    await gitWithAuth(token, ['ls-remote', '--exit-code', 'origin', remoteBranch], {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -593,13 +640,13 @@ export async function gitPull(worktreePath, remoteBranch, token) {
     return { ok: true, message: 'Remote branch not found, skipping pull' };
   }
 
-  await gitWithToken(token, ['pull', '--no-rebase', 'origin', remoteBranch], {
+  await gitWithAuth(token, ['pull', '--no-rebase', 'origin', remoteBranch], {
     cwd: worktreePath,
     stdio: 'pipe',
   });
   if (await lfsAvailable()) {
     try {
-      await gitWithToken(token, ['lfs', 'pull'], { cwd: worktreePath, stdio: 'pipe' });
+      await gitWithAuth(token, ['lfs', 'pull'], { cwd: worktreePath, stdio: 'pipe' });
     } catch {
       /* repo may not use LFS */
     }
@@ -611,7 +658,7 @@ export async function gitFetch(worktreePath, token, branch) {
   const args = branch
     ? ['fetch', 'origin', `+${branch}:refs/remotes/origin/${branch}`]
     : ['fetch', '--all'];
-  const { stdout: output } = await gitWithToken(token, args, {
+  const { stdout: output } = await gitWithAuth(token, args, {
     cwd: worktreePath,
     stdio: 'pipe',
   });
@@ -642,7 +689,7 @@ export async function gitPush(
   pushArgs.push('origin', refspec);
 
   try {
-    await gitWithToken(token, pushArgs, {
+    await gitWithAuth(token, pushArgs, {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -672,6 +719,25 @@ export async function gitPush(
 const MAX_DIFF_BUFFER_SIZE = 5 * 1024 * 1024;
 
 /**
+ * Returns the number of commits on HEAD that are not on any remote-tracking ref.
+ * Commits already reachable from another remote branch (for example a stacked
+ * parent) are not counted, even if `origin/<session remote_branch>` was never pushed.
+ * @returns {Promise<number>}
+ */
+export async function gitCommitsNotOnAnyRemote(worktreePath) {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
+      { maxBuffer: 256 }
+    );
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Returns the number of local commits not yet on the session remote branch.
  * When `remoteBranch` is set, counts `origin/<remoteBranch>..HEAD` so a unique
  * local worktree branch is not treated as fully unpushed. Falls back to
@@ -697,12 +763,7 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
         /* origin/<remoteBranch> missing — count commits not on any remote */
       }
     }
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
-      { maxBuffer: 256 }
-    );
-    return parseInt(stdout.trim(), 10) || 0;
+    return gitCommitsNotOnAnyRemote(worktreePath);
   } catch {
     return 0;
   }
@@ -1433,6 +1494,12 @@ async function fetchWorkflowRunJobs(token, repoFullName, runId) {
   return (jobsData.jobs || []).map(mapWorkflowJob);
 }
 
+function workflowRunCompletedAt(r) {
+  if (r.completed_at) return r.completed_at;
+  if (r.status === 'completed' && r.updated_at) return r.updated_at;
+  return null;
+}
+
 function mapWorkflowRun(r, jobs) {
   return {
     id: r.id,
@@ -1442,7 +1509,7 @@ function mapWorkflowRun(r, jobs) {
     html_url: r.html_url,
     created_at: r.created_at,
     updated_at: r.updated_at,
-    completed_at: r.completed_at ?? null,
+    completed_at: workflowRunCompletedAt(r),
     path: r.path,
     event: r.event,
     head_sha: r.head_sha,
@@ -1451,34 +1518,108 @@ function mapWorkflowRun(r, jobs) {
   };
 }
 
-function normalizeGraphqlEnum(value) {
-  if (value == null) return null;
-  return String(value).toLowerCase();
+const WORKFLOW_RUN_IN_FLIGHT_STATUSES = new Set([
+  'queued',
+  'in_progress',
+  'waiting',
+  'requested',
+  'pending',
+]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mapStatusContextState(state) {
-  const s = normalizeGraphqlEnum(state);
-  if (s === 'success') return 'success';
-  if (s === 'failure' || s === 'error') return 'failure';
-  if (s === 'pending' || s === 'expected') return 'pending';
-  return s;
+function mapGraphqlCheckNodes(nodes) {
+  return nodes
+    .map((node) => {
+      if (node.__typename === 'CheckRun') {
+        const app = node.checkSuite?.app;
+        return {
+          name: node.name,
+          conclusion: normalizeGraphqlEnum(node.conclusion),
+          status: normalizeGraphqlEnum(node.status),
+          required: Boolean(node.isRequired),
+          app: app?.name ?? app?.slug ?? null,
+          html_url: node.detailsUrl ?? null,
+        };
+      }
+      if (node.__typename === 'StatusContext') {
+        return {
+          name: node.context,
+          conclusion: mapStatusContextState(node.state),
+          status: null,
+          required: Boolean(node.isRequired),
+          app: null,
+          html_url: node.targetUrl ?? null,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 /**
- * PR head check rollup (Actions check runs + legacy commit statuses), aligned with the PR checks UI.
- * @returns {{ checks: Array<{ name, conclusion, status, required, app, html_url }>, head_sha: string | null }}
+ * REST fallback for the check rollup, used when the GraphQL rollup is empty or
+ * unavailable. Limitation: these endpoints do not expose branch-protection
+ * state, so every check from this fallback reports `required: false`.
+ * Callers surface `checks_source: 'rest'` so agents know `required` is unknown.
  */
-async function fetchPRCheckRollup(token, repoFullName, prNumber) {
+async function fetchCommitChecksRest(token, repoFullName, sha) {
+  const checks = [];
+
+  const runsRes = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
+    { token }
+  );
+  if (runsRes.ok) {
+    const data = await runsRes.json();
+    for (const cr of data.check_runs || []) {
+      checks.push({
+        name: cr.name,
+        conclusion: normalizeGraphqlEnum(cr.conclusion),
+        status: normalizeGraphqlEnum(cr.status),
+        required: false,
+        app: cr.app?.name ?? cr.app?.slug ?? null,
+        html_url: cr.html_url ?? null,
+      });
+    }
+  }
+
+  const statusRes = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/commits/${encodeURIComponent(sha)}/status`,
+    { token }
+  );
+  if (statusRes.ok) {
+    const statusData = await statusRes.json();
+    for (const st of statusData.statuses || []) {
+      checks.push({
+        name: st.context,
+        conclusion: mapStatusContextState(st.state),
+        status: null,
+        required: false,
+        app: null,
+        html_url: st.target_url ?? null,
+      });
+    }
+  }
+
+  return checks;
+}
+
+async function fetchCommitCheckRollupGraphql(token, repoFullName, { prNumber, headSha }) {
   const [owner, repo] = repoFullName.split('/');
   if (!owner || !repo) return { checks: [], head_sha: null };
 
-  const query = `
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $number) {
-          commits(last: 1) {
-            nodes {
-              commit {
+  let query;
+  let variables;
+  if (prNumber != null) {
+    query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            headRefTarget {
+              ... on Commit {
                 oid
                 statusCheckRollup {
                   contexts(first: 100) {
@@ -1506,82 +1647,313 @@ async function fetchPRCheckRollup(token, repoFullName, prNumber) {
           }
         }
       }
-    }
-  `;
+    `;
+    variables = { owner, repo, number: prNumber };
+  } else if (headSha) {
+    query = `
+      query($owner: String!, $repo: String!, $oid: GitObjectID!) {
+        repository(owner: $owner, name: $repo) {
+          object(oid: $oid) {
+            ... on Commit {
+              oid
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun {
+                      name
+                      conclusion
+                      status
+                      isRequired
+                      detailsUrl
+                      checkSuite { app { name slug } }
+                    }
+                    ... on StatusContext {
+                      context
+                      state
+                      isRequired
+                      targetUrl
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    variables = { owner, repo, oid: headSha };
+  } else {
+    return { checks: [], head_sha: null };
+  }
 
   const res = await githubFetch('https://api.github.com/graphql', {
     method: 'POST',
     token,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query,
-      variables: { owner, repo, number: prNumber },
-    }),
+    body: JSON.stringify({ query, variables }),
   });
   if (!res.ok) return { checks: [], head_sha: null };
   const data = await res.json();
   if (data.errors?.length) return { checks: [], head_sha: null };
 
-  const commit = data?.data?.repository?.pullRequest?.commits?.nodes?.[0]?.commit;
-  if (!commit) return { checks: [], head_sha: null };
+  let commit;
+  if (prNumber != null) {
+    commit = data?.data?.repository?.pullRequest?.headRefTarget;
+  } else {
+    commit = data?.data?.repository?.object;
+  }
+  if (!commit?.oid) return { checks: [], head_sha: null };
 
-  const head_sha = commit.oid;
   const nodes = commit.statusCheckRollup?.contexts?.nodes ?? [];
-  const checks = nodes
-    .map((node) => {
-      if (node.__typename === 'CheckRun') {
-        const app = node.checkSuite?.app;
-        return {
-          name: node.name,
-          conclusion: normalizeGraphqlEnum(node.conclusion),
-          status: normalizeGraphqlEnum(node.status),
-          required: Boolean(node.isRequired),
-          app: app?.name ?? app?.slug ?? null,
-          html_url: node.detailsUrl ?? null,
-        };
-      }
-      if (node.__typename === 'StatusContext') {
-        return {
-          name: node.context,
-          conclusion: mapStatusContextState(node.state),
-          status: null,
-          required: Boolean(node.isRequired),
-          app: null,
-          html_url: node.targetUrl ?? null,
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  return { checks: mapGraphqlCheckNodes(nodes), head_sha: commit.oid };
+}
 
-  return { checks, head_sha };
+function normalizeGraphqlEnum(value) {
+  if (value == null) return null;
+  return String(value).toLowerCase();
+}
+
+function mapStatusContextState(state) {
+  const s = normalizeGraphqlEnum(state);
+  if (s === 'success') return 'success';
+  if (s === 'failure' || s === 'error') return 'failure';
+  if (s === 'pending' || s === 'expected') return 'pending';
+  return s;
 }
 
 /**
- * Recent workflow runs for a branch (with jobs) plus optional PR-head check rollup.
- * @returns {{ runs: Array<object>, checks: Array<object>, head_sha: string | null }}
+ * PR head check rollup (Actions check runs + legacy commit statuses), aligned with the PR checks UI.
+ * Uses GraphQL on the PR head commit, with REST fallback when rollup is empty.
+ * `checks_source` reports which source produced the checks: 'graphql' (includes
+ * branch-protection `required`), 'rest' (fallback; `required` is always false), or
+ * null when neither source was consulted.
+ * @returns {{ checks: Array<object>, head_sha: string | null, checks_source: 'graphql' | 'rest' | null }}
  */
-export async function getPRWorkflows(token, repoFullName, branch, { prNumber } = {}) {
-  const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=10`;
-  const res = await githubFetch(url, { token });
-  const runsRaw = res.ok ? (await res.json()).workflow_runs || [] : [];
+async function fetchPRCheckRollup(token, repoFullName, { prNumber, headSha } = {}) {
+  const graphql = await fetchCommitCheckRollupGraphql(token, repoFullName, {
+    prNumber: prNumber ?? null,
+    headSha: headSha ?? null,
+  });
+  let { checks, head_sha } = graphql;
 
+  if (!head_sha) {
+    if (headSha) {
+      head_sha = headSha;
+    } else if (prNumber != null) {
+      const prRes = await githubFetch(
+        `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
+        { token }
+      );
+      if (prRes.ok) {
+        const pr = await prRes.json();
+        head_sha = pr.head?.sha ?? null;
+      }
+    }
+  }
+
+  let checks_source = 'graphql';
+  if (checks.length === 0) {
+    if (head_sha) {
+      checks = await fetchCommitChecksRest(token, repoFullName, head_sha);
+      checks_source = 'rest';
+    } else {
+      checks_source = null;
+    }
+  }
+
+  return { checks, head_sha, checks_source };
+}
+
+async function loadWorkflowRunsForBranch(token, repoFullName, branch, perPage) {
+  const url = `https://api.github.com/repos/${repoFullName}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=${perPage}`;
+  const res = await githubFetch(url, { token });
+  if (!res.ok) return { ok: false, runs: [] };
+  let runsRaw = [];
+  try {
+    runsRaw = (await res.json()).workflow_runs || [];
+  } catch {
+    return { ok: false, runs: [] };
+  }
   const runs = await Promise.all(
     runsRaw.map(async (r) => {
       const jobs = await fetchWorkflowRunJobs(token, repoFullName, r.id);
       return mapWorkflowRun(r, jobs);
     })
   );
+  return { ok: true, runs };
+}
 
-  let checks = [];
-  let head_sha = null;
-  if (prNumber) {
-    const rollup = await fetchPRCheckRollup(token, repoFullName, prNumber);
-    checks = rollup.checks;
-    head_sha = rollup.head_sha;
+function runIsInFlight(run) {
+  return WORKFLOW_RUN_IN_FLIGHT_STATUSES.has(run.status);
+}
+
+/**
+ * Fetch one workflow run by id, mapped like branch-page runs (jobs included unless
+ * withJobs is false). Returns null when the request fails or the run does not exist.
+ */
+async function fetchWorkflowRunById(token, repoFullName, runId, { withJobs = true } = {}) {
+  const res = await githubFetch(
+    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}`,
+    {
+      token,
+    }
+  );
+  if (!res.ok) return null;
+  let raw;
+  try {
+    raw = await res.json();
+  } catch {
+    return null;
+  }
+  if (!raw?.id) return null;
+  const jobs = withJobs ? await fetchWorkflowRunJobs(token, repoFullName, raw.id) : [];
+  return mapWorkflowRun(raw, jobs);
+}
+
+function filterWorkflowRuns(runs, { conclusion, status } = {}) {
+  let filtered = runs;
+  if (status) {
+    filtered = filtered.filter((r) => r.status === status);
+  }
+  if (conclusion) {
+    filtered = filtered.filter((r) => r.conclusion === conclusion);
+  }
+  return filtered;
+}
+
+/**
+ * Recent workflow runs for a branch (with jobs) plus PR-head check rollup.
+ * When waiting, stop reasons are surfaced: `wait_timed_out` (deadline elapsed),
+ * `wait_fetch_failed` (last poll fetch failed), `wait_run_not_found` (wait_for_run_id
+ * was never observed in any successful poll).
+ * @returns {{ runs: Array<object>, checks: Array<object>, head_sha: string | null, checks_source: 'graphql' | 'rest' | null, wait_timed_out?: boolean, wait_fetch_failed?: boolean, wait_run_not_found?: boolean, resolved_pr_number?: number }}
+ */
+export async function getPRWorkflows(token, repoFullName, branch, options = {}) {
+  const {
+    prNumber: prNumberOption,
+    conclusion,
+    status,
+    waitForCompletion = false,
+    waitForRunId,
+    waitTimeoutSeconds = 120,
+    perPage = 10,
+    pollIntervalMs = 5000,
+  } = options;
+
+  let effectivePrNumber = prNumberOption ?? null;
+  if (effectivePrNumber == null) {
+    const open = await getOpenPR(token, repoFullName, branch);
+    effectivePrNumber = open?.number ?? null;
   }
 
-  return { runs, checks, head_sha };
+  const shouldWait = Boolean(waitForCompletion || waitForRunId != null);
+  const deadline = Date.now() + waitTimeoutSeconds * 1000;
+  let waitTimedOut = false;
+  let waitFetchFailed = false;
+  let targetRunSeen = false;
+  let runs = [];
+
+  if (shouldWait) {
+    for (;;) {
+      let settled = false;
+      if (waitForRunId != null) {
+        // Poll the target run by id: newer runs can slide it out of the branch
+        // page, and a page-only check would silently treat "not found" as done.
+        const target = await fetchWorkflowRunById(token, repoFullName, waitForRunId, {
+          withJobs: false,
+        });
+        if (target) {
+          targetRunSeen = true;
+          waitFetchFailed = false;
+          settled = !runIsInFlight(target);
+        } else {
+          waitFetchFailed = true;
+        }
+      } else {
+        const page = await loadWorkflowRunsForBranch(token, repoFullName, branch, perPage);
+        if (page.ok) {
+          runs = page.runs;
+          waitFetchFailed = false;
+          settled = !page.runs.some(runIsInFlight);
+        } else {
+          // A failed poll is not "everything finished" — keep polling.
+          waitFetchFailed = true;
+        }
+      }
+      if (settled) break;
+      if (Date.now() >= deadline) {
+        waitTimedOut = true;
+        break;
+      }
+      await sleep(pollIntervalMs);
+    }
+
+    if (waitForRunId != null) {
+      // The polling loop checks the run by id; load the branch page for response data.
+      const page = await loadWorkflowRunsForBranch(token, repoFullName, branch, perPage);
+      if (page.ok) {
+        runs = page.runs;
+      } else {
+        waitFetchFailed = true;
+      }
+      // The target run may have slid out of the branch page — fetch it directly so
+      // the response still carries its conclusion and jobs.
+      if (!runs.some((r) => String(r.id) === String(waitForRunId))) {
+        const target = await fetchWorkflowRunById(token, repoFullName, waitForRunId);
+        if (target) runs = [target, ...runs];
+      }
+    }
+  } else {
+    const page = await loadWorkflowRunsForBranch(token, repoFullName, branch, perPage);
+    runs = page.runs;
+  }
+
+  runs = filterWorkflowRuns(runs, { conclusion, status });
+
+  const rollupHeadSha = runs[0]?.head_sha ?? undefined;
+  const rollup = await fetchPRCheckRollup(token, repoFullName, {
+    prNumber: effectivePrNumber ?? undefined,
+    headSha: rollupHeadSha,
+  });
+
+  const result = {
+    runs,
+    checks: rollup.checks,
+    checks_source: rollup.checks_source ?? null,
+    head_sha: rollup.head_sha ?? rollupHeadSha ?? null,
+  };
+  if (waitTimedOut) result.wait_timed_out = true;
+  if (waitFetchFailed) result.wait_fetch_failed = true;
+  if (waitForRunId != null && !targetRunSeen) result.wait_run_not_found = true;
+  if (effectivePrNumber != null && prNumberOption == null) {
+    result.resolved_pr_number = effectivePrNumber;
+  }
+  return result;
+}
+
+function selectWorkflowLogJobs(allJobs, { jobId, jobName, allJobs: fetchAllJobs } = {}) {
+  if (jobId != null) {
+    const match = allJobs.filter((j) => String(j.id) === String(jobId));
+    if (match.length === 0) {
+      throw new Error(`No job with id ${jobId} in workflow run`);
+    }
+    return match;
+  }
+  if (jobName != null) {
+    const match = allJobs.filter((j) => j.name === jobName);
+    if (match.length === 0) {
+      throw new Error(`No job named ${jobName} in workflow run`);
+    }
+    return match;
+  }
+  if (fetchAllJobs) {
+    return allJobs;
+  }
+  const failedJobs = allJobs.filter(
+    (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out'
+  );
+  return failedJobs.length > 0 ? failedJobs : allJobs;
 }
 
 /**
@@ -1591,14 +1963,19 @@ export async function getPRWorkflows(token, repoFullName, branch, { prNumber } =
  *
  * @returns {{ jobs: Array<{ id, name, status, conclusion, log, totalBytes, startByte, endByte }> }}
  */
-export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte, endByte } = {}) {
+export async function getPRWorkflowLogs(
+  token,
+  repoFullName,
+  runId,
+  { startByte, endByte, jobId, jobName, allJobs: fetchAllJobs } = {}
+) {
   const validationError = validateLogByteRange({ startByte, endByte });
   if (validationError) {
     throw new Error(validationError);
   }
 
   const jobsRes = await githubFetch(
-    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=30`,
+    `https://api.github.com/repos/${repoFullName}/actions/runs/${runId}/jobs?per_page=100`,
     { token }
   );
   if (!jobsRes.ok) {
@@ -1607,11 +1984,7 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
   const jobsData = await jobsRes.json();
   const allJobs = jobsData.jobs || [];
 
-  // Focus on failed jobs; fall back to all jobs if none failed
-  const failedJobs = allJobs.filter(
-    (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out'
-  );
-  const targetJobs = failedJobs.length > 0 ? failedJobs : allJobs;
+  const targetJobs = selectWorkflowLogJobs(allJobs, { jobId, jobName, allJobs: fetchAllJobs });
 
   const results = await Promise.all(
     targetJobs.map(async (job) => {
@@ -1685,17 +2058,28 @@ export async function getPRWorkflowLogs(token, repoFullName, runId, { startByte,
 }
 
 /**
+ * GitHub emits a second pull_request.synchronize when a PATCH includes `base`,
+ * even if the branch name is unchanged and a git push just updated HEAD.
+ * Only retarget when the desired base differs from the PR's current base.
+ */
+export function prBasePatchField(baseBranch, currentBaseBranch) {
+  if (!baseBranch || !currentBaseBranch || baseBranch === currentBaseBranch) return undefined;
+  return baseBranch;
+}
+
+/**
  * Create or update a pull request via the GitHub API.
  * @returns {{ url: string, number: number }}
  */
 export async function upsertPR(
   token,
-  { repoFullName, prNumber, title, body, head, baseBranch, reopen = false }
+  { repoFullName, prNumber, title, body, head, baseBranch, currentBaseBranch, reopen = false }
 ) {
   if (prNumber) {
     const patchBody = { title, body };
     if (reopen) patchBody.state = 'open';
-    if (baseBranch) patchBody.base = baseBranch;
+    const base = prBasePatchField(baseBranch, currentBaseBranch);
+    if (base) patchBody.base = base;
     const res = await githubFetch(
       `https://api.github.com/repos/${repoFullName}/pulls/${prNumber}`,
       {

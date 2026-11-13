@@ -49,14 +49,18 @@ function usageAgentTypeOf(row) {
   return normalizeUsageAgentType(row?.agent_type ?? row?.kind);
 }
 
-export const AGENT_TYPE_LABELS = { builder: 'Builder', reviewer: 'Reviewer' };
+export const AGENT_TYPE_LABELS = {
+  builder: 'Builder',
+  reviewer: 'Reviewer',
+  subagent: 'Subagent',
+};
 
 export function usageRepoLabel(fullName) {
   if (!fullName || fullName === '__global__') return 'Global';
   return repoDisplayName(fullName);
 }
 
-export function usageRepoTitle(fullName) {
+function usageRepoTitle(fullName) {
   if (!fullName || fullName === '__global__') return 'Global sessions';
   return fullName;
 }
@@ -97,6 +101,27 @@ export function listSessionCostLines(breakdown) {
     .sort((a, b) => b.cost_usd - a.cost_usd);
 }
 
+/** @param {Array<{ agent_id?: number, cost_usd?: number|string }>} [byAgent] */
+export function usageCostByAgentId(byAgent) {
+  const map = new Map();
+  for (const row of byAgent ?? []) {
+    if (row.agent_id == null) continue;
+    const id = Number(row.agent_id);
+    map.set(id, (map.get(id) ?? 0) + Number(row.cost_usd ?? 0));
+  }
+  return map;
+}
+
+/**
+ * Per-agent cost for agents panel rows and composer chrome (parentheses, agent only).
+ * @returns {string|null}
+ */
+export function formatAgentUsageCostLabel({ agentCost }) {
+  const agent = Number(agentCost) || 0;
+  if (agent <= 0) return null;
+  return `(${formatUsd(agent)})`;
+}
+
 const EMPTY_USAGE_METRICS = {
   total_tokens: 0,
   input_tokens: 0,
@@ -119,20 +144,29 @@ function addUsageMetrics(acc, row) {
 // Categorical slots, assigned in fixed order and never cycled: the 9th series and
 // beyond fold into "Other". Validated for the dark chart surface (zinc-900) against
 // the lightness band, chroma floor, CVD separation and contrast.
+/**
+ * Chart series colors for the Usage graph. Charts stay on concrete steps (see
+ * index.css note) but each series gets a lighter dark-mode step so bars keep
+ * non-text contrast against zinc-950 instead of reading near-black.
+ */
 export const SERIES_COLORS = [
-  'bg-amber-600',
-  'bg-sky-600',
-  'bg-emerald-600',
-  'bg-violet-500',
-  'bg-rose-500',
-  'bg-fuchsia-500',
-  'bg-lime-600',
-  'bg-cyan-600',
+  'bg-amber-600 dark:bg-amber-400',
+  'bg-sky-600 dark:bg-sky-400',
+  'bg-emerald-600 dark:bg-emerald-400',
+  'bg-violet-500 dark:bg-violet-400',
+  'bg-rose-500 dark:bg-rose-400',
+  'bg-fuchsia-500 dark:bg-fuchsia-400',
+  'bg-lime-600 dark:bg-lime-400',
+  'bg-cyan-600 dark:bg-cyan-400',
 ];
 const OTHER_COLOR = 'bg-track';
 export const OTHER_KEY = '__other__';
 
-const AGENT_TYPE_COLORS = { builder: SERIES_COLORS[0], reviewer: SERIES_COLORS[2] };
+const AGENT_TYPE_COLORS = {
+  builder: SERIES_COLORS[0],
+  reviewer: SERIES_COLORS[2],
+  subagent: SERIES_COLORS[4],
+};
 
 export const UNKNOWN_CONFIG_KEY = '__none__';
 
@@ -147,6 +181,16 @@ export function usageConfigLabel(row) {
 export function usageConfigKey(row) {
   if (row?.agent_config_id != null) return String(row.agent_config_id);
   return UNKNOWN_CONFIG_KEY;
+}
+
+function usageUserKey(row) {
+  return row?.user_id == null ? '' : String(row.user_id);
+}
+
+function usageUserLabel(row) {
+  if (row?.username) return row.username;
+  if (row?.user_id != null) return `User ${row.user_id}`;
+  return 'Unknown user';
 }
 
 /** The last `count` UTC days, oldest first — `date(created_at)` on the server is UTC too. */
@@ -198,17 +242,29 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
     (r) => usageConfigKey(r),
     metric
   );
+  const { colors: userColors, otherCount: otherUserCount } = rankedPaletteKeys(
+    rows,
+    usageUserKey,
+    metric
+  );
 
   const configTitle = new Map();
+  const userTitle = new Map();
   for (const r of rows) {
-    const key = usageConfigKey(r);
-    if (!configTitle.has(key)) configTitle.set(key, usageConfigLabel(r));
+    const configKey = usageConfigKey(r);
+    if (!configTitle.has(configKey)) configTitle.set(configKey, usageConfigLabel(r));
+    const userKey = usageUserKey(r);
+    if (!userTitle.has(userKey)) userTitle.set(userKey, usageUserLabel(r));
   }
 
   const keyOf = (r) => {
     if (dimension === 'config') {
       const key = usageConfigKey(r);
       return configColors.has(key) ? key : OTHER_KEY;
+    }
+    if (dimension === 'user') {
+      const key = usageUserKey(r);
+      return userColors.has(key) ? key : OTHER_KEY;
     }
     if (dimension === 'agent_type' || dimension === 'kind') return usageAgentTypeOf(r);
     if (dimension === 'model') {
@@ -221,6 +277,7 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
   const colorOf = (key) => {
     if (key === OTHER_KEY) return OTHER_COLOR;
     if (dimension === 'config') return configColors.get(key) ?? OTHER_COLOR;
+    if (dimension === 'user') return userColors.get(key) ?? OTHER_COLOR;
     if (dimension === 'agent_type' || dimension === 'kind') {
       return AGENT_TYPE_COLORS[key] ?? OTHER_COLOR;
     }
@@ -238,9 +295,14 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
         const n = otherConfigCount;
         return `Other (${n} ${n === 1 ? 'config' : 'configs'})`;
       }
+      if (dimension === 'user') {
+        const n = otherUserCount;
+        return `Other (${n} ${n === 1 ? 'user' : 'users'})`;
+      }
       return `Other (${otherRepoCount} ${otherRepoCount === 1 ? 'repo' : 'repos'})`;
     }
     if (dimension === 'config') return configTitle.get(key) ?? key;
+    if (dimension === 'user') return userTitle.get(key) ?? key;
     if (dimension === 'agent_type' || dimension === 'kind') {
       return AGENT_TYPE_LABELS[key] ?? key;
     }
@@ -277,26 +339,35 @@ export function buildSeries(rows, dimension, metric = 'tokens') {
   return { series, byDay };
 }
 
+function usageDimensionKey(row, dimension) {
+  if (dimension === 'user') return usageUserKey(row);
+  if (dimension === 'model') return row.model || '';
+  if (dimension === 'agent_type') return usageAgentTypeOf(row);
+  return row.repo_full_name || '';
+}
+
 /**
- * Collapse daily rows into one line per (repo, agent, kind) — or also per model
- * when `byModel` is on, so the table can split a repo across models.
+ * Collapse daily rows into one line per group-by dimension (repo, user, model, or agent type).
+ * `{ byModel: true }` is treated as `dimension: 'model'` for older callers.
  */
-export function aggregateUsage(rows, { byModel = false } = {}) {
+export function aggregateUsage(rows, { dimension = 'repo', byModel = false } = {}) {
+  const groupDimension = byModel ? 'model' : dimension;
   const totals = new Map();
   for (const row of rows) {
     const agent_type = usageAgentTypeOf(row);
     const model = row.model || '';
-    const configKey = usageConfigKey(row);
-    const key = byModel
-      ? `${row.repo_full_name}\t${configKey}\t${agent_type}\t${model}`
-      : `${row.repo_full_name}\t${configKey}\t${agent_type}`;
+    const key = usageDimensionKey(row, groupDimension);
     const prev = totals.get(key) ?? {
+      dimension: groupDimension,
+      group_key: key,
       repo_full_name: row.repo_full_name,
+      user_id: row.user_id ?? null,
+      username: row.username ?? null,
       agent_config_id: row.agent_config_id ?? null,
       agent_config_label: row.agent_config_label ?? null,
       agent_sdk: row.agent_sdk,
       agent_type,
-      ...(byModel ? { model } : {}),
+      model,
       ...EMPTY_USAGE_METRICS,
     };
     addUsageMetrics(prev, row);
@@ -305,6 +376,53 @@ export function aggregateUsage(rows, { byModel = false } = {}) {
   return [...totals.values()].sort(
     (a, b) => b.total_tokens - a.total_tokens || b.cost_usd - a.cost_usd
   );
+}
+
+export function usageGroupLabel(row, dimension = row?.dimension || 'repo') {
+  if (dimension === 'user') return usageUserLabel(row);
+  if (dimension === 'model') return usageModelLabel(row?.model);
+  if (dimension === 'agent_type') {
+    return AGENT_TYPE_LABELS[row?.agent_type] ?? row?.agent_type ?? 'Unknown';
+  }
+  return usageRepoLabel(row?.repo_full_name);
+}
+
+export function usageGroupTitle(row, dimension = row?.dimension || 'repo') {
+  if (dimension === 'user') return usageUserLabel(row);
+  if (dimension === 'model') return row?.model || usageModelLabel(row?.model);
+  if (dimension === 'agent_type') return usageGroupLabel(row, dimension);
+  return usageRepoTitle(row?.repo_full_name);
+}
+
+export function usageDimensionHeading(dimension) {
+  if (dimension === 'user') return 'By user';
+  if (dimension === 'model') return 'By model';
+  if (dimension === 'agent_type') return 'By agent type';
+  return 'By repository';
+}
+
+const USAGE_GROUP_DIMENSIONS = [
+  { key: 'user', label: 'By user' },
+  { key: 'model', label: 'By model' },
+  { key: 'repo', label: 'By repo' },
+  { key: 'agent_type', label: 'By agent' },
+];
+
+export function availableUsageDimensions(rows) {
+  const data = rows ?? [];
+  return USAGE_GROUP_DIMENSIONS.filter((d) => {
+    if (d.key === 'repo') return sumBy(data, (r) => r.repo_full_name).size > 1;
+    if (d.key === 'user') return sumBy(data, usageUserKey).size > 1;
+    if (d.key === 'model') return sumBy(data, (r) => r.model || '').size > 1;
+    if (d.key === 'agent_type') return sumBy(data, (r) => r.agent_type || 'builder').size > 1;
+    return false;
+  });
+}
+
+export function resolveUsageDimension(rows, dimension) {
+  const options = availableUsageDimensions(rows);
+  if (options.some((d) => d.key === dimension)) return dimension;
+  return options[0]?.key ?? 'repo';
 }
 
 export function sumUsageMetrics(rows) {

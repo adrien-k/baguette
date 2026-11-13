@@ -12,7 +12,7 @@ import { stripWorktreePath } from '../../utils/paths.js';
 import EditDiffView from './EditDiffView.tsx';
 import QuietToolBlock from './QuietToolBlock.tsx';
 import BashToolBlock from './BashToolBlock.tsx';
-import AskUserQuestionBlock, { type AskUserQuestion } from './AskUserQuestionBlock.tsx';
+import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
 import PlanReviewBlock from './PlanReviewBlock.tsx';
 import BaguetteMcpToolBlock from './BaguetteMcpToolBlock.tsx';
 import TodoBlock from './TodoBlock.tsx';
@@ -27,6 +27,7 @@ type TypedToolCall = ToolCallPayload & {
   id: number;
   tool_started_at?: string | null;
   call_id?: string | null;
+  agent_id?: number | null;
 };
 
 /** The `tool_call` variant narrowed to a single kind. */
@@ -229,11 +230,37 @@ export default function ToolCallBlock({
   sessionPath,
   sessionId,
   userReplied = false,
+  agents,
+  onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
   sessionId?: number;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   if (message._hidden) return null;
 
@@ -243,6 +270,10 @@ export default function ToolCallBlock({
       sessionPath={sessionPath}
       sessionId={sessionId}
       userReplied={userReplied}
+      agents={agents}
+      onSelectAgent={onSelectAgent}
+      tasks={tasks}
+      onSelectTask={onSelectTask}
     />
   );
 }
@@ -256,11 +287,37 @@ function ToolCallSwitch({
   sessionPath,
   sessionId,
   userReplied,
+  agents,
+  onSelectAgent,
+  tasks,
+  onSelectTask,
 }: {
   message: TypedToolCall & { _hidden?: boolean };
   sessionPath?: string | null;
   sessionId?: number;
   userReplied?: boolean;
+  agents?: Array<{
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }>;
+  onSelectAgent?: (agent: {
+    id: number;
+    ref?: number;
+    name?: string;
+    agent_type?: string;
+    status?: string;
+  }) => void;
+  tasks?: Array<{
+    id: number;
+    label?: string | null;
+    task_key?: string | null;
+    status?: string;
+    command?: string;
+  }>;
+  onSelectTask?: (taskId: number) => void;
 }) {
   const isError = message.status === 'error';
   const startedAt = message.tool_started_at ?? message.started_at;
@@ -292,8 +349,9 @@ function ToolCallSwitch({
     case 'ask_user':
       return (
         <AskUserQuestionBlock
-          questions={message.args.questions as AskUserQuestion[]}
+          questions={message.args.questions}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );
@@ -302,6 +360,7 @@ function ToolCallSwitch({
         <PlanReviewBlock
           markdown={message.args.plan}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
         />
       );
@@ -324,7 +383,12 @@ function ToolCallSwitch({
           isError={isError}
           startedAt={startedAt}
           sessionId={sessionId}
+          agentId={message.agent_id}
           userReplied={userReplied}
+          agents={agents}
+          onSelectAgent={onSelectAgent}
+          tasks={tasks}
+          onSelectTask={onSelectTask}
         />
       );
     }

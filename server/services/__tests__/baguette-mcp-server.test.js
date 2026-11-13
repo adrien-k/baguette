@@ -59,8 +59,6 @@ import {
   gitPull,
   gitPush,
   gitFetch,
-  upsertPR,
-  getOpenPR,
   getOpenPRByNumber,
   getPRComments,
   createPRComment,
@@ -73,12 +71,13 @@ import {
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { isPortListening } from '../port-utils.js';
-import { PUBLIC_HOST } from '../../config.js';
-import { buildBaguetteMcpServer } from '../baguette-mcp-server.js';
+import { buildBaguetteToolList } from '../mcp/server.js';
+import { loadConfiguredSlackApps } from '../mcp/lib/slack.js';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
 import { createSessionAgentContext } from '../mcp/lib/session-agent-context.js';
 import { createGitPushTool } from '../mcp/tools/git-push.js';
-import { createPrUpsertTool } from '../mcp/tools/pr-upsert.js';
 import { gitHubOriginFromFullName } from '../../../shared/repo-origin.js';
+import { getGithubToken } from '../agent-settings.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -96,8 +95,6 @@ const DEFAULT_SESSION = {
   session_path: '/tmp/wt',
   auto_push: 1,
 };
-// Footer buildSessionFooter adds for session 1 when there is no preview URL or usage.
-const OPEN_SESSION_FOOTER = `\n\n---\n\n<!-- baguette-footer -->\n\n_[Open Session](${PUBLIC_HOST}/sessions/1)_`;
 const SESSION_HEADER = '*Posted by baguette - Agent, session 1:*\n\n';
 const INTERNAL_PATCH_PARAMS = { provider: undefined, user: { id: 1 } };
 
@@ -162,7 +159,15 @@ function makeTaskCreate({ exitCode = 0, stdout = '', stderr = '' } = {}) {
 
 function makeApp(
   sessionData,
-  { tasksCreate, tasksGetTask, tasksFilterTasks, tasksFindLatestTaskByTaskKey, usageRows = [] } = {}
+  {
+    tasksCreate,
+    tasksGetTask,
+    tasksFilterTasks,
+    tasksFindLatestTaskByTaskKey,
+    usageRows = [],
+    repoOverrides = {},
+    userRow = { id: 1, access_token: 'tok' },
+  } = {}
 ) {
   let sessionSnapshot = {
     ...DEFAULT_SESSION,
@@ -195,8 +200,7 @@ function makeApp(
   const db = (table) => {
     if (table === 'sessions')
       return { where: () => ({ first: async () => ({ ...sessionSnapshot }) }) };
-    if (table === 'users')
-      return { where: () => ({ first: async () => ({ id: 1, access_token: 'tok' }) }) };
+    if (table === 'users') return { where: () => ({ first: async () => ({ ...userRow }) }) };
     if (table === 'repos')
       return {
         where: () => ({
@@ -207,6 +211,8 @@ function makeApp(
               full_name: fullName,
               default_branch: 'main',
               origin: gitHubOriginFromFullName(fullName),
+              access_mode: 'github',
+              ...repoOverrides,
             };
           },
         }),
@@ -226,7 +232,7 @@ function makeApp(
   const app = {
     get: (key) => (key === 'db' ? db : null),
     service: (name) => {
-      if (name === 'users') return { get: async () => ({ id: 1, access_token: 'tok' }) };
+      if (name === 'users') return { get: async () => ({ ...userRow }) };
       if (name === 'tasks')
         return {
           getTask: mockGetTask,
@@ -248,7 +254,10 @@ async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null }
     sessionRow,
     appOpts
   );
-  await buildBaguetteMcpServer(sessionRow, app, { agent });
+  const slackApps = await loadConfiguredSlackApps(app);
+  claudeAgentSdkPlugin.adaptTools(
+    await buildBaguetteToolList(sessionRow, app, { slackApps, agent })
+  );
   const tools = createSdkMcpServer.mock.calls[0][0].tools;
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
@@ -260,7 +269,7 @@ function buildStandaloneGitPrTools(sessionOverrides = {}, appOpts = {}) {
     appOpts
   );
   const ctx = createSessionAgentContext(sessionRow, app);
-  const tools = [createGitPushTool(ctx), createPrUpsertTool(ctx)];
+  const tools = [createGitPushTool(ctx)];
   return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
 }
 
@@ -281,23 +290,97 @@ beforeEach(() => {
 });
 
 describe('builder MCP tool registry', () => {
-  it('omits GitPush and PrUpsert for repo sessions', async () => {
+  it('omits GitPush for repo sessions', async () => {
     const { tools } = await buildServer();
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
     expect(names).toContain('UpdateSession');
+    expect(names).toContain('ConfigureMcpServer');
+  });
+
+  it('keeps GitHub PR tools for github remotes with a token', async () => {
+    const { tools } = await buildServer();
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('PrRead');
+    expect(names).toContain('PrComments');
+    expect(names).toContain('GitPull');
+    const update = tools.find((t) => t.name === 'UpdateSession');
+    expect(update.description).toMatch(/syncs title and description to GitHub/i);
+  });
+
+  it('omits PR tools without a token and keeps GitPull', async () => {
+    getGithubToken.mockReturnValue(null);
+    const { tools } = await buildServer(
+      {},
+      {
+        userRow: { id: 1 },
+        repoOverrides: {
+          access_mode: 'github',
+          origin: 'https://github.com/acme/app.git',
+        },
+      }
+    );
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('PrRead');
+    expect(names).not.toContain('PrComments');
+    expect(names).not.toContain('PrReview');
+    expect(names).not.toContain('ListGithubPrs');
+    expect(names).not.toContain('PrWorkflows');
+    expect(names).toContain('GitPull');
+    expect(names).toContain('GitFetch');
+    expect(names).toContain('UpdateSession');
+    const update = tools.find((t) => t.name === 'UpdateSession');
+    expect(update.description).not.toMatch(/syncs title and description to GitHub/i);
+    getGithubToken.mockReturnValue('ghtoken');
+  });
+
+  it('omits GitPull and PR tools for local repos', async () => {
+    const { tools } = await buildServer(
+      {},
+      {
+        repoOverrides: {
+          access_mode: 'local',
+          origin: null,
+        },
+      }
+    );
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('GitPull');
+    expect(names).not.toContain('GitFetch');
+    expect(names).not.toContain('PrRead');
+    expect(names).not.toContain('PrComments');
+    expect(names).toContain('UpdateSession');
+    expect(names).toContain('CurrentSessionInfo');
   });
 
   it('omits session-shipping tools for subagent turns', async () => {
     const { tools } = await buildServer({}, {}, { agent: { agent_type: 'subagent' } });
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('UpdateSession');
-    expect(names).not.toContain('CreatePlan');
     expect(names).not.toContain('StartSubagent');
+    expect(names).toContain('CreatePlan');
+    expect(names).toContain('StartPlan');
+    expect(names).toContain('ListPlans');
+    expect(names).toContain('EditPlan');
+    expect(names).toContain('CompletePlan');
+    expect(names).toContain('ListSubagents');
+    expect(names).toContain('AwaitSubagent');
+    expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
+    expect(names).toContain('ConfigureMcpServer');
+  });
+
+  it('plan and todo tool descriptions tell agents CreatePlan does not attach and to complete todos', async () => {
+    const { tools } = await buildServer();
+    const desc = (name) => tools.find((t) => t.name === name)?.description ?? '';
+    expect(desc('CreatePlan')).toMatch(/does not attach/i);
+    expect(desc('StartPlan')).toMatch(/Run the plan/i);
+    expect(desc('ListPlans')).toMatch(/ListPlans|plan_id/i);
+    expect(desc('CompletePlan')).toMatch(/completed/);
+    expect(desc('DeleteTodo')).toMatch(/Prefer UpdateTodo with status completed/);
   });
 });
 
@@ -317,6 +400,9 @@ describe('global sessions', () => {
     expect(names).not.toContain('AwaitDetachedTask');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('CurrentSessionInfo');
+    expect(names).toContain('ListMissingModelPrices');
+    expect(names).toContain('UpdateModelPricing');
+    expect(names).toContain('RecomputeUsageCosts');
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');
@@ -340,9 +426,60 @@ describe('CurrentSessionInfo', () => {
     expect(result.local_branch).toBe('feat/x');
     expect(result.session_branch).toBeUndefined();
     expect(result.git_commits_to_push).toBe('git rev-list --count origin/feat/x-remote..HEAD');
+    expect(result.git_commits_not_on_any_remote).toBe('git rev-list --count HEAD --not --remotes');
     expect(result.git_commits_behind_remote).toBe(
       'git rev-list --count HEAD..origin/feat/x-remote'
     );
+    expect(result.repo_access_mode).toBe('github');
+    expect(result.git_remote).toBe('https://github.com/owner/repo.git');
+    expect(result.github_api_available).toBe(true);
+  });
+
+  it('reports github_api_available false without a token', async () => {
+    getGithubToken.mockReturnValue(null);
+    const { tools } = await buildServer(
+      {},
+      {
+        userRow: { id: 1 },
+        repoOverrides: {
+          access_mode: 'github',
+          origin: 'https://github.com/acme/app.git',
+        },
+      }
+    );
+    const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
+    expect(result.repo_access_mode).toBe('github');
+    expect(result.git_remote).toBe('https://github.com/acme/app.git');
+    expect(result.github_api_available).toBe(false);
+    const info = tools.find((t) => t.name === 'CurrentSessionInfo');
+    expect(info.description).not.toContain('PrRead');
+    expect(info.description).toMatch(/source of title and description/i);
+    getGithubToken.mockReturnValue('ghtoken');
+  });
+
+  it('returns local access fields with no remote', async () => {
+    const { tools } = await buildServer(
+      {},
+      {
+        repoOverrides: {
+          access_mode: 'local',
+          origin: null,
+        },
+      }
+    );
+    const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
+    expect(result.repo_access_mode).toBe('local');
+    expect(result.git_remote).toBeNull();
+    expect(result.github_api_available).toBe(false);
+  });
+
+  it('omits repo access fields on global sessions', async () => {
+    const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
+    const result = parseResult(await callTool(tools, 'CurrentSessionInfo'));
+    expect(result.is_global).toBe(true);
+    expect(result.repo_access_mode).toBeUndefined();
+    expect(result.git_remote).toBeUndefined();
+    expect(result.github_api_available).toBeUndefined();
   });
 
   it('returns remote_branch and local_branch separately when they differ', async () => {
@@ -453,7 +590,11 @@ describe('GitPull', () => {
     const { tools } = await buildServer({ remote_branch: 'feature-branch' });
     const result = parseResult(await callTool(tools, 'GitPull'));
     expect(result.ok).toBe(true);
-    expect(gitPull).toHaveBeenCalledWith('/tmp/wt', 'feature-branch', 'ghtoken');
+    expect(gitPull).toHaveBeenCalledWith(
+      '/tmp/wt',
+      'feature-branch',
+      expect.objectContaining({ mode: 'github', token: 'ghtoken', userId: 1 })
+    );
   });
 });
 
@@ -463,7 +604,11 @@ describe('GitFetch', () => {
     const { tools } = await buildServer();
     const result = parseResult(await callTool(tools, 'GitFetch', { branch: 'main' }));
     expect(result.ok).toBe(true);
-    expect(gitFetch).toHaveBeenCalledWith('/tmp/wt', 'ghtoken', 'main');
+    expect(gitFetch).toHaveBeenCalledWith(
+      '/tmp/wt',
+      expect.objectContaining({ mode: 'github', token: 'ghtoken', userId: 1 }),
+      'main'
+    );
   });
 });
 
@@ -488,10 +633,14 @@ describe('GitPush', () => {
     const result = parseResult(await callTool(tools, 'GitPush'));
     expect(result.ok).toBe(true);
     expect(result.branch).toBe('feature-branch');
-    expect(gitPush).toHaveBeenCalledWith('/tmp/wt', 'ghtoken', {
-      force: false,
-      branch: 'feature-branch',
-    });
+    expect(gitPush).toHaveBeenCalledWith(
+      '/tmp/wt',
+      expect.objectContaining({ mode: 'github', token: 'ghtoken', userId: 1 }),
+      {
+        force: false,
+        branch: 'feature-branch',
+      }
+    );
     expect(mockPatch).toHaveBeenCalledWith(
       1,
       {
@@ -537,177 +686,6 @@ describe('UpdateSession', () => {
     );
     expect(result.ok).toBe(true);
     expect(mockPatch).toHaveBeenCalledWith(1, { base_branch: 'develop' }, INTERNAL_PATCH_PARAMS);
-  });
-});
-
-describe('PrUpsert', () => {
-  it('resolves HEAD, creates PR, and patches session when no pr_number', async () => {
-    execFile.mockImplementationOnce((_cmd, _args, _opts, cb) =>
-      cb(null, { stdout: 'feature-branch\n', stderr: '' })
-    );
-    upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/1', number: 1 });
-    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: null });
-    const result = parseResult(
-      await callTool(tools, 'PrUpsert', { title: 'My PR', description: 'Details' })
-    );
-    expect(result.ok).toBe(true);
-    expect(result.url).toBe('https://github.com/owner/repo/pull/1');
-    expect(upsertPR).toHaveBeenCalledWith(
-      'ghtoken',
-      expect.objectContaining({
-        head: 'feature-branch',
-        body: `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nDetails${OPEN_SESSION_FOOTER}`,
-      })
-    );
-    expect(mockPatch).toHaveBeenCalledWith(
-      1,
-      { label: 'My PR', pr_description: 'Details' },
-      INTERNAL_PATCH_PARAMS
-    );
-    expect(mockPatch).toHaveBeenCalledWith(
-      1,
-      {
-        pr_url: 'https://github.com/owner/repo/pull/1',
-        pr_number: 1,
-        pr_status: 'draft',
-      },
-      INTERNAL_PATCH_PARAMS
-    );
-  });
-
-  it('updates existing PR without HEAD lookup; patches label and description', async () => {
-    getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body: '' });
-    upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: 5 });
-    const result = parseResult(
-      await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'Updated body' })
-    );
-    expect(result.ok).toBe(true);
-    expect(execFile).not.toHaveBeenCalled();
-    expect(upsertPR).toHaveBeenCalledWith(
-      'ghtoken',
-      expect.objectContaining({
-        body: `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nUpdated body${OPEN_SESSION_FOOTER}`,
-      })
-    );
-    expect(mockPatch).toHaveBeenCalledWith(
-      1,
-      {
-        label: 'Updated',
-        pr_description: 'Updated body',
-      },
-      INTERNAL_PATCH_PARAMS
-    );
-  });
-
-  it('preserves user-written content above the marker when updating an existing PR', async () => {
-    const existingBody = `My reviewer notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld baguette content`;
-    getOpenPRByNumber.mockResolvedValueOnce({ title: 'PR', body: existingBody });
-    upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = buildStandaloneGitPrTools({ pr_number: 5 });
-    const result = parseResult(
-      await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'New baguette content' })
-    );
-    expect(result.ok).toBe(true);
-    expect(upsertPR).toHaveBeenCalledWith(
-      'ghtoken',
-      expect.objectContaining({
-        body: `My reviewer notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nNew baguette content${OPEN_SESSION_FOOTER}`,
-      })
-    );
-  });
-
-  it('rewrites usage footer from session on each upsert', async () => {
-    getOpenPRByNumber.mockResolvedValueOnce({
-      title: 'PR',
-      body: `Notes\n\n${BAGUETTE_DESCRIPTION_MARKER}\n---\n\nOld\n\n<!-- baguette-footer -->\n\n_claude / \`old\` · In: 0 · Out: 0 · Cache read: 0 · Cache write: 0 · Cost: $0_`,
-    });
-    upsertPR.mockResolvedValue({ url: 'https://github.com/owner/repo/pull/5', number: 5 });
-    const { tools } = buildStandaloneGitPrTools(
-      {
-        pr_number: 5,
-        agent_sdk: 'cursor',
-        model: 'new-model',
-      },
-      {
-        usageRows: [
-          {
-            agent_type: 'builder',
-            model: 'new-model',
-            agent_sdk: 'cursor',
-            cost_usd: '1.50',
-            input_tokens: 1000,
-            output_tokens: 200,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-          },
-        ],
-      }
-    );
-    const result = parseResult(
-      await callTool(tools, 'PrUpsert', { title: 'Updated', description: 'Summary' })
-    );
-    expect(result.ok).toBe(true);
-    expect(upsertPR).toHaveBeenCalledWith(
-      'ghtoken',
-      expect.objectContaining({
-        body: expect.stringContaining(
-          `<!-- baguette-footer -->\n\n_[Open Session](${PUBLIC_HOST}/sessions/1)_\n_cursor / \`new-model\` · In: 1.0k · Out: 200 · Cache read: 0 · Cache write: 0 · Cost: $1.50_`
-        ),
-      })
-    );
-    const sentBody = upsertPR.mock.calls[0][1].body;
-    expect(sentBody).not.toContain('claude / `old`');
-  });
-
-  it('fails and links session when an open PR already exists for HEAD', async () => {
-    execFile.mockImplementationOnce((_cmd, _args, _opts, cb) =>
-      cb(null, { stdout: 'my-feature\n', stderr: '' })
-    );
-    getOpenPR.mockResolvedValueOnce({
-      number: 7,
-      html_url: 'https://github.com/owner/repo/pull/7',
-      title: 'Already open',
-      base_ref: 'main',
-      draft: false,
-    });
-    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: null });
-    const result = parseResult(
-      await callTool(tools, 'PrUpsert', { title: 'New title', description: 'Body' })
-    );
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/already exists/);
-    expect(upsertPR).not.toHaveBeenCalled();
-    expect(mockPatch).toHaveBeenCalledWith(
-      1,
-      { label: 'New title', pr_description: 'Body' },
-      INTERNAL_PATCH_PARAMS
-    );
-    expect(mockPatch).toHaveBeenCalledWith(
-      1,
-      {
-        pr_url: 'https://github.com/owner/repo/pull/7',
-        pr_number: 7,
-        pr_status: 'open',
-        label: 'Already open',
-      },
-      INTERNAL_PATCH_PARAMS
-    );
-  });
-
-  it('persists label and description but skips GitHub when auto_push is disabled', async () => {
-    const { tools, mockPatch } = buildStandaloneGitPrTools({ pr_number: null, auto_push: 0 });
-    const result = parseResult(
-      await callTool(tools, 'PrUpsert', { title: 'My PR', description: 'Details' })
-    );
-    expect(result.ok).toBe(true);
-    expect(upsertPR).not.toHaveBeenCalled();
-    expect(mockPatch).toHaveBeenCalledWith(
-      1,
-      { label: 'My PR', pr_description: 'Details' },
-      INTERNAL_PATCH_PARAMS
-    );
-    expect(mockPatch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -830,6 +808,8 @@ describe('RunTask', () => {
     );
     const result = parseResult(await callTool(tools, 'RunTask', { label: 'Run tests' }));
     expect(result.ok).toBe(true);
+    expect(result.taskId).toBe(99);
+    expect(result.label).toBe('Run tests');
     expect(result.exitCode).toBe(0);
     expect(result.stdoutLines).toEqual(['all tests passed']);
     expect(result.stderrLines).toEqual([]);
@@ -868,6 +848,30 @@ describe('RunTask', () => {
     expect(joined).toBe(huge.replace(/\n$/, ''));
     expect(joined).toContain('LAST_LINE');
     expect(joined.length).toBeGreaterThan(90_000);
+  });
+
+  it('inline (default) — times out after the await cap but the task keeps running (virtual detach)', async () => {
+    vi.useFakeTimers();
+    loadBaguetteConfig.mockResolvedValue({
+      session: { commands: [{ label: 'Run tests', run: 'npm test' }] },
+    });
+    const tasksCreate = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve({ id: 99, label: 'Run tests', status: 'running' }));
+    const { tools } = await buildServer({}, { tasksCreate });
+    const promise = callTool(tools, 'RunTask', { label: 'Run tests' });
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    const result = parseResult(await promise);
+    vi.useRealTimers();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Timed out after 30 minutes/);
+    expect(result.error).toMatch(/task 99/);
+    expect(result.error).toMatch(/not cancelled/);
+    expect(result.error).toMatch(/AwaitDetachedTask/);
+    expect(tasksCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ task_key: 'Run tests' }),
+      expect.anything()
+    );
   });
 
   // The tool names the task and forwards args; the tasks service resolves the `run` script
@@ -1001,6 +1005,29 @@ describe('AwaitDetachedTask', () => {
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(2);
     expect(result.stdoutLines).toEqual(['done']);
+  });
+
+  it('returns ok: false when the task does not exit before the await timeout', async () => {
+    vi.useFakeTimers();
+    const task = {
+      id: 42,
+      session_id: 1,
+      label: 'Run tests',
+      onLog() {
+        return () => {};
+      },
+      onExit() {
+        return () => {};
+      },
+    };
+    const { tools } = await buildServer({}, { tasksGetTask: vi.fn().mockReturnValue(task) });
+    const promise = callTool(tools, 'AwaitDetachedTask', { taskId: 42 });
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    const result = parseResult(await promise);
+    vi.useRealTimers();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not cancelled/);
+    expect(result.error).toMatch(/KillTask/);
   });
 });
 
@@ -1206,6 +1233,12 @@ describe('PrWorkflows', () => {
     expect(result.ok).toBe(true);
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
       prNumber: 42,
+      conclusion: undefined,
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
     });
     expect(result.runs).toHaveLength(1);
     expect(result.checks).toHaveLength(1);
@@ -1218,6 +1251,30 @@ describe('PrWorkflows', () => {
     await callTool(tools, 'PrWorkflows');
     expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'created-branch', {
       prNumber: undefined,
+      conclusion: undefined,
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
+    });
+  });
+
+  it('accepts the startup_failure conclusion filter', async () => {
+    getPRWorkflows.mockResolvedValue({ runs: [], checks: [], head_sha: null });
+    const { tools } = await buildServer({ remote_branch: 'feat/branch', pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'PrWorkflows', { conclusion: 'startup_failure' })
+    );
+    expect(result.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith('ghtoken', 'owner/repo', 'feat/branch', {
+      prNumber: 42,
+      conclusion: 'startup_failure',
+      status: undefined,
+      waitForCompletion: false,
+      waitForRunId: undefined,
+      waitTimeoutSeconds: undefined,
+      perPage: undefined,
     });
   });
 });
@@ -1233,6 +1290,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
       startByte: 0,
       endByte: 8000,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 
@@ -1243,6 +1303,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '12345', {
       startByte: -10,
       endByte: undefined,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 
@@ -1253,6 +1316,9 @@ describe('PrWorkflowLogs', () => {
     expect(getPRWorkflowLogs).toHaveBeenCalledWith('ghtoken', 'owner/repo', '99', {
       startByte: undefined,
       endByte: undefined,
+      jobId: undefined,
+      jobName: undefined,
+      allJobs: undefined,
     });
   });
 });

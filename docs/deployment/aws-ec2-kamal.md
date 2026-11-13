@@ -102,13 +102,14 @@ That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DO
 
 ### Secrets (**Secrets** tab)
 
-| Secret                      | How to obtain                                               |
-| --------------------------- | ----------------------------------------------------------- |
-| `SSH_PRIVATE_KEY`           | Deploy key on the instance — fetch via SSM (below), not SSH |
-| `AUTH_GITHUB_CLIENT_ID`     | GitHub App client ID ([kamal.md §4](kamal.md#4-github-app)) |
-| `AUTH_GITHUB_CLIENT_SECRET` | GitHub App client secret                                    |
-| `AUTH_GITHUB_APP_SLUG`      | GitHub App slug (the `<slug>` in `github.com/apps/<slug>`)  |
-| `ENCRYPTION_KEY`            | `openssl rand -hex 32`                                      |
+| Secret               | How to obtain                                               |
+| -------------------- | ----------------------------------------------------------- |
+| `SSH_PRIVATE_KEY`    | Deploy key on the instance — fetch via SSM (below), not SSH |
+| `BOOTSTRAP_PASSWORD` | Optional. First-visitor gate on public hosts (env-only)     |
+
+`TRUST_PROXY_HOPS` is optional (default `1`) and is not a secret: kamal-proxy is the one trusted `X-Forwarded-For` hop, so the default is correct for this topology. Set it to `0` only if you expose Baguette directly with no proxy in front.
+
+`TRUST_EDGE_COUNTRY` is optional and default off. Set `1` only when Baguette runs behind Cloudflare, CloudFront, or App Engine, which set the client-country header; otherwise Admin → Users last-used country comes from a geoip lookup of the client IP. kamal-proxy does not set those headers.
 
 #### Fetch `SSH_PRIVATE_KEY` with SSM
 

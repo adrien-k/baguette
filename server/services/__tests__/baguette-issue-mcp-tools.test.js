@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
@@ -10,6 +10,9 @@ import {
   buildSessionAgentIssueMcpTools,
 } from '../baguette-issue-mcp-tools.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
+import { registerAllSdkPlugins } from '../../agent-sdks/index.js';
+
+registerAllSdkPlugins();
 
 const db = createTestDb();
 
@@ -21,7 +24,7 @@ let app;
 let session;
 
 beforeEach(async () => {
-  const [userId] = await db('users').insert({ github_id: 9, username: 'mcp', approved: true });
+  const [userId] = await db('users').insert({ github_id: 9, username: 'mcp', status: 'approved' });
   const [repoId] = await db('repos').insert({ full_name: 'o/r', repo_path: '/tmp/r' });
   const [sessionId] = await db('sessions').insert({
     user_id: userId,

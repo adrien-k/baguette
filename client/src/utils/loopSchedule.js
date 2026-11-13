@@ -100,6 +100,12 @@ export function formatCountdown(isoString) {
   return `in ${days}d`;
 }
 
+/** Sidebar and workspace header title for a loop. */
+export function loopDisplayTitle(loop) {
+  if (!loop) return 'Loop';
+  return loop.name || loop.prompt?.split('\n')[0] || 'Loop';
+}
+
 /** Loop card subtitle: last run and next run, e.g. "Last 2h ago · Next in 3h". */
 export function formatLoopRunSubtitle(loop) {
   if (!loop) return null;

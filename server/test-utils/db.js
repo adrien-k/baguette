@@ -6,6 +6,7 @@ import Knex from 'knex';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { beforeAll, beforeEach, afterAll } from 'vitest';
+import { invalidateGithubAppCache } from '../lib/instance-settings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsPath = path.join(__dirname, '../migrations');
@@ -91,6 +92,15 @@ export async function testMessageRow(db, sessionId, fields = {}) {
   };
 }
 
+/** Empty singleton so tests are isolated from ambient AUTH_GITHUB_* env. */
+async function seedEmptyInstanceSettings(db) {
+  const existing = await db('instance_settings').where({ id: 1 }).first();
+  if (!existing) {
+    await db('instance_settings').insert({ id: 1 });
+  }
+  invalidateGithubAppCache();
+}
+
 async function createAndMigrate() {
   const db = Knex({
     client: 'better-sqlite3',
@@ -99,7 +109,13 @@ async function createAndMigrate() {
     migrations: { directory: migrationsPath },
   });
   await db.migrate.latest();
+  await seedEmptyInstanceSettings(db);
   return db;
+}
+
+/** In-memory migrated Knex instance without Vitest lifecycle hooks. */
+export function createMigratedTestDb() {
+  return createAndMigrate();
 }
 
 async function truncateAllTables(db) {
@@ -134,6 +150,7 @@ export function createTestDb() {
 
   beforeEach(async () => {
     await truncateAllTables(dbRef);
+    await seedEmptyInstanceSettings(dbRef);
   });
 
   afterAll(async () => {

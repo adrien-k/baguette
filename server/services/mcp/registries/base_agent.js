@@ -6,6 +6,9 @@ import { createListBranchesTool } from '../tools/list-branches.js';
 import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
 import { createStartSubagentTool } from '../tools/start-subagent.js';
+import { createListSubagentsTool } from '../tools/list-subagents.js';
+import { createAwaitSubagentTool } from '../tools/await-subagent.js';
+import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
@@ -19,6 +22,18 @@ import { createGetLoopTool } from '../tools/get-loop.js';
 import { createCreateLoopTool } from '../tools/create-loop.js';
 import { createUpdateLoopTool } from '../tools/update-loop.js';
 import { createDeleteLoopTool } from '../tools/delete-loop.js';
+import {
+  createListMissingModelPricesTool,
+  createRecomputeUsageCostsTool,
+  createUpdateModelPricingTool,
+} from '../tools/model-pricing.js';
+import {
+  createDeleteSkillTool,
+  createListSkillsTool,
+  createReadSkillTool,
+  createCreateSkillTool,
+  createUpdateSkillTool,
+} from '../tools/skills.js';
 
 function sessionToolsFromContext(ctx) {
   return [
@@ -53,15 +68,26 @@ export function buildSessionIssueReadTools(session, app) {
 }
 
 /** Account- and cross-session MCP tools (external MCP + in-session base layer). */
-export function buildBaseAgentTools(user, app, { callerSession = null } = {}) {
-  const ctx = createAccountContext(user, app, { callerSession });
+export function buildBaseAgentTools(user, app, { callerSession = null, callerAgent = null } = {}) {
+  const ctx = createAccountContext(user, app, { callerSession, callerAgent });
   return [
+    createListSkillsTool(ctx),
+    createReadSkillTool(ctx),
+    createCreateSkillTool(ctx),
+    createUpdateSkillTool(ctx),
+    createDeleteSkillTool(ctx),
     createListReposTool(ctx),
     createListBranchesTool(ctx),
     createListModelsTool(ctx),
     createListPresetModelsTool(ctx),
     createStartSubagentTool(ctx),
+    createListSubagentsTool(ctx),
+    createAwaitSubagentTool(ctx),
+    createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
+    createListMissingModelPricesTool(ctx),
+    createUpdateModelPricingTool(ctx),
+    createRecomputeUsageCostsTool(ctx),
     ...sessionToolsFromContext(ctx),
     ...loopToolsFromContext(ctx),
     ...issueReadToolsFromContext(ctx),

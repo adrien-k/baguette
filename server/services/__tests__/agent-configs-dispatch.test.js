@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { feathers } from '@feathersjs/feathers';
+import { feathers } from 'feathers';
 
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
@@ -9,10 +9,8 @@ import { registerReposService } from '../feathers/repos.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
-import {
-  registerAgentConfigsService,
-  registerAgentSdk,
-} from '../feathers/agent-configs.service.js';
+import { registerAgentConfigsService } from '../feathers/agent-configs.service.js';
+import { registerAgentSdk } from '../../agent-sdks/registry.js';
 const db = createTestDb();
 
 let app;
@@ -39,7 +37,7 @@ beforeEach(async () => {
   await db('users').insert({
     github_id: 1,
     username: 'alice',
-    approved: true,
+    status: 'approved',
   });
   user1 = await db('users').where({ username: 'alice' }).first();
   const configId = await insertTestAgentConfig(db, user1.id, { apiKey: 'sk-ant' });

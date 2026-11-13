@@ -14,7 +14,7 @@ async function seedSession({ archived = false, shortId }) {
     const [userId] = await db('users').insert({
       github_id: 1,
       username: 't',
-      approved: true,
+      status: 'approved',
     });
     user = { id: userId };
   }

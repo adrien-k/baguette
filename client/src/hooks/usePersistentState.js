@@ -11,19 +11,22 @@ function readFromStorage(key) {
 
 export function usePersistentState(storageKey) {
   const [store, setStore] = useState(() => readFromStorage(storageKey));
-  const prevKeyRef = useRef(storageKey);
+  const [boundKey, setBoundKey] = useState(storageKey);
   // persistWhen gates by field key, so any write persists a snapshot that respects all gates of
   // its storage key, not just the gate of the field being written. Gates are scoped per storage
   // key and re-registered by makeField on every render, so a storage-key change never inherits
   // another key's stale gate set.
   const gatesRef = useRef({});
+  const setterCacheRef = useRef(new Map());
+
+  if (boundKey !== storageKey) {
+    setBoundKey(storageKey);
+    setStore(readFromStorage(storageKey));
+  }
 
   useEffect(() => {
-    if (storageKey !== prevKeyRef.current) {
-      prevKeyRef.current = storageKey;
-      setStore(readFromStorage(storageKey));
-    }
-  }, [storageKey]);
+    setterCacheRef.current.clear();
+  }, [boundKey]);
 
   // Returns [value, setter] — like useState but backed by localStorage under storageKey.fieldKey.
   // `options.persistWhen(store)` gates persistence: while it returns false the value still works
@@ -35,32 +38,36 @@ export function usePersistentState(storageKey) {
     if (persistWhen) keyGates[fieldKey] = persistWhen;
     else delete keyGates[fieldKey];
     const value = fieldKey in store ? store[fieldKey] : defaultValue;
-    const setValue = (newValue) => {
-      setStore((prev) => {
-        const resolved =
-          typeof newValue === 'function' ? newValue(prev[fieldKey] ?? defaultValue) : newValue;
-        // Returning the previous store when nothing changed lets React bail out of the
-        // re-render. Setter identities are unstable (recreated per render), so effects that
-        // list them as deps re-run on every commit and would loop forever otherwise.
-        if (Object.is(prev[fieldKey], resolved)) return prev;
-        const next = { ...prev, [fieldKey]: resolved };
-        if (storageKey) {
-          const gates = gatesRef.current[storageKey] ?? {};
-          const persisted = Object.fromEntries(
-            Object.entries(next).filter(([key]) => {
-              const gate = gates[key];
-              return !gate || gate(next);
-            })
-          );
-          try {
-            localStorage.setItem(storageKey, JSON.stringify(persisted));
-          } catch {
-            // ignore quota / private mode
+    const cacheKey = `${storageKey}\0${fieldKey}`;
+    let setValue = setterCacheRef.current.get(cacheKey);
+    if (!setValue) {
+      setValue = (newValue) => {
+        setStore((prev) => {
+          const resolved =
+            typeof newValue === 'function' ? newValue(prev[fieldKey] ?? defaultValue) : newValue;
+          // Returning the previous store when nothing changed lets React bail out of the
+          // re-render. Setter identity is stable per field (see setterCacheRef).
+          if (Object.is(prev[fieldKey], resolved)) return prev;
+          const next = { ...prev, [fieldKey]: resolved };
+          if (storageKey) {
+            const gates = gatesRef.current[storageKey] ?? {};
+            const persisted = Object.fromEntries(
+              Object.entries(next).filter(([key]) => {
+                const gate = gates[key];
+                return !gate || gate(next);
+              })
+            );
+            try {
+              localStorage.setItem(storageKey, JSON.stringify(persisted));
+            } catch {
+              // ignore quota / private mode
+            }
           }
-        }
-        return next;
-      });
-    };
+          return next;
+        });
+      };
+      setterCacheRef.current.set(cacheKey, setValue);
+    }
     return [value, setValue];
   };
 

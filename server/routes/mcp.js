@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { findUserByMcpToken, parseBearerToken } from '../services/mcp-auth.js';
+import { unapprovedAccountError } from '../lib/unapproved-account.js';
+import { isApprovedUser } from '../../shared/user-status.js';
 import { createBaguetteExternalMcpServer } from '../services/baguette-external-mcp.js';
 
 function jsonRpcError(res, status, message) {
@@ -30,8 +32,8 @@ export default function createMcpRoutes(app) {
       jsonRpcError(res, 401, 'Invalid MCP token');
       return null;
     }
-    if (!row.approved) {
-      jsonRpcError(res, 403, 'Account pending approval');
+    if (!isApprovedUser(row)) {
+      jsonRpcError(res, 403, unapprovedAccountError(row));
       return null;
     }
     try {

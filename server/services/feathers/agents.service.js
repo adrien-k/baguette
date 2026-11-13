@@ -1,11 +1,16 @@
 import { KnexService } from '@feathersjs/knex';
-import { BadRequest, NotFound } from '@feathersjs/errors';
+import { BadRequest, NotFound } from 'feathers/errors';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { dispatchReviewerAfterCreate } from '../reviewer-turn-prime.js';
-import { builderChatActiveKey, getAgentById } from '../agents-db.js';
+import {
+  builderChatActiveKey,
+  getAgentById,
+  listActiveChildAgents,
+  listSubagentsForSession,
+} from '../agents-db.js';
 import { getAgentServiceForAgent } from '../agent-session-routing.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
@@ -15,6 +20,36 @@ import {
   summarizeAssistantMessage,
 } from '../mcp/lib/session-resolution.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
+
+async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
+  if (parentAgentId == null || parentAgentId === '') return null;
+  const id = Number(parentAgentId);
+  if (!Number.isFinite(id)) throw new BadRequest('Invalid parent_agent_id');
+  const parent = await getAgentById(db, id);
+  if (!parent || parent.session_id !== sessionId) {
+    throw new BadRequest('parent_agent_id not found in session');
+  }
+  if (parent.agent_type === 'reviewer') {
+    throw new BadRequest('Cannot attach subagent to reviewer parent');
+  }
+  return id;
+}
+
+async function subagentTurnResult(app, sessionId, agentId) {
+  const db = app.get('db');
+  const agent = await getAgentById(db, agentId);
+  const lastAssistant = await db('session_messages')
+    .where({ session_id: sessionId, agent_id: agentId, type: 'assistant' })
+    .orderBy('id', 'desc')
+    .first();
+  return {
+    agent_id: agent.id,
+    ref: agent.ref,
+    status: agent.status,
+    session_id: sessionId,
+    last_assistant_message: summarizeAssistantMessage(lastAssistant),
+  };
+}
 
 function isAgentsRefUniqueViolation(err) {
   const msg = String(err?.message ?? '');
@@ -48,14 +83,25 @@ class AgentsService extends KnexService {
     const agentId = Number(data?.agent_id);
     if (!Number.isFinite(agentId)) throw new BadRequest('agent_id is required');
     const agent = await this.get(agentId, { user: params.user });
+    await this._stopActiveChildAgents(agent, params);
+    await this._stopSingleAgent(agent, params);
+    return { ok: true, agent_id: agent.id };
+  }
+
+  async _stopActiveChildAgents(agent, params) {
+    const db = this.app.get('db');
+    const children = await listActiveChildAgents(db, agent.id);
+    for (const child of children) {
+      await this._stopActiveChildAgents(child, params);
+      await this._stopSingleAgent(child, params);
+    }
+  }
+
+  async _stopSingleAgent(agent, params) {
     const session = await this.app.service('sessions').get(agent.session_id, { user: params.user });
     const reviewTurn = getReviewAgentTurn(this.app);
     if (agent.agent_type === 'reviewer') {
       await reviewTurn.stopReviewerAgent(session, agent);
-    } else if (agent.is_primary) {
-      await this.app
-        .service('sessions')
-        .stop({ id: session.id }, { ...params, resolvedSession: session });
     } else if (agent.agent_type === 'builder' || agent.agent_type === 'subagent') {
       const agentService = await getAgentServiceForAgent(this.app, agent);
       const activeKey = builderChatActiveKey(agent);
@@ -68,7 +114,6 @@ class AgentsService extends KnexService {
     } else {
       throw new BadRequest('Cannot stop this agent');
     }
-    return { ok: true, agent_id: agent.id };
   }
 
   async startSubagent(data, params) {
@@ -79,11 +124,24 @@ class AgentsService extends KnexService {
     if (!name) throw new BadRequest('name is required');
     if (!initialPrompt) throw new BadRequest('initial_prompt is required');
 
+    const waitForCompletion = data.wait_for_completion !== false;
+    const notifyParent = data.notify_parent === true;
+
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
-    const resolved = await resolveMcpStartSubagentModel(this.app.get('db'), params.user.id, {
+    const db = this.app.get('db');
+    const parentAgentId = await resolveStartSubagentParentId(
+      db,
+      sessionId,
+      data.parent_agent_id ?? null
+    );
+    const resolved = await resolveMcpStartSubagentModel(db, params.user.id, {
       session_id: sessionId,
       preset_model_id: data.preset_model_id ?? null,
+      agent_config_id: data.agent_config_id ?? null,
+      model: data.model ?? null,
+      model_params: data.model_params ?? null,
       repo_id: session.repo_id ?? null,
+      app: this.app,
     });
 
     const modelParamsStored = stringifyModelParamsForStorage(resolved.model_params);
@@ -97,6 +155,8 @@ class AgentsService extends KnexService {
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
+        notify_parent: notifyParent,
+        ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
       },
       { ...params, provider: 'rest' }
     );
@@ -123,7 +183,6 @@ class AgentsService extends KnexService {
       throw err;
     }
 
-    const waitForCompletion = data.wait_for_completion !== false;
     if (!waitForCompletion) {
       const fresh = await getAgentById(this.app.get('db'), agent.id);
       return {
@@ -131,22 +190,62 @@ class AgentsService extends KnexService {
         ref: agent.ref,
         status: fresh?.status ?? agent.status,
         session_id: sessionId,
+        notify_parent: Boolean(fresh?.notify_parent),
       };
     }
 
-    const finalAgent = await waitForAgentTurnEnd(this.app.get('db'), agent.id);
-    const lastAssistant = await this.app
-      .get('db')('session_messages')
-      .where({ session_id: sessionId, agent_id: agent.id, type: 'assistant' })
-      .orderBy('id', 'desc')
-      .first();
+    await waitForAgentTurnEnd(this.app.get('db'), agent.id);
+    return subagentTurnResult(this.app, sessionId, agent.id);
+  }
 
+  async awaitSubagent(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    await this.app.service('sessions').get(sessionId, { user: params.user });
+    const db = this.app.get('db');
+    const agent = await this._resolveSubagentTarget(db, sessionId, data);
+    if (agent.status === 'running') {
+      await waitForAgentTurnEnd(db, agent.id);
+    }
+    return subagentTurnResult(this.app, sessionId, agent.id);
+  }
+
+  async _resolveSubagentTarget(db, sessionId, data) {
+    const agentId = data?.agent_id != null ? Number(data.agent_id) : null;
+    const agentRef = data?.agent_ref != null ? Number(data.agent_ref) : null;
+    if (!Number.isFinite(agentId) && !Number.isFinite(agentRef)) {
+      throw new BadRequest('agent_id or agent_ref is required');
+    }
+    let agent = null;
+    if (Number.isFinite(agentId)) {
+      agent = await getAgentById(db, agentId);
+    } else {
+      agent = await db('agents').where({ session_id: sessionId, ref: agentRef }).first();
+    }
+    if (!agent || agent.session_id !== sessionId || agent.agent_type !== 'subagent') {
+      throw new NotFound('Subagent not found');
+    }
+    return agent;
+  }
+
+  async listSubagents(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    await this.app.service('sessions').get(sessionId, { user: params.user });
+    const rows = await listSubagentsForSession(this.app.get('db'), sessionId, {
+      status: data?.status,
+      active_only: data?.active_only === true,
+    });
     return {
-      agent_id: finalAgent.id,
-      ref: finalAgent.ref,
-      status: finalAgent.status,
       session_id: sessionId,
-      last_assistant_message: summarizeAssistantMessage(lastAssistant),
+      subagents: rows.map((row) => ({
+        agent_id: row.id,
+        ref: row.ref,
+        name: row.name,
+        status: row.status,
+        parent_agent_id: row.parent_agent_id ?? null,
+        notify_parent: Boolean(row.notify_parent),
+      })),
     };
   }
 }
@@ -167,6 +266,8 @@ const CREATE_FIELDS = [
   'model_params',
   'initial_prompt',
   'name',
+  'parent_agent_id',
+  'notify_parent',
 ];
 
 async function stashReviewerCreateExtras(context) {
@@ -253,7 +354,20 @@ async function validateCreate(context) {
     const name = context.data.name?.trim();
     if (!name) throw new BadRequest('name is required for a subagent');
     context.data.is_primary = 0;
-  } else if (agent_type === 'builder') {
+    // Only subagents report back to a parent on completion (StartSubagent notify_parent).
+    context.data.notify_parent = context.data.notify_parent ? 1 : 0;
+    if (context.data.parent_agent_id != null) {
+      context.data.parent_agent_id = await resolveStartSubagentParentId(
+        db,
+        session_id,
+        context.data.parent_agent_id
+      );
+    }
+  } else {
+    delete context.data.parent_agent_id;
+    delete context.data.notify_parent;
+  }
+  if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
     if (existingPrimary) {
       const name = context.data.name?.trim();
@@ -324,6 +438,24 @@ async function stopReviewerBeforeRemove(app, row, user) {
   await getReviewAgentTurn(app).stopReviewerAgent(session, row);
 }
 
+/** Collaborators may stop a run; only the owner can create, reconfigure, or delete agents. */
+async function requireOwnSessionForWrite(context) {
+  if (!context.params?.provider) return context;
+  const userId = context.params.user?.id;
+  if (!userId) return context;
+  const db = context.app.get('db');
+  let sessionId = context.data?.session_id;
+  if (context.id != null) {
+    const agent = await getAgentById(db, context.id);
+    if (!agent) throw new NotFound('Agent not found');
+    sessionId = agent.session_id;
+  }
+  if (sessionId == null) return context;
+  const session = await db('sessions').where({ id: sessionId, user_id: userId }).first();
+  if (!session) throw new NotFound('Session not found');
+  return context;
+}
+
 async function beforeRemove(context) {
   const row = await context.service.get(context.id, { user: context.params.user });
   if (!row) throw new NotFound('Agent not found');
@@ -335,7 +467,7 @@ async function beforeRemove(context) {
   }
   const db = context.app.get('db');
   if (row.agent_type === 'reviewer') {
-    context.app.service('sessions').resetClaudeUsageTotals(reviewTurnKey(row.id));
+    context.app.service('sessions').resetUsageTotals(reviewTurnKey(row.id));
   }
   await db('session_messages').where({ agent_id: row.id }).delete();
   await db('queued_messages').where({ agent_id: row.id }).delete();
@@ -349,6 +481,7 @@ const agentsHooks = {
     find: [],
     get: [],
     create: [
+      requireOwnSessionForWrite,
       pickCreateFields,
       stashReviewerCreateExtras,
       allocateAgentRef,
@@ -357,8 +490,13 @@ const agentsHooks = {
       normalizeModelParams,
       resolveSdkOnConfigChange,
     ],
-    patch: [only(EXTERNAL_PATCH_FIELDS), normalizeModelParams, resolveSdkOnConfigChange],
-    remove: [beforeRemove],
+    patch: [
+      requireOwnSessionForWrite,
+      only(EXTERNAL_PATCH_FIELDS),
+      normalizeModelParams,
+      resolveSdkOnConfigChange,
+    ],
+    remove: [requireOwnSessionForWrite, beforeRemove],
     stop: [requireUser],
   },
   after: {
@@ -374,7 +512,17 @@ export function registerAgentsService(app, path = 'agents') {
     paginate: { default: 50, max: 100 },
   };
   app.use(path, new AgentsService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'stop', 'startSubagent'],
+    methods: [
+      'find',
+      'get',
+      'create',
+      'patch',
+      'remove',
+      'stop',
+      'startSubagent',
+      'awaitSubagent',
+      'listSubagents',
+    ],
   });
   app.service(path).hooks(agentsHooks);
 }

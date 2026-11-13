@@ -22,8 +22,8 @@ const TOOL_PROGRESS_PATCH_DEBOUNCE_MS = 250;
  * Per-provider builders for tool-call payloads. Each provider owns its own
  * canonical name / kind vocabulary, args coercion, and result envelope, so the
  * writer stays purely a row builder. See
- * `server/services/claude/claude-mapping.ts` (`claudeBuildToolCallStart` /
- * `claudeBuildToolCallComplete`) and `server/services/cursor/cursor-mapping.ts`
+ * `server/agent-sdks/claude/mapping.ts` (`claudeBuildToolCallStart` /
+ * `claudeBuildToolCallComplete`) and `server/agent-sdks/cursor/mapping.ts`
  * (`cursorBuildToolCallStart` / `cursorBuildToolCallComplete`).
  */
 export type ToolCallBuilders = {

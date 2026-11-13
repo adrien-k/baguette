@@ -6,6 +6,8 @@ import { sessionsService, tasksService } from '../../feathers.js';
 import StartButton from '../../components/StartButton.jsx';
 import Toggle from '../../components/Toggle.jsx';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 
 function ServiceQrCode({ url }) {
   if (!url) return null;
@@ -42,7 +44,7 @@ const STATUS_LABEL = {
 const actionBtnClass =
   'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-strong/80 bg-control/40 text-xs text-secondary hover:border-strong hover:bg-control transition-colors';
 
-function PreviewSettingsToggles({ session, compact = false }) {
+function PreviewSettingsToggles({ session, compact = false, readonly = false }) {
   return (
     <div
       className={`rounded-lg border border-line bg-inset/50 space-y-4 ${compact ? 'p-3' : 'p-4'}`}
@@ -61,9 +63,10 @@ function PreviewSettingsToggles({ session, compact = false }) {
         <Toggle
           size="md"
           checked={!!session?.is_preview_public}
+          disabled={readonly}
           aria-label="Public preview"
           onChange={(next) => {
-            if (!session?.id) return;
+            if (!session?.id || readonly) return;
             sessionsService
               .patch(session.id, { is_preview_public: next })
               .catch((err) => toastError('Failed to update public preview setting', err));
@@ -83,9 +86,10 @@ function PreviewSettingsToggles({ session, compact = false }) {
         <Toggle
           size="md"
           checked={session?.is_preview_users_public !== false}
+          disabled={readonly}
           aria-label="Baguette users"
           onChange={(next) => {
-            if (!session?.id) return;
+            if (!session?.id || readonly) return;
             sessionsService
               .patch(session.id, { is_preview_users_public: next })
               .catch((err) => toastError('Failed to update Baguette users preview setting', err));
@@ -106,9 +110,10 @@ function PreviewSettingsToggles({ session, compact = false }) {
         <Toggle
           size="md"
           checked={!!session?.is_preview_ip_public}
+          disabled={readonly}
           aria-label="IP-public preview"
           onChange={(next) => {
-            if (!session?.id) return;
+            if (!session?.id || readonly) return;
             sessionsService
               .patch(session.id, { is_preview_ip_public: next })
               .catch((err) => toastError('Failed to update IP-public preview setting', err));
@@ -215,29 +220,48 @@ function ServiceRow({
 }
 
 export default function PreviewView({ session, readonly, onViewLogs, compact = false }) {
+  const { currentUser } = useCurrentUser();
+  const controlsReadonly = readonly || !isSessionOwner(session, currentUser);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingService, setStartingService] = useState(null);
   const [stoppingTaskId, setStoppingTaskId] = useState(null);
 
-  const refreshStatus = useCallback(() => {
-    if (!session?.id) return;
-    sessionsService
-      .previewStatus({ id: session.id })
-      .then((res) => setServices(res.services ?? []))
-      .catch((err) => toastError('Failed to load preview status', err))
-      .finally(() => setLoading(false));
-  }, [session]);
+  const refreshStatus = useCallback(
+    (isCurrent = () => true) => {
+      if (!session?.id) return;
+      const id = session.id;
+      sessionsService
+        .previewStatus({ id })
+        .then((res) => {
+          if (!isCurrent()) return;
+          setServices(res.services ?? []);
+        })
+        .catch((err) => {
+          if (isCurrent()) toastError('Failed to load preview status', err);
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        });
+    },
+    [session]
+  );
 
   useEffect(() => {
+    let cancelled = false;
+    const isCurrent = () => !cancelled;
     setLoading(true);
-    refreshStatus();
-    const interval = setInterval(refreshStatus, 4000);
-    return () => clearInterval(interval);
+    setServices([]);
+    refreshStatus(isCurrent);
+    const interval = setInterval(() => refreshStatus(isCurrent), 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [refreshStatus]);
 
   const handleStart = async (serviceName) => {
-    if (!session?.id) return;
+    if (!session?.id || controlsReadonly) return;
     setStartingService(serviceName);
     try {
       await sessionsService.startPreviewService({ id: session.id, service: serviceName });
@@ -250,7 +274,7 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
   };
 
   const handleStop = async (taskId) => {
-    if (!taskId) return;
+    if (!taskId || controlsReadonly) return;
     setStoppingTaskId(taskId);
     try {
       await tasksService.kill(taskId);
@@ -275,7 +299,7 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
           </header>
         )}
 
-        <PreviewSettingsToggles session={session} compact={compact} />
+        <PreviewSettingsToggles session={session} compact={compact} readonly={controlsReadonly} />
 
         <div className="space-y-3">
           {!compact && (
@@ -290,7 +314,7 @@ export default function PreviewView({ session, readonly, onViewLogs, compact = f
               <ServiceRow
                 key={svc.name}
                 svc={svc}
-                readonly={readonly}
+                readonly={controlsReadonly}
                 ipPublicEnabled={!!session?.is_preview_ip_public}
                 onStart={handleStart}
                 onStop={handleStop}

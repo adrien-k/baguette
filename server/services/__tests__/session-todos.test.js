@@ -17,6 +17,7 @@ describe('serializeTodo', () => {
     expect(serializeTodo(row)).toMatchObject({
       title: 'Add migration',
       content: 'Write the migration file.',
+      plan_id: null,
     });
   });
 
@@ -32,5 +33,22 @@ describe('serializeTodo', () => {
       updated_at: null,
     };
     expect(serializeTodo(row).title).toBeNull();
+    expect(serializeTodo(row).plan_id).toBeNull();
+  });
+
+  it('includes plan_id when present', () => {
+    const row = {
+      id: 1,
+      ref: 1,
+      session_id: 1,
+      plan_id: 9,
+      title: 'Attached',
+      content: 'Body',
+      status: 'pending',
+      sort_order: 0,
+      created_at: null,
+      updated_at: null,
+    };
+    expect(serializeTodo(row).plan_id).toBe(9);
   });
 });

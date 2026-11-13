@@ -5,9 +5,14 @@ import {
   isAllSessionsPath,
   isLoopsPath,
   isNewSessionRouteId,
+  isSessionHomePathname,
+  isSharedWithMePath,
   loopEditUrlForScope,
   loopsHomeUrlForScope,
+  NEW_LOOP_ROUTE_ID,
   NEW_SESSION_ROUTE_ID,
+  isLoopHomePathname,
+  isNewLoopRouteId,
   sessionHref,
   sessionUrlForScope,
 } from '../session-scope.js';
@@ -19,6 +24,20 @@ describe('isAllSessionsPath', () => {
     expect(isAllSessionsPath('/loops/12')).toBe(true);
     expect(isAllSessionsPath('/global/loops/12')).toBe(false);
     expect(isAllSessionsPath('/repos/1/loops/12')).toBe(false);
+    expect(isAllSessionsPath('/shared')).toBe(false);
+    expect(isAllSessionsPath('/shared/sessions/1')).toBe(false);
+  });
+});
+
+describe('isSharedWithMePath', () => {
+  it('matches /shared and nested shared routes', () => {
+    expect(isSharedWithMePath('/shared')).toBe(true);
+    expect(isSharedWithMePath('/shared/sessions/1')).toBe(true);
+    expect(isSharedWithMePath('/shared/loops')).toBe(true);
+    expect(isSharedWithMePath('/shared/loops/12')).toBe(true);
+    expect(isSharedWithMePath('/')).toBe(false);
+    expect(isSharedWithMePath('/sessions/1')).toBe(false);
+    expect(isSharedWithMePath('/global')).toBe(false);
   });
 });
 
@@ -27,9 +46,11 @@ describe('isLoopsPath / agentsScopePathFromPathname', () => {
     expect(isLoopsPath('/loops')).toBe(true);
     expect(isLoopsPath('/loops/9')).toBe(true);
     expect(isLoopsPath('/global/loops')).toBe(true);
+    expect(isLoopsPath('/shared/loops')).toBe(true);
     expect(isLoopsPath('/')).toBe(false);
     expect(agentsScopePathFromPathname('/loops/9')).toBe('/');
     expect(agentsScopePathFromPathname('/global/loops')).toBe('/global');
+    expect(agentsScopePathFromPathname('/shared/loops')).toBe('/shared');
     expect(agentsScopePathFromPathname('/repos/3/loops/9')).toBe('/repos/3');
   });
 });
@@ -41,6 +62,14 @@ describe('homeUrlForScope / sessionUrlForScope', () => {
     expect(sessionUrlForScope('abc', scope)).toBe('/sessions/abc');
     expect(loopsHomeUrlForScope(scope)).toBe('/loops');
     expect(loopEditUrlForScope(9, scope)).toBe('/loops/9');
+  });
+
+  it('uses Shared with me', () => {
+    const scope = { fromAllSessions: false, fromSharedWithMe: true, selectedRepo: '__shared__' };
+    expect(homeUrlForScope(scope)).toBe('/shared');
+    expect(sessionUrlForScope('abc', scope)).toBe('/shared/sessions/abc');
+    expect(loopsHomeUrlForScope(scope)).toBe('/shared/loops');
+    expect(loopEditUrlForScope(9, scope)).toBe('/shared/loops/9');
   });
 
   it('uses Global', () => {
@@ -57,6 +86,36 @@ describe('homeUrlForScope / sessionUrlForScope', () => {
     expect(sessionUrlForScope('abc', scope)).toBe('/repos/3/sessions/abc');
     expect(loopsHomeUrlForScope(scope)).toBe('/repos/3/loops');
     expect(loopEditUrlForScope(9, scope)).toBe('/repos/3/loops/9');
+  });
+});
+
+describe('isSessionHomePathname', () => {
+  it('matches session workspace home paths only', () => {
+    expect(isSessionHomePathname('/')).toBe(true);
+    expect(isSessionHomePathname('/global')).toBe(true);
+    expect(isSessionHomePathname('/shared')).toBe(true);
+    expect(isSessionHomePathname('/repos/3')).toBe(true);
+    expect(isSessionHomePathname('/sessions/1')).toBe(false);
+    expect(isSessionHomePathname('/loops')).toBe(false);
+    expect(isSessionHomePathname('/repos/3/sessions/1')).toBe(false);
+  });
+});
+
+describe('loop home and new loop route', () => {
+  it('matches loop workspace home paths', () => {
+    expect(isLoopHomePathname('/loops')).toBe(true);
+    expect(isLoopHomePathname('/global/loops')).toBe(true);
+    expect(isLoopHomePathname('/shared/loops')).toBe(true);
+    expect(isLoopHomePathname('/repos/3/loops')).toBe(true);
+    expect(isLoopHomePathname('/loops/9')).toBe(false);
+  });
+
+  it('recognizes new loop URL segment', () => {
+    expect(NEW_LOOP_ROUTE_ID).toBe('new');
+    expect(isNewLoopRouteId('new')).toBe(true);
+    expect(
+      loopEditUrlForScope('new', { fromAllSessions: true, selectedRepo: '__all__', repoId: 3 })
+    ).toBe('/loops/new');
   });
 });
 

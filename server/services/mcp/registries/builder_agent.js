@@ -26,33 +26,40 @@ import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
 import { createTodoHandlers } from '../lib/todo-handlers.js';
 import { createCreateTodoTool } from '../tools/create-todo.js';
-import { createProcessTodoTool } from '../tools/process-todo.js';
-import { createCompleteTodoTool } from '../tools/complete-todo.js';
+import { createUpdateTodoTool } from '../tools/update-todo.js';
+import { createDeleteTodoTool } from '../tools/delete-todo.js';
 import { createListTodosTool } from '../tools/list-todos.js';
 import { createAskUserQuestionsTool } from '../tools/ask-user-questions.js';
 import { createPlanHandlers } from '../lib/plan-handlers.js';
 import { createCreatePlanTool } from '../tools/create-plan.js';
+import { createStartPlanTool } from '../tools/start-plan.js';
+import { createListPlansTool } from '../tools/list-plans.js';
 import { createEditPlanTool } from '../tools/edit-plan.js';
 import { createReadPlanTool } from '../tools/read-plan.js';
+import { createCompletePlanTool } from '../tools/complete-plan.js';
+import { createConfigureMcpServerTool } from '../tools/configure-mcp-server.js';
 
 function buildBuilderIssueTools(ctx) {
   return [createUpdateIssueStatusTool(ctx)];
 }
 
 /** Repo session builder MCP tools (git, PR, tasks, issues for the coding agent). */
-export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
-  const ctx = createSessionAgentContext(session, app, { slackApps });
-  const todoHandlers = createTodoHandlers(session, app);
-  const planHandlers = createPlanHandlers(session, app);
+export function buildBuilderAgentTools(session, app, { slackApps = [], agent = null } = {}) {
+  const ctx = createSessionAgentContext(session, app, { slackApps, callerAgent: agent });
+  const todoHandlers = createTodoHandlers(session, app, { callerAgent: agent });
+  const planHandlers = createPlanHandlers(session, app, { callerAgent: agent });
   const tools = [
     ...buildBuilderIssueTools(ctx),
     createAskUserQuestionsTool(),
     createCreatePlanTool(planHandlers),
+    createStartPlanTool(planHandlers),
+    createListPlansTool(planHandlers),
     createEditPlanTool(planHandlers),
     createReadPlanTool(planHandlers),
+    createCompletePlanTool(planHandlers),
     createCreateTodoTool(todoHandlers),
-    createProcessTodoTool(ctx),
-    createCompleteTodoTool(ctx),
+    createUpdateTodoTool(ctx),
+    createDeleteTodoTool(ctx),
     createListTodosTool(ctx),
     createGitPullTool(ctx),
     createGitFetchTool(ctx),
@@ -77,6 +84,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [] } = {}) {
     createReadTaskOutputTool(ctx),
     createConfigRepoPromptTool(ctx),
     createUploadImageTool(ctx),
+    createConfigureMcpServerTool(ctx),
   ];
   if (slackApps.length) {
     tools.push(createSlackPostMessageTool(ctx));
