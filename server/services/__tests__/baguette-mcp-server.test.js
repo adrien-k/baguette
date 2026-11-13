@@ -1048,6 +1048,42 @@ describe('PrComments', () => {
 });
 
 describe('EditPrComment', () => {
+  describe('availability', () => {
+    const toolNames = async (...args) => (await buildServer(...args)).tools.map((t) => t.name);
+
+    it('is offered for GitHub repos with a token', async () => {
+      expect(await toolNames()).toContain('EditPrComment');
+    });
+
+    it('is omitted without a GitHub token', async () => {
+      getGithubToken.mockReturnValue(null);
+      const names = await toolNames(
+        {},
+        {
+          userRow: { id: 1 },
+          repoOverrides: { access_mode: 'github', origin: 'https://github.com/acme/app.git' },
+        }
+      );
+      getGithubToken.mockReturnValue('ghtoken');
+      expect(names).not.toContain('EditPrComment');
+    });
+
+    it('is omitted for local repos', async () => {
+      const names = await toolNames({}, { repoOverrides: { access_mode: 'local', origin: null } });
+      expect(names).not.toContain('EditPrComment');
+    });
+
+    it('is omitted for global sessions', async () => {
+      const names = await toolNames({ is_global: true, repo_full_name: '', repo_id: null });
+      expect(names).not.toContain('EditPrComment');
+    });
+
+    it('is omitted for subagent turns', async () => {
+      const names = await toolNames({}, {}, { agent: { agent_type: 'subagent' } });
+      expect(names).not.toContain('EditPrComment');
+    });
+  });
+
   it('returns ok: false when no PR', async () => {
     const { tools } = await buildServer({ pr_number: null });
     const result = parseResult(

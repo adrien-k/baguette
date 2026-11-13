@@ -163,6 +163,35 @@ describe('editPRComment', () => {
     expect(urls.every((u) => u === 'https://api.github.com/repos/o/r/pulls/comments/8')).toBe(true);
   });
 
+  it('surfaces a failed comment lookup without patching', async () => {
+    vi.mocked(githubFetch).mockImplementation((url) =>
+      Promise.resolve(
+        url.endsWith('/user')
+          ? jsonResponse(ME)
+          : { ok: false, status: 404, text: () => Promise.resolve('Not Found') }
+      )
+    );
+
+    await expect(editPRComment('tok', 'o/r', 12, 'issue', 'new')).rejects.toThrow(
+      'Failed to load comment: 404 Not Found'
+    );
+    expect(vi.mocked(githubFetch).mock.calls.some(([, o]) => o?.method === 'PATCH')).toBe(false);
+  });
+
+  it('surfaces a failed PATCH', async () => {
+    vi.mocked(githubFetch).mockImplementation((url, opts) => {
+      if (url.endsWith('/user')) return Promise.resolve(jsonResponse(ME));
+      if (opts?.method === 'PATCH') {
+        return Promise.resolve({ ok: false, status: 422, text: () => Promise.resolve('bad') });
+      }
+      return Promise.resolve(jsonResponse(ownComment(13)));
+    });
+
+    await expect(editPRComment('tok', 'o/r', 13, 'issue', 'new')).rejects.toThrow(
+      'Failed to edit comment: 422 bad'
+    );
+  });
+
   it('refuses to edit another user’s comment', async () => {
     mockGithub({ id: 10, user: { id: 2, login: 'someone-else' }, body: baguetteBody });
 
