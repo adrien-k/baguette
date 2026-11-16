@@ -1,14 +1,16 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import CardRepoBadge from './CardRepoBadge.jsx';
 import ArchiveSession from './ArchiveSession.jsx';
 import StopSession, { isSessionStoppable } from './StopSession.jsx';
+import SessionAgentTree from './SessionAgentTree.jsx';
 import SessionListIndicator, { SessionUnreadDot } from './SessionListIndicator.jsx';
 import ReviewInProgressBadge, { isReviewInProgress } from './ReviewInProgressBadge.jsx';
 import { SessionLoopIcon } from './SessionLoopIndicator.jsx';
 import { sessionListPromptPreview } from '../pages/session/sessionListDisplay.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
+import { formatCompactRelativeTime } from '../utils/dates.js';
 import { LIST_SCOPE_SHARED, isSessionOwner } from '@baguette/shared/session-sharing.js';
 import ListOwnerLabel from './ListOwnerLabel.jsx';
 
@@ -19,7 +21,9 @@ export default function MiniSessionEntry({
   hideRepoBadge = false,
   suppressUnreadWhenOpen = false,
   listScope,
+  routeAgentId = null,
 }) {
+  const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
   const isOwner = isSessionOwner(s, currentUser);
   const showOwner = listScope === LIST_SCOPE_SHARED || !isOwner;
@@ -28,8 +32,18 @@ export default function MiniSessionEntry({
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
   const isCurrent = String(s.id) === String(currentId);
   const title = s.label || (isGlobalSession(s) ? 'Global session' : s.repo_full_name) || 'Session';
+  const branch = s.remote_branch || s.local_branch || null;
   const promptPreview = sessionListPromptPreview(s);
+  // Named tasks show their branch; unlabeled sessions identify by prompt.
+  const subtitle = s.label ? branch : promptPreview || branch;
   const showRepo = showRepoDetails && !hideRepoBadge;
+  const activeLabel = formatCompactRelativeTime(s.last_activity_at ?? s.updated_at ?? s.created_at);
+  const agentTree = Array.isArray(s.agents) ? s.agents : [];
+
+  const agentChatUrl = (agentId) => {
+    const base = sessionUrl(s.id);
+    return `${base}?agent=${agentId}&view=chat`;
+  };
 
   return (
     <div
@@ -56,10 +70,21 @@ export default function MiniSessionEntry({
             {s.loop_id && <SessionLoopIcon />}
             {isReviewInProgress(s) && !isArchiving && <ReviewInProgressBadge compact />}
           </span>
-          {promptPreview && (
-            <span className="block truncate text-[11px] text-faint">{promptPreview}</span>
+          {subtitle && (
+            <span
+              className={`block truncate text-[11px] text-faint ${
+                subtitle === branch ? 'font-mono' : ''
+              }`}
+            >
+              {subtitle}
+            </span>
           )}
         </Link>
+        {activeLabel && (
+          <span className="shrink-0 text-[10px] text-faint tabular-nums" title="Last activity">
+            {activeLabel}
+          </span>
+        )}
         {isArchiving && <span className="shrink-0 text-[10px] text-accent/90">Archiving…</span>}
         {!s.archived_at && !isArchiving && (
           <div className="shrink-0">
@@ -71,6 +96,15 @@ export default function MiniSessionEntry({
           </div>
         )}
       </div>
+      {agentTree.length > 0 && (
+        <SessionAgentTree
+          sessionId={s.id}
+          agents={agentTree}
+          currentAgentId={isCurrent ? routeAgentId : null}
+          canManage={isOwner && !isArchived && !isArchiving}
+          onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
+        />
+      )}
     </div>
   );
 }

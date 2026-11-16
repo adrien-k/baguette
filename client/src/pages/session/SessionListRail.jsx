@@ -28,6 +28,7 @@ export default function SessionListRail({
   onDeleteLoop,
   sidebarSessions,
   routeSessionId,
+  routeAgentId,
   isNewSessionRoute,
   hideSessionListRepo,
   suppressOpenSessionUnread,
@@ -160,6 +161,7 @@ export default function SessionListRail({
                     String(s.id) === String(routeSessionId) && suppressOpenSessionUnread
                   }
                   listScope={listScope}
+                  routeAgentId={routeAgentId}
                 />
               ))}
               {hasMoreSessions && sessionsLength > 0 && (

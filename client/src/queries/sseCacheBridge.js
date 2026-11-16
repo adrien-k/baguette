@@ -25,6 +25,8 @@ import { getRealtimeScope } from './realtimeScope.js';
 import {
   applyAgentEventToDetail,
   applyAgentEventToInfiniteList,
+  applyAgentRemoveToDetail,
+  applyAgentRemoveToInfiniteList,
   applySessionEventToDetail,
   applySessionEventToInfiniteList,
   removeSessionFromInfiniteList,
@@ -91,6 +93,16 @@ function applyAgentPatchEvent(queryClient, agent) {
   updateSessionListEntries(queryClient, (data) => applyAgentEventToInfiniteList(data, agent));
   updateMatchingEntries(queryClient, ['sessions', 'detail'], (prev) =>
     applyAgentEventToDetail(prev, agent)
+  );
+}
+
+// Agent creation arrives as the full row — the patch merge appends it to the
+// session's embedded `agents` (sidebar agent tree shows new subagents live).
+function applyAgentRemoveEvent(queryClient, agent) {
+  if (!agent?.session_id) return;
+  updateSessionListEntries(queryClient, (data) => applyAgentRemoveToInfiniteList(data, agent));
+  updateMatchingEntries(queryClient, ['sessions', 'detail'], (prev) =>
+    applyAgentRemoveToDetail(prev, agent)
   );
 }
 
@@ -173,6 +185,7 @@ export function startSseCacheBridge(queryClient) {
   const onSessionUpsert = (session) => upsertSessionEvent(queryClient, session);
   const onSessionRemove = (session) => removeSessionEvent(queryClient, session);
   const onAgentPatch = (agent) => applyAgentPatchEvent(queryClient, agent);
+  const onAgentRemove = (agent) => applyAgentRemoveEvent(queryClient, agent);
   const onMessageUpsert = (message) => upsertMessageEvent(queryClient, message);
   const onRepoChange = () => {
     void queryClient.invalidateQueries({ queryKey: repoKeys.all, refetchType: 'active' });
@@ -192,7 +205,9 @@ export function startSseCacheBridge(queryClient) {
   sessionsService.on('updated', onSessionUpsert);
   sessionsService.on('patched', onSessionUpsert);
   sessionsService.on('removed', onSessionRemove);
+  agentsService.on('created', onAgentPatch);
   agentsService.on('patched', onAgentPatch);
+  agentsService.on('removed', onAgentRemove);
   messagesService.on('created', onMessageUpsert);
   messagesService.on('patched', onMessageUpsert);
   reposService.on('created', onRepoChange);
@@ -221,7 +236,9 @@ export function startSseCacheBridge(queryClient) {
     sessionsService.off('updated', onSessionUpsert);
     sessionsService.off('patched', onSessionUpsert);
     sessionsService.off('removed', onSessionRemove);
+    agentsService.off('created', onAgentPatch);
     agentsService.off('patched', onAgentPatch);
+    agentsService.off('removed', onAgentRemove);
     messagesService.off('created', onMessageUpsert);
     messagesService.off('patched', onMessageUpsert);
     reposService.off('created', onRepoChange);

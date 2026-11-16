@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
+import { agentTitleFromPrompt } from '../client/src/utils/sessionAgents.js';
 import { E2E_THEME, e2eThemeSuffix } from './fixtures.js';
 import {
   MOCK_ALT_PRIMARY_MODEL_ID,
@@ -148,28 +149,35 @@ async function waitForSessionProvisioningDone(page) {
 
 export async function expectMockQuickTurnComplete(page) {
   await waitForSessionProvisioningDone(page);
-  await openSessionAgentsPanel(page);
-  const main = page.locator('li').filter({ hasText: 'Main' });
-  await expect(main.getByText(/Completed|Stopped/i)).toBeVisible({ timeout: 120_000 });
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await expect(page.getByText(MOCK_E2E_QUICK_TURN_SUMMARY)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(MOCK_E2E_QUICK_TURN_SUMMARY)).toBeVisible({ timeout: 120_000 });
 }
 
-/** Open the session side panel Agents tab (`?panel=agents`). */
-export async function openSessionAgentsPanel(page) {
-  const url = new URL(page.url());
-  url.searchParams.set('panel', 'agents');
-  await page.goto(url.toString());
-  await expect(page.getByRole('button', { name: 'Agents', exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
+/** Sidebar agent-tree row for an agent by its exact displayed title. */
+export function sessionAgentTreeRow(page, name) {
+  return page
+    .locator('[data-testid="agent-tree-row"]')
+    .filter({ has: page.getByText(name, { exact: true }) });
 }
 
-export async function ensureSidePanelVisible(page) {
-  const agentsTab = page.getByRole('button', { name: 'Agents', exact: true });
-  if (await agentsTab.isVisible()) return;
-  await page.getByTitle('Show side panel').click();
-  await expect(agentsTab).toBeVisible({ timeout: 15_000 });
+/** Wait until no agent with `name` is running (API poll — the tree only shows a spinner while running). */
+export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
+  await expect
+    .poll(
+      async () => {
+        const agents = await listSessionAgentsForPage(page);
+        return agents.filter((a) => a.name === name && a.status === 'running').length;
+      },
+      { timeout, intervalMs: 1_000 }
+    )
+    .toBe(0);
+}
+
+/** Open an agent's chat from the sidebar agent tree. */
+export async function selectAgentInTree(page, name) {
+  const row = sessionAgentTreeRow(page, name);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.locator('button').first().click();
 }
 
 /**
@@ -181,22 +189,16 @@ export async function ensureSidePanelVisible(page) {
  * new builder meanwhile).
  */
 export async function addManualBuilderAgent(page, name) {
-  await ensureSidePanelVisible(page);
-  await openSessionAgentsPanel(page);
+  // The agent is named from the prompt's first four words — resolve the stored name.
+  const storedName = agentTitleFromPrompt(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
   const composer = await sessionChatComposer(page);
   await composer.fill(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
   await page.getByTitle('Schedule', { exact: true }).click();
   await page.getByRole('menuitem', { name: 'Start subagent' }).click();
-  const row = page.locator('li').filter({ hasText: name });
+  const row = sessionAgentTreeRow(page, storedName);
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await expect(row.getByText(/Completed/i)).toBeVisible({ timeout: 120_000 });
-}
-
-export async function selectAgentInPanel(page, name) {
-  await openSessionAgentsPanel(page);
-  const row = page.locator('li').filter({ hasText: name });
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.locator('button').first().click();
+  await waitForAgentNotRunning(page, storedName);
+  return storedName;
 }
 
 export async function sessionChatComposer(page) {
@@ -271,6 +273,21 @@ export async function openComposerAgentSwitcher(page) {
   const dialog = page.getByRole('dialog', { name: 'Switch agent' });
   await expect(dialog).toBeVisible();
   return dialog;
+}
+
+/** Select an agent through the composer switcher (works even when it has no tree row). */
+export async function selectAgentViaComposer(page, name) {
+  const chatTab = page.getByRole('button', { name: 'Chat', exact: true });
+  if (await chatTab.isVisible()) await chatTab.click();
+  const dialog = await openComposerAgentSwitcher(page);
+  // Option label: "[#{ref} ]{name}[ ({type})][ (${cost})]".
+  const pattern = new RegExp(`^(?:#\\d+ )?${escapeRegExp(name)}(?: \(.*\))?$`);
+  await dialog.getByRole('button', { name: pattern }).click();
+  await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -467,25 +484,21 @@ export async function seedE2eUsageDashboard(page) {
 }
 
 async function waitForPrimaryBuilderIdle(page) {
-  await openSessionAgentsPanel(page);
-  const main = page.locator('li').filter({ hasText: 'Main' });
-  await expect(main.getByText(/Completed|Stopped/i)).toBeVisible({ timeout: 120_000 });
+  await waitForAgentNotRunning(page, 'Builder');
 }
 
 /** Primary builder MCP subagent phrase; waits for a new summary line and subagent row. */
 export async function sendSubagentPromptAndWait(page) {
   await waitForPrimaryBuilderIdle(page);
-  await selectAgentInPanel(page, 'Main');
   const summaryLocator = page.getByText(MOCK_E2E_SUBAGENT_SUMMARY);
   const summariesBefore = await summaryLocator.count();
   await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
   await expect
     .poll(async () => summaryLocator.count(), { timeout: 120_000 })
     .toBeGreaterThan(summariesBefore);
-  await openSessionAgentsPanel(page);
-  const row = page.locator('li').filter({ hasText: MOCK_E2E_SUBAGENT_NAME }).last();
+  await waitForAgentNotRunning(page, MOCK_E2E_SUBAGENT_NAME);
+  const row = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
   await expect(row).toBeVisible({ timeout: 120_000 });
-  await expect(row.getByText(/Completed/i)).toBeVisible({ timeout: 120_000 });
 }
 
 export async function expectMcpReadonlyComposer(page) {
@@ -500,10 +513,12 @@ export async function expectMcpReadonlyComposer(page) {
   });
 }
 
-export async function deleteAgentFromPanel(page, name) {
-  await openSessionAgentsPanel(page);
-  const row = page.locator('li').filter({ hasText: name });
-  await row.getByTitle('Delete agent').click();
+/** Delete an agent from the sidebar tree row actions menu (confirm dialog included). */
+export async function deleteAgentFromTree(page, name) {
+  const row = sessionAgentTreeRow(page, name);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.getByLabel(/^Actions for /).click();
+  await page.getByRole('button', { name: 'Delete agent' }).click();
   const modal = page.locator('.fixed.inset-0').filter({
     has: page.getByRole('heading', { name: 'Delete agent?' }),
   });

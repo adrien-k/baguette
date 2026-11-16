@@ -14,13 +14,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
 import { feathers } from 'feathers';
 import { BadRequest } from 'feathers/errors';
-import { createTestDb, insertTestSession, testSessionAgentDefaults } from '../../test-utils/db.js';
+import {
+  createTestDb,
+  getPrimaryBuilderAgentId,
+  insertTestSession,
+  testSessionAgentDefaults,
+} from '../../test-utils/db.js';
 import {
   generateSessionShortId,
   registerSessionsService,
   resolveSessionFromData,
 } from '../feathers/sessions.service.js';
-import { registerAgentsService } from '../feathers/agents.service.js';
+import { patchAgentInternal, registerAgentsService } from '../feathers/agents.service.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReposService } from '../feathers/repos.service.js';
@@ -1394,6 +1399,81 @@ describe('Sessions service - find, get, create', () => {
       const data = result.data ?? result;
       expect(data).toHaveLength(1);
       expect(data[0].id).toBe(sessId1);
+    });
+
+    it('embeds per-agent sdk/model/parent fields for the sidebar tree', async () => {
+      const primaryId = await getPrimaryBuilderAgentId(db, sessId1);
+      const [subId] = await db('agents').insert({
+        session_id: sessId1,
+        name: 'tree-worker',
+        agent_type: 'subagent',
+        is_primary: 0,
+        status: 'completed',
+        agent_sdk: 'pi',
+        model: 'glm-5.3',
+        parent_agent_id: primaryId,
+      });
+
+      const result = await app.service('sessions').find({ query: {}, ...params({ id: userId1 }) });
+      const session = (result.data ?? result).find((s) => s.id === sessId1);
+      expect(session.agents).toHaveLength(2);
+
+      const primary = session.agents.find((a) => a.is_primary === 1);
+      expect(primary).toEqual(
+        expect.objectContaining({
+          id: primaryId,
+          agent_sdk: 'claude',
+          model: 'sonnet',
+          parent_agent_id: null,
+        })
+      );
+      expect(primary.updated_at).toBeTruthy();
+
+      const sub = session.agents.find((a) => a.id === subId);
+      expect(sub).toEqual(
+        expect.objectContaining({
+          agent_type: 'subagent',
+          agent_sdk: 'pi',
+          model: 'glm-5.3',
+          parent_agent_id: primaryId,
+          updated_at: expect.anything(),
+        })
+      );
+    });
+
+    it('advances agent updated_at when the agent is patched', async () => {
+      const primaryId = await getPrimaryBuilderAgentId(db, sessId1);
+      const [subId] = await db('agents').insert({
+        session_id: sessId1,
+        name: 'stale-worker',
+        agent_type: 'subagent',
+        is_primary: 0,
+        status: 'completed',
+        agent_sdk: 'pi',
+        model: 'glm-5.3',
+        parent_agent_id: primaryId,
+      });
+      await db('agents').where({ id: subId }).update({ updated_at: '2020-01-01T00:00:00.000Z' });
+
+      // External patch (allowed fields, e.g. composer rename).
+      const renamed = await app
+        .service('agents')
+        .patch(subId, { name: 'renamed-worker' }, params({ id: userId1 }));
+      expect(renamed.name).toBe('renamed-worker');
+      expect(new Date(renamed.updated_at).getTime()).toBeGreaterThan(
+        new Date('2020-01-01T00:00:00.000Z').getTime()
+      );
+
+      // Internal patch (turn lifecycle status).
+      await db('agents').where({ id: subId }).update({ updated_at: '2020-01-01T00:00:00.000Z' });
+      const patched = await patchAgentInternal(app, subId, { status: 'running' }, userId1);
+      expect(patched.status).toBe('running');
+      expect(new Date(patched.updated_at).getTime()).toBeGreaterThan(
+        new Date('2020-01-01T00:00:00.000Z').getTime()
+      );
+
+      const subAfter = await db('agents').where({ id: subId }).first();
+      expect(new Date(subAfter.updated_at).getTime()).toBe(new Date(patched.updated_at).getTime());
     });
 
     it('rejects when not authenticated', async () => {

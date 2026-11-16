@@ -291,14 +291,13 @@ export default function Session() {
           const next = new URLSearchParams(prev);
           next.set('agent', String(agent.id));
           next.set('view', 'chat');
-          next.set('panel', 'agents');
+          next.delete('panel');
           return next;
         },
         { replace: true }
       );
-      setShowTasks(true);
     },
-    [setSearchParams, setShowTasks]
+    [setSearchParams]
   );
   const handleReviewerCleared = useCallback(() => {
     if (primaryBuilder) selectAgent(primaryBuilder);
@@ -1178,6 +1177,7 @@ export default function Session() {
           onDeleteLoop={loopWorkspace.handleDeleteLoop}
           sidebarSessions={sidebarSessions}
           routeSessionId={routeSessionId}
+          routeAgentId={agentParam}
           isNewSessionRoute={isNewSessionRoute}
           hideSessionListRepo={hideSessionListRepo}
           suppressOpenSessionUnread={suppressOpenSessionUnread}
@@ -1371,11 +1371,7 @@ export default function Session() {
           </div>
 
           {!isNewSessionRoute && (
-            <SessionMainViewFooter
-              session={session}
-              onShowTasks={() => setSidePanelTab('tasks')}
-              onShowAgents={() => setSidePanelTab('agents')}
-            />
+            <SessionMainViewFooter session={session} onShowTasks={() => setSidePanelTab('tasks')} />
           )}
         </div>
 
@@ -1441,9 +1437,6 @@ export default function Session() {
               chatOpen={chatViewOpen}
               agentLabelById={agentLabelById}
               sessionId={sessionId}
-              selectedAgentId={activeAgent?.id}
-              onSelectAgent={selectAgent}
-              onReviewerCleared={handleReviewerCleared}
             />
           </div>
         )}

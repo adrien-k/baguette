@@ -91,6 +91,44 @@ export function applyAgentEventToInfiniteList(data, agent) {
   return { ...data, pages };
 }
 
+/** Drop a removed agent from a detail cache entry; no-op for other sessions. */
+export function applyAgentRemoveToDetail(prev, agent) {
+  if (!prev || !agent?.session_id || !sameScopeId(prev.id, agent.session_id)) return prev;
+  if (!Array.isArray(prev.agents)) return prev;
+  const agents = prev.agents.filter((a) => a.id !== agent.id);
+  if (agents.length === prev.agents.length) return prev;
+  return { ...prev, agents };
+}
+
+/** Drop a removed agent from list rows; returns same ref when not present. */
+function applyAgentRemoveToRows(rows, agent) {
+  if (!Array.isArray(rows) || !agent?.session_id) return rows;
+  let changed = false;
+  const next = rows.map((row) => {
+    if (!sameScopeId(row?.id, agent.session_id)) return row;
+    const merged = applyAgentRemoveToDetail(row, agent);
+    if (merged === row) return row;
+    changed = true;
+    return merged;
+  });
+  if (!changed) return rows;
+  return sortSessionsForList(next);
+}
+
+/** Drop a removed agent from an infinite list cache entry. */
+export function applyAgentRemoveToInfiniteList(data, agent) {
+  if (!data?.pages) return data;
+  let changed = false;
+  const pages = data.pages.map((page) => {
+    const next = applyAgentRemoveToRows(page?.data ?? [], agent);
+    if (next === (page?.data ?? [])) return page;
+    changed = true;
+    return { ...page, data: next };
+  });
+  if (!changed) return data;
+  return { ...data, pages };
+}
+
 /** Remove a session from list rows; returns same ref when not present. */
 function removeSessionFromRows(rows, sessionId) {
   if (!Array.isArray(rows)) return rows;

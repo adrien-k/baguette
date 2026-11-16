@@ -90,3 +90,17 @@ export function formatSessionActiveLabel(isoString) {
   const rel = formatRelativeTime(isoString);
   return rel ? `active ${rel}` : '';
 }
+
+/** Compact sidebar-row label: now, 49m, 3h, 2d, then "Mar 4". */
+export function formatCompactRelativeTime(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}

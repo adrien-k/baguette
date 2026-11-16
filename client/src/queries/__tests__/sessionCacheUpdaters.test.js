@@ -5,6 +5,8 @@ import { setRealtimeScope } from '../realtimeScope.js';
 import {
   applyAgentEventToDetail,
   applyAgentEventToInfiniteList,
+  applyAgentRemoveToDetail,
+  applyAgentRemoveToInfiniteList,
   applySessionEventToDetail,
   applySessionEventToInfiniteList,
   mergeSessionDetail,
@@ -112,6 +114,51 @@ describe('applyAgentEventToInfiniteList', () => {
   it('returns the same reference when no row matches the agent session', () => {
     const data = infiniteData([owned]);
     expect(applyAgentEventToInfiniteList(data, { session_id: 55 })).toBe(data);
+  });
+});
+
+describe('applyAgentRemoveToInfiniteList', () => {
+  it('drops a removed agent from the session row and re-sorts', () => {
+    const older = {
+      ...owned,
+      id: 9,
+      agents: [
+        { id: 5, ref: 1, name: 'builder', status: 'idle' },
+        { id: 6, ref: 2, name: 'worker', status: 'idle' },
+      ],
+    };
+    const newer = { ...owned, id: 10 };
+    const data = infiniteData(sortSessionsForList([older, newer]));
+    const next = applyAgentRemoveToInfiniteList(data, { session_id: 9, id: 6 });
+    expect(next).not.toBe(data);
+    const rows = flatten(next);
+    expect(rows.find((r) => r.id === 9).agents).toEqual([
+      { id: 5, ref: 1, name: 'builder', status: 'idle' },
+    ]);
+  });
+
+  it('returns the same reference when no row matches or the agent is absent', () => {
+    const data = infiniteData([owned]);
+    expect(applyAgentRemoveToInfiniteList(data, { session_id: 55, id: 5 })).toBe(data);
+    expect(applyAgentRemoveToInfiniteList(data, { session_id: owned.id, id: 999 })).toBe(data);
+  });
+});
+
+describe('applyAgentRemoveToDetail', () => {
+  it('drops a removed agent from its session detail only', () => {
+    const detail = {
+      id: 10,
+      status: 'idle',
+      agents: [{ id: 5, ref: 1, name: 'builder', status: 'idle' }],
+    };
+    const next = applyAgentRemoveToDetail(detail, { session_id: 10, id: 5 });
+    expect(next.agents).toEqual([]);
+    expect(applyAgentRemoveToDetail(detail, { session_id: 11, id: 5 })).toBe(detail);
+  });
+
+  it('returns the same reference when the detail has no embedded agents', () => {
+    const detail = { id: 10, status: 'idle' };
+    expect(applyAgentRemoveToDetail(detail, { session_id: 10, id: 5 })).toBe(detail);
   });
 });
 

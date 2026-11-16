@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   activeAgentsRunningLabel,
+  applyAgentPatchToSession,
   agentDisplayTitle,
   agentMenuOptionLabel,
   agentNameMatchesType,
@@ -159,5 +160,77 @@ describe('isSubagentBuilder', () => {
     expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(false);
     expect(isSubagentBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(true);
     expect(isSubagentBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
+  });
+});
+
+describe('applyAgentPatchToSession', () => {
+  const session = {
+    id: 7,
+    review_status: null,
+    agents: [
+      {
+        id: 1,
+        ref: 1,
+        name: 'Builder',
+        agent_type: 'builder',
+        status: 'stopped',
+        is_primary: 1,
+        agent_config_id: 4,
+        agent_sdk: 'mock',
+        model: 'mock-5',
+        parent_agent_id: null,
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ],
+  };
+
+  it('merges patch fields into the embedded summary', () => {
+    const next = applyAgentPatchToSession(session, {
+      id: 1,
+      session_id: 7,
+      status: 'running',
+      updated_at: '2026-01-02T00:00:00Z',
+    });
+    expect(next.agents[0]).toEqual(
+      expect.objectContaining({
+        status: 'running',
+        agent_config_id: 4,
+        agent_sdk: 'mock',
+        model: 'mock-5',
+        parent_agent_id: null,
+        updated_at: '2026-01-02T00:00:00Z',
+      })
+    );
+  });
+
+  it('appends a new agent with tree fields to the embedded list', () => {
+    const next = applyAgentPatchToSession(session, {
+      id: 2,
+      session_id: 7,
+      ref: 2,
+      name: 'worker',
+      agent_type: 'subagent',
+      status: 'running',
+      is_primary: 0,
+      agent_config_id: 5,
+      agent_sdk: 'pi',
+      model: 'glm-5.3',
+      parent_agent_id: 1,
+      updated_at: '2026-01-02T00:00:00Z',
+    });
+    expect(next.agents).toHaveLength(2);
+    expect(next.agents[1]).toEqual(
+      expect.objectContaining({
+        id: 2,
+        agent_sdk: 'pi',
+        model: 'glm-5.3',
+        parent_agent_id: 1,
+      })
+    );
+  });
+
+  it('ignores patches for other sessions', () => {
+    const next = applyAgentPatchToSession(session, { id: 1, session_id: 99, status: 'running' });
+    expect(next).toBe(session);
   });
 });

@@ -1,7 +1,6 @@
 import { X } from 'lucide-react';
 import SessionFilesPanel from './SessionFilesPanel.jsx';
 import SessionCommitsPanel from './SessionCommitsPanel.jsx';
-import AgentsPanel from './AgentsPanel.jsx';
 import LogsView from './LogsView.jsx';
 import TaskPanel from '../../components/TaskPanel.jsx';
 import { SIDE_PANEL_TABS } from './sessionSidePanelTabs.js';
@@ -50,9 +49,6 @@ export default function SessionSidePanel({
   chatOpen,
   agentLabelById,
   sessionId,
-  selectedAgentId,
-  onSelectAgent,
-  onReviewerCleared,
 }) {
   const { currentUser } = useCurrentUser();
   const filesUnavailable = isGlobal;
@@ -104,15 +100,6 @@ export default function SessionSidePanel({
             allCommitsSelected={diffViewActive && selectedDiffCommit === 'all'}
             onSelectCommit={onSelectCommit}
             onRefresh={onRefreshBranchCommits}
-          />
-        )}
-        {sidePanelTab === 'agents' && (
-          <AgentsPanel
-            sessionId={sessionId}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={onSelectAgent}
-            onReviewerCleared={onReviewerCleared}
-            readonly={ownerReadonly}
           />
         )}
         {sidePanelTab === 'logs' && (

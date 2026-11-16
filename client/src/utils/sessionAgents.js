@@ -150,14 +150,24 @@ export function applyAgentPatchToSession(session, agent) {
   }
   const agents = Array.isArray(session.agents) ? [...session.agents] : [];
   const agentIdx = agents.findIndex((a) => a.id === agent.id);
-  const summary = {
-    id: agent.id,
-    ref: agent.ref,
-    name: agent.name,
-    agent_type: agent.agent_type,
-    status: agent.status,
-    is_primary: agent.is_primary,
-  };
+  // Defined fields only, so partial patches do not clobber embedded tree fields.
+  const summary = {};
+  for (const key of [
+    'id',
+    'ref',
+    'name',
+    'agent_type',
+    'status',
+    'is_primary',
+    // Sidebar tree fields (provider icon, model label, nesting, relative time).
+    'agent_config_id',
+    'agent_sdk',
+    'model',
+    'parent_agent_id',
+    'updated_at',
+  ]) {
+    if (agent[key] !== undefined) summary[key] = agent[key];
+  }
   if (agentIdx >= 0) agents[agentIdx] = { ...agents[agentIdx], ...summary };
   else agents.push(summary);
   const reviewer = agents.find((a) => a.agent_type === 'reviewer');

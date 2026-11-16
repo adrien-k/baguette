@@ -2585,6 +2585,7 @@ async function mergeSessionAgentFields(context) {
     const reviewer = await getReviewerAgent(db, session.id);
     const agentRows = await listAgentsForSession(db, session.id);
     const out = { ...session };
+    // Sidebar agent tree: provider icon, model label, nesting, relative time.
     out.agents = agentRows.map((a) => ({
       id: a.id,
       ref: a.ref,
@@ -2592,6 +2593,11 @@ async function mergeSessionAgentFields(context) {
       agent_type: a.agent_type,
       status: a.status,
       is_primary: a.is_primary,
+      agent_config_id: a.agent_config_id,
+      agent_sdk: a.agent_sdk,
+      model: a.model,
+      parent_agent_id: a.parent_agent_id,
+      updated_at: a.updated_at,
     }));
     if (builder) {
       out.agent_config_id = builder.agent_config_id;

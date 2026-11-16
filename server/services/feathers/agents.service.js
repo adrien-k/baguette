@@ -280,6 +280,13 @@ const EXTERNAL_PATCH_FIELDS = [
   'initial_prompt',
 ];
 
+/** Bump `updated_at` on every non-empty agent patch (sidebar "last activity" label). */
+function touchUpdatedAt(context) {
+  if (!context.data || Object.keys(context.data).length === 0) return context;
+  context.data.updated_at = new Date().toISOString();
+  return context;
+}
+
 const CREATE_FIELDS = [
   'session_id',
   'agent_type',
@@ -516,6 +523,7 @@ const agentsHooks = {
       only(EXTERNAL_PATCH_FIELDS),
       normalizeModelParams,
       resolveSdkOnConfigChange,
+      touchUpdatedAt,
     ],
     remove: [requireOwnSessionForWrite, beforeRemove],
     stop: [requireUser],
