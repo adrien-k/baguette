@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { queryClient } from './queries/queryClientInstance.js';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import {
   Settings as SettingsIcon,
@@ -506,15 +509,23 @@ function ThemedToaster() {
   );
 }
 
+function QueryDevtools() {
+  if (!import.meta.env.DEV) return null;
+  return <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />;
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <CurrentUserProvider>
-        <ColorSchemeProvider>
-          <AppContent />
-          <ThemedToaster />
-        </ColorSchemeProvider>
-      </CurrentUserProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <CurrentUserProvider>
+          <ColorSchemeProvider>
+            <AppContent />
+            <ThemedToaster />
+          </ColorSchemeProvider>
+        </CurrentUserProvider>
+      </AuthProvider>
+      <QueryDevtools />
+    </QueryClientProvider>
   );
 }

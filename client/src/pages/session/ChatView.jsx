@@ -23,7 +23,7 @@ import {
   agentsService,
 } from '../../feathers.js';
 import { toastFeathersError, toastError } from '../../utils/toastError.jsx';
-import { useRefetchOnSseReconnect } from '../../hooks/useRefetchOnSseReconnect.js';
+import { subscribeSseReconnect } from '../../utils/sseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
@@ -301,7 +301,10 @@ export default function ChatView({
       .catch(() => {});
   }, [chatSessionId]);
 
-  useRefetchOnSseReconnect(reloadQueuedMessages, Boolean(chatSessionId));
+  useEffect(() => {
+    if (!chatSessionId) return undefined;
+    return subscribeSseReconnect(reloadQueuedMessages);
+  }, [chatSessionId, reloadQueuedMessages]);
 
   useEffect(() => {
     if (!chatSessionId) {

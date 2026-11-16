@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useGetUserSessions } from '../hooks/useGetUserSessions.js';
+import { usePublishRealtimeScope } from '../queries/realtimeScope.js';
 import { requestNotificationPermission } from '../utils/notifications.js';
 import { useSessionNotifications } from '../hooks/useSessionNotifications.jsx';
 import { useRepoContext } from './RepoContext.jsx';
@@ -19,10 +20,10 @@ export function SessionsProvider({ children }) {
     [location.pathname]
   );
   const listScope = normalizeListScope(listQuery.list_scope);
-  const { sessions, loading, refetch, hasMore, loadMore } = useGetUserSessions(listQuery, {
-    repos,
-    currentUserId: currentUser?.id,
-  });
+  const { sessions, loading, refetch, hasMore, loadMore } = useGetUserSessions(listQuery);
+
+  // Feeds the SSE cache bridge so it can evaluate list filters outside React.
+  usePublishRealtimeScope(repos, currentUser?.id);
 
   useSessionNotifications(sessions, loading);
 

@@ -17,6 +17,7 @@
     "@floating-ui/react": "^0.27.20",
     "@lobehub/icons": "^6.13.0",
     "@simplewebauthn/browser": "^14.0.0",
+    "@tanstack/react-query": "^5.107.1",
     "ansi-to-html": "^0.7.2",
     "diff": "^9.0.0",
     "feathers": "6.0.0-pre.11",
@@ -33,8 +34,9 @@
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "@testing-library/react": "^16.3.3",
     "@tailwindcss/vite": "latest",
+    "@tanstack/react-query-devtools": "^5.107.1",
+    "@testing-library/react": "^16.3.3",
     "@vitejs/plugin-react": "^5.1.4",
     "postcss": "^8.5.25",
     "postcss-100vh-fix": "^2.0.0",

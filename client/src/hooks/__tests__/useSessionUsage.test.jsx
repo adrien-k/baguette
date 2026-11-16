@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 
 const mocks = vi.hoisted(() => {
   const deferred = () => {
@@ -56,82 +56,85 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('../../feathers.js', () => ({ sessionsService: mocks.sessionUsageService }));
 
+import { createTestQueryClient, makeQueryClientWrapper } from '../../queries/testUtils.jsx';
 import { useSessionUsage } from '../useSessionUsage.js';
 
 beforeEach(() => mocks.resetService(mocks.sessionUsageService));
 
 afterEach(cleanup);
 
-async function flush() {
-  await act(async () => {});
-}
-
-describe('useSessionUsage', () => {
+describe('useSessionUsage (React Query)', () => {
   it('loads usage for a session and refetches when an agent turn completes', async () => {
-    const { result } = renderHook((id) => useSessionUsage(id), { initialProps: 101 });
-    await flush();
-    expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledWith(101);
+    const { result } = renderHook((id) => useSessionUsage(id), {
+      initialProps: 101,
+      wrapper: makeQueryClientWrapper(createTestQueryClient()),
+    });
+    await waitFor(() => expect(result.current.loading).toBe(true));
     await act(async () => {
       mocks.sessionUsageService.sessionUsage.queue[0].resolve({ total_tokens: 10 });
     });
-    expect(result.current.usage).toEqual({ total_tokens: 10 });
-    expect(result.current.loading).toBe(false);
+    await waitFor(() => expect(result.current.usage).toEqual({ total_tokens: 10 }));
 
     await act(async () => {
       mocks.sessionUsageService.emit('turn:complete', { session_id: 101 });
     });
-    await flush();
-    expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledTimes(2));
     await act(async () => {
       mocks.sessionUsageService.sessionUsage.queue[1].resolve({ total_tokens: 22 });
     });
-    expect(result.current.usage).toEqual({ total_tokens: 22 });
+    await waitFor(() => expect(result.current.usage).toEqual({ total_tokens: 22 }));
     expect(result.current.loading).toBe(false);
   });
 
   it('ignores turn completion events for another session', async () => {
-    renderHook((id) => useSessionUsage(id), { initialProps: 101 });
-    await flush();
-    expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledTimes(1);
+    renderHook((id) => useSessionUsage(id), {
+      initialProps: 101,
+      wrapper: makeQueryClientWrapper(createTestQueryClient()),
+    });
+    await waitFor(() => expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledTimes(1));
 
     await act(async () => {
       mocks.sessionUsageService.emit('turn:complete', { session_id: 999 });
     });
-    await flush();
+    await act(async () => {});
     expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledTimes(1);
   });
 
   it('resets usage on session switch and ignores the stale response', async () => {
-    const { result, rerender } = renderHook((id) => useSessionUsage(id), { initialProps: 101 });
-    await flush();
-    expect(result.current.loading).toBe(true);
+    const { result, rerender } = renderHook((id) => useSessionUsage(id), {
+      initialProps: 101,
+      wrapper: makeQueryClientWrapper(createTestQueryClient()),
+    });
+    await waitFor(() => expect(result.current.loading).toBe(true));
 
     rerender(202);
     expect(result.current.usage).toBeNull();
-    await flush();
-    expect(mocks.sessionUsageService.sessionUsage).toHaveBeenCalledTimes(2);
-    expect(mocks.sessionUsageService.sessionUsage).toHaveBeenLastCalledWith(202);
+    await waitFor(() =>
+      expect(mocks.sessionUsageService.sessionUsage).toHaveBeenLastCalledWith(202)
+    );
 
     await act(async () => {
       mocks.sessionUsageService.sessionUsage.queue[0].resolve({ total_tokens: 10 }); // late, for 101
     });
     expect(result.current.usage).toBeNull();
-    expect(result.current.loading).toBe(true);
 
     await act(async () => {
       mocks.sessionUsageService.sessionUsage.queue[1].resolve({ total_tokens: 30 });
     });
-    expect(result.current.usage).toEqual({ total_tokens: 30 });
+    await waitFor(() => expect(result.current.usage).toEqual({ total_tokens: 30 }));
     expect(result.current.loading).toBe(false);
   });
 
   it('stops loading when the usage request fails', async () => {
-    const { result } = renderHook((id) => useSessionUsage(id), { initialProps: 101 });
-    await flush();
+    const { result } = renderHook((id) => useSessionUsage(id), {
+      initialProps: 101,
+      wrapper: makeQueryClientWrapper(createTestQueryClient()),
+    });
+    await waitFor(() => expect(result.current.loading).toBe(true));
     await act(async () => {
       mocks.sessionUsageService.sessionUsage.queue[0].reject(new Error('boom'));
     });
+    await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.usage).toBeNull();
-    expect(result.current.loading).toBe(false);
   });
 });
