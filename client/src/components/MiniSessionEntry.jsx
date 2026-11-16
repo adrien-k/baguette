@@ -31,6 +31,9 @@ export default function MiniSessionEntry({
   const isArchiving = !isArchived && s.status === 'archiving';
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
   const isCurrent = String(s.id) === String(currentId);
+  // Highlight the row itself only when the session is open without a specific
+  // agent chat; otherwise the selected agent row inside the tree is the highlight.
+  const rowHighlighted = isCurrent && !routeAgentId;
   const title = s.label || (isGlobalSession(s) ? 'Global session' : s.repo_full_name) || 'Session';
   const branch = s.remote_branch || s.local_branch || null;
   const promptPreview = sessionListPromptPreview(s);
@@ -49,27 +52,29 @@ export default function MiniSessionEntry({
     <div
       className={`group px-3 py-2 text-xs transition-colors ${
         isArchived || isArchiving ? 'opacity-50' : ''
-      } ${isCurrent ? 'bg-control-hover' : 'hover:bg-control/50'}`}
+      } ${rowHighlighted ? 'bg-control-hover' : 'hover:bg-control/50'}`}
     >
       <div className="flex items-center gap-2">
         <SessionListIndicator session={s} />
         {showOwner && <ListOwnerLabel owner={s.owner} />}
         <Link to={sessionUrl(s.id)} className="flex-1 min-w-0 leading-snug text-left">
-          {showRepo && (
-            <span className="block truncate">
-              <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
-            </span>
-          )}
           <span className="flex min-w-0 items-center gap-1.5">
             <SessionUnreadDot session={s} suppressUnread={suppressUnreadWhenOpen} />
             <span
-              className={`min-w-0 truncate font-medium ${isCurrent ? 'text-fg' : 'text-heading'}`}
+              className={`min-w-0 truncate font-medium ${
+                rowHighlighted ? 'text-fg' : 'text-heading'
+              }`}
             >
               {title}
             </span>
             {s.loop_id && <SessionLoopIcon />}
             {isReviewInProgress(s) && !isArchiving && <ReviewInProgressBadge compact />}
           </span>
+          {showRepo && (
+            <span className="block truncate">
+              <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
+            </span>
+          )}
           {subtitle && (
             <span
               className={`block truncate text-[11px] text-faint ${
@@ -96,11 +101,11 @@ export default function MiniSessionEntry({
           </div>
         )}
       </div>
-      {agentTree.length > 0 && (
+      {isCurrent && agentTree.length > 0 && (
         <SessionAgentTree
           sessionId={s.id}
           agents={agentTree}
-          currentAgentId={isCurrent ? routeAgentId : null}
+          currentAgentId={routeAgentId}
           canManage={isOwner && !isArchived && !isArchiving}
           onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
         />

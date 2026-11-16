@@ -10,11 +10,10 @@ import { isPrimaryAgent, isSubagentBuilder, sortSessionAgentsByRefAsc } from './
 /**
  * Build the agent tree for a session's embedded agent summaries.
  *
- * The primary builder is the session row itself and never becomes a node —
- * its subagents sit directly under the session (subagents cannot spawn
- * subagents, so that is always one level). Subagents spawned by an extra
- * builder nest under that builder's row. Reviewer and extra builders sit at
- * the top level.
+ * The primary builder is the top node; its subagents nest under it (subagents
+ * cannot spawn subagents, so that is always one level). Subagents spawned by
+ * an extra builder nest under that builder's row. Reviewer and extra builders
+ * sit at the top level.
  *
  * @param {Array<{ id: number, parent_agent_id?: number | null } | object>} agents
  * @returns {SessionAgentTreeNode[]} Root nodes, ref-ascending within each level.
@@ -24,17 +23,15 @@ export function buildSessionAgentTree(agents) {
   const byId = new Map(list.map((agent) => [agent.id, agent]));
   const primary = list.find(isPrimaryAgent) ?? null;
 
-  /** Effective parent row for nesting (null = top level, under the session row). */
+  /** Effective parent row for nesting (null = top level). */
   const parentOf = (agent) => {
-    let parent = null;
+    if (agent === primary) return null;
     const parentId = agent.parent_agent_id;
     if (parentId != null && byId.has(parentId) && parentId !== agent.id) {
-      parent = byId.get(parentId);
-    } else if (isSubagentBuilder(agent) && primary) {
-      parent = primary;
+      return byId.get(parentId);
     }
-    // The session row represents the primary builder — its children sit at the top level.
-    return parent === primary ? null : parent;
+    // Orphaned subagents fall back under the primary builder row.
+    return isSubagentBuilder(agent) && primary ? primary : null;
   };
 
   const childrenOf = new Map();
@@ -50,5 +47,5 @@ export function buildSessionAgentTree(agents) {
     children: (childrenOf.get(agent.id) ?? []).map(nodeFor),
   });
 
-  return list.filter((agent) => agent !== primary && parentOf(agent) == null).map(nodeFor);
+  return list.filter((agent) => parentOf(agent) == null).map(nodeFor);
 }

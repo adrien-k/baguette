@@ -41,6 +41,20 @@ export async function listAgentsForSession(db, sessionId) {
 }
 
 /**
+ * Summed usage cost per agent id for a session (agents without usage are absent).
+ * @returns {Promise<Map<number, number>>} agent_id → summed `cost_usd`
+ */
+export async function listAgentCostsForSession(db, sessionId) {
+  const rows = await db('usage')
+    .where({ session_id: sessionId })
+    .whereNotNull('agent_id')
+    .select('agent_id')
+    .sum('cost_usd as cost_usd')
+    .groupBy('agent_id');
+  return new Map(rows.map((r) => [r.agent_id, parseFloat(r.cost_usd ?? 0)]));
+}
+
+/**
  * @param {import('knex').Knex} db
  * @param {number} sessionId
  * @param {{ status?: string, active_only?: boolean }} [filter]

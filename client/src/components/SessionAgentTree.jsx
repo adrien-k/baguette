@@ -19,6 +19,7 @@ import {
   isPrimaryAgent,
 } from '../utils/sessionAgents.js';
 import { messageModelDisplayName } from '../utils/messageModelLabel.js';
+import { formatUsd } from '../utils/usageSeries.js';
 import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { parseModelField } from '../utils/models.js';
@@ -48,16 +49,26 @@ function AgentTreeStatus({ status }) {
   return null;
 }
 
-/** Model label for one agent row: catalog display name when available, else the raw id. */
-function AgentTreeModelLabel({ agentConfigId, model }) {
+/** Model label for one agent row: catalog display name when available, else the raw id, plus usage cost. */
+function AgentTreeModelLabel({ agentConfigId, model, costUsd }) {
   const enabled = agentConfigId != null;
   const { models } = useAgentConfigModels(agentConfigId ?? null, { enabled });
-  if (!model) return null;
-  const label = messageModelDisplayName({ model, models: enabled ? models : [] });
+  const cost = Number(costUsd) > 0 ? formatUsd(Number(costUsd)) : null;
+  if (!model && !cost) return null;
+  const label = model
+    ? messageModelDisplayName({ model, models: enabled ? models : [] }) || parseModelField(model)
+    : null;
   return (
-    <span className="shrink-0 max-w-[7rem] truncate font-mono text-[10px] text-faint tabular-nums">
-      {label || parseModelField(model)}
-    </span>
+    <>
+      {label && (
+        <span className="shrink-0 max-w-[7rem] truncate font-mono text-[10px] text-faint tabular-nums">
+          {label}
+        </span>
+      )}
+      {cost && (
+        <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">({cost})</span>
+      )}
+    </>
   );
 }
 
@@ -136,7 +147,6 @@ function AgentTreeRow({ node, depth, ...rest }) {
   const { getConfig } = useAgentConfigContext();
   const config = getConfig(agent.agent_config_id);
   const title = agentDisplayTitle(agent);
-  const time = formatCompactRelativeTime(agent.updated_at);
   const {
     currentAgentId,
     canManage,
@@ -155,6 +165,7 @@ function AgentTreeRow({ node, depth, ...rest }) {
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
   const renaming = renamingAgentId === agent.id;
   const busy = busyAgentId === agent.id;
+  const time = agent.agent_type === 'subagent' ? null : formatCompactRelativeTime(agent.updated_at);
 
   return (
     <li>
@@ -207,7 +218,11 @@ function AgentTreeRow({ node, depth, ...rest }) {
           )}
           <AgentTreeStatus status={agent.status} />
         </button>
-        <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
+        <AgentTreeModelLabel
+          agentConfigId={agent.agent_config_id}
+          model={agent.model}
+          costUsd={agent.cost_usd}
+        />
         {time && (
           <Tooltip content={agent.updated_at ? new Date(agent.updated_at).toLocaleString() : ''}>
             <span className="shrink-0 w-9 text-right text-[10px] text-faint tabular-nums">
@@ -236,10 +251,10 @@ function AgentTreeRow({ node, depth, ...rest }) {
 }
 
 /**
- * Agent tree for a session row: provider icon · name · model ·
- * relative time, with per-row actions. The session row itself is the primary
- * builder, so its subagents sit directly under it; subagents spawned by an
- * extra builder nest under that builder's row.
+ * Agent tree for a session row: primary builder at the top, then reviewer
+ * and extra builders, with subagents nested under the agent that spawned
+ * them. Rows show provider icon · name · status · model · usage cost ·
+ * relative time (subagents omit the time), with per-row actions.
  */
 export default function SessionAgentTree({
   sessionId,
@@ -341,7 +356,7 @@ export default function SessionAgentTree({
 
   return (
     <>
-      <ul className="mt-0.5 space-y-0.5" data-testid="session-agent-tree">
+      <ul className="mt-0.5 space-y-0.5 max-h-32 overflow-y-auto" data-testid="session-agent-tree">
         {tree.map((node) => (
           <AgentTreeRow key={node.agent.id} node={node} depth={0} {...rowProps} />
         ))}

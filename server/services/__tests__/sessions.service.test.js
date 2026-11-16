@@ -1401,7 +1401,7 @@ describe('Sessions service - find, get, create', () => {
       expect(data[0].id).toBe(sessId1);
     });
 
-    it('embeds per-agent sdk/model/parent fields for the sidebar tree', async () => {
+    it('embeds per-agent sdk/model/parent/cost fields for the sidebar tree', async () => {
       const primaryId = await getPrimaryBuilderAgentId(db, sessId1);
       const [subId] = await db('agents').insert({
         session_id: sessId1,
@@ -1412,6 +1412,22 @@ describe('Sessions service - find, get, create', () => {
         agent_sdk: 'pi',
         model: 'glm-5.3',
         parent_agent_id: primaryId,
+      });
+      await db('usage').insert({
+        session_id: sessId1,
+        user_id: userId1,
+        repo_full_name: 'test/repo',
+        agent_id: primaryId,
+        agent_sdk: 'claude',
+        cost_usd: 0.25,
+      });
+      await db('usage').insert({
+        session_id: sessId1,
+        user_id: userId1,
+        repo_full_name: 'test/repo',
+        agent_id: primaryId,
+        agent_sdk: 'claude',
+        cost_usd: 0.125,
       });
 
       const result = await app.service('sessions').find({ query: {}, ...params({ id: userId1 }) });
@@ -1424,6 +1440,7 @@ describe('Sessions service - find, get, create', () => {
           id: primaryId,
           agent_sdk: 'claude',
           model: 'sonnet',
+          cost_usd: 0.375,
           parent_agent_id: null,
         })
       );
@@ -1435,6 +1452,7 @@ describe('Sessions service - find, get, create', () => {
           agent_type: 'subagent',
           agent_sdk: 'pi',
           model: 'glm-5.3',
+          cost_usd: null,
           parent_agent_id: primaryId,
           updated_at: expect.anything(),
         })

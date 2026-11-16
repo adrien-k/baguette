@@ -84,6 +84,7 @@ import {
   builderChatActiveKey,
   getPrimaryBuilderAgent,
   listAgentsForSession,
+  listAgentCostsForSession,
   getReviewerAgent,
   insertPrimaryBuilderAgent,
   ensureReviewerAgentRow,
@@ -1123,17 +1124,9 @@ export class SessionsService extends KnexService {
       { total_tokens: 0, cost_usd: 0, input_tokens: 0, output_tokens: 0 }
     );
 
-    const agentCostRows = await db('usage')
-      .where({ session_id: session.id })
-      .whereNotNull('agent_id')
-      .select('agent_id')
-      .sum('cost_usd as cost_usd')
-      .groupBy('agent_id');
-
-    const by_agent = agentCostRows.map((r) => ({
-      agent_id: r.agent_id,
-      cost_usd: parseFloat(r.cost_usd ?? 0),
-    }));
+    const by_agent = [...(await listAgentCostsForSession(db, session.id))].map(
+      ([agent_id, cost_usd]) => ({ agent_id, cost_usd })
+    );
 
     return { totals, breakdown, by_agent };
   }
@@ -2584,8 +2577,9 @@ async function mergeSessionAgentFields(context) {
     const builder = await getPrimaryBuilderAgent(db, session.id);
     const reviewer = await getReviewerAgent(db, session.id);
     const agentRows = await listAgentsForSession(db, session.id);
+    const agentCosts = await listAgentCostsForSession(db, session.id);
     const out = { ...session };
-    // Sidebar agent tree: provider icon, model label, nesting, relative time.
+    // Sidebar agent tree: provider icon, model label, cost, nesting, relative time.
     out.agents = agentRows.map((a) => ({
       id: a.id,
       ref: a.ref,
@@ -2596,6 +2590,7 @@ async function mergeSessionAgentFields(context) {
       agent_config_id: a.agent_config_id,
       agent_sdk: a.agent_sdk,
       model: a.model,
+      cost_usd: agentCosts.get(a.id) ?? null,
       parent_agent_id: a.parent_agent_id,
       updated_at: a.updated_at,
     }));
