@@ -1,5 +1,6 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest, NotFound } from 'feathers/errors';
+import logger from '../../logger.js';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
@@ -15,6 +16,7 @@ import { getAgentServiceForAgent } from '../agent-session-routing.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
 import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
+import { insertAgentObserver, notifyParentAgentIds } from '../agents-db.js';
 import {
   buildMcpUserMessageJson,
   summarizeAssistantMessage,
@@ -155,11 +157,26 @@ class AgentsService extends KnexService {
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
-        notify_parent: notifyParent,
         ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
       },
       { ...params, provider: 'rest' }
     );
+
+    // Observer row must exist before the first message dispatches the turn — a very
+    // fast turn would otherwise go terminal before the wake-up subscription lands.
+    if (notifyParent && parentAgentId != null) {
+      try {
+        await insertAgentObserver(this.app.get('db'), {
+          agentId: agent.id,
+          observerAgentId: parentAgentId,
+        });
+      } catch (err) {
+        logger.warn(
+          { agentId: agent.id, parentAgentId, err: err?.message },
+          'Failed to insert subagent notify_parent observer row'
+        );
+      }
+    }
 
     const message_json = buildMcpUserMessageJson(initialPrompt);
 
@@ -185,12 +202,13 @@ class AgentsService extends KnexService {
 
     if (!waitForCompletion) {
       const fresh = await getAgentById(this.app.get('db'), agent.id);
+      const watching = await notifyParentAgentIds(this.app.get('db'), [agent.id]);
       return {
         agent_id: agent.id,
         ref: agent.ref,
         status: fresh?.status ?? agent.status,
         session_id: sessionId,
-        notify_parent: Boolean(fresh?.notify_parent),
+        notify_parent: watching.has(agent.id),
       };
     }
 
@@ -236,6 +254,10 @@ class AgentsService extends KnexService {
       status: data?.status,
       active_only: data?.active_only === true,
     });
+    const watching = await notifyParentAgentIds(
+      this.app.get('db'),
+      rows.map((row) => row.id)
+    );
     return {
       session_id: sessionId,
       subagents: rows.map((row) => ({
@@ -244,7 +266,7 @@ class AgentsService extends KnexService {
         name: row.name,
         status: row.status,
         parent_agent_id: row.parent_agent_id ?? null,
-        notify_parent: Boolean(row.notify_parent),
+        notify_parent: watching.has(row.id),
       })),
     };
   }
@@ -267,7 +289,6 @@ const CREATE_FIELDS = [
   'initial_prompt',
   'name',
   'parent_agent_id',
-  'notify_parent',
 ];
 
 async function stashReviewerCreateExtras(context) {
@@ -354,8 +375,8 @@ async function validateCreate(context) {
     const name = context.data.name?.trim();
     if (!name) throw new BadRequest('name is required for a subagent');
     context.data.is_primary = 0;
-    // Only subagents report back to a parent on completion (StartSubagent notify_parent).
-    context.data.notify_parent = context.data.notify_parent ? 1 : 0;
+    // Parent wake-ups are `agent_observers` rows created by StartSubagent (notify_parent).
+    delete context.data.notify_parent;
     if (context.data.parent_agent_id != null) {
       context.data.parent_agent_id = await resolveStartSubagentParentId(
         db,

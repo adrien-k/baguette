@@ -12,11 +12,16 @@ import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
+import { createGetSessionStatusTool } from '../tools/get-session-status.js';
 import { createPrReadTool } from '../tools/pr-read.js';
 import { createListRunningTasksTool } from '../tools/list-running-tasks.js';
 import { createCreateSessionMessageTool } from '../tools/create-session-message.js';
 import { createGetSessionMessagesTool } from '../tools/get-session-messages.js';
 import { createGetSessionMessageTool } from '../tools/get-session-message.js';
+import { createWatchSessionTool } from '../tools/watch-session.js';
+import { createUnwatchSessionTool } from '../tools/unwatch-session.js';
+import { createAwaitSessionTurnTool } from '../tools/await-session-turn.js';
+import { createStopSessionTool } from '../tools/stop-session.js';
 import { createListLoopsTool } from '../tools/list-loops.js';
 import { createGetLoopTool } from '../tools/get-loop.js';
 import { createCreateLoopTool } from '../tools/create-loop.js';
@@ -39,11 +44,16 @@ function sessionToolsFromContext(ctx) {
   return [
     createSearchSessionsTool(ctx),
     createGetSessionTool(ctx),
+    createGetSessionStatusTool(ctx),
     createPrReadTool(ctx),
     createListRunningTasksTool(ctx),
     createCreateSessionMessageTool(ctx),
     createGetSessionMessagesTool(ctx),
     createGetSessionMessageTool(ctx),
+    createWatchSessionTool(ctx),
+    createUnwatchSessionTool(ctx),
+    createAwaitSessionTurnTool(ctx),
+    createStopSessionTool(ctx),
   ];
 }
 
@@ -99,7 +109,11 @@ export function buildBaguetteAccountToolList(user, app, options) {
   return buildBaseAgentTools(user, app, options);
 }
 
-export function buildBaguetteSessionMcpTools(user, app, { callerSession = null } = {}) {
-  const ctx = createAccountContext(user, app, { callerSession });
+export function buildBaguetteSessionMcpTools(
+  user,
+  app,
+  { callerSession = null, callerAgent = null } = {}
+) {
+  const ctx = createAccountContext(user, app, { callerSession, callerAgent });
   return sessionToolsFromContext(ctx);
 }

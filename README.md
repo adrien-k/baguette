@@ -20,6 +20,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **GitHub sign-in (optional)** -- Sign in through your own GitHub App to create branches and PRs on your behalf. Baguette is scoped to the repositories you grant the App -- down to a single one. You can skip the App and use passkeys and/or a personal access token instead.
 - **Claude & Cursor agents** -- Choose between Claude Code and Cursor as the agent backend when creating a session. Both support Start (agent) and Plan modes.
 - **Session management** -- Spin up sessions from any branch of any repo. Each session gets its own git worktree.
+- **Multi-session orchestration** -- Run several sessions in parallel from a global session: agents subscribe to child-session turn-end notifications and report progress as it happens ([read more](docs/sessions-and-agents.md)).
 - **Live preview** -- Test your session's changes live in the browser. Each session gets a subdomain hooked to its development server, its own database, and the rest of its isolated stack ([read more](docs/session-management.md#web-server-preview)).
 - **Automatic PR creation** -- After the first round of changes, a branch and PR are automatically created with an AI-generated title and description.
 - **Task execution** -- Run arbitrary commands within a session's working directory. Tail logs, kill processes, and track running tasks per-session and globally.

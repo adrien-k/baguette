@@ -2,12 +2,25 @@ import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { SESSION_LIST_COLUMNS, applySessionSearchFilters } from '../lib/session-resolution.js';
 
+/** Each session row carries the primary builder's status so fleet views need no second call. */
+function sessionsWithBuilderStatusQuery(db, columns) {
+  return db('sessions')
+    .leftJoin('users', 'users.id', 'sessions.user_id')
+    .leftJoin('agents as builder', function joinPrimaryBuilder() {
+      this.on('builder.session_id', 'sessions.id').andOn('builder.is_primary', db.raw('1'));
+    })
+    .select(columns.map((column) => `sessions.${column}`))
+    .select('users.username as owner_username')
+    .select('builder.id as builder_agent_id')
+    .select('builder.status as builder_status');
+}
+
 export function createSearchSessionsTool(ctx) {
   const { app, userId } = ctx;
   return {
     name: 'SearchSessions',
     description:
-      'Search your sessions and sessions shared with you. Matches label and initial_prompt for `q`. `remote_branch` matches the shared PR/push head. `target_branch` matches local_branch or remote_branch.',
+      'Search your sessions and sessions shared with you. Matches label and initial_prompt for `q`. `remote_branch` matches the shared PR/push head. `target_branch` matches local_branch or remote_branch. Each result includes `builder_status` (running/approval/stopped/completed/failed) and `builder_agent_id`.',
     schema: {
       repo_id: z.number().int().optional().describe('Filter by repository id from ListRepos'),
       is_global: z.boolean().optional().describe('Filter to global sessions'),
@@ -47,10 +60,7 @@ export function createSearchSessionsTool(ctx) {
       }
       const db = app.get('db');
       const limit = args.limit ?? 50;
-      let query = db('sessions')
-        .leftJoin('users', 'users.id', 'sessions.user_id')
-        .select(SESSION_LIST_COLUMNS.map((column) => `sessions.${column}`))
-        .select('users.username as owner_username');
+      let query = sessionsWithBuilderStatusQuery(db, SESSION_LIST_COLUMNS);
       query = applySessionSearchFilters(query, args, userId);
       const sessions = await query
         .orderByRaw('CASE WHEN sessions.archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')

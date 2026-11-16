@@ -1,6 +1,10 @@
 import { getAgentById, getAgentBySessionRef } from '../../agents-db.js';
 
-export function formatSubagentSummary(agent) {
+/**
+ * Summarize a subagent row; `notifyParent` is the observed-agent presence in
+ * `agent_observers` (notify_parent became a subscription row, not a column).
+ */
+export function formatSubagentSummary(agent, { notifyParent = false } = {}) {
   if (!agent) return null;
   return {
     agent_id: agent.id,
@@ -8,7 +12,7 @@ export function formatSubagentSummary(agent) {
     name: agent.name,
     status: agent.status,
     parent_agent_id: agent.parent_agent_id ?? null,
-    notify_parent: Boolean(agent.notify_parent),
+    notify_parent: Boolean(notifyParent),
   };
 }
 

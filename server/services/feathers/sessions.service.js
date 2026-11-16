@@ -479,10 +479,10 @@ export class SessionsService extends KnexService {
 
   /**
    * Resume what can be resumed of the interrupted children captured at boot; stop the rest.
-   * Runs after the primaries are resumed: a resumed `notify_parent` child that finishes
-   * early must not wake its parent before the parent's own restart prompt has been
-   * injected (the wake would start a parent turn and the injection would be rejected as
-   * a turn mismatch).
+   * Runs after the primaries are resumed: a resumed child with an `agent_observers` wake-up
+   * subscription that finishes early must not wake its parent before the parent's own
+   * restart prompt has been injected (the wake would start a parent turn and the injection
+   * would be rejected as a turn mismatch).
    */
   async _settleStaleChildAgents(staleChildren, counts) {
     for (const child of staleChildren) {

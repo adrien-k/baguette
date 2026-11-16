@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 import { resolveSubagentInSession, formatSubagentSummary } from '../lib/subagent-resolution.js';
+import { notifyParentAgentIds } from '../../agents-db.js';
 
 export function createStopSubagentTool(ctx) {
   const { app, userId, userParams, callerSession } = ctx;
@@ -47,9 +48,10 @@ export function createStopSubagentTool(ctx) {
       try {
         await app.service('agents').stop({ agent_id: agent.id }, userParams);
         const fresh = await resolveSubagentInSession(db, targetSessionId, { agent_id: agent.id });
+        const watching = await notifyParentAgentIds(db, [agent.id]);
         return ok({
           stopped: true,
-          subagent: formatSubagentSummary(fresh),
+          subagent: formatSubagentSummary(fresh, { notifyParent: watching.has(agent.id) }),
         });
       } catch (err) {
         return fail(err.message);

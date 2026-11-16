@@ -1,4 +1,7 @@
 import { patchAgentInternal } from './feathers/agents.service.js';
+import { getAgentById } from './agents-db.js';
+import logger from '../logger.js';
+import { notifyAgentObservers } from './agent-observers-notify.js';
 
 /** Agent turn status while waiting for AskUserQuestions or plan confirmation. */
 const AGENT_AWAITING_USER_STATUS = 'approval';
@@ -11,6 +14,15 @@ const AGENT_AWAITING_USER_STATUS = 'approval';
 async function markBuilderAgentAwaitingUser(app, agentId, userId) {
   if (!agentId || !userId) return;
   await patchAgentInternal(app, agentId, { status: AGENT_AWAITING_USER_STATUS }, userId);
+  try {
+    const agent = await getAgentById(app.get('db'), agentId);
+    await notifyAgentObservers(app, agent, userId, { awaitingUser: true });
+  } catch (err) {
+    logger.warn(
+      { agentId, err: err?.message },
+      'Failed to notify agent observers of awaiting-user status'
+    );
+  }
 }
 
 /**

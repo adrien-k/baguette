@@ -1,4 +1,5 @@
 import { registerAgentsService } from './agents.service.js';
+import { registerAgentObserversService } from './agent-observers.service.js';
 import { registerMessagesService } from './messages.service.js';
 import { registerSessionsService } from './sessions.service.js';
 import { registerTasksService } from './tasks.service.js';
@@ -35,6 +36,7 @@ import { registerFeathersRealtime } from './realtime.js';
 export function registerFeathersServices(app, { realtime = true } = {}) {
   registerMessagesService(app);
   registerAgentsService(app);
+  registerAgentObserversService(app);
   registerSessionsService(app);
   registerQueuedMessagesService(app);
   registerAgentConfigsService(app);

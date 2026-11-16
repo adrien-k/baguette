@@ -138,6 +138,14 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSkill',
   'DeleteSkill',
   'ConfigRepoPrompt',
+  // Fleet orchestration is the parent's job: a subagent must not stop sessions
+  // (including its own parent's turn), subscribe to wake-ups that dispatch
+  // subagent turns outside the parent's control, or inspect/await other sessions.
+  'StopSession',
+  'WatchSession',
+  'UnwatchSession',
+  'AwaitSessionTurn',
+  'GetSessionStatus',
   'PrComment',
   'PrReview',
   'PrMarkCommentViewed',
@@ -154,16 +162,12 @@ export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   'GitPull',
   'GitPush',
   'GitFetch',
-  'PrComments',
+  // PR write tools stay global-excluded; read-only inspection (PrRead, PrComments,
+  // PrWorkflows, ListGithubPrs, GetGithubPr) is session_id-parameterized and allowed.
   'PrMarkCommentViewed',
   'PrComment',
   'PrReview',
-  'PrWorkflows',
-  'PrWorkflowLogs',
-  'ListGithubPrs',
-  'GetGithubPr',
   'AddGithubLabel',
-  'ListGithubTags',
   'ConfigRepoPrompt',
   'ListProjectCommands',
   'RunTask',

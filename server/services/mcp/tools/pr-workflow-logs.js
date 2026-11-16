@@ -8,11 +8,14 @@ import {
 import { ok, fail } from '../lib/result.js';
 
 export function createPrWorkflowLogsTool(ctx) {
-  const { getSession, getToken, requireGitHubApi } = ctx;
+  const { resolveReadTargetSession, requireGitHubApiForSession, getToken } = ctx;
   return {
     name: 'PrWorkflowLogs',
-    description: `Get logs for a workflow run job. Pass job_id or job_name (from PrWorkflows run jobs) to read one job; otherwise returns failed jobs when any failed, else all jobs. Defaults to the last ${DEFAULT_LOG_BYTES} bytes. When endByte is omitted, returns max(${MAX_LOG_RANGE_BYTES}, bytes from startByte through EOF). When both startByte and endByte are set, the range is capped at ${MAX_LOG_RANGE_BYTES} bytes. Negative indices count from the end; do not combine a negative startByte with a non-negative endByte.`,
+    description:
+      `Get logs for a workflow run job. Pass job_id or job_name (from PrWorkflows run jobs) to read one job; otherwise returns failed jobs when any failed, else all jobs. Defaults to the last ${DEFAULT_LOG_BYTES} bytes. When endByte is omitted, returns max(${MAX_LOG_RANGE_BYTES}, bytes from startByte through EOF). When both startByte and endByte are set, the range is capped at ${MAX_LOG_RANGE_BYTES} bytes. Negative indices count from the end; do not combine a negative startByte with a non-negative endByte. ` +
+      'When running inside a repo session, omit session_id to read its PR. From a global session or when triaging another session, pass session_id (from GetSession or SearchSessions).',
     schema: {
+      session_id: z.number().int().optional().describe('Target repo session id'),
       runId: z.string().describe('Workflow run ID from PrWorkflows'),
       jobId: z
         .string()
@@ -41,12 +44,13 @@ export function createPrWorkflowLogsTool(ctx) {
           `Inclusive end byte (optional). Negative values count from the end. When omitted, end is startByte + max(${MAX_LOG_RANGE_BYTES}, bytes remaining until EOF). Must be negative if startByte is negative.`
         ),
     },
-    handler: async ({ runId, jobId, jobName, allJobs, startByte, endByte }) => {
-      const localErr = await requireGitHubApi();
+    handler: async ({ session_id, runId, jobId, jobName, allJobs, startByte, endByte }) => {
+      const { session, error } = await resolveReadTargetSession(session_id);
+      if (error) return fail(error);
+      const localErr = await requireGitHubApiForSession(session);
       if (localErr) return localErr;
       const validationError = validateLogByteRange({ startByte, endByte });
       if (validationError) return fail(validationError);
-      const session = await getSession();
       try {
         const result = await getPRWorkflowLogs(await getToken(), session.repo_full_name, runId, {
           startByte,

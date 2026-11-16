@@ -5,10 +5,12 @@ import {
   testSessionAgentDefaults,
   insertTestSession,
   testMessageRow,
+  getPrimaryBuilderAgentId,
 } from '../../test-utils/db.js';
 import { insertTestAgentConfig } from '../../test-utils/agent-configs.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
+import { registerAgentObserversService } from '../feathers/agent-observers.service.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { TasksService } from '../feathers/tasks.service.js';
@@ -88,6 +90,7 @@ describe('baguette session MCP tools', () => {
     });
     registerSessionsService(app);
     registerAgentsService(app);
+    registerAgentObserversService(app);
     useClaudeAgentStub(
       app,
       {
@@ -337,5 +340,367 @@ describe('baguette session MCP tools', () => {
     const out = parseOk(await get.handler({ session_id: sessionId }));
     expect(out.last_failed_tasks).toHaveLength(1);
     expect(out.last_failed_tasks[0].exit_code).toBe(2);
+  });
+
+  it('SearchSessions returns builder_status and builder_agent_id per session', async () => {
+    await db('agents')
+      .where({ session_id: sessionId, is_primary: 1 })
+      .update({ status: 'running' });
+    const search = tools.find((t) => t.name === 'SearchSessions');
+    const out = parseOk(await search.handler({ q: 'auth' }));
+    expect(out.sessions).toHaveLength(1);
+    expect(out.sessions[0].builder_status).toBe('running');
+    expect(out.sessions[0].builder_agent_id).toBe(await getPrimaryBuilderAgentId(db, sessionId));
+  });
+
+  it('GetSessionStatus returns agent, queued, task, and todo rollup', async () => {
+    const primaryAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+    await db('agents')
+      .where({ id: primaryAgentId })
+      .update({ status: 'running', active_turn_id: 7 });
+    await db('agents').insert({
+      session_id: sessionId,
+      ref: 2,
+      name: 'Helper',
+      agent_type: 'subagent',
+      is_primary: 0,
+      status: 'completed',
+      agent_config_id: (await db('agents').where({ id: primaryAgentId }).first()).agent_config_id,
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      model_params: null,
+      current_turn_id: 1,
+    });
+    await db('queued_messages').insert({
+      session_id: sessionId,
+      user_id: userId,
+      agent_id: primaryAgentId,
+      kind: 'turn',
+      message_json: JSON.stringify({ content: 'queued follow-up' }),
+    });
+    await db('session_todos').insert([
+      { session_id: sessionId, ref: 1, content: 'do a', status: 'pending', sort_order: 0 },
+      { session_id: sessionId, ref: 2, content: 'do b', status: 'in_progress', sort_order: 1 },
+      { session_id: sessionId, ref: 3, content: 'do c', status: 'completed', sort_order: 2 },
+    ]);
+    await db('session_plans').insert({ session_id: sessionId, markdown: '# plan', status: 'open' });
+    await db('session_messages').where({ session_id: sessionId }).update({ turn_id: 7 });
+    const tasks = app.service('tasks');
+    const running = tasks.createTask({
+      sessionId,
+      command: 'sleep 9',
+      label: 'dev-server',
+      taskKey: 'dev-server',
+    });
+
+    const status = tools.find((t) => t.name === 'GetSessionStatus');
+    const out = parseOk(await status.handler({ session_id: sessionId }));
+
+    expect(out.session.id).toBe(sessionId);
+    expect(out.session.short_id).toBeUndefined();
+    expect(out.primary_agent_id).toBe(primaryAgentId);
+    expect(out.agents).toHaveLength(2);
+    const primary = out.agents.find((a) => a.is_primary);
+    expect(primary.status).toBe('running');
+    expect(primary.active_turn_id).toBe(7);
+    const subagent = out.agents.find((a) => !a.is_primary);
+    expect(subagent.agent_type).toBe('subagent');
+    expect(subagent.status).toBe('completed');
+    expect(out.queued_messages).toEqual({ total: 1, primary_count: 1, scheduled_count: 0 });
+    expect(out.last_message.user).toBeTruthy();
+    expect(out.last_message.assistant).toBeTruthy();
+    expect(out.last_message.assistant.turn_id).toBe(7);
+    expect(out.last_message.user.turn_id).toBe(7);
+    expect(out.running_tasks).toHaveLength(1);
+    expect(out.running_tasks[0].task_id).toBe(running.id);
+    expect(out.todos).toEqual({ pending: 1, in_progress: 1, completed: 1 });
+    expect(out.plan.status).toBe('open');
+  });
+
+  it('GetSessionStatus hides stale deleted-agent queued rows from primary_count', async () => {
+    await db('queued_messages').insert({
+      session_id: sessionId,
+      user_id: userId,
+      agent_id: null,
+      kind: 'turn',
+      message_json: JSON.stringify({ content: 'orphan' }),
+    });
+    const status = tools.find((t) => t.name === 'GetSessionStatus');
+    const out = parseOk(await status.handler({ session_id: sessionId }));
+    expect(out.queued_messages.total).toBe(1);
+    expect(out.queued_messages.primary_count).toBe(0);
+  });
+
+  it('GetSessionStatus rejects another user’s session', async () => {
+    const [otherUserId] = await db('users').insert({
+      github_id: 1000,
+      username: 'other',
+      status: 'approved',
+    });
+    const otherSessionId = await insertTestSession(db, {
+      user_id: otherUserId,
+      repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+      repo_full_name: 'o/r',
+      short_id: 'othr0',
+      label: 'Not mine',
+      initial_prompt: 'secret',
+      base_branch: 'main',
+      local_branch: 'feat/not-mine',
+      status: 'stopped',
+      ...testSessionAgentDefaults,
+    });
+    const status = tools.find((t) => t.name === 'GetSessionStatus');
+    const out = parseResult(await status.handler({ session_id: otherSessionId }));
+    expect(out.ok).toBe(false);
+  });
+
+  it('AwaitSessionTurn returns immediately when the builder is not running', async () => {
+    const tool = tools.find((t) => t.name === 'AwaitSessionTurn');
+    const out = parseOk(await tool.handler({ session_id: sessionId }));
+    expect(out.status).toBe('stopped');
+    expect(out.timed_out).toBe(false);
+    expect(out.agent_id).toBe(await getPrimaryBuilderAgentId(db, sessionId));
+  });
+
+  it('AwaitSessionTurn waits for a running turn to finish', async () => {
+    const primaryAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+    await db('agents').where({ id: primaryAgentId }).update({ status: 'running' });
+    const tool = tools.find((t) => t.name === 'AwaitSessionTurn');
+    const pending = tool.handler({ session_id: sessionId }).then(parseOk);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await db('agents').where({ id: primaryAgentId }).update({ status: 'completed' });
+    const out = await pending;
+    expect(out.status).toBe('completed');
+    expect(out.timed_out).toBe(false);
+  });
+
+  it('AwaitSessionTurn reports timed_out without cancelling on wait expiry', async () => {
+    vi.useFakeTimers();
+    try {
+      const primaryAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+      await db('agents').where({ id: primaryAgentId }).update({ status: 'running' });
+      const tool = tools.find((t) => t.name === 'AwaitSessionTurn');
+      const pending = tool.handler({ session_id: sessionId }).then(parseOk);
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      const out = await pending;
+      expect(out.timed_out).toBe(true);
+      expect(out.status).toBe('running');
+      expect((await db('agents').where({ id: primaryAgentId }).first()).status).toBe('running');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('AwaitSessionTurn rejects another user’s session', async () => {
+    const [otherUserId] = await db('users').insert({
+      github_id: 1001,
+      username: 'other2',
+      status: 'approved',
+    });
+    const otherSessionId = await insertTestSession(db, {
+      user_id: otherUserId,
+      repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+      repo_full_name: 'o/r',
+      short_id: 'othr2',
+      label: 'Not mine either',
+      initial_prompt: 'secret',
+      base_branch: 'main',
+      local_branch: 'feat/not-mine-2',
+      status: 'stopped',
+      ...testSessionAgentDefaults,
+    });
+    const tool = tools.find((t) => t.name === 'AwaitSessionTurn');
+    const out = parseResult(await tool.handler({ session_id: otherSessionId }));
+    expect(out.ok).toBe(false);
+  });
+
+  it('StopSession stops the primary builder and the session', async () => {
+    const primaryAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+    await db('agents').where({ id: primaryAgentId }).update({ status: 'running' });
+    const tool = tools.find((t) => t.name === 'StopSession');
+    const out = parseOk(await tool.handler({ session_id: sessionId }));
+    expect(out.stopped).toBe(true);
+    const primary = await db('agents').where({ id: primaryAgentId }).first();
+    expect(primary.status).toBe('stopped');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(session.status).toBe('stopped');
+  });
+
+  it('StopSession rejects another user’s session', async () => {
+    const [otherUserId] = await db('users').insert({
+      github_id: 1002,
+      username: 'other3',
+      status: 'approved',
+    });
+    const otherSessionId = await insertTestSession(db, {
+      user_id: otherUserId,
+      repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+      repo_full_name: 'o/r',
+      short_id: 'othr2',
+      label: 'Not mine either',
+      initial_prompt: 'secret',
+      base_branch: 'main',
+      local_branch: 'feat/not-mine-2',
+      status: 'stopped',
+      ...testSessionAgentDefaults,
+    });
+    const tool = tools.find((t) => t.name === 'StopSession');
+    const out = parseResult(await tool.handler({ session_id: otherSessionId }));
+    expect(out.ok).toBe(false);
+  });
+
+  describe('WatchSession', () => {
+    let watchTools;
+    let watcherAgentId;
+
+    beforeEach(async () => {
+      watcherAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+      // The caller agent must exist (observer FK + service check): reuse this
+      // session's primary builder as the watcher for a second target session.
+      watchTools = buildBaguetteSessionMcpTools({ id: userId }, app, {
+        callerSession: { id: sessionId, is_global: false },
+        callerAgent: { id: watcherAgentId },
+      });
+    });
+
+    it('reports the observed agent’s current status alongside the subscription', async () => {
+      const targetId = await insertTestSession(db, {
+        user_id: userId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'wtrg01',
+        label: 'Watch target',
+        initial_prompt: 'Work',
+        base_branch: 'main',
+        local_branch: 'feat/watch-target',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      await db('session_messages').insert(
+        await testMessageRow(db, targetId, {
+          type: 'assistant',
+          message_json: JSON.stringify({
+            type: 'assistant',
+            message: { role: 'assistant', content: 'already finished' },
+          }),
+        })
+      );
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const out = parseOk(await tool.handler({ session_id: targetId }));
+      expect(out.observed.status).toBe('stopped');
+      expect(out.observed.last_assistant_message.message.content).toBe('already finished');
+      expect(out.observed.queued_message_count).toBe(0);
+      expect(out.observed_agent_id).toBe(await getPrimaryBuilderAgentId(db, targetId));
+      // Subscription landed.
+      const count = await db('agent_observers')
+        .where({ agent_id: out.observed_agent_id, observer_agent_id: watcherAgentId })
+        .count('id as c')
+        .first();
+      expect(Number(count.c)).toBe(1);
+    });
+
+    it('surfaces approval so a pre-existing wait is not silently missed', async () => {
+      const targetId = await insertTestSession(db, {
+        user_id: userId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'wtrg02',
+        label: 'Approval target',
+        initial_prompt: 'Work',
+        base_branch: 'main',
+        local_branch: 'feat/approval-target',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      await db('agents')
+        .where({ session_id: targetId, is_primary: 1 })
+        .update({ status: 'approval' });
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const out = parseOk(await tool.handler({ session_id: targetId }));
+      expect(out.observed.status).toBe('approval');
+    });
+
+    it('is idempotent per watcher pair', async () => {
+      const targetId = await insertTestSession(db, {
+        user_id: userId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'wtrg03',
+        label: 'Idempotent target',
+        initial_prompt: 'Work',
+        base_branch: 'main',
+        local_branch: 'feat/idem-target',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const first = parseOk(await tool.handler({ session_id: targetId }));
+      const second = parseOk(await tool.handler({ session_id: targetId }));
+      expect(second.row_id).toBe(first.row_id);
+      const count = await db('agent_observers')
+        .where({ agent_id: first.observed_agent_id, observer_agent_id: watcherAgentId })
+        .count('id as c')
+        .first();
+      expect(Number(count.c)).toBe(1);
+    });
+
+    it('rejects an unowned target session', async () => {
+      const [otherUserId] = await db('users').insert({
+        github_id: 1003,
+        username: 'other4',
+        status: 'approved',
+      });
+      const otherSessionId = await insertTestSession(db, {
+        user_id: otherUserId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'othr4',
+        label: 'Not mine 4',
+        initial_prompt: 'secret',
+        base_branch: 'main',
+        local_branch: 'feat/not-mine-4',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const out = parseResult(await tool.handler({ session_id: otherSessionId }));
+      expect(out.ok).toBe(false);
+    });
+
+    it('rejects watching your own session (self-watch would loop)', async () => {
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const out = parseResult(await tool.handler({ session_id: sessionId }));
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/cannot observe itself/);
+      const rows = await db('agent_observers').where({ observer_agent_id: watcherAgentId });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('rejects a mutual watch that would ping-pong forever', async () => {
+      // The watcher (this session's builder) is already observed by the target's builder.
+      const targetSessionId = await insertTestSession(db, {
+        user_id: userId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'cycT01',
+        label: 'Mutual target',
+        initial_prompt: 'Work',
+        base_branch: 'main',
+        local_branch: 'feat/mutual-target',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      const targetAgentId = await getPrimaryBuilderAgentId(db, targetSessionId);
+      await db('agent_observers').insert({
+        agent_id: watcherAgentId,
+        observer_agent_id: targetAgentId,
+        notify_on: 'turn_end',
+      });
+
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const out = parseResult(await tool.handler({ session_id: targetSessionId }));
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/wake-up loop/);
+    });
   });
 });

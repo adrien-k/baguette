@@ -26,6 +26,8 @@ vi.mock('../github.js', async (importOriginal) => {
     upsertPR: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
     getOpenPRByNumber: vi.fn().mockResolvedValue({ title: 'PR title', body: 'PR body' }),
+    listRepoPRs: vi.fn(),
+    listRepoTags: vi.fn(),
     getPRComments: vi.fn(),
     createPRComment: vi.fn(),
     createPRLineComment: vi.fn(),
@@ -58,6 +60,8 @@ import {
   gitPull,
   gitPush,
   gitFetch,
+  listRepoPRs,
+  listRepoTags,
   getOpenPRByNumber,
   getPRComments,
   createPRComment,
@@ -164,6 +168,8 @@ function makeApp(
     tasksFindLatestTaskByTaskKey,
     usageRows = [],
     repoOverrides = {},
+    sessionsById = {},
+    reposById = {},
     userRow = { id: 1, access_token: 'tok' },
   } = {}
 ) {
@@ -197,12 +203,21 @@ function makeApp(
   };
   const db = (table) => {
     if (table === 'sessions')
-      return { where: () => ({ first: async () => ({ ...sessionSnapshot }) }) };
+      return {
+        where: (clause) => ({
+          first: async () => {
+            const target = clause?.id != null ? sessionsById[clause.id] : null;
+            return target ? { ...target } : { ...sessionSnapshot };
+          },
+        }),
+      };
     if (table === 'users') return { where: () => ({ first: async () => ({ ...userRow }) }) };
     if (table === 'repos')
       return {
-        where: () => ({
+        where: (clause) => ({
           first: async () => {
+            const target = clause?.id != null ? reposById[clause.id] : null;
+            if (target) return { ...target };
             const fullName = sessionSnapshot.repo_full_name ?? 'owner/repo';
             return {
               id: sessionSnapshot.repo_id ?? 7,
@@ -357,6 +372,13 @@ describe('builder MCP tool registry', () => {
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('UpdateSession');
     expect(names).not.toContain('StartSubagent');
+    // Fleet orchestration stays with the parent: subagents must not stop sessions
+    // (including their own parent's turn), arm wake-ups, or inspect/await other sessions.
+    expect(names).not.toContain('StopSession');
+    expect(names).not.toContain('WatchSession');
+    expect(names).not.toContain('UnwatchSession');
+    expect(names).not.toContain('AwaitSessionTurn');
+    expect(names).not.toContain('GetSessionStatus');
     expect(names).toContain('CreatePlan');
     expect(names).toContain('StartPlan');
     expect(names).toContain('ListPlans');
@@ -383,14 +405,26 @@ describe('builder MCP tool registry', () => {
 });
 
 describe('global sessions', () => {
-  it('omits git and PR tools', async () => {
+  it('omits git and PR write tools, keeps read-only PR inspection', async () => {
     const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('GitPull');
     expect(names).not.toContain('GitFetch');
     expect(names).not.toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
+    // Read-only PR tools stay available for orchestrating child repo sessions.
     expect(names).toContain('PrRead');
+    expect(names).toContain('PrComments');
+    expect(names).toContain('PrWorkflows');
+    expect(names).toContain('PrWorkflowLogs');
+    expect(names).toContain('ListGithubPrs');
+    expect(names).toContain('GetGithubPr');
+    expect(names).toContain('ListGithubTags');
+    // Write tools stay excluded.
+    expect(names).not.toContain('PrComment');
+    expect(names).not.toContain('PrReview');
+    expect(names).not.toContain('AddGithubLabel');
+    expect(names).not.toContain('PrMarkCommentViewed');
     expect(names).toContain('ListRunningTasks');
     expect(names).not.toContain('ConfigRepoPrompt');
     expect(names).not.toContain('ListProjectCommands');
@@ -405,6 +439,100 @@ describe('global sessions', () => {
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');
     expect(names).not.toContain('CreateIssue');
+  });
+
+  it('global session inspects a child repo session PR via session_id', async () => {
+    const child = {
+      ...DEFAULT_SESSION,
+      id: 5,
+      pr_number: 7,
+      remote_branch: 'feat/child',
+      repo_full_name: 'owner/repo',
+      repo_id: 7,
+    };
+    const { tools } = await buildServer(
+      { is_global: true, repo_full_name: '', repo_id: null },
+      {
+        sessionsById: { 5: child },
+        reposById: {
+          7: {
+            id: 7,
+            full_name: 'owner/repo',
+            origin: gitHubOriginFromFullName('owner/repo'),
+            access_mode: 'github',
+          },
+        },
+      }
+    );
+
+    getPRComments.mockResolvedValueOnce({ issueComments: [], reviewComments: [] });
+    const comments = parseResult(await callTool(tools, 'PrComments', { session_id: 5 }));
+    expect(comments.ok).toBe(true);
+    expect(getPRComments).toHaveBeenCalledWith('ghtoken', 'owner/repo', 7);
+
+    listRepoPRs.mockResolvedValueOnce([]);
+    const prs = parseResult(await callTool(tools, 'ListGithubPrs', { session_id: 5 }));
+    expect(prs.ok).toBe(true);
+    expect(listRepoPRs).toHaveBeenCalledWith('ghtoken', 'owner/repo', {
+      state: 'open',
+      author: undefined,
+      label: undefined,
+      base: undefined,
+      text: undefined,
+    });
+
+    getPRWorkflows.mockResolvedValueOnce({ runs: [], checks: [] });
+    const checks = parseResult(await callTool(tools, 'PrWorkflows', { session_id: 5 }));
+    expect(checks.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      'feat/child',
+      expect.objectContaining({ prNumber: 7 })
+    );
+
+    listRepoTags.mockResolvedValueOnce([]);
+    const tags = parseResult(await callTool(tools, 'ListGithubTags', { session_id: 5 }));
+    expect(tags.ok).toBe(true);
+    expect(listRepoTags).toHaveBeenCalledWith('ghtoken', 'owner/repo');
+  });
+
+  it('global session without session_id gets a clear targeting error', async () => {
+    const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
+    const result = parseResult(await callTool(tools, 'PrComments'));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/pass session_id of a repo session/i);
+  });
+
+  it('cross-session PR inspection rejects a session owned by another user', async () => {
+    const child = { ...DEFAULT_SESSION, id: 5, user_id: 999, pr_number: 7 };
+    const { tools } = await buildServer(
+      { is_global: true, repo_full_name: '', repo_id: null },
+      { sessionsById: { 5: child } }
+    );
+    const result = parseResult(await callTool(tools, 'PrComments', { session_id: 5 }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('Session not found');
+  });
+
+  it('repo session triages another owned session via session_id', async () => {
+    const other = {
+      ...DEFAULT_SESSION,
+      id: 6,
+      pr_number: null,
+      remote_branch: 'feat/other',
+      repo_full_name: 'owner/repo',
+    };
+    const { tools } = await buildServer({}, { sessionsById: { 6: other } });
+    getPRWorkflows.mockResolvedValueOnce({ runs: [], checks: [] });
+    const result = parseResult(await callTool(tools, 'PrWorkflows', { session_id: 6 }));
+    expect(result.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      'feat/other',
+      expect.objectContaining({ prNumber: undefined })
+    );
   });
 });
 
