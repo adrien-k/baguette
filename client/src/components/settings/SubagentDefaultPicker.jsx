@@ -110,7 +110,7 @@ export default function SubagentDefaultPicker({
   const loadPresets = useCallback(() => {
     setPresetsLoading(true);
     agentModelPresetsService
-      .find({ query: { $limit: 50, $sort: { id: 1 } } })
+      .find({ query: { $limit: 50, $sort: { id: 1 }, enabled: 1 } })
       .then((res) => setPresets(res.data ?? res))
       .catch((err) => toastError('Failed to load preset models', err))
       .finally(() => setPresetsLoading(false));

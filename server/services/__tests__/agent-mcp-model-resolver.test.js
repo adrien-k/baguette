@@ -68,6 +68,32 @@ describe('resolveMcpBuilderModel', () => {
     expect(resolved.model).toBe('mock-standard');
   });
 
+  it('rejects a preset that is turned off', async () => {
+    const [presetId] = await db('agent_model_presets').insert({
+      user_id: userId,
+      description: 'Off',
+      agent_config_id: configId,
+      model: 'mock-standard',
+      enabled: 0,
+    });
+    await expect(resolveMcpBuilderModel(db, userId, { preset_model_id: presetId })).rejects.toThrow(
+      /is turned off in Settings/
+    );
+  });
+
+  it('rejects a preset that is not enabled for new sessions', async () => {
+    const [presetId] = await db('agent_model_presets').insert({
+      user_id: userId,
+      description: 'Subagents only',
+      agent_config_id: configId,
+      model: 'mock-standard',
+      for_new_sessions: 0,
+    });
+    await expect(resolveMcpBuilderModel(db, userId, { preset_model_id: presetId })).rejects.toThrow(
+      /not enabled for new sessions/
+    );
+  });
+
   it('uses account session defaults when preset is omitted', async () => {
     await db('users')
       .where({ id: userId })
@@ -231,6 +257,45 @@ describe('resolveMcpStartSubagentModel', () => {
     });
     expect(resolved.agent_config_id).toBe(configId);
     expect(resolved.model).toBe(MOCK_SECONDARY_MODEL_ID);
+  });
+
+  it('accepts a preset enabled only for subagents', async () => {
+    const [presetId] = await db('agent_model_presets').insert({
+      user_id: userId,
+      description: 'Subagents only',
+      agent_config_id: configId,
+      model: MOCK_SECONDARY_MODEL_ID,
+      for_new_sessions: 0,
+    });
+    const resolved = await resolveMcpStartSubagentModel(db, userId, {
+      session_id: sessionId,
+      preset_model_id: presetId,
+    });
+    expect(resolved.model).toBe(MOCK_SECONDARY_MODEL_ID);
+  });
+
+  it('rejects a preset that is turned off or not enabled for subagents', async () => {
+    const [offId] = await db('agent_model_presets').insert({
+      user_id: userId,
+      description: 'Off',
+      agent_config_id: configId,
+      model: MOCK_SECONDARY_MODEL_ID,
+      enabled: 0,
+    });
+    await expect(
+      resolveMcpStartSubagentModel(db, userId, { session_id: sessionId, preset_model_id: offId })
+    ).rejects.toThrow(/is turned off in Settings/);
+
+    const [noSubId] = await db('agent_model_presets').insert({
+      user_id: userId,
+      description: 'Sessions only',
+      agent_config_id: configId,
+      model: MOCK_SECONDARY_MODEL_ID,
+      for_subagents: 0,
+    });
+    await expect(
+      resolveMcpStartSubagentModel(db, userId, { session_id: sessionId, preset_model_id: noSubId })
+    ).rejects.toThrow(/not enabled for subagents/);
   });
 
   it('applies preset_model_id when subagent default is config', async () => {

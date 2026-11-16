@@ -34,11 +34,34 @@ const MCP_SUBAGENT_CONFIG_SETTINGS_ERROR =
 const MCP_AGENT_CREATED_CHOICE_CONFLICT_ERROR =
   'Pass either preset_model_id or agent_config_id and model, not both.';
 
-async function resolvePresetModel(db, userId, preset_model_id) {
+/**
+ * Validate a preset against its on/off switch and usage scope.
+ * @param {'subagent' | 'session'} context 'subagent' = StartSubagent, 'session' = new sessions and loops.
+ */
+function assertPresetUsable(preset, context) {
+  if (!preset.enabled) {
+    throw new BadRequest(
+      `Preset "${preset.description}" is turned off in Settings → Agent → Preset models. Pick another preset from ListPresetModels.`
+    );
+  }
+  if (context === 'subagent' && !preset.for_subagents) {
+    throw new BadRequest(
+      `Preset "${preset.description}" is not enabled for subagents in Settings → Agent → Preset models. Pick another preset from ListPresetModels.`
+    );
+  }
+  if (context === 'session' && !preset.for_new_sessions) {
+    throw new BadRequest(
+      `Preset "${preset.description}" is not enabled for new sessions in Settings → Agent → Preset models. Pick another preset from ListPresetModels.`
+    );
+  }
+}
+
+async function resolvePresetModel(db, userId, preset_model_id, context) {
   const preset = await db('agent_model_presets')
     .where({ id: preset_model_id, user_id: userId })
     .first();
   if (!preset) throw new NotFound('Preset model not found');
+  assertPresetUsable(preset, context);
   const config = await loadOwnedAgentConfig(db, preset.agent_config_id, userId);
   return {
     agent_config_id: preset.agent_config_id,
@@ -128,9 +151,10 @@ async function resolveConfiguredModel(db, userId, settings) {
  * @param {number} userId
  * @param {string} mode
  * @param {{ config_id?: number | null, model_json?: string | null }} settings
+ * @param {'subagent' | 'session'} context preset usage scope: 'subagent' (StartSubagent) or 'session' (new sessions and loops).
  * @param {{ preset_model_id?: number | null, agent_config_id?: number | null, model?: string | null, model_params?: unknown, app?: object }} choice `app` is required unless only the inherit fallback applies.
  */
-async function resolveAgentCreatedChoice(db, userId, mode, settings, choice) {
+async function resolveAgentCreatedChoice(db, userId, mode, settings, context, choice) {
   const presetId = choice.preset_model_id ?? null;
   const explicit = hasExplicitModelFields(choice);
 
@@ -138,7 +162,7 @@ async function resolveAgentCreatedChoice(db, userId, mode, settings, choice) {
     if (presetId != null && explicit) {
       throw new BadRequest(MCP_AGENT_CREATED_CHOICE_CONFLICT_ERROR);
     }
-    if (presetId != null) return resolvePresetModel(db, userId, presetId);
+    if (presetId != null) return resolvePresetModel(db, userId, presetId, context);
     if (explicit) return resolveExplicitModel(db, userId, choice);
     throw new BadRequest(MCP_AGENT_CREATED_ANY_REQUIRED_ERROR);
   }
@@ -146,7 +170,7 @@ async function resolveAgentCreatedChoice(db, userId, mode, settings, choice) {
   if (explicit) {
     throw new BadRequest(MCP_AGENT_CREATED_MODEL_NOT_ALLOWED_ERROR);
   }
-  if (presetId != null) return resolvePresetModel(db, userId, presetId);
+  if (presetId != null) return resolvePresetModel(db, userId, presetId, context);
   if (mode === SUBAGENT_DEFAULT_PRESET) {
     throw new BadRequest(MCP_SUBAGENT_PRESET_REQUIRED_ERROR);
   }
@@ -169,7 +193,7 @@ export async function resolveMcpBuilderModel(db, userId, opts = {}) {
   const { preset_model_id, agent_config_id, model, model_params, repo_id, app } = opts;
   const settings = await resolveEffectiveSubagentDefaultSettings(db, userId, repo_id ?? null);
   const mode = normalizeSubagentDefaultMode(settings.mode);
-  const chosen = await resolveAgentCreatedChoice(db, userId, mode, settings, {
+  const chosen = await resolveAgentCreatedChoice(db, userId, mode, settings, 'session', {
     preset_model_id,
     agent_config_id,
     model,
@@ -196,7 +220,7 @@ export async function resolveMcpStartSubagentModel(db, userId, opts = {}) {
   const { session_id, preset_model_id, agent_config_id, model, model_params, repo_id, app } = opts;
   const settings = await resolveEffectiveSubagentDefaultSettings(db, userId, repo_id ?? null);
   const mode = normalizeSubagentDefaultMode(settings.mode);
-  const chosen = await resolveAgentCreatedChoice(db, userId, mode, settings, {
+  const chosen = await resolveAgentCreatedChoice(db, userId, mode, settings, 'subagent', {
     preset_model_id,
     agent_config_id,
     model,

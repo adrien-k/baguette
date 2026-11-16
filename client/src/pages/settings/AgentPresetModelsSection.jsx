@@ -5,14 +5,28 @@ import { toastError } from '../../utils/toastError.jsx';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import DefaultAgentPicker from '../../components/settings/DefaultAgentPicker.jsx';
 import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
+import Toggle from '../../components/Toggle.jsx';
 import { DANGER_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
+
+const CHECKBOX_CLASS = 'rounded border-strong text-accent focus:ring-brand/50';
+
+function ScopeCheckbox({ checked, onChange, title, children }) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-secondary" title={title}>
+      <input type="checkbox" className={CHECKBOX_CLASS} checked={checked} onChange={onChange} />
+      {children}
+    </label>
+  );
+}
 
 function PresetFormModal({ open, preset, onClose, onSaved }) {
   const [description, setDescription] = useState('');
   const [configId, setConfigId] = useState(null);
   const [model, setModel] = useState(null);
   const [modelParamsJson, setModelParamsJson] = useState(null);
+  const [forSubagents, setForSubagents] = useState(true);
+  const [forNewSessions, setForNewSessions] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -21,6 +35,8 @@ function PresetFormModal({ open, preset, onClose, onSaved }) {
     setConfigId(preset?.agent_config_id ?? null);
     setModel(preset?.model ?? null);
     setModelParamsJson(preset?.model_params?.length ? JSON.stringify(preset.model_params) : null);
+    setForSubagents(preset ? Boolean(preset.for_subagents) : true);
+    setForNewSessions(preset ? Boolean(preset.for_new_sessions) : true);
   }, [open, preset]);
 
   const canSave = description.trim() && configId != null && model && !saving;
@@ -32,6 +48,8 @@ function PresetFormModal({ open, preset, onClose, onSaved }) {
       description: description.trim(),
       agent_config_id: configId,
       model,
+      for_subagents: forSubagents,
+      for_new_sessions: forNewSessions,
       ...(modelParamsJson ? { model_params: JSON.parse(modelParamsJson) } : {}),
     };
     try {
@@ -77,6 +95,25 @@ function PresetFormModal({ open, preset, onClose, onSaved }) {
           onModelParamsJsonChange={setModelParamsJson}
           allowInherit={false}
         />
+        <div className="space-y-1">
+          <span className="text-xs font-medium text-faint">Usable by</span>
+          <div className="flex gap-4">
+            <ScopeCheckbox
+              checked={forSubagents}
+              onChange={(e) => setForSubagents(e.target.checked)}
+              title="Agents can pick this preset when starting subagents."
+            >
+              Subagents
+            </ScopeCheckbox>
+            <ScopeCheckbox
+              checked={forNewSessions}
+              onChange={(e) => setForNewSessions(e.target.checked)}
+              title="Agents can pick this preset when creating new sessions and loops."
+            >
+              New sessions
+            </ScopeCheckbox>
+          </div>
+        </div>
       </div>
       <ModalActions>
         <button type="button" className={DANGER_BUTTON_CLASS} onClick={onClose} disabled={saving}>
@@ -102,6 +139,7 @@ export default function AgentPresetModelsSection() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [busyId, setBusyId] = useState(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -115,6 +153,18 @@ export default function AgentPresetModelsSection() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const handlePatchFlag = async (preset, field, value) => {
+    setBusyId(preset.id);
+    try {
+      await agentModelPresetsService.patch(preset.id, { [field]: value });
+      await reload();
+    } catch (err) {
+      toastError('Failed to update preset model', err);
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this preset model?')) return;
@@ -155,34 +205,71 @@ export default function AgentPresetModelsSection() {
       ) : (
         <ul className="divide-y divide-line rounded-lg border border-line">
           {presets.map((preset) => (
-            <li key={preset.id} className="flex items-start gap-3 px-3 py-2.5 hover:bg-control/30">
+            <li
+              key={preset.id}
+              className={`flex items-start gap-3 px-3 py-2.5 hover:bg-control/30 ${
+                preset.enabled ? '' : 'opacity-60'
+              }`}
+            >
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-heading">{preset.description}</p>
-                <p className="text-xs text-faint mt-0.5">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-medium text-heading">{preset.description}</p>
+                  {!preset.enabled ? (
+                    <span className="shrink-0 rounded bg-line px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary">
+                      Off
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 text-xs text-faint">
                   {formatAgentSdkDisplayName(preset.agent_sdk)} · {preset.model}
                 </p>
               </div>
-              <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  title="Edit"
-                  className="p-1.5 text-faint hover:text-heading"
-                  onClick={() => {
-                    setEditing(preset);
-                    setModalOpen(true);
-                  }}
+              <div className="flex shrink-0 items-center gap-3 pt-0.5">
+                <ScopeCheckbox
+                  checked={Boolean(preset.for_subagents)}
+                  disabled={busyId === preset.id}
+                  onChange={(e) => handlePatchFlag(preset, 'for_subagents', e.target.checked)}
+                  title="Agents can pick this preset when starting subagents."
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  title="Delete"
-                  disabled={deletingId === preset.id}
-                  className="p-1.5 text-faint hover:text-danger"
-                  onClick={() => handleDelete(preset.id)}
+                  Subagents
+                </ScopeCheckbox>
+                <ScopeCheckbox
+                  checked={Boolean(preset.for_new_sessions)}
+                  disabled={busyId === preset.id}
+                  onChange={(e) => handlePatchFlag(preset, 'for_new_sessions', e.target.checked)}
+                  title="Agents can pick this preset when creating new sessions and loops."
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                  New sessions
+                </ScopeCheckbox>
+                <Toggle
+                  checked={Boolean(preset.enabled)}
+                  disabled={busyId === preset.id}
+                  onChange={(value) => handlePatchFlag(preset, 'enabled', value)}
+                  title={preset.enabled ? 'Turn preset off' : 'Turn preset on'}
+                  aria-label={`Toggle ${preset.description}`}
+                />
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    title="Edit"
+                    className="p-1.5 text-faint hover:text-heading"
+                    onClick={() => {
+                      setEditing(preset);
+                      setModalOpen(true);
+                    }}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete"
+                    disabled={deletingId === preset.id}
+                    className="p-1.5 text-faint hover:text-danger"
+                    onClick={() => handleDelete(preset.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </li>
           ))}

@@ -29,7 +29,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
 
         <SettingsSection
           title="Preset models"
-          description="Favorite agent configuration, model, and parameters with a short description. Agents pass these by id when Agent-created sessions and subagents allows presets."
+          description="Favorite agent configuration, model, and parameters with a short description. Agents pass these by id when Agent-created sessions and subagents allows presets. Toggle a preset on or off and choose whether agents may use it for subagents and/or new sessions."
         >
           <AgentPresetModelsSection />
         </SettingsSection>
