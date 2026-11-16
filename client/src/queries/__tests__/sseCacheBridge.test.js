@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     loopsService: makeService(),
     sessionPlansService: makeService(),
     sessionTodosService: makeService(),
+    agentModelPresetsService: makeService(),
   };
 });
 
@@ -44,12 +45,13 @@ vi.mock('../../feathers.js', () => ({
   loopsService: mocks.loopsService,
   sessionPlansService: mocks.sessionPlansService,
   sessionTodosService: mocks.sessionTodosService,
+  agentModelPresetsService: mocks.agentModelPresetsService,
 }));
 
 import { QueryClient } from '@tanstack/react-query';
 import { startSseCacheBridge } from '../sseCacheBridge.js';
 import { setRealtimeScope } from '../realtimeScope.js';
-import { sessionKeys, sessionIssueKeys, loopKeys } from '../keys.js';
+import { sessionKeys, sessionIssueKeys, loopKeys, agentModelPresetKeys } from '../keys.js';
 
 let queryClient;
 let stopBridge;
@@ -235,5 +237,27 @@ describe('sseCacheBridge', () => {
 
     mocks.loopsService.emit('created', { id: 1 });
     expect(queryClient.getQueryState(loopKeys.all).isInvalidated).toBe(true);
+  });
+
+  it('upserts and removes preset rows in the cached list', () => {
+    const preset = { id: 5, description: 'A', enabled: true };
+    queryClient.setQueryData(agentModelPresetKeys.list(), [preset]);
+
+    mocks.agentModelPresetsService.emit('patched', {
+      ...preset,
+      description: 'A2',
+      enabled: false,
+    });
+    expect(queryClient.getQueryData(agentModelPresetKeys.list())).toEqual([
+      { id: 5, description: 'A2', enabled: false },
+    ]);
+
+    mocks.agentModelPresetsService.emit('created', { id: 6, description: 'B', enabled: true });
+    expect(queryClient.getQueryData(agentModelPresetKeys.list()).map((row) => row.id)).toEqual([
+      5, 6,
+    ]);
+
+    mocks.agentModelPresetsService.emit('removed', { id: 5 });
+    expect(queryClient.getQueryData(agentModelPresetKeys.list()).map((row) => row.id)).toEqual([6]);
   });
 });

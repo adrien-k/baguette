@@ -13,6 +13,7 @@ import {
   NEW_SESSION_ROUTE_ID,
   isLoopHomePathname,
   isNewLoopRouteId,
+  isSessionWorkspacePathname,
   sessionHref,
   sessionUrlForScope,
 } from '../session-scope.js';
@@ -98,6 +99,41 @@ describe('isSessionHomePathname', () => {
     expect(isSessionHomePathname('/sessions/1')).toBe(false);
     expect(isSessionHomePathname('/loops')).toBe(false);
     expect(isSessionHomePathname('/repos/3/sessions/1')).toBe(false);
+  });
+});
+
+describe('isSessionWorkspacePathname', () => {
+  it('matches session and loop detail routes in every scope', () => {
+    expect(isSessionWorkspacePathname('/sessions/1')).toBe(true);
+    expect(isSessionWorkspacePathname('/global/sessions/1')).toBe(true);
+    expect(isSessionWorkspacePathname('/shared/sessions/1')).toBe(true);
+    expect(isSessionWorkspacePathname('/repos/3/sessions/1')).toBe(true);
+    expect(isSessionWorkspacePathname('/loops/9')).toBe(true);
+    expect(isSessionWorkspacePathname('/global/loops/9')).toBe(true);
+    expect(isSessionWorkspacePathname('/shared/loops/9')).toBe(true);
+    expect(isSessionWorkspacePathname('/repos/3/loops/9')).toBe(true);
+  });
+
+  it('matches the creation forms', () => {
+    expect(isSessionWorkspacePathname('/sessions/new')).toBe(true);
+    expect(isSessionWorkspacePathname('/global/sessions/new')).toBe(true);
+    expect(isSessionWorkspacePathname('/repos/3/sessions/new')).toBe(true);
+    expect(isSessionWorkspacePathname('/loops/new')).toBe(true);
+    expect(isSessionWorkspacePathname('/repos/3/loops/new')).toBe(true);
+  });
+
+  it('does not match list homes or other pages', () => {
+    expect(isSessionWorkspacePathname('/')).toBe(false);
+    expect(isSessionWorkspacePathname('/global')).toBe(false);
+    expect(isSessionWorkspacePathname('/shared')).toBe(false);
+    expect(isSessionWorkspacePathname('/repos/3')).toBe(false);
+    expect(isSessionWorkspacePathname('/loops')).toBe(false);
+    expect(isSessionWorkspacePathname('/global/loops')).toBe(false);
+    expect(isSessionWorkspacePathname('/repos/3/loops')).toBe(false);
+    expect(isSessionWorkspacePathname('/sessions/1/description')).toBe(false);
+    expect(isSessionWorkspacePathname('/session/1/description')).toBe(false);
+    expect(isSessionWorkspacePathname('/settings')).toBe(false);
+    expect(isSessionWorkspacePathname('/usage')).toBe(false);
   });
 });
 

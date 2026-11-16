@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { agentModelPresetsService } from '../../feathers.js';
+import { agentModelPresetKeys } from '../../queries/keys.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
+import { useAgentModelPresets } from '../../hooks/useAgentModelPresets.js';
 import DefaultAgentPicker from '../../components/settings/DefaultAgentPicker.jsx';
 import Modal, { ModalActions, ModalHeader } from '../../components/Modal.jsx';
 import Toggle from '../../components/Toggle.jsx';
@@ -18,6 +21,13 @@ function ScopeCheckbox({ checked, onChange, title, children }) {
       {children}
     </label>
   );
+}
+
+function formatEnabledModes(preset) {
+  const modes = [];
+  if (preset.for_subagents) modes.push('Subagents');
+  if (preset.for_new_sessions) modes.push('New sessions');
+  return modes.length ? `Enables: ${modes.join(' · ')}` : 'Enables: none';
 }
 
 function PresetFormModal({ open, preset, onClose, onSaved }) {
@@ -134,49 +144,49 @@ function PresetFormModal({ open, preset, onClose, onSaved }) {
 
 export default function AgentPresetModelsSection() {
   const { configOptions, loading: configsLoading } = useAgentConfigs();
-  const [presets, setPresets] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { presets, loading } = useAgentModelPresets();
+  const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    return agentModelPresetsService
-      .find()
-      .then((res) => setPresets(res.data ?? []))
-      .catch((err) => toastError('Failed to load preset models', err))
-      .finally(() => setLoading(false));
-  }, []);
+  const invalidatePresets = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: agentModelPresetKeys.all,
+      refetchType: 'active',
+    });
+  }, [queryClient]);
 
-  useEffect(() => {
-    reload();
-  }, [reload]);
+  const patchFlag = useMutation({
+    mutationFn: ({ id, field, value }) => agentModelPresetsService.patch(id, { [field]: value }),
+    // Flip the row optimistically so the toggle reacts instantly; the SSE
+    // patch event plus the settle invalidation reconcile with the server row.
+    onMutate: async ({ id, field, value }) => {
+      await queryClient.cancelQueries({ queryKey: agentModelPresetKeys.all });
+      queryClient.setQueryData(agentModelPresetKeys.list(), (rows) =>
+        rows?.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+      );
+    },
+    onError: (err) => toastError('Failed to update preset model', err),
+    onSettled: invalidatePresets,
+  });
 
-  const handlePatchFlag = async (preset, field, value) => {
+  const removePreset = useMutation({
+    mutationFn: (id) => agentModelPresetsService.remove(id),
+    onError: (err) => toastError('Failed to delete preset model', err),
+    onSettled: invalidatePresets,
+  });
+
+  const handlePatchFlag = (preset, field, value) => {
     setBusyId(preset.id);
-    try {
-      await agentModelPresetsService.patch(preset.id, { [field]: value });
-      await reload();
-    } catch (err) {
-      toastError('Failed to update preset model', err);
-    } finally {
-      setBusyId(null);
-    }
+    patchFlag.mutate({ id: preset.id, field, value }, { onSettled: () => setBusyId(null) });
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (!window.confirm('Delete this preset model?')) return;
     setDeletingId(id);
-    try {
-      await agentModelPresetsService.remove(id);
-      await reload();
-    } catch (err) {
-      toastError('Failed to delete preset model', err);
-    } finally {
-      setDeletingId(null);
-    }
+    removePreset.mutate(id, { onSettled: () => setDeletingId(null) });
   };
 
   return (
@@ -211,6 +221,14 @@ export default function AgentPresetModelsSection() {
                 preset.enabled ? '' : 'opacity-60'
               }`}
             >
+              <Toggle
+                checked={Boolean(preset.enabled)}
+                disabled={busyId === preset.id}
+                onChange={(value) => handlePatchFlag(preset, 'enabled', value)}
+                title={preset.enabled ? 'Turn preset off' : 'Turn preset on'}
+                aria-label={`Toggle ${preset.description}`}
+                className="mt-0.5"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-medium text-heading">{preset.description}</p>
@@ -223,53 +241,29 @@ export default function AgentPresetModelsSection() {
                 <p className="mt-0.5 text-xs text-faint">
                   {formatAgentSdkDisplayName(preset.agent_sdk)} · {preset.model}
                 </p>
+                <p className="mt-0.5 text-xs text-secondary">{formatEnabledModes(preset)}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-3 pt-0.5">
-                <ScopeCheckbox
-                  checked={Boolean(preset.for_subagents)}
-                  disabled={busyId === preset.id}
-                  onChange={(e) => handlePatchFlag(preset, 'for_subagents', e.target.checked)}
-                  title="Agents can pick this preset when starting subagents."
+              <div className="flex shrink-0 gap-1 pt-0.5">
+                <button
+                  type="button"
+                  title="Edit"
+                  className="p-1.5 text-faint hover:text-heading"
+                  onClick={() => {
+                    setEditing(preset);
+                    setModalOpen(true);
+                  }}
                 >
-                  Subagents
-                </ScopeCheckbox>
-                <ScopeCheckbox
-                  checked={Boolean(preset.for_new_sessions)}
-                  disabled={busyId === preset.id}
-                  onChange={(e) => handlePatchFlag(preset, 'for_new_sessions', e.target.checked)}
-                  title="Agents can pick this preset when creating new sessions and loops."
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Delete"
+                  disabled={deletingId === preset.id}
+                  className="p-1.5 text-faint hover:text-danger"
+                  onClick={() => handleDelete(preset.id)}
                 >
-                  New sessions
-                </ScopeCheckbox>
-                <Toggle
-                  checked={Boolean(preset.enabled)}
-                  disabled={busyId === preset.id}
-                  onChange={(value) => handlePatchFlag(preset, 'enabled', value)}
-                  title={preset.enabled ? 'Turn preset off' : 'Turn preset on'}
-                  aria-label={`Toggle ${preset.description}`}
-                />
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    title="Edit"
-                    className="p-1.5 text-faint hover:text-heading"
-                    onClick={() => {
-                      setEditing(preset);
-                      setModalOpen(true);
-                    }}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Delete"
-                    disabled={deletingId === preset.id}
-                    className="p-1.5 text-faint hover:text-danger"
-                    onClick={() => handleDelete(preset.id)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </li>
           ))}
@@ -282,7 +276,7 @@ export default function AgentPresetModelsSection() {
           setModalOpen(false);
           setEditing(null);
         }}
-        onSaved={reload}
+        onSaved={invalidatePresets}
       />
     </div>
   );

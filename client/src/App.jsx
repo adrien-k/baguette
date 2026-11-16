@@ -14,6 +14,8 @@ import {
   Monitor,
 } from 'lucide-react';
 import NavbarTasksAndStats from './components/NavbarTasksAndStats.jsx';
+import { isSessionWorkspacePathname } from '@baguette/shared/session-scope.js';
+import { useMediaQuery } from './hooks/useMediaQuery.js';
 import Login from './pages/Login.jsx';
 import Invite from './pages/Invite.jsx';
 const System = lazy(() => import('./pages/System.jsx'));
@@ -206,12 +208,19 @@ function ProtectedRoute({ children }) {
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  const { pathname } = useLocation();
+  const isMdUp = useMediaQuery('(min-width: 768px)');
 
   if (loading) return <LoadingScreen />;
 
+  // On phones the session/loop workspace drops the global navbar so the chat
+  // gets the full height — the workspace header's back link takes over. The
+  // list home and every other page keep the navbar.
+  const showNav = isMdUp || !isSessionWorkspacePathname(pathname);
+
   return (
     <div className={`h-screen min-h-screen ${PAGE_BG} flex flex-col`}>
-      <Nav />
+      {showNav ? <Nav /> : null}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <Suspense fallback={<LoadingScreen />}>
           <Routes>

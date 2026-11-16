@@ -159,7 +159,7 @@ export function applyAgentPatchToSession(session, agent) {
     'agent_type',
     'status',
     'is_primary',
-    // Sidebar tree fields (provider icon, model label, nesting, relative time).
+    // Sidebar agent-list fields (provider icon, model label).
     'agent_config_id',
     'agent_sdk',
     'model',

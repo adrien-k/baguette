@@ -10,7 +10,7 @@ import {
   addManualBuilderAgent,
   createLocalRepo,
   createPresetModel,
-  deleteAgentFromTree,
+  deleteAgentViaApi,
   devLogin,
   ensureMockE2eConfigs,
   expectComposerShowsModel,
@@ -55,7 +55,7 @@ test.describe('model selection (mock)', () => {
     await expectMcpReadonlyComposer(page);
     await expectComposerShowsModel(page, 'Mock Alt Primary');
 
-    await deleteAgentFromTree(page, MOCK_E2E_SUBAGENT_NAME);
+    await deleteAgentViaApi(page, MOCK_E2E_SUBAGENT_NAME);
 
     await patchUserSessionDefaults(page, {
       subagent_default_mode: SUBAGENT_DEFAULT_CONFIG,
@@ -65,7 +65,7 @@ test.describe('model selection (mock)', () => {
     await sendSubagentPromptAndWait(page);
     await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
     await expectComposerShowsModel(page, 'Mock Secondary');
-    await deleteAgentFromTree(page, MOCK_E2E_SUBAGENT_NAME);
+    await deleteAgentViaApi(page, MOCK_E2E_SUBAGENT_NAME);
 
     await createPresetModel(page, {
       description: MOCK_E2E_SUBAGENT_PRESET_DESCRIPTION,

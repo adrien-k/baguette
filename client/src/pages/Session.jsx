@@ -23,6 +23,7 @@ import { useSessionPushInProgress } from '../hooks/useSessionPushInProgress.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import { useSessionDiff } from '../hooks/useSessionDiff.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
+import { usePersistentState } from '../hooks/usePersistentState.js';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
 import { modelPatchFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import ChatView from './session/ChatView.jsx';
@@ -454,6 +455,18 @@ export default function Session() {
       })
       .catch(() => {});
   }, [isNewSessionRoute, sessionLoading, sessionFromHook, routeSessionId]);
+
+  // Last-opened session id (persisted): on the mobile session list it decides
+  // which entry auto-expands its agent tree — desktop ignores it (selected-only).
+  const listPersist = usePersistentState('session-list');
+  const [lastOpenedSessionId, setLastOpenedSessionId] = listPersist.useState(
+    'last-opened-id',
+    null
+  );
+  useEffect(() => {
+    if (isNewSessionRoute || !routeSessionId) return;
+    setLastOpenedSessionId(String(routeSessionId));
+  }, [isNewSessionRoute, routeSessionId, setLastOpenedSessionId]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;
@@ -1178,6 +1191,8 @@ export default function Session() {
           sidebarSessions={sidebarSessions}
           routeSessionId={routeSessionId}
           routeAgentId={agentParam}
+          autoExpandId={lastOpenedSessionId}
+          isMobileList={!isMdUp}
           isNewSessionRoute={isNewSessionRoute}
           hideSessionListRepo={hideSessionListRepo}
           suppressOpenSessionUnread={suppressOpenSessionUnread}

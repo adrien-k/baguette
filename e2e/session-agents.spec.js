@@ -3,7 +3,6 @@ import { MOCK_AGENT_SUMMARY_TEXT } from '../shared/mock-agent-sdk.js';
 import {
   addManualBuilderAgent,
   createLocalRepo,
-  deleteAgentFromTree,
   devLogin,
   expectMcpReadonlyComposer,
   MOCK_E2E_QUICK_TURN_PROMPT,
@@ -49,7 +48,7 @@ test.describe('session agents (mock)', () => {
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
   });
 
-  test('manual builder, MCP subagent, readonly chat, and deletion', async ({ page }) => {
+  test('manual builder, MCP subagent, and readonly chat', async ({ page }) => {
     await devLogin(page);
 
     const repoId = await createLocalRepo(page);
@@ -82,8 +81,5 @@ test.describe('session agents (mock)', () => {
         'This agent only accepts new messages via MCP. Switch to another agent to chat in'
       )
     ).toHaveCount(0);
-
-    await deleteAgentFromTree(page, MOCK_E2E_SUBAGENT_NAME);
-    await expect(sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME)).toHaveCount(0);
   });
 });

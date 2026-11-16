@@ -14,6 +14,7 @@ import { getSdkPlugin, registerAgentSdk, registerSdkPlugin } from '../registry.j
 import { claudeBuildToolCallStart, claudeBuildToolCallComplete } from '../claude/mapping.ts';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { runMockAgentTurn, runMockReviewerTurn } from './mock-agent-turn.js';
+import { recordMockTurnUsage } from './record-turn-usage.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../../services/review-agent-turn.js';
 import { issueAgentMetadataFromTurn } from '../../services/session-issues.js';
 import { builderChatActiveKey, resolveAgentRowForMessage } from '../../services/agents-db.js';
@@ -239,6 +240,20 @@ class MockAgentService {
       this._activeSessions.delete(activeKey);
     }
 
+    if (turnFinishedOk) {
+      await this.recordTurnUsage(session, {
+        turnModel,
+        patchSessionCost: true,
+        agentConfigId: meta.turnAgentConfigId,
+        agentId: agent.id,
+      }).catch((err: Error) =>
+        logger.warn(
+          { sessionId, err: (err as Error).message },
+          'mock-agent: failed to record turn usage'
+        )
+      );
+    }
+
     if (turnFinishedOk && isReview) {
       await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
         sdk: MOCK_AGENT_SDK,
@@ -255,6 +270,22 @@ class MockAgentService {
           );
         });
     }
+  }
+
+  /**
+   * One completed mock turn: fixed fake tokens + fixed fake USD cost, recorded
+   * like the real SDKs so usage UIs (sidebar cost tooltip, Usage page) light up.
+   */
+  async recordTurnUsage(
+    session: AgentSessionRow,
+    opts: {
+      turnModel?: { model?: string | null; modelParams?: unknown };
+      patchSessionCost?: boolean;
+      agentConfigId?: number | null;
+      agentId?: number;
+    } = {}
+  ): Promise<number> {
+    return recordMockTurnUsage(this.app, session, opts);
   }
 
   async stopSession(sessionId: number) {

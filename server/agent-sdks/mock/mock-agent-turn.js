@@ -24,6 +24,7 @@ import {
   normalizeSubagentDefaultMode,
 } from '../../../shared/subagent-default-mode.js';
 import { resolveEffectiveSubagentDefaultSettings } from '../../services/agent-config-resolver.js';
+import { MOCK_TURN_COST_USD } from './record-turn-usage.js';
 
 function parseNonNegativeMs(raw, fallback) {
   if (raw != null && raw !== '') {
@@ -118,6 +119,18 @@ async function runMockTool(writer, abortSignal, { callId, name, args, rawResult,
   await delay(mockStepDelayMs(), abortSignal);
 }
 
+/** Persist a successful mock turn result, charging the fake per-turn cost. */
+async function persistMockTurnResult(
+  /** @type {import('../../shared/message-stream-writer.ts').MessageStreamWriter} */ writer
+) {
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: MOCK_TURN_COST_USD,
+  });
+}
+
 /**
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
@@ -126,12 +139,7 @@ async function runMockQuickTurn({ writer, abortSignal }) {
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(MOCK_E2E_QUICK_TURN_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -150,12 +158,7 @@ async function runMockPlanCreateTurn({ writer, abortSignal }) {
     args: { markdown: MOCK_E2E_PLAN_MARKDOWN, interactive: true },
     rawResult: JSON.stringify({ ok: true, markdown: MOCK_E2E_PLAN_MARKDOWN }),
   });
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return { awaitingUser: true };
 }
 
@@ -189,12 +192,7 @@ async function runMockPlanCreateNonInteractiveTurn({ writer, abortSignal }) {
   });
   await writer.appendAssistantText(MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -205,12 +203,7 @@ async function runMockPlanRunTurn({ writer }) {
   // Run the plan is a user message only — do not call StartPlan here.
   await writer.appendAssistantText(MOCK_E2E_PLAN_RUN_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -230,12 +223,7 @@ async function runMockAskQuestionTurn({ writer, abortSignal }) {
     args: { questions },
     rawResult: JSON.stringify({ ok: true, questions }),
   });
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return { awaitingUser: true };
 }
 
@@ -245,12 +233,7 @@ async function runMockAskQuestionTurn({ writer, abortSignal }) {
 async function runMockAskAnswerTurn({ writer }) {
   await writer.appendAssistantText(MOCK_E2E_ASK_ANSWER_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -323,12 +306,7 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
 
   await writer.appendAssistantText(MOCK_E2E_SUBAGENT_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -534,12 +512,7 @@ export async function runMockAgentTurn({
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(mockAgentFullTurnClosingMessage());
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -574,10 +547,5 @@ export async function runMockReviewerTurn({ writer, abortSignal, createIssue }) 
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(MOCK_REVIEWER_SUMMARY_TEXT);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
 }

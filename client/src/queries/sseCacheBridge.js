@@ -9,6 +9,7 @@ import {
   loopsService,
   sessionPlansService,
   sessionTodosService,
+  agentModelPresetsService,
 } from '../feathers.js';
 import {
   sessionKeys,
@@ -17,6 +18,7 @@ import {
   taskKeys,
   currentUserKeys,
   loopKeys,
+  agentModelPresetKeys,
   sessionIssueKeys,
   sessionPlanKeys,
   sessionTodoKeys,
@@ -173,6 +175,27 @@ function loopEvent(queryClient) {
   void queryClient.invalidateQueries({ queryKey: loopKeys.all, refetchType: 'active' });
 }
 
+/** Preset events carry the full enriched row — upsert/remove it in cached lists. */
+function upsertPresetEvent(queryClient, preset) {
+  if (!preset?.id) return;
+  updateMatchingEntries(queryClient, agentModelPresetKeys.all, (rows) => {
+    if (!Array.isArray(rows)) return rows;
+    const index = rows.findIndex((row) => row.id === preset.id);
+    if (index === -1) return [...rows, preset];
+    const next = rows.slice();
+    next[index] = { ...next[index], ...preset };
+    return next;
+  });
+}
+
+function removePresetEvent(queryClient, preset) {
+  if (!preset?.id) return;
+  updateMatchingEntries(queryClient, agentModelPresetKeys.all, (rows) => {
+    if (!Array.isArray(rows)) return rows;
+    return rows.filter((row) => row.id !== preset.id);
+  });
+}
+
 function sameSessionId(a, b) {
   return a != null && b != null && String(a) === String(b);
 }
@@ -200,6 +223,8 @@ export function startSseCacheBridge(queryClient) {
   const onPlanChange = (plan) => planEvent(queryClient, plan);
   const onTodoChange = (todo) => todoEvent(queryClient, todo);
   const onLoopChange = () => loopEvent(queryClient);
+  const onPresetChange = (preset) => upsertPresetEvent(queryClient, preset);
+  const onPresetRemove = (preset) => removePresetEvent(queryClient, preset);
 
   sessionsService.on('created', onSessionUpsert);
   sessionsService.on('updated', onSessionUpsert);
@@ -230,6 +255,9 @@ export function startSseCacheBridge(queryClient) {
   loopsService.on('created', onLoopChange);
   loopsService.on('patched', onLoopChange);
   loopsService.on('removed', onLoopChange);
+  agentModelPresetsService.on('created', onPresetChange);
+  agentModelPresetsService.on('patched', onPresetChange);
+  agentModelPresetsService.on('removed', onPresetRemove);
 
   return () => {
     sessionsService.off('created', onSessionUpsert);
@@ -259,5 +287,8 @@ export function startSseCacheBridge(queryClient) {
     loopsService.off('created', onLoopChange);
     loopsService.off('patched', onLoopChange);
     loopsService.off('removed', onLoopChange);
+    agentModelPresetsService.off('created', onPresetChange);
+    agentModelPresetsService.off('patched', onPresetChange);
+    agentModelPresetsService.off('removed', onPresetRemove);
   };
 }

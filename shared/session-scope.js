@@ -34,6 +34,19 @@ export function isLoopHomePathname(pathname) {
   return /^\/repos\/\d+\/loops$/.test(pathname);
 }
 
+/** True when the dashboard shows a session or loop workspace — a specific session/loop (detail)
+ * or the creation form (`…/sessions/new`, `…/loops/new`) — rather than the list home.
+ * Mobile layouts use this to drop the global navbar in favor of the workspace header's back link. */
+export function isSessionWorkspacePathname(pathname) {
+  if (!pathname) return false;
+  if (isSessionHomePathname(pathname) || isLoopHomePathname(pathname)) return false;
+  return (
+    /^\/(?:(?:global|shared)\/)?sessions\/[^/]+$/.test(pathname) ||
+    /^\/(?:(?:global|shared)\/)?loops\/[^/]+$/.test(pathname) ||
+    /^\/repos\/\d+\/(?:sessions|loops)\/[^/]+$/.test(pathname)
+  );
+}
+
 /** Navbar / dashboard: sessions that are not tied to a single repository. */
 export const GLOBAL_SCOPE = '__global__';
 

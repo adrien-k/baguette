@@ -22,6 +22,8 @@ export default function MiniSessionEntry({
   suppressUnreadWhenOpen = false,
   listScope,
   routeAgentId = null,
+  autoExpandId = null,
+  isMobileList = false,
 }) {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
@@ -41,12 +43,16 @@ export default function MiniSessionEntry({
   const subtitle = s.label ? branch : promptPreview || branch;
   const showRepo = showRepoDetails && !hideRepoBadge;
   const activeLabel = formatCompactRelativeTime(s.last_activity_at ?? s.updated_at ?? s.created_at);
-  const agentTree = Array.isArray(s.agents) ? s.agents : [];
 
   const agentChatUrl = (agentId) => {
     const base = sessionUrl(s.id);
     return `${base}?agent=${agentId}&view=chat`;
   };
+  const agentTree = Array.isArray(s.agents) ? s.agents : [];
+  // The builder row is always visible; the remaining agents expand by default
+  // for the selected session, and on the mobile full-width list also for the
+  // last-opened one. The tree's caret overrides this per entry.
+  const autoExpanded = isCurrent || (isMobileList && String(s.id) === String(autoExpandId));
 
   return (
     <div
@@ -54,8 +60,10 @@ export default function MiniSessionEntry({
         isArchived || isArchiving ? 'opacity-50' : ''
       } ${rowHighlighted ? 'bg-control-hover' : 'hover:bg-control/50'}`}
     >
-      <div className="flex items-center gap-2">
-        <SessionListIndicator session={s} />
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 shrink-0">
+          <SessionListIndicator session={s} />
+        </span>
         {showOwner && <ListOwnerLabel owner={s.owner} />}
         <Link to={sessionUrl(s.id)} className="flex-1 min-w-0 leading-snug text-left">
           <span className="flex min-w-0 items-center gap-1.5">
@@ -86,13 +94,18 @@ export default function MiniSessionEntry({
           )}
         </Link>
         {activeLabel && (
-          <span className="shrink-0 text-[10px] text-faint tabular-nums" title="Last activity">
+          <span
+            className="shrink-0 text-[10px] leading-4 text-faint tabular-nums"
+            title="Last activity"
+          >
             {activeLabel}
           </span>
         )}
-        {isArchiving && <span className="shrink-0 text-[10px] text-accent/90">Archiving…</span>}
+        {isArchiving && (
+          <span className="shrink-0 text-[10px] leading-4 text-accent/90">Archiving…</span>
+        )}
         {!s.archived_at && !isArchiving && (
-          <div className="shrink-0">
+          <div className="flex h-4 shrink-0 items-center">
             {isSessionStoppable(s) ? (
               <StopSession session={s} />
             ) : isOwner ? (
@@ -101,13 +114,13 @@ export default function MiniSessionEntry({
           </div>
         )}
       </div>
-      {isCurrent && agentTree.length > 0 && (
+      {agentTree.length > 0 && (
         <SessionAgentTree
-          sessionId={s.id}
           agents={agentTree}
           currentAgentId={routeAgentId}
           canManage={isOwner && !isArchived && !isArchiving}
           onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
+          autoExpanded={autoExpanded}
         />
       )}
     </div>

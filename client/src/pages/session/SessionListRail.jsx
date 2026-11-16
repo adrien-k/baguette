@@ -29,6 +29,8 @@ export default function SessionListRail({
   sidebarSessions,
   routeSessionId,
   routeAgentId,
+  autoExpandId = null,
+  isMobileList = false,
   isNewSessionRoute,
   hideSessionListRepo,
   suppressOpenSessionUnread,
@@ -162,6 +164,8 @@ export default function SessionListRail({
                   }
                   listScope={listScope}
                   routeAgentId={routeAgentId}
+                  autoExpandId={autoExpandId}
+                  isMobileList={isMobileList}
                 />
               ))}
               {hasMoreSessions && sessionsLength > 0 && (

@@ -54,6 +54,11 @@ export const loopKeys = {
   list: (query) => ['loops', 'list', query ?? {}],
 };
 
+export const agentModelPresetKeys = {
+  all: ['agent-model-presets'],
+  list: () => ['agent-model-presets', 'list'],
+};
+
 export const sessionIssueKeys = {
   all: ['session-issues'],
   session: (sessionId) => ['session-issues', idPart(sessionId)],

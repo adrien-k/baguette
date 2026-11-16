@@ -190,6 +190,52 @@ describe('MockAgentService', () => {
     expect(thinkingRow).toBeTruthy();
   });
 
+  it('records fake usage and cost for a completed mock turn', async () => {
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        message_json: JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: MOCK_E2E_QUICK_TURN_PROMPT },
+        }),
+        ...sessionMessageIdentity(builder),
+      },
+      params({ id: userId })
+    );
+
+    await vi.waitFor(
+      async () => {
+        const builderRow = await db('agents')
+          .where({ session_id: sessionId, is_primary: 1 })
+          .first();
+        expect(builderRow.status).toBe('completed');
+      },
+      { timeout: 10_000 }
+    );
+
+    const usage = await db('usage').where({ session_id: sessionId });
+    expect(usage).toHaveLength(1);
+    expect(usage[0].agent_id).toBe(builder.id);
+    expect(usage[0].agent_sdk).toBe('mock');
+    expect(usage[0].agent_type).toBe('builder');
+    expect(usage[0].agent_config_id).toBe(builder.agent_config_id);
+    expect(usage[0].model).toBe(MOCK_STANDARD_MODEL_ID);
+    expect(Number(usage[0].cost_usd)).toBeGreaterThan(0);
+    expect(usage[0].input_tokens).toBeGreaterThan(0);
+    expect(usage[0].output_tokens).toBeGreaterThan(0);
+    expect(usage[0].total_tokens).toBeGreaterThan(usage[0].input_tokens);
+
+    const session = await db('sessions').where({ id: sessionId }).first();
+    expect(Number(session.total_cost_usd)).toBe(Number(usage[0].cost_usd));
+
+    const turnResultRow = await db('session_messages')
+      .where({ session_id: sessionId, type: 'turn_result' })
+      .first();
+    expect(Number(turnResultRow.total_cost_usd)).toBe(Number(usage[0].cost_usd));
+  });
+
   it('ends on approval after CreatePlan e2e prompt', async () => {
     const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
     await app.service('messages').create(

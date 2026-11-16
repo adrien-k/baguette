@@ -160,6 +160,16 @@ export function sessionAgentTreeRow(page, name) {
     .filter({ has: page.getByText(name, { exact: true }) });
 }
 
+/**
+ * Open an agent's chat from the sidebar agent tree. Skips the disclosure caret
+ * (always the first button on the builder row) so the row's name button is clicked.
+ */
+export async function selectAgentInTree(page, name) {
+  const row = sessionAgentTreeRow(page, name);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.locator('button:not([data-testid="agent-tree-toggle"])').first().click();
+}
+
 /** Wait until no agent with `name` is running (API poll — the tree only shows a spinner while running). */
 export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
   await expect
@@ -171,13 +181,6 @@ export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
       { timeout, intervalMs: 1_000 }
     )
     .toBe(0);
-}
-
-/** Open an agent's chat from the sidebar agent tree. */
-export async function selectAgentInTree(page, name) {
-  const row = sessionAgentTreeRow(page, name);
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.locator('button').first().click();
 }
 
 /**
@@ -513,18 +516,23 @@ export async function expectMcpReadonlyComposer(page) {
   });
 }
 
-/** Delete an agent from the sidebar tree row actions menu (confirm dialog included). */
-export async function deleteAgentFromTree(page, name) {
-  const row = sessionAgentTreeRow(page, name);
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.getByLabel(/^Actions for /).click();
-  await page.getByRole('button', { name: 'Delete agent' }).click();
-  const modal = page.locator('.fixed.inset-0').filter({
-    has: page.getByRole('heading', { name: 'Delete agent?' }),
-  });
-  await expect(modal).toBeVisible();
-  await modal.getByRole('button', { name: 'Delete agent', exact: true }).click();
-  await expect(row).toHaveCount(0, { timeout: 30_000 });
+/**
+ * Delete every agent named `name` in the current session via the API — the
+ * list UI no longer exposes delete (test hygiene between same-name spawns).
+ */
+export async function deleteAgentViaApi(page, name) {
+  const agents = await listSessionAgentsForPage(page);
+  const matches = agents.filter((a) => a.name === name);
+  for (const agent of matches) {
+    const res = await page.request.delete(`/api/agents/${agent.id}`);
+    expect(res.ok()).toBe(true);
+  }
+  await expect
+    .poll(async () => {
+      const remaining = (await listSessionAgentsForPage(page)).filter((a) => a.name === name);
+      return remaining.length;
+    })
+    .toBe(0);
 }
 
 export async function listAgentConfigs(page) {
