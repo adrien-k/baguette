@@ -139,6 +139,70 @@ describe('mapClaudeMessage', () => {
     ).toBeNull();
   });
 
+  // Subagent activity streams on the same query with `parent_tool_use_id` set;
+  // it must never become main-transcript rows (the Agent tool result carries
+  // the subagent's outcome).
+  it('drops subagent-scoped assistant text and tool calls', () => {
+    expect(
+      mapClaudeMessage(
+        asClaude({
+          type: 'assistant',
+          parent_tool_use_id: 'toolu_agent_call',
+          message: {
+            content: [
+              { type: 'thinking', thinking: 'inner plan' },
+              { type: 'text', text: 'subagent final report' },
+              { type: 'tool_use', id: 'toolu_inner', name: 'Read', input: { path: 'a.rb' } },
+            ],
+          },
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('drops subagent tool_result carriers', () => {
+    expect(
+      mapClaudeMessage(
+        asClaude({
+          type: 'user',
+          parent_tool_use_id: 'toolu_agent_call',
+          message: {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'toolu_inner', content: 'ok' }],
+          },
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('drops subagent-scoped stream events', () => {
+    expect(
+      mapClaudeMessage(
+        asClaude({
+          type: 'stream_event',
+          parent_tool_use_id: 'toolu_agent_call',
+          event: {
+            type: 'content_block_start',
+            index: 0,
+            content_block: { type: 'tool_use', id: 'toolu_inner', name: 'Bash', input: {} },
+          },
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('keeps mapping main-thread messages that carry a null parent_tool_use_id', () => {
+    expect(
+      mapClaudeMessage(
+        asClaude({
+          type: 'assistant',
+          parent_tool_use_id: null,
+          message: { content: [{ type: 'text', text: 'main reply' }] },
+        })
+      )
+    ).toEqual([{ op: 'assistant_text', text: 'main reply' }]);
+  });
+
   it('maps result to a turn_result verdict', () => {
     expect(
       mapClaudeMessage(asClaude({ type: 'result', subtype: 'success', total_cost_usd: 0.5 }))
@@ -287,6 +351,18 @@ describe('isClaudeHumanUserMessage', () => {
     expect(isClaudeHumanUserMessage(asClaude({ type: 'user', message: { content: 'hi' } }))).toBe(
       true
     );
+  });
+
+  it('is false for subagent-scoped text user messages', () => {
+    expect(
+      isClaudeHumanUserMessage(
+        asClaude({
+          type: 'user',
+          parent_tool_use_id: 'toolu_agent_call',
+          message: { content: 'inner subagent prompt' },
+        })
+      )
+    ).toBe(false);
   });
 });
 

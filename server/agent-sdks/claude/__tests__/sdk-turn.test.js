@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { processClaudeQueryStream } from '../sdk-turn.ts';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -149,5 +149,102 @@ describe('processClaudeQueryStream - model-less results', () => {
     expect(result.outcome).toBe('completed');
     expect(onResultCalls).toHaveLength(1);
     expect(turnResultOps(writer.state.ops)).toHaveLength(1);
+  });
+});
+
+// ─── Background-task auto-continuation ────────────────────────────────────────
+
+describe('processClaudeQueryStream - background task auto-continuation', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const taskStarted = () => ({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 't1',
+    run_id: 'r1',
+    tool_use_id: 'toolu_agent',
+    is_backgrounded: true,
+  });
+
+  const taskNotification = () => ({
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: 't1',
+    tool_use_id: 'toolu_agent',
+    status: 'completed',
+  });
+
+  const thinkingTokens = (tokens, atMs) => {
+    vi.setSystemTime(atMs);
+    return {
+      type: 'system',
+      subtype: 'thinking_tokens',
+      estimated_tokens: tokens,
+      estimated_tokens_delta: 100,
+      uuid: `u-tt-${tokens}`,
+    };
+  };
+
+  it('lets an actively streaming continuation finish and completes on its result', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const writer = fakeWriter();
+
+    async function* stream() {
+      yield taskStarted();
+      yield realResult({ uuid: 'u-result-1', total_cost_usd: 1, result: 'first' });
+      yield taskNotification();
+      // The follow-up turn thinks in <60s steps well past the original
+      // 60s window — activity must keep the turn open, not abort it.
+      yield thinkingTokens(100, 50_000);
+      yield thinkingTokens(200, 80_000);
+      yield thinkingTokens(300, 110_000);
+      vi.setSystemTime(115_000);
+      yield realResult({
+        uuid: 'u-result-2',
+        total_cost_usd: 2,
+        result: 'Continuation finished.',
+      });
+    }
+
+    const result = await processClaudeQueryStream(stream(), {
+      writer,
+      trackBackgroundTasks: true,
+    });
+
+    expect(result.turnComplete).toBe(true);
+    expect(result.outcome).toBe('completed');
+    // The follow-up result is the verdict, not the stale first one.
+    expect(result.lastResult.uuid).toBe('u-result-2');
+    expect(turnResultOps(writer.state.ops)).toHaveLength(1);
+    expect(turnResultOps(writer.state.ops)[0].payload.total_cost_usd).toBe(2);
+  });
+
+  it('ends the turn when the continuation window stays silent past the deadline', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const writer = fakeWriter();
+
+    async function* stream() {
+      yield taskStarted();
+      yield realResult({ uuid: 'u-result-1', total_cost_usd: 1, result: 'first' });
+      yield taskNotification();
+      // Nothing arrives until after the 60s window elapsed.
+      yield thinkingTokens(100, 61_000);
+    }
+
+    const result = await processClaudeQueryStream(stream(), {
+      writer,
+      trackBackgroundTasks: true,
+    });
+
+    expect(result.turnComplete).toBe(true);
+    expect(result.outcome).toBe('completed');
+    // The first result is still the verdict — no follow-up ever arrived.
+    expect(result.lastResult.uuid).toBe('u-result-1');
+    expect(turnResultOps(writer.state.ops)).toHaveLength(1);
+    expect(turnResultOps(writer.state.ops)[0].payload.total_cost_usd).toBe(1);
   });
 });

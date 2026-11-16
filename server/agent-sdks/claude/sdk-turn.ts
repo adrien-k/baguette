@@ -280,6 +280,18 @@ export async function processClaudeQueryStream(
           break;
         }
       }
+
+      // The auto-continuation window is idle-based, not absolute: stream
+      // activity after the task notification (a fresh init, thinking tokens,
+      // tool calls, assistant output) proves the CLI is producing the
+      // follow-up turn, so keep the turn open until that turn finishes.
+      // Without this, a long-thinking continuation was aborted mid-turn at
+      // the fixed deadline and its response never reached the user. The
+      // deadline above still closes a silent window: an event arriving more
+      // than POST_RESULT_CONTINUATION_MS after the previous one breaks first.
+      if (awaitingStreamContinuation && message.type !== 'result') {
+        continuationDeadline = Date.now() + POST_RESULT_CONTINUATION_MS;
+      }
     }
 
     // Clean stream end with only a model-less result seen: the CLI never produced a
