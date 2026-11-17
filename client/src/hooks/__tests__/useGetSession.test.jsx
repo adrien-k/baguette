@@ -78,6 +78,13 @@ describe('useGetSession (React Query)', () => {
 
     expect(result.current.session).toMatchObject({ id: 42, status: 'running' });
     expect(result.current.loading).toBe(false);
+    expect(mocks.issuesFind).toHaveBeenCalledWith({
+      query: {
+        session_id: 42,
+        $or: [{ status: 'needs_decision' }, { status: 'opened' }],
+        $limit: 0,
+      },
+    });
   });
 
   it('treats new-session routes as disabled and idle', () => {

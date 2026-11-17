@@ -391,6 +391,10 @@ describe('builder MCP tool registry', () => {
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
     expect(names).toContain('ConfigureMcpServer');
+    expect(names).toContain('CreateIssue');
+    expect(names).toContain('UpdateIssue');
+    expect(names).not.toContain('UpdateIssueStatus');
+    expect(names).not.toContain('CloseIssue');
   });
 
   it('plan and todo tool descriptions tell agents CreatePlan does not attach and to complete todos', async () => {
@@ -438,7 +442,9 @@ describe('global sessions', () => {
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');
-    expect(names).not.toContain('CreateIssue');
+    expect(names).toContain('CreateIssue');
+    expect(names).toContain('UpdateIssue');
+    expect(names).not.toContain('CloseIssue');
   });
 
   it('global session inspects a child repo session PR via session_id', async () => {
@@ -629,13 +635,14 @@ describe('CurrentSessionInfo', () => {
 });
 
 describe('PrRead', () => {
-  it('includes ListIssues, ReadIssue and UpdateIssueStatus but not reviewer CRUD', async () => {
+  it('includes builder issue tools but not CloseIssue', async () => {
     const { tools } = await buildServer();
     const names = tools.map((t) => t.name);
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
+    expect(names).toContain('CreateIssue');
+    expect(names).toContain('UpdateIssue');
     expect(names).toContain('UpdateIssueStatus');
-    expect(names).not.toContain('CreateIssue');
     expect(names).not.toContain('CloseIssue');
   });
   it('returns pr_url: null and a message when no PR exists', async () => {

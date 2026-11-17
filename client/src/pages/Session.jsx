@@ -12,6 +12,7 @@ import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
 } from '@baguette/shared/session-unread.js';
+import { countsTowardReviewTab } from '@baguette/shared/session-issues.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useSessionAgents } from '../hooks/useSessionAgents.js';
@@ -198,7 +199,7 @@ export default function Session() {
   });
   const openIssuesTabCount = useMemo(() => {
     if (shouldLoadSessionIssues) {
-      return sessionIssues.filter((i) => i.status === 'opened').length;
+      return sessionIssues.filter(countsTowardReviewTab).length;
     }
     return session?.open_issues_count ?? 0;
   }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);

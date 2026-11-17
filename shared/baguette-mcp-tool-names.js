@@ -29,6 +29,8 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'DeleteLoop',
   'ListIssues',
   'ReadIssue',
+  'CreateIssue',
+  'UpdateIssue',
   'UpdateIssueStatus',
   'GitPull',
   'GitPush',

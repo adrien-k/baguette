@@ -22,6 +22,9 @@ import { createReadTaskOutputTool } from '../tools/read-task-output.js';
 import { createConfigRepoPromptTool } from '../tools/config-repo-prompt.js';
 import { createUploadImageTool } from '../tools/upload-image.js';
 import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
+import { createIssueHandlers } from '../lib/issue-handlers.js';
+import { createCreateIssueTool } from '../tools/create-issue.js';
+import { createUpdateIssueTool } from '../tools/update-issue.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
 import { createTodoHandlers } from '../lib/todo-handlers.js';
 import { createCreateTodoTool } from '../tools/create-todo.js';
@@ -38,8 +41,13 @@ import { createReadPlanTool } from '../tools/read-plan.js';
 import { createCompletePlanTool } from '../tools/complete-plan.js';
 import { createConfigureMcpServerTool } from '../tools/configure-mcp-server.js';
 
-function buildBuilderIssueTools(ctx) {
-  return [createUpdateIssueStatusTool(ctx)];
+function buildBuilderIssueTools(ctx, session, app, agent) {
+  const handlers = createIssueHandlers(session, app, agent ?? {});
+  return [
+    createCreateIssueTool(handlers),
+    createUpdateIssueTool(ctx, { allowStatus: false }),
+    createUpdateIssueStatusTool(ctx),
+  ];
 }
 
 /** Repo session builder MCP tools (git, PR, tasks, issues for the coding agent). */
@@ -48,7 +56,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
   const todoHandlers = createTodoHandlers(session, app, { callerAgent: agent });
   const planHandlers = createPlanHandlers(session, app, { callerAgent: agent });
   const tools = [
-    ...buildBuilderIssueTools(ctx),
+    ...buildBuilderIssueTools(ctx, session, app, agent),
     createAskUserQuestionsTool(),
     createCreatePlanTool(planHandlers),
     createStartPlanTool(planHandlers),
@@ -91,7 +99,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
 }
 
 /** @deprecated Use buildBuilderAgentTools */
-export function buildSessionAgentIssueMcpTools(session, app) {
-  const ctx = createSessionAgentContext(session, app);
-  return buildBuilderIssueTools(ctx);
+export function buildSessionAgentIssueMcpTools(session, app, agent = null) {
+  const ctx = createSessionAgentContext(session, app, { callerAgent: agent });
+  return buildBuilderIssueTools(ctx, session, app, agent);
 }

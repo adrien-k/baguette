@@ -19,6 +19,85 @@ const ISSUE_META_CHIP =
 const FIELD_CLASS =
   'w-full rounded-md border border-strong bg-control px-2.5 py-1.5 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-brand/50';
 
+function descriptionStartsOpen(status) {
+  return status === 'opened' || status === 'needs_decision';
+}
+
+function issueOptions(issue) {
+  const raw = issue?.options;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function selectedOptionTitle(issue, options) {
+  if (!issue?.selected_option_id) return '';
+  const match = options.find((opt) => opt?.id === issue.selected_option_id);
+  return match?.title ?? '';
+}
+
+function statusChipLabel(status) {
+  if (status === 'needs_decision') return 'needs decision';
+  return status;
+}
+
+function statusChipClass(status) {
+  if (status === 'needs_decision') {
+    return `${ISSUE_META_CHIP} border-brand/40 bg-brand/10 text-accent px-2`;
+  }
+  return `${ISSUE_META_CHIP} border-strong text-faint px-2`;
+}
+
+function optionRowClass(selected) {
+  if (selected) return 'border-brand/50 bg-brand/10';
+  return 'border-line bg-inset/40';
+}
+
+function IssueOptionRows({ options, selectedId, interactive, disabled, onSelect }) {
+  return (
+    <div className="space-y-2">
+      {options.map((opt) => {
+        const selected = opt.id === selectedId;
+        const className = `w-full rounded-md border px-3 py-2 text-left ${optionRowClass(selected)}`;
+        const body = (
+          <>
+            <span className="block text-sm font-medium text-fg">{opt.title}</span>
+            {opt.description ? (
+              <span className="mt-0.5 block text-xs text-fg-muted leading-relaxed">
+                {opt.description}
+              </span>
+            ) : null}
+          </>
+        );
+        if (!interactive) {
+          return (
+            <div key={opt.id} className={className}>
+              {body}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(opt.id)}
+            className={`${className} disabled:opacity-50 disabled:cursor-not-allowed hover:border-brand/40`}
+          >
+            {body}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function IssueDescription({ description }) {
   if (!description?.trim()) {
     return <p className="text-xs text-faint italic">No description</p>;
@@ -40,15 +119,17 @@ export default function SessionIssueCard({
   onDelete,
   onFix,
   onSave,
+  onSelectOption,
+  selectingOption = false,
 }) {
   const [editing, setEditing] = useState(false);
-  const [descOpen, setDescOpen] = useState(issue.status === 'opened');
+  const [descOpen, setDescOpen] = useState(descriptionStartsOpen(issue.status));
   const [draftTitle, setDraftTitle] = useState(issue.title);
   const [draftSeverity, setDraftSeverity] = useState(issue.severity);
   const [draftDescription, setDraftDescription] = useState(issue.description ?? '');
 
   useEffect(() => {
-    setDescOpen(issue.status === 'opened');
+    setDescOpen(descriptionStartsOpen(issue.status));
   }, [issue.id, issue.status]);
 
   const startEdit = () => {
@@ -75,8 +156,12 @@ export default function SessionIssueCard({
 
   const canSaveIssue = Boolean(draftTitle.trim());
 
-  const active = issue.status === 'opened';
+  const needsDecision = issue.status === 'needs_decision';
+  const active = issue.status === 'opened' || needsDecision;
   const canEdit = !readonly && issue.status === 'opened';
+  const options = issueOptions(issue);
+  const decisionTitle = selectedOptionTitle(issue, options);
+  const showStatusChip = readonly || issue.status === 'resolved' || needsDecision;
   const agentSubtitle = issueAgentSubtitle({
     agent_sdk: issue.agent_sdk,
     model: issue.model,
@@ -192,10 +277,8 @@ export default function SessionIssueCard({
             >
               {issue.severity}
             </span>
-            {readonly || issue.status === 'resolved' ? (
-              <span className={`${ISSUE_META_CHIP} border-strong text-faint px-2`}>
-                {issue.status}
-              </span>
+            {showStatusChip ? (
+              <span className={statusChipClass(issue.status)}>{statusChipLabel(issue.status)}</span>
             ) : (
               <select
                 value={issue.status}
@@ -227,6 +310,25 @@ export default function SessionIssueCard({
               </div>
             )}
           </div>
+          {needsDecision && options.length > 0 && (
+            <IssueOptionRows
+              options={options}
+              selectedId={issue.selected_option_id}
+              interactive={!readonly && Boolean(onSelectOption)}
+              disabled={selectingOption}
+              onSelect={(optionId) => onSelectOption(issue, optionId)}
+            />
+          )}
+          {!needsDecision && readonly && options.length > 0 && (
+            <IssueOptionRows
+              options={options}
+              selectedId={issue.selected_option_id}
+              interactive={false}
+            />
+          )}
+          {!needsDecision && decisionTitle ? (
+            <p className="text-xs text-fg-muted">Decision: {decisionTitle}</p>
+          ) : null}
           {!readonly && issue.status === 'opened' && (
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => onFix(issue)} className={SECONDARY_BUTTON_CLASS}>

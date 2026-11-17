@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { sessionsService, sessionIssuesService, tasksService } from '../feathers.js';
+import { REVIEW_TAB_ISSUE_STATUSES } from '@baguette/shared/session-issues.js';
 import { sessionKeys } from '../queries/keys.js';
 import { feathersGet } from '../queries/feathersFinders.js';
 import { sameScopeId } from '../utils/boundScope.js';
@@ -18,7 +19,11 @@ function paginateTotal(res) {
 async function fetchSessionCounts(id) {
   const [issuesRes, tasksRes] = await Promise.all([
     sessionIssuesService.find({
-      query: { session_id: id, status: 'opened', $limit: 0 },
+      query: {
+        session_id: id,
+        $or: REVIEW_TAB_ISSUE_STATUSES.map((status) => ({ status })),
+        $limit: 0,
+      },
     }),
     tasksService.find({
       query: { session_id: id, status: 'running', $limit: 0 },

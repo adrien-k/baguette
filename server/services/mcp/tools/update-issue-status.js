@@ -14,7 +14,7 @@ export function createUpdateIssueStatusTool(ctx) {
   return {
     name: 'UpdateIssueStatus',
     description:
-      'Set a session review issue to ignored or resolved after you have handled it. Do not use opened. session_id is required.',
+      'Set a session review issue to ignored or resolved after you have handled it. Do not use opened. Rejected while status is needs_decision — the user must choose an option first. session_id is required.',
     schema: {
       session_id: z.number().int().describe('Session id'),
       ref: issueRefSchema,

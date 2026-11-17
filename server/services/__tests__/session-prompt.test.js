@@ -63,6 +63,9 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('CurrentSessionInfo');
     expect(result).toContain('ListSkills');
     expect(result).toContain('ReadSkill');
+    expect(result).toContain('CreateIssue');
+    expect(result).toContain('needs_decision');
+    expect(result).toContain('out of the current task');
   });
 
   it('includes commit and UpdateSession instructions when auto_push=1', async () => {
@@ -164,6 +167,11 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
     expect(result).not.toContain('Baguette repo configuration');
     expect(result).toContain('do **not** have `UpdateSession`');
+    expect(result).toContain('CreateIssue');
+    expect(result).toContain('out-of-scope');
+    expect(result).toContain('mid-fix');
+    expect(result).toContain('needs_decision');
+    expect(result).toContain('no options');
     expect(result).toContain('StartPlan');
     expect(result).toContain('CompletePlan');
     expect(result).toContain('Mark todos **`completed`**');
@@ -312,6 +320,8 @@ describe('buildReviewSystemPromptAppend', () => {
     expect(result).toContain('Watch for SQL injection');
     expect(result).toContain('implement fixes');
     expect(result).toContain('submitted');
+    expect(result).toContain('needs_decision');
+    expect(result).toContain('no options');
     expect(result).toContain('ListSkills');
     expect(result).toContain('ReadSkill');
   });
