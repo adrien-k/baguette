@@ -22,6 +22,7 @@ import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionPushInProgress } from '../hooks/useSessionPushInProgress.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import { useSessionDiff } from '../hooks/useSessionDiff.js';
+import { useSessionFileFilters } from '../hooks/useSessionFileFilters.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
@@ -208,6 +209,8 @@ export default function Session() {
   const [lastSidePanelTab, setLastSidePanelTab] = useState('tasks');
   const [scrollToDiffFile, setScrollToDiffFile] = useState(null);
   const [selectedDiffFile, setSelectedDiffFile] = useState(null);
+  /** Include/exclude regex filters shared by the files panel list and the diff view. */
+  const fileFilters = useSessionFileFilters();
   /** File path chosen from the sidebar while the diff request is still in flight. */
   const [pendingSidebarDiffFile, setPendingSidebarDiffFile] = useState(null);
   const diffCommitParam = searchParams.get('commit');
@@ -1350,6 +1353,7 @@ export default function Session() {
                   onAgentConfigChange={handleAgentConfigChangeRequest}
                   cursorModelPrefs={cursorModelPrefs}
                   onCursorModelPrefChange={setCursorModelPref}
+                  fileFilters={fileFilters}
                 />
               )}
             {!isLoopsView &&
@@ -1425,6 +1429,7 @@ export default function Session() {
               selectedDiffFilePath={
                 diffViewActive && sessionDiffFileByFile ? diffSelectorFile : null
               }
+              fileFilters={fileFilters}
               branchCommits={branchCommits}
               branchCommitsLoading={branchCommitsLoading}
               onRefreshBranchCommits={refreshBranchCommits}

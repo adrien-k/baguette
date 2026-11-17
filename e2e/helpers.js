@@ -1,6 +1,8 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { expect } from '@playwright/test';
 import { titleFromPrompt } from '../shared/agent-naming.js';
 import { E2E_THEME, e2eThemeSuffix } from './fixtures.js';
@@ -25,6 +27,8 @@ import {
   SUBAGENT_DEFAULT_CONFIG,
   SUBAGENT_DEFAULT_PRESET,
 } from '../shared/subagent-default-mode.js';
+
+const execFileAsync = promisify(execFile);
 
 export {
   MOCK_E2E_QUICK_TURN_PROMPT,
@@ -344,11 +348,55 @@ export async function saveE2eScreenshot(page, fileName, options = {}) {
   return path;
 }
 
-const E2E_DB_PATH = join(
-  fileURLToPath(new URL('..', import.meta.url)),
-  '.data-e2e',
-  'baguette.sqlite3'
-);
+const E2E_DATA_DIR = join(fileURLToPath(new URL('..', import.meta.url)), '.data-e2e');
+const E2E_DB_PATH = join(E2E_DATA_DIR, 'baguette.sqlite3');
+
+/**
+ * Absolute session worktree path from the webServer sqlite. `sessions.session_path`
+ * is stored relative to DATA_DIR (mirroring server/config.js resolution); older rows
+ * may hold absolute paths.
+ */
+export async function getE2eSessionWorktreePath(sessionId) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let sessionPath = null;
+  try {
+    const row = db.prepare('SELECT session_path FROM sessions WHERE id = ?').get(sessionId);
+    sessionPath = row?.session_path ?? null;
+  } finally {
+    db.close();
+  }
+  if (!sessionPath) return null;
+  if (isAbsolute(sessionPath)) return sessionPath;
+  return join(E2E_DATA_DIR, sessionPath);
+}
+
+/**
+ * Write files into a session worktree and commit them (dev e2e only). The mock
+ * agent leaves files untracked, which `git diff` does not report — a commit makes
+ * them show up in the Files panel and Diff view like real agent work.
+ * Returns the new HEAD short sha.
+ */
+export async function commitWorktreeFiles(worktreePath, files, message = 'Add sample files') {
+  for (const [relPath, content] of Object.entries(files)) {
+    const absPath = join(worktreePath, relPath);
+    await mkdir(dirname(absPath), { recursive: true });
+    await writeFile(absPath, content, 'utf8');
+  }
+  const git = (...args) => execFileAsync('git', ['-C', worktreePath, ...args], { stdio: 'pipe' });
+  await git('add', '-A');
+  await git(
+    '-c',
+    'user.name=Baguette E2E',
+    '-c',
+    'user.email=e2e@baguette.local',
+    'commit',
+    '-m',
+    message
+  );
+  const head = await git('rev-parse', '--short', 'HEAD');
+  return head.stdout.trim();
+}
 
 /** Set `users.color_scheme` directly in the webServer sqlite (theme runs). */
 export async function setE2eUserColorScheme(userId, scheme) {

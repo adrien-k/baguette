@@ -26,6 +26,7 @@ export default function SessionSidePanel({
   onRefreshChangedFiles,
   onSelectDiffFile,
   selectedDiffFilePath,
+  fileFilters,
   branchCommits,
   branchCommitsLoading,
   onRefreshBranchCommits,
@@ -89,6 +90,7 @@ export default function SessionSidePanel({
             onSelectFile={onSelectDiffFile}
             onRefresh={onRefreshChangedFiles}
             unavailable={filesUnavailable}
+            fileFilters={fileFilters}
           />
         )}
         {sidePanelTab === 'commits' && (
