@@ -417,6 +417,140 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(configureServer)).toBe(false);
   });
 
+  it('folds mid-turn assistant messages into Worked; only the last stays visible', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Starting' }] } },
+      toolCallRow(1),
+      toolCallRow(2),
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Halfway' }] } },
+      toolCallRow(3),
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'All done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(3);
+    expect(grouped[1].messages.map((m) => m.type)).toEqual([
+      'assistant',
+      'tool_call',
+      'tool_call',
+      'assistant',
+      'tool_call',
+    ]);
+    expect(grouped[2].message.message.content[0].text).toBe('All done');
+  });
+
+  it("keeps a turn's only assistant message visible (no mid-turn folding)", () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message']);
+  });
+
+  it('folds consecutive mid-turn assistant texts even without tool calls', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'First' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Second' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(0);
+    expect(grouped[1].messages[0].message.content[0].text).toBe('First');
+    expect(grouped[2].message.message.content[0].text).toBe('Second');
+  });
+
+  it('keeps the last assistant message visible while the turn streams (no later anchor)', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Working…' }] } },
+      toolCallRow(1),
+      toolCallRow(2),
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message', 'message', 'message']);
+  });
+
+  it('does not fold the assistant message before an errored turn result', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Investigating…' }] } },
+      toolCallRow(1),
+      { type: 'turn_result', status: 'error', error_message: 'boom', total_cost_usd: null },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message', 'message', 'message']);
+  });
+
+  it('folds mid-turn assistants independently per turn', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'First mid' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'First final' }] } },
+      { type: 'user', message: { content: 'again' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Second mid' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Second final' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual([
+      'message',
+      'work',
+      'message',
+      'message',
+      'work',
+      'message',
+    ]);
+    expect(grouped[1].messages[0].message.content[0].text).toBe('First mid');
+    expect(grouped[4].messages[0].message.content[0].text).toBe('Second mid');
+  });
+
+  it('does not fold mid-turn assistants inside an expanded Worked group', () => {
+    const run = [
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Starting' }] } },
+      toolCallRow(1),
+      toolCallRow(2),
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Halfway' }] } },
+      toolCallRow(3),
+    ];
+    const grouped = groupChatDisplayMessages(run, { foldMidTurnAssistants: false });
+    expect(grouped.every((g) => g.kind === 'message')).toBe(true);
+    expect(grouped).toHaveLength(run.length);
+  });
+
+  it('exposes mid-turn folding through the boundary and work helpers', () => {
+    const first = { type: 'assistant', message: { content: [{ type: 'text', text: 'A' }] } };
+    const second = { type: 'assistant', message: { content: [{ type: 'text', text: 'B' }] } };
+    const messages = [{ type: 'user', message: { content: 'go' } }, first, second];
+    // Backward-computed turn pointers: index 1 folds into index 2.
+    const turnLastAnchors = [-1, 2, -1];
+    const context = (index) => ({ messages, index, turnLastAnchors });
+    expect(isChatWorkMessage(first, context(1))).toBe(true);
+    expect(isChatGroupBoundary(first, context(1))).toBe(false);
+    expect(isChatWorkMessage(second, context(2))).toBe(false);
+    expect(isChatGroupBoundary(second, context(2))).toBe(true);
+  });
+
+  it('does not fold a mid-turn assistant that carries a pinned chat tool', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' } },
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'Pick one' },
+            { type: 'tool_use', name: 'AskUserQuestions', id: 'ask' },
+          ],
+        },
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message', 'message']);
+    expect(messageContainsPinnedChatTool(messages[1])).toBe(true);
+  });
+
   it('treats Cursor mcp meta-tool StartSubagent as a group boundary', () => {
     const startSubagent = {
       type: 'assistant',

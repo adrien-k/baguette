@@ -53,7 +53,11 @@ export default function ChatWorkSummary({
   const [expanded, setExpanded] = useState(false);
   const duration = formatTaskDuration(durationMs);
   const callsLabel = callCount === 1 ? '1 call' : `${callCount} calls`;
-  const innerItems = useMemo(() => groupChatDisplayMessages(messages), [messages]);
+  // Expanded view shows every folded message flat — no mid-turn re-folding inside the group.
+  const innerItems = useMemo(
+    () => groupChatDisplayMessages(messages, { foldMidTurnAssistants: false }),
+    [messages]
+  );
 
   let label = 'Worked';
   if (duration) label += ` for ${duration}`;

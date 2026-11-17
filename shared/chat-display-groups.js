@@ -1,4 +1,5 @@
 import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp-tool-names.js';
+import { isTurnStartingUserMessage } from './turn-model.js';
 
 /** Minimum tool calls in a run before it collapses into a work summary. */
 export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
@@ -135,18 +136,57 @@ export function isChatAnchorMessage(msg) {
 }
 
 /**
+ * Per-index pointer to the final assistant text message of that index's turn.
+ * Turns start at turn-starting user messages and end at the next user message
+ * or turn result; `-1` means the index has no later assistant anchor in its turn.
+ */
+function computeTurnLastAnchorIndices(messages) {
+  const result = new Array(messages.length).fill(-1);
+  let lastAnchor = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    result[i] = lastAnchor;
+    if (msg.type === 'assistant' && isChatAnchorMessage(msg)) lastAnchor = i;
+    else if (
+      isTurnStartingUserMessage(msg) ||
+      msg.type === 'turn_result' ||
+      msg.type === 'result'
+    ) {
+      lastAnchor = -1;
+    }
+  }
+  return result;
+}
+
+/**
+ * Assistant text message followed by another assistant text message in the same
+ * turn — chatty models emit these mid-turn; they fold into the Worked group and
+ * only the turn's last assistant message stays visible.
+ */
+function assistantIsMidTurn(msg, context) {
+  if (msg?.type !== 'assistant' || !isChatAnchorMessage(msg)) return false;
+  if (!context || !Array.isArray(context.turnLastAnchors)) return false;
+  const last = context.turnLastAnchors[context.index];
+  return last !== -1 && last !== context.index;
+}
+
+/**
  * User/assistant text or the last PrUpsert — splits work runs and enables collapse.
+ * Mid-turn assistant messages fold into the Worked run instead of splitting it.
  * @param {object} [context] When grouping, pass `{ messages, index }` so only the last PrUpsert is a boundary.
  */
 export function isChatGroupBoundary(msg, context) {
   return (
-    isChatAnchorMessage(msg) ||
+    (isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context)) ||
     prUpsertIsDisplayBoundary(msg, context) ||
     messageContainsPinnedChatTool(msg)
   );
 }
 
-/** Tool-only assistant turns plus system/result noise between group boundaries. */
+/**
+ * Tool-only assistant turns, mid-turn assistant text, plus system/result noise
+ * between group boundaries.
+ */
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
   if (messageContainsPinnedChatTool(msg)) return false;
@@ -154,7 +194,9 @@ export function isChatWorkMessage(msg, context) {
   if (msg.type === 'result' || msg.type === 'turn_result') return true;
   if (msg.type === 'tool_call') return true;
   if (msg.type === 'system') return msg.subtype !== 'prompt';
-  if (msg.type === 'assistant') return !isChatAnchorMessage(msg);
+  if (msg.type === 'assistant') {
+    return !isChatAnchorMessage(msg) || assistantIsMidTurn(msg, context);
+  }
   return false;
 }
 
@@ -215,9 +257,13 @@ function pushMessageItems(items, messages, startIndex) {
   }
 }
 
+function runContainsAssistantText(run) {
+  return run.some((msg) => msg.type === 'assistant' && isChatAnchorMessage(msg));
+}
+
 function pushWorkRun(items, run, startIndex, { collapseAll }) {
   const callCount = countToolCallsInMessages(run);
-  if (collapseAll && callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS) {
+  if (collapseAll && (callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS || runContainsAssistantText(run))) {
     pushWorkItem(items, run, startIndex, callCount);
     return;
   }
@@ -235,17 +281,24 @@ function pushWorkRun(items, run, startIndex, { collapseAll }) {
 }
 
 /**
+ * @param {object[]} messages
+ * @param {{ foldMidTurnAssistants?: boolean }} [opts]
+ *   When false (used inside an expanded Worked group), assistant text messages
+ *   always stay visible instead of folding into the surrounding work run.
  * @returns {Array<
  *   | { kind: 'message', message: object, index: number }
  *   | { kind: 'work', messages: object[], indices: number[], callCount: number, durationMs: number }
  * >}
  */
-export function groupChatDisplayMessages(messages) {
+export function groupChatDisplayMessages(messages, opts = {}) {
   const lastPrUpsertIndex = findLastPrUpsertMessageIndex(messages);
+  const turnLastAnchors =
+    opts.foldMidTurnAssistants === false ? null : computeTurnLastAnchorIndices(messages);
   const groupContext = (index) => ({
     messages,
     index,
     lastPrUpsertIndex,
+    turnLastAnchors,
   });
   const items = [];
   let i = 0;
