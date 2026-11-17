@@ -163,6 +163,7 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'AwaitSessionTurn',
   'GetSessionStatus',
   'PrComment',
+  'EditPrComment',
   'PrReview',
   'PrMarkCommentViewed',
   'PrComments',
@@ -182,6 +183,7 @@ export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   // PrWorkflows, ListGithubPrs, GetGithubPr) is session_id-parameterized and allowed.
   'PrMarkCommentViewed',
   'PrComment',
+  'EditPrComment',
   'PrReview',
   'AddGithubLabel',
   'ConfigRepoPrompt',

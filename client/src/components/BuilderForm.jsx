@@ -174,6 +174,7 @@ export default function BuilderForm({
   const [sessionStartMode, setSessionStartMode] = useState('new-branch');
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
+  const [newBranch, setNewBranch] = useState(editingLoop?.create_new_branch ?? true);
   const [isShared, setIsShared] = persistentState.useState('isShared', !!editingLoop?.is_shared, {
     persistWhen: hasPromptText,
   });
@@ -384,6 +385,7 @@ export default function BuilderForm({
     setFiles([]);
     setFileError(null);
     setLoopName('');
+    setNewBranch(true);
     if (!editingLoop) {
       const next = {};
       for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
@@ -464,8 +466,7 @@ export default function BuilderForm({
       name: loopName.trim() || null,
       prompt: payload.initialPrompt,
       single_session: singleSession,
-      // Every run needs its own branch pushed somewhere reviewable, so neither is optional.
-      create_new_branch: true,
+      create_new_branch: newBranch,
       auto_push: autoPushEnabledForRepo(payload.repoFullName, payload.autoPush, linkedRepo),
       agent_config_id: payload.agentConfigId,
       model: payload.model ?? null,
@@ -791,6 +792,25 @@ export default function BuilderForm({
                   a summary of what it already did.
                   <br />
                   Off: each run starts a fresh session on its own branch.
+                </span>
+              }
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-faint hover:text-fg-muted transition-colors" />
+            </Tooltip>
+            <Toggle
+              checked={!isGlobal && newBranch}
+              onChange={setNewBranch}
+              disabled={isGlobal}
+              label="Create new branch"
+              title={isGlobal ? 'Global loops have no repository or branch' : undefined}
+              className="gap-2"
+            />
+            <Tooltip
+              content={
+                <span className="block max-w-xs whitespace-normal leading-relaxed">
+                  On: runs branch out of the selected branch, which creates a new PR.
+                  <br />
+                  Off: runs work directly on the selected branch.
                 </span>
               }
             >

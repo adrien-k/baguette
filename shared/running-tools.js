@@ -60,6 +60,10 @@ export function runningToolDisplay(block, opts = {}) {
       const detail = path && line != null ? `${path}:${line}` : preview || undefined;
       return { label: path && line != null ? 'PrComment (inline)' : 'PrComment', detail };
     }
+    if (short === 'EditPrComment') {
+      const body = input.body ?? '';
+      return { label: 'EditPrComment', detail: body.length > 48 ? `${body.slice(0, 45)}…` : body };
+    }
     if (short === 'PrReview') {
       return {
         label: `PrReview:${input.event ?? ''}`,

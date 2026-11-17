@@ -40,6 +40,7 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'PrComments',
   'PrMarkCommentViewed',
   'PrComment',
+  'EditPrComment',
   'PrReview',
   'PrWorkflows',
   'PrWorkflowLogs',

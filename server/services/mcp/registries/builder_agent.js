@@ -7,6 +7,7 @@ import { createUpdateSessionTool } from '../tools/update-session.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
 import { createPrMarkCommentViewedTool } from '../tools/pr-mark-comment-viewed.js';
 import { createPrCommentTool } from '../tools/pr-comment.js';
+import { createEditPrCommentTool } from '../tools/edit-pr-comment.js';
 import { createPrReviewTool } from '../tools/pr-review.js';
 import { createPrWorkflowsTool } from '../tools/pr-workflows.js';
 import { createPrWorkflowLogsTool } from '../tools/pr-workflow-logs.js';
@@ -77,6 +78,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createPrCommentsTool(ctx),
     createPrMarkCommentViewedTool(ctx),
     createPrCommentTool(ctx),
+    createEditPrCommentTool(ctx),
     createPrReviewTool(ctx),
     createPrWorkflowsTool(ctx),
     createPrWorkflowLogsTool(ctx),
