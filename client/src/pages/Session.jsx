@@ -26,7 +26,6 @@ import { useSessionDiff } from '../hooks/useSessionDiff.js';
 import { useSessionFileFilters } from '../hooks/useSessionFileFilters.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
 import { usePersistentState } from '../hooks/usePersistentState.js';
-import { useLastOpenedAgents } from '../hooks/useLastOpenedAgents.js';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
 import { modelPatchFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import ChatView from './session/ChatView.jsx';
@@ -134,30 +133,15 @@ export default function Session() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [isNewSessionRoute, routeSessionId]);
   const { agents, loading: agentsLoading, primaryBuilder, reviewer } = useSessionAgents(sessionId);
-  const { getLastOpenedAgentId, setLastOpenedAgentId } = useLastOpenedAgents();
   const agentParam = searchParams.get('agent');
-  // Agent chosen by the URL when present, else the one last opened in this
-  // session, else the primary builder.
-  const lastOpenedAgentId = getLastOpenedAgentId(sessionId);
   const activeAgent = useMemo(() => {
     if (!agents.length) return null;
     const parsedId = agentParam ? Number(agentParam) : null;
     if (parsedId != null && agents.some((a) => a.id === parsedId)) {
       return agents.find((a) => a.id === parsedId) ?? null;
     }
-    const lastOpened =
-      lastOpenedAgentId != null ? agents.find((a) => a.id === lastOpenedAgentId) : null;
-    if (lastOpened) return lastOpened;
     return primaryBuilder ?? agents[0] ?? null;
-  }, [agents, agentParam, primaryBuilder, lastOpenedAgentId]);
-  // Tree clicks navigate straight to `?agent=<id>` and deep links carry the
-  // param too — remember those selections the same way `selectAgent` does.
-  useEffect(() => {
-    if (!sessionId || !agentParam || agentsLoading) return;
-    const parsedId = Number(agentParam);
-    if (!Number.isFinite(parsedId) || !agents.some((a) => a.id === parsedId)) return;
-    setLastOpenedAgentId(sessionId, parsedId);
-  }, [sessionId, agentParam, agents, agentsLoading, setLastOpenedAgentId]);
+  }, [agents, agentParam, primaryBuilder]);
   const {
     messages: hookMessages,
     loading: messagesLoading,
@@ -306,7 +290,6 @@ export default function Session() {
   const selectAgent = useCallback(
     (agent) => {
       if (!agent?.id) return;
-      if (sessionId != null) setLastOpenedAgentId(sessionId, agent.id);
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -318,7 +301,7 @@ export default function Session() {
         { replace: true }
       );
     },
-    [sessionId, setLastOpenedAgentId, setSearchParams]
+    [setSearchParams]
   );
   const handleReviewerCleared = useCallback(() => {
     if (primaryBuilder) selectAgent(primaryBuilder);
