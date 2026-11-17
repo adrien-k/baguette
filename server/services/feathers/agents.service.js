@@ -12,7 +12,7 @@ import {
   listActiveChildAgents,
   listSubagentsForSession,
 } from '../agents-db.js';
-import { getAgentServiceForAgent } from '../agent-session-routing.js';
+import { getAgentServiceForAgent, getAgentServiceForSession } from '../agent-session-routing.js';
 import { getUtilityModelService } from '../utility-model.js';
 import { completeSessionMetadata } from '../session-metadata.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
@@ -119,6 +119,41 @@ class AgentsService extends KnexService {
     } else {
       throw new BadRequest('Cannot stop this agent');
     }
+  }
+
+  /**
+   * Generate a short agent label from a prompt. Prefers the account utility model;
+   * otherwise uses the session's primary builder. Throws when nothing usable comes back
+   * so the client can keep the heuristic prefill.
+   */
+  async generateName(data, params) {
+    const prompt = String(data?.prompt ?? '').trim();
+    const sessionId = Number(data?.session_id);
+    if (!prompt) throw new BadRequest('prompt is required');
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+
+    let name = await completeUtilityAgentName(this.app, params.user, prompt);
+    if (!name) {
+      try {
+        const builderService = await getAgentServiceForSession(this.app, session);
+        const builder = await this.app
+          .get('db')('agents')
+          .where({ session_id: sessionId, is_primary: 1 })
+          .first();
+        name = await labelFromMetadataService(builderService, {
+          taskPrompt: prompt,
+          userId: params.user?.id ?? null,
+          agentConfigId: builder?.agent_config_id ?? session.agent_config_id ?? null,
+          model: builder?.model ?? session.model ?? null,
+          modelParams: builder?.model_params ?? session.model_params ?? null,
+        });
+      } catch (err) {
+        logger.warn({ err: err?.message }, 'Session builder name generation failed');
+      }
+    }
+    if (!name) throw new BadRequest('Could not generate a label');
+    return { name };
   }
 
   async startSubagent(data, params) {
@@ -303,6 +338,36 @@ const CREATE_FIELDS = [
   'naming_prompt',
 ];
 
+const AGENT_NAME_MAX_LENGTH = 120;
+
+async function labelFromMetadataService(service, opts) {
+  const { label } = await completeSessionMetadata(service, opts);
+  return label.slice(0, AGENT_NAME_MAX_LENGTH);
+}
+
+/**
+ * Ask the account utility model for a short agent name. Returns '' when none is
+ * configured or the completion is unusable; callers apply their own fallback.
+ */
+async function completeUtilityAgentName(app, user, prompt) {
+  const trimmed = String(prompt ?? '').trim();
+  if (!trimmed) return '';
+  try {
+    const utility = await getUtilityModelService(app, user?.id);
+    if (!utility) return '';
+    return await labelFromMetadataService(utility.service, {
+      taskPrompt: trimmed,
+      userId: user?.id ?? null,
+      agentConfigId: utility.agent_config_id,
+      model: utility.model,
+      modelParams: utility.model_params,
+    });
+  } catch (err) {
+    logger.warn({ err: err?.message }, 'Utility model name generation failed');
+    return '';
+  }
+}
+
 /**
  * Name a manually started secondary builder when the caller does not pass a name:
  * the user's utility model (Settings → Agent) summarizes `naming_prompt`, falling back
@@ -322,25 +387,10 @@ async function resolveSecondaryBuilderName(context) {
     .where({ session_id: sessionId, is_primary: 1 })
     .first();
   if (!primary) return context; // first builder keeps the default naming
-  let name = '';
   const prompt = namingPrompt.trim();
-  if (prompt) {
-    try {
-      const utility = await getUtilityModelService(context.app, context.params.user?.id);
-      if (utility) {
-        const { label } = await completeSessionMetadata(utility.service, {
-          taskPrompt: prompt,
-          userId: context.params.user?.id ?? null,
-          agentConfigId: utility.agent_config_id,
-          model: utility.model,
-          modelParams: utility.model_params,
-        });
-        name = label.slice(0, 120);
-      }
-    } catch (err) {
-      logger.warn({ err: err?.message }, 'Builder name generation failed — using prompt fallback');
-    }
-  }
+  const name = prompt
+    ? await completeUtilityAgentName(context.app, context.params.user, prompt)
+    : '';
   context.data.name = name || titleFromPrompt(prompt);
   return context;
 }
@@ -508,6 +558,18 @@ async function stopReviewerBeforeRemove(app, row, user) {
   await getReviewAgentTurn(app).stopReviewerAgent(session, row);
 }
 
+/** External name changes are limited to extra builders (not primary, reviewer, or MCP subagent). */
+async function restrictNamePatch(context) {
+  if (!context.params?.provider) return context;
+  if (context.data?.name === undefined) return context;
+  const agent = await getAgentById(context.app.get('db'), context.id);
+  if (!agent) throw new NotFound('Agent not found');
+  if (agent.agent_type !== 'builder' || Number(agent.is_primary) === 1) {
+    throw new BadRequest('Only secondary builders can be renamed');
+  }
+  return context;
+}
+
 /** Collaborators may stop a run; only the owner can create, reconfigure, or delete agents. */
 async function requireOwnSessionForWrite(context) {
   if (!context.params?.provider) return context;
@@ -564,6 +626,7 @@ const agentsHooks = {
     patch: [
       requireOwnSessionForWrite,
       only(EXTERNAL_PATCH_FIELDS),
+      restrictNamePatch,
       normalizeModelParams,
       resolveSdkOnConfigChange,
       touchUpdatedAt,
@@ -591,6 +654,7 @@ export function registerAgentsService(app, path = 'agents') {
       'patch',
       'remove',
       'stop',
+      'generateName',
       'startSubagent',
       'awaitSubagent',
       'listSubagents',

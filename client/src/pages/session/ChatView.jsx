@@ -27,6 +27,7 @@ import { subscribeSseReconnect } from '../../utils/sseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
+import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import {
   collectRunningBashToolsForDock,
@@ -55,6 +56,7 @@ import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
+import StartSubagentModal from '../../components/StartSubagentModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
@@ -174,6 +176,7 @@ export default function ChatView({
   const [queue, setQueue] = useState([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
+  const [showStartSubagentModal, setShowStartSubagentModal] = useState(false);
   const [creatingLoop, setCreatingLoop] = useState(false);
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
@@ -633,9 +636,21 @@ export default function ChatView({
   const showStartSubagentOption =
     !readonly && showMessageComposer && activeAgent?.agent_type !== 'reviewer';
 
-  const handleStartSubagentBuilder = async () => {
+  const openStartSubagentModal = () => {
+    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    setShowStartSubagentModal(true);
+  };
+
+  const closeStartSubagentModal = () => {
+    if (sending) return;
+    setShowStartSubagentModal(false);
+  };
+
+  const handleStartSubagentBuilder = async ({ name, agent_config_id, model, model_params }) => {
     if ((!input.trim() && !files.length) || !session?.id || sending) return;
     const text = input.trim();
+    const label = typeof name === 'string' ? name.trim() : '';
+    if (!label) return;
     setError(null);
     setFileError(null);
     const filesToSend = files;
@@ -654,13 +669,15 @@ export default function ChatView({
     const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
     let newAgent;
     try {
-      // The server names the builder: utility model when configured, else the prompt's
-      // first words (shared/agent-naming.js).
-      newAgent = await agentsService.create({
+      const payload = {
         session_id: session.id,
         agent_type: 'builder',
-        naming_prompt: text,
-      });
+        name: label,
+      };
+      if (agent_config_id != null) payload.agent_config_id = agent_config_id;
+      if (model) payload.model = model;
+      if (model_params !== undefined) payload.model_params = model_params;
+      newAgent = await agentsService.create(payload);
     } catch (err) {
       setInput(text);
       setFiles(filesToSend);
@@ -668,11 +685,12 @@ export default function ChatView({
       setSending(false);
       return;
     }
+    setShowStartSubagentModal(false);
     if (newAgent?.id != null) {
       onSelectAgent?.(newAgent);
     }
     try {
-      await sendMessage(messageJson, { ...composerTurnFields(), agent: newAgent });
+      await sendMessage(messageJson, { agent: newAgent });
       setInput('');
       persistentState.clear();
     } catch (err) {
@@ -1128,7 +1146,7 @@ export default function ChatView({
                                 type="button"
                                 role="menuitem"
                                 disabled={!canSendDraft}
-                                onClick={() => void handleStartSubagentBuilder()}
+                                onClick={openStartSubagentModal}
                                 className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:pointer-events-none"
                               >
                                 Start subagent
@@ -1166,6 +1184,19 @@ export default function ChatView({
           onCancel={closeRegularlyModal}
           saving={creatingLoop}
           defaultName={input.trim().split('\n')[0].slice(0, 60)}
+        />
+      )}
+      {showStartSubagentModal && session?.id && (
+        <StartSubagentModal
+          sessionId={session.id}
+          prompt={input.trim()}
+          defaultLabel={titleFromPrompt(input)}
+          initialAgentConfigId={session.agent_config_id ?? agentSource?.agent_config_id ?? null}
+          initialModel={session.model ?? composerModel}
+          initialModelParams={session.model_params ?? composerModelParams}
+          onConfirm={(opts) => void handleStartSubagentBuilder(opts)}
+          onCancel={closeStartSubagentModal}
+          saving={sending}
         />
       )}
       {showMergeModal && (

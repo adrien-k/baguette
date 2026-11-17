@@ -187,21 +187,32 @@ export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
     .toBe(0);
 }
 
+/** Open **Start subagent** from the composer Send (Schedule) menu; composer text must already be set. */
+export async function openStartSubagentModalFromComposer(page) {
+  await page.getByTitle('Schedule', { exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
+  await expect(page.getByRole('heading', { name: 'Start subagent' })).toBeVisible();
+}
+
+export async function confirmStartSubagentModal(page) {
+  await page.getByRole('button', { name: 'Start subagent' }).click();
+}
+
 /**
  * Create an extra builder from the composer's Send menu ("Start subagent").
  *
- * The agent is named from the prompt's first four words, so `name` must be at most four
- * words. The prompt sent to it appends the quick mock prompt so its first turn is fast;
- * the helper waits for that turn to complete before returning (the composer targets the
- * new builder meanwhile).
+ * The start-subagent modal prefills the label from the prompt's first four words, so
+ * `name` must be at most four words. The prompt sent to it appends the quick mock prompt
+ * so its first turn is fast; the helper confirms the modal and waits for that turn to
+ * complete before returning (the composer targets the new builder meanwhile).
  */
 export async function addManualBuilderAgent(page, name) {
-  // The agent is named from the prompt's first four words — resolve the stored name.
+  // The modal prefills the label from the prompt's first four words — resolve the stored name.
   const storedName = titleFromPrompt(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
   const composer = await sessionChatComposer(page);
   await composer.fill(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
-  await page.getByTitle('Schedule', { exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
+  await openStartSubagentModalFromComposer(page);
+  await confirmStartSubagentModal(page);
   const row = sessionAgentTreeRow(page, storedName);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await waitForAgentNotRunning(page, storedName);

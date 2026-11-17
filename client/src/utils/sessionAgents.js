@@ -121,6 +121,14 @@ export function isSubagentBuilder(agent) {
   return agent?.agent_type === 'subagent';
 }
 
+/**
+ * Extra builder started from the composer (not the session primary, not an MCP subagent).
+ * These are the only agents whose title can be renamed in the session list.
+ */
+export function isSecondaryBuilder(agent) {
+  return agent?.agent_type === 'builder' && !isPrimaryAgent(agent);
+}
+
 /** Session reviewer row (`agent_type` reviewer) — managed from the review UI, not editable. */
 export function isReviewerAgent(agent) {
   return agent?.agent_type === 'reviewer';

@@ -19,7 +19,18 @@ async function makeApp() {
     label: 'Utility',
     service_path: 'utility-agent',
   });
-  app.use('sessions', { get: async (id) => ({ id: Number(id) }) }, { methods: ['get'] });
+  app.use(
+    'sessions',
+    {
+      get: async (id) => {
+        const row = await db('sessions')
+          .where({ id: Number(id) })
+          .first();
+        return row ?? { id: Number(id) };
+      },
+    },
+    { methods: ['get'] }
+  );
   registerAgentsService(app);
   await app.setup();
   return app;
@@ -174,5 +185,121 @@ describe('agents create - secondary builder naming', () => {
           params()
         )
     ).rejects.toThrow('name is required for a subagent');
+  });
+
+  it('renames a secondary builder and rejects renaming a subagent', async () => {
+    const builder = await createBuilder({ agent_type: 'builder', name: 'Extra' });
+    const renamed = await app.service('agents').patch(builder.id, { name: 'Scout' }, params());
+    expect(renamed.name).toBe('Scout');
+
+    const subagent = await app.service('agents').create(
+      {
+        session_id: sessionId,
+        agent_type: 'subagent',
+        agent_config_id: utilityConfigId,
+        name: 'Worker',
+      },
+      params()
+    );
+    await expect(
+      app.service('agents').patch(subagent.id, { name: 'Renamed worker' }, params())
+    ).rejects.toThrow('Only secondary builders can be renamed');
+  });
+});
+
+describe('agents generateName', () => {
+  let app;
+  let user;
+  let utilityConfigId;
+  let sessionId;
+
+  const params = () => ({ provider: 'rest', user });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    completeText.mockResolvedValue('Fix flaky login test.');
+    app = await makeApp();
+    await db('users').insert({ github_id: 1, username: 'naming-user', status: 'approved' });
+    user = await db('users').where({ username: 'naming-user' }).first();
+    utilityConfigId = await insertTestAgentConfig(db, user.id, {
+      sdk: 'utility',
+      apiKey: 'ut-key',
+    });
+    [sessionId] = await db('sessions').insert({
+      user_id: user.id,
+      repo_full_name: 'o/r',
+      base_branch: 'main',
+      short_id: 'abc12',
+      initial_prompt: 'work',
+      status: 'stopped',
+    });
+    await db('agents').insert({
+      session_id: sessionId,
+      ref: 1,
+      name: 'Builder',
+      agent_type: 'builder',
+      is_primary: 1,
+      status: 'stopped',
+      agent_config_id: utilityConfigId,
+      agent_sdk: 'utility',
+      model: 'session-model',
+      current_turn_id: 0,
+    });
+  });
+
+  it('names from the utility model when configured', async () => {
+    await db('users')
+      .where({ id: user.id })
+      .update({
+        utility_default_config_id: utilityConfigId,
+        utility_default_model: JSON.stringify({ model: 'utility-cheap', model_params: null }),
+      });
+
+    const result = await app
+      .service('agents')
+      .generateName({ session_id: sessionId, prompt: 'Fix the flaky login test now' }, params());
+
+    expect(result).toEqual({ name: 'Fix flaky login test' });
+    const [, opts] = completeText.mock.calls[0];
+    expect(opts).toMatchObject({
+      userId: user.id,
+      agentConfigId: utilityConfigId,
+      model: 'utility-cheap',
+    });
+  });
+
+  it('falls back to the session builder when no utility default is set', async () => {
+    const result = await app
+      .service('agents')
+      .generateName(
+        { session_id: sessionId, prompt: 'Refactor the storage layer for speed' },
+        params()
+      );
+
+    expect(result).toEqual({ name: 'Fix flaky login test' });
+    const [, opts] = completeText.mock.calls[0];
+    expect(opts).toMatchObject({
+      userId: user.id,
+      agentConfigId: utilityConfigId,
+      model: 'session-model',
+    });
+  });
+
+  it('rejects when the model yields nothing usable', async () => {
+    completeText.mockResolvedValueOnce('   ');
+    await expect(
+      app
+        .service('agents')
+        .generateName({ session_id: sessionId, prompt: 'Clean leftover artifacts' }, params())
+    ).rejects.toThrow('Could not generate a label');
+  });
+
+  it('requires a prompt and session_id', async () => {
+    await expect(
+      app.service('agents').generateName({ session_id: sessionId, prompt: '  ' }, params())
+    ).rejects.toThrow('prompt is required');
+    await expect(
+      app.service('agents').generateName({ prompt: 'Fix the login' }, params())
+    ).rejects.toThrow('session_id is required');
   });
 });

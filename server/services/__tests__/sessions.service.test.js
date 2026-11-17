@@ -1504,12 +1504,12 @@ describe('Sessions service - find, get, create', () => {
       });
       await db('agents').where({ id: subId }).update({ updated_at: '2020-01-01T00:00:00.000Z' });
 
-      // External patch (allowed fields, e.g. composer rename).
-      const renamed = await app
+      // External patch of an allowed field (subagent titles are not renameable).
+      const retargeted = await app
         .service('agents')
-        .patch(subId, { name: 'renamed-worker' }, params({ id: userId1 }));
-      expect(renamed.name).toBe('renamed-worker');
-      expect(new Date(renamed.updated_at).getTime()).toBeGreaterThan(
+        .patch(subId, { model: 'glm-5.4' }, params({ id: userId1 }));
+      expect(retargeted.model).toBe('glm-5.4');
+      expect(new Date(retargeted.updated_at).getTime()).toBeGreaterThan(
         new Date('2020-01-01T00:00:00.000Z').getTime()
       );
 

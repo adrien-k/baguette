@@ -12,6 +12,7 @@ import {
   isAnyAgentAwaitingUser,
   isPrimaryAgent,
   isReviewerAgent,
+  isSecondaryBuilder,
   isSubagentBuilder,
   otherAgentsRunningLabel,
   partitionSessionAgentsByRunning,
@@ -169,6 +170,16 @@ describe('isSubagentBuilder', () => {
     expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(false);
     expect(isSubagentBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(true);
     expect(isSubagentBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
+  });
+});
+
+describe('isSecondaryBuilder', () => {
+  it('is true only for extra composer builders', () => {
+    expect(isSecondaryBuilder({ agent_type: 'builder', is_primary: 1 })).toBe(false);
+    expect(isSecondaryBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(true);
+    expect(isSecondaryBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(false);
+    expect(isSecondaryBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
+    expect(isSecondaryBuilder(null)).toBe(false);
   });
 });
 

@@ -13,6 +13,8 @@ import {
   isAgentTurnActive,
   isPrimaryAgent,
   isReviewerAgent,
+  isSecondaryBuilder,
+  isSubagentBuilder,
 } from '../utils/sessionAgents.js';
 import { messageModelDisplayName } from '../utils/messageModelLabel.js';
 import { formatUsd } from '../utils/usageSeries.js';
@@ -75,11 +77,11 @@ function AgentTreeModelLabel({ agentConfigId, model }) {
 /**
  * Small rename affordance trailing the title. Turns are stopped from the
  * chat composer and agents are not deletable from the list, so this is the
- * only per-row action. The reviewer is not editable — it is managed from
- * the review UI.
+ * only per-row action. Only extra builders are renameable — the primary
+ * builder, reviewer, and MCP subagents keep a fixed title.
  */
 function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
-  if (!canManage || isPrimaryAgent(agent) || isReviewerAgent(agent) || renaming) return null;
+  if (!canManage || !isSecondaryBuilder(agent) || renaming) return null;
   return (
     <button
       type="button"
@@ -193,11 +195,16 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
             />
           ) : (
             <span
-              className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 ${agentNameToneClass(
+              className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
                 agent
               )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
             >
-              {title}
+              {isSubagentBuilder(agent) && (
+                <span className="shrink-0" aria-hidden>
+                  <AgentTypeIcon agentType="subagent" />
+                </span>
+              )}
+              <span className="truncate">{title}</span>
             </span>
           )}
           <AgentTreeStatus status={agent.status} />
@@ -238,7 +245,8 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
  * caret. Builder and reviewer rows carry a quiet brand/merged tint (subagent
  * rows stay plain). Rows show provider icon · name · status · rename
  * affordance (right of the title, when applicable) · model (on the right, the
- * first element to collapse when width is tight).
+ * first element to collapse when width is tight). Subagent titles are
+ * prefixed with the subagent type icon.
  */
 export default function SessionAgentTree({
   agents,
@@ -266,6 +274,7 @@ export default function SessionAgentTree({
       : null;
 
   const startRename = (agent) => {
+    if (!isSecondaryBuilder(agent)) return;
     setRenamingAgentId(agent.id);
     setRenameValue(agent.name?.trim() || agentDisplayTitle(agent));
   };
