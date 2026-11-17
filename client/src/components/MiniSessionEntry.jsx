@@ -36,11 +36,12 @@ export default function MiniSessionEntry({
   // Highlight the row itself only when the session is open without a specific
   // agent chat; otherwise the selected agent row inside the tree is the highlight.
   const rowHighlighted = isCurrent && !routeAgentId;
-  const title = s.label || (isGlobalSession(s) ? 'Global session' : s.repo_full_name) || 'Session';
-  const branch = s.remote_branch || s.local_branch || null;
   const promptPreview = sessionListPromptPreview(s);
-  // Named tasks show their branch; unlabeled sessions identify by prompt.
-  const subtitle = s.label ? branch : promptPreview || branch;
+  const title =
+    s.label?.trim() ||
+    promptPreview ||
+    (isGlobalSession(s) ? 'Global session' : s.repo_full_name) ||
+    'Session';
   const showRepo = showRepoDetails && !hideRepoBadge;
   const activeLabel = formatCompactRelativeTime(s.last_activity_at ?? s.updated_at ?? s.created_at);
 
@@ -83,15 +84,6 @@ export default function MiniSessionEntry({
               <CardRepoBadge show isGlobal={isGlobalSession(s)} repoFullName={s.repo_full_name} />
             </span>
           )}
-          {subtitle && (
-            <span
-              className={`block truncate text-[11px] text-faint ${
-                subtitle === branch ? 'font-mono' : ''
-              }`}
-            >
-              {subtitle}
-            </span>
-          )}
         </Link>
         {activeLabel && (
           <span
@@ -121,6 +113,7 @@ export default function MiniSessionEntry({
           canManage={isOwner && !isArchived && !isArchiving}
           onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
           autoExpanded={autoExpanded}
+          showOwnerGutter={showOwner}
         />
       )}
     </div>

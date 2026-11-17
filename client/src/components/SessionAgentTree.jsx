@@ -107,7 +107,7 @@ function AgentTreeCaret({ expanded, onToggle }) {
       aria-expanded={expanded}
       aria-label={expanded ? 'Hide agents' : 'Show agents'}
       onClick={onToggle}
-      className="shrink-0 -my-1 p-1 text-faint hover:text-fg transition-colors"
+      className="shrink-0 -my-1 p-0.5 text-faint hover:text-fg transition-colors"
     >
       <ChevronDown
         className={`w-3.5 h-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`}
@@ -128,7 +128,7 @@ function agentNameToneClass(agent) {
   return '';
 }
 
-function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
+function AgentTreeRow({ agent, ...rest }) {
   const { getConfig } = useAgentConfigContext();
   const config = getConfig(agent.agent_config_id);
   const title = agentDisplayTitle(agent);
@@ -155,16 +155,10 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
       <div
         data-testid="agent-tree-row"
         data-agent-name={agent.name || title}
-        className={`group flex items-center gap-1.5 rounded-md py-1 pr-1.5 transition-colors ${
+        className={`group flex items-center gap-1.5 rounded-md py-1 pl-0 pr-1.5 transition-colors ${
           isCurrent ? 'bg-control-hover' : 'hover:bg-control/50'
-        } ${caretSlot ? 'pl-2' : 'pl-9'}`}
+        }`}
       >
-        {caretSlot &&
-          (caret ? (
-            <AgentTreeCaret expanded={caret.expanded} onToggle={caret.onToggle} />
-          ) : (
-            <span className="h-4 w-[22px] shrink-0" aria-hidden />
-          ))}
         <AgentTreeIcon agent={agent} config={config} />
         <button
           type="button"
@@ -237,15 +231,12 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
 }
 
 /**
- * Agent group for a session row. The primary builder's row is always visible
- * at the top with a disclosure caret on its left; the remaining agents
- * (reviewer, extra builders, subagents) show when expanded, ordered by last
- * activity (most recent first) — `autoExpanded` is the default (selected
- * session on desktop, last-opened on mobile), overridable per entry via the
- * caret. Builder and reviewer rows carry a quiet brand/merged tint (subagent
- * rows stay plain). Rows show provider icon · name · status · rename
- * affordance (right of the title, when applicable) · model (on the right, the
- * first element to collapse when width is tight). Subagent titles are
+ * Agent group for a session row. A disclosure caret in the session-status column
+ * toggles extra agents; every row shares the same indent in the title column.
+ * `autoExpanded` is the default (selected session on desktop, last-opened on
+ * mobile), overridable via the caret. Builder and reviewer rows carry a quiet
+ * brand/merged tint (subagent rows stay plain). Rows show provider icon · name
+ * · status · rename affordance · model (on the right). Subagent titles are
  * prefixed with the subagent type icon.
  */
 export default function SessionAgentTree({
@@ -254,6 +245,7 @@ export default function SessionAgentTree({
   canManage,
   onSelectAgent,
   autoExpanded = false,
+  showOwnerGutter = false,
 }) {
   const list = buildSessionAgentList(agents);
   const [renamingAgentId, setRenamingAgentId] = useState(null);
@@ -318,23 +310,27 @@ export default function SessionAgentTree({
     onRequestRename: startRename,
   };
 
+  const visibleAgents = [...(primary ? [primary] : []), ...(!grouped || expanded ? others : [])];
+
   return (
-    // Scroll breakpoint at 10 rows: rows are py-1 + a 16px line box (24px) with a
-    // 2px gap between the builder and others groups — 10 rows = 242px, 11 = 266px,
-    // so max-h-64 (256px) fits ten rows and scrolls from the eleventh.
-    <div className="mt-0.5 space-y-0.5 max-h-64 overflow-y-auto" data-testid="session-agent-tree">
-      {primary && (
+    <div className="mt-0.5 flex items-start gap-2">
+      <span className="mt-0.5 flex h-4 w-3 shrink-0 items-center justify-center">
+        {caret ? <AgentTreeCaret expanded={caret.expanded} onToggle={caret.onToggle} /> : null}
+      </span>
+      {showOwnerGutter && <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
+      {/* Scroll breakpoint at 10 rows: rows are py-1 + a 16px line box (24px) with a
+          2px gap between the builder and others groups — 10 rows = 242px, 11 = 266px,
+          so max-h-64 (256px) fits ten rows and scrolls from the eleventh. */}
+      <div
+        className="min-w-0 flex-1 space-y-0.5 max-h-64 overflow-y-auto"
+        data-testid="session-agent-tree"
+      >
         <ul>
-          <AgentTreeRow agent={primary} caretSlot caret={caret} {...rowProps} />
-        </ul>
-      )}
-      {others.length > 0 && (!grouped || expanded) && (
-        <ul>
-          {others.map((agent) => (
+          {visibleAgents.map((agent) => (
             <AgentTreeRow key={agent.id} agent={agent} {...rowProps} />
           ))}
         </ul>
-      )}
+      </div>
     </div>
   );
 }

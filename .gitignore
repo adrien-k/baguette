@@ -13,3 +13,4 @@ e2e/screenshots/
 config/credentials/
 .kamal/.env
 fly.toml
+screenshots/
