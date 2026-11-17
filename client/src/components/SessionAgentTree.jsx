@@ -11,6 +11,7 @@ import {
   agentDisplayTitle,
   isAgentAwaitingUser,
   isAgentTurnActive,
+  isAgentTreeCollapseLocked,
   isPrimaryAgent,
   isReviewerAgent,
   isSecondaryBuilder,
@@ -98,16 +99,27 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
   );
 }
 
+function agentTreeCaretLabel(expanded, locked) {
+  if (locked) return 'Other agents stay visible while this agent is open';
+  if (expanded) return 'Hide agents';
+  return 'Show agents';
+}
+
 /** Disclosure caret for the builder's agent group. */
-function AgentTreeCaret({ expanded, onToggle }) {
+function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
+  const locked = expanded && collapseLocked;
   return (
     <button
       type="button"
       data-testid="agent-tree-toggle"
       aria-expanded={expanded}
-      aria-label={expanded ? 'Hide agents' : 'Show agents'}
-      onClick={onToggle}
-      className="shrink-0 -my-1 p-0.5 text-faint hover:text-fg transition-colors"
+      aria-disabled={locked || undefined}
+      aria-label={agentTreeCaretLabel(expanded, locked)}
+      title={locked ? 'Open the primary agent to hide the others' : undefined}
+      onClick={locked ? undefined : onToggle}
+      className={`shrink-0 -my-1 p-0.5 transition-colors ${
+        locked ? 'cursor-default text-faint/40' : 'text-faint hover:text-fg'
+      }`}
     >
       <ChevronDown
         className={`w-3.5 h-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`}
@@ -232,7 +244,8 @@ function AgentTreeRow({ agent, ...rest }) {
 
 /**
  * Agent group for a session row. A disclosure caret in the session-status column
- * toggles extra agents; every row shares the same indent in the title column.
+ * toggles extra agents, except while a non-primary agent is selected — collapsing
+ * would hide the open chat. Every row shares the same indent in the title column.
  * `autoExpanded` is the default (selected session on desktop, last-opened on
  * mobile), overridable via the caret. Builder and reviewer rows carry a quiet
  * brand/merged tint (subagent rows stay plain). Rows show provider icon · name
@@ -259,10 +272,15 @@ export default function SessionAgentTree({
   const primary = list.find(isPrimaryAgent) ?? null;
   const others = primary ? list.filter((a) => a.id !== primary.id) : list;
   const grouped = Boolean(primary);
-  const expanded = manuallyExpanded ?? autoExpanded;
+  const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId);
+  const expanded = collapseLocked || (manuallyExpanded ?? autoExpanded);
   const caret =
     grouped && others.length > 0
-      ? { expanded, onToggle: () => setManuallyExpanded(!expanded) }
+      ? {
+          expanded,
+          collapseLocked,
+          onToggle: () => setManuallyExpanded(!expanded),
+        }
       : null;
 
   const startRename = (agent) => {
@@ -315,7 +333,13 @@ export default function SessionAgentTree({
   return (
     <div className="mt-0.5 flex items-start gap-2">
       <span className="mt-0.5 flex h-4 w-3 shrink-0 items-center justify-center">
-        {caret ? <AgentTreeCaret expanded={caret.expanded} onToggle={caret.onToggle} /> : null}
+        {caret ? (
+          <AgentTreeCaret
+            expanded={caret.expanded}
+            collapseLocked={caret.collapseLocked}
+            onToggle={caret.onToggle}
+          />
+        ) : null}
       </span>
       {showOwnerGutter && <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
       {/* Scroll breakpoint at 10 rows: rows are py-1 + a 16px line box (24px) with a

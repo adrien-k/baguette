@@ -84,6 +84,18 @@ export function isPrimaryAgent(agent) {
   return Boolean(agent && Number(agent.is_primary) === 1);
 }
 
+/**
+ * The session-list caret must not hide other agents while one of them is the
+ * open chat — collapsing would drop the selected row out of the tree.
+ * @param {SessionAgentSummary[]} agents
+ * @param {number | string | null | undefined} currentAgentId
+ */
+export function isAgentTreeCollapseLocked(agents, currentAgentId) {
+  if (currentAgentId == null || currentAgentId === '') return false;
+  const selected = (agents ?? []).find((agent) => Number(agent.id) === Number(currentAgentId));
+  return Boolean(selected && !isPrimaryAgent(selected));
+}
+
 /** Stable list order for agents panel and switchers (ref ascending, then id). */
 export function sortSessionAgentsByRefAsc(agents) {
   return [...agents].sort((a, b) => {

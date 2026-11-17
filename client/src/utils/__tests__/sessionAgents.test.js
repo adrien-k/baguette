@@ -8,6 +8,7 @@ import {
   agentSwitcherDropdownSections,
   countActiveAgentsForSession,
   isAgentAwaitingUser,
+  isAgentTreeCollapseLocked,
   isAgentTurnActive,
   isAnyAgentAwaitingUser,
   isPrimaryAgent,
@@ -44,6 +45,19 @@ describe('agent display labels', () => {
     expect(isPrimaryAgent({ is_primary: 1 })).toBe(true);
     expect(isPrimaryAgent({ is_primary: 0 })).toBe(false);
     expect(isPrimaryAgent({ is_primary: true })).toBe(true);
+  });
+
+  it('locks the agent-tree caret while a non-primary agent is selected', () => {
+    const agents = [
+      { id: 1, is_primary: 1 },
+      { id: 2, is_primary: 0, agent_type: 'subagent' },
+      { id: 3, is_primary: 0, agent_type: 'reviewer' },
+    ];
+    expect(isAgentTreeCollapseLocked(agents, 2)).toBe(true);
+    expect(isAgentTreeCollapseLocked(agents, '3')).toBe(true);
+    expect(isAgentTreeCollapseLocked(agents, 1)).toBe(false);
+    expect(isAgentTreeCollapseLocked(agents, null)).toBe(false);
+    expect(isAgentTreeCollapseLocked(agents, 99)).toBe(false);
   });
 
   it('sorts agents by ref ascending', () => {
