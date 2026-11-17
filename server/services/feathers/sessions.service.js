@@ -22,6 +22,7 @@ import {
   gitLocalAndRemoteSha,
   gitLogSinceBase,
   gitFetch,
+  gitCommitsToPush,
   gitPush,
   mergePR,
   markPRReady,
@@ -41,6 +42,7 @@ import {
   resolveRestoreWorktreeBranches,
 } from '../github.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
+import { persistGitPushApprovalOutcome } from '../git-push-approval-persistence.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
@@ -1271,7 +1273,12 @@ export class SessionsService extends KnexService {
     const session = params.resolvedSession;
     if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
     if (!session?.session_path) throw new BadRequest('Session has no worktree');
-    const pushEvent = { session_id: session.id, user_id: session.user_id };
+    const requestId = data?.request_id ?? null;
+    const pushEvent = {
+      session_id: session.id,
+      user_id: session.user_id,
+      ...(requestId ? { request_id: requestId } : {}),
+    };
     this.emit('push:start', pushEvent);
     let pushOk = false;
     let pushFailure = null;
@@ -1288,14 +1295,30 @@ export class SessionsService extends KnexService {
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
       const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
-      // Only governs creating a *new* PR; an existing PR is always kept in sync.
+      const requestedBranch = data?.branch ?? null;
+      const sessionBranch = session.remote_branch || session.local_branch || null;
+      const pushToAlternateBranch =
+        requestedBranch != null &&
+        requestedBranch !== sessionBranch &&
+        (session.remote_branch == null || requestedBranch !== session.remote_branch);
+      // Only governs creating a *new* PR; an existing PR is synced unless syncPr is false.
       const createPr = data?.createPr !== false;
+      const syncPr = data?.syncPr !== false;
       let commitsToPush = 0;
       if (!forceGit) {
-        ({ commitsToPush } = await computeSessionGitStatus(session));
+        if (pushToAlternateBranch && branch) {
+          commitsToPush = await gitCommitsToPush(cwd, branch, {
+            missingOriginRefMeansUnpushed: true,
+          });
+        } else {
+          ({ commitsToPush } = await computeSessionGitStatus(session));
+        }
       }
-      const needsMetadataSync = sessionNeedsPrMetadataSync(session);
+      const needsMetadataSync = syncPr && sessionNeedsPrMetadataSync(session);
       let pushedBranch = branch || session.remote_branch || session.local_branch;
+      const isSessionBranchPush = session.remote_branch
+        ? branch === session.remote_branch
+        : branch === session.local_branch;
       if (forceGit || commitsToPush > 0) {
         try {
           const result = await gitPush(cwd, auth, {
@@ -1304,13 +1327,15 @@ export class SessionsService extends KnexService {
             forceOverwrite: forceMode === 'force',
           });
           pushedBranch = result.branch;
-          await this.app
-            .service('sessions')
-            .patch(
-              session.id,
-              { remote_branch: pushedBranch },
-              { provider: undefined, user: { id: session.user_id } }
-            );
+          if (isSessionBranchPush) {
+            await this.app
+              .service('sessions')
+              .patch(
+                session.id,
+                { remote_branch: pushedBranch },
+                { provider: undefined, user: { id: session.user_id } }
+              );
+          }
         } catch (err) {
           if (err.rejected) {
             const conflict = new BadRequest('Push failed due to a conflict');
@@ -1329,6 +1354,7 @@ export class SessionsService extends KnexService {
       }
       if (
         token &&
+        syncPr &&
         (session.pr_number || (createPr && (session.label || session.pr_description != null)))
       ) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
@@ -1431,7 +1457,40 @@ export class SessionsService extends KnexService {
         }),
         ...(imageAttachmentFailures.length && { image_failures: imageAttachmentFailures }),
       });
+      if (requestId) {
+        try {
+          const outcome = pushOk ? 'pushed' : 'failed';
+          await persistGitPushApprovalOutcome(this.app, session, {
+            requestId,
+            outcome,
+            errorMessage: pushFailure?.message ?? null,
+          });
+        } catch (err) {
+          logger.warn(
+            { err: err.message, sessionId: session.id, requestId },
+            'Failed to persist GitPush approval outcome after push'
+          );
+        }
+      }
     }
+  }
+
+  async recordGitPushApprovalOutcome(data, params) {
+    const session = params.resolvedSession;
+    const requestId = data?.request_id;
+    const outcome = data?.outcome;
+    if (!requestId || typeof requestId !== 'string') {
+      throw new BadRequest('request_id is required');
+    }
+    if (!['canceled', 'pushed', 'failed'].includes(outcome)) {
+      throw new BadRequest('outcome must be canceled, pushed, or failed');
+    }
+    const result = await persistGitPushApprovalOutcome(this.app, session, {
+      requestId,
+      outcome,
+      errorMessage: data?.error_message ?? null,
+    });
+    return { ok: true, ...result };
   }
 
   /**
@@ -2758,6 +2817,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'merge',
       'setPrDraft',
       'push',
+      'recordGitPushApprovalOutcome',
       'archive',
       'restore',
       'getPrDetails',
@@ -2871,6 +2931,7 @@ const sessionsHooks = {
     merge: [resolveSessionFromData, requireOwnResolvedSession],
     setPrDraft: [resolveSessionFromData, requireOwnResolvedSession],
     push: [resolveSessionFromData, requireOwnResolvedSession],
+    recordGitPushApprovalOutcome: [resolveSessionFromData, requireOwnResolvedSession],
     archive: [resolveSessionFromData, requireOwnResolvedSession],
     restore: [resolveSessionFromData, requireOwnResolvedSession],
     getPrDetails: [resolveSessionFromData],

@@ -438,9 +438,17 @@ export default function Session() {
   }, [sessionId]);
 
   useEffect(() => {
-    const onPushRequest = ({ sessionId: sid, branch, forceMode }) => {
+    const onPushRequest = ({
+      sessionId: sid,
+      branch,
+      forceMode,
+      reason,
+      autoPushOff,
+      agentRequest,
+      request_id: requestId,
+    }) => {
       if (sid !== sessionId) return;
-      setPushRequest({ branch, forceMode });
+      setPushRequest({ branch, forceMode, reason, autoPushOff, agentRequest, requestId });
       setShowPushModal(true);
     };
     sessionsService.on('push:request', onPushRequest);
@@ -711,16 +719,25 @@ export default function Session() {
 
   const handlePush = () => {
     if (!session?.id || pushing) return;
+    setPushRequest(null);
     setShowPushModal(true);
   };
 
-  const handlePushConfirmed = async ({ forceMode, branch, createPr } = {}) => {
+  const handlePushConfirmed = async ({ forceMode, branch, createPr, syncPr } = {}) => {
     if (!session?.id || pushing) return;
+    const approvalRequestId = pushRequest?.requestId ?? null;
     setShowPushModal(false);
     setPushRequest(null);
     beginLocalPush();
     try {
-      await sessionsService.push({ id: session.id, forceMode, branch, createPr });
+      await sessionsService.push({
+        id: session.id,
+        forceMode,
+        branch,
+        createPr,
+        ...(syncPr === false ? { syncPr: false } : {}),
+        ...(approvalRequestId ? { request_id: approvalRequestId } : {}),
+      });
       await refreshCommitsToPush();
       toast.success('Pushed successfully');
     } catch (err) {
@@ -1502,6 +1519,22 @@ export default function Session() {
         onAutoPushChange={handleAutoPushChange}
         onPushConfirmed={handlePushConfirmed}
         onPushCancel={() => {
+          if (pushRequest?.agentRequest && session?.id) {
+            const cancelPayload = {
+              session_id: session.id,
+              ...(pushRequest.requestId ? { request_id: pushRequest.requestId } : {}),
+            };
+            if (pushRequest.requestId) {
+              sessionsService
+                .recordGitPushApprovalOutcome({
+                  id: session.id,
+                  request_id: pushRequest.requestId,
+                  outcome: 'canceled',
+                })
+                .catch((err) => toastError('Failed to record push cancellation', err));
+            }
+            sessionsService.emit('push:approval-cancelled', cancelPayload);
+          }
           setShowPushModal(false);
           setPushRequest(null);
         }}

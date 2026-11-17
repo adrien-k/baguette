@@ -748,9 +748,13 @@ export async function gitCommitsNotOnAnyRemote(worktreePath) {
  * When `remoteBranch` is set, counts `origin/<remoteBranch>..HEAD` so a unique
  * local worktree branch is not treated as fully unpushed. Falls back to
  * `HEAD --not --remotes` if that origin ref is missing (new branch never pushed).
+ * When `missingOriginRefMeansUnpushed` is true, a missing `origin/<remoteBranch>`
+ * returns 1 instead of that fallback (for alternate-target pushes where HEAD may
+ * already be on the session remote).
  * @returns {Promise<number>}
  */
-export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
+export async function gitCommitsToPush(worktreePath, remoteBranch = null, options = {}) {
+  const { missingOriginRefMeansUnpushed = false } = options;
   try {
     if (remoteBranch) {
       try {
@@ -766,6 +770,9 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null) {
         );
         return parseInt(stdout.trim(), 10) || 0;
       } catch {
+        if (missingOriginRefMeansUnpushed) {
+          return 1;
+        }
         /* origin/<remoteBranch> missing — count commits not on any remote */
       }
     }

@@ -68,6 +68,10 @@ export default function SessionWorkspaceModals({
           commitsToPush={commitsToPush}
           initialBranch={pushRequest?.branch || session?.remote_branch || session?.local_branch}
           initialForceMode={pushRequest?.forceMode || null}
+          localBranch={session?.remote_branch || session?.local_branch || ''}
+          reason={pushRequest?.reason || null}
+          autoPushOff={pushRequest?.autoPushOff === true}
+          agentRequest={pushRequest?.agentRequest === true}
           autoPush={sessionAutoPushOn}
           autoPushDisabled={sessionIsLocalRepo}
           onAutoPushChange={onAutoPushChange}

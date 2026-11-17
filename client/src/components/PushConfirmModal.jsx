@@ -22,6 +22,10 @@ export default function PushConfirmModal({
   commitsToPush,
   initialBranch,
   initialForceMode,
+  localBranch = '',
+  reason = null,
+  autoPushOff = false,
+  agentRequest = false,
   autoPush,
   autoPushDisabled = false,
   onAutoPushChange,
@@ -37,7 +41,10 @@ export default function PushConfirmModal({
   const [loadingShas, setLoadingShas] = useState(false);
 
   let prPhrase = ' and update the PR.';
-  if (!hasExistingPr) {
+  if (agentRequest) {
+    // Agent-initiated approval (GitPush tool): no PR create or sync.
+    prPhrase = '';
+  } else if (!hasExistingPr) {
     prPhrase = createPr ? ' and create the PR.' : '';
   }
 
@@ -78,6 +85,15 @@ export default function PushConfirmModal({
     <Modal>
       <ModalHeader title="Push commits" onClose={onCancel} />
 
+      {reason ? (
+        <div
+          className={`mb-2 rounded-lg border ${HAIRLINE} bg-control/40 px-3 py-2 text-xs ${TEXT_MUTED}`}
+        >
+          <span className={`${TEXT_FAINT} uppercase tracking-wide text-[10px] mr-1.5`}>Agent</span>
+          <span className={TEXT_HEADING}>{reason}</span>
+        </div>
+      ) : null}
+
       <p className={`${TEXT_MUTED} text-sm mb-1`}>
         Push{' '}
         {commitsToPush > 0 ? (
@@ -87,7 +103,7 @@ export default function PushConfirmModal({
         ) : (
           'changes'
         )}{' '}
-        to GitHub{prPhrase}
+        to origin{prPhrase}
       </p>
 
       <div className="flex flex-col gap-3 mb-0 mt-4">
@@ -102,6 +118,11 @@ export default function PushConfirmModal({
             loadingText="Loading branches..."
             emptyText="No branches found"
           />
+          {localBranch && localBranch !== branch && (
+            <div className={`mt-1.5 font-mono text-[10px] ${TEXT_FAINT}`}>
+              local {localBranch} → origin/{branch}
+            </div>
+          )}
           {(localSha || remoteSha) && (
             <div className={`mt-1.5 flex items-center gap-1.5 font-mono text-[10px] ${TEXT_FAINT}`}>
               <span title="Local HEAD">{localSha ?? '?'}</span>
@@ -129,7 +150,7 @@ export default function PushConfirmModal({
           </select>
         </div>
 
-        {isPureForce && (
+        {forceMode === 'force' && (
           <div className={`flex items-start gap-2 text-xs ${TINT_WARN_SOFT} rounded-lg px-3 py-2`}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>
@@ -138,8 +159,26 @@ export default function PushConfirmModal({
             </span>
           </div>
         )}
+        {forceMode === 'lease' && (
+          <div className={`flex items-start gap-2 text-xs ${TINT_WARN_SOFT} rounded-lg px-3 py-2`}>
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              <strong>--force-with-lease</strong> overwrites the remote branch unless it moved since
+              your last fetch.
+            </span>
+          </div>
+        )}
+        {autoPushOff && !autoPush && (
+          <div className={`flex items-start gap-2 text-xs ${TINT_WARN_SOFT} rounded-lg px-3 py-2`}>
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Auto-push is off for this session. Confirming pushes this once manually — re-enable
+              auto-push below if it should be automatic again.
+            </span>
+          </div>
+        )}
 
-        {!hasExistingPr && (
+        {!hasExistingPr && !agentRequest && (
           <label
             className={`flex items-center justify-between gap-3 rounded-lg border ${HAIRLINE} bg-control/40 px-3 py-2.5 cursor-pointer`}
           >
@@ -191,7 +230,12 @@ export default function PushConfirmModal({
         <button
           type="button"
           onClick={() =>
-            onConfirm({ forceMode: forceMode || null, branch: branch || null, createPr })
+            onConfirm({
+              forceMode: forceMode || null,
+              branch: branch || null,
+              createPr: agentRequest ? false : createPr,
+              syncPr: !agentRequest,
+            })
           }
           className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
             isPureForce

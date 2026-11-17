@@ -11,7 +11,9 @@ export function mockAgentFullTurnClosingMessage() {
 - \`${MOCK_E2E_SUBAGENT_PROMPT}\` — StartSubagent via MCP
 - \`${MOCK_E2E_CREATE_PLAN_PROMPT}\` — CreatePlan UI; then **Run the plan** or reply \`Proceed with the plan.\`
 - \`${MOCK_E2E_CREATE_PLAN_NON_INTERACTIVE_PROMPT}\` — CreatePlan with \`interactive: false\`; turn continues (no Run/Refine)
-- \`${MOCK_E2E_ASK_QUESTION_PROMPT}\` — AskUserQuestions UI; pick an option to submit answers`;
+- \`${MOCK_E2E_ASK_QUESTION_PROMPT}\` — AskUserQuestions UI; pick an option to submit answers
+- \`${MOCK_E2E_GITPUSH_PROMPT}\` — real GitPush MCP call; opens the Push approval modal
+- \`${MOCK_E2E_GITPUSH_FORCE_PROMPT}\` — same with force: "force" (approval shows the --force warning)`;
 }
 
 export const MOCK_REVIEWER_SUMMARY_TEXT =
@@ -68,6 +70,16 @@ export const MOCK_E2E_ASK_QUESTION_TEXT = 'Which e2e path should we take?';
 export const MOCK_E2E_ASK_ANSWER_SUMMARY = 'E2E mock question answer received.';
 
 /**
+ * E2e: real GitPush MCP tool call (needs a repo with an origin — see the
+ * `gitpush-approval` e2e spec). Requests the Push approval for `development`.
+ */
+export const MOCK_E2E_GITPUSH_PROMPT = 'e2e mock request a push approval';
+export const MOCK_E2E_GITPUSH_FORCE_PROMPT = 'e2e mock request a force push approval';
+export const MOCK_E2E_GITPUSH_TARGET_BRANCH = 'development';
+export const MOCK_E2E_GITPUSH_REASON = 'Fast-forward development with the committed e2e work.';
+export const MOCK_E2E_GITPUSH_SUMMARY = 'E2E GitPush approval requested.';
+
+/**
  * @param {object | null | undefined} parsed - normalized user payload (`normalizeUserPayloadForStorage`)
  */
 export function mockUserPromptText(parsed) {
@@ -92,7 +104,7 @@ export function mockUserPromptText(parsed) {
   return '';
 }
 
-/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create-non-interactive' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer'} */
+/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create-non-interactive' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer' | 'gitpush-e2e' | 'gitpush-force-e2e'} */
 export function mockAgentScenarioForPrompt(promptText) {
   const text = (promptText ?? '').trim().toLowerCase();
   if (text.includes(MOCK_E2E_SUBAGENT_PROMPT.toLowerCase())) return 'subagent-e2e';
@@ -104,6 +116,8 @@ export function mockAgentScenarioForPrompt(promptText) {
   if (text === 'proceed with the plan.') return 'plan-run';
   if (text.includes(MOCK_E2E_ASK_QUESTION_PROMPT.toLowerCase())) return 'ask-question';
   if (text.includes(MOCK_E2E_ASK_QUESTION_TEXT.toLowerCase())) return 'ask-answer';
+  if (text.includes(MOCK_E2E_GITPUSH_FORCE_PROMPT.toLowerCase())) return 'gitpush-force-e2e';
+  if (text.includes(MOCK_E2E_GITPUSH_PROMPT.toLowerCase())) return 'gitpush-e2e';
   return 'full';
 }
 

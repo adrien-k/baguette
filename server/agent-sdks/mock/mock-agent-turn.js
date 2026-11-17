@@ -11,6 +11,9 @@ import {
   MOCK_E2E_SUBAGENT_SUMMARY,
   MOCK_E2E_ASK_ANSWER_SUMMARY,
   MOCK_E2E_ASK_QUESTION_TEXT,
+  MOCK_E2E_GITPUSH_REASON,
+  MOCK_E2E_GITPUSH_SUMMARY,
+  MOCK_E2E_GITPUSH_TARGET_BRANCH,
   MOCK_E2E_PLAN_MARKDOWN,
   MOCK_E2E_PLAN_NON_INTERACTIVE_MARKDOWN,
   MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY,
@@ -19,6 +22,8 @@ import {
   MOCK_REVIEWER_SUMMARY_TEXT,
   mockAgentScenarioForPrompt,
 } from '../../../shared/mock-agent-sdk.js';
+import { createGitPushTool } from '../../services/mcp/tools/git-push.js';
+import { createSessionAgentContext } from '../../services/mcp/lib/session-agent-context.js';
 import {
   SUBAGENT_DEFAULT_PRESET,
   normalizeSubagentDefaultMode,
@@ -238,6 +243,49 @@ async function runMockAskAnswerTurn({ writer }) {
 }
 
 /**
+ * Real GitPush MCP tool call for e2e: commits a scratch file, then calls the
+ * actual tool handler so the Push approval modal opens in the UI. Needs a
+ * session whose repo has an origin (seeded by the e2e spec).
+ */
+async function runMockGitPushE2eTurn({ session, app, writer, abortSignal, force }) {
+  const cwd = resolveDataDirRelativePath(session.session_path);
+  if (!cwd) {
+    throw new Error('Session worktree is not ready');
+  }
+
+  await writer.appendThinking('Committing e2e work, then requesting a push approval…');
+  await delay(mockStepDelayMs(), abortSignal);
+
+  const scratchRel = '.baguette-mock/gitpush-note.txt';
+  await mkdir(join(cwd, '.baguette-mock'), { recursive: true });
+  await writeFile(join(cwd, scratchRel), 'e2e gitpush work\n', 'utf8');
+  await runShell(
+    cwd,
+    `git add ${scratchRel} && git -c user.name=E2E -c user.email=e2e@baguette.dev commit -m "e2e: gitpush work"`,
+    abortSignal
+  );
+
+  const toolArgs = {
+    branch: MOCK_E2E_GITPUSH_TARGET_BRANCH,
+    ...(force ? { force } : {}),
+    reason: MOCK_E2E_GITPUSH_REASON,
+  };
+  const ctx = createSessionAgentContext(session, app);
+  const tool = createGitPushTool(ctx);
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-gitpush',
+    name: 'mcp__baguette__GitPush',
+    args: toolArgs,
+    rawResult: await tool.handler(toolArgs),
+  });
+
+  await writer.appendAssistantText(MOCK_E2E_GITPUSH_SUMMARY);
+  await writer.flushAssistant();
+  await persistMockTurnResult(writer);
+  return {};
+}
+
+/**
  * Primary builder turn: real StartSubagent (MCP flag) for e2e session-agent coverage.
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
@@ -348,6 +396,12 @@ export async function runMockAgentTurn({
   }
   if (scenario === 'ask-answer') {
     return runMockAskAnswerTurn({ writer, abortSignal });
+  }
+  if (scenario === 'gitpush-e2e') {
+    return runMockGitPushE2eTurn({ session, app, writer, abortSignal, force: null });
+  }
+  if (scenario === 'gitpush-force-e2e') {
+    return runMockGitPushE2eTurn({ session, app, writer, abortSignal, force: 'force' });
   }
 
   const cwd = resolveDataDirRelativePath(session.session_path);

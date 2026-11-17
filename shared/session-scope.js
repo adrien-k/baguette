@@ -142,6 +142,9 @@ export function sessionHref(session, { fromAllSessions } = {}) {
 export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSession',
   'UpdateIssueStatus',
+  // Session shipping stays with the parent builder: pushing can retarget
+  // remote_branch and open the Push modal, which is the parent's decision.
+  'GitPush',
   'StartSubagent',
   'CreateSession',
   'CreateLoop',

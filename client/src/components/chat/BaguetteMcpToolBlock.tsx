@@ -13,6 +13,7 @@ import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
 import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
 import TaskMcpToolBlock from './TaskMcpToolBlock.tsx';
 import ConfigureMcpServerBlock from './ConfigureMcpServerBlock.tsx';
+import GitPushToolBlock from './GitPushToolBlock.tsx';
 import { parseMcpJsonResult, type McpResultData } from '../../utils/parseMcpJsonResult.ts';
 
 const ISSUE_SEVERITY_CLASS: Record<string, string> = {
@@ -436,6 +437,10 @@ export default function BaguetteMcpToolBlock({
 
   if (toolShortName === 'ConfigureMcpServer') {
     return <ConfigureMcpServerBlock args={args} result={result} isError={isError} />;
+  }
+
+  if (toolShortName === 'GitPush') {
+    return <GitPushToolBlock args={args} result={result} isError={isError} sessionId={sessionId} />;
   }
 
   if (toolShortName === 'PrUpsert') {

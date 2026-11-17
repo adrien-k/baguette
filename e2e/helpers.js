@@ -28,8 +28,6 @@ import {
   SUBAGENT_DEFAULT_PRESET,
 } from '../shared/subagent-default-mode.js';
 
-const execFileAsync = promisify(execFile);
-
 export {
   MOCK_E2E_QUICK_TURN_PROMPT,
   MOCK_E2E_QUICK_TURN_SUMMARY,
@@ -42,6 +40,89 @@ export {
 
 export function localRepoName() {
   return `e2e-mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const execFileAsync = promisify(execFile);
+
+async function runGit(cwd, args) {
+  const { stdout } = await execFileAsync('git', args, {
+    cwd: cwd ?? undefined,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return stdout.trim();
+}
+
+/**
+ * Local repo upgraded to "GitHub mode" against a real local bare origin, so the
+ * GitPush approval e2e can push for real without any GitHub network:
+ *
+ * - the bare origin is seeded FROM the main clone (`master` plus a
+ *   `development` branch at the same commit), so session branches and the
+ *   `development` target share history and pushes are fast-forwards
+ * - the main clone tracks the bare as `origin`
+ * - the repos row flips to `access_mode: 'github'` with that origin (GitPush
+ *   tool, auto-push and the Push modal all take the github path)
+ *
+ * Pushes run `git push` with a fake token; the auth extraheader is scoped to
+ * `http.https://github.com/` so it never reaches the plain-path origin.
+ * Returns `{ repoId, repoName, originPath }`.
+ */
+export async function seedGitPushOriginRepo(page, repoName = localRepoName()) {
+  const repoId = await createLocalRepo(page, repoName);
+
+  const dataDir = dirname(E2E_DB_PATH);
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let repoRow;
+  try {
+    repoRow = db.prepare('SELECT repo_path, default_branch FROM repos WHERE id = ?').get(repoId);
+  } finally {
+    db.close();
+  }
+  expect(repoRow?.repo_path).toBeTruthy();
+  const mainCloneDir = join(dataDir, repoRow.repo_path);
+  const baseBranch = repoRow.default_branch || 'master';
+
+  const originDir = join(dataDir, 'gitpush-origins');
+  const originPath = join(originDir, `${repoName}.git`);
+  await mkdir(originDir, { recursive: true });
+  await runGit(null, ['init', '--bare', '-b', baseBranch, originPath]);
+  await runGit(mainCloneDir, ['remote', 'add', 'origin', originPath]);
+  // Seed the bare from the main clone: master as-is, development from the same
+  // commit so the modal's HEAD:development push is always a fast-forward.
+  await runGit(mainCloneDir, ['push', '-q', 'origin', baseBranch]);
+  await runGit(mainCloneDir, ['push', '-q', 'origin', `${baseBranch}:development`]);
+  await runGit(mainCloneDir, ['fetch', 'origin']);
+
+  const dbWrite = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    dbWrite
+      .prepare("UPDATE repos SET origin = ?, access_mode = 'github' WHERE id = ?")
+      .run(originPath, repoId);
+  } finally {
+    dbWrite.close();
+  }
+
+  return { repoId, repoName, originPath };
+}
+
+/** Resolve a git ref to its full sha (e2e push verification). */
+export async function gitSha(cwd, ref) {
+  return runGit(cwd, ['rev-parse', ref]);
+}
+
+/** Read a session's worktree path from the webServer sqlite. */
+export async function e2eSessionWorktreePath(sessionId) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let row;
+  try {
+    row = db.prepare('SELECT session_path FROM sessions WHERE id = ?').get(sessionId);
+  } finally {
+    db.close();
+  }
+  expect(row?.session_path).toBeTruthy();
+  return join(dirname(E2E_DB_PATH), row.session_path);
 }
 
 /**

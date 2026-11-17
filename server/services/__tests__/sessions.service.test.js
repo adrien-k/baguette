@@ -36,6 +36,7 @@ import {
   BAGUETTE_DESCRIPTION_MARKER,
   BAGUETTE_FOOTER_MARKER,
   createWorktree,
+  gitCommitsToPush,
   gitPush,
   upsertPR,
   getOpenPR,
@@ -123,6 +124,7 @@ vi.mock('../github.js', async (importOriginal) => {
     ...actual,
     removeWorktree: vi.fn().mockResolvedValue(undefined),
     createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
+    gitCommitsToPush: vi.fn().mockResolvedValue(0),
     gitPush: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-branch' }),
     upsertPR: vi.fn().mockResolvedValue({ url: 'https://github.com/o/r/pull/1', number: 1 }),
     getOpenPRByNumber: vi.fn(),
@@ -2735,6 +2737,166 @@ describe('Sessions service - find, get, create', () => {
       const row = await db('sessions').where({ id: created.id }).first();
       expect(row.pr_number).toBeNull();
       expect(row.last_pushed_at).toBeNull();
+    });
+
+    it('push to an alternate branch still runs git push when the session branch has no unpushed commits', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-alt-branch-push',
+        remote_branch: 'session-feature',
+        local_branch: 'session-feature-local',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitCommitsToPush).mockResolvedValueOnce(2);
+      vi.mocked(gitPush).mockResolvedValueOnce({ ok: true, branch: 'development' });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id, branch: 'development', createPr: false, syncPr: false },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitCommitsToPush).toHaveBeenCalledWith(expect.any(String), 'development', {
+        missingOriginRefMeansUnpushed: true,
+      });
+      expect(gitPush).toHaveBeenCalledTimes(1);
+      expect(gitPush).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ branch: 'development' })
+      );
+      const row = await db('sessions').where({ id: created.id }).first();
+      expect(row.remote_branch).toBe('session-feature');
+    });
+
+    it('push to an alternate branch runs git push when origin/<target> is unknown locally', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-alt-missing-origin-ref',
+        remote_branch: 'session-feature',
+        local_branch: 'session-feature-local',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitCommitsToPush).mockImplementationOnce(async (_cwd, _branch, options) => {
+        return options?.missingOriginRefMeansUnpushed ? 1 : 0;
+      });
+      vi.mocked(gitPush).mockResolvedValueOnce({ ok: true, branch: 'development' });
+      vi.mocked(gitPush).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id, branch: 'development', createPr: false, syncPr: false },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitCommitsToPush).toHaveBeenCalledWith(expect.any(String), 'development', {
+        missingOriginRefMeansUnpushed: true,
+      });
+      expect(gitPush).toHaveBeenCalledTimes(1);
+    });
+
+    it('push to an alternate branch does not patch remote_branch', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-alt-branch-no-retarget',
+        remote_branch: 'my-session-branch',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 3,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockResolvedValueOnce({ ok: true, branch: 'development' });
+      vi.mocked(gitPush).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id, branch: 'development' },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      const row = await db('sessions').where({ id: created.id }).first();
+      expect(row.remote_branch).toBe('my-session-branch');
+    });
+
+    it('push with syncPr false does not sync an existing PR', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-syncpr-false',
+        label: 'Title',
+        pr_description: 'Body',
+        pr_number: 7,
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 0,
+        commitsSinceReview: 0,
+      });
+      vi.mocked(gitPush).mockClear();
+      vi.mocked(upsertPR).mockClear();
+
+      const sessionRow = await db('sessions').where({ id: created.id }).first();
+      await app.service('sessions').push(
+        { id: created.id, createPr: false, syncPr: false },
+        {
+          provider: undefined,
+          user: { id: userId1 },
+          resolvedSession: sessionRow,
+        }
+      );
+
+      expect(gitPush).not.toHaveBeenCalled();
+      expect(upsertPR).not.toHaveBeenCalled();
     });
 
     it('push with createPr false still syncs an existing PR', async () => {

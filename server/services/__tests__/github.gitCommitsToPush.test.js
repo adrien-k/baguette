@@ -63,4 +63,16 @@ describe('gitCommitsToPush / gitCommitsNotOnAnyRemote', () => {
     expect(await gitCommitsNotOnAnyRemote(workPath)).toBe(0);
     expect(await gitCommitsToPush(workPath, SESSION_BRANCH)).toBe(1);
   });
+
+  it('treats a missing origin ref as unpushed when missingOriginRefMeansUnpushed is set', async () => {
+    await git(workPath, 'push', '-u', 'origin', SESSION_BRANCH);
+    await git(workPath, 'fetch', 'origin');
+
+    const UNKNOWN_TARGET = 'never-fetched-target';
+    expect(await gitCommitsNotOnAnyRemote(workPath)).toBe(0);
+    expect(await gitCommitsToPush(workPath, UNKNOWN_TARGET)).toBe(0);
+    expect(
+      await gitCommitsToPush(workPath, UNKNOWN_TARGET, { missingOriginRefMeansUnpushed: true })
+    ).toBe(1);
+  });
 });

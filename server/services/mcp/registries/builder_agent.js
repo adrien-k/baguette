@@ -1,6 +1,7 @@
 import { createSessionAgentContext } from '../lib/session-agent-context.js';
 import { createGitPullTool } from '../tools/git-pull.js';
 import { createGitFetchTool } from '../tools/git-fetch.js';
+import { createGitPushTool } from '../tools/git-push.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
 import { createUpdateSessionTool } from '../tools/update-session.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
@@ -70,6 +71,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createListTodosTool(ctx),
     createGitPullTool(ctx),
     createGitFetchTool(ctx),
+    createGitPushTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),
     createUpdateSessionTool(ctx),
     createPrCommentsTool(ctx),

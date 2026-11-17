@@ -150,7 +150,8 @@ test.describe('bootstrap onboarding without GitHub', () => {
   }) => {
     await page.setViewportSize(WIDE_VIEWPORT);
     await devLogin(page);
-    await page.getByRole('button', { name: /dev/ }).click();
+    // exact: the TanStack devtools floating button's name also contains "dev"
+    await page.getByRole('button', { name: 'dev', exact: true }).click();
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.getByRole('heading', { name: 'Baguette' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('button', { name: 'Sign in with passkey' })).toBeVisible();

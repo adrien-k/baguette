@@ -99,7 +99,7 @@ export function sortSessionAgentsByRefAsc(agents) {
  * Returns 0 when unknown so timed agents sort ahead; SQLite CURRENT_TIMESTAMP
  * values ("YYYY-MM-DD HH:MM:SS", UTC) are normalized to ISO before parsing.
  */
-export function agentLastActivityMs(agent) {
+function agentLastActivityMs(agent) {
   const raw = agent?.updated_at;
   if (!raw) return 0;
   const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw) ? `${raw}Z` : raw;

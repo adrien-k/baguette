@@ -187,6 +187,7 @@ function makeApp(
   const mockGetTask = tasksGetTask ?? vi.fn().mockReturnValue(null);
   const mockFilterTasks = tasksFilterTasks ?? vi.fn().mockReturnValue([]);
   const mockFindLatestTaskByTaskKey = tasksFindLatestTaskByTaskKey ?? vi.fn().mockReturnValue(null);
+  const mockEmit = vi.fn();
   const emptyUsageQuery = () => {
     const chain = {
       where: () => chain,
@@ -241,6 +242,7 @@ function makeApp(
     getInterpolatedConfigValue: async (_id, value) => value,
     getTaskEnv: mockGetTaskEnv,
     create: mockCreate,
+    emit: mockEmit,
   };
   const app = {
     get: (key) => (key === 'db' ? db : null),
@@ -258,7 +260,15 @@ function makeApp(
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };
     },
   };
-  return { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+  return {
+    app,
+    mockPatch,
+    mockGetTaskEnv,
+    mockCreate,
+    mockGetTask,
+    mockFilterTasks,
+    mockEmit,
+  };
 }
 
 async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null } = {}) {
@@ -277,13 +287,11 @@ async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null }
 
 function buildStandaloneGitPrTools(sessionOverrides = {}, appOpts = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
-  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
-    sessionRow,
-    appOpts
-  );
+  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks, mockEmit } =
+    makeApp(sessionRow, appOpts);
   const ctx = createSessionAgentContext(sessionRow, app);
   const tools = [createGitPushTool(ctx)];
-  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks, mockEmit };
 }
 
 function callTool(tools, name, args = {}) {
@@ -303,13 +311,16 @@ beforeEach(() => {
 });
 
 describe('builder MCP tool registry', () => {
-  it('omits GitPush for repo sessions', async () => {
+  it('includes GitPush for repo sessions without force options', async () => {
     const { tools } = await buildServer();
     const names = tools.map((t) => t.name);
-    expect(names).not.toContain('GitPush');
+    expect(names).toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('ConfigureMcpServer');
+    const push = tools.find((t) => t.name === 'GitPush');
+    expect(push.description).toMatch(/not for regular turn work/i);
+    expect(push.description).toMatch(/approval/i);
   });
 
   it('keeps GitHub PR tools for github remotes with a token', async () => {
@@ -372,6 +383,9 @@ describe('builder MCP tool registry', () => {
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('UpdateSession');
     expect(names).not.toContain('StartSubagent');
+    // Session shipping stays with the parent builder: pushes can retarget
+    // remote_branch and open the Push modal, which is the parent's decision.
+    expect(names).not.toContain('GitPush');
     // Fleet orchestration stays with the parent: subagents must not stop sessions
     // (including their own parent's turn), arm wake-ups, or inspect/await other sessions.
     expect(names).not.toContain('StopSession');
@@ -746,6 +760,13 @@ describe('GitFetch', () => {
 });
 
 describe('GitPush', () => {
+  it('exposes force and reason options in its schema', async () => {
+    const { tools } = buildStandaloneGitPrTools();
+    const push = tools.find((t) => t.name === 'GitPush');
+    expect(push.schema).toHaveProperty('force');
+    expect(push.schema).toHaveProperty('reason');
+  });
+
   it('returns ok: false when push is rejected', async () => {
     const err = Object.assign(new Error('push rejected: run git-pull to resolve conflict'), {
       rejected: true,
@@ -770,7 +791,6 @@ describe('GitPush', () => {
       '/tmp/wt',
       expect.objectContaining({ mode: 'github', token: 'ghtoken', userId: 1 }),
       {
-        force: false,
         branch: 'feature-branch',
       }
     );
@@ -783,13 +803,100 @@ describe('GitPush', () => {
     );
   });
 
-  it('skips push and returns ok message when auto_push is disabled', async () => {
-    const { tools, mockPatch } = buildStandaloneGitPrTools({ auto_push: 0 });
-    const result = parseResult(await callTool(tools, 'GitPush'));
+  it('opens the push approval (no direct push) when auto_push is disabled', async () => {
+    const { tools, mockPatch, mockEmit } = buildStandaloneGitPrTools({ auto_push: 0 });
+    const result = parseResult(
+      await callTool(tools, 'GitPush', { reason: 'user asked to push now' })
+    );
     expect(result.ok).toBe(true);
-    expect(typeof result.message).toBe('string');
+    expect(result.approval_requested).toBe(true);
+    expect(typeof result.request_id).toBe('string');
+    expect(result.request_id.length).toBeGreaterThan(0);
+    expect(result.auto_push_off).toBe(true);
+    expect(result.reason).toBe('user asked to push now');
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        sessionId: 1,
+        request_id: result.request_id,
+        forceMode: null,
+        reason: 'user asked to push now',
+        autoPushOff: true,
+        agentRequest: true,
+      })
+    );
     expect(gitPush).not.toHaveBeenCalled();
     expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('opens the push approval (no direct push) for a non-session branch', async () => {
+    const { tools, mockPatch, mockEmit } = buildStandaloneGitPrTools({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        branch: 'development',
+        reason: 'fast-forward development with the finished work',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBe(true);
+    expect(result.local_branch).toBe('feature-branch');
+    expect(result.target_branch).toBe('development');
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        sessionId: 1,
+        branch: 'development',
+        forceMode: null,
+        reason: 'fast-forward development with the finished work',
+        autoPushOff: false,
+        agentRequest: true,
+      })
+    );
+    expect(gitPush).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['lease', 'lease'],
+    ['force', 'force'],
+  ])('opens the push approval (no direct push) for force: %s', async (forceMode) => {
+    const { tools, mockPatch, mockEmit } = buildStandaloneGitPrTools();
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        force: forceMode,
+        reason: 'align with the rebased history the user requested',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBe(true);
+    expect(result.force).toBe(forceMode);
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        sessionId: 1,
+        forceMode,
+        reason: 'align with the rebased history the user requested',
+        autoPushOff: false,
+        agentRequest: true,
+      })
+    );
+    expect(gitPush).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('pushes directly (no approval) for a plain session-branch push with auto-push on', async () => {
+    gitPush.mockResolvedValue({ ok: true, branch: 'feature-branch' });
+    const { tools, mockEmit } = buildStandaloneGitPrTools({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
+    const result = parseResult(await callTool(tools, 'GitPush'));
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBeUndefined();
+    expect(mockEmit).not.toHaveBeenCalled();
   });
 });
 
