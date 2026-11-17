@@ -210,5 +210,44 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
       const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
       expect(completedPatch).toBeUndefined();
     });
+
+    it('patches stopped (not failed) when the turn outcome is stopped', async () => {
+      const service = new PiAgentService();
+      service.app = app;
+      service.setup(service.app);
+      vi.spyOn(service, 'buildAgentOptions').mockResolvedValue({
+        cwd: '/tmp',
+        modelRuntime: {},
+        customTools: [],
+      });
+      vi.spyOn(service, 'runTurn').mockResolvedValue({
+        outcome: 'stopped',
+        turnUsage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          reasoning_tokens: 0,
+          total_tokens: 0,
+          model: null,
+        },
+      });
+
+      const session = await piDb('sessions').where({ id: 3 }).first();
+      const builder = await piDb('agents').where({ session_id: 3, is_primary: 1 }).first();
+      const row = { model: 'claude-haiku-4-5', agent_config_id: 8 };
+
+      await service._runTurn(
+        session,
+        { type: 'user', message: { role: 'user', content: 'hi' } },
+        row,
+        { turnId: 12, channel: 'chat', agent: builder }
+      );
+
+      const stoppedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'stopped');
+      expect(stoppedPatch).toBeDefined();
+      const failedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'failed');
+      expect(failedPatch).toBeUndefined();
+    });
   });
 });

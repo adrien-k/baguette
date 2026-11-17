@@ -345,6 +345,39 @@ describe('Sessions service - custom methods', () => {
       expect(extraAfter.active_turn_id).toBeNull();
     });
 
+    it('cancels in-flight provisioning on stop and ends stopped', async () => {
+      await db('sessions')
+        .where({ id: sessId })
+        .update({ status: 'provisioning', session_path: null });
+      const sessionsSvc = app.service('sessions');
+      // A pending provisioning job whose promise has not settled yet.
+      let settleJob;
+      const job = new Promise((resolve) => {
+        settleJob = resolve;
+      });
+      sessionsSvc._trackProvisioning(sessId, job);
+      sessionsSvc._provisioningAbortSessionIds.add(sessId);
+
+      const result = await app.service('sessions').stop(sessId, params({ id: userId }));
+
+      expect(result).toEqual({ ok: true });
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.status).toBe('stopped');
+      // The abort registration stays until the provisioning job settles, so a late
+      // setup error or finalize cannot resurrect or fail the stopped session.
+      expect(sessionsSvc._provisioningAbortSessionIds.has(sessId)).toBe(true);
+
+      settleJob();
+      await job;
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(sessionsSvc._provisioningAbortSessionIds.has(sessId)).toBe(false);
+    });
+
+    it('stop of a non-provisioning session does not register a provisioning abort', async () => {
+      await app.service('sessions').stop(sessId, params({ id: userId }));
+      expect(app.service('sessions')._provisioningAbortSessionIds.has(sessId)).toBe(false);
+    });
+
     it('rejects with NotFound for an unknown id', async () => {
       await expect(
         app.service('sessions').stop(99999, params({ id: userId }))

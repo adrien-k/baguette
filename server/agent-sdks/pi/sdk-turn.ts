@@ -58,11 +58,22 @@ export async function processPiSessionStream(
 
   const ensureFailureRecorded = async () => {
     if (turnResultRecorded || finishedOk) return;
+    // A deliberate stop is not a failure: leave no terminal verdict row behind.
+    if (abortSignal?.aborted) return;
     const detail = lastError ?? 'Pi agent turn failed before completing.';
     const ops = piTurnResultOps('error', detail);
     noteTurnResultFromOps(ops);
     await writer.apply(ops);
     finishedOk = false;
+  };
+
+  /** Apply mapped ops, dropping terminal verdict rows once the turn is deliberately aborted. */
+  const applyOps = (ops: MessageOp[] | null | undefined) => {
+    if (!ops?.length) return;
+    const effective = abortSignal?.aborted ? ops.filter((op) => op.op !== 'turn_result') : ops;
+    if (!effective.length) return;
+    noteTurnResultFromOps(ops);
+    applyChain = applyChain.then(() => writer.apply(effective));
   };
 
   const unsubscribe = subscribe((event) => {
@@ -96,10 +107,7 @@ export async function processPiSessionStream(
 
     // Pi still emits agent_settled after a failed assistant turn; do not treat that as success.
     const ops = event.type === 'agent_settled' && turnFailed ? null : mapPiEvent(event);
-    if (ops?.length) {
-      noteTurnResultFromOps(ops);
-      applyChain = applyChain.then(() => writer.apply(ops));
-    }
+    applyOps(ops);
   });
 
   try {

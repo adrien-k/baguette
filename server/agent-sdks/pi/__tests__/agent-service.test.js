@@ -61,6 +61,7 @@ vi.mock('../sdk-turn.ts', () => ({
 }));
 
 import { PiAgentService } from '../agent-service.ts';
+import { processPiSessionStream } from '../sdk-turn.ts';
 import { createAgentSession } from '@earendil-works/pi-coding-agent';
 
 function makeApp(overrides = {}) {
@@ -196,6 +197,59 @@ describe('PiAgentService', () => {
       activeKey: 1,
     });
     expect(service._activeSessions.has(1)).toBe(false);
+  });
+
+  it('runTurn classifies an aborted turn as stopped, not failed', async () => {
+    vi.mocked(processPiSessionStream).mockResolvedValueOnce({
+      finishedOk: false,
+      turnUsage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        reasoning_tokens: 0,
+        total_tokens: 0,
+        model: null,
+      },
+    });
+    const service = new PiAgentService();
+    service.app = makeApp();
+    const controller = new AbortController();
+    controller.abort();
+    const result = await service.runTurn({
+      session: { id: 1, user_id: 2, session_path: 'sessions/wt', model: 'm' },
+      userText: 'hello',
+      agentOptions: { cwd: '/tmp', modelRuntime: {}, customTools: [] },
+      writer: { close: vi.fn() },
+      activeKey: 1,
+      abortController: controller,
+    });
+    expect(result.outcome).toBe('stopped');
+  });
+
+  it('runTurn keeps a failed turn failed when no abort was requested', async () => {
+    vi.mocked(processPiSessionStream).mockResolvedValueOnce({
+      finishedOk: false,
+      turnUsage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        reasoning_tokens: 0,
+        total_tokens: 0,
+        model: null,
+      },
+    });
+    const service = new PiAgentService();
+    service.app = makeApp();
+    const result = await service.runTurn({
+      session: { id: 1, user_id: 2, session_path: 'sessions/wt', model: 'm' },
+      userText: 'hello',
+      agentOptions: { cwd: '/tmp', modelRuntime: {}, customTools: [] },
+      writer: { close: vi.fn() },
+      activeKey: 1,
+    });
+    expect(result.outcome).toBe('failed');
   });
 
   it('handleMessageCreated steers when force and streaming', async () => {

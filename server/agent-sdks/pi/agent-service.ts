@@ -425,7 +425,14 @@ export class PiAgentService {
         },
         abortSignal: controller.signal,
       });
-      outcome = finishedOk ? 'completed' : 'failed';
+      if (finishedOk) {
+        outcome = 'completed';
+      } else if (controller.signal.aborted) {
+        // Deliberate stop (Stop button, agents.stop): the turn was aborted, not failed.
+        outcome = 'stopped';
+      } else {
+        outcome = 'failed';
+      }
       return { outcome, turnUsage };
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -629,6 +636,10 @@ export class PiAgentService {
         });
       } else if (outcome === 'failed' && channel !== 'review' && !awaitingUser) {
         await setAgentTurnTerminal(this.app, agent, userId, 'failed');
+      } else if (outcome === 'stopped' && channel !== 'review') {
+        // Mirror Claude: the aborter usually patches 'stopped' itself; this keeps the
+        // agent from staying 'running' if the turn is aborted by any other path.
+        await setAgentTurnTerminal(this.app, agent, userId, 'stopped');
       }
     } catch (err) {
       awaitingUser = Boolean(sessionState.endTurnAwaitingUser);

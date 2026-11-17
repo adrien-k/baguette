@@ -221,6 +221,9 @@ export class SessionsService extends KnexService {
       if (this._provisioningBySessionId.get(sessionId) === promise) {
         this._provisioningBySessionId.delete(sessionId);
       }
+      // The provisioning-abort registration must live exactly as long as the job:
+      // archive/stop add it to cancel in-flight setup, and the settled job clears it.
+      this._provisioningAbortSessionIds.delete(sessionId);
     });
   }
 
@@ -840,6 +843,13 @@ export class SessionsService extends KnexService {
 
   async stop(data, params) {
     const session = params.resolvedSession;
+    const wasProvisioning = session.status === PROVISIONING_STATUS;
+    if (wasProvisioning) {
+      // Cancel in-flight setup like archive does, so it can neither fail the
+      // session afterwards (status 'failed') nor dispatch turns post-stop.
+      this._provisioningAbortSessionIds.add(session.id);
+      await unstickProvisioningSessionRow(this.app, session.id);
+    }
     await this._stopAllBuilderAgents(session);
     const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
     if (builder) {
@@ -2268,10 +2278,16 @@ async function finalizeSessionAfterProvision(app, session, params) {
 /** Direct DB update so setup failure clears `provisioning` even when Feathers patch fails. */
 async function markSessionSetupFailed(app, sessionId) {
   const db = app.get('db');
+  // Only a still-provisioning row may become 'failed': a user stop ('stopped') or an
+  // in-flight archive ('archiving') must never be clobbered by a late setup error.
   try {
-    await db('sessions').where({ id: sessionId }).update({ status: 'failed', session_path: null });
+    await db('sessions')
+      .where({ id: sessionId, status: PROVISIONING_STATUS })
+      .update({ status: 'failed', session_path: null });
   } catch {
-    await db('sessions').where({ id: sessionId }).update({ status: 'failed' });
+    await db('sessions')
+      .where({ id: sessionId, status: PROVISIONING_STATUS })
+      .update({ status: 'failed' });
   }
   const updated = await db('sessions').where({ id: sessionId }).first();
   if (updated) app.service('sessions').emit('patched', withoutShortId(updated));
