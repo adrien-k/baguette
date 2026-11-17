@@ -113,4 +113,34 @@ test.describe('file panel regex filters', () => {
     await includeInput.fill('');
     await expect(page.getByText(/Invalid regular expression/)).toBeHidden();
   });
+
+  test('filter patterns survive a full page reload', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize(PANEL_VP);
+    await devLogin(page);
+
+    const repoId = await createLocalRepo(page);
+    await startMockBuilderSession(page, repoId);
+    await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
+
+    const sessionId = parseSessionIdFromUrl(page.url());
+    const worktree = await getE2eSessionWorktreePath(sessionId);
+    expect(worktree).toBeTruthy();
+    await commitWorktreeFiles(worktree, SAMPLE_FILES);
+
+    await page.getByRole('button', { name: 'Files', exact: true }).click();
+    await page.getByRole('button', { name: 'Filters' }).click();
+    await page.locator('#files-include-filter').fill('\\.md$');
+
+    const panel = sidePanel(page);
+    await expect(panel.getByText('Showing 1 of 5 files')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
+    await page.getByRole('button', { name: 'Files', exact: true }).click();
+
+    await expect(page.locator('#files-include-filter')).toHaveValue('\\.md$');
+    await expect(panel.getByText('Showing 1 of 5 files')).toBeVisible();
+    await expect(panel.getByText('overview.md', { exact: true })).toBeVisible();
+  });
 });
