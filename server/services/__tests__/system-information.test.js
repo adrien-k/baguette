@@ -6,6 +6,7 @@ vi.mock('../../db.js', () => {
     where: () => agentCountChain,
     whereNull: () => agentCountChain,
     whereIn: () => agentCountChain,
+    whereNot: () => agentCountChain,
     count: () => ({
       first: async () => ({ count: 2 }),
     }),

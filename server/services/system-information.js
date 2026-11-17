@@ -116,8 +116,10 @@ async function runningSessionCounts(userId) {
       .where('sessions.user_id', userId)
       .whereNull('sessions.archived_at')
       .whereIn('agents.status', RUNNING_TURN_STATUSES);
+  // Count every running agent (primary builders and subagents) plus reviewers, so the
+  // navbar total matches the full "Active agents" list on the Usage page.
   const [agentsRow, reviewersRow] = await Promise.all([
-    base().where('agents.is_primary', 1).count('* as count').first(),
+    base().whereNot('agents.agent_type', 'reviewer').count('* as count').first(),
     base().where('agents.agent_type', 'reviewer').count('* as count').first(),
   ]);
   return {
