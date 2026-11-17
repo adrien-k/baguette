@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const issueOptionSchema = z.object({
+const issueOptionSchema = z.object({
   id: z.string().min(1).describe('Stable id for this approach'),
   title: z.string().min(1).describe('Short name of the approach'),
   description: z

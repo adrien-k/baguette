@@ -31,7 +31,7 @@ function optionText(value) {
  * them. A non-empty list must be 2–5 items with unique non-empty id and title.
  * @returns {null | Array<{ id: string, title: string, description?: string }>}
  */
-export function normalizeIssueOptions(options) {
+function normalizeIssueOptions(options) {
   if (options == null) return null;
   if (!Array.isArray(options)) throw new Error('options must be an array');
   if (options.length === 0) return [];

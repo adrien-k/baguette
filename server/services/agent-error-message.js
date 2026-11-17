@@ -64,7 +64,7 @@ export async function lastPersistedAgentError(db, agent, { turnId } = {}) {
  * @param {{ id?: number }[]} agents
  * @returns {Promise<Map<number, string | null>>}
  */
-export async function lastPersistedAgentErrorsById(db, agents) {
+async function lastPersistedAgentErrorsById(db, agents) {
   const ids = [...new Set(agents.map((agent) => agent?.id).filter((id) => id != null))];
   const byId = new Map();
   if (!ids.length) return byId;
