@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import logger from '../../../logger.js';
 import { stringifyModelParamsForStorage } from '../../../../shared/agent-session-defaults.js';
+import { isGlobalSession } from '../../../../shared/session-scope.js';
 import { getSdkPlugin } from '../../../agent-sdks/registry.js';
 import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
@@ -33,7 +34,8 @@ function createSessionDescription(mode) {
     `${agentCreatedModelClause(mode, 'session')} ` +
     'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
     'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global). ' +
-    'For orchestration: pass notify_parent: true to get a wake-up message each time the new session’s builder turn finishes (completed/failed) or waits for user input — then end your turn instead of blocking.'
+    'For orchestration: pass notify_parent: true to get a wake-up message each time the new session’s builder turn finishes (completed/failed) or waits for user input — then end your turn instead of blocking. ' +
+    'Only global sessions may observe the sessions they create; a repo session must create children without notify_parent.'
   );
 }
 
@@ -89,7 +91,7 @@ export function createCreateSessionTool(ctx) {
         .boolean()
         .optional()
         .describe(
-          'When true, subscribe this agent to the new session’s turn-end notifications (wake-up messages on completed/failed turns and on approval). Prefer ending your turn right after creating; use UnwatchSession to stop notifications.'
+          'When true, subscribe this agent to the new session’s turn-end notifications (wake-up messages on completed/failed turns and on approval). Only global sessions may observe the sessions they create — a repo session must pass false. Prefer ending your turn right after creating; use UnwatchSession to stop notifications.'
         ),
     },
     handler: async ({
@@ -115,6 +117,12 @@ export function createCreateSessionTool(ctx) {
       if (notify_parent && (callerSession?.id == null || callerAgent?.id == null)) {
         return fail(
           'notify_parent requires an in-session agent (caller session and agent); external MCP callers cannot receive wake-ups.'
+        );
+      }
+      if (notify_parent && !isGlobalSession(callerSession)) {
+        return fail(
+          'Only global sessions can observe the sessions they create — a repo session cannot watch its children. ' +
+            'Create the session without notify_parent, or run the orchestration from a global session.'
         );
       }
       let resolvedBaseBranch = base_branch;

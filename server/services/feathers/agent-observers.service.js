@@ -30,9 +30,18 @@ class AgentObserversService extends KnexService {
     if (!Number.isFinite(observerAgentId)) throw new BadRequest('observer_agent_id is required');
 
     // v1 ownership: caller must own both the observed and the observer session.
+    let observerSession = null;
     for (const id of [sessionId, observerSessionId]) {
       const session = await db('sessions').where({ id, user_id: userId }).first();
       if (!session) throw new NotFound(`Session ${id} not found`);
+      if (id === observerSessionId) observerSession = session;
+    }
+    // Cross-session observation is the global orchestrator workflow — a repo session
+    // cannot watch the sessions it creates (or any other session).
+    if (!observerSession?.is_global) {
+      throw new BadRequest(
+        'Only global sessions can observe other sessions — session watching is the global orchestrator workflow.'
+      );
     }
     const observerAgent = await db('agents')
       .where({ id: observerAgentId, session_id: observerSessionId })

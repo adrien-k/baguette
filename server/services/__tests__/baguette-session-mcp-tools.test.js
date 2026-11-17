@@ -552,15 +552,57 @@ describe('baguette session MCP tools', () => {
   describe('WatchSession', () => {
     let watchTools;
     let watcherAgentId;
+    let watcherSessionId;
 
     beforeEach(async () => {
-      watcherAgentId = await getPrimaryBuilderAgentId(db, sessionId);
-      // The caller agent must exist (observer FK + service check): reuse this
-      // session's primary builder as the watcher for a second target session.
+      // Cross-session watching is global-only: the watcher is a global session,
+      // both in the passed callerSession object and in its DB row (the service
+      // check loads the row). The caller agent must exist (observer FK +
+      // service check), so insert a real global session with a primary builder.
+      watcherSessionId = await insertTestSession(db, {
+        user_id: userId,
+        // Global sessions carry no repo fields (sessions.service stores '').
+        is_global: true,
+        repo_full_name: '',
+        base_branch: '',
+        short_id: 'gwch1',
+        label: 'Global orchestrator',
+        initial_prompt: 'Orchestrate',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      watcherAgentId = await getPrimaryBuilderAgentId(db, watcherSessionId);
       watchTools = buildBaguetteSessionMcpTools({ id: userId }, app, {
+        callerSession: { id: watcherSessionId, is_global: true },
+        callerAgent: { id: watcherAgentId },
+      });
+    });
+
+    it('rejects a repo-session caller — watching is global-only', async () => {
+      const targetId = await insertTestSession(db, {
+        user_id: userId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'wtrg04',
+        label: 'Repo watch target',
+        initial_prompt: 'Work',
+        base_branch: 'main',
+        local_branch: 'feat/repo-watch-target',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      const repoTools = buildBaguetteSessionMcpTools({ id: userId }, app, {
         callerSession: { id: sessionId, is_global: false },
         callerAgent: { id: watcherAgentId },
       });
+      const tool = repoTools.find((t) => t.name === 'WatchSession');
+      const out = parseResult(await tool.handler({ session_id: targetId }));
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/Only global sessions/);
+      // No subscription landed for the target's builder.
+      const targetAgentId = await getPrimaryBuilderAgentId(db, targetId);
+      const rows = await db('agent_observers').where({ agent_id: targetAgentId });
+      expect(rows).toHaveLength(0);
     });
 
     it('reports the observed agent’s current status alongside the subscription', async () => {
@@ -644,6 +686,19 @@ describe('baguette session MCP tools', () => {
       expect(Number(count.c)).toBe(1);
     });
 
+    it('agent-observers.watch rejects a non-global observer session (service backstop)', async () => {
+      await expect(
+        app.service('agent-observers').watch(
+          {
+            session_id: sessionId,
+            observer_session_id: sessionId,
+            observer_agent_id: watcherAgentId,
+          },
+          { user: { id: userId } }
+        )
+      ).rejects.toThrow(/Only global sessions/);
+    });
+
     it('rejects an unowned target session', async () => {
       const [otherUserId] = await db('users').insert({
         github_id: 1003,
@@ -669,7 +724,7 @@ describe('baguette session MCP tools', () => {
 
     it('rejects watching your own session (self-watch would loop)', async () => {
       const tool = watchTools.find((t) => t.name === 'WatchSession');
-      const out = parseResult(await tool.handler({ session_id: sessionId }));
+      const out = parseResult(await tool.handler({ session_id: watcherSessionId }));
       expect(out.ok).toBe(false);
       expect(out.error).toMatch(/cannot observe itself/);
       const rows = await db('agent_observers').where({ observer_agent_id: watcherAgentId });

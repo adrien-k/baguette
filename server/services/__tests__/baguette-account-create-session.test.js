@@ -264,4 +264,47 @@ describe('CreateSession MCP model defaults', () => {
       expect.any(Object)
     );
   });
+
+  it('rejects notify_parent from a repo session before creating', async () => {
+    const tools = buildBaguetteAccountToolList({ id: user.id }, app, {
+      callerSession: { id: 7, is_global: false },
+      callerAgent: { id: 3 },
+    });
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    const result = parseMcpToolResult(
+      await createSession.handler({
+        repo_id: 1,
+        base_branch: 'main',
+        initial_prompt: 'hello',
+        notify_parent: true,
+      })
+    );
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toMatch(/Only global sessions/);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('notify_parent from a global session creates the session', async () => {
+    await db('users')
+      .where({ id: user.id })
+      .update({
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+      });
+    const tools = buildBaguetteAccountToolList({ id: user.id }, app, {
+      callerSession: { id: 7, is_global: true },
+      callerAgent: { id: 3 },
+    });
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    const result = parseMcpToolResult(
+      await createSession.handler({
+        repo_id: 1,
+        base_branch: 'main',
+        initial_prompt: 'hello',
+        notify_parent: true,
+      })
+    );
+    expect(result?.ok).toBe(true);
+    expect(createSpy).toHaveBeenCalled();
+  });
 });

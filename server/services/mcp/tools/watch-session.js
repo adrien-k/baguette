@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isGlobalSession } from '../../../../shared/session-scope.js';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById, summarizeAssistantMessage } from '../lib/session-resolution.js';
 import { getPrimaryBuilderAgent } from '../../agents-db.js';
@@ -14,6 +15,7 @@ export function createWatchSessionTool(ctx) {
       'Set `notify_on: "once"` for a single notification; default keeps watching every turn. ' +
       'The result reports the observed agent’s current status: notifications only fire on future transitions, so if a turn already finished (or the agent is waiting on user input) when you subscribe, handle that state right away from the result. ' +
       'Watches that would create a wake-up loop are rejected — you cannot watch your own session, and mutual or transitive watch cycles are refused because each wake-up starts a real turn. ' +
+      'Only global sessions can observe other sessions — a repo session cannot watch the sessions it creates; supervision belongs to a global orchestrator. ' +
       'Unsubscribe with UnwatchSession. CreateSession(notify_parent: true) already watches the new session.',
     schema: {
       session_id: z.number().int().describe('Session numeric id to watch'),
@@ -27,6 +29,12 @@ export function createWatchSessionTool(ctx) {
       if (callerSession?.id == null || callerAgent?.id == null) {
         return fail(
           'Watching requires an in-session agent (caller session and agent); external MCP callers cannot receive wake-ups.'
+        );
+      }
+      if (!isGlobalSession(callerSession)) {
+        return fail(
+          'Only global sessions can observe other sessions — session watching is the global orchestrator workflow. ' +
+            'A repo session cannot watch the sessions it creates; create them without notify_parent, or run the orchestration from a global session.'
         );
       }
       const { error } = await requireOwnedSessionById(app, session_id, userId);
