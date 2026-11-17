@@ -1,6 +1,14 @@
-import { createAppQueryClient, refetchActiveQueriesOnSseReconnect } from './queryClient.js';
+import {
+  createAppQueryClient,
+  refetchActiveQueriesForResumeCatchUp,
+  refetchActiveQueriesOnSseReconnect,
+} from './queryClient.js';
 import { startSseCacheBridge } from './sseCacheBridge.js';
-import { subscribeSseReconnect } from '../utils/sseReconnect.js';
+import {
+  subscribeSseReconnect,
+  subscribeSseResumeCatchUp,
+  subscribeSseStreamPaused,
+} from '../utils/sseReconnect.js';
 
 /**
  * App-wide singleton QueryClient. Module-level like the Feathers client in
@@ -8,7 +16,15 @@ import { subscribeSseReconnect } from '../utils/sseReconnect.js';
  */
 export const queryClient = createAppQueryClient();
 
-/** SSE stream reconnected (drop, tab visible, online again) → refetch stale active queries. */
+/** SSE paused (hidden/offline) → mark cached server state stale for catch-up refetch. */
+subscribeSseStreamPaused(() => {
+  void queryClient.invalidateQueries({ refetchType: 'none' });
+});
+
+/** Tab resume: refetch while the stream is still down, before lifecycle calls setup(). */
+subscribeSseResumeCatchUp(() => refetchActiveQueriesForResumeCatchUp(queryClient));
+
+/** Visible-tab SSE drop (no pre-connect catch-up) → debounced refetch on connected. */
 subscribeSseReconnect(() => refetchActiveQueriesOnSseReconnect(queryClient));
 
 /** Feathers service events → query cache updates (sessions, agents, messages…). */

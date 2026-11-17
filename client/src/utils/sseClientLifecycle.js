@@ -1,3 +1,10 @@
+import {
+  clearSkipSseReconnectRefetch,
+  clearSseFocusRefetchSuppression,
+  notifySseStreamPaused,
+  runSseResumeCatchUp,
+} from './sseReconnect.js';
+
 /** Wait before reopening SSE so the network can settle (hidden/offline or after a drop). */
 const SSE_RECONNECT_DELAY_MS = 500;
 
@@ -35,6 +42,10 @@ export function configureSsePauseAndReconnect({
   let feathersReconnectTimeout = null;
   /** @type {{ on: Function, removeListener: Function } | null} */
   let sseService = null;
+  /** @type {Promise<void> | null} */
+  let reconnectWork = null;
+  /** @type {((result: 'ready' | 'aborted') => void) | null} */
+  let finishDelay = null;
 
   const isVisibleAndOnline = () => getVisibility() !== 'hidden' && getOnline();
   const shouldStayConnected = () => shouldConnect() && isVisibleAndOnline();
@@ -45,9 +56,33 @@ export function configureSsePauseAndReconnect({
   };
 
   const clearReconnectTimer = () => {
-    if (reconnectTimer == null) return;
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+    if (reconnectTimer != null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (finishDelay == null) return;
+    const finish = finishDelay;
+    finishDelay = null;
+    finish('aborted');
+  };
+
+  const waitBeforeCatchUp = () => {
+    if (reconnectDelayMs <= 0) return Promise.resolve(/** @type {'ready'} */ ('ready'));
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        if (reconnectTimer != null) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        finishDelay = null;
+        resolve(result);
+      };
+      finishDelay = finish;
+      reconnectTimer = setTimeout(() => finish('ready'), reconnectDelayMs);
+    });
   };
 
   const cancelFeathersReconnect = () => {
@@ -56,35 +91,73 @@ export function configureSsePauseAndReconnect({
     feathersReconnectTimeout = null;
   };
 
+  const enterPausedState = () => {
+    const entering = !paused;
+    paused = true;
+    if (entering) notifySseStreamPaused();
+  };
+
   const pauseStream = () => {
     clearReconnectTimer();
     cancelFeathersReconnect();
     const controller = getAbortController();
     if (!controller || controller.signal.aborted) {
-      paused = true;
+      enterPausedState();
       return;
     }
     controller.abort();
     clearAbortController();
-    paused = true;
+    enterPausedState();
+  };
+
+  const abandonResume = () => {
+    clearSkipSseReconnectRefetch();
+  };
+
+  const openStreamAfterCatchUp = async (markSetupStarted) => {
+    const waited = await waitBeforeCatchUp();
+    if (waited !== 'ready') return;
+    if (!started || !shouldStayConnected()) return;
+    try {
+      await runSseResumeCatchUp();
+      if (!started || !shouldStayConnected() || isStreamOpen()) {
+        abandonResume();
+        return;
+      }
+      await app.teardown();
+      if (!started || !shouldStayConnected()) {
+        abandonResume();
+        return;
+      }
+      markSetupStarted();
+      await app.setup();
+      // The controller arrives on `connected`, which clears `paused` when the
+      // tab is still visible. Do not treat a resolved setup as a live stream.
+      if (started && shouldStayConnected() && isStreamOpen()) paused = false;
+    } catch (error) {
+      abandonResume();
+      throw error;
+    }
   };
 
   const reconnect = () => {
     if (!started || !shouldStayConnected()) return;
     if (isStreamOpen()) return;
     if (!paused) return;
-    clearReconnectTimer();
-    if (reconnectDelayMs <= 0) {
-      void app.teardown().then(() => app.setup());
-      paused = false;
-      return;
-    }
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      if (!started || !shouldStayConnected()) return;
-      void app.teardown().then(() => app.setup());
-      paused = false;
-    }, reconnectDelayMs);
+    if (reconnectWork != null) return;
+    // `app.setup()` resolves before the SSE `connected` event stores the
+    // AbortController. Retry only when that call never started (delay aborted
+    // or catch-up bailed). A handshake that is still opening is left alone
+    // until `connected` or `disconnected`.
+    let setupStarted = false;
+    const work = openStreamAfterCatchUp(() => {
+      setupStarted = true;
+    });
+    reconnectWork = work.finally(() => {
+      reconnectWork = null;
+      if (setupStarted) return;
+      if (started && paused && shouldStayConnected() && !isStreamOpen()) reconnect();
+    });
   };
 
   const sync = () => {
@@ -96,14 +169,16 @@ export function configureSsePauseAndReconnect({
 
   const onReconnecting = (info) => {
     feathersReconnectTimeout = info?.timeout ?? null;
-    if (!started || shouldStayConnected()) return;
+    if (!started) return;
+    if (shouldStayConnected()) return;
     cancelFeathersReconnect();
-    paused = true;
+    enterPausedState();
   };
 
   const onDisconnected = () => {
-    if (!started || shouldStayConnected()) return;
-    paused = true;
+    if (!started) return;
+    if (shouldStayConnected()) return;
+    enterPausedState();
   };
 
   const onConnected = () => {
@@ -140,6 +215,7 @@ export function configureSsePauseAndReconnect({
     paused = false;
     clearReconnectTimer();
     pauseStream();
+    clearSseFocusRefetchSuppression();
   };
 
   return { start, stop };
