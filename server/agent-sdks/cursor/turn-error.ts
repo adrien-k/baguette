@@ -19,7 +19,7 @@ export type CursorTerminalSurfacingInput = {
 };
 
 export type CursorTerminalSurfacing = {
-  /** Copy for the persisted `system/status` transcript row. */
+  /** Copy for the persisted `turn_result` error (or a quiet status row on user stop). */
   statusText: string;
   /** True when the run failed without the user asking for it (emit `app:error`). */
   isFailure: boolean;

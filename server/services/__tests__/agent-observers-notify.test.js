@@ -141,6 +141,88 @@ describe('agent_observers wake-ups', () => {
     );
   });
 
+  it('includes the failure error in the parent wake-up', async () => {
+    const childId = await insertSubagent({ ref: 3, name: 'Flaky', observed: primaryId });
+    await setAgentTurnTerminal(app, { id: childId }, userId, 'failed', {
+      error_message: 'You have hit your usage limit.',
+    });
+
+    const payload = parseUserPayload(
+      await db('session_messages').where({ session_id: sessionId, type: 'user' }).first()
+    );
+    expect(payload.content).toContain('finished with status failed');
+    expect(payload.content).toContain('Error:');
+    expect(payload.content).toContain('You have hit your usage limit.');
+    const turnResult = await db('session_messages')
+      .where({ agent_id: childId, type: 'turn_result' })
+      .first();
+    expect(JSON.parse(turnResult.message_json).error_message).toBe(
+      'You have hit your usage limit.'
+    );
+  });
+
+  it('writes a new turn_result when a later turn fails without an intervening success', async () => {
+    const childId = await insertSubagent({ ref: 5, name: 'RetryFail', observed: primaryId });
+    await db('session_messages').insert({
+      session_id: sessionId,
+      agent_id: childId,
+      turn_id: 1,
+      type: 'turn_result',
+      message_json: JSON.stringify({
+        type: 'turn_result',
+        status: 'error',
+        error_message: 'first failure',
+        total_cost_usd: null,
+      }),
+      agent_sdk: 'claude',
+      model: 'sonnet',
+    });
+    await db('agents').where({ id: childId }).update({ active_turn_id: 2, status: 'running' });
+
+    await setAgentTurnTerminal(app, { id: childId, active_turn_id: 2 }, userId, 'failed', {
+      error_message: 'second failure',
+    });
+
+    const results = await db('session_messages')
+      .where({ agent_id: childId, type: 'turn_result' })
+      .orderBy('id', 'asc');
+    expect(results).toHaveLength(2);
+    expect(JSON.parse(results[0].message_json).error_message).toBe('first failure');
+    expect(JSON.parse(results[1].message_json).error_message).toBe('second failure');
+    expect(results[1].turn_id).toBe(2);
+
+    const payload = parseUserPayload(
+      await db('session_messages').where({ session_id: sessionId, type: 'user' }).first()
+    );
+    expect(payload.content).toContain('second failure');
+    expect(payload.content).not.toContain('first failure');
+  });
+
+  it('recovers the failure error from a persisted turn_result when none is passed', async () => {
+    const childId = await insertSubagent({ ref: 4, name: 'Recovered', observed: primaryId });
+    await db('session_messages').insert({
+      session_id: sessionId,
+      agent_id: childId,
+      turn_id: 1,
+      type: 'turn_result',
+      message_json: JSON.stringify({
+        type: 'turn_result',
+        status: 'error',
+        error_message: 'Provider 402 Payment Required',
+        total_cost_usd: null,
+      }),
+      agent_sdk: 'claude',
+      model: 'sonnet',
+    });
+
+    await setAgentTurnTerminal(app, { id: childId }, userId, 'failed');
+
+    const payload = parseUserPayload(
+      await db('session_messages').where({ session_id: sessionId, type: 'user' }).first()
+    );
+    expect(payload.content).toContain('Provider 402 Payment Required');
+  });
+
   it('does not notify when the agent has no observer rows', async () => {
     const childId = await insertSubagent({ ref: 4 });
     await setAgentTurnTerminal(app, { id: childId }, userId, 'completed');

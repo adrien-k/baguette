@@ -7,7 +7,7 @@
  * so the user saw no reply, no toast, and no error banner. These tests pin the new
  * behavior in `CursorAgentService._streamOneRun`:
  *   - real failures (ERROR/EXPIRED, remote CANCELLED, silent stream ends) emit
- *     `app:error`, persist a turn-bound status row, and mark the agent failed;
+ *     `app:error`, persist a turn_result error, and mark the agent failed;
  *   - a deliberate user stop stays quiet and does not mark the agent failed.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -179,14 +179,13 @@ describe('CursorAgentService terminal status surfacing', () => {
       expect.objectContaining({
         session_id: 1,
         turn_id: 7,
-        type: 'system',
-        subtype: 'status',
+        type: 'turn_result',
       }),
       expect.anything()
     );
     const statusData = messagesCreate.mock.calls[0][0];
     const payload = JSON.parse(statusData.message_json);
-    expect(payload.status).toContain('Cursor did not report a reason');
+    expect(payload.error_message).toContain('Cursor did not report a reason');
   });
 
   it('marks ERROR with Cursor’s detail as app:error carrying the detail', async () => {
@@ -449,13 +448,14 @@ describe('CursorAgentService terminal status surfacing', () => {
     );
 
     const reviewAgentTurn = reviewAgentTurnStub;
-    expect(reviewAgentTurn._persistStatus).toHaveBeenCalledWith(
+    expect(reviewAgentTurn.onAgentTurnComplete).toHaveBeenCalledWith(
       sessionRow,
-      expect.stringContaining('stopped unexpectedly')
+      'failed',
+      expect.objectContaining({
+        sdk: 'cursor',
+        error_message: expect.stringContaining('stopped unexpectedly'),
+      })
     );
-    expect(reviewAgentTurn.onAgentTurnComplete).toHaveBeenCalledWith(sessionRow, 'failed', {
-      sdk: 'cursor',
-    });
     expect(sessionEmit).toHaveBeenCalledWith(
       'app:error',
       expect.objectContaining({ sessionId: 1 })

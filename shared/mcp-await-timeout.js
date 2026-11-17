@@ -25,7 +25,7 @@ export function agentTurnWaitTimeoutMessage(agent) {
   return (
     `Timed out after ${minutes} minutes waiting for ${idPart}${refPart} to finish. ` +
     'The subagent was not cancelled — the wait is detached and the turn keeps running in the background. ' +
-    'Read its last assistant message in the session (GetSessionMessages for that agent) to check progress, ' +
+    'Read its last assistant message in the session (GetAgentMessages for that agent) to check progress, ' +
     'then call AwaitSubagent again to continue waiting. ' +
     'Use StopSubagent only if it looks stuck for no good reason.'
   );

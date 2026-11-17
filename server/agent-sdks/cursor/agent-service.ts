@@ -815,19 +815,12 @@ ${body}`,
           if (channel === 'review') {
             await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'cursor',
+              error_message: (err as Error).message,
             });
-            await getReviewAgentTurn(this.app)._persistStatus(session, (err as Error).message);
           } else {
-            await setAgentTurnTerminal(this.app, agent, userId, 'failed');
-            await this._persistStatusMessage(
-              sessionId,
-              userId,
-              (err as Error).message,
-              session,
-              channel,
-              agent.id,
-              turnId
-            );
+            await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
+              error_message: (err as Error).message,
+            });
           }
         } catch {
           // ignore secondary errors
@@ -858,7 +851,7 @@ ${body}`,
   /**
    * Stream one run to completion. Returns { finishedOk, hasBackgroundTask, sawTerminalBreak }.
    * Terminal ERROR/CANCELLED/EXPIRED statuses and silent stream ends mark the turn failed and
-   * persist a status message; real failures also emit `app:error` so the UI bubbles them up
+   * persist a turn_result error; real failures also emit `app:error` so the UI bubbles them up
    * (a bare CANCELLED with no message killed session 922 turn 10 silently, "Service unavailable"
    * only visible on Cursor's side). Only a user-initiated stop (stopTurn → stopRequested) stays
    * quiet, and CANCELLED after a turn-ending Baguette tool (plan / questions) is expected.
@@ -982,7 +975,7 @@ ${body}`,
 
   /**
    * Terminal failure bookkeeping shared by the terminal-status and silent-end paths:
-   * persist the status row (with the turn id so it lands in the failed turn), mark the
+   * persist a turn_result error (with the turn id so it lands in the failed turn), mark the
    * agent failed unless the stop was deliberate, and emit `app:error` for real failures.
    */
   private async _surfaceCursorTurnFailure(
@@ -1000,27 +993,38 @@ ${body}`,
     }
   ): Promise<void> {
     if (channel === 'review') {
-      await getReviewAgentTurn(this.app)._persistStatus(session, surfacing.statusText);
       if (surfacing.isFailure) {
         await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
           sdk: 'cursor',
+          error_message: surfacing.statusText,
         });
+      } else {
+        await getReviewAgentTurn(this.app)._persistStatus(session, surfacing.statusText);
       }
     } else {
       const agentId = sessionState?.agentId;
       const agentRow = agentId != null ? await getAgentById(this.app.get('db'), agentId) : null;
       if (surfacing.isFailure && agentRow) {
-        await setAgentTurnTerminal(this.app, agentRow, userId, 'failed');
+        await setAgentTurnTerminal(
+          this.app,
+          { ...agentRow, active_turn_id: sessionState?.turnId ?? agentRow.active_turn_id },
+          userId,
+          'failed',
+          {
+            error_message: surfacing.statusText,
+          }
+        );
+      } else {
+        await this._persistStatusMessage(
+          sessionId,
+          userId,
+          surfacing.statusText,
+          session,
+          channel,
+          agentId,
+          sessionState?.turnId ?? null
+        );
       }
-      await this._persistStatusMessage(
-        sessionId,
-        userId,
-        surfacing.statusText,
-        session,
-        channel,
-        agentId,
-        sessionState?.turnId ?? null
-      );
     }
     if (surfacing.isFailure) {
       this.app

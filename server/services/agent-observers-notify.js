@@ -12,6 +12,7 @@
 import logger from '../logger.js';
 import { normalizeUserPayloadForStorage } from '../../shared/normalize-user-payload.js';
 import { sessionMessageIdentity } from './feathers/message-create-fields.js';
+import { lastPersistedAgentError, normalizeAgentErrorMessage } from './agent-error-message.js';
 
 /** Plain-text summary of the observed agent's last assistant message (null when none). */
 function assistantSummaryText(row) {
@@ -64,7 +65,7 @@ function observedLabel(observedAgent, observedSession) {
 function buildNotifyContent(
   observedAgent,
   observedSession,
-  { status, awaitingUser, summary, queued }
+  { status, awaitingUser, summary, queued, errorText }
 ) {
   const label = observedLabel(observedAgent, observedSession);
   if (awaitingUser) {
@@ -78,6 +79,7 @@ function buildNotifyContent(
   if (observedAgent.agent_type !== 'subagent') {
     lines.push(`See /sessions/${observedSession?.id}.`);
   }
+  if (errorText) lines.push('', 'Error:', '', truncate(errorText));
   if (summary) lines.push('', 'Last message:', '', truncate(summary));
   else lines.push('', 'No assistant message was recorded for the turn.');
   if (queued > 0) {
@@ -149,6 +151,12 @@ export async function notifyAgentObservers(
     .first();
   const summary = assistantSummaryText(lastAssistant);
   const queued = await countQueuedTurnMessages(db, observedAgent.id);
+  let errorText = null;
+  if ((status ?? observedAgent.status) === 'failed') {
+    errorText =
+      normalizeAgentErrorMessage(observedAgent.error_message) ??
+      (await lastPersistedAgentError(db, observedAgent));
+  }
 
   // One failing observer must not abort the whole fan-out or block the rest:
   // deliver each wake-up independently and keep going.
@@ -161,6 +169,7 @@ export async function notifyAgentObservers(
         awaitingUser,
         summary,
         queued,
+        errorText,
       });
       const payload = normalizeUserPayloadForStorage({
         type: 'user',

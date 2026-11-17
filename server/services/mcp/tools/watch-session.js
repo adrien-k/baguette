@@ -3,6 +3,7 @@ import { isGlobalSession } from '../../../../shared/session-scope.js';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById, summarizeAssistantMessage } from '../lib/session-resolution.js';
 import { getPrimaryBuilderAgent } from '../../agents-db.js';
+import { agentFailureError, hydrateAgentFailureErrors } from '../../agent-error-message.js';
 
 export function createWatchSessionTool(ctx) {
   const { app, userId, userParams, callerSession, callerAgent } = ctx;
@@ -13,7 +14,7 @@ export function createWatchSessionTool(ctx) {
       'When the watched session’s primary builder turn finishes (completed/failed) or waits for user input (approval), ' +
       'Baguette posts a summary to you as a new user message. ' +
       'Set `notify_on: "once"` for a single notification; default keeps watching every turn. ' +
-      'The result reports the observed agent’s current status: notifications only fire on future transitions, so if a turn already finished (or the agent is waiting on user input) when you subscribe, handle that state right away from the result. ' +
+      'The result reports the observed agent’s current status (including error_message when failed): notifications only fire on future transitions, so if a turn already finished (or the agent is waiting on user input) when you subscribe, handle that state right away from the result. ' +
       'Watches that would create a wake-up loop are rejected — you cannot watch your own session, and mutual or transitive watch cycles are refused because each wake-up starts a real turn. ' +
       'Only global sessions can observe other sessions — a repo session cannot watch the sessions it creates; supervision belongs to a global orchestrator. ' +
       'Unsubscribe with UnwatchSession. CreateSession(notify_parent: true) already watches the new session.',
@@ -57,6 +58,7 @@ export function createWatchSessionTool(ctx) {
         const builder = await getPrimaryBuilderAgent(db, session_id);
         let current = null;
         if (builder) {
+          await hydrateAgentFailureErrors(db, [builder]);
           const lastAssistant = await db('session_messages')
             .where({ session_id, agent_id: builder.id, type: 'assistant' })
             .orderBy('id', 'desc')
@@ -67,6 +69,7 @@ export function createWatchSessionTool(ctx) {
             .first();
           current = {
             status: builder.status,
+            error_message: agentFailureError(builder),
             last_assistant_message: summarizeAssistantMessage(lastAssistant),
             queued_message_count: Number(queuedRow?.count ?? 0),
           };

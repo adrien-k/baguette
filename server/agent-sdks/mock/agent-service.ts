@@ -225,9 +225,12 @@ class MockAgentService {
         if (isReview) {
           await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
             sdk: MOCK_AGENT_SDK,
+            error_message: (err as Error).message,
           });
         } else {
-          await setAgentTurnTerminal(this.app, agent, userId, 'failed');
+          await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
+            error_message: (err as Error).message,
+          });
         }
         this.app.service('sessions').emit('app:error', {
           sessionId,

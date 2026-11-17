@@ -3,6 +3,7 @@ import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 import { collectLastFailedTasks } from '../lib/task-helpers.js';
 import { notifyParentAgentIds } from '../../agents-db.js';
+import { agentFailureError, hydrateAgentFailureErrors } from '../../agent-error-message.js';
 
 /** Task statuses that mean "the child process is alive or draining". */
 const RUNNING_TASK_STATUSES = ['running', 'waiting', 'exiting'];
@@ -41,8 +42,9 @@ export function createGetSessionStatusTool(ctx) {
   return {
     name: 'GetSessionStatus',
     description:
-      'Cheap progress snapshot of one session: agent statuses (running/approval/stopped/completed/failed), queued-message counts, last message pointers, running/failed tasks, and todo/plan rollup. ' +
+      'Cheap progress snapshot of one session: agent statuses (running/approval/stopped/completed/failed), error_message when an agent failed, queued-message counts, last message pointers, running/failed tasks, and todo/plan rollup. ' +
       'Prefer this over GetSession for progress checks — it avoids fetching message bodies. ' +
+      'Use GetAgentMessages when you need message bodies. ' +
       'Identify the session by session_id (from SearchSessions or CreateSession).',
     schema: {
       session_id: z.number().int().describe('Session numeric id'),
@@ -56,6 +58,7 @@ export function createGetSessionStatusTool(ctx) {
 
       const db = app.get('db');
       const agents = await db('agents').where({ session_id }).orderBy('id', 'asc');
+      await hydrateAgentFailureErrors(db, agents);
       const primary = agents.find((agent) => agent.is_primary === 1) ?? null;
       const primaryAgentId = primary?.id ?? null;
       const watching = await notifyParentAgentIds(
@@ -119,6 +122,7 @@ export function createGetSessionStatusTool(ctx) {
           agent_type: agent.agent_type,
           is_primary: Boolean(agent.is_primary),
           status: agent.status,
+          error_message: agentFailureError(agent),
           active_turn_id: agent.active_turn_id,
           notify_parent: watching.has(agent.id),
           model: agent.model,

@@ -16,7 +16,7 @@ import { createGetSessionStatusTool } from '../tools/get-session-status.js';
 import { createPrReadTool } from '../tools/pr-read.js';
 import { createListRunningTasksTool } from '../tools/list-running-tasks.js';
 import { createCreateSessionMessageTool } from '../tools/create-session-message.js';
-import { createGetSessionMessagesTool } from '../tools/get-session-messages.js';
+import { createGetAgentMessagesTool } from '../tools/get-agent-messages.js';
 import { createGetSessionMessageTool } from '../tools/get-session-message.js';
 import { createWatchSessionTool } from '../tools/watch-session.js';
 import { createUnwatchSessionTool } from '../tools/unwatch-session.js';
@@ -48,7 +48,7 @@ function sessionToolsFromContext(ctx) {
     createPrReadTool(ctx),
     createListRunningTasksTool(ctx),
     createCreateSessionMessageTool(ctx),
-    createGetSessionMessagesTool(ctx),
+    createGetAgentMessagesTool(ctx),
     createGetSessionMessageTool(ctx),
     createWatchSessionTool(ctx),
     createUnwatchSessionTool(ctx),

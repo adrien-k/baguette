@@ -43,7 +43,7 @@ import { sessionMessageIdentity } from '../../services/feathers/message-create-f
 import { claudeResultErrorText } from './mapping.ts';
 import { processClaudeQueryStream, type ClaudeStreamTurnOutcome } from './sdk-turn.ts';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
-import type { SystemMessagePayload, UserMessagePayload } from '../../../shared/session-messages.ts';
+import type { UserMessagePayload } from '../../../shared/session-messages.ts';
 import type {
   AgentApp,
   AgentRow,
@@ -72,6 +72,20 @@ import {
 } from '../../services/agent-turn-patch.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
+
+const CLAUDE_SILENT_END_TEXT =
+  'Agent ended the turn without completing. Send your message again to continue.';
+
+function claudeTurnFailureError(opts: {
+  lastStreamError: string | null;
+  lastResult: SDKMessage | null;
+  silentQueryEnd: boolean;
+}): string | null {
+  if (opts.lastStreamError) return opts.lastStreamError;
+  if (opts.lastResult) return claudeResultErrorText(opts.lastResult as SDKResultMessage);
+  if (opts.silentQueryEnd) return CLAUDE_SILENT_END_TEXT;
+  return null;
+}
 
 /** Push/end handle feeding user messages into an open SDK query. */
 type ChannelHandle = {
@@ -111,7 +125,6 @@ type RunTurnOpts = {
   prompt?: unknown;
   queryOptions?: ClaudeSdkOptions;
   persistMessage?: (message: SDKMessage) => Promise<void>;
-  persistStatus?: (text: string) => Promise<void>;
   onInitSessionId?: (id: string) => Promise<void>;
   onResult?: (message: SDKMessage) => Promise<void>;
   onStreamError?: (err: Error) => Promise<void>;
@@ -124,7 +137,6 @@ type RunTurnOpts = {
 type ConsumeQueryOpts = {
   streamWriter?: MessageStreamWriter | null;
   persistMessage?: (message: SDKMessage) => Promise<void>;
-  persistStatus?: (text: string) => Promise<void>;
   onInitSessionId?: (id: string) => Promise<void>;
   onResult?: (message: SDKMessage) => Promise<void>;
   onStreamError?: (err: Error) => Promise<void>;
@@ -372,7 +384,6 @@ export class ClaudeAgentService {
     }
     return await this._consumeQuery(state, {
       persistMessage: opts.persistMessage,
-      persistStatus: opts.persistStatus,
       onInitSessionId: opts.onInitSessionId,
       onResult: opts.onResult,
       onStreamError: opts.onStreamError,
@@ -617,40 +628,6 @@ export class ClaudeAgentService {
     }
     this._activeSessions.delete(activeKey);
     await this._closeQueryInstanceSafe(session.sessionId, session.queryInstance);
-  }
-
-  /**
-   * Persist a system/status message on the agent the failure belongs to — reviewer,
-   * primary builder, or subagent are all rows in `agents`, so no channel distinction
-   * is needed here. Falls back to the primary builder when no agent id is given.
-   */
-  private async _persistSessionStatusMessage(
-    sessionId: number,
-    userId: number,
-    statusText: string,
-    agentId?: number | null
-  ) {
-    const payload: SystemMessagePayload = {
-      type: 'system',
-      subtype: 'status',
-      status: statusText,
-    };
-    const db = this.app.get('db') as DbLike;
-    const agent =
-      agentId != null
-        ? ((await getAgentById(db, agentId)) as AgentRow | undefined)
-        : ((await getPrimaryBuilderAgent(db, sessionId)) as AgentRow | undefined);
-    if (!agent) return;
-    await this.app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: 'system',
-        subtype: 'status',
-        message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(agent),
-      },
-      { provider: undefined, user: { id: userId } }
-    );
   }
 
   createCanUseTool() {
@@ -932,16 +909,10 @@ export class ClaudeAgentService {
     const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
-    const { turnComplete, streamFailed, outcome, lastResult } = await this._consumeQuery(
-      sessionState,
-      {
+    const { turnComplete, streamFailed, outcome, lastResult, lastStreamError } =
+      await this._consumeQuery(sessionState, {
         streamWriter: sessionState.streamWriter ?? null,
         persistMessage: (message) => this.persistMessage(sessionState, message),
-        // Shared by the stream's thrown-error path and the silent-end path below:
-        // attributed to the agent whose turn it is, not just the primary builder
-        // (see _persistSessionStatusMessage).
-        persistStatus: (text: string): Promise<void> =>
-          this._persistSessionStatusMessage(sessionId, userId, text, sessionState.agentId),
         onInitSessionId: async (id) => {
           await patchAgentInternal(
             this.app,
@@ -951,19 +922,23 @@ export class ClaudeAgentService {
           );
           sessionState.claudeSessionId = id;
         },
-        onStreamError: async () => {
+        onStreamError: async (err: Error) => {
           if (!isReview) return; // Chat status is patched once after the stream ends below.
           const session = (await db('sessions').where({ id: sessionId }).first()) as
             AgentSessionRow | undefined;
           if (!session) return;
+          const userFacing =
+            err.message === SDK_QUERY_CLOSED_MESSAGE
+              ? 'Agent connection closed before the response finished. Try sending your message again.'
+              : err.message;
           await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
             sdk: 'claude',
+            error_message: userFacing,
           });
         },
         trackBackgroundTasks: true,
         activeKey,
-      }
-    );
+      });
 
     const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
 
@@ -991,12 +966,9 @@ export class ClaudeAgentService {
     const silentQueryEnd = !turnComplete && !streamFailed && outcome === 'failed';
     if (silentQueryEnd && !awaitingUser) {
       logger.warn({ sessionId }, 'Claude query ended without a result message');
-      const statusText =
-        'Agent ended the turn without completing. Send your message again to continue.';
-      await this._persistSessionStatusMessage(sessionId, userId, statusText, sessionState.agentId);
       this.app.service('sessions').emit('app:error', {
         sessionId,
-        message: statusText,
+        message: CLAUDE_SILENT_END_TEXT,
         user_id: userId,
       });
     }
@@ -1017,15 +989,26 @@ export class ClaudeAgentService {
       }
     }
 
+    const failureError = claudeTurnFailureError({
+      lastStreamError,
+      lastResult,
+      silentQueryEnd,
+    });
+
     if (isReview && (turnComplete || silentQueryEnd) && !awaitingUser) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
       if (session) {
-        await getReviewAgentTurn(this.app).onAgentTurnComplete(
-          session,
-          outcome === 'completed' ? 'completed' : 'failed',
-          { sdk: 'claude' }
-        );
+        if (outcome === 'completed') {
+          await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
+            sdk: 'claude',
+          });
+        } else {
+          await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+            sdk: 'claude',
+            error_message: failureError,
+          });
+        }
       }
     }
 
@@ -1035,9 +1018,12 @@ export class ClaudeAgentService {
       const turnEnded = turnComplete || streamFailed || silentQueryEnd;
       if (awaitingUser) {
         await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'approval');
+      } else if (turnEnded && outcome === 'completed') {
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'completed');
       } else if (turnEnded) {
-        const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
-        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'failed', {
+          error_message: failureError,
+        });
       } else if (outcome === 'stopped') {
         await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'stopped');
       }
@@ -1067,7 +1053,6 @@ export class ClaudeAgentService {
     {
       streamWriter,
       persistMessage,
-      persistStatus,
       onInitSessionId,
       onResult,
       onStreamError,
@@ -1080,28 +1065,29 @@ export class ClaudeAgentService {
     streamFailed: boolean;
     outcome: TurnOutcome;
     lastResult: SDKMessage | null;
+    lastStreamError: string | null;
   }> {
     const { queryInstance, sessionId, userId } = sessionState;
     const key = activeKey ?? sessionId;
 
     let streamFailed = false;
+    let lastStreamError: string | null = null;
     const result = await processClaudeQueryStream(queryInstance, {
       writer: streamWriter,
       persistMessage,
-      persistStatus,
       onInitSessionId,
       onResult,
       trackBackgroundTasks,
-      connectionClosedHint,
       onStreamError: async (err) => {
         // Service-level error wiring: log, emit app:error, route through
-        // onStreamError. The stream mapper has already persisted the status row.
+        // onStreamError. The failed turn_result is persisted by setAgentTurnTerminal.
         if (err.name !== 'AbortError') {
           handleAppError(this.app, err, { userId, sessionId });
           logger.error({ sessionId }, 'Session stream error');
           logger.error(err, 'Session stream error');
           const userFacing =
             err.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : err.message;
+          lastStreamError = userFacing;
           this.app
             .service('sessions')
             .emit('app:error', { sessionId, message: userFacing, user_id: userId });
@@ -1125,6 +1111,7 @@ export class ClaudeAgentService {
       streamFailed: result.streamFailed || streamFailed,
       outcome: result.outcome,
       lastResult: result.lastResult,
+      lastStreamError,
     };
   }
 

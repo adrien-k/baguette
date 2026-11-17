@@ -163,6 +163,77 @@ describe('baguette session MCP tools', () => {
     expect(out.message_json).toContain('hello');
   });
 
+  it('GetAgentMessages defaults to the primary builder when agent_id is omitted or null', async () => {
+    const list = tools.find((t) => t.name === 'GetAgentMessages');
+    const primaryId = await getPrimaryBuilderAgentId(db, sessionId);
+    const omitted = parseOk(await list.handler({ session_id: sessionId }));
+    expect(omitted.agent_id).toBe(primaryId);
+    expect(omitted.messages).toHaveLength(2);
+    const nulled = parseOk(await list.handler({ session_id: sessionId, agent_id: null }));
+    expect(nulled.agent_id).toBe(primaryId);
+    expect(nulled.messages).toHaveLength(2);
+  });
+
+  it('GetAgentMessages filters by agent_id', async () => {
+    const altConfigId = await insertTestAgentConfig(db, userId, {
+      apiKey: 'sk-ant-alt',
+      label: 'Alt',
+    });
+    const [extraAgentId] = await db('agents').insert({
+      session_id: sessionId,
+      ref: 2,
+      name: 'Extra',
+      agent_type: 'builder',
+      is_primary: 0,
+      status: 'stopped',
+      agent_config_id: altConfigId,
+      agent_sdk: 'claude',
+      model: 'opus',
+      model_params: null,
+      current_turn_id: 0,
+    });
+    await db('session_messages').insert(
+      await testMessageRow(db, sessionId, {
+        agent_id: extraAgentId,
+        type: 'assistant',
+        message_json: JSON.stringify({
+          type: 'assistant',
+          message: { role: 'assistant', content: 'from extra' },
+        }),
+      })
+    );
+    const list = tools.find((t) => t.name === 'GetAgentMessages');
+    const extra = parseOk(await list.handler({ session_id: sessionId, agent_id: extraAgentId }));
+    expect(extra.agent_id).toBe(extraAgentId);
+    expect(extra.messages).toHaveLength(1);
+    expect(extra.messages[0].message_json).toContain('from extra');
+    const primary = parseOk(await list.handler({ session_id: sessionId }));
+    expect(primary.agent_id).toBe(await getPrimaryBuilderAgentId(db, sessionId));
+    expect(primary.messages).toHaveLength(2);
+    expect(primary.messages.every((m) => !m.message_json.includes('from extra'))).toBe(true);
+  });
+
+  it('GetAgentMessages rejects an agent from another session', async () => {
+    const repoId = (await db('repos').where({ full_name: 'o/r' }).first()).id;
+    const otherSessionId = await insertTestSession(db, {
+      user_id: userId,
+      repo_id: repoId,
+      repo_full_name: 'o/r',
+      short_id: 'zzzz',
+      label: 'Other',
+      initial_prompt: 'Other',
+      base_branch: 'main',
+      local_branch: 'other',
+      status: 'stopped',
+      ...testSessionAgentDefaults,
+    });
+    const otherAgentId = await getPrimaryBuilderAgentId(db, otherSessionId);
+    const list = tools.find((t) => t.name === 'GetAgentMessages');
+    const out = parseResult(await list.handler({ session_id: sessionId, agent_id: otherAgentId }));
+    expect(out.ok).toBe(false);
+    expect(out.error).toBe('Agent not found');
+  });
+
   it('CreateSessionMessage rejects empty or whitespace-only text', async () => {
     const create = tools.find((t) => t.name === 'CreateSessionMessage');
     for (const text of ['', '   ']) {
@@ -402,6 +473,7 @@ describe('baguette session MCP tools', () => {
     expect(out.agents).toHaveLength(2);
     const primary = out.agents.find((a) => a.is_primary);
     expect(primary.status).toBe('running');
+    expect(primary.error_message).toBeNull();
     expect(primary.active_turn_id).toBe(7);
     const subagent = out.agents.find((a) => !a.is_primary);
     expect(subagent.agent_type).toBe('subagent');
@@ -415,6 +487,57 @@ describe('baguette session MCP tools', () => {
     expect(out.running_tasks[0].task_id).toBe(running.id);
     expect(out.todos).toEqual({ pending: 1, in_progress: 1, completed: 1 });
     expect(out.plan.status).toBe('open');
+  });
+
+  it('GetSessionStatus includes error_message on failed agents', async () => {
+    const primaryAgentId = await getPrimaryBuilderAgentId(db, sessionId);
+    await db('agents').where({ id: primaryAgentId }).update({ status: 'failed' });
+    await db('session_messages').insert(
+      await testMessageRow(db, sessionId, {
+        agent_id: primaryAgentId,
+        type: 'turn_result',
+        message_json: JSON.stringify({
+          type: 'turn_result',
+          status: 'error',
+          error_message: 'Cursor agent encountered an error.',
+          total_cost_usd: null,
+        }),
+      })
+    );
+    const [helperId] = await db('agents').insert({
+      session_id: sessionId,
+      ref: 2,
+      name: 'Helper',
+      agent_type: 'subagent',
+      is_primary: 0,
+      status: 'completed',
+      agent_config_id: (await db('agents').where({ id: primaryAgentId }).first()).agent_config_id,
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      model_params: null,
+      current_turn_id: 1,
+    });
+    await db('session_messages').insert(
+      await testMessageRow(db, sessionId, {
+        agent_id: helperId,
+        type: 'turn_result',
+        message_json: JSON.stringify({
+          type: 'turn_result',
+          status: 'error',
+          error_message: 'stale — should not leak',
+          total_cost_usd: null,
+        }),
+      })
+    );
+
+    const status = tools.find((t) => t.name === 'GetSessionStatus');
+    const out = parseOk(await status.handler({ session_id: sessionId }));
+    const primary = out.agents.find((a) => a.is_primary);
+    const subagent = out.agents.find((a) => !a.is_primary);
+    expect(primary.status).toBe('failed');
+    expect(primary.error_message).toBe('Cursor agent encountered an error.');
+    expect(subagent.status).toBe('completed');
+    expect(subagent.error_message).toBeNull();
   });
 
   it('GetSessionStatus hides stale deleted-agent queued rows from primary_count', async () => {
@@ -639,6 +762,39 @@ describe('baguette session MCP tools', () => {
         .count('id as c')
         .first();
       expect(Number(count.c)).toBe(1);
+    });
+
+    it('includes error_message when the observed builder already failed', async () => {
+      const targetId = await insertTestSession(db, {
+        user_id: userId,
+        repo_id: (await db('repos').where({ full_name: 'o/r' }).first()).id,
+        repo_full_name: 'o/r',
+        short_id: 'wtrg05',
+        label: 'Failed target',
+        initial_prompt: 'Work',
+        base_branch: 'main',
+        local_branch: 'feat/failed-target',
+        status: 'stopped',
+        ...testSessionAgentDefaults,
+      });
+      await db('agents')
+        .where({ session_id: targetId, is_primary: 1 })
+        .update({ status: 'failed' });
+      await db('session_messages').insert(
+        await testMessageRow(db, targetId, {
+          type: 'turn_result',
+          message_json: JSON.stringify({
+            type: 'turn_result',
+            status: 'error',
+            error_message: 'Quota exceeded',
+            total_cost_usd: null,
+          }),
+        })
+      );
+      const tool = watchTools.find((t) => t.name === 'WatchSession');
+      const out = parseOk(await tool.handler({ session_id: targetId }));
+      expect(out.observed.status).toBe('failed');
+      expect(out.observed.error_message).toBe('Quota exceeded');
     });
 
     it('surfaces approval so a pre-existing wait is not silently missed', async () => {

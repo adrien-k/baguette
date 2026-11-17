@@ -7,6 +7,7 @@ import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById, summarizeAssistantMessage } from '../lib/session-resolution.js';
 import { getPrimaryBuilderAgent, notifyParentAgentIds } from '../../agents-db.js';
 import { waitForAgentTurnEnd } from '../../wait-for-agent-turn.js';
+import { agentFailureError, hydrateAgentFailureErrors } from '../../agent-error-message.js';
 
 function sessionTurnWaitTimeoutMessage(session, agent) {
   const label = session?.label ? ` "${session.label}"` : '';
@@ -25,7 +26,7 @@ export function createAwaitSessionTurnTool(ctx) {
   return {
     name: 'AwaitSessionTurn',
     description:
-      `Block until a session's primary builder turn finishes (up to ${waitMinutes} minutes per call), then return its status and last assistant message. ` +
+      `Block until a session's primary builder turn finishes (up to ${waitMinutes} minutes per call), then return its status, error_message when failed, and last assistant message. ` +
       'On timeout the turn is NOT cancelled — the wait is virtually detached and it keeps running: check GetSessionStatus for progress, then AwaitSessionTurn again to continue waiting. ' +
       'Blocking prevents taking new user messages during the wait — for long work prefer CreateSession(notify_parent: true) or WatchSession wake-ups instead, and keep this for short synchronous waits. ' +
       'Identify the session by session_id (from SearchSessions or CreateSession).',
@@ -56,6 +57,7 @@ export function createAwaitSessionTurnTool(ctx) {
       }
 
       const fresh = await getPrimaryBuilderAgent(db, session.id);
+      await hydrateAgentFailureErrors(db, [fresh ?? builder]);
       const lastAssistant = await db('session_messages')
         .where({ session_id: session.id, agent_id: builder.id, type: 'assistant' })
         .orderBy('id', 'desc')
@@ -69,6 +71,7 @@ export function createAwaitSessionTurnTool(ctx) {
         session_id: session.id,
         agent_id: builder.id,
         status: fresh?.status ?? builder.status,
+        error_message: agentFailureError(fresh ?? builder),
         timed_out: timedOut,
         last_assistant_message: summarizeAssistantMessage(lastAssistant),
         queued_message_count: Number(queuedRow?.count ?? 0),

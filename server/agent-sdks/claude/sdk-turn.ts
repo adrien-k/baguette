@@ -32,7 +32,6 @@
 
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { isClaudeHumanUserMessage, mapClaudeMessage } from './mapping.ts';
-import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { MessageOp } from '../../../shared/message-types.ts';
 
@@ -55,18 +54,12 @@ export type ClaudeStreamCallbacks = {
    */
   onStreamError?: (err: Error) => Promise<void> | void;
   /**
-   * Persisted as a typed `system` row when the stream ends in failure.
-   */
-  persistStatus?: (text: string) => Promise<void>;
-  /**
    * Fallback persistence for the rare case where no writer is wired in
    * (e.g. replay/debug paths).
    */
   persistMessage?: (message: SDKMessage) => Promise<void>;
   /** Track background tasks and continue draining after the result message. */
   trackBackgroundTasks?: boolean;
-  /** Shown to the user when the SDK closes the query mid-turn. */
-  connectionClosedHint?: string;
 };
 
 export type ProcessClaudeQueryStreamOptions = {
@@ -130,10 +123,8 @@ export async function processClaudeQueryStream(
     onInitSessionId,
     onResult,
     onStreamError,
-    persistStatus,
     persistMessage,
     trackBackgroundTasks = false,
-    connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
   } = options;
 
   const pendingBackgroundTaskIds = new Set<string>();
@@ -311,13 +302,6 @@ export async function processClaudeQueryStream(
   } catch (err) {
     const error = err as Error;
     if (error.name !== 'AbortError') {
-      const userFacing =
-        error.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : error.message;
-      try {
-        await persistStatus?.(userFacing);
-      } catch {
-        // persistStatus is best-effort; the caller has already been notified via onStreamError.
-      }
       await onStreamError?.(error);
       streamFailed = true;
       outcome = 'failed';

@@ -23,6 +23,7 @@ import {
   buildMcpUserMessageJson,
   summarizeAssistantMessage,
 } from '../mcp/lib/session-resolution.js';
+import { agentFailureError, hydrateAgentFailureErrors } from '../agent-error-message.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
 import { titleFromPrompt } from '../../../shared/agent-naming.js';
 
@@ -43,6 +44,7 @@ async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
 async function subagentTurnResult(app, sessionId, agentId) {
   const db = app.get('db');
   const agent = await getAgentById(db, agentId);
+  await hydrateAgentFailureErrors(db, [agent]);
   const lastAssistant = await db('session_messages')
     .where({ session_id: sessionId, agent_id: agentId, type: 'assistant' })
     .orderBy('id', 'desc')
@@ -51,6 +53,7 @@ async function subagentTurnResult(app, sessionId, agentId) {
     agent_id: agent.id,
     ref: agent.ref,
     status: agent.status,
+    error_message: agentFailureError(agent),
     session_id: sessionId,
     last_assistant_message: summarizeAssistantMessage(lastAssistant),
   };
@@ -296,6 +299,7 @@ class AgentsService extends KnexService {
       this.app.get('db'),
       rows.map((row) => row.id)
     );
+    await hydrateAgentFailureErrors(this.app.get('db'), rows);
     return {
       session_id: sessionId,
       subagents: rows.map((row) => ({
@@ -303,6 +307,7 @@ class AgentsService extends KnexService {
         ref: row.ref,
         name: row.name,
         status: row.status,
+        error_message: agentFailureError(row),
         parent_agent_id: row.parent_agent_id ?? null,
         notify_parent: watching.has(row.id),
       })),

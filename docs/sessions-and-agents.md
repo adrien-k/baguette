@@ -22,7 +22,7 @@ Agents inside a repo session (see below) can also spawn **subagents** for backgr
 
 ## Global sessions
 
-A global session is not checked out in a worktree. Its working directory is the shared repos folder, where it may **read but not modify** repository files. It carries **account-level tools** instead: `ListRepos`/`ListBranches`/`ListModels`, session inspection (`SearchSessions`, `GetSession`, `GetSessionMessages`), subagent tools, loops, and **read-only** PR inspection (`PrRead`, `PrWorkflows`, …) for other sessions.
+A global session is not checked out in a worktree. Its working directory is the shared repos folder, where it may **read but not modify** repository files. It carries **account-level tools** instead: `ListRepos`/`ListBranches`/`ListModels`, session inspection (`SearchSessions`, `GetSession`, `GetAgentMessages`), subagent tools, loops, and **read-only** PR inspection (`PrRead`, `PrWorkflows`, …) for other sessions.
 
 Git/PR write tools, `RunTask`, and the project-command family are deliberately unavailable — to change code, a global session starts (or asks you to open) a **repo session**.
 
@@ -60,7 +60,7 @@ If the watcher is mid-turn when a wake-up lands, the message queues for its next
 A global-session agent orchestrating child sessions:
 
 1. **Start** each child with `CreateSession(notify_parent: true)`, then **end the turn** — do not block on it. User messages keep queueing normally while the children run. (To manage a session that already exists, `WatchSession` — its result includes the child's current status, so a turn that finished in the meantime can be handled right away.)
-2. **Wake-ups arrive automatically** when a child's builder turn finishes or waits for user input. On a wake-up, check `GetSessionStatus` for the cheap snapshot (agent statuses, queued messages, tasks, todo/plan rollup), or `GetSessionMessages` for message bodies; check `PrRead` / `PrWorkflows` for PR/CI state.
+2. **Wake-ups arrive automatically** when a child's builder turn finishes or waits for user input. On a wake-up, check `GetSessionStatus` for the cheap snapshot (agent statuses, queued messages, tasks, todo/plan rollup), or `GetAgentMessages` for message bodies; check `PrRead` / `PrWorkflows` for PR/CI state.
 3. **Report to the user**, coalescing several finished children into one progress report, and follow up with `CreateSessionMessage` when needed.
 
 | Tool                                                                                         | Purpose                                                                                                                       |

@@ -13,6 +13,7 @@ import { loadOwnedAgentConfig } from './agent-config-resolver.js';
 import { getReviewerAgent } from './agents-db.js';
 import { patchAgentInternal } from './feathers/agents.service.js';
 import { getSdkPlugin, listSdkPlugins } from '../agent-sdks/registry.js';
+import { ensureFailedTurnResult } from './agent-error-message.js';
 
 export function reviewTurnKey(agentId) {
   return `review:${agentId}`;
@@ -140,10 +141,10 @@ class ReviewAgentTurn {
   async onAgentTurnComplete(
     session,
     outcome,
-    { sdk: _sdk, turnUsage: _turnUsage, agent: _agent, turnModel: _turnModel } = {}
+    { sdk: _sdk, turnUsage: _turnUsage, agent: _agent, turnModel: _turnModel, error_message } = {}
   ) {
     this._turnExtras.delete(session.id);
-    await this._finishReviewTurn(session, outcome);
+    await this._finishReviewTurn(session, outcome, { error_message });
   }
 
   /** Called when a queued review follow-up is about to dispatch after the prior turn ended. */
@@ -185,8 +186,11 @@ class ReviewAgentTurn {
     });
   }
 
-  async _patchReviewStatus(session, reviewer, status) {
+  async _patchReviewStatus(session, reviewer, status, { error_message } = {}) {
     if (!reviewer?.id) return;
+    if (status === 'failed') {
+      await ensureFailedTurnResult(this.app, reviewer, session.user_id, error_message);
+    }
     await patchAgentInternal(this.app, reviewer.id, { status }, session.user_id);
   }
 
@@ -211,7 +215,7 @@ class ReviewAgentTurn {
     return systemPrompt;
   }
 
-  async _finishReviewTurn(session, outcome) {
+  async _finishReviewTurn(session, outcome, { error_message } = {}) {
     await this._dispose(session.id);
     const db = this.app.get('db');
     const reviewer = await getReviewerAgent(db, session.id);
@@ -224,7 +228,7 @@ class ReviewAgentTurn {
       );
     if (!hasQueued) {
       if (reviewer?.status === 'running') {
-        await this._patchReviewStatus(session, reviewer, outcome);
+        await this._patchReviewStatus(session, reviewer, outcome, { error_message });
       }
     } else {
       await this._beginQueuedReviewTurn(session);
@@ -284,7 +288,11 @@ class ReviewAgentTurn {
         counts.failed++;
         logger.error({ err, sessionId: session.id }, 'Failed to resume interrupted review');
         const reviewer = await getReviewerAgent(this.app.get('db'), session.id);
-        if (reviewer) await this._patchReviewStatus(session, reviewer, 'failed').catch(() => {});
+        if (reviewer) {
+          await this._patchReviewStatus(session, reviewer, 'failed', {
+            error_message: err.message,
+          }).catch(() => {});
+        }
       }
     }
     return counts;
@@ -297,8 +305,11 @@ class ReviewAgentTurn {
         ? await db('agents').where({ id: reviewerAgentId, session_id: session.id }).first()
         : await getReviewerAgent(db, session.id);
     if (isGlobalSession(session) || !session.session_path) {
-      await this._persistStatus(session, 'Server restarted — review could not be resumed');
-      if (reviewer) await this._patchReviewStatus(session, reviewer, 'failed');
+      const unresumable = 'Server restarted — review could not be resumed';
+      await this._persistStatus(session, unresumable);
+      if (reviewer) {
+        await this._patchReviewStatus(session, reviewer, 'failed', { error_message: unresumable });
+      }
       return false;
     }
     const agentService = await agentServicePathForSession(this.app, session, { review: true });
@@ -306,8 +317,11 @@ class ReviewAgentTurn {
       .service(agentService)
       .isInterruptedSessionResumable(session, { channel: 'review', agent: reviewer });
     if (!resumable) {
-      await this._persistStatus(session, 'Server restarted — review could not be resumed');
-      if (reviewer) await this._patchReviewStatus(session, reviewer, 'failed');
+      const unresumable = 'Server restarted — review could not be resumed';
+      await this._persistStatus(session, unresumable);
+      if (reviewer) {
+        await this._patchReviewStatus(session, reviewer, 'failed', { error_message: unresumable });
+      }
       return false;
     }
 
@@ -331,7 +345,9 @@ class ReviewAgentTurn {
       ).catch(() => {});
       const failedReviewer = reviewer ?? (await getReviewerAgent(db, session.id));
       if (failedReviewer) {
-        await this._patchReviewStatus(session, failedReviewer, 'failed').catch(() => {});
+        await this._patchReviewStatus(session, failedReviewer, 'failed', {
+          error_message: `Server restarted — could not resume review (${err.message})`,
+        }).catch(() => {});
       }
       return false;
     }

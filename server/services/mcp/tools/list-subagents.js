@@ -10,6 +10,7 @@ export function createListSubagentsTool(ctx) {
     name: 'ListSubagents',
     description:
       'List MCP subagents (`agent_type` subagent) in a session with optional status filtering. ' +
+      'Each subagent includes status and error_message when failed. ' +
       'Omit session_id in a repo session for the current session. ' +
       'Use with AwaitSubagent, StopSubagent, and CreateSessionMessage (agent_ref).',
     schema: {

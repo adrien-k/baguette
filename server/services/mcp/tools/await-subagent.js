@@ -10,8 +10,8 @@ export function createAwaitSubagentTool(ctx) {
   return {
     name: 'AwaitSubagent',
     description:
-      `Block until a subagent turn finishes (up to ${waitMinutes} minutes per call), then return status and the last assistant message. ` +
-      'On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last assistant message (GetSessionMessages) to check progress, then AwaitSubagent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ' +
+      `Block until a subagent turn finishes (up to ${waitMinutes} minutes per call), then return status, error_message when failed, and the last assistant message. ` +
+      'On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last assistant message (GetAgentMessages) to check progress, then AwaitSubagent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ' +
       'Use after StartSubagent with attach: false, or to wait on a subagent started earlier. ' +
       'Identify the subagent by agent_id or agent_ref from ListSubagents / StartSubagent.',
     schema: {

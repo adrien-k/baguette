@@ -47,6 +47,7 @@ export type AgentRow = {
   agent_type: string;
   is_primary: number;
   status: string;
+  error_message?: string | null;
   agent_config_id?: number | null;
   agent_sdk?: string | null;
   model?: string | null;

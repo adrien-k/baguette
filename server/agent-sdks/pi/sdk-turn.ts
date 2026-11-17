@@ -15,6 +15,7 @@ export type ProcessPiSessionStreamOptions = {
 export type ProcessPiSessionStreamResult = {
   finishedOk: boolean;
   turnUsage: PiTurnUsage;
+  lastError: string | null;
 };
 
 function errorDetail(value: unknown, fallback: string): string {
@@ -131,5 +132,5 @@ export async function processPiSessionStream(
   }
 
   if (abortSignal?.aborted) finishedOk = false;
-  return { finishedOk, turnUsage };
+  return { finishedOk, turnUsage, lastError };
 }

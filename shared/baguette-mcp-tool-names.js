@@ -20,7 +20,7 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'PrRead',
   'ListRunningTasks',
   'CreateSessionMessage',
-  'GetSessionMessages',
+  'GetAgentMessages',
   'GetSessionMessage',
   'ListLoops',
   'GetLoop',

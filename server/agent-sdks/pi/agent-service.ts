@@ -392,6 +392,7 @@ export class PiAgentService {
   }): Promise<{
     outcome: 'completed' | 'failed' | 'stopped';
     turnUsage?: PiTurnUsage;
+    error_message?: string | null;
   }> {
     const key = activeKey ?? session.id;
     const controller = abortController ?? new AbortController();
@@ -414,7 +415,7 @@ export class PiAgentService {
       });
       sessionState.piSession = piSession;
       streamStarted = true;
-      const { finishedOk, turnUsage } = await processPiSessionStream({
+      const { finishedOk, turnUsage, lastError } = await processPiSessionStream({
         writer,
         subscribe: (listener) =>
           piSession.subscribe((event) => {
@@ -433,7 +434,7 @@ export class PiAgentService {
       } else {
         outcome = 'failed';
       }
-      return { outcome, turnUsage };
+      return { outcome, turnUsage, error_message: lastError };
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         logger.error(
@@ -458,7 +459,11 @@ export class PiAgentService {
       } else {
         outcome = 'stopped';
       }
-      return { outcome, turnUsage: emptyTurnUsage() };
+      return {
+        outcome,
+        turnUsage: emptyTurnUsage(),
+        error_message: (err as Error).name === 'AbortError' ? null : (err as Error).message,
+      };
     } finally {
       if (!streamStarted) {
         try {
@@ -594,7 +599,7 @@ export class PiAgentService {
         throw new Error('pi-agent: missing turn writer');
       }
 
-      const { outcome, turnUsage } = await this.runTurn({
+      const { outcome, turnUsage, error_message } = await this.runTurn({
         session,
         userText,
         agentOptions,
@@ -633,9 +638,10 @@ export class PiAgentService {
       } else if (outcome === 'failed' && channel === 'review') {
         await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
           sdk: 'pi',
+          error_message,
         });
       } else if (outcome === 'failed' && channel !== 'review' && !awaitingUser) {
-        await setAgentTurnTerminal(this.app, agent, userId, 'failed');
+        await setAgentTurnTerminal(this.app, agent, userId, 'failed', { error_message });
       } else if (outcome === 'stopped' && channel !== 'review') {
         // Mirror Claude: the aborter usually patches 'stopped' itself; this keeps the
         // agent from staying 'running' if the turn is aborted by any other path.
@@ -650,21 +656,16 @@ export class PiAgentService {
           if (channel === 'review') {
             await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'pi',
+              error_message: (err as Error).message,
             });
-            await getReviewAgentTurn(this.app)._persistStatus(session, (err as Error).message);
           } else {
-            await setAgentTurnTerminal(this.app, agent, userId, 'failed');
             if (writer) {
               await this._recordPiTurnError(writer, (err as Error).message);
-            } else {
-              await this._persistStatusMessage(
-                sessionId,
-                userId,
-                (err as Error).message,
-                session,
-                channel,
-                agent.id
-              );
+            }
+            await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
+              error_message: (err as Error).message,
+            });
+            if (!writer) {
               this.app.service('sessions').emit('app:error', {
                 sessionId,
                 message: (err as Error).message,

@@ -1,4 +1,5 @@
 import { getAgentById, getAgentBySessionRef } from '../../agents-db.js';
+import { agentFailureError } from '../../agent-error-message.js';
 
 /**
  * Summarize a subagent row; `notifyParent` is the observed-agent presence in
@@ -11,6 +12,7 @@ export function formatSubagentSummary(agent, { notifyParent = false } = {}) {
     ref: agent.ref,
     name: agent.name,
     status: agent.status,
+    error_message: agentFailureError(agent),
     parent_agent_id: agent.parent_agent_id ?? null,
     notify_parent: Boolean(notifyParent),
   };

@@ -780,7 +780,10 @@ describe('ClaudeAgentService', () => {
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
           BASE_BUILDER.id,
-          { status: 'failed', active_turn_id: null },
+          {
+            status: 'failed',
+            active_turn_id: null,
+          },
           expect.anything()
         );
       });
@@ -812,7 +815,10 @@ describe('ClaudeAgentService', () => {
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
           BASE_BUILDER.id,
-          { status: 'failed', active_turn_id: null },
+          {
+            status: 'failed',
+            active_turn_id: null,
+          },
           expect.anything()
         );
       });
@@ -829,14 +835,13 @@ describe('ClaudeAgentService', () => {
         expect.objectContaining({
           session_id: BASE_SESSION_ID,
           agent_id: BASE_BUILDER.id,
-          type: 'system',
-          subtype: 'status',
+          type: 'turn_result',
         }),
         expect.anything()
       );
     });
 
-    it('attributes the silent-end status row to the reviewer agent without review special-casing', async () => {
+    it('attributes the silent-end failure to the reviewer agent without review special-casing', async () => {
       const reviewer = await ensureReviewerAgentRow(db, BASE_SESSION_ID, {
         agent_config_id: BASE_BUILDER.agent_config_id,
         agent_sdk: 'claude',
@@ -862,16 +867,6 @@ describe('ClaudeAgentService', () => {
 
       await service.processMessages(state);
 
-      // The status row belongs to the agent whose turn failed — the reviewer itself.
-      expect(mockApp._messageCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          session_id: BASE_SESSION_ID,
-          agent_id: reviewer.id,
-          type: 'system',
-          subtype: 'status',
-        }),
-        expect.anything()
-      );
       // No review-side status handler was needed for the row itself; the reviewer's
       // own status stays owned by the review turn service via onAgentTurnComplete.
       expect(mockApp._reviewAgentTurn._persistStatus).not.toHaveBeenCalled();
@@ -883,7 +878,11 @@ describe('ClaudeAgentService', () => {
         expect(mockApp._reviewAgentTurn.onAgentTurnComplete).toHaveBeenCalledWith(
           expect.objectContaining({ id: BASE_SESSION_ID }),
           'failed',
-          { sdk: 'claude' }
+          expect.objectContaining({
+            sdk: 'claude',
+            error_message:
+              'Agent ended the turn without completing. Send your message again to continue.',
+          })
         );
       });
     });
@@ -907,7 +906,10 @@ describe('ClaudeAgentService', () => {
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
           BASE_BUILDER.id,
-          { status: 'failed', active_turn_id: null },
+          {
+            status: 'failed',
+            active_turn_id: null,
+          },
           expect.anything()
         );
       });
@@ -942,7 +944,10 @@ describe('ClaudeAgentService', () => {
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
           BASE_BUILDER.id,
-          { status: 'failed', active_turn_id: null },
+          {
+            status: 'failed',
+            active_turn_id: null,
+          },
           expect.anything()
         );
       });
@@ -959,8 +964,7 @@ describe('ClaudeAgentService', () => {
         expect(mockApp._messageCreate).toHaveBeenCalledWith(
           expect.objectContaining({
             session_id: BASE_SESSION_ID,
-            type: 'system',
-            subtype: 'status',
+            type: 'turn_result',
             message_json: expect.stringContaining('Stream broken'),
           }),
           expect.anything()
