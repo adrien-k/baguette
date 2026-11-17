@@ -1236,12 +1236,12 @@ describe('ClaudeAgentService', () => {
 
   // ── 7. Metadata generation ─────────────────────────────────────────────────
 
-  describe('generateSessionMetadata', () => {
+  describe('completeText', () => {
     const SUCCESS_RESULT = {
       type: 'result',
       subtype: 'success',
       is_error: false,
-      result: '{"label":"Fix login redirect","branch":"fix-login-redirect-abc12"}',
+      result: 'Fix login redirect',
     };
 
     function makeService() {
@@ -1251,35 +1251,39 @@ describe('ClaudeAgentService', () => {
       });
     }
 
-    it('generates the label and branch with the session’s selected model', async () => {
+    it('returns the raw completion text and runs the requested model', async () => {
       query.mockImplementation(() => makeAsyncIterable([SUCCESS_RESULT]));
 
       const service = makeService();
-      const result = await service.generateSessionMetadata(
-        'Fix the bug',
-        'abc12',
-        { id: 1 },
-        null,
-        { model: 'claude-opus-5' }
-      );
-
-      expect(result).toEqual({
-        label: 'Fix login redirect',
-        branchName: 'fix-login-redirect-abc12',
+      const text = await service.completeText('Generate a title', {
+        userId: 1,
+        model: 'claude-opus-5',
       });
+
+      expect(text).toBe('Fix login redirect');
       expect(query).toHaveBeenCalledTimes(1);
       expect(query.mock.calls[0][0].options.model).toBe('claude-opus-5');
     });
 
-    it('falls back to the cheap alias when the session has no selected model', async () => {
+    it('falls back to the cheap alias when no model is requested', async () => {
       query.mockImplementation(() => makeAsyncIterable([SUCCESS_RESULT]));
 
       const service = makeService();
-      await service.generateSessionMetadata('Fix the bug', 'abc12', { id: 1 }, null, {
-        model: null,
-      });
+      await service.completeText('Generate a title', { userId: 1, model: null });
 
       expect(query.mock.calls[0][0].options.model).toBe('haiku');
+    });
+
+    it('returns empty text when the result is an error', async () => {
+      query.mockImplementation(() =>
+        makeAsyncIterable([
+          { type: 'result', subtype: 'error_during_execution', is_error: true, result: 'nope' },
+        ])
+      );
+
+      const service = makeService();
+      const text = await service.completeText('Generate a title', { userId: 1 });
+      expect(text).toBe('');
     });
   });
 });

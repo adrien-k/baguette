@@ -63,6 +63,7 @@ import {
   resolveAgentRowForMessage,
 } from '../../services/agents-db.js';
 import { patchAgentInternal } from '../../services/feathers/agents.service.js';
+import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import {
   clearAgentActiveTurnId,
   setAgentActiveTurnId,
@@ -71,7 +72,6 @@ import {
 } from '../../services/agent-turn-patch.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
-const METADATA_TIMEOUT_MS = 30_000;
 
 type PiSessionState = {
   isProcessing: boolean;
@@ -763,31 +763,28 @@ export class PiAgentService {
     return this.getActiveSession(id);
   }
 
-  async generateSessionMetadata(
-    initialPrompt: string,
-    shortId = '',
-    user: { id?: number } | null = null,
-    _repo: { id?: number | null } | null = null,
-    session: Pick<AgentSessionRow, 'model' | 'model_params' | 'agent_config_id'> | null = null
-  ): Promise<{ label: string; branchName: string }> {
-    const fallbackBranch = `task-${shortId}`;
-    const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
-- "label": very short label (max 50 chars) summarizing the task
-- "branch": short kebab-case git branch name suffixed with "-${shortId}" (e.g. "fix-auth-token-${shortId}"), max 60 chars
-
-Task: ${initialPrompt}`;
-
-    let label = '';
-    let branchName = fallbackBranch;
-
-    const config = user?.id ? await this.loadAgentConfig(user.id, session?.agent_config_id) : null;
+  /**
+   * One-shot completion: send a prompt, return the raw response text.
+   * Must resolve within METADATA_TIMEOUT_MS and abort its own session on timeout —
+   * callers treat '' as "no completion" and fall back to defaults.
+   */
+  async completeText(
+    prompt: string,
+    opts: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      model?: string | null;
+    } = {}
+  ): Promise<string> {
+    const config =
+      opts.userId != null ? await this.loadAgentConfig(opts.userId, opts.agentConfigId) : null;
     const { apiKey, envVar } = resolvePiCredentials(config);
     if (!apiKey) {
-      return { label, branchName };
+      return '';
     }
 
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
-    const modelId = session?.model || PI_METADATA_MODEL_ID;
+    const modelId = opts.model || PI_METADATA_MODEL_ID;
 
     const cwd = process.cwd();
     const agentDir = undefined;
@@ -816,7 +813,7 @@ Task: ${initialPrompt}`;
         config,
       });
     } catch {
-      return { label, branchName };
+      return '';
     }
 
     let collectedText = '';
@@ -839,14 +836,11 @@ Task: ${initialPrompt}`;
       await Promise.race([
         consume,
         new Promise<void>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('Metadata generation timed out')),
-            METADATA_TIMEOUT_MS
-          );
+          timer = setTimeout(() => reject(new Error('Completion timed out')), METADATA_TIMEOUT_MS);
         }),
       ]);
     } catch {
-      // fall back to defaults
+      // fall back to an empty completion
     } finally {
       if (timer) clearTimeout(timer);
       unsubscribe();
@@ -857,25 +851,7 @@ Task: ${initialPrompt}`;
       }
     }
 
-    const text = collectedText.trim();
-    if (text) {
-      try {
-        const jsonText = text
-          .replace(/^```(?:json)?\n?/, '')
-          .replace(/\n?```$/, '')
-          .trim();
-        const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
-        label = (parsed.label || '').slice(0, 80);
-        branchName = (parsed.branch || fallbackBranch)
-          .replace(/[^a-z0-9-]/g, '-')
-          .replace(/-+/g, '-')
-          .slice(0, 60);
-      } catch {
-        label = text.slice(0, 80);
-      }
-    }
-
-    return { label, branchName };
+    return collectedText.trim();
   }
 
   /**
@@ -910,7 +886,7 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'stopTurn',
       'runTurn',
       'buildAgentOptions',
-      'generateSessionMetadata',
+      'completeText',
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
       'isInterruptedSessionResumable',

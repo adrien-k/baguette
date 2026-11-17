@@ -171,7 +171,7 @@ describe('getClaudeEnv agent_config_id', () => {
       apiKeyEnvVar: 'ANTHROPIC_AUTH_TOKEN',
       label: 'Claude token',
     });
-    const env = await getClaudeEnv(app, user.id, null, configId);
+    const env = await getClaudeEnv(app, user.id, configId);
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-user');
     expect(env.ANTHROPIC_API_KEY).toBe(HOST_API);
   });
@@ -181,7 +181,7 @@ describe('getClaudeEnv agent_config_id', () => {
     const configId = await insertTestAgentConfig(db, user.id, {
       apiKey: 'sk-ant-oat01-legacy',
     });
-    const env = await getClaudeEnv(app, user.id, null, configId);
+    const env = await getClaudeEnv(app, user.id, configId);
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-oat01-legacy');
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(HOST_OAUTH);
   });
@@ -193,14 +193,14 @@ describe('getClaudeEnv agent_config_id', () => {
       apiKey: 'sk-key',
       apiUrl: 'https://account-gateway.example.com',
     });
-    const env = await getClaudeEnv(app, user.id, null, configId);
+    const env = await getClaudeEnv(app, user.id, configId);
     expect(env.ANTHROPIC_BASE_URL).toBe('https://account-gateway.example.com');
   });
 
   it('does not set gateway discovery env vars in the session env', async () => {
     const { insertTestAgentConfig } = await import('../../../test-utils/agent-configs.js');
     const configId = await insertTestAgentConfig(db, user.id, { apiKey: 'sk-key' });
-    const env = await getClaudeEnv(app, user.id, null, configId);
+    const env = await getClaudeEnv(app, user.id, configId);
     expect(env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBeUndefined();
   });
 

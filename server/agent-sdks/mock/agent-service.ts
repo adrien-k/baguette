@@ -304,13 +304,13 @@ class MockAgentService {
     return this._activeSessions.get(id) ?? null;
   }
 
-  async generateSessionMetadata(
-    _initialPrompt: string,
-    shortId = '',
-    _user: unknown = null,
-    _repo: unknown = null
-  ): Promise<{ label: string; branchName: string }> {
-    return { label: '', branchName: `task-${shortId}` };
+  /**
+   * One-shot completion primitive (shared contract — see services/session-metadata.js).
+   * The mock SDK has no model to run: an empty string makes callers fall back to
+   * their default label and `task-<shortId>` branch.
+   */
+  async completeText(_prompt: string, _opts?: Record<string, unknown>): Promise<string> {
+    return '';
   }
 
   async isInterruptedSessionResumable(
@@ -335,7 +335,7 @@ export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVIC
       'handleTableMessageCreated',
       'stopSession',
       'stopTurn',
-      'generateSessionMetadata',
+      'completeText',
       'isInterruptedSessionResumable',
     ],
   });

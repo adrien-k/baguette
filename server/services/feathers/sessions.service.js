@@ -65,6 +65,8 @@ import {
   getAgentServiceForAgent,
   getAgentServiceForSession,
 } from '../agent-session-routing.js';
+import { getUtilityModelService } from '../utility-model.js';
+import { completeSessionMetadata } from '../session-metadata.js';
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { gitAuthFromRepo, isLocalRepo } from '../../../shared/repo-origin.js';
@@ -2039,6 +2041,36 @@ function defaultSessionLabelWithoutPrompt(sessionId) {
   return `New session #${sessionId}`;
 }
 
+/**
+ * Generate the session label + branch name for provisioning. The user's utility
+ * model (Settings → Agent) wins when configured — naming is a small job that should
+ * not pay for, or depend on, the session's builder model. Without one the primary
+ * builder's SDK and session model generate the completion as before. The label and
+ * branch slug are derived from one shared title prompt (services/session-metadata.js).
+ */
+async function generateSessionMetadataForProvisioning(app, session, user) {
+  const utility = await getUtilityModelService(app, user?.id);
+  if (utility) {
+    return completeSessionMetadata(utility.service, {
+      taskPrompt: session.initial_prompt,
+      userId: user?.id ?? null,
+      agentConfigId: utility.agent_config_id,
+      model: utility.model,
+      modelParams: utility.model_params,
+      shortId: session.short_id,
+    });
+  }
+  const builderService = await getAgentServiceForSession(app, session);
+  return completeSessionMetadata(builderService, {
+    taskPrompt: session.initial_prompt,
+    userId: user?.id ?? null,
+    agentConfigId: session.agent_config_id ?? null,
+    model: session.model ?? null,
+    modelParams: session.model_params ?? null,
+    shortId: session.short_id,
+  });
+}
+
 function taskBranchForShortId(branchPrefix, shortId) {
   return `${branchPrefix}task-${shortId}`;
 }
@@ -2052,14 +2084,7 @@ async function provisionGlobalSession(app, session, params) {
   };
   if (hasInitialPrompt(session.initial_prompt)) {
     try {
-      const metadataAgent = await getAgentServiceForSession(app, session);
-      const result = await metadataAgent.generateSessionMetadata(
-        session.initial_prompt,
-        session.short_id,
-        params.user,
-        null,
-        session
-      );
+      const result = await generateSessionMetadataForProvisioning(app, session, params.user);
       if (result.label) patch.label = result.label;
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
@@ -2146,14 +2171,7 @@ async function provisionSessionEnvironment(app, session, params) {
       session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
     if (hasInitialPrompt(session.initial_prompt)) {
       try {
-        const metadataAgent = await getAgentServiceForSession(app, session);
-        const result = await metadataAgent.generateSessionMetadata(
-          session.initial_prompt,
-          shortId,
-          user,
-          repo,
-          session
-        );
+        const result = await generateSessionMetadataForProvisioning(app, session, user);
         if (result.label) patch.label = result.label;
         if (!requestedBranchName && !session.remote_branch) {
           remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;

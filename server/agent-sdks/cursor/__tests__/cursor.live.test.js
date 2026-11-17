@@ -11,7 +11,7 @@ const env = readLiveSdkEnv('cursor');
 
 describe.skipIf(!env.enabled)('cursor live SDK', () => {
   it(
-    'listModels, connectivity, builder turn, and reviewer turn',
+    'listModels, connectivity, completeText, builder turn, and reviewer turn',
     { timeout: liveSdkSuiteTimeoutMs(env) },
     async () => {
       const { runLiveSdkSuite } = await import('../../../test-utils/sdk-live.js');

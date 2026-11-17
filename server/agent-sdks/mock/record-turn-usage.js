@@ -4,9 +4,9 @@ import { MOCK_AGENT_SDK } from './meta.js';
 /**
  * Fake per-turn token totals for the mock agent (dev/e2e): constant figures so
  * the Usage page and sidebar cost tooltip have something to show without any
- * pricing-table lookup.
+ * pricing-table lookup. Module-internal — only `recordMockTurnUsage` reads it.
  */
-export const MOCK_TURN_USAGE = Object.freeze({
+const MOCK_TURN_USAGE = Object.freeze({
   input_tokens: 1_200,
   output_tokens: 340,
   cache_read_tokens: 0,

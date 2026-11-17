@@ -374,6 +374,7 @@ function formatUserExternal(context) {
     user.agent_default_model = parseAgentDefaultModelJson(user.agent_default_model);
     user.reviewer_default_model = parseAgentDefaultModelJson(user.reviewer_default_model);
     user.subagent_default_model = parseAgentDefaultModelJson(user.subagent_default_model);
+    user.utility_default_model = parseAgentDefaultModelJson(user.utility_default_model);
     user.admin = !!user.admin;
     return user;
   };

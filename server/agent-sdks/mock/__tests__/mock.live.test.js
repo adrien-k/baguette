@@ -5,7 +5,7 @@ const env = readLiveSdkEnv('mock');
 
 describe.skipIf(!env.enabled)('mock live SDK', () => {
   it(
-    'listModels, connectivity, and builder tool tour',
+    'listModels, connectivity, completeText, and builder tool tour',
     { timeout: liveSdkSuiteTimeoutMs(env, { includeReviewer: false }) },
     async () => {
       const { runLiveSdkSuite } = await import('../../../test-utils/sdk-live.js');

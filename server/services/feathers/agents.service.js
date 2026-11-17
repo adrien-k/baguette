@@ -13,6 +13,8 @@ import {
   listSubagentsForSession,
 } from '../agents-db.js';
 import { getAgentServiceForAgent } from '../agent-session-routing.js';
+import { getUtilityModelService } from '../utility-model.js';
+import { completeSessionMetadata } from '../session-metadata.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
 import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
@@ -22,6 +24,7 @@ import {
   summarizeAssistantMessage,
 } from '../mcp/lib/session-resolution.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
+import { titleFromPrompt } from '../../../shared/agent-naming.js';
 
 async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
   if (parentAgentId == null || parentAgentId === '') return null;
@@ -296,7 +299,51 @@ const CREATE_FIELDS = [
   'initial_prompt',
   'name',
   'parent_agent_id',
+  // Naming-only hint for secondary builders; consumed by resolveSecondaryBuilderName.
+  'naming_prompt',
 ];
+
+/**
+ * Name a manually started secondary builder when the caller does not pass a name:
+ * the user's utility model (Settings → Agent) summarizes `naming_prompt`, falling back
+ * to the prompt's first words, then 'Builder'. The hint is never persisted.
+ */
+async function resolveSecondaryBuilderName(context) {
+  if (context.method !== 'create') return context;
+  const data = context.data ?? {};
+  const namingPrompt = typeof data.naming_prompt === 'string' ? data.naming_prompt : '';
+  delete data.naming_prompt;
+  if (data.agent_type !== 'builder') return context;
+  if (typeof data.name === 'string' && data.name.trim()) return context;
+  const sessionId = data.session_id;
+  if (!sessionId) return context;
+  const primary = await context.app
+    .get('db')('agents')
+    .where({ session_id: sessionId, is_primary: 1 })
+    .first();
+  if (!primary) return context; // first builder keeps the default naming
+  let name = '';
+  const prompt = namingPrompt.trim();
+  if (prompt) {
+    try {
+      const utility = await getUtilityModelService(context.app, context.params.user?.id);
+      if (utility) {
+        const { label } = await completeSessionMetadata(utility.service, {
+          taskPrompt: prompt,
+          userId: context.params.user?.id ?? null,
+          agentConfigId: utility.agent_config_id,
+          model: utility.model,
+          modelParams: utility.model_params,
+        });
+        name = label.slice(0, 120);
+      }
+    } catch (err) {
+      logger.warn({ err: err?.message }, 'Builder name generation failed — using prompt fallback');
+    }
+  }
+  context.data.name = name || titleFromPrompt(prompt);
+  return context;
+}
 
 async function stashReviewerCreateExtras(context) {
   if (!context.params?.provider) return context;
@@ -397,13 +444,8 @@ async function validateCreate(context) {
   }
   if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
-    if (existingPrimary) {
-      const name = context.data.name?.trim();
-      if (!name) throw new BadRequest('name is required for an additional builder agent');
-      context.data.is_primary = 0;
-    } else {
-      context.data.is_primary = 1;
-    }
+    // Secondary builders are named by resolveSecondaryBuilderName before this hook.
+    context.data.is_primary = existingPrimary ? 0 : 1;
   }
   if (agent_type === 'reviewer') {
     const existing = await db('agents').where({ session_id, agent_type: 'reviewer' }).first();
@@ -511,6 +553,7 @@ const agentsHooks = {
     create: [
       requireOwnSessionForWrite,
       pickCreateFields,
+      resolveSecondaryBuilderName,
       stashReviewerCreateExtras,
       allocateAgentRef,
       inheritPrimaryBuilderDefaults,

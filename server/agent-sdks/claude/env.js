@@ -100,10 +100,9 @@ export function buildClaudeEnvFromPlainUser(
  *
  * @param {object} app  - Feathers app instance
  * @param {number} userId
- * @param {string|null} _repoFullName - unused; kept for call-site compatibility
  * @param {number|null} [agentConfigId=null] - agent_configs row whose credentials to use
  */
-export async function getClaudeEnv(app, userId, _repoFullName, agentConfigId = null) {
+export async function getClaudeEnv(app, userId, agentConfigId = null) {
   const db = app.get('db');
   let config = null;
   if (agentConfigId != null) {

@@ -156,7 +156,8 @@ describe('091 agent_observers', () => {
       notify_on: 'turn_end',
     });
 
-    await db.migrate.down();
+    // Target the 091 down explicitly — later migrations (092+) may exist and must stay.
+    await db.migrate.down({ name: '091_agent_observers.js' });
 
     expect(await db.schema.hasColumn('agents', 'notify_parent')).toBe(true);
     expect(await db.schema.hasTable('agent_observers')).toBe(false);

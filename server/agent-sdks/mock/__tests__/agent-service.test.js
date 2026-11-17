@@ -106,9 +106,9 @@ afterEach(() => {
 });
 
 describe('MockAgentService', () => {
-  it('generateSessionMetadata returns empty label and default branch', async () => {
-    const result = await app.service('mock-agent').generateSessionMetadata('Fix bugs', 'abc12');
-    expect(result).toEqual({ label: '', branchName: 'task-abc12' });
+  it('completeText returns an empty string so callers fall back to defaults', async () => {
+    const result = await app.service('mock-agent').completeText('Fix bugs', { shortId: 'abc12' });
+    expect(result).toBe('');
   });
 
   it('isInterruptedSessionResumable is always false', async () => {

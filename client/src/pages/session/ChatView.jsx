@@ -65,7 +65,6 @@ import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
-  agentTitleFromPrompt,
   isAgentTurnActive,
   isSubagentBuilder,
 } from '../../utils/sessionAgents.js';
@@ -654,10 +653,12 @@ export default function ChatView({
     const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
     let newAgent;
     try {
+      // The server names the builder: utility model when configured, else the prompt's
+      // first words (shared/agent-naming.js).
       newAgent = await agentsService.create({
         session_id: session.id,
         agent_type: 'builder',
-        name: agentTitleFromPrompt(text),
+        naming_prompt: text,
       });
     } catch (err) {
       setInput(text);

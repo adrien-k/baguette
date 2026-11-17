@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { agentModelPresetsService } from '../../feathers.js';
 import { agentModelPresetKeys } from '../../queries/keys.js';
 import { toastError } from '../../utils/toastError.jsx';
+import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentModelPresets } from '../../hooks/useAgentModelPresets.js';
 import DefaultAgentPicker from '../../components/settings/DefaultAgentPicker.jsx';
@@ -20,6 +21,24 @@ function ScopeCheckbox({ checked, onChange, title, children }) {
       <input type="checkbox" className={CHECKBOX_CLASS} checked={checked} onChange={onChange} />
       {children}
     </label>
+  );
+}
+
+/** Provider icon for a preset's agent configuration (SDK default mark as fallback). */
+function PresetProviderIcon({ preset, configById }) {
+  const config = configById.get(String(preset.agent_config_id)) ?? null;
+  return (
+    <span
+      className="inline-flex shrink-0"
+      title={config?.label ?? formatAgentSdkDisplayName(preset.agent_sdk)}
+    >
+      <AgentConfigLogo
+        sdk={config?.sdk ?? preset.agent_sdk}
+        logo={config?.logo ?? null}
+        className="w-3.5 h-3.5 shrink-0"
+        size={14}
+      />
+    </span>
   );
 }
 
@@ -150,6 +169,7 @@ export default function AgentPresetModelsSection() {
   const [editing, setEditing] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const configById = useMemo(() => new Map(configOptions.map((c) => [c.key, c])), [configOptions]);
 
   const invalidatePresets = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -238,8 +258,11 @@ export default function AgentPresetModelsSection() {
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-0.5 text-xs text-faint">
-                  {formatAgentSdkDisplayName(preset.agent_sdk)} · {preset.model}
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-faint">
+                  <PresetProviderIcon preset={preset} configById={configById} />
+                  <span>
+                    {formatAgentSdkDisplayName(preset.agent_sdk)} · {preset.model}
+                  </span>
                 </p>
                 <p className="mt-0.5 text-xs text-secondary">{formatEnabledModes(preset)}</p>
               </div>

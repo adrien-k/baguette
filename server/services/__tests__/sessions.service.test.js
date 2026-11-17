@@ -75,7 +75,7 @@ const {
   syncSessionSettingsFromPatch,
   loadBaguetteConfig,
   readBaguetteConfigRaw,
-  generateSessionMetadata,
+  completeText,
   buildSystemPromptAppend,
   reviewStop,
   resumeInterruptedReviews,
@@ -85,9 +85,7 @@ const {
   syncSessionSettingsFromPatch: vi.fn(),
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   readBaguetteConfigRaw: vi.fn().mockResolvedValue({ missing: true }),
-  generateSessionMetadata: vi
-    .fn()
-    .mockResolvedValue({ label: 'Test task', branchName: 'test-task-abc' }),
+  completeText: vi.fn().mockResolvedValue('Test task'),
   buildSystemPromptAppend: vi.fn().mockResolvedValue('mocked builder system prompt'),
   reviewStop: vi.fn().mockResolvedValue({ ok: true }),
   resumeInterruptedReviews: vi.fn().mockResolvedValue({ resumed: 0, failed: 0 }),
@@ -201,7 +199,7 @@ function makeApp(db) {
       stopTurn,
       handleMessageCreated: claudeHandleMessageCreated,
       syncSessionSettingsFromPatch,
-      generateSessionMetadata,
+      completeText,
       isInterruptedSessionResumable: claudeInterruptedResumable,
     },
     {
@@ -210,7 +208,7 @@ function makeApp(db) {
         'stopTurn',
         'handleMessageCreated',
         'syncSessionSettingsFromPatch',
-        'generateSessionMetadata',
+        'completeText',
         'isInterruptedSessionResumable',
       ],
     }
@@ -219,14 +217,14 @@ function makeApp(db) {
     'cursor-agent',
     {
       stopSession,
-      generateSessionMetadata,
+      completeText,
       handleMessageCreated: cursorHandleMessageCreated,
       isInterruptedSessionResumable: cursorInterruptedResumable,
     },
     {
       methods: [
         'stopSession',
-        'generateSessionMetadata',
+        'completeText',
         'handleMessageCreated',
         'isInterruptedSessionResumable',
       ],
@@ -2984,7 +2982,7 @@ describe('Sessions service - find, get, create', () => {
       const userMsgCall = createMessage.mock.calls.find(([data]) => data.type === 'user');
       expect(userMsgCall).toBeUndefined();
       expect(session.status).toBe('stopped');
-      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(completeText).not.toHaveBeenCalled();
       expect(session.label).toBe(`New session #${session.id}`);
       const savedRow = await db('sessions').where({ id: session.id }).first();
       expect(session.remote_branch).toBe(`task-${savedRow.short_id}`);
@@ -3000,7 +2998,7 @@ describe('Sessions service - find, get, create', () => {
         );
 
       expect(session.is_global).toBe(true);
-      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(completeText).not.toHaveBeenCalled();
       expect(session.label).toBe(`New session #${session.id}`);
     });
 
@@ -3048,7 +3046,7 @@ describe('Sessions service - find, get, create', () => {
       expect(session.pr_number).toBe(42);
       expect(session.pr_url).toBe('https://github.com/test/repo/pull/42');
       expect(session.label).toBe('Feature PR');
-      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(completeText).not.toHaveBeenCalled();
     });
 
     it('create_new_branch=false does not mark PR metadata as updated when loading an open PR', async () => {
@@ -3148,7 +3146,7 @@ describe('Sessions service - find, get, create', () => {
       expect(session.local_branch).toBe(`feature/bar-${savedRow.short_id}`);
       expect(session.remote_branch).toBe('feature/bar');
       expect(session.label).toBe('Continuing: feature/bar');
-      expect(generateSessionMetadata).not.toHaveBeenCalled();
+      expect(completeText).not.toHaveBeenCalled();
       expect(createWorktree).toHaveBeenCalledWith(
         expect.objectContaining({ full_name: 'test/repo' }),
         'feature/bar',
@@ -3198,7 +3196,7 @@ describe('Sessions service - find, get, create', () => {
       expect(session.repo_id).toBeNull();
       expect(session.auto_push).toBeFalsy();
       expect(createWorktree).not.toHaveBeenCalled();
-      expect(generateSessionMetadata).toHaveBeenCalled();
+      expect(completeText).toHaveBeenCalled();
     });
 
     it('forces auto_push off for local repositories', async () => {
@@ -3228,6 +3226,33 @@ describe('Sessions service - find, get, create', () => {
     });
 
     it('passes the session so metadata generation uses its selected model', async () => {
+      await app
+        .service('sessions')
+        .create(
+          sessionData({ model: 'claude-opus-5', initial_prompt: 'Fix the bug' }),
+          params({ id: userId1 })
+        );
+
+      expect(completeText).toHaveBeenCalled();
+      const [prompt, opts] = completeText.mock.calls[0];
+      expect(prompt).toContain('Fix the bug');
+      expect(opts.model).toBe('claude-opus-5');
+    });
+
+    it('generates label and branch with the utility model when configured', async () => {
+      const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
+      const utilityConfigId = await insertTestAgentConfig(db, userId1, { apiKey: 'sk-ant' });
+      await db('users')
+        .where({ id: userId1 })
+        .update({
+          utility_default_config_id: utilityConfigId,
+          utility_default_model: JSON.stringify({
+            model: 'utility-haiku',
+            model_params: null,
+          }),
+        });
+      completeText.mockResolvedValueOnce('Utility label.');
+
       const session = await app
         .service('sessions')
         .create(
@@ -3235,10 +3260,34 @@ describe('Sessions service - find, get, create', () => {
           params({ id: userId1 })
         );
 
-      expect(generateSessionMetadata).toHaveBeenCalled();
-      const forwarded = generateSessionMetadata.mock.calls[0].at(-1);
-      expect(forwarded.id).toBe(session.id);
-      expect(forwarded.model).toBe('claude-opus-5');
+      expect(completeText).toHaveBeenCalled();
+      const [, opts] = completeText.mock.calls[0];
+      // The utility pick replaces the session row: builder model/params must not leak through.
+      const saved = await db('sessions').where({ id: session.id }).first();
+      expect(opts).toEqual({
+        userId: userId1,
+        agentConfigId: utilityConfigId,
+        model: 'utility-haiku',
+        modelParams: null,
+      });
+      // The label is derived from the raw completion; the branch is kebab-cased from it.
+      expect(saved.label).toBe('Utility label');
+      expect(saved.remote_branch).toBe(`utility-label-${saved.short_id}`);
+    });
+
+    it('uses the session model for metadata when no utility default is set', async () => {
+      const session = await app
+        .service('sessions')
+        .create(
+          sessionData({ model: 'claude-opus-5', initial_prompt: 'Fix the bug' }),
+          params({ id: userId1 })
+        );
+
+      const [, opts] = completeText.mock.calls[0];
+      expect(opts.model).toBe('claude-opus-5');
+      expect(session.label).toBe('Test task');
+      const saved = await db('sessions').where({ id: session.id }).first();
+      expect(saved.remote_branch).toBe(`test-task-${saved.short_id}`);
     });
 
     it('create_new_branch=false allows a second session on a branch already in use', async () => {

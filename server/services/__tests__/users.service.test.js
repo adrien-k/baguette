@@ -488,6 +488,60 @@ describe('Users service - agent defaults patch', () => {
     expect(updated.agent_default_config_id).toBe(configId);
   }, 15000);
 
+  it('stores and validates the utility default model', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'kimi-k3' }, { id: 'glm-5.3' }] }), {
+            status: 200,
+          })
+      )
+    );
+    const configId = await insertTestAgentConfig(db, user1.id, {
+      apiKey: 'sk-ant-api03-key',
+      apiUrl: 'https://opencode.ai/zen/go',
+      label: 'Claude GW',
+    });
+    const updated = await app.service('users').patch(
+      user1.id,
+      {
+        utility_default_config_id: configId,
+        utility_default_model: { model: 'kimi-k3' },
+      },
+      params(user1)
+    );
+    expect(updated.utility_default_model.model).toBe('kimi-k3');
+    expect(updated.utility_default_config_id).toBe(configId);
+  }, 15000);
+
+  it('requires a config id when setting a utility model and clears it with the config', async () => {
+    await expect(
+      app
+        .service('users')
+        .patch(user1.id, { utility_default_model: { model: 'haiku' } }, params(user1))
+    ).rejects.toThrow(/utility_default_config_id is required/);
+
+    const configId = await insertTestAgentConfig(db, user1.id, {
+      apiKey: 'sk-ant-api03-key',
+      apiUrl: 'https://opencode.ai/zen/go',
+      label: 'Claude GW 2',
+    });
+    await app.service('users').patch(
+      user1.id,
+      {
+        utility_default_config_id: configId,
+        utility_default_model: { model: 'kimi-k3' },
+      },
+      params(user1)
+    );
+    const cleared = await app
+      .service('users')
+      .patch(user1.id, { utility_default_config_id: null }, params(user1));
+    expect(cleared.utility_default_config_id).toBeNull();
+    expect(cleared.utility_default_model.model).toBeNull();
+  }, 15000);
+
   it('accepts any as the agent-created model policy and rejects unknown modes', async () => {
     const updated = await app
       .service('users')

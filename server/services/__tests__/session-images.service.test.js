@@ -233,7 +233,8 @@ describe('session-images resolveForPush', () => {
     });
 
     expect(resolved['img-a']).toEqual({
-      url: `${PUBLIC_API_URL}/api/images/img-a.png`,
+      // publicSessionImageUrl strips a trailing slash from the configured origin.
+      url: `${PUBLIC_API_URL.replace(/\/$/, '')}/api/images/img-a.png`,
       alt_text: 'shot',
     });
     expect(resolved['img-b']).toEqual({

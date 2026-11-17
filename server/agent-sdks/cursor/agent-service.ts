@@ -16,10 +16,12 @@ import type {
 } from '@cursor/sdk';
 import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { cursorSdkStateRoot, cursorWorkspaceRef } from './session-paths.js';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
+import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
 import { loadEnabledMcpServersForSession } from '../../services/user-mcp-runtime.js';
@@ -81,6 +83,26 @@ import {
 } from '../../services/agent-turn-patch.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
+
+/**
+ * Throwaway store root for one-shot completions (`completeText`): per process so
+ * concurrent runs never contend on one SQLite file, and disposable since nothing
+ * reads the state back. OS tmp cleanup handles the leftovers.
+ */
+const COMPLETE_TEXT_STATE_ROOT = join(tmpdir(), `baguette-cursor-complete-text-${process.pid}`);
+let completeTextScratchStore = null;
+
+/** Lazy singleton `SqliteLocalAgentStore` under the scratch root (see COMPLETE_TEXT_STATE_ROOT). */
+async function getCompleteTextScratchStore() {
+  completeTextScratchStore ??= (async () => {
+    await mkdir(COMPLETE_TEXT_STATE_ROOT, { recursive: true });
+    return SqliteLocalAgentStore.open({
+      workspaceRef: COMPLETE_TEXT_STATE_ROOT,
+      stateRoot: COMPLETE_TEXT_STATE_ROOT,
+    });
+  })();
+  return completeTextScratchStore;
+}
 
 const SYSTEM_PROMPT_RULE_FILENAME = 'system-prompt.mdc';
 const PROMPT_RULE_MODES = ['build', 'review'];
@@ -1163,48 +1185,34 @@ ${body}`,
     return this.getActiveSession(id);
   }
 
-  async generateSessionMetadata(
-    initialPrompt: string,
-    shortId = '',
-    user: { id?: number } | null = null,
-    repo: { id?: number | null } | null = null,
-    session: Pick<AgentSessionRow, 'model' | 'model_params' | 'agent_config_id'> | null = null
-  ): Promise<{ label: string; branchName: string }> {
-    const fallbackBranch = `task-${shortId}`;
-    const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
-- "label": very short label (max 50 chars) summarizing the task
-- "branch": short kebab-case git branch name suffixed with "-${shortId}" (e.g. "fix-auth-token-${shortId}"), max 60 chars
-
-Task: ${initialPrompt}`;
-
-    let label = '';
-    let branchName = fallbackBranch;
-
-    const apiKey = user?.id
-      ? await this.loadAgentConfigApiKey(user.id, session?.agent_config_id)
-      : undefined;
-    // Generate the label/branch with the session's selected model (and its variant params)
-    // so the metadata matches the agent that will actually run the task. Sessions created
-    // without an explicit model fall back to a cheap one so provisioning stays fast.
-    const modelId = session?.model || CURSOR_CHEAP_MODEL_ID;
-    const modelParams = this.parseModelParams(session?.model_params);
-    let repoFullName: string | null = null;
-    if (repo?.id) {
-      const repoRow = await (this.app.get('db') as DbLike)('repos').where({ id: repo.id }).first();
-      repoFullName = (repoRow?.full_name as string) ?? null;
-    }
-    const homeSession = {
-      short_id: shortId,
-      repo_full_name: repoFullName,
-      session_path: null,
-    } as AgentSessionRow;
+  /**
+   * One-shot completion: send a prompt, return the raw response text.
+   * Must resolve within METADATA_TIMEOUT_MS — callers treat '' as "no completion"
+   * and fall back to defaults. Runs on the requested model (and variant params);
+   * calls without an explicit model fall back to a cheap one so provisioning stays fast.
+   */
+  async completeText(
+    prompt: string,
+    opts: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      model?: string | null;
+      modelParams?: unknown;
+    } = {}
+  ): Promise<string> {
+    const apiKey =
+      opts.userId != null
+        ? await this.loadAgentConfigApiKey(opts.userId, opts.agentConfigId)
+        : undefined;
+    const modelId = opts.model || CURSOR_CHEAP_MODEL_ID;
+    const modelParams = this.parseModelParams(opts.modelParams);
 
     let collectedText = '';
 
-    const store = await SqliteLocalAgentStore.open({
-      workspaceRef: cursorWorkspaceRef(homeSession),
-      stateRoot: cursorSdkStateRoot(homeSession) ?? join(DATA_DIR, 'cursor-sdk-store'),
-    });
+    // One-shot completions need no persistence: the SDK requires a store, so a
+    // throwaway per-process scratch dir keeps run state out of DATA_DIR and out
+    // of every session folder. Opened once and reused across completions.
+    const store = await getCompleteTextScratchStore();
     const agent = await Agent.create({
       apiKey,
       model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
@@ -1216,45 +1224,44 @@ Task: ${initialPrompt}`;
 
     const run = await agent.send(prompt);
 
-    for await (const sdkMsg of run.stream()) {
-      if (sdkMsg.type === 'assistant') {
-        const content = (
-          sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
-        ).message?.content;
-        for (const block of content ?? []) {
-          if (block.type === 'text') collectedText += block.text ?? '';
+    const consume = (async () => {
+      for await (const sdkMsg of run.stream()) {
+        if (sdkMsg.type === 'assistant') {
+          const content = (
+            sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
+          ).message?.content;
+          for (const block of content ?? []) {
+            if (block.type === 'text') collectedText += block.text ?? '';
+          }
+        }
+        if (
+          sdkMsg.type === 'status' &&
+          (sdkMsg as { status?: string }).status &&
+          ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
+            (sdkMsg as { status?: string }).status as string
+          )
+        ) {
+          break;
         }
       }
-      if (
-        sdkMsg.type === 'status' &&
-        (sdkMsg as { status?: string }).status &&
-        ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
-          (sdkMsg as { status?: string }).status as string
-        )
-      ) {
-        break;
-      }
+    })();
+
+    // Cursor runs surface errors via terminal statuses but can still stall; fail fast
+    // like the other SDKs so provisioning never waits on a stuck stream.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        consume,
+        new Promise<void>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Completion timed out')), METADATA_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      consume.catch(() => {}); // late stream events after timeout are non-fatal
     }
 
-    const text = collectedText.trim();
-    if (text) {
-      try {
-        const jsonText = text
-          .replace(/^```(?:json)?\n?/, '')
-          .replace(/\n?```$/, '')
-          .trim();
-        const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
-        label = (parsed.label || '').slice(0, 80);
-        branchName = (parsed.branch || fallbackBranch)
-          .replace(/[^a-z0-9-]/g, '-')
-          .replace(/-+/g, '-')
-          .slice(0, 60);
-      } catch {
-        label = text.slice(0, 80);
-      }
-    }
-
-    return { label, branchName };
+    return collectedText.trim();
   }
 
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
@@ -1293,7 +1300,7 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'writeAlwaysApplyRule',
       'writePromptRule',
       'createOrResumeAgent',
-      'generateSessionMetadata',
+      'completeText',
       'openSessionStore',
       'disposeSessionStore',
       'prepareTiedSessionLoopCompaction',

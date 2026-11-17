@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
-import { agentTitleFromPrompt } from '../client/src/utils/sessionAgents.js';
+import { titleFromPrompt } from '../shared/agent-naming.js';
 import { E2E_THEME, e2eThemeSuffix } from './fixtures.js';
 import {
   MOCK_ALT_PRIMARY_MODEL_ID,
@@ -193,7 +193,7 @@ export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
  */
 export async function addManualBuilderAgent(page, name) {
   // The agent is named from the prompt's first four words — resolve the stored name.
-  const storedName = agentTitleFromPrompt(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
+  const storedName = titleFromPrompt(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
   const composer = await sessionChatComposer(page);
   await composer.fill(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
   await page.getByTitle('Schedule', { exact: true }).click();

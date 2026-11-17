@@ -106,7 +106,8 @@ describe('bootstrap schema migrations (078+)', () => {
     expect(await fkTargets(db, 'agent_configs')).toContain('users');
     expect(await fkTargets(db, 'secrets')).toContain('users');
     const usersOutbound = await fkTargets(db, 'users');
-    expect(usersOutbound.filter((t) => t === 'agent_configs')).toHaveLength(3);
+    // agent/reviewer/subagent/utility default config references (055 + 069 + 092).
+    expect(usersOutbound.filter((t) => t === 'agent_configs')).toHaveLength(4);
 
     expect(await db.raw('PRAGMA foreign_key_check')).toHaveLength(0);
 

@@ -12,6 +12,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
+import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { remoteHasNewCommits } from '../../services/github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../../services/agent-settings.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -163,9 +164,6 @@ const REVIEWER_ALLOWED_TOOLS = [
   'mcp__baguette__UpdateIssue',
   'mcp__baguette__CloseIssue',
 ];
-
-/** Hard cap on session metadata (label/branch) generation — provisioning must not stall on CLI API retries. */
-const METADATA_TIMEOUT_MS = 30_000;
 
 function claudeSdkPermissionMode(sessionRow: AgentSessionRow): 'plan' | 'acceptEdits' {
   return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
@@ -741,7 +739,7 @@ export class ClaudeAgentService {
     const resolvedActiveKey = activeKey ?? sessionId;
     // Env from the turn's agent config row — the config id was resolved at dispatch
     // from the message row snapshot and is required to be present.
-    const claudeEnv = await getClaudeEnv(this.app, sessionRow.user_id, null, turnConfigId);
+    const claudeEnv = await getClaudeEnv(this.app, sessionRow.user_id, turnConfigId);
     let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
       const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
@@ -1212,35 +1210,31 @@ export class ClaudeAgentService {
     await this._disposeActiveSession(sessionId);
   }
 
-  async generateSessionMetadata(
-    initialPrompt: string,
-    shortId = '',
-    user: { id: number } | null,
-    repo: { full_name?: string | null } | null = null,
-    session: Pick<AgentSessionRow, 'model'> | null = null
-  ): Promise<{ label: string; branchName: string }> {
-    const fallbackBranch = `task-${shortId}`;
-    const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
-- "label": very short label (max 50 chars) summarizing the task
-- "branch": short kebab-case git branch name suffixed with "-${shortId}" (e.g. "fix-auth-token-${shortId}"), max 60 chars
-
-Task: ${initialPrompt}`;
-
-    let label = '';
-    let branchName = fallbackBranch;
-
-    const metadataModel = session?.model || 'haiku';
+  /**
+   * One-shot completion: send a prompt, return the raw response text.
+   * Must resolve within METADATA_TIMEOUT_MS and clean up its own CLI subprocess on
+   * timeout — callers treat '' as "no completion" and fall back to defaults.
+   */
+  async completeText(
+    prompt: string,
+    opts: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      model?: string | null;
+    } = {}
+  ): Promise<string> {
+    // Run with the requested model so the completion matches the agent that will
+    // actually use it. Calls without an explicit model fall back to the cheap alias
+    // so provisioning stays fast.
+    const model = opts.model || 'haiku';
+    // Credentials follow the config that selected the model (the user's utility
+    // default, else the session's builder config) so gateway models resolve correctly.
     const env = applyClaudeAgentModelEnv(
-      await getClaudeEnv(this.app, user?.id ?? 0, repo?.full_name ?? null),
-      session?.model ?? null
+      await getClaudeEnv(this.app, opts.userId ?? 0, opts.agentConfigId ?? null),
+      opts.model ?? null
     );
-    const q = query({
-      prompt,
-      // Generate the label/branch with the session's selected model so the metadata
-      // matches the agent that will actually run the task. Sessions created without an
-      // explicit model fall back to the cheap alias so provisioning stays fast.
-      options: { model: metadataModel, env },
-    });
+    const q = query({ prompt, options: { model, env } });
+    let text = '';
     const consume = (async () => {
       for await (const message of q) {
         const msg = message as SDKMessage & {
@@ -1249,37 +1243,20 @@ Task: ${initialPrompt}`;
           result?: string;
         };
         if (msg.type === 'result' && msg.subtype === 'success' && !msg.is_error) {
-          const text = (msg.result || '').trim();
-          try {
-            const jsonText = text
-              .replace(/^```(?:json)?\n?/, '')
-              .replace(/\n?```$/, '')
-              .trim();
-            const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
-            label = (parsed.label || '').slice(0, 80);
-            branchName = (parsed.branch || fallbackBranch)
-              .replace(/[^a-z0-9-]/g, '-')
-              .replace(/-+/g, '-')
-              .slice(0, 60);
-          } catch {
-            label = text.slice(0, 80);
-          }
+          text = (msg.result || '').trim();
         }
       }
     })();
 
     // The CLI retries failed API calls up to 10 times with exponential backoff; a bad
-    // credential or model can stall metadata for minutes. Provisioning must not wait on
-    // that — fail fast and let the caller fall back to the default label/branch.
+    // credential or model can stall completions for minutes. Provisioning must not wait
+    // on that — fail fast and let the caller fall back to defaults.
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         consume,
         new Promise<void>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('Metadata generation timed out')),
-            METADATA_TIMEOUT_MS
-          );
+          timer = setTimeout(() => reject(new Error('Completion timed out')), METADATA_TIMEOUT_MS);
         }),
       ]);
     } finally {
@@ -1292,7 +1269,7 @@ Task: ${initialPrompt}`;
       consume.catch(() => {}); // late failures after timeout/close are non-fatal
     }
 
-    return { label, branchName };
+    return text;
   }
 
   async isInterruptedSessionResumable(
@@ -1379,7 +1356,7 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'syncSessionSettingsFromPatch',
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
-      'generateSessionMetadata',
+      'completeText',
       'isInterruptedSessionResumable',
     ],
   });

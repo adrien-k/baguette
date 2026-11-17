@@ -9,8 +9,9 @@
  *   cursor  glm-5p3-flash                               ~$0.0045  (composer-2.5 was ~$0.028)
  *   pi      opencode-go/glm-5.3-flash                   ~$0.0051
  *
- * `runLiveSdkSuite` also exercises agent-configs listModels + testConnectivity and a
- * reviewer turn (CurrentSessionInfo) per SDK.
+ * `runLiveSdkSuite` also exercises agent-configs listModels + testConnectivity, a
+ * `completeText` smoke call (predictable one-word answer), and a reviewer turn
+ * (CurrentSessionInfo) per SDK.
  */
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -53,6 +54,10 @@ const LIVE_SDK_REVIEW_PROMPT = [
   '1. Call CurrentSessionInfo.',
   '2. Reply with the single word REVIEW_OK.',
 ].join('\n');
+
+/** completeText smoke: fixed factual prompt with a single predictable word as the answer. */
+const LIVE_COMPLETE_PROMPT = 'What is the day after Monday? Respond with just a word.';
+const LIVE_COMPLETE_EXPECTED = 'tuesday';
 
 async function initLiveWorktree(absPath) {
   await mkdir(absPath, { recursive: true });
@@ -383,6 +388,35 @@ async function assertLiveListModels(app, ctx, env) {
   }
 }
 
+/**
+ * completeText smoke: run the one-shot primitive against the seeded config/model and
+ * assert the predictable answer. Mock has no model and must return '' (the fallback
+ * contract), every real SDK must answer the factual prompt.
+ */
+async function assertLiveCompleteText(app, _db, ctx, env) {
+  const plugin = getSdkPlugin(env.sdk);
+  const svc = plugin?.servicePath ? app.service(plugin.servicePath) : null;
+  expect(svc?.completeText, `SDK service must expose completeText (${env.sdk})`).toBeTypeOf(
+    'function'
+  );
+  const text = await svc.completeText(LIVE_COMPLETE_PROMPT, {
+    userId: ctx.userId,
+    agentConfigId: ctx.configId,
+    model: env.model,
+    modelParams: env.modelParams,
+  });
+  if (env.sdk === 'mock') {
+    expect(text, 'mock completeText must return an empty string (callers fall back)').toBe('');
+  } else {
+    expect(
+      String(text).toLowerCase(),
+      `completeText returned an unexpected answer\nprompt: ${LIVE_COMPLETE_PROMPT}\ncompletion: ${text}`
+    ).toContain(LIVE_COMPLETE_EXPECTED);
+  }
+  // eslint-disable-next-line no-console -- live test report
+  console.log(`[sdk-live ${env.sdk}] completeText -> ${JSON.stringify(String(text).trim())}`);
+}
+
 async function assertLiveConnectivity(app, ctx, env, { listModelsOk = false } = {}) {
   if (listModelsOk && env.sdk === 'pi') {
     // Pi listModels already loaded the provider catalog; opencode-go probe path is redundant.
@@ -515,6 +549,7 @@ export async function runLiveSdkSuite(sdk, opts = {}) {
     ctx = await seedLiveSession(db, sdk, env);
     const listModelsOk = await assertLiveListModels(app, ctx, env);
     await assertLiveConnectivity(app, ctx, env, { listModelsOk });
+    await assertLiveCompleteText(app, db, ctx, env);
     const builderResult = await runLiveTurnAndAssert(app, db, ctx, env, builderOpts);
     let reviewerResult = null;
     if (includeReviewer) {

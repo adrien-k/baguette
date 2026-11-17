@@ -3,7 +3,9 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import { usersService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
-import DefaultAgentPicker from '../../components/settings/DefaultAgentPicker.jsx';
+import DefaultAgentPicker, {
+  AgentDefaultModelPicker,
+} from '../../components/settings/DefaultAgentPicker.jsx';
 import SubagentDefaultPicker from '../../components/settings/SubagentDefaultPicker.jsx';
 import {
   SUBAGENT_DEFAULT_INHERIT,
@@ -27,6 +29,10 @@ export default function AgentDefaultsSection({ settings, onSave }) {
   const [subagentConfigId, setSubagentConfigId] = useState(null);
   const [subagentModel, setSubagentModel] = useState(null);
   const [subagentModelParamsJson, setSubagentModelParamsJson] = useState(null);
+
+  const [utilityConfigId, setUtilityConfigId] = useState(null);
+  const [utilityModel, setUtilityModel] = useState(null);
+  const [utilityModelParamsJson, setUtilityModelParamsJson] = useState(null);
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -53,6 +59,13 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     setSubagentModelParamsJson(
       settings.subagent_default_model?.model_params?.length
         ? JSON.stringify(settings.subagent_default_model.model_params)
+        : null
+    );
+    setUtilityConfigId(settings.utility_default_config_id ?? null);
+    setUtilityModel(settings.utility_default_model?.model ?? null);
+    setUtilityModelParamsJson(
+      settings.utility_default_model?.model_params?.length
+        ? JSON.stringify(settings.utility_default_model.model_params)
         : null
     );
   }, [settings]);
@@ -95,6 +108,10 @@ export default function AgentDefaultsSection({ settings, onSave }) {
           subagentMode === 'config' && subagentConfigId
             ? buildModelPayload(subagentModel, subagentModelParamsJson)
             : null,
+        utility_default_config_id: utilityConfigId,
+        utility_default_model: utilityConfigId
+          ? buildModelPayload(utilityModel, utilityModelParamsJson)
+          : null,
       });
       onSave(updated);
       setSaved(true);
@@ -119,6 +136,8 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         subagent_default_mode: SUBAGENT_DEFAULT_INHERIT,
         subagent_default_config_id: null,
         subagent_default_model: null,
+        utility_default_config_id: null,
+        utility_default_model: null,
       });
       onSave(updated);
       hydrateFromSettings();
@@ -135,6 +154,25 @@ export default function AgentDefaultsSection({ settings, onSave }) {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-3 rounded-lg border border-line bg-control/30 p-4">
+        <div>
+          <h4 className="text-sm font-medium text-fg">Utility model</h4>
+          <p className="text-xs text-faint mt-0.5">
+            Cheap model for small jobs: naming sessions, branches, and secondary builders. Leave
+            unset to name with the session&apos;s builder model.
+          </p>
+        </div>
+        <AgentDefaultModelPicker
+          configId={utilityConfigId}
+          onConfigIdChange={setUtilityConfigId}
+          model={utilityModel}
+          modelParamsJson={utilityModelParamsJson}
+          onModelChange={setUtilityModel}
+          onModelParamsJsonChange={setUtilityModelParamsJson}
+          inheritLabel="Session's builder model"
+          showInheritPlaceholder
+        />
+      </div>
       <DefaultAgentPicker
         title="Builder default"
         description="Pre-fills the dashboard builder. Agents use it for new sessions and loops when Agent-created sessions and subagents is set to inherit."

@@ -13,7 +13,7 @@ const env = readLiveSdkEnv('pi');
 
 describe.skipIf(!env.enabled)('pi live SDK', () => {
   it(
-    'listModels, connectivity, builder turn, and reviewer turn',
+    'listModels, connectivity, completeText, builder turn, and reviewer turn',
     { timeout: liveSdkSuiteTimeoutMs(env) },
     async () => {
       const { runLiveSdkSuite } = await import('../../../test-utils/sdk-live.js');
