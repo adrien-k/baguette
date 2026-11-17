@@ -11,8 +11,11 @@ import {
   isAgentTurnActive,
   isAnyAgentAwaitingUser,
   isPrimaryAgent,
+  isReviewerAgent,
   isSubagentBuilder,
+  otherAgentsRunningLabel,
   partitionSessionAgentsByRunning,
+  sortSessionAgentsByLastActivityDesc,
   sortSessionAgentsByRefAsc,
 } from '../sessionAgents.js';
 
@@ -49,6 +52,23 @@ describe('agent display labels', () => {
       { id: 7, ref: 2 },
     ];
     expect(sortSessionAgentsByRefAsc(agents).map((a) => a.ref)).toEqual([1, 2, 3]);
+  });
+
+  it('sorts agents by last activity, most recent first', () => {
+    const agents = [
+      { id: 1, updated_at: '2024-01-01T10:00:00Z' },
+      { id: 2, updated_at: '2024-01-01T12:00:00Z' },
+      { id: 3 },
+    ];
+    expect(sortSessionAgentsByLastActivityDesc(agents).map((a) => a.id)).toEqual([2, 1, 3]);
+  });
+
+  it('treats SQLite CURRENT_TIMESTAMP values as UTC', () => {
+    const agents = [
+      { id: 1, updated_at: '2024-01-01 12:00:01' },
+      { id: 2, updated_at: '2024-01-01T12:00:00Z' },
+    ];
+    expect(sortSessionAgentsByLastActivityDesc(agents).map((a) => a.id)).toEqual([1, 2]);
   });
 
   it('prefixes menu label with session ref when present', () => {
@@ -149,6 +169,21 @@ describe('isSubagentBuilder', () => {
     expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(false);
     expect(isSubagentBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(true);
     expect(isSubagentBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
+  });
+});
+
+describe('otherAgentsRunningLabel', () => {
+  it('pluralizes the other-agents label', () => {
+    expect(otherAgentsRunningLabel(1)).toBe('1 other agent running');
+    expect(otherAgentsRunningLabel(3)).toBe('3 other agents running');
+  });
+});
+
+describe('isReviewerAgent', () => {
+  it('is true only for reviewer rows', () => {
+    expect(isReviewerAgent({ agent_type: 'reviewer' })).toBe(true);
+    expect(isReviewerAgent({ agent_type: 'builder' })).toBe(false);
+    expect(isReviewerAgent(null)).toBe(false);
   });
 });
 

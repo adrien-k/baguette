@@ -125,6 +125,7 @@ export default function ChatView({
   onSelectAgent,
   tasks = [],
   onSelectTask,
+  onShowTasks,
   systemPrompt,
   onViewChange,
   readonly,
@@ -987,6 +988,8 @@ export default function ChatView({
             selectedAgentId={activeAgent?.id}
             onSelectAgent={onSelectAgent}
             runningAgentCount={runningAgentCount}
+            runningTasksCount={session?.running_tasks_count ?? 0}
+            onShowTasks={onShowTasks}
             agentOptionCostLabel={agentUsageCostLabel}
             agentHeaderEnd={
               activeAgentCostLabel ? (
@@ -1058,6 +1061,8 @@ export default function ChatView({
                     selectedAgentId={activeAgent?.id}
                     onSelectAgent={readonly ? undefined : onSelectAgent}
                     runningAgentCount={runningAgentCount}
+                    runningTasksCount={session?.running_tasks_count ?? 0}
+                    onShowTasks={onShowTasks}
                     agentOptionCostLabel={agentUsageCostLabel}
                     agentHeaderEnd={
                       activeAgentCostLabel ? (

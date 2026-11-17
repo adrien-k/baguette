@@ -12,6 +12,7 @@ import {
   isAgentAwaitingUser,
   isAgentTurnActive,
   isPrimaryAgent,
+  isReviewerAgent,
 } from '../utils/sessionAgents.js';
 import { messageModelDisplayName } from '../utils/messageModelLabel.js';
 import { formatUsd } from '../utils/usageSeries.js';
@@ -74,10 +75,11 @@ function AgentTreeModelLabel({ agentConfigId, model }) {
 /**
  * Small rename affordance trailing the title. Turns are stopped from the
  * chat composer and agents are not deletable from the list, so this is the
- * only per-row action.
+ * only per-row action. The reviewer is not editable — it is managed from
+ * the review UI.
  */
 function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
-  if (!canManage || isPrimaryAgent(agent) || renaming) return null;
+  if (!canManage || isPrimaryAgent(agent) || isReviewerAgent(agent) || renaming) return null;
   return (
     <button
       type="button"
@@ -113,6 +115,17 @@ function AgentTreeCaret({ expanded, onToggle }) {
   );
 }
 
+/**
+ * Quiet pill behind the agent name: the primary builder gets brand, the
+ * reviewer merged (same intensities as the composer switcher badges);
+ * secondary builders and subagents stay plain.
+ */
+function agentNameToneClass(agent) {
+  if (isPrimaryAgent(agent)) return 'bg-brand/15';
+  if (isReviewerAgent(agent)) return 'bg-merged/10';
+  return '';
+}
+
 function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
   const { getConfig } = useAgentConfigContext();
   const config = getConfig(agent.agent_config_id);
@@ -131,6 +144,9 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
   } = rest;
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
   const renaming = renamingAgentId === agent.id;
+  const modelLabelNode = (
+    <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
+  );
 
   return (
     <li>
@@ -177,9 +193,9 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
             />
           ) : (
             <span
-              className={`min-w-0 truncate text-[11px] leading-4 ${
-                isCurrent ? 'text-fg' : 'text-secondary'
-              }`}
+              className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 ${agentNameToneClass(
+                agent
+              )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
             >
               {title}
             </span>
@@ -192,8 +208,22 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
           renaming={renaming}
           onRequestRename={onRequestRename}
         />
-        {!renaming && <span className="grow" aria-hidden />}
-        <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
+        {!renaming ? (
+          <button
+            type="button"
+            onClick={() => onSelectAgent(agent)}
+            title={`Open ${title} chat`}
+            aria-label={`Open ${title} chat`}
+            className="flex min-w-0 grow cursor-pointer items-center justify-end"
+          >
+            {modelLabelNode}
+          </button>
+        ) : (
+          <>
+            <span className="grow" aria-hidden />
+            {modelLabelNode}
+          </>
+        )}
       </div>
     </li>
   );
@@ -201,12 +231,14 @@ function AgentTreeRow({ agent, caretSlot = false, caret = null, ...rest }) {
 
 /**
  * Agent group for a session row. The primary builder's row is always visible
- * with a disclosure caret on its left; the remaining agents (reviewer, extra
- * builders, subagents) show when expanded — `autoExpanded` is the default
- * (selected session on desktop, last-opened on mobile), overridable per entry
- * via the caret. Rows show provider icon · name · status · rename affordance
- * (right of the title, when applicable) · model (on the right, the first
- * element to collapse when width is tight).
+ * at the top with a disclosure caret on its left; the remaining agents
+ * (reviewer, extra builders, subagents) show when expanded, ordered by last
+ * activity (most recent first) — `autoExpanded` is the default (selected
+ * session on desktop, last-opened on mobile), overridable per entry via the
+ * caret. Builder and reviewer rows carry a quiet brand/merged tint (subagent
+ * rows stay plain). Rows show provider icon · name · status · rename
+ * affordance (right of the title, when applicable) · model (on the right, the
+ * first element to collapse when width is tight).
  */
 export default function SessionAgentTree({
   agents,
@@ -278,7 +310,10 @@ export default function SessionAgentTree({
   };
 
   return (
-    <div className="mt-0.5 space-y-0.5 max-h-32 overflow-y-auto" data-testid="session-agent-tree">
+    // Scroll breakpoint at 10 rows: rows are py-1 + a 16px line box (24px) with a
+    // 2px gap between the builder and others groups — 10 rows = 242px, 11 = 266px,
+    // so max-h-64 (256px) fits ten rows and scrolls from the eleventh.
+    <div className="mt-0.5 space-y-0.5 max-h-64 overflow-y-auto" data-testid="session-agent-tree">
       {primary && (
         <ul>
           <AgentTreeRow agent={primary} caretSlot caret={caret} {...rowProps} />

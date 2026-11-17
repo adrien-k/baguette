@@ -94,9 +94,36 @@ export function sortSessionAgentsByRefAsc(agents) {
   });
 }
 
+/**
+ * Last-activity timestamp in ms (`updated_at` — bumped on every agent patch).
+ * Returns 0 when unknown so timed agents sort ahead; SQLite CURRENT_TIMESTAMP
+ * values ("YYYY-MM-DD HH:MM:SS", UTC) are normalized to ISO before parsing.
+ */
+export function agentLastActivityMs(agent) {
+  const raw = agent?.updated_at;
+  if (!raw) return 0;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw) ? `${raw}Z` : raw;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Most recent activity first. Stable sort: ties and agents without a
+ * timestamp keep their input order (feed it ref-ascending for a stable,
+ * creation-ordered fallback).
+ */
+export function sortSessionAgentsByLastActivityDesc(agents) {
+  return [...agents].sort((a, b) => agentLastActivityMs(b) - agentLastActivityMs(a));
+}
+
 /** MCP StartSubagent agents (`agent_type` subagent). */
 export function isSubagentBuilder(agent) {
   return agent?.agent_type === 'subagent';
+}
+
+/** Session reviewer row (`agent_type` reviewer) — managed from the review UI, not editable. */
+export function isReviewerAgent(agent) {
+  return agent?.agent_type === 'reviewer';
 }
 
 /** Agent turn finished or idle — safe to remove (server also enforces). */
@@ -169,6 +196,12 @@ export function applyAgentPatchToSession(session, agent) {
 export function activeAgentsRunningLabel(count) {
   if (count === 1) return '1 agent running';
   return `${count} agents running`;
+}
+
+/** Label for agents still running besides the currently selected one. */
+export function otherAgentsRunningLabel(count) {
+  if (count === 1) return '1 other agent running';
+  return `${count} other agents running`;
 }
 
 /**

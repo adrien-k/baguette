@@ -36,7 +36,6 @@ import LoopWorkspaceBody from './session/LoopWorkspaceBody.jsx';
 import { useLoopWorkspace } from '../hooks/useLoopWorkspace.js';
 import { useWorkspaceHeaderEntity } from '../hooks/useWorkspaceHeaderEntity.js';
 import SessionSidePanel from './session/SessionSidePanel.jsx';
-import SessionMainViewFooter from './session/SessionMainViewFooter.jsx';
 import SessionListRail from './session/SessionListRail.jsx';
 import SessionWorkspaceHeader from './session/SessionWorkspaceHeader.jsx';
 import SessionStatusBanners from './session/SessionStatusBanners.jsx';
@@ -1287,6 +1286,7 @@ export default function Session() {
                   onSelectAgent={selectAgent}
                   tasks={tasks}
                   onSelectTask={selectTask}
+                  onShowTasks={() => setSidePanelTab('tasks')}
                   systemPrompt={systemPrompt}
                   onViewChange={setView}
                   readonly={isReadonly}
@@ -1384,10 +1384,6 @@ export default function Session() {
                 />
               )}
           </div>
-
-          {!isNewSessionRoute && (
-            <SessionMainViewFooter session={session} onShowTasks={() => setSidePanelTab('tasks')} />
-          )}
         </div>
 
         {/* Task / files / reviewer panel — drawer below md, inline column md+ */}
