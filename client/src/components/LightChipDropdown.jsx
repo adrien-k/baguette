@@ -27,7 +27,7 @@ const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max
 const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
- * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean, detail?: string }} LightDropdownOption
+ * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean, detail?: string, description?: string }} LightDropdownOption
  * @typedef {{ heading?: string, options: LightDropdownOption[] }} LightDropdownSection
  */
 
@@ -109,7 +109,16 @@ export default function LightChipDropdown({
         }
       >
         {opt.icon ? <span className="shrink-0 flex items-center">{opt.icon}</span> : null}
-        <span className={layout === 'list' ? 'truncate flex-1 min-w-0' : ''}>{opt.label}</span>
+        {layout === 'list' && opt.description ? (
+          <span className="flex-1 min-w-0">
+            <span className="block truncate">{opt.label}</span>
+            <span className="block text-xs text-faint whitespace-normal leading-snug">
+              {opt.description}
+            </span>
+          </span>
+        ) : (
+          <span className={layout === 'list' ? 'truncate flex-1 min-w-0' : ''}>{opt.label}</span>
+        )}
         {layout === 'list' && opt.detail ? (
           <span className="ml-auto text-xs text-faint shrink-0">{opt.detail}</span>
         ) : null}
@@ -119,7 +128,12 @@ export default function LightChipDropdown({
     const keyed = (
       <div key={optionKey(opt.value)} className={layout === 'list' ? 'w-full' : ''}>
         {opt.title ? (
-          <Tooltip content={opt.title} wrap placement="left">
+          <Tooltip
+            content={opt.title}
+            wrap
+            placement="left"
+            className={layout === 'list' ? 'flex w-full items-stretch' : undefined}
+          >
             <span className="block w-full">{button}</span>
           </Tooltip>
         ) : (

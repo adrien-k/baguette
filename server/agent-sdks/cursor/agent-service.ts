@@ -35,7 +35,12 @@ import {
   type CursorStreamUsageCallback,
   type ProcessCursorRunStreamResult,
 } from './sdk-turn.ts';
-import { cursorSilentEndStatusText, cursorTerminalStatusSurfacing } from './turn-error.ts';
+import {
+  cursorSilentEndStatusText,
+  cursorTerminalStatusSurfacing,
+  cursorUsageLimit,
+  type CursorUsageLimit,
+} from './turn-error.ts';
 import { extractUserTextFromUserPayload } from '../../../shared/user-message-content.js';
 import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -808,7 +813,16 @@ ${body}`,
       }
     } catch (err) {
       awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
-      if ((err as Error).name !== 'AbortError') {
+      const thrownLimit = channel === 'review' ? null : cursorUsageLimit(err as Error);
+      if (thrownLimit) {
+        logger.warn({ sessionId, err: (err as Error).message }, 'Cursor usage limit reached');
+        await this._handleCursorUsageLimit(session, userId, agent.id, thrownLimit).catch((e) =>
+          logger.warn(
+            { sessionId, err: (e as Error).message },
+            'cursor-agent: usage limit handling failed'
+          )
+        );
+      } else if ((err as Error).name !== 'AbortError') {
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId, err: (err as Error).message }, 'Cursor session stream error');
         try {
@@ -989,9 +1003,18 @@ ${body}`,
     }: {
       channel: MessageChannel;
       sessionState: CursorSessionState | undefined;
-      surfacing: { statusText: string; isFailure: boolean };
+      surfacing: { statusText: string; isFailure: boolean; usageLimit?: CursorUsageLimit | null };
     }
   ): Promise<void> {
+    if (surfacing.usageLimit && channel !== 'review' && sessionState?.agentId != null) {
+      await this._handleCursorUsageLimit(
+        session,
+        userId,
+        sessionState.agentId,
+        surfacing.usageLimit
+      );
+      return;
+    }
     if (channel === 'review') {
       if (surfacing.isFailure) {
         await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
@@ -1031,6 +1054,23 @@ ${body}`,
         .service('sessions')
         .emit('app:error', { sessionId, message: surfacing.statusText, user_id: userId });
     }
+  }
+
+  /** Stop the agent and apply the session's usage limit action (stop, or wait until reset). */
+  private async _handleCursorUsageLimit(
+    session: AgentSessionRow,
+    userId: number,
+    agentId: number,
+    limit: CursorUsageLimit
+  ): Promise<void> {
+    await setAgentTurnTerminal(this.app, { id: agentId }, userId, 'stopped');
+    // `onUsageLimit` never throws; the agent is already stopped either way.
+    await this.app.service('sessions').onUsageLimit(session.id, agentId, {
+      label: 'Cursor',
+      sdk: 'cursor',
+      reason: 'rejected',
+      reset_at_ms: limit.resetAtMs,
+    });
   }
 
   /**

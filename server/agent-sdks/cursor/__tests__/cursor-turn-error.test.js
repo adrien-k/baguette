@@ -9,7 +9,11 @@
  * must bubble up — user-initiated stops stay quiet, everything else surfaces.
  */
 import { describe, it, expect } from 'vitest';
-import { cursorSilentEndStatusText, cursorTerminalStatusSurfacing } from '../turn-error.ts';
+import {
+  cursorSilentEndStatusText,
+  cursorTerminalStatusSurfacing,
+  cursorUsageLimit,
+} from '../turn-error.ts';
 
 const RETRY_HINT = 'Send your message again to continue in a fresh conversation.';
 
@@ -82,5 +86,32 @@ describe('cursorSilentEndStatusText', () => {
     expect(cursorSilentEndStatusText('upstream fetch failed')).toBe(
       `Cursor agent ended the run without completing. upstream fetch failed. ${RETRY_HINT}`
     );
+  });
+});
+
+describe('cursorUsageLimit', () => {
+  it('detects usage-limit text and parses the reset', () => {
+    const now = Date.parse('2026-11-18T12:00:00Z');
+    expect(cursorUsageLimit('You have hit your usage limit. Try again in 3 hours.', now)).toEqual({
+      resetAtMs: now + 3 * 3_600_000,
+    });
+  });
+
+  it('detects the SDK RateLimitError / 429 without text', () => {
+    expect(cursorUsageLimit({ name: 'RateLimitError', message: 'boom' })).toEqual({
+      resetAtMs: null,
+    });
+    expect(cursorUsageLimit({ status: 429, message: '' })).toEqual({ resetAtMs: null });
+  });
+
+  it('ignores unrelated failures', () => {
+    expect(cursorUsageLimit('HTTP 503 Service unavailable')).toBeNull();
+    expect(cursorUsageLimit(null)).toBeNull();
+  });
+
+  it('marks an ERROR terminal status with limit text as a usage limit', () => {
+    const result = cursorTerminalStatusSurfacing('ERROR', { detail: 'Usage limit exceeded' });
+    expect(result.usageLimit).toEqual({ resetAtMs: null });
+    expect(cursorTerminalStatusSurfacing('ERROR', { detail: 'boom' }).usageLimit).toBeUndefined();
   });
 });

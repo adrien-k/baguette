@@ -32,6 +32,13 @@ import {
   stringifyModelParams,
 } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
+import UsageLimitActionSelect from './UsageLimitActionSelect.jsx';
+import UsageLimitInput from './UsageLimitInput.jsx';
+import {
+  DEFAULT_USAGE_LIMIT_ACTION,
+  parseUsageLimit,
+  usageLimitInputText,
+} from '../utils/usageLimitActions.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
@@ -141,6 +148,16 @@ export default function BuilderForm({
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true, {
     persistWhen: hasPromptText,
   });
+  const [usageLimitAction, setUsageLimitAction] = persistentState.useState(
+    'usageLimitAction',
+    editingLoop?.usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION,
+    { persistWhen: hasPromptText }
+  );
+  const [usageLimitText, setUsageLimitText] = persistentState.useState(
+    'usageLimit',
+    usageLimitInputText(editingLoop?.usage_limit),
+    { persistWhen: hasPromptText }
+  );
   useEffect(() => {
     if (localRepo) setAutoPush(false);
   }, [localRepo, setAutoPush]);
@@ -368,12 +385,10 @@ export default function BuilderForm({
   }, [editingLoop?.id]);
 
   const isLoop = mode === 'loop';
-  // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions =
-    (!isGlobal && !isLoop) || availablePlugins.length > 0 || mcpCatalog.length > 0;
   const canSubmit =
     !loopReadOnly &&
     !loading &&
+    parseUsageLimit(usageLimitText) !== undefined &&
     hasAgentConfig &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
@@ -423,6 +438,8 @@ export default function BuilderForm({
       createNewBranch,
       branchName: branchName || undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
+      usageLimitAction,
+      usageLimit: parseUsageLimit(usageLimitText),
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       mcpServers: mcpEnabled,
@@ -451,6 +468,8 @@ export default function BuilderForm({
         single_session: singleSession,
         create_new_branch: false,
         auto_push: false,
+        usage_limit_action: payload.usageLimitAction,
+        usage_limit: payload.usageLimit,
         agent_config_id: payload.agentConfigId,
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
@@ -468,6 +487,8 @@ export default function BuilderForm({
       single_session: singleSession,
       create_new_branch: newBranch,
       auto_push: autoPushEnabledForRepo(payload.repoFullName, payload.autoPush, linkedRepo),
+      usage_limit_action: payload.usageLimitAction,
+      usage_limit: payload.usageLimit,
       agent_config_id: payload.agentConfigId,
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
@@ -820,118 +841,133 @@ export default function BuilderForm({
         </>
       )}
 
-      {hasMoreOptions && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowMore((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading transition-colors"
-          >
-            <ChevronRight
-              className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
-            />
-            More options
-          </button>
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowMore((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading transition-colors"
+        >
+          <ChevronRight className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`} />
+          More options
+        </button>
 
-          {showMore && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
-              {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
-              {!isLoop && !isGlobal && (
-                <>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-secondary mb-1">
-                      Branch name{' '}
-                      <span className="text-faint font-normal">
-                        (optional, for Start — auto-generated if empty)
+        {showMore && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-secondary mb-1">
+                When a usage limit is reached
+              </label>
+              <UsageLimitActionSelect value={usageLimitAction} onChange={setUsageLimitAction} />
+            </div>
+
+            {usageLimitAction === 'continue' && (
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-secondary mb-1">
+                  Usage limit{' '}
+                  <span className="text-faint font-normal">
+                    (USD of credits this session may spend — empty for unlimited)
+                  </span>
+                </label>
+                <UsageLimitInput value={usageLimitText} onChange={setUsageLimitText} />
+              </div>
+            )}
+
+            {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
+            {!isLoop && !isGlobal && (
+              <>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-secondary mb-1">
+                    Branch name{' '}
+                    <span className="text-faint font-normal">
+                      (optional, for Start — auto-generated if empty)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value)}
+                    placeholder="my-feature-branch"
+                    className={`${INPUT_CLASS} focus:border-transparent`}
+                  />
+                </div>
+              </>
+            )}
+
+            {mcpCatalog.length > 0 && (
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-secondary mb-1.5">
+                  MCP servers
+                </label>
+                <div className="space-y-1.5">
+                  {mcpCatalog.map((server) => (
+                    <label
+                      key={server.id}
+                      className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!mcpEnabled[String(server.id)]}
+                        onChange={(e) =>
+                          setMcpEnabled((prev) => ({
+                            ...prev,
+                            [String(server.id)]: e.target.checked,
+                          }))
+                        }
+                        className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                      />
+                      <span className="text-sm text-secondary leading-tight">
+                        <span className="font-medium text-heading">{server.name}</span>
+                        <span className="block text-xs font-normal text-faint mt-0.5">
+                          {server.url}
+                          {server.transport === 'sse' ? ' · not attached on Pi' : ''}
+                        </span>
+                        {server.description ? (
+                          <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
+                            {server.description}
+                          </span>
+                        ) : null}
                       </span>
                     </label>
-                    <input
-                      type="text"
-                      value={branchName}
-                      onChange={(e) => setBranchName(e.target.value)}
-                      placeholder="my-feature-branch"
-                      className={`${INPUT_CLASS} focus:border-transparent`}
-                    />
-                  </div>
-                </>
-              )}
-
-              {mcpCatalog.length > 0 && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-secondary mb-1.5">
-                    MCP servers
-                  </label>
-                  <div className="space-y-1.5">
-                    {mcpCatalog.map((server) => (
-                      <label
-                        key={server.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!mcpEnabled[String(server.id)]}
-                          onChange={(e) =>
-                            setMcpEnabled((prev) => ({
-                              ...prev,
-                              [String(server.id)]: e.target.checked,
-                            }))
-                          }
-                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                        />
-                        <span className="text-sm text-secondary leading-tight">
-                          <span className="font-medium text-heading">{server.name}</span>
-                          <span className="block text-xs font-normal text-faint mt-0.5">
-                            {server.url}
-                            {server.transport === 'sse' ? ' · not attached on Pi' : ''}
-                          </span>
-                          {server.description ? (
-                            <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
-                              {server.description}
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {availablePlugins.length > 0 && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
-                  <div className="space-y-1.5">
-                    {availablePlugins.map((plugin) => (
-                      <label
-                        key={plugin.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedPlugins.includes(plugin.id)}
-                          onChange={(e) =>
-                            setSelectedPlugins((prev) =>
-                              e.target.checked
-                                ? [...prev, plugin.id]
-                                : prev.filter((id) => id !== plugin.id)
-                            )
-                          }
-                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                        />
-                        <span className="text-sm text-secondary leading-tight">
-                          <span className="font-medium text-heading">{plugin.name}</span>
-                          <span className="block text-xs font-normal text-faint mt-0.5">
-                            {plugin.marketplace_repo} · {plugin.plugin_path}
-                          </span>
+            {availablePlugins.length > 0 && (
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
+                <div className="space-y-1.5">
+                  {availablePlugins.map((plugin) => (
+                    <label
+                      key={plugin.id}
+                      className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPlugins.includes(plugin.id)}
+                        onChange={(e) =>
+                          setSelectedPlugins((prev) =>
+                            e.target.checked
+                              ? [...prev, plugin.id]
+                              : prev.filter((id) => id !== plugin.id)
+                          )
+                        }
+                        className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                      />
+                      <span className="text-sm text-secondary leading-tight">
+                        <span className="font-medium text-heading">{plugin.name}</span>
+                        <span className="block text-xs font-normal text-faint mt-0.5">
+                          {plugin.marketplace_repo} · {plugin.plugin_path}
                         </span>
-                      </label>
-                    ))}
-                  </div>
+                      </span>
+                    </label>
+                  ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

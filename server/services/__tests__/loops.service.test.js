@@ -170,6 +170,34 @@ describe('Loops service', () => {
       expect(loop.create_new_branch).toBe(true);
     });
 
+    it('defaults usage_limit_action to stop, stores wait/continue, and rejects unknown actions', async () => {
+      const plain = await app.service('loops').create(loopData(), params(aliceId));
+      expect(plain.usage_limit_action).toBe('stop');
+      const waiter = await app
+        .service('loops')
+        .create(loopData({ usage_limit_action: 'wait' }), params(aliceId));
+      expect(waiter.usage_limit_action).toBe('wait');
+      await expect(
+        app.service('loops').create(loopData({ usage_limit_action: 'pause' }), params(aliceId))
+      ).rejects.toThrow(/usage_limit_action/);
+      const patched = await app
+        .service('loops')
+        .patch(plain.id, { usage_limit_action: 'wait' }, params(aliceId));
+      expect(patched.usage_limit_action).toBe('wait');
+    });
+
+    it('stores usage_limit (null = unlimited) and passes it to started sessions', async () => {
+      const unlimited = await app.service('loops').create(loopData(), params(aliceId));
+      expect(unlimited.usage_limit).toBeNull();
+      const capped = await app
+        .service('loops')
+        .create(loopData({ usage_limit_action: 'continue', usage_limit: 0.5 }), params(aliceId));
+      expect(capped.usage_limit).toBe(0.5);
+      await expect(
+        app.service('loops').create(loopData({ usage_limit: -1 }), params(aliceId))
+      ).rejects.toThrow(/usage_limit/);
+    });
+
     it('stores create_new_branch false for a repository loop', async () => {
       const loop = await app
         .service('loops')
@@ -539,6 +567,15 @@ describe('Loops service', () => {
       expect(row.last_session_id).toBe(77);
       expect(row.last_run_at).toBeTruthy();
       expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('passes the loop usage_limit_action to every session it starts', async () => {
+      await makeDueLoop({ usage_limit_action: 'continue', usage_limit: 0.5 });
+      await app.service('loops').runDue();
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ usage_limit_action: 'continue', usage_limit: 0.5 }),
+        expect.anything()
+      );
     });
 
     it('starts the session on the base branch when create_new_branch is off', async () => {

@@ -10,7 +10,14 @@ import {
   autoUpdate,
 } from '@floating-ui/react';
 
-export default function Tooltip({ children, content, placement = 'top', wrap = false }) {
+export default function Tooltip({
+  children,
+  content,
+  placement = 'top',
+  wrap = false,
+  /** Classes for the wrapper around `children`; use `flex w-full` to fill a row. */
+  className = 'inline-flex items-stretch',
+}) {
   const [open, setOpen] = useState(false);
 
   const { refs, floatingStyles, context } = useFloating({
@@ -28,7 +35,7 @@ export default function Tooltip({ children, content, placement = 'top', wrap = f
 
   return (
     <>
-      <span ref={setReference} {...getReferenceProps()} className="inline-flex items-stretch">
+      <span ref={setReference} {...getReferenceProps()} className={className}>
         {children}
       </span>
       <FloatingPortal>

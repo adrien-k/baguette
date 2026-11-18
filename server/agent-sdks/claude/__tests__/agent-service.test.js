@@ -126,6 +126,7 @@ function makeMockApp(db) {
   const getClaudeEnv = vi.fn().mockResolvedValue({});
   const deleteSessionTasks = vi.fn();
   const createTask = vi.fn().mockResolvedValue({});
+  const onUsageLimit = vi.fn().mockResolvedValue({ action: 'stop', resume_at: null });
   const reviewAgentTurnStub = {
     onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
     _persistStatus: vi.fn().mockResolvedValue(undefined),
@@ -154,6 +155,7 @@ function makeMockApp(db) {
           onActivity: async () => {},
           onTurnStart: async () => {},
           onTurnComplete: async () => {},
+          onUsageLimit,
           insertUsageRow: vi.fn().mockResolvedValue(0),
           get: async (id) => db('sessions').where({ id }).first(),
         };
@@ -170,6 +172,7 @@ function makeMockApp(db) {
     _sessionRemove: sessionRemove,
     _sessionEmit: sessionEmit,
     _messageCreate: messageCreate,
+    _onUsageLimit: onUsageLimit,
   };
 }
 
@@ -737,7 +740,7 @@ describe('ClaudeAgentService', () => {
   // ── 5. Assistant failure ───────────────────────────────────────────────────
 
   describe('assistant failure', () => {
-    it('bubbles a quota-shaped failed result via app:error and marks the agent failed', async () => {
+    it('hands a quota-shaped failed result to the usage-limit policy and stops the agent', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
         _db: mockApp.get('db'),
@@ -747,11 +750,7 @@ describe('ClaudeAgentService', () => {
       // usage-limit text instead of the stream throwing.
       query.mockImplementation(() =>
         makeAsyncIterable([
-          {
-            type: 'system',
-            subtype: 'init',
-            session_id: 'sdk-1',
-          },
+          { type: 'system', subtype: 'init', session_id: 'sdk-1' },
           {
             type: 'result',
             subtype: 'error_during_execution',
@@ -769,29 +768,53 @@ describe('ClaudeAgentService', () => {
       });
 
       await vi.waitFor(() => {
-        expect(mockApp._sessionEmit).toHaveBeenCalledWith(
-          'app:error',
-          expect.objectContaining({
-            sessionId: BASE_SESSION_ID,
-            message: expect.stringContaining('usage limit'),
-          })
+        expect(mockApp._onUsageLimit).toHaveBeenCalledWith(
+          BASE_SESSION_ID,
+          BASE_BUILDER.id,
+          expect.objectContaining({ sdk: 'claude', reason: 'rejected' })
         );
       });
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
           BASE_BUILDER.id,
-          {
-            status: 'failed',
-            active_turn_id: null,
-          },
+          { status: 'stopped', active_turn_id: null },
           expect.anything()
         );
       });
-      // No extra status row: the turn_result row already renders the error inline.
-      expect(mockApp._messageCreate).not.toHaveBeenCalledWith(
-        expect.objectContaining({ subtype: 'status' }),
-        expect.anything()
+      // The policy notice replaces the generic failure toast.
+      expect(mockApp._sessionEmit).not.toHaveBeenCalledWith('app:error', expect.anything());
+    });
+
+    it('stops a turn when a rejected rate_limit_event arrives mid-stream', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      query.mockImplementation(() =>
+        makeAsyncIterable([
+          { type: 'system', subtype: 'init', session_id: 'sdk-1' },
+          {
+            type: 'rate_limit_event',
+            rate_limit_info: {
+              status: 'rejected',
+              rateLimitType: 'five_hour',
+              resetsAt: 1793064000,
+            },
+          },
+        ])
       );
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
+      await vi.waitFor(() => {
+        expect(mockApp._onUsageLimit).toHaveBeenCalledWith(
+          BASE_SESSION_ID,
+          BASE_BUILDER.id,
+          expect.objectContaining({ reset_at_ms: 1793064000_000 })
+        );
+      });
     });
 
     it('fails the turn and surfaces app:error when the query ends without a result', async () => {

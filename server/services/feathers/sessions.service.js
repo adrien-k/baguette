@@ -116,6 +116,13 @@ import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
 import { getAgentById } from '../agents-db.js';
+import {
+  usageLimitFieldsError,
+  USAGE_LIMIT_RESUME_PROMPT,
+  computeResumeAtMs,
+  normalizeUsageLimitAction,
+  usageLimitStatusText,
+} from '../../lib/usage-limit.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
@@ -1802,6 +1809,87 @@ export class SessionsService extends KnexService {
     }
   }
 
+  /**
+   * A subscription limit (or the session's usage limit) ended an agent turn.
+   * Persists a status row, then per `usage_limit_action`: `stop` (and `continue`, once its
+   * credits are spent) leaves the session stopped, `wait` schedules a "continue" message just
+   * after the limit resets. Each resumed turn re-enters this path at the next limit, so a
+   * waiting session keeps going through as many windows as the work needs.
+   *
+   * Never throws: the turn is already over, so a failure here is logged and the session just
+   * stays stopped.
+   *
+   * @param {{label: string, sdk: string, reason: string, reset_at_ms?: number | null}} limit
+   * @returns {Promise<{action: string, resume_at: string | null} | null>}
+   */
+  async onUsageLimit(sessionId, agentId, limit) {
+    try {
+      const db = this.app.get('db');
+      const session = await db('sessions').where({ id: sessionId }).first();
+      const agent = agentId != null ? await getAgentById(db, agentId) : null;
+      if (!session || !agent) return null;
+
+      const resetAtMs = limit.reset_at_ms ?? null;
+      let action =
+        normalizeUsageLimitAction(session.usage_limit_action) === 'wait' ? 'wait' : 'stop';
+      let resumeAtMs = null;
+      if (action === 'wait') {
+        resumeAtMs = computeResumeAtMs(resetAtMs);
+        try {
+          await this.scheduleUsageLimitResume(session, agent, limit.sdk, resumeAtMs);
+        } catch (err) {
+          // Without a schedule the notice must not promise a resume.
+          logger.warn(
+            { sessionId, err: err?.message },
+            'sessions: failed to schedule limit resume'
+          );
+          action = 'stop';
+          resumeAtMs = null;
+        }
+      }
+
+      const status = usageLimitStatusText({
+        label: limit.label,
+        reason: limit.reason,
+        action,
+        resetAtMs,
+        resumeAtMs,
+      });
+      await this.app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({ type: 'system', subtype: 'status', status }),
+          ...sessionMessageIdentity(agent, { agent_sdk: limit.sdk }),
+        },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+      return { action, resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : null };
+    } catch (err) {
+      logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit handling failed');
+      return null;
+    }
+  }
+
+  /** One pending "continue" message per agent: a newer limit hit replaces the earlier one. */
+  async scheduleUsageLimitResume(session, agent, sdk, resumeAtMs) {
+    const message_json = buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT);
+    await this.app
+      .get('db')('queued_messages')
+      .where({ session_id: session.id, agent_id: agent.id, kind: 'scheduled', message_json })
+      .delete();
+    await this.app.service('queued-messages').schedule(
+      {
+        session_id: session.id,
+        message_json,
+        send_at: new Date(resumeAtMs).toISOString(),
+        ...sessionMessageIdentity(agent, { agent_sdk: sdk }),
+      },
+      { user: { id: session.user_id } }
+    );
+  }
+
   async onTurnComplete(sessionId, agentId = null) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -1960,6 +2048,13 @@ function coerceIsSharedOnWrite(context) {
   if ('is_shared' in (context.data || {})) {
     context.data.is_shared = context.data.is_shared ? 1 : 0;
   }
+  return context;
+}
+
+/** Validate the usage-limit policy fields `usage_limit_action` and `usage_limit` on write. */
+function normalizeUsageLimitOnWrite(context) {
+  const error = usageLimitFieldsError(context.data || {});
+  if (error) throw new BadRequest(error);
   return context;
 }
 
@@ -2894,6 +2989,7 @@ const sessionsHooks = {
     create: [
       scopeByUser,
       coerceIsSharedOnWrite,
+      normalizeUsageLimitOnWrite,
       ensureShortId,
       seedLastActivityOnCreate,
       validateSessionCreate,
@@ -2908,6 +3004,7 @@ const sessionsHooks = {
       handleSessionLastViewedPatch,
       requireOwnSession,
       coerceIsSharedOnWrite,
+      normalizeUsageLimitOnWrite,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
