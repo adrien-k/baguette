@@ -1,4 +1,7 @@
-import { agentAccessibleTitle, agentDisplayTitle } from '../../shared/agent-display-title.js';
+import {
+  agentAccessibleTitleForGithub,
+  agentDisplayTitle,
+} from '../../shared/agent-display-title.js';
 import { normalizeUsageAgentType } from '../../shared/usage-agent-type.js';
 import { getSdkPlugin } from '../agent-sdks/registry.js';
 import { listAgentsForSession } from './agents-db.js';
@@ -130,7 +133,7 @@ export function formatPrFooterModelSegment(row) {
 function resolveAgentLabel(row, agentsById) {
   if (row.agent_id != null) {
     const agent = agentsById.get(row.agent_id);
-    if (agent) return agentAccessibleTitle(agent);
+    if (agent) return agentAccessibleTitleForGithub(agent);
   }
   return agentDisplayTitle({ name: row.agent_type, agent_type: row.agent_type });
 }

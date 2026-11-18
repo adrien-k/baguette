@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { GITHUB_REF_WORD_JOINER } from '../../../shared/agent-display-title.js';
 import { registerAllSdkPlugins } from '../../agent-sdks/index.js';
 import {
   mergeUsageForPrFooter,
@@ -155,8 +156,8 @@ describe('formatPrFooterUsageLines', () => {
       [builderAgent, reviewerAgent]
     );
     expect(lines[0]).toBe('LLM Usage:');
-    expect(lines).toContainEqual('- #1 Builder - opus $0.10 / 100 tokens');
-    expect(lines).toContainEqual('- #2 Reviewer - opus $0.05 / 50 tokens');
+    expect(lines).toContainEqual(`- #${GITHUB_REF_WORD_JOINER}1 Builder - opus $0.10 / 100 tokens`);
+    expect(lines).toContainEqual(`- #${GITHUB_REF_WORD_JOINER}2 Reviewer - opus $0.05 / 50 tokens`);
     expect(lines[lines.length - 1]).toBe('Total: $0.15');
   });
 
@@ -192,8 +193,8 @@ describe('formatPrFooterUsageLines', () => {
       ]),
       [builderAgent, reviewerAgent]
     );
-    expect(lines[1]).toBe('- #2 Reviewer - opus $0.50 / 100 tokens');
-    expect(lines[2]).toBe('- #1 Builder - opus $0.01 / 10 tokens');
+    expect(lines[1]).toBe(`- #${GITHUB_REF_WORD_JOINER}2 Reviewer - opus $0.50 / 100 tokens`);
+    expect(lines[2]).toBe(`- #${GITHUB_REF_WORD_JOINER}1 Builder - opus $0.01 / 10 tokens`);
   });
 
   it('prefixes agent ref when multiple agents share default type labels', () => {
@@ -231,8 +232,10 @@ describe('formatPrFooterUsageLines', () => {
         { id: 3, ref: 3, name: 'Builder', agent_type: 'builder' },
       ]
     );
-    expect(lines).toContainEqual('- #1 Builder - composer-2.5 $0.10 / 100 tokens');
-    expect(lines).toContainEqual('- #3 Builder - opus $0.05 / 50 tokens');
+    expect(lines).toContainEqual(
+      `- #${GITHUB_REF_WORD_JOINER}1 Builder - composer-2.5 $0.10 / 100 tokens`
+    );
+    expect(lines).toContainEqual(`- #${GITHUB_REF_WORD_JOINER}3 Builder - opus $0.05 / 50 tokens`);
   });
 
   it('uses custom subagent names when present', () => {
@@ -254,7 +257,9 @@ describe('formatPrFooterUsageLines', () => {
       ]),
       [{ id: 3, ref: 4, name: 'Research', agent_type: 'subagent' }]
     );
-    expect(lines[1]).toBe('- #4 Research - composer-2.5 $0.25 / 500 tokens');
+    expect(lines[1]).toBe(
+      `- #${GITHUB_REF_WORD_JOINER}4 Research - composer-2.5 $0.25 / 500 tokens`
+    );
   });
 });
 

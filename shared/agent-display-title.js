@@ -22,14 +22,23 @@ export function agentDisplayTitle(agent) {
   return name || typeLabel;
 }
 
-function agentRefPrefix(agent) {
+/** U+2060 WORD JOINER — invisible; prevents GitHub from autolinking `#N` in markdown. */
+export const GITHUB_REF_WORD_JOINER = '\u2060';
+
+function agentRefPrefix(agent, { github = false } = {}) {
   if (agent?.ref == null) return '';
-  return `#${agent.ref} `;
+  const ref = github ? `${GITHUB_REF_WORD_JOINER}${agent.ref}` : agent.ref;
+  return `#${ref} `;
 }
 
 /** Display title with `#ref` prefix when present (disambiguates duplicate default names). */
-export function agentAccessibleTitle(agent) {
+export function agentAccessibleTitle(agent, options) {
   const title = agentDisplayTitle(agent);
-  const prefix = agentRefPrefix(agent);
+  const prefix = agentRefPrefix(agent, options);
   return prefix ? `${prefix}${title}` : title;
+}
+
+/** Like `agentAccessibleTitle`, with a word joiner after `#` for GitHub markdown footers. */
+export function agentAccessibleTitleForGithub(agent) {
+  return agentAccessibleTitle(agent, { github: true });
 }
