@@ -81,7 +81,7 @@ export function normalizeUsageLimitAction(value) {
  * sleep for no reason and hide a normal failure. SDK-structured signals (Claude's rejected
  * rate-limit event, Cursor's `RateLimitError` / HTTP 429) are handled in each SDK folder.
  */
-export const USAGE_LIMIT_TEXT_PATTERN =
+const USAGE_LIMIT_TEXT_PATTERN =
   /usage limit|spend limit|hit your limit|out of (?:usage|credits)|limit (?:reached|exceeded)|exceeded (?:your |the )?(?:\w+ )?limit/i;
 
 export function isUsageLimitText(text) {
