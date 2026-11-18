@@ -104,6 +104,11 @@ describe('cursorUsageLimit', () => {
     expect(cursorUsageLimit({ status: 429, message: '' })).toEqual({ resetAtMs: null });
   });
 
+  it('does not treat generic rate-limit / quota text as a plan limit', () => {
+    expect(cursorUsageLimit('rate limit hit, retry shortly')).toBeNull();
+    expect(cursorUsageLimit('quota lookup failed (HTTP 429 in body)')).toBeNull();
+  });
+
   it('ignores unrelated failures', () => {
     expect(cursorUsageLimit('HTTP 503 Service unavailable')).toBeNull();
     expect(cursorUsageLimit(null)).toBeNull();

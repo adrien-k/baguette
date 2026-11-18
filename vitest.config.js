@@ -22,7 +22,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: false,
-    exclude: ['**/node_modules/**', '**/.data/**', 'e2e/**'],
+    exclude: ['**/node_modules/**', '**/.data/**', 'e2e/**', '.claude/**'],
     setupFiles: ['./server/test-utils/setup.js'],
   },
 });

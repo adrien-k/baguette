@@ -14,3 +14,8 @@ config/credentials/
 .kamal/.env
 fly.toml
 screenshots/
+
+# Claude Code local config
+.claude/
+FINDINGS.md
+AUDIT.md

@@ -13,6 +13,7 @@ import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
 import { createGetSessionStatusTool } from '../tools/get-session-status.js';
+import { createGetSessionUsageLimitsTool } from '../tools/get-session-usage-limits.js';
 import { createPrReadTool } from '../tools/pr-read.js';
 import { createListRunningTasksTool } from '../tools/list-running-tasks.js';
 import { createCreateSessionMessageTool } from '../tools/create-session-message.js';
@@ -45,6 +46,7 @@ function sessionToolsFromContext(ctx) {
     createSearchSessionsTool(ctx),
     createGetSessionTool(ctx),
     createGetSessionStatusTool(ctx),
+    createGetSessionUsageLimitsTool(ctx),
     createPrReadTool(ctx),
     createListRunningTasksTool(ctx),
     createCreateSessionMessageTool(ctx),

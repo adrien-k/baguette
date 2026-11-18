@@ -127,6 +127,7 @@ function makeMockApp(db) {
   const deleteSessionTasks = vi.fn();
   const createTask = vi.fn().mockResolvedValue({});
   const onUsageLimit = vi.fn().mockResolvedValue({ action: 'stop', resume_at: null });
+  const insertUsageRow = vi.fn().mockResolvedValue(0);
   const reviewAgentTurnStub = {
     onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
     _persistStatus: vi.fn().mockResolvedValue(undefined),
@@ -156,7 +157,7 @@ function makeMockApp(db) {
           onTurnStart: async () => {},
           onTurnComplete: async () => {},
           onUsageLimit,
-          insertUsageRow: vi.fn().mockResolvedValue(0),
+          insertUsageRow,
           get: async (id) => db('sessions').where({ id }).first(),
         };
       if (name === 'agents') return { patch: agentPatch };
@@ -173,6 +174,7 @@ function makeMockApp(db) {
     _sessionEmit: sessionEmit,
     _messageCreate: messageCreate,
     _onUsageLimit: onUsageLimit,
+    _insertUsageRow: insertUsageRow,
   };
 }
 
@@ -997,6 +999,127 @@ describe('ClaudeAgentService', () => {
   });
 
   // ── 6. handleMessageCreated ───────────────────────────────────────────────
+
+  // ── Usage-limit policy: every action × limit hit / not hit ────────────────
+
+  describe('usage limit policy', () => {
+    const overageOn = {
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'allowed', isUsingOverage: true, resetsAt: 1793064000 },
+    };
+    const rejected = {
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', resetsAt: 1793064000 },
+    };
+    // ~$15 at Sonnet output rates: over any small cap. 20k tokens ≈ $0.30.
+    const assistant = (id, outputTokens) => ({
+      type: 'assistant',
+      message: {
+        id,
+        model: 'claude-sonnet-4-5',
+        content: [],
+        usage: { input_tokens: 0, output_tokens: outputTokens },
+      },
+    });
+    const done = { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 };
+    const init = { type: 'system', subtype: 'init', session_id: 'sdk-1' };
+
+    async function runTurn(policy, messages) {
+      await db('sessions').where({ id: BASE_SESSION_ID }).update(policy);
+      query.mockImplementation(() => makeAsyncIterable([init, ...messages]));
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
+      await vi.waitFor(() => {
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          expect.objectContaining({ status: expect.stringMatching(/completed|stopped/) }),
+          expect.anything()
+        );
+      });
+      return db('sessions').where({ id: BASE_SESSION_ID }).first();
+    }
+
+    const reasonOf = () => mockApp._onUsageLimit.mock.calls.at(-1)?.[2]?.reason;
+
+    it.each(['stop', 'wait', 'continue'])(
+      '%s: a turn that never hits a limit just completes',
+      async (action) => {
+        const row = await runTurn({ usage_limit_action: action }, [assistant('a', 1000), done]);
+        expect(mockApp._onUsageLimit).not.toHaveBeenCalled();
+        expect(row.usage_limit_spent).toBe(0);
+      }
+    );
+
+    it.each(['stop', 'wait', 'continue'])(
+      '%s: a rejected subscription limit is reported to the policy',
+      async (action) => {
+        await runTurn({ usage_limit_action: action }, [rejected]);
+        expect(reasonOf()).toBe('rejected');
+        expect(mockApp._onUsageLimit.mock.calls[0][2].reset_at_ms).toBe(1793064000_000);
+      }
+    );
+
+    it.each(['stop', 'wait'])('%s: drawing paid overage is refused', async (action) => {
+      await runTurn({ usage_limit_action: action }, [overageOn, assistant('a', 1000), done]);
+      expect(reasonOf()).toBe('overage_disabled');
+    });
+
+    it('continue + unlimited: overage runs to completion and the spend is recorded', async () => {
+      const row = await runTurn({ usage_limit_action: 'continue', usage_limit: null }, [
+        overageOn,
+        assistant('a', 1_000_000),
+        done,
+      ]);
+      expect(mockApp._onUsageLimit).not.toHaveBeenCalled();
+      expect(row.usage_limit_spent).toBeGreaterThan(1);
+    });
+
+    it('continue + under the cap: completes and records the spend', async () => {
+      const row = await runTurn({ usage_limit_action: 'continue', usage_limit: 100 }, [
+        overageOn,
+        assistant('a', 20_000),
+        done,
+      ]);
+      expect(mockApp._onUsageLimit).not.toHaveBeenCalled();
+      expect(row.usage_limit_spent).toBeGreaterThan(0);
+      expect(row.usage_limit_spent).toBeLessThan(1);
+    });
+
+    it('continue + over the cap: stops with the session usage limit and records the spend', async () => {
+      const row = await runTurn({ usage_limit_action: 'continue', usage_limit: 1 }, [
+        overageOn,
+        assistant('a', 1_000_000),
+        done,
+      ]);
+      expect(reasonOf()).toBe('usage_limit');
+      expect(row.usage_limit_spent).toBeGreaterThan(1);
+    });
+
+    it('continue: spend from earlier turns counts toward the cap', async () => {
+      await runTurn({ usage_limit_action: 'continue', usage_limit: 1, usage_limit_spent: 0.9 }, [
+        overageOn,
+        assistant('a', 20_000),
+        done,
+      ]);
+      expect(reasonOf()).toBe('usage_limit');
+    });
+
+    it('records the usage of a turn cut mid-stream by the cap', async () => {
+      await runTurn({ usage_limit_action: 'continue', usage_limit: 1 }, [
+        overageOn,
+        assistant('a', 1_000_000),
+      ]);
+      await vi.waitFor(() => expect(mockApp._insertUsageRow).toHaveBeenCalled());
+      expect(mockApp._insertUsageRow.mock.calls[0][1]).toMatchObject({ output_tokens: 1_000_000 });
+    });
+  });
 
   describe('handleMessageCreated', () => {
     it('does nothing for non-user messages', async () => {

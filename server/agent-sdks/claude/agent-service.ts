@@ -11,6 +11,7 @@ import {
   type SettingSource,
 } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeUsageLimitGuard } from './usage-limit.js';
+import { getLastResultTotals } from './usage-totals.js';
 import { allowsOverage } from '../../lib/usage-limit.js';
 import type { ClaudeUsageLimitHit } from './sdk-turn.ts';
 import logger from '../../logger.js';
@@ -883,6 +884,48 @@ export class ClaudeAgentService {
     return recordClaudeTurnUsage(this.app, session, result, opts);
   }
 
+  /** Paid overage spent this turn counts against the session's `usage_limit` in later turns. */
+  async _recordOverageSpend(
+    sessionState: ClaudeAgentState,
+    guard: ClaudeUsageLimitGuard | null
+  ): Promise<void> {
+    if (!guard || guard.spentUsd <= 0) return;
+    const db = this.app.get('db') as DbLike;
+    await db('sessions')
+      .where({ id: sessionState.sessionId })
+      .increment('usage_limit_spent', guard.spentUsd)
+      .catch((err: Error) =>
+        logger.warn(
+          { sessionId: sessionState.sessionId, err: err.message },
+          'claude-agent: failed to record overage spend'
+        )
+      );
+  }
+
+  /**
+   * A synthetic `result` for a turn cut before its own: absolute per-model totals (what the
+   * last recorded result left in the running totals, plus the tokens seen since), so the
+   * usual delta recording yields exactly the cut turn's usage.
+   */
+  _partialResult(
+    sessionState: ClaudeAgentState,
+    partial: Record<string, Record<string, number>> | null | undefined
+  ): SDKMessage | null {
+    if (!partial) return null;
+    const prev = getLastResultTotals(sessionState.sessionId).models as Record<
+      string,
+      Record<string, number>
+    >;
+    const modelUsage: Record<string, Record<string, number>> = {};
+    for (const [model, used] of Object.entries(partial)) {
+      const before = prev?.[model] ?? {};
+      modelUsage[model] = Object.fromEntries(
+        Object.entries(used).map(([field, n]) => [field, (before[field] ?? 0) + n])
+      );
+    }
+    return { type: 'result', modelUsage } as unknown as SDKMessage;
+  }
+
   /** Usage for a turn cut short by a limit, so the spend before the cut is still recorded. */
   async _recordLimitTurnUsage(sessionState: ClaudeAgentState, result: SDKMessage): Promise<void> {
     const db = this.app.get('db') as DbLike;
@@ -1150,11 +1193,19 @@ export class ClaudeAgentService {
       }
     });
 
+    await this._recordOverageSpend(sessionState, usageGuard);
+    // A turn cut before its own `result` is recorded from the tokens seen so far.
+    const lastResult =
+      result.lastResult ??
+      (result.usageLimit
+        ? this._partialResult(sessionState, usageGuard?.partialModelUsageSinceResult())
+        : null);
+
     return {
       turnComplete: result.turnComplete,
       streamFailed: result.streamFailed || streamFailed,
       outcome: result.outcome,
-      lastResult: result.lastResult,
+      lastResult,
       lastStreamError,
       usageLimit: result.usageLimit,
     };
@@ -1169,10 +1220,16 @@ export class ClaudeAgentService {
     try {
       const db = this.app.get('db') as DbLike;
       const row = (await db('sessions').where({ id: sessionState.sessionId }).first()) as
-        { usage_limit_action?: string | null; usage_limit?: number | null } | undefined;
+        | {
+            usage_limit_action?: string | null;
+            usage_limit?: number | null;
+            usage_limit_spent?: number | null;
+          }
+        | undefined;
       return new ClaudeUsageLimitGuard({
         overage: allowsOverage(row?.usage_limit_action),
         usageLimitUsd: row?.usage_limit ?? null,
+        priorSpentUsd: row?.usage_limit_spent ?? 0,
       });
     } catch (err) {
       // The guard is optional: without it the turn just runs unguarded.

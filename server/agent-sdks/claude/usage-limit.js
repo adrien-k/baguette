@@ -1,5 +1,5 @@
 import logger from '../../logger.js';
-import { parseUsageLimitResetMs } from '../../lib/usage-limit.js';
+import { isUsageLimitText, parseUsageLimitResetMs } from '../../lib/usage-limit.js';
 import { estimateAgentTurnCostUsd } from '../../../shared/agent-model-pricing.js';
 
 /** Epoch ms from a rate-limit `resetsAt` (epoch seconds or millis). */
@@ -9,13 +9,11 @@ export function claudeResetsAtMs(resetsAt) {
   return Number.isNaN(new Date(ms).getTime()) ? null : ms;
 }
 
-const LIMIT_TEXT_PATTERN = /usage limit|hit your limit|limit reached/i;
-
 /** Limit text on a failed `result` (the CLI can end a turn this way without a rejected event). */
 function resultLimitText(message) {
   if (!message.is_error) return null;
   const text = [message.result, ...(message.errors ?? [])].filter(Boolean).join(' ');
-  return LIMIT_TEXT_PATTERN.test(text) ? text : null;
+  return isUsageLimitText(text) ? text : null;
 }
 
 function assistantCostUsd(message) {
@@ -48,11 +46,16 @@ function assistantCostUsd(message) {
  */
 export class ClaudeUsageLimitGuard {
   /**
-   * @param {{ overage?: boolean, usageLimitUsd?: number | null }} [options] `usageLimitUsd` null = unlimited
+   * @param {{ overage?: boolean, usageLimitUsd?: number | null, priorSpentUsd?: number }} [options]
+   *   `usageLimitUsd` null = unlimited; `priorSpentUsd` is the overage the session spent in
+   *   earlier turns, so the limit caps the whole session, not each turn.
    */
-  constructor({ overage = true, usageLimitUsd = null } = {}) {
+  constructor({ overage = true, usageLimitUsd = null, priorSpentUsd = 0 } = {}) {
     this.overage = overage;
     this.usageLimitUsd = usageLimitUsd;
+    this.priorSpentUsd = Number(priorSpentUsd) > 0 ? Number(priorSpentUsd) : 0;
+    /** Assistant messages since the last `result`, by id (a message repeats per content block). */
+    this.sinceResult = new Map();
     this.overageActive = false;
     this.spentUsd = 0;
     this.lastTotalCostUsd = 0;
@@ -69,8 +72,15 @@ export class ClaudeUsageLimitGuard {
   observe(message) {
     try {
       if (message.type === 'rate_limit_event') return this.#onRateLimit(message.rate_limit_info);
-      if (message.type === 'assistant') return this.#onAssistant(message);
-      if (message.type === 'result') return this.#onResult(message);
+      if (message.type === 'assistant') {
+        const m = message.message;
+        if (m?.usage && m.model) this.sinceResult.set(m.id ?? this.sinceResult.size, m);
+        return this.#onAssistant(message);
+      }
+      if (message.type === 'result') {
+        this.sinceResult.clear();
+        return this.#onResult(message);
+      }
     } catch (err) {
       // Logged once per turn: a broken shape would otherwise repeat for every message.
       if (!this.warned)
@@ -83,11 +93,17 @@ export class ClaudeUsageLimitGuard {
   #onRateLimit(info) {
     if (!info) return null;
     const resetMs = claudeResetsAtMs(info.resetsAt) ?? claudeResetsAtMs(info.overageResetsAt);
-    if (resetMs) this.resetAtMs = resetMs;
+    const usingOverage = Boolean(info.isUsingOverage || info.overageInUse);
 
-    if (info.status === 'rejected') return { reason: 'rejected', resetAtMs: this.resetAtMs };
+    // Only the event that actually stops the turn says when to resume. `allowed`/warning
+    // events describe other windows (e.g. weekly) and must not become the reset time.
+    if (info.status === 'rejected') {
+      if (resetMs) this.resetAtMs = resetMs;
+      return { reason: 'rejected', resetAtMs: this.resetAtMs };
+    }
 
-    if ((info.isUsingOverage || info.overageInUse) && !this.overageActive) {
+    if (usingOverage && !this.overageActive) {
+      if (resetMs) this.resetAtMs = resetMs;
       this.overageActive = true;
       this.baselineCostUsd = this.lastTotalCostUsd;
       this.spentUsd = 0;
@@ -108,6 +124,28 @@ export class ClaudeUsageLimitGuard {
     return this.#checkBudget();
   }
 
+  /**
+   * Tokens of the turn since the last `result` as a `modelUsage` map, for a turn cut before its
+   * own `result` arrived. Null when there is nothing to record.
+   */
+  partialModelUsageSinceResult() {
+    if (!this.sinceResult.size) return null;
+    const byModel = {};
+    for (const { model, usage } of this.sinceResult.values()) {
+      const into = (byModel[model] ??= {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      });
+      into.inputTokens += usage.input_tokens ?? 0;
+      into.outputTokens += usage.output_tokens ?? 0;
+      into.cacheReadInputTokens += usage.cache_read_input_tokens ?? 0;
+      into.cacheCreationInputTokens += usage.cache_creation_input_tokens ?? 0;
+    }
+    return byModel;
+  }
+
   #onResult(message) {
     const limitText = resultLimitText(message);
     if (limitText) {
@@ -123,7 +161,8 @@ export class ClaudeUsageLimitGuard {
   }
 
   #checkBudget() {
-    if (this.usageLimitUsd == null || this.spentUsd < this.usageLimitUsd) return null;
+    if (this.usageLimitUsd == null) return null;
+    if (this.priorSpentUsd + this.spentUsd < this.usageLimitUsd) return null;
     return { reason: 'usage_limit', resetAtMs: this.resetAtMs };
   }
 }

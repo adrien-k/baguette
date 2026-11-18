@@ -96,6 +96,50 @@ describe('ClaudeUsageLimitGuard', () => {
   });
 });
 
+describe('ClaudeUsageLimitGuard session budget and reset time', () => {
+  it('counts overage spent in earlier turns against the usage limit', () => {
+    const fresh = new ClaudeUsageLimitGuard({ overage: true, usageLimitUsd: 1 });
+    fresh.observe(limitEvent({ status: 'allowed', isUsingOverage: true }));
+    expect(fresh.observe(assistant('a', 20_000))).toBeNull();
+
+    const later = new ClaudeUsageLimitGuard({
+      overage: true,
+      usageLimitUsd: 1,
+      priorSpentUsd: 0.9,
+    });
+    later.observe(limitEvent({ status: 'allowed', isUsingOverage: true }));
+    expect(later.observe(assistant('a', 20_000))).toMatchObject({ reason: 'usage_limit' });
+  });
+
+  it('does not take the reset time from an allowed/warning event', () => {
+    const guard = new ClaudeUsageLimitGuard();
+    guard.observe(limitEvent({ status: 'allowed_warning', resetsAt: 4_000_000_000 }));
+    const hit = guard.observe({
+      type: 'result',
+      is_error: true,
+      result: 'You have hit your limit',
+    });
+    expect(hit).toMatchObject({ reason: 'rejected', resetAtMs: null });
+  });
+
+  it('reports tokens used since the last result for a turn cut mid-stream', () => {
+    const guard = new ClaudeUsageLimitGuard();
+    guard.observe(assistant('a', 100));
+    guard.observe(assistant('a', 100));
+    guard.observe(result(0.01));
+    expect(guard.partialModelUsageSinceResult()).toBeNull();
+    guard.observe(assistant('b', 250));
+    expect(guard.partialModelUsageSinceResult()).toEqual({
+      'claude-sonnet-4-5': {
+        inputTokens: 0,
+        outputTokens: 250,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+    });
+  });
+});
+
 describe('processClaudeQueryStream usage guard', () => {
   async function* stream(messages) {
     for (const m of messages) yield m;

@@ -30,6 +30,11 @@ function normalizeUsageLimit(value) {
  * session or loop write. Returns an error message, or null when the fields are fine.
  */
 export function usageLimitFieldsError(data) {
+  // `null` means "not set": drop it so the column default ('stop') applies instead of
+  // tripping the NOT NULL constraint.
+  if ('usage_limit_action' in data && data.usage_limit_action == null) {
+    delete data.usage_limit_action;
+  }
   if (data.usage_limit_action != null && !USAGE_LIMIT_ACTIONS.includes(data.usage_limit_action)) {
     return `usage_limit_action must be one of: ${USAGE_LIMIT_ACTIONS.join(', ')}`;
   }
@@ -53,12 +58,34 @@ export const RESUME_MARGIN_MAX_MS = 120_000;
 
 /** Retry delay when a provider reports a limit without a usable reset time. */
 export const FALLBACK_RETRY_MS = 30 * 60_000;
+/** Backoff ceiling, and how many resets-unknown retries `wait` makes before giving up. */
+export const FALLBACK_RETRY_MAX_MS = 6 * 3_600_000;
+export const MAX_UNKNOWN_RESET_RETRIES = 8;
+
+/** 30m, 1h, 2h, 4h, then 6h: consecutive limit hits with no reset time back off. */
+export function fallbackRetryMs(attempt = 0) {
+  const n = Math.max(0, Math.floor(attempt));
+  return Math.min(FALLBACK_RETRY_MS * 2 ** n, FALLBACK_RETRY_MAX_MS);
+}
 
 export const USAGE_LIMIT_RESUME_PROMPT =
   'The usage limit has reset. Continue the work where you left off.';
 
 export function normalizeUsageLimitAction(value) {
   return USAGE_LIMIT_ACTIONS.includes(value) ? value : DEFAULT_USAGE_LIMIT_ACTION;
+}
+
+/**
+ * Plan-limit wording shared by every SDK. Generic transient text ("rate limit", "quota",
+ * "too many requests", a bare 429 in prose) is deliberately excluded: with `wait` it would
+ * sleep for no reason and hide a normal failure. SDK-structured signals (Claude's rejected
+ * rate-limit event, Cursor's `RateLimitError` / HTTP 429) are handled in each SDK folder.
+ */
+export const USAGE_LIMIT_TEXT_PATTERN =
+  /usage limit|spend limit|hit your limit|out of (?:usage|credits)|limit (?:reached|exceeded)|exceeded (?:your |the )?(?:\w+ )?limit/i;
+
+export function isUsageLimitText(text) {
+  return typeof text === 'string' && USAGE_LIMIT_TEXT_PATTERN.test(text);
 }
 
 const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -97,19 +124,43 @@ export function parseUsageLimitResetMs(text, nowMs = Date.now()) {
 }
 
 /** Epoch ms to send the resume message: reset (or fallback) plus a 1–2 minute margin. */
-export function computeResumeAtMs(resetAtMs, nowMs = Date.now(), random = Math.random) {
-  const base = resetAtMs != null && resetAtMs > nowMs ? resetAtMs : nowMs + FALLBACK_RETRY_MS;
+export function computeResumeAtMs(
+  resetAtMs,
+  nowMs = Date.now(),
+  random = Math.random,
+  attempt = 0
+) {
+  const base =
+    resetAtMs != null && resetAtMs > nowMs ? resetAtMs : nowMs + fallbackRetryMs(attempt);
   const margin =
     RESUME_MARGIN_MIN_MS + Math.floor(random() * (RESUME_MARGIN_MAX_MS - RESUME_MARGIN_MIN_MS));
   return base + margin;
 }
 
-export function usageLimitStatusText({ label, reason, action, resetAtMs, resumeAtMs }) {
+/** "25m", "1h 31m", "2d 3h": how long until the resume, rounded to the minute. */
+export function formatResumeIn(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+export function usageLimitStatusText({
+  label,
+  reason,
+  action,
+  resetAtMs,
+  resumeAtMs,
+  nowMs = Date.now(),
+}) {
   const why =
     reason === 'usage_limit' ? 'session usage limit reached' : 'subscription limit reached';
-  const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
   if (action === 'wait') {
-    return `${label} ${why}. Waiting until ${new Date(resumeAtMs).toISOString()}, then resuming automatically.${reset}`;
+    return `${label} ${why}. Resumes after usage limit reset in ${formatResumeIn(resumeAtMs - nowMs)}.`;
   }
+  const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
   return `${label} ${why}. Session stopped; send a message to continue.${reset}`;
 }

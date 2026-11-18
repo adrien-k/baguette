@@ -385,10 +385,12 @@ export default function BuilderForm({
   }, [editingLoop?.id]);
 
   const isLoop = mode === 'loop';
+  // The dollar cap only exists under Continue: null = none, undefined = invalid text.
+  const usageCap = usageLimitAction === 'continue' ? parseUsageLimit(usageLimitText) : null;
   const canSubmit =
     !loopReadOnly &&
     !loading &&
-    parseUsageLimit(usageLimitText) !== undefined &&
+    usageCap !== undefined &&
     hasAgentConfig &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
@@ -439,7 +441,7 @@ export default function BuilderForm({
       branchName: branchName || undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
       usageLimitAction,
-      usageLimit: parseUsageLimit(usageLimitText),
+      usageLimit: usageCap,
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       mcpServers: mcpEnabled,

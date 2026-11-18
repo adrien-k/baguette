@@ -125,6 +125,9 @@ export default function SubscriptionCard({ session, locked, onSessionUpdate }) {
     session?.agent_sdk,
     session?.agent_config_id
   );
+  // An SDK without plan limits (e.g. Pi) reports no provider: nothing to show or configure.
+  if (!loading && !error && providers.length === 0) return null;
+
   const action = session?.usage_limit_action ?? 'stop';
   // The oldest provider refresh: the card is only as fresh as its stalest data.
   const refreshedAt = providers

@@ -120,6 +120,7 @@ import {
   usageLimitFieldsError,
   USAGE_LIMIT_RESUME_PROMPT,
   computeResumeAtMs,
+  MAX_UNKNOWN_RESET_RETRIES,
   normalizeUsageLimitAction,
   usageLimitStatusText,
 } from '../../lib/usage-limit.js';
@@ -169,6 +170,8 @@ export class SessionsService extends KnexService {
     super(options);
     /** @type {Record<number, number>} When `onActivity` last ran per session (ms since epoch). */
     this._sessionActivityLastBumpMs = Object.create(null);
+    /** Consecutive limit hits with no reset time per session id (see `onUsageLimit`). */
+    this.usageLimitRetries = new Map();
   }
 
   setup(app) {
@@ -1833,18 +1836,30 @@ export class SessionsService extends KnexService {
       let action =
         normalizeUsageLimitAction(session.usage_limit_action) === 'wait' ? 'wait' : 'stop';
       let resumeAtMs = null;
+      let gaveUp = false;
       if (action === 'wait') {
-        resumeAtMs = computeResumeAtMs(resetAtMs);
-        try {
-          await this.scheduleUsageLimitResume(session, agent, limit.sdk, resumeAtMs);
-        } catch (err) {
-          // Without a schedule the notice must not promise a resume.
-          logger.warn(
-            { sessionId, err: err?.message },
-            'sessions: failed to schedule limit resume'
-          );
+        // No reset time: back off between retries and stop after a few, so a weekly limit
+        // days from resetting does not start an agent turn every half hour.
+        const attempt = resetAtMs == null ? (this.usageLimitRetries.get(sessionId) ?? 0) : 0;
+        if (attempt >= MAX_UNKNOWN_RESET_RETRIES) {
+          this.usageLimitRetries.delete(sessionId);
           action = 'stop';
-          resumeAtMs = null;
+          gaveUp = true;
+        } else {
+          if (resetAtMs == null) this.usageLimitRetries.set(sessionId, attempt + 1);
+          else this.usageLimitRetries.delete(sessionId);
+          resumeAtMs = computeResumeAtMs(resetAtMs, Date.now(), Math.random, attempt);
+          try {
+            await this.scheduleUsageLimitResume(session, agent, limit.sdk, resumeAtMs);
+          } catch (err) {
+            // Without a schedule the notice must not promise a resume.
+            logger.warn(
+              { sessionId, err: err?.message },
+              'sessions: failed to schedule limit resume'
+            );
+            action = 'stop';
+            resumeAtMs = null;
+          }
         }
       }
 
@@ -1855,12 +1870,15 @@ export class SessionsService extends KnexService {
         resetAtMs,
         resumeAtMs,
       });
+      const notice = gaveUp
+        ? `${status} Gave up waiting: the reset time is unknown after ${MAX_UNKNOWN_RESET_RETRIES} retries.`
+        : status;
       await this.app.service('messages').create(
         {
           session_id: sessionId,
           type: 'system',
           subtype: 'status',
-          message_json: JSON.stringify({ type: 'system', subtype: 'status', status }),
+          message_json: JSON.stringify({ type: 'system', subtype: 'status', status: notice }),
           ...sessionMessageIdentity(agent, { agent_sdk: limit.sdk }),
         },
         { provider: undefined, user: { id: session.user_id } }
@@ -1870,6 +1888,22 @@ export class SessionsService extends KnexService {
       logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit handling failed');
       return null;
     }
+  }
+
+  /**
+   * Drop the pending limit resume(s) of a session, when the user turns `wait` off.
+   * Not an API method: it is not listed in `methods`.
+   */
+  async cancelUsageLimitResume(sessionId) {
+    this.usageLimitRetries.delete(sessionId);
+    return this.app
+      .get('db')('queued_messages')
+      .where({
+        session_id: sessionId,
+        kind: 'scheduled',
+        message_json: buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT),
+      })
+      .delete();
   }
 
   /** One pending "continue" message per agent: a newer limit hit replaces the earlier one. */
@@ -1891,6 +1925,8 @@ export class SessionsService extends KnexService {
   }
 
   async onTurnComplete(sessionId, agentId = null) {
+    // A turn that finished normally ends any run of limit hits with an unknown reset time.
+    this.usageLimitRetries.delete(sessionId);
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
@@ -2051,8 +2087,18 @@ function coerceIsSharedOnWrite(context) {
   return context;
 }
 
+/** Turning `wait` off must also drop the resume it already scheduled. */
+async function cancelResumeWhenNotWaiting(context) {
+  if (!context.data || !('usage_limit_action' in context.data)) return context;
+  if (context.result?.usage_limit_action === 'wait') return context;
+  if (context.result?.id != null) await context.service.cancelUsageLimitResume(context.result.id);
+  return context;
+}
+
 /** Validate the usage-limit policy fields `usage_limit_action` and `usage_limit` on write. */
 function normalizeUsageLimitOnWrite(context) {
+  // `usage_limit_spent` is server bookkeeping: a client must not reset its own budget.
+  if (context.params.provider && context.data) delete context.data.usage_limit_spent;
   const error = usageLimitFieldsError(context.data || {});
   if (error) throw new BadRequest(error);
   return context;
@@ -3056,6 +3102,7 @@ const sessionsHooks = {
       attachViewerLastViewed,
       mergeSessionAgentFields,
       syncSessionSettingsAfterPatch,
+      cancelResumeWhenNotWaiting,
       addHasWebserver,
       stampWasShared,
     ],

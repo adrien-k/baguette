@@ -82,6 +82,37 @@ describe('sessions.onUsageLimit', () => {
     expect(await db('queued_messages').where({ session_id: sessionId })).toHaveLength(0);
   });
 
+  it('continue: a rejected subscription limit (overage refused too) stops without scheduling', async () => {
+    await setPolicy({ usage_limit_action: 'continue' });
+    const out = await app.service('sessions').onUsageLimit(sessionId, agentId, hit());
+    expect(out).toEqual({ action: 'stop', resume_at: null });
+    expect(await db('queued_messages').where({ session_id: sessionId })).toHaveLength(0);
+  });
+
+  it('wait: falls back to stop (and says so) when the resume cannot be scheduled', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    vi.spyOn(app.service('sessions'), 'scheduleUsageLimitResume').mockRejectedValue(
+      new Error('db down')
+    );
+    const out = await app.service('sessions').onUsageLimit(sessionId, agentId, hit());
+    expect(out).toEqual({ action: 'stop', resume_at: null });
+    const status = await db('session_messages')
+      .where({ session_id: sessionId, subtype: 'status' })
+      .first();
+    expect(JSON.parse(status.message_json).status).toContain('Session stopped');
+  });
+
+  it('wait: the chat notice says when it resumes', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    await app.service('sessions').onUsageLimit(sessionId, agentId, hit(3_600_000));
+    const status = await db('session_messages')
+      .where({ session_id: sessionId, subtype: 'status' })
+      .first();
+    expect(JSON.parse(status.message_json).status).toMatch(
+      /Resumes after usage limit reset in 1h [0-9]+m\./
+    );
+  });
+
   it('stop: persists a notice and schedules nothing', async () => {
     const out = await app.service('sessions').onUsageLimit(sessionId, agentId, hit());
     expect(out).toEqual({ action: 'stop', resume_at: null });
@@ -129,6 +160,108 @@ describe('sessions.onUsageLimit', () => {
       .service('sessions')
       .onUsageLimit(sessionId, agentId, { ...hit(), reset_at_ms: null });
     expect(Date.parse(out.resume_at)).toBeGreaterThan(Date.now() + 29 * 60_000);
+  });
+});
+
+describe('wait backoff and cancellation', () => {
+  const noReset = () => ({ ...hit(), reset_at_ms: null });
+
+  it('backs off between retries when no reset time is known, then gives up', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    const svc = app.service('sessions');
+    const delays = [];
+    for (let i = 0; i < 8; i++) {
+      const out = await svc.onUsageLimit(sessionId, agentId, noReset());
+      expect(out.action).toBe('wait');
+      delays.push(Date.parse(out.resume_at) - Date.now());
+    }
+    expect(delays[1]).toBeGreaterThan(delays[0] * 1.9);
+    expect(delays[7]).toBeLessThan(6 * 3_600_000 + RESUME_MARGIN_MAX_MS + 5000);
+
+    const last = await svc.onUsageLimit(sessionId, agentId, noReset());
+    expect(last).toEqual({ action: 'stop', resume_at: null });
+    const statuses = await db('session_messages').where({
+      session_id: sessionId,
+      subtype: 'status',
+    });
+    expect(statuses.at(-1).message_json).toContain('Gave up waiting');
+  });
+
+  it('a known reset time restarts the backoff', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    const svc = app.service('sessions');
+    await svc.onUsageLimit(sessionId, agentId, noReset());
+    await svc.onUsageLimit(sessionId, agentId, hit());
+    const out = await svc.onUsageLimit(sessionId, agentId, noReset());
+    expect(Date.parse(out.resume_at) - Date.now()).toBeLessThan(31 * 60_000 + RESUME_MARGIN_MAX_MS);
+  });
+
+  it('cancelUsageLimitResume removes the pending resume only', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    await app.service('sessions').onUsageLimit(sessionId, agentId, hit());
+    await app.service('queued-messages').schedule(
+      {
+        session_id: sessionId,
+        agent_id: agentId,
+        agent_sdk: 'claude',
+        model: 'claude-sonnet-4-5',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'later' } }),
+        send_at: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+      { user: { id: userId } }
+    );
+    expect(await app.service('sessions').cancelUsageLimitResume(sessionId)).toBe(1);
+    const rows = await db('queued_messages').where({ session_id: sessionId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].message_json).toContain('later');
+  });
+
+  it('switching the action away from wait cancels the pending resume', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    await app.service('sessions').onUsageLimit(sessionId, agentId, hit());
+    await app
+      .service('sessions')
+      .patch(sessionId, { usage_limit_action: 'stop' }, { provider: 'rest', user: { id: userId } });
+    expect(await db('queued_messages').where({ session_id: sessionId })).toHaveLength(0);
+  });
+
+  it('a user message during the wait does not cancel the resume; a new limit hit reschedules it', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    await app.service('sessions').onUsageLimit(sessionId, agentId, hit(3_600_000));
+    await app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        agent_id: agentId,
+        agent_sdk: 'claude',
+        model: 'claude-sonnet-4-5',
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+      },
+      { provider: 'rest', user: { id: userId } }
+    );
+    expect(
+      await db('queued_messages').where({ session_id: sessionId, kind: 'scheduled' })
+    ).toHaveLength(1);
+    // The message is rejected by the limit again: still exactly one pending resume.
+    await app.service('sessions').onUsageLimit(sessionId, agentId, hit(3_000_000));
+    expect(
+      await db('queued_messages').where({ session_id: sessionId, kind: 'scheduled' })
+    ).toHaveLength(1);
+  });
+});
+
+describe('usage_limit_spent', () => {
+  it('cannot be set by a client on patch', async () => {
+    await db('sessions').where({ id: sessionId }).update({ usage_limit_spent: 3 });
+    await app
+      .service('sessions')
+      .patch(
+        sessionId,
+        { usage_limit_spent: 0, usage_limit: 5 },
+        { provider: 'rest', user: { id: userId } }
+      );
+    const row = await db('sessions').where({ id: sessionId }).first();
+    expect(row.usage_limit_spent).toBe(3);
   });
 });
 

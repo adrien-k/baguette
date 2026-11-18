@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   allowsOverage,
   computeResumeAtMs,
+  FALLBACK_RETRY_MAX_MS,
   FALLBACK_RETRY_MS,
+  fallbackRetryMs,
+  formatResumeIn,
+  isUsageLimitText,
   normalizeUsageLimitAction,
   parseUsageLimitResetMs,
   RESUME_MARGIN_MAX_MS,
@@ -76,7 +80,9 @@ describe('usage limit action + copy', () => {
       resumeAtMs: NOW + 5000,
     };
     expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain('Session stopped');
-    expect(usageLimitStatusText({ ...base, action: 'wait' })).toContain('Waiting until');
+    expect(
+      usageLimitStatusText({ ...base, action: 'wait', resumeAtMs: NOW + 91 * 60_000, nowMs: NOW })
+    ).toBe('Claude subscription limit reached. Resumes after usage limit reset in 1h 31m.');
     expect(usageLimitStatusText({ ...base, action: 'stop', reason: 'usage_limit' })).toContain(
       'session usage limit reached'
     );
@@ -112,5 +118,51 @@ describe('usageLimitFieldsError', () => {
     for (const bad of [-1, 'abc', NaN, Infinity]) {
       expect(usageLimitFieldsError({ usage_limit: bad })).toMatch(/usage_limit must be/);
     }
+  });
+});
+
+describe('fallbackRetryMs', () => {
+  it('backs off 30m, 1h, 2h, 4h and caps at 6h', () => {
+    expect([0, 1, 2, 3, 4, 9].map(fallbackRetryMs)).toEqual([
+      FALLBACK_RETRY_MS,
+      2 * FALLBACK_RETRY_MS,
+      4 * FALLBACK_RETRY_MS,
+      8 * FALLBACK_RETRY_MS,
+      FALLBACK_RETRY_MAX_MS,
+      FALLBACK_RETRY_MAX_MS,
+    ]);
+  });
+
+  it('computeResumeAtMs uses the attempt when the reset is unknown', () => {
+    const at = computeResumeAtMs(null, NOW, () => 0, 2);
+    expect(at).toBe(NOW + 4 * FALLBACK_RETRY_MS + RESUME_MARGIN_MIN_MS);
+  });
+});
+
+describe('isUsageLimitText', () => {
+  it('matches plan-limit wording only, not generic rate-limit text', () => {
+    expect(isUsageLimitText('You have hit your usage limit')).toBe(true);
+    expect(isUsageLimitText('Claude AI usage limit reached|1700000000')).toBe(true);
+    expect(isUsageLimitText('rate limit, slow down')).toBe(false);
+    expect(isUsageLimitText('quota check failed, too many requests (429)')).toBe(false);
+    expect(isUsageLimitText(undefined)).toBe(false);
+  });
+});
+
+describe('usageLimitFieldsError null action', () => {
+  it('drops a null usage_limit_action so the column default applies', () => {
+    const data = { usage_limit_action: null };
+    expect(usageLimitFieldsError(data)).toBeNull();
+    expect('usage_limit_action' in data).toBe(false);
+  });
+});
+
+describe('formatResumeIn', () => {
+  it('formats minutes, hours and days', () => {
+    expect(formatResumeIn(5_000)).toBe('1m');
+    expect(formatResumeIn(25 * 60_000)).toBe('25m');
+    expect(formatResumeIn(91 * 60_000)).toBe('1h 31m');
+    expect(formatResumeIn(2 * 86_400_000)).toBe('2d');
+    expect(formatResumeIn(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d 3h');
   });
 });

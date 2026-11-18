@@ -971,6 +971,7 @@ ${body}`,
           surfacing: {
             statusText: cursorSilentEndStatusText(detail),
             isFailure: true,
+            usageLimit: cursorUsageLimit(detail),
           },
         });
       }

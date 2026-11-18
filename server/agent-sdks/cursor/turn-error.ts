@@ -9,15 +9,12 @@
  * keeping deliberate user stops quiet.
  */
 
-import { parseUsageLimitResetMs } from '../../lib/usage-limit.js';
+import { isUsageLimitText, parseUsageLimitResetMs } from '../../lib/usage-limit.js';
 
 export type CursorTerminalStatus = 'ERROR' | 'CANCELLED' | 'EXPIRED';
 
 /** Cursor reported a plan/usage limit; `resetAtMs` is parsed from its text when present. */
 export type CursorUsageLimit = { resetAtMs: number | null };
-
-const CURSOR_USAGE_LIMIT_PATTERN =
-  /usage limit|rate limit|quota|spend limit|limit (?:reached|exceeded)|exceeded .*limit|too many requests|\b429\b/i;
 
 /**
  * Detect a Cursor usage/rate limit from an SDK error or terminal-status detail.
@@ -31,7 +28,7 @@ export function cursorUsageLimit(
   const text = typeof source === 'string' ? source : (source.message ?? '');
   const structured =
     typeof source !== 'string' && (source.name === 'RateLimitError' || source.status === 429);
-  if (!structured && !CURSOR_USAGE_LIMIT_PATTERN.test(text)) return null;
+  if (!structured && !isUsageLimitText(text)) return null;
   return { resetAtMs: parseUsageLimitResetMs(text, nowMs) };
 }
 
