@@ -111,6 +111,13 @@ describe('sessions.onUsageLimit', () => {
     expect(JSON.parse(status.message_json).status).toMatch(/Waiting for usage limit to reset \(/);
   });
 
+  it('wait: the session row carries the resume time for the sidebar clock', async () => {
+    await setPolicy({ usage_limit_action: 'wait' });
+    const out = await app.service('sessions').onUsageLimit(sessionId, agentId, hit(3_600_000));
+    const row = await app.service('sessions').get(sessionId, { provider: undefined });
+    expect(Date.parse(row.usage_limit_resume_at)).toBe(Date.parse(out.resume_at));
+  });
+
   it('stop: persists a notice and schedules nothing', async () => {
     const out = await app.service('sessions').onUsageLimit(sessionId, agentId, hit());
     expect(out).toEqual({ action: 'stop', resume_at: null });

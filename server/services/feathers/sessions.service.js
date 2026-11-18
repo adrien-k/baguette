@@ -1887,6 +1887,8 @@ export class SessionsService extends KnexService {
         },
         { provider: undefined, user: { id: session.user_id } }
       );
+      // Patch the session so open sidebars pick up `usage_limit_resume_at` right away.
+      if (resumeAtMs) await this.onActivity(session);
       return { action, resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : null };
     } catch (err) {
       logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit handling failed');
@@ -2664,6 +2666,30 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
   return forExternalClient ? withoutShortId(shaped) : shaped;
 }
 
+/**
+ * Rows of sessions waiting out a usage limit get `usage_limit_resume_at`: the send time of
+ * their pending resume message (one query for the whole page).
+ */
+async function attachUsageLimitResume(context) {
+  const result = context.result;
+  if (!result) return context;
+  let sessions = [result];
+  if (Array.isArray(result.data)) sessions = result.data;
+  else if (Array.isArray(result)) sessions = result;
+  const ids = sessions.map((s) => s.id).filter((id) => id != null);
+  if (!ids.length) return context;
+  const pending = await context.app
+    .get('db')('queued_messages')
+    .whereIn('session_id', ids)
+    .where({ kind: 'scheduled', message_json: buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT) })
+    .groupBy('session_id')
+    .select('session_id')
+    .min('send_at as send_at');
+  const resumeBySession = new Map(pending.map((r) => [r.session_id, r.send_at]));
+  for (const s of sessions) s.usage_limit_resume_at = resumeBySession.get(s.id) ?? null;
+  return context;
+}
+
 async function addHasWebserver(context) {
   const result = context.result;
   if (!result) return context;
@@ -3086,12 +3112,19 @@ const sessionsHooks = {
     startPreviewService: [resolveSessionFromData, requireOwnResolvedSession],
   },
   after: {
-    find: [attachOwners, attachViewerLastViewed, mergeSessionAgentFields, addHasWebserver],
+    find: [
+      attachOwners,
+      attachViewerLastViewed,
+      mergeSessionAgentFields,
+      attachUsageLimitResume,
+      addHasWebserver,
+    ],
     get: [
       attachOwners,
       attachViewerLastViewed,
       refreshPrStatusAfterGet,
       mergeSessionAgentFields,
+      attachUsageLimitResume,
       addHasWebserver,
     ],
     create: [
@@ -3107,6 +3140,7 @@ const sessionsHooks = {
       mergeSessionAgentFields,
       syncSessionSettingsAfterPatch,
       cancelResumeWhenNotWaiting,
+      attachUsageLimitResume,
       addHasWebserver,
       stampWasShared,
     ],
