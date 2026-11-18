@@ -16,6 +16,12 @@ import type {
 
 /** Throttle assistant row patches during streaming (UI still updates via `patched` events). */
 const ASSISTANT_PATCH_DEBOUNCE_MS = 250;
+
+function assistantPayloadHasVisibleText(payload: AssistantMessagePayload): boolean {
+  return payload.blocks.some(
+    (b) => b.type === 'text' && String((b as { text?: string }).text ?? '').trim()
+  );
+}
 const TOOL_PROGRESS_PATCH_DEBOUNCE_MS = 250;
 
 /**
@@ -320,6 +326,9 @@ export class MessageStreamWriter {
   }
 
   async persistTurnResult(payload: TurnResultPayload): Promise<void> {
+    if (this.assistantRowId && assistantPayloadHasVisibleText(this.assistantPayload)) {
+      this.assistantPayload = { ...this.assistantPayload, turn_reply: true };
+    }
     await this.flushAssistant();
     this.resetThinkingTokensRow();
     await this.persistPayload(payload);

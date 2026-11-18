@@ -201,6 +201,8 @@ export type AssistantBlock =
 export type AssistantMessagePayload = {
   type: 'assistant';
   blocks: AssistantBlock[];
+  /** Set on the last assistant row flushed immediately before `turn_result`. */
+  turn_reply?: boolean;
 };
 
 /**

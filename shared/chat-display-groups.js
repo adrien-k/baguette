@@ -100,26 +100,11 @@ export function messageContainsPrUpsert(msg) {
   return msg.message.content.some(blockIsPrUpsert);
 }
 
-/** Index of the last message containing PrUpsert, or -1 if none. */
-function findLastPrUpsertMessageIndex(messages) {
-  let last = -1;
-  for (let i = 0; i < messages.length; i++) {
-    if (messageContainsPrUpsert(messages[i])) last = i;
-  }
-  return last;
-}
-
-function prUpsertIsDisplayBoundary(msg, context) {
-  if (!messageContainsPrUpsert(msg)) return false;
-  if (!context) return true;
-  const { messages, index, lastPrUpsertIndex } = context;
-  const last =
-    lastPrUpsertIndex !== undefined
-      ? lastPrUpsertIndex
-      : messages
-        ? findLastPrUpsertMessageIndex(messages)
-        : -1;
-  return index === last;
+/** Assistant row stamped by the writer as the turn's closing reply (before `turn_result`). */
+export function isTurnReplyAssistantMessage(msg) {
+  if (msg?.type !== 'assistant') return false;
+  if (msg.turn_reply === true) return true;
+  return false;
 }
 
 /** User or assistant message with visible text — boundaries of a chat turn. */
@@ -165,20 +150,19 @@ function computeTurnLastAnchorIndices(messages) {
  */
 function assistantIsMidTurn(msg, context) {
   if (msg?.type !== 'assistant' || !isChatAnchorMessage(msg)) return false;
+  if (isTurnReplyAssistantMessage(msg)) return false;
   if (!context || !Array.isArray(context.turnLastAnchors)) return false;
   const last = context.turnLastAnchors[context.index];
   return last !== -1 && last !== context.index;
 }
 
 /**
- * User/assistant text or the last PrUpsert — splits work runs and enables collapse.
+ * User/assistant text or pinned chat tools — splits work runs and enables collapse.
  * Mid-turn assistant messages fold into the Worked run instead of splitting it.
- * @param {object} [context] When grouping, pass `{ messages, index }` so only the last PrUpsert is a boundary.
  */
 export function isChatGroupBoundary(msg, context) {
   return (
     (isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context)) ||
-    prUpsertIsDisplayBoundary(msg, context) ||
     messageContainsPinnedChatTool(msg)
   );
 }
@@ -190,7 +174,6 @@ export function isChatGroupBoundary(msg, context) {
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
   if (messageContainsPinnedChatTool(msg)) return false;
-  if (prUpsertIsDisplayBoundary(msg, context)) return false;
   if (msg.type === 'result' || msg.type === 'turn_result') return true;
   if (msg.type === 'tool_call') return true;
   if (msg.type === 'system') return msg.subtype !== 'prompt';
@@ -291,13 +274,11 @@ function pushWorkRun(items, run, startIndex, { collapseAll }) {
  * >}
  */
 export function groupChatDisplayMessages(messages, opts = {}) {
-  const lastPrUpsertIndex = findLastPrUpsertMessageIndex(messages);
   const turnLastAnchors =
     opts.foldMidTurnAssistants === false ? null : computeTurnLastAnchorIndices(messages);
   const groupContext = (index) => ({
     messages,
     index,
-    lastPrUpsertIndex,
     turnLastAnchors,
   });
   const items = [];

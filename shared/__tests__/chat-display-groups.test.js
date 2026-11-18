@@ -6,6 +6,7 @@ import {
   isChatAnchorMessage,
   isChatGroupBoundary,
   isChatWorkMessage,
+  isTurnReplyAssistantMessage,
   messageContainsPinnedChatTool,
   messageContainsPrUpsert,
 } from '../chat-display-groups.js';
@@ -30,7 +31,7 @@ describe('chat display grouping', () => {
     ).toBe(true);
   });
 
-  it('treats PrUpsert tool messages as group boundaries', () => {
+  it('detects PrUpsert but keeps it inside Worked (not a group boundary)', () => {
     const prUpsert = {
       type: 'assistant',
       message: {
@@ -38,11 +39,11 @@ describe('chat display grouping', () => {
       },
     };
     expect(messageContainsPrUpsert(prUpsert)).toBe(true);
-    expect(isChatGroupBoundary(prUpsert)).toBe(true);
-    expect(isChatWorkMessage(prUpsert)).toBe(false);
+    expect(isChatGroupBoundary(prUpsert)).toBe(false);
+    expect(isChatWorkMessage(prUpsert)).toBe(true);
   });
 
-  it('treats Cursor mcp meta-tool PrUpsert as a group boundary', () => {
+  it('detects Cursor mcp meta-tool PrUpsert as work, not a boundary', () => {
     const prUpsert = {
       type: 'assistant',
       message: {
@@ -57,11 +58,11 @@ describe('chat display grouping', () => {
       },
     };
     expect(messageContainsPrUpsert(prUpsert)).toBe(true);
-    expect(isChatGroupBoundary(prUpsert)).toBe(true);
-    expect(isChatWorkMessage(prUpsert)).toBe(false);
+    expect(isChatGroupBoundary(prUpsert)).toBe(false);
+    expect(isChatWorkMessage(prUpsert)).toBe(true);
   });
 
-  it('treats UpdateSession as a group boundary', () => {
+  it('detects UpdateSession as work, not a boundary', () => {
     const updateSession = {
       type: 'assistant',
       message: {
@@ -76,11 +77,11 @@ describe('chat display grouping', () => {
       },
     };
     expect(messageContainsPrUpsert(updateSession)).toBe(true);
-    expect(isChatGroupBoundary(updateSession)).toBe(true);
-    expect(isChatWorkMessage(updateSession)).toBe(false);
+    expect(isChatGroupBoundary(updateSession)).toBe(false);
+    expect(isChatWorkMessage(updateSession)).toBe(true);
   });
 
-  it('treats typed tool_call PrUpsert as a group boundary', () => {
+  it('detects typed tool_call PrUpsert as work, not a boundary', () => {
     const prUpsert = {
       type: 'tool_call',
       name: 'mcp__baguette__PrUpsert',
@@ -88,8 +89,8 @@ describe('chat display grouping', () => {
       call_id: 'pr',
     };
     expect(messageContainsPrUpsert(prUpsert)).toBe(true);
-    expect(isChatGroupBoundary(prUpsert)).toBe(true);
-    expect(isChatWorkMessage(prUpsert)).toBe(false);
+    expect(isChatGroupBoundary(prUpsert)).toBe(false);
+    expect(isChatWorkMessage(prUpsert)).toBe(true);
   });
 
   it('does not collapse CreatePlan into a surrounding Worked group', () => {
@@ -156,7 +157,7 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(createIssue)).toBe(true);
   });
 
-  it('does not collapse Cursor PrUpsert into a surrounding Worked group', () => {
+  it('collapses PrUpsert/UpdateSession into a surrounding Worked group', () => {
     const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
@@ -174,8 +175,8 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
-    expect(grouped[2].message.message.content[0].input.toolName).toBe('PrUpsert');
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 1);
   });
 
   it('does not collapse work with at most five tool calls', () => {
@@ -223,7 +224,7 @@ describe('chat display grouping', () => {
     expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS);
   });
 
-  it('splits work at the last PrUpsert only', () => {
+  it('folds PrUpsert and trailing tools into one Worked group before the final reply', () => {
     const fewTools = [{ type: 'tool_use', name: 'Read', id: 'r1' }];
     const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
       type: 'tool_use',
@@ -242,11 +243,11 @@ describe('chat display grouping', () => {
     ];
     const grouped = groupChatDisplayMessages(messages);
     const kinds = grouped.map((g) => g.kind);
-    expect(kinds).toEqual(['message', 'work', 'message', 'message', 'message']);
-    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS);
+    expect(kinds).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 2);
   });
 
-  it('collapses earlier PrUpsert into Worked; only the last stays visible', () => {
+  it('folds multiple PrUpsert calls into the same Worked group', () => {
     const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
@@ -270,9 +271,8 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
-    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 1);
-    expect(grouped[2].message.message.content[0].input.toolName).toBe('PrUpsert');
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 2);
   });
 
   it('does not collapse trailing work without a following anchor', () => {
@@ -415,6 +415,25 @@ describe('chat display grouping', () => {
     expect(messageContainsPinnedChatTool(configureServer)).toBe(true);
     expect(isChatGroupBoundary(configureServer)).toBe(true);
     expect(isChatWorkMessage(configureServer)).toBe(false);
+  });
+
+  it('treats turn_reply assistant as the turn anchor without scanning ahead', () => {
+    const mid = {
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'Halfway' }] },
+    };
+    const final = {
+      type: 'assistant',
+      turn_reply: true,
+      blocks: [{ type: 'text', text: 'Done' }],
+    };
+    expect(isTurnReplyAssistantMessage(final)).toBe(true);
+    expect(isChatGroupBoundary(final)).toBe(true);
+    expect(isChatWorkMessage(mid, { index: 1, turnLastAnchors: [3, 3, 3, -1] })).toBe(true);
+    const messages = [{ type: 'user', message: { content: 'go' } }, mid, toolCallRow(1), final];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[2].message.turn_reply).toBe(true);
   });
 
   it('folds mid-turn assistant messages into Worked; only the last stays visible', () => {
