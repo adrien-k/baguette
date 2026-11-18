@@ -71,7 +71,7 @@ describe('usage limit action + copy', () => {
     };
     expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain('Session stopped');
     expect(usageLimitStatusText({ ...base, action: 'wait' })).toBe(
-      'Claude usage limit reached. Waiting for usage limit to reset.'
+      'Claude usage limit reached. Waiting for reset.'
     );
     expect(usageLimitStatusText({ ...base, action: 'stop', reason: 'usage_limit' })).toContain(
       'session usage limit reached'

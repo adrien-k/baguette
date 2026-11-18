@@ -35,8 +35,8 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
     return (
       <Clock
         className={`${iconSize} text-warning shrink-0`}
-        aria-label="Waiting for usage limit to reset"
-        title="Waiting for usage limit to reset"
+        aria-label="Waiting for reset"
+        title="Waiting for reset"
       />
     );
   }

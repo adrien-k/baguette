@@ -109,7 +109,7 @@ describe('sessions.onUsageLimit', () => {
       .where({ session_id: sessionId, subtype: 'status' })
       .first();
     const payload = JSON.parse(status.message_json);
-    expect(payload.status).toContain('Waiting for usage limit to reset');
+    expect(payload.status).toContain('Waiting for reset');
     expect(payload.usage_limit_resume_at).toBe(out.resume_at);
   });
 

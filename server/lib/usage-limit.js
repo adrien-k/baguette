@@ -141,7 +141,7 @@ const USAGE_LIMIT_REASON_TEXT = {
 export function usageLimitStatusText({ label, reason, action, resetAtMs }) {
   const why = USAGE_LIMIT_REASON_TEXT[reason] ?? USAGE_LIMIT_REASON_TEXT.rejected;
   if (action === 'wait') {
-    return `${label} ${why}. Waiting for usage limit to reset.`;
+    return `${label} ${why}. Waiting for reset.`;
   }
   const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
   return `${label} ${why}. Session stopped; send a message to continue.${reset}`;
