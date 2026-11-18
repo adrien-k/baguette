@@ -108,9 +108,7 @@ describe('sessions.onUsageLimit', () => {
     const status = await db('session_messages')
       .where({ session_id: sessionId, subtype: 'status' })
       .first();
-    expect(JSON.parse(status.message_json).status).toMatch(
-      /Waiting for usage limit to reset in 1h [0-9]+m \(/
-    );
+    expect(JSON.parse(status.message_json).status).toMatch(/Waiting for usage limit to reset \(/);
   });
 
   it('stop: persists a notice and schedules nothing', async () => {

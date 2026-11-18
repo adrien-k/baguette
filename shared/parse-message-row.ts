@@ -198,6 +198,7 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
       content: typeof typed.content === 'string' ? typed.content : undefined,
       text: typeof typed.text === 'string' ? typed.text : (payload.text as string | undefined),
       task_status: payload.task_status as string | undefined,
+      usage_limit_resume_at: payload.usage_limit_resume_at as string | undefined,
       estimated_tokens: typed.estimated_tokens ?? (payload.estimated_tokens as number | null),
       estimated_tokens_delta: typed.estimated_tokens_delta ?? null,
       tool_use_id: payload.tool_use_id as string | undefined,

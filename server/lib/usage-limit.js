@@ -132,17 +132,6 @@ export function computeResumeAtMs(
   return base + margin;
 }
 
-/** "25m", "1h 31m", "2d 3h": how long until the resume, rounded to the minute. */
-export function formatResumeIn(ms) {
-  const minutes = Math.max(1, Math.round(ms / 60_000));
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  const mins = minutes % 60;
-  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
-
 /** "Nov 18, 9:10 PM UTC": absolute time, with the zone spelled out. */
 function formatUtcDate(ms) {
   const text = new Date(ms).toLocaleString('en-US', {
@@ -156,22 +145,15 @@ function formatUtcDate(ms) {
 }
 
 const USAGE_LIMIT_REASON_TEXT = {
-  rejected: 'subscription limit reached',
-  overage_disabled: 'subscription limit reached (paid overage is off for this session)',
+  rejected: 'usage limit reached',
+  overage_disabled: 'usage limit reached (paid overage is off for this session)',
   usage_limit: 'session usage limit reached',
 };
 
-export function usageLimitStatusText({
-  label,
-  reason,
-  action,
-  resetAtMs,
-  resumeAtMs,
-  nowMs = Date.now(),
-}) {
+export function usageLimitStatusText({ label, reason, action, resetAtMs, resumeAtMs }) {
   const why = USAGE_LIMIT_REASON_TEXT[reason] ?? USAGE_LIMIT_REASON_TEXT.rejected;
   if (action === 'wait') {
-    return `${label} ${why}. Waiting for usage limit to reset in ${formatResumeIn(resumeAtMs - nowMs)} (${formatUtcDate(resumeAtMs)}).`;
+    return `${label} ${why}. Waiting for usage limit to reset (${formatUtcDate(resumeAtMs)}).`;
   }
   const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
   return `${label} ${why}. Session stopped; send a message to continue.${reset}`;

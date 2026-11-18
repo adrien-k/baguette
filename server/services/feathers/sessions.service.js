@@ -1877,7 +1877,12 @@ export class SessionsService extends KnexService {
           session_id: sessionId,
           type: 'system',
           subtype: 'status',
-          message_json: JSON.stringify({ type: 'system', subtype: 'status', status: notice }),
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: notice,
+            usage_limit_resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : undefined,
+          }),
           ...sessionMessageIdentity(agent, { agent_sdk: limit.sdk }),
         },
         { provider: undefined, user: { id: session.user_id } }

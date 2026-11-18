@@ -5,7 +5,6 @@ import {
   FALLBACK_RETRY_MAX_MS,
   FALLBACK_RETRY_MS,
   fallbackRetryMs,
-  formatResumeIn,
   isUsageLimitText,
   parseUsageLimitResetMs,
   RESUME_MARGIN_MAX_MS,
@@ -72,10 +71,8 @@ describe('usage limit action + copy', () => {
       resumeAtMs: NOW + 5000,
     };
     expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain('Session stopped');
-    expect(
-      usageLimitStatusText({ ...base, action: 'wait', resumeAtMs: NOW + 91 * 60_000, nowMs: NOW })
-    ).toBe(
-      'Claude subscription limit reached. Waiting for usage limit to reset in 1h 31m (Nov 18, 1:31 PM UTC).'
+    expect(usageLimitStatusText({ ...base, action: 'wait', resumeAtMs: NOW + 91 * 60_000 })).toBe(
+      'Claude usage limit reached. Waiting for usage limit to reset (Nov 18, 1:31 PM UTC).'
     );
     expect(usageLimitStatusText({ ...base, action: 'stop', reason: 'usage_limit' })).toContain(
       'session usage limit reached'
@@ -153,15 +150,5 @@ describe('usageLimitFieldsError null action', () => {
     const data = { usage_limit_action: null };
     expect(usageLimitFieldsError(data)).toBeNull();
     expect('usage_limit_action' in data).toBe(false);
-  });
-});
-
-describe('formatResumeIn', () => {
-  it('formats minutes, hours and days', () => {
-    expect(formatResumeIn(5_000)).toBe('1m');
-    expect(formatResumeIn(25 * 60_000)).toBe('25m');
-    expect(formatResumeIn(91 * 60_000)).toBe('1h 31m');
-    expect(formatResumeIn(2 * 86_400_000)).toBe('2d');
-    expect(formatResumeIn(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d 3h');
   });
 });
