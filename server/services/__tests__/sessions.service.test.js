@@ -2691,7 +2691,11 @@ describe('Sessions service - find, get, create', () => {
       pushSpy.mockRestore();
     });
 
-    it('does not auto-push when a non-primary builder completes a turn', async () => {
+    it('auto-pushes when a secondary builder completes a turn', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
       const created = await app
         .service('sessions')
         .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
@@ -2721,8 +2725,44 @@ describe('Sessions service - find, get, create', () => {
         commitsSinceReview: 0,
       });
 
-      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push').mockResolvedValue({ ok: true });
       await app.service('sessions').onTurnComplete(created.id, extraId);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      pushSpy.mockRestore();
+    });
+
+    it('does not auto-push when a subagent completes a turn', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const primary = await db('agents').where({ session_id: created.id, is_primary: 1 }).first();
+      const [subagentId] = await db('agents').insert({
+        session_id: created.id,
+        ref: 2,
+        name: 'Sub',
+        agent_type: 'subagent',
+        is_primary: 0,
+        status: 'completed',
+        agent_sdk: primary.agent_sdk,
+        model: primary.model,
+        model_params: primary.model_params,
+        agent_config_id: primary.agent_config_id,
+      });
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-subagent',
+        auto_push: 1,
+        status: 'completed',
+      });
+
+      vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 2,
+        commitsSinceReview: 0,
+      });
+
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push');
+      await app.service('sessions').onTurnComplete(created.id, subagentId);
       expect(pushSpy).not.toHaveBeenCalled();
       pushSpy.mockRestore();
     });

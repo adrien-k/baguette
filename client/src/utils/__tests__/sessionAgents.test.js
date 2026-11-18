@@ -16,6 +16,7 @@ import {
   isReviewerAgent,
   isSecondaryBuilder,
   isSubagentBuilder,
+  showSessionChatFooterExtrasForAgent,
   otherAgentsRunningLabel,
   partitionSessionAgentsByRunning,
   sortSessionAgentsByLastActivityDesc,
@@ -201,6 +202,24 @@ describe('isSecondaryBuilder', () => {
     expect(isSecondaryBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(false);
     expect(isSecondaryBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
     expect(isSecondaryBuilder(null)).toBe(false);
+  });
+});
+
+describe('showSessionChatFooterExtrasForAgent', () => {
+  it('shows for primary and secondary builders only', () => {
+    expect(showSessionChatFooterExtrasForAgent(null)).toBe(true);
+    expect(showSessionChatFooterExtrasForAgent({ agent_type: 'builder', is_primary: 1 })).toBe(
+      true
+    );
+    expect(showSessionChatFooterExtrasForAgent({ agent_type: 'builder', is_primary: 0 })).toBe(
+      true
+    );
+    expect(showSessionChatFooterExtrasForAgent({ agent_type: 'subagent', is_primary: 0 })).toBe(
+      false
+    );
+    expect(showSessionChatFooterExtrasForAgent({ agent_type: 'reviewer', is_primary: 0 })).toBe(
+      false
+    );
   });
 });
 

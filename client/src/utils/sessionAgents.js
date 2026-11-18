@@ -126,6 +126,17 @@ export function isSecondaryBuilder(agent) {
   return agent?.agent_type === 'builder' && !isPrimaryAgent(agent);
 }
 
+/** Primary or secondary builder — shares the session worktree (not subagent/reviewer). */
+export function isComposerBuilderAgent(agent) {
+  return agent?.agent_type === 'builder';
+}
+
+/** Git sync / merge / push footer on builder chats only (primary and secondary). */
+export function showSessionChatFooterExtrasForAgent(activeAgent) {
+  if (!activeAgent) return true;
+  return isComposerBuilderAgent(activeAgent);
+}
+
 /** Session reviewer row (`agent_type` reviewer) — managed from the review UI, not editable. */
 export function isReviewerAgent(agent) {
   return agent?.agent_type === 'reviewer';

@@ -70,6 +70,7 @@ import {
   agentDisplayTitle,
   isAgentTurnActive,
   isSubagentBuilder,
+  showSessionChatFooterExtrasForAgent,
 } from '../../utils/sessionAgents.js';
 import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usageSeries.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
@@ -223,7 +224,7 @@ export default function ChatView({
   const isProvisioning = session?.status === 'provisioning';
   const activeSubagent = isSubagentBuilder(activeAgent);
   const showMessageComposer = !activeSubagent;
-  const showSessionChatFooterExtras = !activeAgent || Boolean(Number(activeAgent.is_primary));
+  const showSessionChatFooterExtras = showSessionChatFooterExtrasForAgent(activeAgent);
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const costByAgentId = useMemo(
     () => usageCostByAgentId(sessionUsage?.by_agent),

@@ -1868,7 +1868,7 @@ export class SessionsService extends KnexService {
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
   async maybeAutoPushAfterTurn(session, agent) {
     if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
-    if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
+    if (agent && agent.agent_type !== 'builder') return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
     const auth = await sessionGitAuth(this.app, session, user);
