@@ -58,7 +58,7 @@ export default function ShowPlanBlock({
           <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         )}
       </div>
-      <div className="px-3 sm:px-4 py-3 overflow-auto max-h-[50vh] text-sm">
+      <div className="px-3 sm:px-4 py-3 text-sm">
         {isError && errorMessage ? (
           <p className="text-sm text-danger">{errorMessage}</p>
         ) : markdown?.trim() ? (
