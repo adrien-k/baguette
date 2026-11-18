@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Hourglass } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { formatTaskDuration } from '../../utils/dates.js';
 
 /** Re-renders every second until `resumeAt`, so the countdown stays live. */
@@ -25,7 +25,7 @@ export default function UsageLimitNotice({
   const timer = remaining > 0 ? formatTaskDuration(remaining) : 'Resuming…';
   return (
     <div className="mx-auto flex max-w-fit items-center gap-2 rounded-md border border-line/60 bg-control/40 px-3 py-1.5 text-xs text-fg-muted">
-      <Hourglass className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
+      <Clock className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
       <span className="font-mono tabular-nums text-heading">{timer}</span>
       <span>{status}</span>
     </div>
