@@ -25,6 +25,7 @@ import {
   loadBaguetteConfig,
   readBaguetteConfigRaw,
   CONFIG_FILENAME,
+  resolveServicesConfig,
 } from '../baguette-config.js';
 
 describe('getScriptBlock', () => {
@@ -541,5 +542,31 @@ describe('loadBaguetteAgentPrompt', () => {
   it('returns null when the role file is missing', async () => {
     const { loadBaguetteAgentPrompt } = await import('../baguette-config.js');
     expect(await loadBaguetteAgentPrompt(tmpDir, 'reviewer')).toBeNull();
+  });
+});
+
+describe('resolveServicesConfig', () => {
+  it('skips an invalid service and keeps the valid ones', () => {
+    const services = resolveServicesConfig({
+      session: {
+        tasks: {
+          'dev-server': { run: 'pnpm dev', ports: ['VITE_PORT:5173'] },
+          api: { run: 'pnpm api' },
+        },
+      },
+      services: {
+        app: { task: 'dev-server', expose: 'VITE_PORT' },
+        broken: { task: 'missing-task' },
+        web: { task: 'api' },
+      },
+    });
+    expect(services.map((s) => s.name)).toEqual(['app', 'web']);
+    expect(services[0].taskKey).toBe('dev-server');
+  });
+
+  it('returns null when the config failed to load', () => {
+    expect(resolveServicesConfig({ error: 'parse failed', services: { app: { task: 'x' } } })).toBe(
+      null
+    );
   });
 });

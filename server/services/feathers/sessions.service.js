@@ -102,7 +102,6 @@ import {
   getSessionPreviewUrl,
   previewTaskLookupKey,
   resolvePreviewServiceConfig,
-  sessionHasPreviewConfig,
 } from '../preview-services.js';
 import { isPortListening } from '../port-utils.js';
 import path from 'path';
@@ -2496,14 +2495,15 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
   const absoluteSessionPath = resolvedPath
     ? await fs.realpath(resolvedPath).catch(() => resolvedPath)
     : resolvedPath;
-  const config = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
-  const hasPreview = sessionHasPreviewConfig(config);
+  const loadedConfig = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
+  const config = loadedConfig?.error ? null : loadedConfig;
   const previewServices =
-    hasPreview && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
+    config && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
+  const hasPreview = (previewServices?.length ?? 0) > 0;
   const shaped = {
     ...session,
     absolute_session_path: absoluteSessionPath ?? null,
-    preview_url: hasPreview && getSessionPreviewUrl(session, config),
+    preview_url: hasPreview ? getSessionPreviewUrl(session, config) : null,
     preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,

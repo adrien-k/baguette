@@ -47,6 +47,7 @@ async function buildInterpolateContext(db, sessionId) {
   let interpolateOpts = null;
   if (session?.session_path) {
     baguetteConfig = await loadBaguetteConfig(session.session_path);
+    if (baguetteConfig?.error) baguetteConfig = null;
     if (baguetteConfig) {
       const servicesConfig = resolveServicesConfig(baguetteConfig);
       const servicesUriMap = servicesConfig

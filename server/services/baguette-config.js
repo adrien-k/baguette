@@ -483,42 +483,52 @@ function normalizeServiceDescription(value) {
 /**
  * Resolve the services block into an array of service configs.
  * Returns `Array<{ name, command, ports, expose, taskKey }>` or null if no services block.
+ * A broken service entry is skipped; a failure reading tasks drops the whole block.
  */
 export function resolveServicesConfig(baguetteConfig) {
-  if (!baguetteConfig) return null;
+  if (!baguetteConfig || baguetteConfig.error) return null;
   const servicesBlock = baguetteConfig.services;
   if (!servicesBlock || typeof servicesBlock !== 'object') return null;
 
-  const tasks = getAvailableTasks(baguetteConfig);
+  let tasks;
+  try {
+    tasks = getAvailableTasks(baguetteConfig);
+  } catch (err) {
+    logger.warn({ err }, 'Skipping services: failed to read tasks from .baguette.yaml');
+    return null;
+  }
+
   const result = [];
-
   for (const [name, svcDef] of Object.entries(servicesBlock)) {
-    if (!SERVICE_NAME_REGEX.test(name)) {
-      throw new Error(`Invalid service name "${name}": must be lowercase alphanumeric + hyphens`);
+    try {
+      if (!SERVICE_NAME_REGEX.test(name)) {
+        throw new Error(`Invalid service name "${name}": must be lowercase alphanumeric + hyphens`);
+      }
+      if (name === 'vscode') {
+        throw new Error('Service name "vscode" is reserved by Baguette');
+      }
+      if (!svcDef || typeof svcDef !== 'object') continue;
+      if (!svcDef.task) {
+        throw new Error(`services.${name} must specify a task`);
+      }
+      const taskDef = tasks[svcDef.task];
+      if (!taskDef) {
+        throw new Error(`services.${name}.task "${svcDef.task}" not found in session.tasks`);
+      }
+      const description =
+        normalizeServiceDescription(svcDef.description) ??
+        normalizeServiceDescription(taskDef.description);
+      result.push({
+        name,
+        command: taskDef.run,
+        ports: taskDef.ports || [],
+        expose: svcDef.expose,
+        taskKey: svcDef.task,
+        description,
+      });
+    } catch (err) {
+      logger.warn({ err, service: name }, 'Skipping invalid service in .baguette.yaml');
     }
-    if (name === 'vscode') {
-      throw new Error(`Service name "vscode" is reserved by Baguette`);
-    }
-    if (!svcDef || typeof svcDef !== 'object') continue;
-
-    if (!svcDef.task) {
-      throw new Error(`services.${name} must specify a task`);
-    }
-    const taskDef = tasks[svcDef.task];
-    if (!taskDef) {
-      throw new Error(`services.${name}.task "${svcDef.task}" not found in session.tasks`);
-    }
-    const description =
-      normalizeServiceDescription(svcDef.description) ??
-      normalizeServiceDescription(taskDef.description);
-    result.push({
-      name,
-      command: taskDef.run,
-      ports: taskDef.ports || [],
-      expose: svcDef.expose,
-      taskKey: svcDef.task,
-      description,
-    });
   }
 
   return result;
