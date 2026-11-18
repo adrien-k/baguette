@@ -109,17 +109,25 @@ class SessionIssuesService extends KnexService {
     if (id == null || id === '') throw new BadRequest('Issue id is required');
     if (!optionId) throw new BadRequest('option_id is required');
     const issue = await this.get(id, { user: params?.user });
-    if (issue.status !== 'needs_decision') {
-      throw new BadRequest('Only issues that need a decision can be selected');
-    }
     const options = parseStoredOptions(issue.options) ?? [];
+    if (options.length === 0) throw new BadRequest('This issue has no decision options');
     const match = options.find((opt) => opt?.id === optionId);
     if (!match) throw new BadRequest('Unknown option');
-    return this.patch(
-      id,
-      { selected_option_id: match.id, status: 'opened' },
-      { user: params?.user, selectingOption: true }
-    );
+    if (issue.status === 'needs_decision') {
+      return this.patch(
+        id,
+        { selected_option_id: match.id, status: 'opened' },
+        { user: params?.user, selectingOption: true }
+      );
+    }
+    if (issue.status === 'opened') {
+      return this.patch(
+        id,
+        { selected_option_id: match.id },
+        { user: params?.user, selectingOption: true }
+      );
+    }
+    throw new BadRequest('Only opened decision issues can be updated');
   }
 
   async _postBuilderFixMessage(session, text, params) {
