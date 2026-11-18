@@ -33,9 +33,14 @@ export default function MiniSessionEntry({
   const isArchiving = !isArchived && s.status === 'archiving';
   const { sessionUrl, showRepoDetails } = useFilterRoutes();
   const isCurrent = String(s.id) === String(currentId);
-  // Highlight the row itself only when the session is open without a specific
-  // agent chat; otherwise the selected agent row inside the tree is the highlight.
-  const rowHighlighted = isCurrent && !routeAgentId;
+  // Highlight the open session always; use a lighter fill when an agent chat is
+  // open so the selected agent row (bg-control-hover) reads as the stronger accent.
+  const rowHighlighted = isCurrent;
+  const sessionRowBgClass = isCurrent
+    ? routeAgentId
+      ? 'bg-control'
+      : 'bg-control-hover'
+    : 'hover:bg-control/50';
   const promptPreview = sessionListPromptPreview(s);
   const title =
     s.label?.trim() ||
@@ -59,7 +64,7 @@ export default function MiniSessionEntry({
     <div
       className={`group px-3 py-2 text-xs transition-colors ${
         isArchived || isArchiving ? 'opacity-50' : ''
-      } ${rowHighlighted ? 'bg-control-hover' : 'hover:bg-control/50'}`}
+      } ${sessionRowBgClass}`}
     >
       <div className="flex items-start gap-2">
         <span className="mt-0.5 shrink-0">

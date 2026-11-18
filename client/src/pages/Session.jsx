@@ -1210,8 +1210,8 @@ export default function Session() {
           onDeleteLoop={loopWorkspace.handleDeleteLoop}
           sidebarSessions={sidebarSessions}
           routeSessionId={routeSessionId}
-          // Highlight the open agent row only while an agent chat is actually
-          // open; other views (review, diff) highlight the session row itself.
+          // While agent chat is open, the list highlights both the session row
+          // and the selected agent (different backgrounds); review/diff only the session.
           routeAgentId={chatViewOpen ? (activeAgent?.id ?? null) : null}
           autoExpandId={lastOpenedSessionId}
           isMobileList={!isMdUp}
