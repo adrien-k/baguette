@@ -109,7 +109,7 @@ describe('sessions.onUsageLimit', () => {
       .where({ session_id: sessionId, subtype: 'status' })
       .first();
     expect(JSON.parse(status.message_json).status).toMatch(
-      /Resumes after usage limit reset in 1h [0-9]+m\./
+      /Waiting for usage limit to reset in 1h [0-9]+m \(/
     );
   });
 

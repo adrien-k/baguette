@@ -74,7 +74,9 @@ describe('usage limit action + copy', () => {
     expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain('Session stopped');
     expect(
       usageLimitStatusText({ ...base, action: 'wait', resumeAtMs: NOW + 91 * 60_000, nowMs: NOW })
-    ).toBe('Claude subscription limit reached. Resumes after usage limit reset in 1h 31m.');
+    ).toBe(
+      'Claude subscription limit reached. Waiting for usage limit to reset in 1h 31m (Nov 18, 1:31 PM UTC).'
+    );
     expect(usageLimitStatusText({ ...base, action: 'stop', reason: 'usage_limit' })).toContain(
       'session usage limit reached'
     );
@@ -135,6 +137,11 @@ describe('isUsageLimitText', () => {
   it('matches plan-limit wording only, not generic rate-limit text', () => {
     expect(isUsageLimitText('You have hit your usage limit')).toBe(true);
     expect(isUsageLimitText('Claude AI usage limit reached|1700000000')).toBe(true);
+    expect(
+      isUsageLimitText(
+        "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later."
+      )
+    ).toBe(true);
     expect(isUsageLimitText('rate limit, slow down')).toBe(false);
     expect(isUsageLimitText('quota check failed, too many requests (429)')).toBe(false);
     expect(isUsageLimitText(undefined)).toBe(false);

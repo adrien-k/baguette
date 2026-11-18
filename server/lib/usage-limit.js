@@ -77,7 +77,7 @@ export const USAGE_LIMIT_RESUME_PROMPT =
  * rate-limit event, Cursor's `RateLimitError` / HTTP 429) are handled in each SDK folder.
  */
 const USAGE_LIMIT_TEXT_PATTERN =
-  /usage limit|spend limit|hit your limit|out of (?:usage|credits)|limit (?:reached|exceeded)|exceeded (?:your |the )?(?:\w+ )?limit/i;
+  /usage limit|spend limit|hit your limit|out of (?:usage|credits)|limit (?:reached|exceeded)|exceeded (?:your |the )?(?:\w+ )?limit|exceed your (?:account's )?rate limit/i;
 
 export function isUsageLimitText(text) {
   return typeof text === 'string' && USAGE_LIMIT_TEXT_PATTERN.test(text);
@@ -143,6 +143,18 @@ export function formatResumeIn(ms) {
   return `${mins}m`;
 }
 
+/** "Nov 18, 9:10 PM UTC": absolute time, with the zone spelled out. */
+function formatUtcDate(ms) {
+  const text = new Date(ms).toLocaleString('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${text} UTC`;
+}
+
 const USAGE_LIMIT_REASON_TEXT = {
   rejected: 'subscription limit reached',
   overage_disabled: 'subscription limit reached (paid overage is off for this session)',
@@ -159,7 +171,7 @@ export function usageLimitStatusText({
 }) {
   const why = USAGE_LIMIT_REASON_TEXT[reason] ?? USAGE_LIMIT_REASON_TEXT.rejected;
   if (action === 'wait') {
-    return `${label} ${why}. Resumes after usage limit reset in ${formatResumeIn(resumeAtMs - nowMs)}.`;
+    return `${label} ${why}. Waiting for usage limit to reset in ${formatResumeIn(resumeAtMs - nowMs)} (${formatUtcDate(resumeAtMs)}).`;
   }
   const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
   return `${label} ${why}. Session stopped; send a message to continue.${reset}`;
