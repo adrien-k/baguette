@@ -1123,7 +1123,7 @@ export default function ChatView({
                     agentConfigOptions={agentConfigOptions}
                     configsLoading={configsLoading}
                     modelsLoading={modelsLoading}
-                    showAutoPushParam
+                    showAutoPushParam={!isGlobalSession(session)}
                     textareaId="chat-input"
                     canSend={canSendDraft}
                     submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}
