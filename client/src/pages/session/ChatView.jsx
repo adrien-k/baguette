@@ -58,6 +58,8 @@ import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
 import StartSubagentModal from '../../components/StartSubagentModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
+import PendingInitialPromptMessage from '../../components/chat/PendingInitialPromptMessage.jsx';
+import { shouldShowPendingInitialPrompt } from './pendingInitialPrompt.js';
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
@@ -353,6 +355,17 @@ export default function ChatView({
     }
     return result;
   }, [messages]);
+
+  const pendingInitialPrompt = session?.initial_prompt?.trim() ?? '';
+  const showPendingInitialPrompt = useMemo(
+    () =>
+      shouldShowPendingInitialPrompt({
+        session,
+        messages: displayMessages,
+        activeAgent,
+      }),
+    [session, displayMessages, activeAgent]
+  );
 
   const chatDisplayItems = useMemo(
     () => groupChatDisplayMessages(displayMessages),
@@ -796,6 +809,9 @@ export default function ChatView({
                 </div>
               )}
               {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
+              {showPendingInitialPrompt && (
+                <PendingInitialPromptMessage text={pendingInitialPrompt} />
+              )}
               {chatDisplayItems.map((item) =>
                 item.kind === 'work' ? (
                   <ChatWorkSummary
