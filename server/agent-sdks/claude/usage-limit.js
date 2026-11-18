@@ -127,6 +127,7 @@ export class ClaudeUsageLimitGuard {
   /**
    * Tokens of the turn since the last `result` as a `modelUsage` map, for a turn cut before its
    * own `result` arrived. Null when there is nothing to record.
+   * @returns {Record<string, Record<string, number>> | null}
    */
   partialModelUsageSinceResult() {
     if (!this.sinceResult.size) return null;
