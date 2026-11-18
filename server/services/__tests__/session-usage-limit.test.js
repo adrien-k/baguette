@@ -102,13 +102,15 @@ describe('sessions.onUsageLimit', () => {
     expect(JSON.parse(status.message_json).status).toContain('Session stopped');
   });
 
-  it('wait: the chat notice says when it resumes', async () => {
+  it('wait: the chat notice carries the resume time for the client countdown', async () => {
     await setPolicy({ usage_limit_action: 'wait' });
-    await app.service('sessions').onUsageLimit(sessionId, agentId, hit(3_600_000));
+    const out = await app.service('sessions').onUsageLimit(sessionId, agentId, hit(3_600_000));
     const status = await db('session_messages')
       .where({ session_id: sessionId, subtype: 'status' })
       .first();
-    expect(JSON.parse(status.message_json).status).toMatch(/Waiting for usage limit to reset \(/);
+    const payload = JSON.parse(status.message_json);
+    expect(payload.status).toContain('Waiting for usage limit to reset');
+    expect(payload.usage_limit_resume_at).toBe(out.resume_at);
   });
 
   it('wait: the session row carries the resume time for the sidebar clock', async () => {

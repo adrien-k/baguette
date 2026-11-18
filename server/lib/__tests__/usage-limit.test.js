@@ -68,11 +68,10 @@ describe('usage limit action + copy', () => {
       label: 'Claude',
       reason: 'rejected',
       resetAtMs: NOW + 1000,
-      resumeAtMs: NOW + 5000,
     };
     expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain('Session stopped');
-    expect(usageLimitStatusText({ ...base, action: 'wait', resumeAtMs: NOW + 91 * 60_000 })).toBe(
-      'Claude usage limit reached. Waiting for usage limit to reset (Nov 18, 1:31 PM UTC).'
+    expect(usageLimitStatusText({ ...base, action: 'wait' })).toBe(
+      'Claude usage limit reached. Waiting for usage limit to reset.'
     );
     expect(usageLimitStatusText({ ...base, action: 'stop', reason: 'usage_limit' })).toContain(
       'session usage limit reached'

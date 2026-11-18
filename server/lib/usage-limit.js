@@ -132,28 +132,16 @@ export function computeResumeAtMs(
   return base + margin;
 }
 
-/** "Nov 18, 9:10 PM UTC": absolute time, with the zone spelled out. */
-function formatUtcDate(ms) {
-  const text = new Date(ms).toLocaleString('en-US', {
-    timeZone: 'UTC',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-  return `${text} UTC`;
-}
-
 const USAGE_LIMIT_REASON_TEXT = {
   rejected: 'usage limit reached',
   overage_disabled: 'usage limit reached (paid overage is off for this session)',
   usage_limit: 'session usage limit reached',
 };
 
-export function usageLimitStatusText({ label, reason, action, resetAtMs, resumeAtMs }) {
+export function usageLimitStatusText({ label, reason, action, resetAtMs }) {
   const why = USAGE_LIMIT_REASON_TEXT[reason] ?? USAGE_LIMIT_REASON_TEXT.rejected;
   if (action === 'wait') {
-    return `${label} ${why}. Waiting for usage limit to reset (${formatUtcDate(resumeAtMs)}).`;
+    return `${label} ${why}. Waiting for usage limit to reset.`;
   }
   const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
   return `${label} ${why}. Session stopped; send a message to continue.${reset}`;

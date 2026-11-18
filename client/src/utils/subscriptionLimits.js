@@ -1,3 +1,5 @@
+import { formatDateTimeWithZone } from './dates.js';
+
 /** Whole dollars when exact ("$800"), otherwise cents ("$13.98"). */
 function formatDollars(value) {
   const n = Number(value) || 0;
@@ -19,29 +21,6 @@ function formatCountdown(ms) {
   return hours > 0 ? `in ${days}d ${hours}h` : `in ${days}d`;
 }
 
-/** Browser UTC offset as "UTC", "UTC+1", "UTC-5" or "UTC+5:30" for the given instant. */
-function formatUtcOffset(date) {
-  const minutes = -date.getTimezoneOffset();
-  if (minutes === 0) return 'UTC';
-  const sign = minutes > 0 ? '+' : '-';
-  const abs = Math.abs(minutes);
-  const hours = Math.floor(abs / 60);
-  const rest = abs % 60;
-  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`;
-}
-
-/** Absolute time in the browser's timezone: "Nov 18, 9:10 PM UTC+1". */
-function formatAbsolute(at) {
-  const date = new Date(at);
-  const local = date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-  return `${local} ${formatUtcOffset(date)}`;
-}
-
 /** "resets in 4h 31m (Nov 18, 9:10 PM UTC+1)" — countdown plus the absolute local time. */
 export function formatLimitReset(iso, now = Date.now()) {
   if (!iso) return null;
@@ -49,7 +28,7 @@ export function formatLimitReset(iso, now = Date.now()) {
   if (Number.isNaN(at)) return null;
   const ms = at - now;
   if (ms <= 0) return 'resets now';
-  return `resets ${formatCountdown(ms)} (${formatAbsolute(at)})`;
+  return `resets ${formatCountdown(ms)} (${formatDateTimeWithZone(at)})`;
 }
 
 /** Detail line under a bar: "$1.60 of $20 · resets in 17d (Dec 6, 1:00 AM UTC+1)". */

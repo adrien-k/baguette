@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Clock } from 'lucide-react';
-import { formatTaskDuration } from '../../utils/dates.js';
+import { formatDateTimeWithZone, formatTaskDuration } from '../../utils/dates.js';
 
 /** Re-renders every second until `resumeAt`, so the countdown stays live. */
 function useRemainingMs(resumeAt: string): number {
@@ -27,7 +27,9 @@ export default function UsageLimitNotice({
     <div className="mx-auto flex max-w-fit items-center gap-2 rounded-md border border-line/60 bg-control/40 px-3 py-1.5 text-xs text-fg-muted">
       <Clock className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
       <span className="font-mono tabular-nums text-heading">{timer}</span>
-      <span>{status}</span>
+      <span>
+        {status} ({formatDateTimeWithZone(resumeAt)})
+      </span>
     </div>
   );
 }

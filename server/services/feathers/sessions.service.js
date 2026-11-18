@@ -1867,7 +1867,6 @@ export class SessionsService extends KnexService {
         reason: limit.reason,
         action,
         resetAtMs,
-        resumeAtMs,
       });
       const notice = gaveUp
         ? `${status} Gave up waiting: the reset time is unknown after ${MAX_UNKNOWN_RESET_RETRIES} retries.`
