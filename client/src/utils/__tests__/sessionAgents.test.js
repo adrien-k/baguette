@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   activeAgentsRunningLabel,
   applyAgentPatchToSession,
+  agentAccessibleTitle,
   agentDisplayTitle,
   agentMenuOptionLabel,
   agentNameMatchesType,
@@ -89,6 +90,12 @@ describe('agent display labels', () => {
   it('prefixes menu label with session ref when present', () => {
     const agent = { ref: 3, name: 'Builder', agent_type: 'builder' };
     expect(agentMenuOptionLabel(agent)).toBe('#3 Builder');
+    expect(agentAccessibleTitle(agent)).toBe('#3 Builder');
+  });
+
+  it('agentAccessibleTitle omits ref prefix when ref is missing', () => {
+    const agent = { name: 'E2E MCP subagent', agent_type: 'subagent' };
+    expect(agentAccessibleTitle(agent)).toBe('E2E MCP subagent');
   });
 });
 

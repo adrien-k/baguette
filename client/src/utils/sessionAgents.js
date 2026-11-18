@@ -56,6 +56,13 @@ export function agentDisplayTitle(agent) {
   return name || typeLabel;
 }
 
+/** Tree row / tooltip label — `#ref` prefix plus {@link agentDisplayTitle}. */
+export function agentAccessibleTitle(agent) {
+  const title = agentDisplayTitle(agent);
+  const prefix = agentRefPrefix(agent);
+  return prefix ? `${prefix}${title}` : title;
+}
+
 /** Menu row label when switching agents. */
 export function agentMenuOptionLabel(agent) {
   const typeLabel = agentTypeLabel(agent.agent_type);
