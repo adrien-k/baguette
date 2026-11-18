@@ -7,7 +7,6 @@ import {
   fallbackRetryMs,
   formatResumeIn,
   isUsageLimitText,
-  normalizeUsageLimitAction,
   parseUsageLimitResetMs,
   RESUME_MARGIN_MAX_MS,
   RESUME_MARGIN_MIN_MS,
@@ -65,13 +64,6 @@ describe('computeResumeAtMs', () => {
 });
 
 describe('usage limit action + copy', () => {
-  it('defaults unknown actions to stop', () => {
-    expect(normalizeUsageLimitAction('wait')).toBe('wait');
-    expect(normalizeUsageLimitAction('continue')).toBe('continue');
-    expect(normalizeUsageLimitAction('pause')).toBe('stop');
-    expect(normalizeUsageLimitAction(undefined)).toBe('stop');
-  });
-
   it('words stop and wait differently', () => {
     const base = {
       label: 'Claude',

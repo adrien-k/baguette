@@ -13,7 +13,6 @@
  *                 spent (no limit when null), then stop.
  */
 const USAGE_LIMIT_ACTIONS = ['stop', 'wait', 'continue'];
-const DEFAULT_USAGE_LIMIT_ACTION = 'stop';
 
 /**
  * Session `usage_limit` in USD: a finite number >= 0 (it may be a few cents), or null for
@@ -70,10 +69,6 @@ export function fallbackRetryMs(attempt = 0) {
 
 export const USAGE_LIMIT_RESUME_PROMPT =
   'The usage limit has reset. Continue the work where you left off.';
-
-export function normalizeUsageLimitAction(value) {
-  return USAGE_LIMIT_ACTIONS.includes(value) ? value : DEFAULT_USAGE_LIMIT_ACTION;
-}
 
 /**
  * Plan-limit wording shared by every SDK. Generic transient text ("rate limit", "quota",
@@ -148,6 +143,12 @@ export function formatResumeIn(ms) {
   return `${mins}m`;
 }
 
+const USAGE_LIMIT_REASON_TEXT = {
+  rejected: 'subscription limit reached',
+  overage_disabled: 'subscription limit reached (paid overage is off for this session)',
+  usage_limit: 'session usage limit reached',
+};
+
 export function usageLimitStatusText({
   label,
   reason,
@@ -156,8 +157,7 @@ export function usageLimitStatusText({
   resumeAtMs,
   nowMs = Date.now(),
 }) {
-  const why =
-    reason === 'usage_limit' ? 'session usage limit reached' : 'subscription limit reached';
+  const why = USAGE_LIMIT_REASON_TEXT[reason] ?? USAGE_LIMIT_REASON_TEXT.rejected;
   if (action === 'wait') {
     return `${label} ${why}. Resumes after usage limit reset in ${formatResumeIn(resumeAtMs - nowMs)}.`;
   }

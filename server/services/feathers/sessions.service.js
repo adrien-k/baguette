@@ -121,7 +121,6 @@ import {
   USAGE_LIMIT_RESUME_PROMPT,
   computeResumeAtMs,
   MAX_UNKNOWN_RESET_RETRIES,
-  normalizeUsageLimitAction,
   usageLimitStatusText,
 } from '../../lib/usage-limit.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
@@ -1833,8 +1832,8 @@ export class SessionsService extends KnexService {
       if (!session || !agent) return null;
 
       const resetAtMs = limit.reset_at_ms ?? null;
-      let action =
-        normalizeUsageLimitAction(session.usage_limit_action) === 'wait' ? 'wait' : 'stop';
+      // `continue` also ends as `stop` here: it only gets this far once its credits are spent.
+      let action = session.usage_limit_action === 'wait' ? 'wait' : 'stop';
       let resumeAtMs = null;
       let gaveUp = false;
       if (action === 'wait') {
