@@ -175,6 +175,20 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'ListGithubTags',
 ];
 
+/**
+ * MCP tools omitted on inbound HTTP MCP (`/api/mcp`) — no caller session/agent;
+ * subagent and fleet orchestration belong to in-session builder turns.
+ */
+export const EXTERNAL_MCP_EXCLUDED_TOOLS = [
+  'StartSubagent',
+  'AwaitSubagent',
+  'StopSubagent',
+  'StopSession',
+  'WatchSession',
+  'UnwatchSession',
+  'AwaitSessionTurn',
+];
+
 export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   'GitPull',
   'GitPush',
