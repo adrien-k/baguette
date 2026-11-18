@@ -7,9 +7,6 @@ import { defineConfig } from 'vitest/config';
 // Vitest defaults NODE_ENV to 'test' only when it is unset, so pin it here to
 // make `pnpm test` independent of the shell environment.
 process.env.NODE_ENV = 'test';
-// Likewise pin the public host: a developer's `.env` (loaded by server/config.js) must not
-// change the preview / redirect URLs the tests assert on.
-process.env.PUBLIC_HOST = 'http://localhost:3000';
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
