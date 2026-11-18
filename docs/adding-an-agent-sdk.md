@@ -69,9 +69,6 @@ export const claudeAgentSdkPlugin = {
   // Optional usage hooks (sessions.insertUsageRow stays generic)
   resetUsageTotals(totalsKey),        // Claude running-total map; others omit
   usageLabelExtras(row),              // PR footer extras e.g. `{ fast: true }` (Cursor)
-  // Plan limits for the session "Usage limits" card (optional; throwing is fine — the usage
-  // service turns it into an error entry for that provider only):
-  // fetchSubscriptionLimits({ app, userId, agentConfigId }) → { status, message, limits[], account }
 
   // JSON-serializable Settings credential fields
   credentialSchema: {
